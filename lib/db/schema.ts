@@ -1,0 +1,197 @@
+import {
+  pgTable,
+  uuid,
+  varchar,
+  text,
+  integer,
+  boolean,
+  timestamp,
+  doublePrecision,
+  bigint,
+  jsonb,
+  uniqueIndex,
+  check,
+} from "drizzle-orm/pg-core";
+
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    email: varchar("email", { length: 255 }).notNull().unique(),
+    name: varchar("name", { length: 255 }),
+    image: text("image"),
+    emailVerified: timestamp("email_verified", { withTimezone: true }),
+    googleId: varchar("google_id", { length: 255 }).unique(),
+    credits: integer("credits").notNull().default(0),
+    apiKeyHash: varchar("api_key_hash", { length: 64 }).unique(),
+    apiKeyPrefix: varchar("api_key_prefix", { length: 12 }),
+    apiKeyCreatedAt: timestamp("api_key_created_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    lastFaucetAt: timestamp("last_faucet_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("users_google_id_idx").on(table.googleId),
+    uniqueIndex("users_api_key_hash_idx").on(table.apiKeyHash),
+    uniqueIndex("users_email_idx").on(table.email),
+  ]
+);
+
+export const creditPackages = pgTable("credit_packages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  stripePriceId: varchar("stripe_price_id", { length: 255 }).notNull().unique(),
+  name: varchar("name", { length: 100 }),
+  credits: integer("credits").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  active: boolean("active").default(true),
+  sortOrder: integer("sort_order").default(0),
+});
+
+export const gameBets = pgTable(
+  "game_bets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    gameType: varchar("game_type", { length: 20 }).notNull(),
+    amount: integer("amount").notNull(),
+    outcome: varchar("outcome", { length: 10 }).notNull(),
+    payout: integer("payout").notNull(),
+    resultPayload: jsonb("result_payload"),
+    serverSeedId: uuid("server_seed_id").references(() => serverSeeds.id),
+    clientSeed: text("client_seed"),
+    nonce: bigint("nonce", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("game_bets_user_created_idx").on(table.userId, table.createdAt),
+    uniqueIndex("game_bets_game_created_idx").on(table.gameType, table.createdAt),
+  ]
+);
+
+export const serverSeeds = pgTable("server_seeds", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  seedHash: varchar("seed_hash", { length: 64 }).notNull(),
+  seed: varchar("seed", { length: 64 }),
+  used: boolean("used").default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const blackjackRounds = pgTable("blackjack_rounds", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id),
+  betAmount: integer("bet_amount").notNull(),
+  playerHands: jsonb("player_hands").notNull(),
+  dealerHand: jsonb("dealer_hand").notNull(),
+  deck: jsonb("deck").notNull(),
+  status: varchar("status", { length: 20 }).notNull(),
+  serverSeedId: uuid("server_seed_id").references(() => serverSeeds.id),
+  clientSeed: text("client_seed"),
+  nonce: bigint("nonce", { mode: "number" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+export const crashRounds = pgTable(
+  "crash_rounds",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    crashPoint: doublePrecision("crash_point").notNull(),
+    serverSeedId: uuid("server_seed_id").references(() => serverSeeds.id),
+    clientSeed: text("client_seed"),
+    nonce: bigint("nonce", { mode: "number" }),
+    status: varchar("status", { length: 20 }).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("crash_rounds_status_started_idx").on(
+      table.status,
+      table.startedAt
+    ),
+  ]
+);
+
+export const crashBets = pgTable(
+  "crash_bets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    crashRoundId: uuid("crash_round_id")
+      .notNull()
+      .references(() => crashRounds.id),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    amount: integer("amount").notNull(),
+    cashedOutAt: doublePrecision("cashed_out_at"),
+    payout: integer("payout").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("crash_bets_round_user_idx").on(table.crashRoundId, table.userId),
+    uniqueIndex("crash_bets_round_idx").on(table.crashRoundId),
+  ]
+);
+
+export const faucetGrants = pgTable(
+  "faucet_grants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    amount: integer("amount").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("faucet_grants_user_created_idx").on(
+      table.userId,
+      table.createdAt
+    ),
+  ]
+);
+
+export const stripeEvents = pgTable("stripe_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  stripeEventId: varchar("stripe_event_id", { length: 255 }).notNull().unique(),
+  type: varchar("type", { length: 100 }),
+  payload: jsonb("payload"),
+  processedAt: timestamp("processed_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const accounts = pgTable("accounts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  type: varchar("type", { length: 255 }).notNull(),
+  provider: varchar("provider", { length: 255 }).notNull(),
+  providerAccountId: varchar("provider_account_id", { length: 255 }).notNull(),
+  refresh_token: text("refresh_token"),
+  access_token: text("access_token"),
+  expires_at: integer("expires_at"),
+  token_type: varchar("token_type", { length: 255 }),
+  scope: varchar("scope", { length: 255 }),
+  id_token: text("id_token"),
+  session_state: varchar("session_state", { length: 255 }),
+});
+
+export const sessions = pgTable("sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sessionToken: varchar("session_token", { length: 255 }).notNull().unique(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  expires: timestamp("expires", { withTimezone: true }).notNull(),
+});
+
+export const verificationTokens = pgTable("verification_tokens", {
+  identifier: varchar("identifier", { length: 255 }).notNull(),
+  token: varchar("token", { length: 255 }).notNull(),
+  expires: timestamp("expires", { withTimezone: true }).notNull(),
+});

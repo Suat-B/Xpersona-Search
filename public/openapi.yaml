@@ -1,0 +1,228 @@
+openapi: 3.0.3
+info:
+  title: xpersona Casino API
+  description: All authenticated endpoints require header Authorization Bearer \<user API key\>. Base URL https://xpersona.co
+  version: 1.0.0
+servers:
+  - url: https://xpersona.co
+security:
+  - bearerAuth: []
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: OK
+  /api/me:
+    get:
+      summary: Current user
+      responses:
+        "200":
+          description: User profile (id, email, name, image, credits, apiKeyPrefix, createdAt)
+        "401":
+          description: Unauthorized
+  /api/me/balance:
+    get:
+      summary: Balance
+      responses:
+        "200":
+          description: { balance }
+        "401":
+          description: Unauthorized
+  /api/me/api-key:
+    post:
+      summary: Generate API key (returns plain key once)
+      responses:
+        "200":
+          description: { apiKey, apiKeyPrefix }
+        "401":
+          description: Unauthorized
+  /api/faucet:
+    post:
+      summary: Claim hourly faucet
+      responses:
+        "200":
+          description: { balance, granted, nextFaucetAt }
+        "429":
+          description: Faucet cooldown
+        "401":
+          description: Unauthorized
+  /api/credits/packages:
+    get:
+      summary: List credit packages
+      security: []
+      responses:
+        "200":
+          description: List of packages (id, name, credits, amountCents, stripePriceId)
+  /api/credits/checkout:
+    post:
+      summary: Create Stripe Checkout session
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [packageId]
+              properties:
+                packageId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: { url }
+        "401":
+          description: Unauthorized
+  /api/games/dice/bet:
+    post:
+      summary: Place dice bet
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, target, condition]
+              properties:
+                amount: { type: integer, minimum: 1 }
+                target: { type: number, minimum: 0, maximum: 100 }
+                condition: { type: string, enum: [over, under] }
+      responses:
+        "200":
+          description: betId, result, win, payout, balance, verification
+        "400":
+          description: VALIDATION_ERROR, INSUFFICIENT_BALANCE, BET_TOO_LOW, BET_TOO_HIGH
+        "401":
+          description: Unauthorized
+  /api/games/blackjack/round:
+    post:
+      summary: Start blackjack round
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: roundId, playerHand, dealerUp, balance, status
+        "400":
+          description: INSUFFICIENT_BALANCE
+        "401":
+          description: Unauthorized
+  /api/games/blackjack/round/{roundId}/action:
+    post:
+      summary: Hit, stand, double, or split
+      parameters:
+        - name: roundId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [hit, stand, double, split] }
+      responses:
+        "200":
+          description: Updated hands or settled outcome
+        "400":
+          description: ROUND_ENDED, VALIDATION_ERROR
+        "403":
+          description: ROUND_NOT_YOURS
+        "404":
+          description: ROUND_NOT_FOUND
+        "401":
+          description: Unauthorized
+  /api/games/plinko/bet:
+    post:
+      summary: Place plinko bet
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, risk]
+              properties:
+                amount: { type: integer, minimum: 1 }
+                risk: { type: string, enum: [low, medium, high] }
+      responses:
+        "200":
+          description: betId, path, bucketIndex, multiplier, payout, balance, verification
+        "400":
+          description: Validation or balance error
+        "401":
+          description: Unauthorized
+  /api/games/crash/rounds/current:
+    get:
+      summary: Current crash round (or new one created)
+      responses:
+        "200":
+          description: roundId, startedAt, currentMultiplier, status
+        "401":
+          description: Unauthorized
+  /api/games/crash/rounds/current/bet:
+    post:
+      summary: Place bet on current crash round
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: betId, roundId, amount, balance
+        "400":
+          description: ROUND_ENDED, INSUFFICIENT_BALANCE
+        "404":
+          description: ROUND_NOT_FOUND
+        "401":
+          description: Unauthorized
+  /api/games/crash/rounds/{id}/cashout:
+    post:
+      summary: Cash out on crash round
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: cashedOutAt, payout, balance
+        "400":
+          description: ROUND_ENDED
+        "404":
+          description: ROUND_NOT_FOUND
+        "401":
+          description: Unauthorized
+  /api/games/slots/spin:
+    post:
+      summary: Spin slots
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: betId, reels, wins, totalPayout, balance, verification
+        "400":
+          description: INSUFFICIENT_BALANCE
+        "401":
+          description: Unauthorized
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API Key
+      description: User API key from dashboard (Generate API key)

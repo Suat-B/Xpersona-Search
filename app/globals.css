@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-matte: #0a0a0a;
+  --bg-card: #111;
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --accent-heart: #f43f5e;
+  --border: #27272a;
+}
+
+body {
+  background-color: var(--bg-matte);
+  color: var(--text-primary);
+}
