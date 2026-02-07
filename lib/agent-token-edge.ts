@@ -13,6 +13,16 @@ export function getGuestCookieName(): string {
   return GUEST_COOKIE_NAME;
 }
 
+function getSecret(): string | null {
+  const s =
+    process.env.NEXTAUTH_SECRET ||
+    process.env.AUTH_SECRET ||
+    (process.env.NODE_ENV === "development"
+      ? "xpersona-dev-secret-min-32-chars-do-not-use-in-production"
+      : "");
+  return s || null;
+}
+
 function base64UrlDecodeToStr(token: string): string {
   const base64 = token.replace(/-/g, "+").replace(/_/g, "/");
   const pad = base64.length % 4;
@@ -23,7 +33,7 @@ function base64UrlDecodeToStr(token: string): string {
 
 export async function verifyAgentTokenEdge(token: string): Promise<string | null> {
   try {
-    const secret = process.env.NEXTAUTH_SECRET!;
+    const secret = getSecret();
     if (!secret) return null;
     const raw = base64UrlDecodeToStr(token);
     const parts = raw.split(".");

@@ -13,12 +13,19 @@ function getRedirectBase(request: Request): string {
   }
 }
 
+function getSecret(): string | undefined {
+  return process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET;
+}
+
 async function createGuestSession(request: Request): Promise<
   | { ok: true; userId: string; token: string; baseUrl: string }
   | { ok: false; status: number; message: string }
 > {
-  if (!process.env.NEXTAUTH_SECRET) {
-    return { ok: false, status: 500, message: "NEXTAUTH_SECRET is not set" };
+  if (!getSecret()) {
+    return { ok: false, status: 500, message: "NEXTAUTH_SECRET is not set. Add it to .env.local (see .env.example)." };
+  }
+  if (!process.env.DATABASE_URL) {
+    return { ok: false, status: 503, message: "DATABASE_URL is not set. Add it to .env.local to use guest mode." };
   }
   try {
     const guestId = randomUUID();

@@ -11,9 +11,20 @@ const AGENT_COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 const GUEST_COOKIE_NAME = "xp_guest_session";
 const GUEST_COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
+function getSecret(): string {
+  const s =
+    process.env.NEXTAUTH_SECRET ||
+    process.env.AUTH_SECRET ||
+    (process.env.NODE_ENV === "development"
+      ? "xpersona-dev-secret-min-32-chars-do-not-use-in-production"
+      : "");
+  if (!s) throw new Error("NEXTAUTH_SECRET or AUTH_SECRET must be set");
+  return s;
+}
+
 /** Create signed token for agent cookie (userId + expiry). */
 export function createAgentToken(userId: string): string {
-  const secret = process.env.NEXTAUTH_SECRET!;
+  const secret = getSecret();
   const exp = String(Date.now() + AGENT_COOKIE_MAX_AGE * 1000);
   const payload = userId + "." + exp;
   const sig = createHmac("sha256", secret).update(payload).digest("hex");
@@ -23,7 +34,7 @@ export function createAgentToken(userId: string): string {
 /** Verify agent token; return userId or null. */
 export function verifyAgentToken(token: string): string | null {
   try {
-    const secret = process.env.NEXTAUTH_SECRET!;
+    const secret = getSecret();
     const raw = Buffer.from(token, "base64url").toString("utf8");
     const [userId, exp, sig] = raw.split(".");
     if (!userId || !exp || !sig) return null;
@@ -43,7 +54,7 @@ export function getAgentCookieName(): string {
 
 /** Create signed token for guest cookie (userId + expiry). */
 export function createGuestToken(userId: string): string {
-  const secret = process.env.NEXTAUTH_SECRET!;
+  const secret = getSecret();
   const exp = String(Date.now() + GUEST_COOKIE_MAX_AGE * 1000);
   const payload = userId + "." + exp;
   const sig = createHmac("sha256", secret).update(payload).digest("hex");
@@ -53,7 +64,7 @@ export function createGuestToken(userId: string): string {
 /** Verify guest token; return userId or null. */
 export function verifyGuestToken(token: string): string | null {
   try {
-    const secret = process.env.NEXTAUTH_SECRET!;
+    const secret = getSecret();
     const raw = Buffer.from(token, "base64url").toString("utf8");
     const [userId, exp, sig] = raw.split(".");
     if (!userId || !exp || !sig) return null;

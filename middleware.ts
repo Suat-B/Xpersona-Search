@@ -12,7 +12,13 @@ export async function middleware(req: NextRequest) {
   const isDashboard = req.nextUrl.pathname.startsWith("/dashboard");
   const isGames = req.nextUrl.pathname.startsWith("/games");
   const isProtected = isDashboard || isGames;
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  const secret =
+  process.env.NEXTAUTH_SECRET ||
+  process.env.AUTH_SECRET ||
+  (process.env.NODE_ENV === "development"
+    ? "xpersona-dev-secret-min-32-chars-do-not-use-in-production"
+    : undefined);
+const token = await getToken({ req, secret });
   const isLoggedIn = !!token;
 
   if (isProtected && !isLoggedIn) {

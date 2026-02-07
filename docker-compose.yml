@@ -1,0 +1,17 @@
+# Local PostgreSQL for xpersona. Start: docker compose up -d
+# .env.local DATABASE_URL should be: postgresql://postgres:postgres@localhost:5432/xpersona
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: xpersona
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d xpersona"]
+      interval: 2s
+      timeout: 5s
+      retries: 10

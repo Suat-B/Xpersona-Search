@@ -10,7 +10,15 @@ import {
 } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
+const secret =
+  process.env.NEXTAUTH_SECRET ||
+  process.env.AUTH_SECRET ||
+  (process.env.NODE_ENV === "development"
+    ? "xpersona-dev-secret-min-32-chars-do-not-use-in-production"
+    : undefined);
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  secret,
   adapter: DrizzleAdapter(db, {
     usersTable: users,
     accountsTable: accounts,
@@ -18,10 +26,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     verificationTokensTable: verificationTokens,
   } as never),
   providers: [
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    }),
+    ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+      ? [
+          Google({
+            clientId: process.env.GOOGLE_CLIENT_ID,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+          }),
+        ]
+      : []),
   ],
   callbacks: {
     async signIn({ user, account }) {
