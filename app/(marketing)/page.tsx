@@ -1,115 +1,127 @@
 import Link from "next/link";
-import { auth } from "@/lib/auth";
+import { auth, type Session } from "@/lib/auth";
 import { cookies } from "next/headers";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
+import { GlassCard } from "@/components/ui/GlassCard";
 
 const GAMES = [
-  { name: "Dice", href: "/games/dice" },
-  { name: "Blackjack", href: "/games/blackjack" },
-  { name: "Plinko", href: "/games/plinko" },
-  { name: "Crash", href: "/games/crash" },
-  { name: "Slots", href: "/games/slots" },
+  { name: "Dice", href: "/games/dice", desc: "Roll for probability" },
+  { name: "Blackjack", href: "/games/blackjack", desc: "Hit 21 or bust" },
+  { name: "Plinko", href: "/games/plinko", desc: "Gravity distribution" },
+  { name: "Crash", href: "/games/crash", desc: "Exit before collapse" },
+  { name: "Slots", href: "/games/slots", desc: "Pattern matching" },
 ] as const;
 
 export default async function HomePage() {
-  const session = await auth();
+  let session: Session | null = null;
+  try {
+    session = await auth();
+  } catch {
+    // e.g. DB/adapter error; still allow cookie-based guest
+  }
   const cookieStore = await cookies();
   const userIdFromCookie = getAuthUserFromCookie(cookieStore);
   const isLoggedIn = !!(session?.user || userIdFromCookie);
 
   return (
-    <main className="min-h-screen p-6 md:p-8">
-      <div className="mx-auto max-w-3xl">
-        {/* Hero */}
-        <div className="mb-12 text-center">
-          <h1 className="mb-2 text-4xl font-semibold tracking-tight">
-            xpersona
-            <span className="ml-2 inline-block text-[var(--accent-heart)]" aria-hidden>
-              ♥
+    <main className="min-h-screen relative overflow-hidden flex flex-col items-center justify-center p-6 md:p-8">
+      <div className="mx-auto max-w-5xl w-full z-10 relative">
+        {/* Navigation / Header Area */}
+        <header className="absolute top-0 right-0 p-4">
+          {isLoggedIn ? (
+            <Link href="/dashboard" className="text-sm text-text-secondary hover:text-accent-heart transition-colors">
+              Dashboard &rarr;
+            </Link>
+          ) : (
+            <Link href="/api/auth/signin" className="text-sm text-text-secondary hover:text-white transition-colors">
+              Login
+            </Link>
+          )}
+        </header>
+
+        {/* Hero Section */}
+        <div className="mb-20 text-center flex flex-col items-center">
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 backdrop-blur-md">
+            <span className="flex h-2 w-2 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success-green opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-success-green"></span>
             </span>
+            <span className="text-xs font-medium tracking-wider text-text-secondary uppercase">
+              Quant Hardened &bull; Live
+            </span>
+          </div>
+
+          <h1 className="mb-6 text-6xl md:text-8xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-white/50 font-[family-name:var(--font-outfit)]">
+            xpersona
+            <span className="text-accent-heart drop-shadow-[0_0_15px_rgba(244,63,94,0.5)]">.</span>
           </h1>
-          <p className="mb-6 text-lg text-[var(--text-secondary)]">
-            Casino for AI and you
+
+          <p className="mb-10 max-w-xl text-lg md:text-xl text-text-secondary font-light leading-relaxed">
+            The next generation of probability. <br />
+            <span className="text-white font-medium">Casino for AI and you.</span>
           </p>
 
-          {isLoggedIn ? (
-            <div className="flex flex-col gap-4 sm:flex-row sm:justify-center">
+          {!isLoggedIn && (
+            <div className="flex flex-col gap-4 sm:flex-row">
               <Link
-                href="/dashboard"
-                className="rounded-lg bg-[var(--accent-heart)] px-8 py-3 font-medium text-white transition hover:opacity-90"
+                href="/api/auth/signin"
+                className="group relative px-8 py-3.5 bg-accent-heart text-white font-semibold rounded-lg overflow-hidden shadow-[0_0_20px_-5px_#f43f5e] hover:shadow-[0_0_30px_-5px_#f43f5e] transition-all duration-300 hover:scale-105"
               >
-                Go to Dashboard — play games
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+                Start Protocol
               </Link>
               <Link
-                href="/docs"
-                className="rounded-lg border border-[var(--border)] px-6 py-3 font-medium transition hover:bg-[var(--bg-card)]"
+                href="/api/auth/guest"
+                className="px-8 py-3.5 rounded-lg border border-white/10 bg-white/5 text-text-secondary hover:bg-white/10 hover:text-white transition-all duration-300 hover:border-white/20 backdrop-blur-sm"
               >
-                API docs
+                Guest Access
               </Link>
             </div>
-          ) : (
-            <>
-              <p className="mb-8 text-[var(--text-secondary)]">
-                Sign in with Google or continue as a guest. You’ll land on your{" "}
-                <strong className="text-[var(--text-primary)]">Dashboard</strong> where you
-                can see your balance, claim free credits, and play all the games.
-              </p>
-              <div className="flex flex-col gap-4 sm:flex-row sm:justify-center sm:flex-wrap">
-                <Link
-                  href="/api/auth/signin"
-                  className="rounded-lg bg-[var(--accent-heart)] px-6 py-3 font-medium text-white transition hover:opacity-90"
-                >
-                  Sign in with Google
-                </Link>
-                <Link
-                  href="/api/auth/guest"
-                  className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-6 py-3 font-medium transition hover:bg-[var(--border)]"
-                >
-                  Continue as guest
-                </Link>
-                <Link
-                  href="/docs"
-                  className="rounded-lg border border-[var(--border)] px-6 py-3 font-medium transition hover:bg-[var(--bg-card)]"
-                >
-                  API docs
-                </Link>
-              </div>
-            </>
+          )}
+
+          {isLoggedIn && (
+            <Link
+              href="/dashboard"
+              className="group relative px-8 py-3.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium rounded-lg overflow-hidden transition-all duration-300 backdrop-blur-sm"
+            >
+              Enter Dashboard &rarr;
+            </Link>
           )}
         </div>
 
-        {/* Games list — always visible */}
-        <section className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-6">
-          <h2 className="mb-2 text-xl font-semibold">Games</h2>
-          <p className="mb-6 text-sm text-[var(--text-secondary)]">
-            {isLoggedIn
-              ? "Click a game to play. You can also open your Dashboard above."
-              : "Sign in or continue as guest to play. You’ll see these on your Dashboard."}
-          </p>
-          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {GAMES.map((game) => (
-              <li key={game.name}>
+        {/* Games Grid */}
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {GAMES.map((game) => (
+            <GlassCard
+              key={game.name}
+              href={isLoggedIn ? game.href : undefined}
+              glow={true}
+              className={!isLoggedIn ? "opacity-60 cursor-not-allowed group-hover:!border-white/5" : ""}
+            >
+              <div className="flex flex-col h-full justify-between min-h-[140px]">
+                <div>
+                  <h3 className="text-2xl font-bold tracking-tight mb-1 font-[family-name:var(--font-outfit)]">{game.name}</h3>
+                  <p className="text-sm text-text-secondary">{game.desc}</p>
+                </div>
                 {isLoggedIn ? (
-                  <Link
-                    href={game.href}
-                    className="block rounded border border-[var(--border)] px-4 py-3 font-medium transition hover:border-[var(--accent-heart)] hover:bg-[var(--bg-matte)]"
-                  >
-                    {game.name}
-                  </Link>
+                  <div className="self-end mt-4 opacity-0 group-hover:opacity-100 transition-opacity text-accent-heart text-sm font-bold tracking-widest uppercase">
+                    Play &rarr;
+                  </div>
                 ) : (
-                  <span className="block rounded border border-[var(--border)] px-4 py-3 font-medium text-[var(--text-secondary)]">
-                    {game.name}
-                  </span>
+                  <div className="self-end mt-4 text-xs text-text-secondary uppercase tracking-widest">
+                    Locked
+                  </div>
                 )}
-              </li>
-            ))}
-          </ul>
-          {!isLoggedIn && (
-            <p className="mt-4 text-center text-sm text-[var(--text-secondary)]">
-              Sign in or continue as guest above to unlock and play.
-            </p>
-          )}
-        </section>
+              </div>
+            </GlassCard>
+          ))}
+        </div>
+
+        <div className="mt-16 text-center">
+          <Link href="/docs" className="text-xs text-text-secondary hover:text-accent-heart transition-colors border-b border-transparent hover:border-accent-heart pb-0.5">
+            View System Documentation (API)
+          </Link>
+        </div>
       </div>
     </main>
   );

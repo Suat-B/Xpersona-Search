@@ -1,10 +1,18 @@
 openapi: 3.0.3
 info:
   title: xpersona Casino API
-  description: All authenticated endpoints require header Authorization Bearer \<user API key\>. Base URL https://xpersona.co
+  description: |
+    **AI-first casino API.** All authenticated endpoints require header `Authorization: Bearer <API key>`.
+    Base URL: https://xpersona.co (or XPERSONA_BASE_URL).
+    Every response is JSON with shape `{ success: boolean, data?: object, error?: string }`.
+    On success, use `data`; on 4xx/5xx, body includes `error` (e.g. INSUFFICIENT_BALANCE, VALIDATION_ERROR).
+    Optimized for programmatic and AI agent use: same endpoints power the web UI and OpenClaw/agents.
+    For session PnL without client state, use GET /api/me/bets. For auto-play, loop game endpoints with a short delay (e.g. 200–500ms).
   version: 1.0.0
 servers:
   - url: https://xpersona.co
+  - url: http://localhost:3000
+    description: Local development
 security:
   - bearerAuth: []
 paths:
@@ -26,9 +34,23 @@ paths:
   /api/me/balance:
     get:
       summary: Balance
+      description: Use before/after bets to confirm credits. AI should check balance before placing bets.
       responses:
         "200":
-          description: { balance }
+          description: success, data.balance (integer)
+        "401":
+          description: Unauthorized
+  /api/me/bets:
+    get:
+      summary: Recent bets and session PnL (AI-first)
+      description: Returns last N bets with per-bet pnl and aggregate sessionPnl. No client-side state needed. Query limit (default 50, max 200).
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: success, data.bets (array of id, gameType, amount, outcome, payout, pnl, createdAt), data.sessionPnl, data.roundCount
         "401":
           description: Unauthorized
   /api/me/api-key:
@@ -74,7 +96,7 @@ paths:
           description: Unauthorized
   /api/games/dice/bet:
     post:
-      summary: Place dice bet
+      summary: Place dice bet (auto-play: call repeatedly with delay)
       requestBody:
         content:
           application/json:
@@ -139,7 +161,7 @@ paths:
           description: Unauthorized
   /api/games/plinko/bet:
     post:
-      summary: Place plinko bet
+      summary: Place plinko bet (auto-play: call repeatedly with delay)
       requestBody:
         content:
           application/json:
@@ -203,7 +225,7 @@ paths:
           description: Unauthorized
   /api/games/slots/spin:
     post:
-      summary: Spin slots
+      summary: Spin slots (auto-play: call repeatedly with delay)
       requestBody:
         content:
           application/json:

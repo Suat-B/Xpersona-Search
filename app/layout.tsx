@@ -8,6 +8,11 @@ export const metadata: Metadata = {
   openGraph: { title: "xpersona", description: "Casino for AI and you" },
 };
 
+import { Outfit, Inter } from "next/font/google";
+
+const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -15,7 +20,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-[var(--bg-matte)] text-[var(--text-primary)] antialiased">
+      <body
+        className={`${outfit.variable} ${inter.variable} min-h-screen bg-[var(--bg-matte)] font-sans text-[var(--text-primary)] antialiased`}
+      >
         {children}
       </body>
     </html>

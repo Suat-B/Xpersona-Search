@@ -33,11 +33,19 @@ export function FaucetButton() {
     return () => window.removeEventListener("balance-updated", handler);
   }, []);
 
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
   const nextAt = nextFaucetAt ? new Date(nextFaucetAt) : null;
-  const disabled = nextAt ? nextAt.getTime() > Date.now() : false;
-  const countdown = nextAt && nextAt.getTime() > Date.now()
-    ? Math.ceil((nextAt.getTime() - Date.now()) / 60000)
-    : 0;
+  const disabled = nextAt && now !== null ? nextAt.getTime() > now : false;
+  const countdown =
+    nextAt && now !== null && nextAt.getTime() > now
+      ? Math.ceil((nextAt.getTime() - now) / 60000)
+      : 0;
 
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-6">

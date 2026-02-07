@@ -38,5 +38,5 @@ const token = await getToken({ req, secret });
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/games/:path*"],
+  matcher: ["/dashboard", "/dashboard/:path*", "/games", "/games/:path*"],
 };

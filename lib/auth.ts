@@ -28,11 +28,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
       ? [
-          Google({
-            clientId: process.env.GOOGLE_CLIENT_ID,
-            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-          }),
-        ]
+        Google({
+          clientId: process.env.GOOGLE_CLIENT_ID,
+          clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        }),
+      ]
       : []),
   ],
   callbacks: {
@@ -41,6 +41,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         await db
           .update(users)
           .set({ googleId: account.providerAccountId })
+          // Use non-null assertion because DrizzleAdapter ensures user is created before signIn callback?
+          // Actually, we should check user.id.
           .where(eq(users.id, user.id!));
       }
       return true;
