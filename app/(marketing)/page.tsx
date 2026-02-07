@@ -80,13 +80,13 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                 className="group relative px-8 py-3.5 bg-accent-heart text-white font-semibold rounded-lg overflow-hidden shadow-[0_0_20px_-5px_#f43f5e] hover:shadow-[0_0_30px_-5px_#f43f5e] transition-all duration-300 hover:scale-105"
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
-                Start Protocol
+                Play Dice
               </Link>
               <Link
-                href="/api/auth/guest"
+                href="/docs"
                 className="px-8 py-3.5 rounded-lg border border-white/10 bg-white/5 text-text-secondary hover:bg-white/10 hover:text-white transition-all duration-300 hover:border-white/20 backdrop-blur-sm"
               >
-                Guest Access
+                OpenClaw API
               </Link>
             </div>
           )}
@@ -101,34 +101,33 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           )}
         </div>
 
-        {/* Games Grid - centered when single item */}
-        <div className="flex justify-center">
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 w-fit">
-            {GAMES.map((game) => (
-            <GlassCard
-              key={game.name}
-              href={isLoggedIn ? game.href : undefined}
-              glow={true}
-              className={!isLoggedIn ? "opacity-60 cursor-not-allowed group-hover:!border-white/5" : ""}
-            >
-              <div className="flex flex-col h-full justify-between min-h-[140px]">
-                <div>
-                  <h3 className="text-2xl font-bold tracking-tight mb-1 font-[family-name:var(--font-outfit)]">{game.name}</h3>
-                  <p className="text-sm text-text-secondary">{game.desc}</p>
+        {/* Games Grid - single card centered; add sm:grid-cols-2 lg:grid-cols-3 when more games exist */}
+        <div className="grid gap-6 grid-cols-1 justify-items-center">
+          {GAMES.map((game) => (
+            <div key={game.name} className="w-full max-w-sm">
+              <GlassCard
+                href={isLoggedIn ? game.href : undefined}
+                glow={true}
+                className={!isLoggedIn ? "opacity-60 cursor-not-allowed group-hover:!border-white/5" : ""}
+              >
+                <div className="flex flex-col h-full justify-between min-h-[140px]">
+                  <div>
+                    <h3 className="text-2xl font-bold tracking-tight mb-1 font-[family-name:var(--font-outfit)]">{game.name}</h3>
+                    <p className="text-sm text-text-secondary">{game.desc}</p>
+                  </div>
+                  {isLoggedIn ? (
+                    <div className="self-end mt-4 opacity-0 group-hover:opacity-100 transition-opacity text-accent-heart text-sm font-bold tracking-widest uppercase">
+                      Play &rarr;
+                    </div>
+                  ) : (
+                    <div className="self-end mt-4 text-xs text-text-secondary uppercase tracking-widest">
+                      Locked
+                    </div>
+                  )}
                 </div>
-                {isLoggedIn ? (
-                  <div className="self-end mt-4 opacity-0 group-hover:opacity-100 transition-opacity text-accent-heart text-sm font-bold tracking-widest uppercase">
-                    Play &rarr;
-                  </div>
-                ) : (
-                  <div className="self-end mt-4 text-xs text-text-secondary uppercase tracking-widest">
-                    Locked
-                  </div>
-                )}
-              </div>
-            </GlassCard>
+              </GlassCard>
+            </div>
           ))}
-          </div>
         </div>
 
         <div className="mt-16 text-center">
