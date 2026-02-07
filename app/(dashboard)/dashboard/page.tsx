@@ -18,9 +18,12 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold font-mono tracking-tight glow-text-white">DASHBOARD_V2</h2>
           <div className="flex gap-2">
-            <button disabled className="px-3 py-1.5 text-xs font-mono border border-white/10 rounded bg-white/5 text-[var(--text-secondary)] hover:bg-white/10 transition">
+            <Link
+              href="/dashboard/deposit"
+              className="px-3 py-1.5 text-xs font-mono border border-[var(--accent-heart)]/30 rounded bg-[var(--accent-heart)]/10 text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition"
+            >
               DEPOSIT
-            </button>
+            </Link>
             <button disabled className="px-3 py-1.5 text-xs font-mono border border-white/10 rounded bg-white/5 text-[var(--text-secondary)] hover:bg-white/10 transition">
               WITHDRAW
             </button>

@@ -10,12 +10,13 @@ import { eq } from "drizzle-orm";
 const SIDEBAR_LINKS = [
   { href: "/games/dice", label: "Play Dice", exact: true },
   { href: "/dashboard", label: "Dashboard", exact: true },
+  { href: "/dashboard/deposit", label: "Deposit", exact: true },
   { href: "/dashboard/strategies", label: "Strategies", exact: false },
   { href: "/dashboard/provably-fair", label: "Provably Fair", exact: false },
   { href: "/dashboard/api", label: "API", exact: false },
 ] as const;
 
-const EXACT_HREFS = ["/games/dice", "/dashboard"];
+const EXACT_HREFS = ["/games/dice", "/dashboard", "/dashboard/deposit"];
 
 export default async function DashboardLayout({
   children,

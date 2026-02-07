@@ -154,6 +154,15 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               {balance.toLocaleString()}
             </span>
           </div>
+          <Link
+            href="/dashboard/deposit"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--accent-heart)]/30 bg-[var(--accent-heart)]/10 text-xs font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            Deposit
+          </Link>
         </div>
       </header>
 

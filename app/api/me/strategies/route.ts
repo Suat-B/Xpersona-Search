@@ -111,36 +111,45 @@ export async function POST(request: Request) {
       );
     }
     const strategyConfig = config && typeof config === "object" ? (config as object) : {};
-    const [inserted] = await db
-      .insert(strategies)
-      .values({
-        userId: authResult.user.id,
-        gameType,
-        name,
-        config: strategyConfig,
-      })
-      .returning({
-        id: strategies.id,
-        gameType: strategies.gameType,
-        name: strategies.name,
-        config: strategies.config,
-        createdAt: strategies.createdAt,
+    try {
+      const [inserted] = await db
+        .insert(strategies)
+        .values({
+          userId: authResult.user.id,
+          gameType,
+          name,
+          config: strategyConfig,
+        })
+        .returning({
+          id: strategies.id,
+          gameType: strategies.gameType,
+          name: strategies.name,
+          config: strategies.config,
+          createdAt: strategies.createdAt,
+        });
+      if (!inserted) {
+        return NextResponse.json(
+          { success: false, error: "INTERNAL_ERROR", message: "Strategy insert failed" },
+          { status: 500 }
+        );
+      }
+      await db.insert(strategyCode).values({
+        strategyId: inserted.id,
+        pythonCode,
+        description: description ?? "",
       });
-    if (!inserted) {
+      return NextResponse.json({
+        success: true,
+        data: { ...inserted, hasPythonCode: true },
+      });
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : "Database or server error";
+      const message = /unique|duplicate/i.test(raw) ? "A strategy with this name already exists. Use a different name." : raw;
       return NextResponse.json(
-        { success: false, error: "INTERNAL_ERROR" },
+        { success: false, error: "INTERNAL_ERROR", message },
         { status: 500 }
       );
     }
-    await db.insert(strategyCode).values({
-      strategyId: inserted.id,
-      pythonCode,
-      description: description ?? "",
-    });
-    return NextResponse.json({
-      success: true,
-      data: { ...inserted, hasPythonCode: true },
-    });
   }
 
   if (!validateStrategyConfig(gameType, config)) {
@@ -150,31 +159,40 @@ export async function POST(request: Request) {
     );
   }
 
-  const [inserted] = await db
-    .insert(strategies)
-    .values({
-      userId: authResult.user.id,
-      gameType,
-      name,
-      config: config as object,
-    })
-    .returning({
-      id: strategies.id,
-      gameType: strategies.gameType,
-      name: strategies.name,
-      config: strategies.config,
-      createdAt: strategies.createdAt,
-    });
+  try {
+    const [inserted] = await db
+      .insert(strategies)
+      .values({
+        userId: authResult.user.id,
+        gameType,
+        name,
+        config: config as object,
+      })
+      .returning({
+        id: strategies.id,
+        gameType: strategies.gameType,
+        name: strategies.name,
+        config: strategies.config,
+        createdAt: strategies.createdAt,
+      });
 
-  if (!inserted) {
+    if (!inserted) {
+      return NextResponse.json(
+        { success: false, error: "INTERNAL_ERROR", message: "Strategy insert failed" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: inserted,
+    });
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : "Database or server error";
+    const message = /unique|duplicate/i.test(raw) ? "A strategy with this name already exists. Use a different name." : raw;
     return NextResponse.json(
-      { success: false, error: "INTERNAL_ERROR" },
+      { success: false, error: "INTERNAL_ERROR", message },
       { status: 500 }
     );
   }
-
-  return NextResponse.json({
-    success: true,
-    data: inserted,
-  });
 }

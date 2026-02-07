@@ -551,14 +551,25 @@ function CreatePythonStrategyForm({
         onCreated();
       } else {
         const msg = typeof data.message === "string" ? data.message : data.error;
-        setErr(msg ?? (res.status === 401 ? "Please sign in" : "Create failed"));
+        const validationErrors = data.validation_result?.errors;
+        const detail = Array.isArray(validationErrors) && validationErrors.length > 0
+          ? validationErrors.join(". ")
+          : msg ?? (res.status === 401 ? "Please sign in" : `Create failed (${res.status} ${res.statusText || "error"})`);
+        setErr(detail);
       }
-    } catch {
-      setErr("Create failed");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Network or server error";
+      setErr(`Create failed: ${msg}`);
     } finally {
       setSubmitting(false);
     }
   };
+
+  const minimalTestStrategy = `class Strategy:
+  def on_round_start(self, ctx):
+    if ctx.get_balance() < 10:
+      return BetDecision.stop("insufficient_balance")
+    return BetDecision(10, 50, "over")`;
 
   return (
     <GlassCard className="mb-6 p-6">
@@ -567,6 +578,12 @@ function CreatePythonStrategyForm({
         <p className="text-sm text-[var(--text-secondary)]">
           Any Python is allowed. Define a class with a method <code className="bg-white/10 px-1 rounded">on_round_start(self, ctx)</code> that returns a bet decision. Use <code className="bg-white/10 px-1 rounded">BetDecision(amount, target, &apos;over&apos;|&apos;under&apos;)</code> or <code className="bg-white/10 px-1 rounded">BetDecision.stop(reason)</code>. Same contract for OpenClaw AI.
         </p>
+        <p className="text-xs text-[var(--text-secondary)]">
+          Try this minimal strategy (paste into the code box below):
+        </p>
+        <pre className="rounded border border-[var(--border)] bg-[var(--bg-deep)] p-3 text-xs font-mono text-[var(--text-primary)] overflow-x-auto whitespace-pre-wrap">
+          {minimalTestStrategy}
+        </pre>
         <div>
           <label className="block text-sm text-[var(--text-secondary)]">Name</label>
           <input
