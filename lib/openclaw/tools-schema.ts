@@ -500,6 +500,74 @@ export const CasinoToolsSchema = {
         risk_rating: { type: "string" }
       }
     }
+  },
+
+  "casino_claim_faucet": {
+    name: "casino_claim_faucet",
+    description: "Claim the hourly faucet for the authenticated user",
+    parameters: {
+      type: "object",
+      properties: {}
+    },
+    returns: {
+      type: "object",
+      properties: {
+        success: { type: "boolean" },
+        balance: { type: "number" },
+        granted: { type: "number" },
+        next_faucet_at: { type: "string" },
+        message: { type: "string" },
+        error: { type: "string" }
+      }
+    }
+  },
+
+  "casino_list_credit_packages": {
+    name: "casino_list_credit_packages",
+    description: "List available credit packages for purchase (deposit)",
+    parameters: {
+      type: "object",
+      properties: {}
+    },
+    returns: {
+      type: "object",
+      properties: {
+        success: { type: "boolean" },
+        packages: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              name: { type: "string" },
+              credits: { type: "number" },
+              amount_cents: { type: "number" }
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "casino_create_checkout": {
+    name: "casino_create_checkout",
+    description: "Create a Stripe Checkout session for a credit package; returns URL for user to complete deposit",
+    parameters: {
+      type: "object",
+      properties: {
+        package_id: { type: "string", description: "ID of the credit package from casino_list_credit_packages" }
+      },
+      required: ["package_id"]
+    },
+    returns: {
+      type: "object",
+      properties: {
+        success: { type: "boolean" },
+        checkout_url: { type: "string" },
+        expires_at: { type: "string" },
+        error: { type: "string" }
+      }
+    }
   }
 };
 

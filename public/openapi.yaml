@@ -236,6 +236,36 @@ paths:
           description: { url }
         "401":
           description: Unauthorized
+  /api/openclaw/tools:
+    get:
+      summary: OpenClaw tool discovery
+      description: Returns the full tool schema (tool names, parameters, returns) for programmatic discovery. Same auth as REST; Bearer optional for schema.
+      security: []
+      responses:
+        "200":
+          description: success, tools (object mapping tool name to schema with parameters and returns)
+    post:
+      summary: Execute OpenClaw tool
+      description: OpenClaw-native tools endpoint. Single POST per action; body specifies tool name and parameters. Requires Authorization Bearer API key (except for casino_auth_guest).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tool, parameters]
+              properties:
+                tool: { type: string, description: Tool name (e.g. casino_get_balance, casino_place_dice_bet) }
+                parameters: { type: object, description: Tool-specific parameters }
+                agent_token: { type: string, description: Optional agent context token }
+      responses:
+        "200":
+          description: success true, tool, result (tool output), meta (e.g. rate_limit_remaining)
+        "400":
+          description: Invalid tool name or parameters
+        "401":
+          description: Unauthorized (missing or invalid Bearer token)
+        "429":
+          description: Rate limit exceeded
   /api/games/dice/bet:
     post:
       summary: Place dice bet (auto-play: call repeatedly with delay)

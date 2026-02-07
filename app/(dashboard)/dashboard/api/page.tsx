@@ -317,8 +317,19 @@ export default function ApiDocsPage() {
           OpenClaw Tools API (agent tools)
         </h2>
         <p className="text-sm text-[var(--text-secondary)] mb-4">
-          For agents that call the tool endpoint: <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">POST /api/openclaw/tools</code> with body <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">{"{ tool: string, parameters: object, agent_token?: string }"}</code>. Response shape is the same <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">{"{ success, data?, error? }"}</code>. Most users can use the REST endpoints above with their API key; tools are for OpenClaw-compatible agents.
+          For agents that call the tool endpoint: <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">POST /api/openclaw/tools</code> with body <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">{"{ tool: string, parameters: object, agent_token?: string }"}</code>. Response: <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">{"{ success, tool, result, meta? }"}</code> or <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">{"{ success: false, error }"}</code>. Most users can use the REST endpoints above with their API key; tools are for OpenClaw-compatible agents.
         </p>
+        <p className="text-sm text-[var(--text-secondary)] mb-2">
+          <strong className="text-[var(--text-primary)]">Auth:</strong> Send <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">Authorization: Bearer &lt;API_KEY&gt;</code> (same as REST). Required for tool execution (except <code className="bg-white/10 px-1 rounded font-mono text-xs">casino_auth_guest</code>).
+        </p>
+        <p className="text-sm text-[var(--text-secondary)] mb-4">
+          <strong className="text-[var(--text-primary)]">Discovery:</strong> <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">GET /api/openclaw/tools</code> returns the full tool schema (tool names, parameters, returns) for programmatic discovery.
+        </p>
+        <p className="text-xs text-[var(--text-secondary)] mb-2">Example: get balance</p>
+        <pre className="rounded-lg bg-[var(--bg-deep)] border border-[var(--border)] p-3 text-xs font-mono text-[var(--text-primary)] overflow-x-auto mb-4">
+{`curl -s -X POST -H "Authorization: Bearer $XPERSONA_API_KEY" -H "Content-Type: application/json" \\
+  -d '{"tool":"casino_get_balance","parameters":{}}' https://xpersona.co/api/openclaw/tools`}
+        </pre>
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
             <thead>
@@ -344,6 +355,9 @@ export default function ApiDocsPage() {
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_notify</td><td className="py-2">Send notification</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_get_limits</td><td className="py-2">Get betting and rate limits</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_calculate_odds</td><td className="py-2">Calculate odds and expected value</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_claim_faucet</td><td className="py-2">Claim hourly faucet</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_list_credit_packages</td><td className="py-2">List credit packages for purchase</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_create_checkout</td><td className="py-2">Create Stripe checkout URL for deposit</td></tr>
             </tbody>
           </table>
         </div>

@@ -39,6 +39,50 @@ All game responses include `data.balance` and outcome (e.g. `data.payout`, `data
 
 ---
 
+## Tools API (OpenClaw-native)
+
+You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST per action and returns a structured `result`. Prefer Tools when the OpenClaw integration is configured to call our tools endpoint.
+
+**Endpoint:** `POST https://xpersona.co/api/openclaw/tools` (or `XPERSONA_BASE_URL`).
+
+**Auth:** `Authorization: Bearer <XPERSONA_API_KEY>` (same as REST). Required for all tools except `casino_auth_guest`.
+
+**Body:** `{ "tool": "<tool_name>", "parameters": { ... }, "agent_token": "<optional>" }`.
+
+**Response:** `{ "success": true, "tool": "<name>", "result": { ... }, "meta": { "timestamp", "agent_id", "rate_limit_remaining" } }` or `{ "success": false, "error": "..." }`. On error the HTTP status may be 400, 401, or 429 (rate limit).
+
+**Tool discovery:** `GET /api/openclaw/tools` returns `{ "success": true, "tools": { ... } }` with the full schema (tool names, parameters, returns). Use this for programmatic discovery. Full parameter details: https://xpersona.co/dashboard/api.
+
+**Tool list (one-line purpose):**
+
+| Tool | Purpose |
+|------|---------|
+| casino_auth_guest | Create or authenticate as a guest user |
+| casino_auth_agent | Authenticate as an AI agent with permissions |
+| casino_place_dice_bet | Place a dice bet (amount, target, condition) |
+| casino_get_balance | Get balance and session stats |
+| casino_get_history | Get bet history and statistics |
+| casino_analyze_patterns | Analyze patterns and trends |
+| casino_deploy_strategy | Deploy a Python strategy (name, python_code, game_type) |
+| casino_run_strategy | Execute a deployed strategy |
+| casino_list_strategies | List deployed strategies |
+| casino_get_strategy | Get strategy details and code |
+| casino_delete_strategy | Delete a strategy |
+| casino_stop_session | Stop an active strategy session |
+| casino_get_session_status | Get status of active or recent session |
+| casino_notify | Send notification about game events |
+| casino_get_limits | Get betting and rate limits |
+| casino_calculate_odds | Calculate odds and expected value for dice |
+| casino_claim_faucet | Claim the hourly faucet for the user |
+| casino_list_credit_packages | List credit packages for purchase |
+| casino_create_checkout | Create a Stripe checkout URL for a package (deposit) |
+
+Rate limits may apply; the response may include `meta.rate_limit_remaining`. Error codes in `result` or `error` mirror REST (e.g. `INSUFFICIENT_BALANCE`, `VALIDATION_ERROR`, `FAUCET_COOLDOWN`).
+
+**Recommended flow for an agent:** (1) Get balance (`casino_get_balance`). (2) If low, claim faucet (`casino_claim_faucet`) or suggest deposit (`casino_list_credit_packages` then `casino_create_checkout` and share the URL). (3) Place bets (`casino_place_dice_bet`) or run a strategy (`casino_run_strategy`). (4) Report session PnL from `casino_get_balance` or `casino_get_history`.
+
+---
+
 ## Session PnL (AI-first)
 
 **GET /api/me/bets?limit=50** returns the user’s recent bets and session PnL so the AI can report performance without keeping state:

@@ -8,11 +8,13 @@ import { CasinoToolName } from "./tools-schema";
 import { AgentContext } from "./agent-auth";
 import { getAuthUser } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
-import { gameBets, users, strategies, strategyCode, agentSessions } from "@/lib/db/schema";
+import { gameBets, users, strategies, strategyCode, agentSessions, creditPackages } from "@/lib/db/schema";
 import { eq, desc, and } from "drizzle-orm";
-import { DICE_HOUSE_EDGE } from "@/lib/constants";
+import { DICE_HOUSE_EDGE, FAUCET_AMOUNT } from "@/lib/constants";
 import { executeDiceRound } from "@/lib/games/execute-dice";
 import { validatePythonStrategyCode } from "@/lib/strategy-python-validation";
+import { grantFaucet } from "@/lib/faucet";
+import Stripe from "stripe";
 
 // Tool handler registry
 const toolHandlers: Record<CasinoToolName, (params: any, agentContext: AgentContext | null, request: NextRequest) => Promise<any>> = {
@@ -31,7 +33,10 @@ const toolHandlers: Record<CasinoToolName, (params: any, agentContext: AgentCont
   "casino_get_session_status": handleGetSessionStatus,
   "casino_notify": handleNotify,
   "casino_get_limits": handleGetLimits,
-  "casino_calculate_odds": handleCalculateOdds
+  "casino_calculate_odds": handleCalculateOdds,
+  "casino_claim_faucet": handleClaimFaucet,
+  "casino_list_credit_packages": handleListCreditPackages,
+  "casino_create_checkout": handleCreateCheckout
 };
 
 export async function executeTool(
