@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
-import { gameBets } from "@/lib/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { gameBets, serverSeeds } from "@/lib/db/schema";
+import { eq, desc, and } from "drizzle-orm";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
 /**
  * GET /api/me/bets — Recent bets and session PnL for the authenticated user.
- * AI-first: use this to report session PnL without client-side state.
- * Query: limit (default 50, max 200).
+ * When gameType=dice, each bet includes verification fields (serverSeedHash, clientSeed, nonce) and resultPayload for provably fair audit.
+ * Query: limit (default 50, max 200), gameType (optional, e.g. "dice").
  */
 export async function GET(request: Request) {
   const authResult = await getAuthUser(request as any);
@@ -26,26 +26,67 @@ export async function GET(request: Request) {
     MAX_LIMIT,
     Math.max(1, parseInt(url.searchParams.get("limit") ?? String(DEFAULT_LIMIT), 10) || DEFAULT_LIMIT)
   );
+  const gameType = url.searchParams.get("gameType")?.trim() || null;
+  const includeVerification = gameType === "dice";
 
-  const rows = await db
-    .select({
-      id: gameBets.id,
-      gameType: gameBets.gameType,
-      amount: gameBets.amount,
-      outcome: gameBets.outcome,
-      payout: gameBets.payout,
-      createdAt: gameBets.createdAt,
-    })
-    .from(gameBets)
-    .where(eq(gameBets.userId, authResult.user.id))
-    .orderBy(desc(gameBets.createdAt))
-    .limit(limit);
+  const whereClause =
+    gameType != null
+      ? and(eq(gameBets.userId, authResult.user.id), eq(gameBets.gameType, gameType))
+      : eq(gameBets.userId, authResult.user.id);
+
+  let rows: Array<{
+    id: string;
+    gameType: string;
+    amount: number;
+    outcome: string;
+    payout: number;
+    createdAt: Date | null;
+    resultPayload?: unknown;
+    clientSeed?: string | null;
+    nonce?: number | null;
+    serverSeedHash?: string | null;
+  }>;
+
+  if (includeVerification) {
+    rows = await db
+      .select({
+        id: gameBets.id,
+        gameType: gameBets.gameType,
+        amount: gameBets.amount,
+        outcome: gameBets.outcome,
+        payout: gameBets.payout,
+        createdAt: gameBets.createdAt,
+        resultPayload: gameBets.resultPayload,
+        clientSeed: gameBets.clientSeed,
+        nonce: gameBets.nonce,
+        serverSeedHash: serverSeeds.seedHash,
+      })
+      .from(gameBets)
+      .leftJoin(serverSeeds, eq(gameBets.serverSeedId, serverSeeds.id))
+      .where(whereClause)
+      .orderBy(desc(gameBets.createdAt))
+      .limit(limit);
+  } else {
+    rows = await db
+      .select({
+        id: gameBets.id,
+        gameType: gameBets.gameType,
+        amount: gameBets.amount,
+        outcome: gameBets.outcome,
+        payout: gameBets.payout,
+        createdAt: gameBets.createdAt,
+      })
+      .from(gameBets)
+      .where(whereClause)
+      .orderBy(desc(gameBets.createdAt))
+      .limit(limit);
+  }
 
   let sessionPnl = 0;
   const bets = rows.map((r) => {
     const pnl = r.payout - r.amount;
     sessionPnl += pnl;
-    return {
+    const bet: Record<string, unknown> = {
       id: r.id,
       gameType: r.gameType,
       amount: r.amount,
@@ -54,6 +95,15 @@ export async function GET(request: Request) {
       pnl,
       createdAt: r.createdAt,
     };
+    if (includeVerification && "resultPayload" in r) {
+      bet.resultPayload = r.resultPayload ?? null;
+      bet.verification = {
+        serverSeedHash: r.serverSeedHash ?? null,
+        clientSeed: r.clientSeed ?? "",
+        nonce: r.nonce ?? 0,
+      };
+    }
+    return bet;
   });
 
   return NextResponse.json({

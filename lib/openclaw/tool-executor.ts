@@ -10,9 +10,8 @@ import { getAuthUser } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
 import { gameBets, users, strategies, strategyCode, agentSessions } from "@/lib/db/schema";
 import { eq, desc, and } from "drizzle-orm";
-import { hashToFloat, hashSeed } from "@/lib/games/rng";
 import { DICE_HOUSE_EDGE } from "@/lib/constants";
-import { randomBytes } from "crypto";
+import { executeDiceRound } from "@/lib/games/execute-dice";
 import { validatePythonStrategyCode } from "@/lib/strategy-python-validation";
 
 // Tool handler registry
@@ -47,10 +46,6 @@ export async function executeTool(
   }
   
   return await handler(parameters, agentContext, request);
-}
-
-function generateServerSeed(): string {
-  return randomBytes(32).toString("hex");
 }
 
 // Tool Implementations
@@ -122,82 +117,54 @@ async function handleAuthAgent(params: any, agentContext: AgentContext | null, r
 
 async function handlePlaceDiceBet(params: any, agentContext: AgentContext | null, request: NextRequest) {
   const { amount, target, condition, strategy_id } = params;
-  
+
   const authResult = await getAuthUser(request);
   if ("error" in authResult) {
     throw new Error(authResult.error);
   }
-  
+
   const user = authResult.user;
-  
+
   if (amount < 1 || amount > 10000) {
     throw new Error("Invalid bet amount");
   }
-  
+
   if (target < 0 || target > 99.99) {
     throw new Error("Invalid target");
   }
-  
+
   if (!["over", "under"].includes(condition)) {
     throw new Error("Invalid condition");
   }
-  
+
   if (user.credits < amount) {
     throw new Error("Insufficient balance");
   }
-  
+
   if (agentContext && amount > agentContext.maxBetAmount) {
     throw new Error(`Agent bet limit exceeded: max ${agentContext.maxBetAmount}`);
   }
-  
-  const serverSeed = generateServerSeed();
-  const clientSeed = `guest_${Date.now()}`;
-  const nonce = 0;
-  const resultValue = hashToFloat(serverSeed, clientSeed, nonce) * 100;
-  
-  const win = condition === "over" 
-    ? resultValue > target 
-    : resultValue < target;
-  
-  const probability = condition === "over" 
-    ? (100 - target) / 100 
-    : target / 100;
-  const rawMultiplier = (1 - DICE_HOUSE_EDGE) / probability;
-  const multiplier = Math.min(rawMultiplier, 10);
-  const payout = win ? Math.round(amount * multiplier) : 0;
-  
-  const newBalance = user.credits - amount + payout;
-  
-  await db.update(users)
-    .set({ credits: newBalance })
-    .where(eq(users.id, user.id));
-  
-  await db.insert(gameBets).values({
-    id: crypto.randomUUID(),
-    userId: user.id,
-    gameType: "dice",
-    amount: amount,
-    outcome: win ? "win" : "loss",
-    payout: payout,
-    resultPayload: {
-      target,
-      condition,
-      result: resultValue,
-      strategy_id,
-      agent_id: agentContext?.agentId
-    },
-    clientSeed,
-    nonce
-  });
-  
+
+  const resultPayloadExtra: Record<string, unknown> = {};
+  if (strategy_id != null) resultPayloadExtra.strategy_id = strategy_id;
+  if (agentContext?.agentId != null) resultPayloadExtra.agent_id = agentContext.agentId;
+
+  const round = await executeDiceRound(
+    user.id,
+    amount,
+    target,
+    condition as "over" | "under",
+    Object.keys(resultPayloadExtra).length > 0 ? resultPayloadExtra : undefined
+  );
+
   return {
     success: true,
-    result: resultValue,
-    win,
-    payout,
-    balance: newBalance,
-    server_seed_hash: hashSeed(serverSeed).slice(0, 16) + "...",
-    nonce
+    result: round.result,
+    win: round.win,
+    payout: round.payout,
+    balance: round.balance,
+    server_seed_hash: round.serverSeedHash ?? "",
+    nonce: 0,
   };
 }
 

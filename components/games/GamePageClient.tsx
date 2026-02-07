@@ -4,12 +4,13 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { ClientOnly } from "@/components/ClientOnly";
-import { useSessionPnL } from "./useSessionPnL";
+import { useDiceSessionPnL } from "./useSessionPnL";
 import { SessionPnLChart } from "@/components/ui/SessionPnLChart";
 import { DiceStrategyPanel } from "./DiceStrategyPanel";
 import { RecentResults } from "@/components/ui/RecentResults";
 import { StreakIndicator } from "@/components/ui/StreakIndicator";
 import { StatsSummary } from "@/components/ui/StatsSummary";
+import { DiceVerificationHistory } from "./DiceVerificationHistory";
 
 const ACTIVE_STRATEGY_KEY = "xpersona_active_strategy_run";
 
@@ -25,7 +26,7 @@ interface RollResult {
 }
 
 export default function GamePageClient({ game }: { game: GameSlug }) {
-  const { series, totalPnl, rounds, addRound, reset } = useSessionPnL();
+  const { series, totalPnl, rounds, reset } = useDiceSessionPnL();
   const [amount, setAmount] = useState(10);
   const [target, setTarget] = useState(50);
   const [condition, setCondition] = useState<"over" | "under">("over");
@@ -172,7 +173,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               onAmountChange={setAmount}
               onTargetChange={setTarget}
               onConditionChange={setCondition}
-              onRoundComplete={addRound}
+              onRoundComplete={() => {}}
               onAutoPlayChange={setAutoPlayActive}
               onResult={handleResult}
             />
@@ -247,19 +248,37 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 <div className="flex-shrink-0">
                   <StatsSummary results={recentResults} />
                 </div>
+
+                {/* Verifiable dice history with Verify modal */}
+                <div className="flex-shrink-0">
+                  <DiceVerificationHistory />
+                </div>
               </>
             ) : (
-              /* Strategy Panel */
-              <div className="flex-shrink-0 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] overflow-hidden">
-                <div className="p-4">
-                  <DiceStrategyPanel
-                    amount={amount}
-                    target={target}
-                    condition={condition}
-                    disabled={autoPlayActive}
-                    onLoadConfig={loadStrategyConfig}
-                    onBalanceUpdate={() => window.dispatchEvent(new Event("balance-updated"))}
-                  />
+              <div className="flex-shrink-0 space-y-3">
+                <p className="text-sm text-[var(--text-secondary)]">
+                  Load a saved strategy or run Python code. Running a strategy places real dice bets and updates your balance.
+                </p>
+                <Link
+                  href="/dashboard#strategies"
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--accent-heart)] hover:underline"
+                >
+                  Create & manage strategies
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </Link>
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] overflow-hidden">
+                  <div className="p-4">
+                    <DiceStrategyPanel
+                      amount={amount}
+                      target={target}
+                      condition={condition}
+                      disabled={autoPlayActive}
+                      onLoadConfig={loadStrategyConfig}
+                      onBalanceUpdate={() => window.dispatchEvent(new Event("balance-updated"))}
+                    />
+                  </div>
                 </div>
               </div>
             )}
@@ -299,7 +318,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       {/* Footer - Compact 48px */}
       <footer className="flex-shrink-0 h-12 flex items-center justify-between px-6 border-t border-white/5 bg-[var(--bg-card)]/50 backdrop-blur-sm">
         <div className="flex items-center gap-4 text-xs text-[var(--text-secondary)]">
-          <span className="flex items-center gap-1.5">
+          <span className="flex items-center gap-1.5" title="Every roll is verifiable — use Verifiable history above to view verification data">
             <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
             </svg>

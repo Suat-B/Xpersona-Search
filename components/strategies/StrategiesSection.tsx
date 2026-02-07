@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import { GlassCard } from "@/components/ui/GlassCard";
 
@@ -54,22 +54,27 @@ export function StrategiesSection() {
       .catch(() => {});
   }, []);
 
+  const fetchIdRef = useRef(0);
+
   const fetchStrategies = useCallback(async () => {
+    const fetchId = ++fetchIdRef.current;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/me/strategies");
-      const data = await res.json();
-      if (data.success && Array.isArray(data.data?.strategies)) {
+      const res = await fetch("/api/me/strategies", { credentials: "include" });
+      const data = await res.json().catch(() => ({}));
+      if (fetchId !== fetchIdRef.current) return;
+      if (res.ok && data.success && Array.isArray(data.data?.strategies)) {
         setStrategies(data.data.strategies);
+        setError(null);
       } else {
-        setStrategies([]);
+        setError(data.error ?? "Failed to load strategies");
       }
-    } catch (e) {
+    } catch {
+      if (fetchId !== fetchIdRef.current) return;
       setError("Failed to load strategies");
-      setStrategies([]);
     } finally {
-      setLoading(false);
+      if (fetchId === fetchIdRef.current) setLoading(false);
     }
   }, []);
 
@@ -164,6 +169,20 @@ export function StrategiesSection() {
             Create Python strategy
           </button>
         </div>
+        <p className="mt-3 text-sm text-[var(--text-secondary)]">
+          Strategies are saved presets or Python code; running them places real dice bets using your balance.
+        </p>
+      </div>
+
+      {/* What you can do */}
+      <div className="mb-6 rounded-xl border border-[var(--border)] bg-[var(--bg-card)]/50 p-4">
+        <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">What you can do</h4>
+        <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-[var(--text-secondary)]">
+          <li><strong className="text-[var(--text-primary)]">Create</strong> — Save a quick preset (amount/target/condition) or custom Python code.</li>
+          <li><strong className="text-[var(--text-primary)]">Run</strong> — Execute a strategy to place many dice bets automatically (uses your balance).</li>
+          <li><strong className="text-[var(--text-primary)]">Save from Dice</strong> — On the dice page, save your current settings as a strategy.</li>
+          <li><strong className="text-[var(--text-primary)]">Delete</strong> — Remove strategies from this list.</li>
+        </ul>
       </div>
 
       <div className="flex items-center justify-between mb-4">
@@ -298,6 +317,8 @@ export function StrategiesSection() {
                   type="button"
                   onClick={() => handleRun(s)}
                   className="rounded border border-green-500/50 bg-green-500/10 px-3 py-1.5 text-sm text-green-400 hover:bg-green-500/20"
+                  title={s.hasPythonCode ? "Opens runner to start strategy" : "Run this strategy to place dice bets automatically"}
+                  aria-label={s.hasPythonCode ? "Run Python strategy (opens runner)" : "Run strategy to place dice bets automatically"}
                 >
                   {s.hasPythonCode && s.gameType === "dice" ? "Run (Python)" : "Run (20)"}
                 </button>
@@ -358,13 +379,15 @@ function CreateStrategyForm({
       const res = await fetch("/api/me/strategies", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ gameType: "dice", name: trimmed, config: buildConfig() }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (data.success) {
         onCreated();
       } else {
-        setErr(data.message ?? data.error ?? "Create failed");
+        const msg = typeof data.message === "string" ? data.message : data.error;
+        setErr(msg ?? (res.status === 401 ? "Please sign in" : "Create failed"));
       }
     } catch {
       setErr("Create failed");

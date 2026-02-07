@@ -10,6 +10,8 @@ export type DiceRoundResult = {
   result: number;
   win: boolean;
   payout: number;
+  betId?: string;
+  serverSeedHash?: string;
 };
 
 /** Execute one dice round for a user. Throws on insufficient balance or validation. */
@@ -17,7 +19,8 @@ export async function executeDiceRound(
   userId: string,
   amount: number,
   target: number,
-  condition: "over" | "under"
+  condition: "over" | "under",
+  resultPayloadExtra?: Record<string, unknown>
 ): Promise<DiceRoundResult> {
   const [userRow] = await db
     .select({ credits: users.credits })
@@ -50,27 +53,33 @@ export async function executeDiceRound(
       clientSeed,
       0
     );
+    const payload = { ...diceResult.resultPayload, ...(resultPayloadExtra || {}) };
     const newCredits = row.credits - amount + diceResult.payout;
     await tx
       .update(users)
       .set({ credits: newCredits })
       .where(eq(users.id, userId));
-    await tx.insert(gameBets).values({
-      userId,
-      gameType: "dice",
-      amount,
-      outcome: diceResult.win ? "win" : "loss",
-      payout: diceResult.payout,
-      resultPayload: diceResult.resultPayload,
-      serverSeedId: seedRow!.id,
-      clientSeed,
-      nonce: 0,
-    });
+    const [bet] = await tx
+      .insert(gameBets)
+      .values({
+        userId,
+        gameType: "dice",
+        amount,
+        outcome: diceResult.win ? "win" : "loss",
+        payout: diceResult.payout,
+        resultPayload: payload,
+        serverSeedId: seedRow!.id,
+        clientSeed,
+        nonce: 0,
+      })
+      .returning({ id: gameBets.id });
     return {
       balance: newCredits,
       result: diceResult.result,
       win: diceResult.win,
       payout: diceResult.payout,
+      betId: bet?.id,
+      serverSeedHash: seedHash,
     };
   });
   return result;
