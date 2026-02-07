@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 
 type Metric = {
@@ -14,43 +14,71 @@ type Metric = {
 
 export default function QuantMetrics() {
     const [metrics, setMetrics] = useState<Metric[]>([
-        { label: "BALANCE", value: "$0.00", subtext: "Available", trend: "neutral" },
-        { label: "SESSION PNL", value: "+$0.00", subtext: "0% ROI", trend: "neutral" },
+        { label: "BALANCE", value: "0", subtext: "credits", trend: "neutral" },
+        { label: "SESSION PNL", value: "+0", subtext: "0 bets", trend: "neutral" },
         { label: "WIN RATE", value: "0%", subtext: "0 Bets", trend: "neutral" },
-        { label: "VOLUME", value: "$0.00", subtext: "Wagered", trend: "neutral" },
+        { label: "VOLUME", value: "0", subtext: "Wagered", trend: "neutral" },
     ]);
 
-    // Mock live data updates
-    useEffect(() => {
-        const interval = setInterval(() => {
-            // In a real app, fetch from API or listen to socket
-            // For now, just a placeholder effect to show it's "live"
-        }, 5000);
-        return () => clearInterval(interval);
-    }, []);
+    const refresh = useCallback(async () => {
+        try {
+            const [balanceRes, betsRes] = await Promise.all([
+                fetch("/api/me/balance", { credentials: "include" }),
+                fetch("/api/me/bets?limit=100&gameType=dice", { credentials: "include" }),
+            ]);
+            const balanceData = await balanceRes.json();
+            const betsData = await betsRes.json();
 
-    // Listen for balance updates
-    useEffect(() => {
-        const updateBalance = async () => {
-            try {
-                const res = await fetch("/api/me/balance");
-                const data = await res.json();
-                if (data.success) {
-                    setMetrics(prev => {
-                        const newMetrics = [...prev];
-                        newMetrics[0] = { ...newMetrics[0], value: `$${data.data.balance.toFixed(2)}` };
-                        return newMetrics;
-                    });
-                }
-            } catch (e) {
-                console.error("Failed to fetch balance", e);
+            const balance = balanceData.success && typeof balanceData.data?.balance === "number"
+                ? balanceData.data.balance
+                : 0;
+
+            let sessionPnl = 0;
+            let roundCount = 0;
+            let wins = 0;
+            let volume = 0;
+            if (betsData.success && Array.isArray(betsData.data?.bets)) {
+                sessionPnl = typeof betsData.data.sessionPnl === "number" ? betsData.data.sessionPnl : 0;
+                const bets = betsData.data.bets as { amount: number; outcome: string }[];
+                roundCount = bets.length;
+                wins = bets.filter((b) => b.outcome === "win").length;
+                volume = bets.reduce((s, b) => s + (b.amount ?? 0), 0);
             }
-        };
 
-        updateBalance();
-        window.addEventListener("balance-updated", updateBalance);
-        return () => window.removeEventListener("balance-updated", updateBalance);
+            const winRatePct = roundCount > 0 ? (wins / roundCount) * 100 : 0;
+            const pnlTrend: "up" | "down" | "neutral" = sessionPnl > 0 ? "up" : sessionPnl < 0 ? "down" : "neutral";
+
+            setMetrics([
+                { label: "BALANCE", value: String(balance), subtext: "credits", trend: "neutral" },
+                {
+                    label: "SESSION PNL",
+                    value: (sessionPnl >= 0 ? "+" : "") + String(sessionPnl),
+                    subtext: `${roundCount} bets`,
+                    trend: pnlTrend,
+                },
+                {
+                    label: "WIN RATE",
+                    value: `${winRatePct.toFixed(1)}%`,
+                    subtext: `${roundCount} Bets`,
+                    trend: winRatePct >= 50 ? "up" : winRatePct < 50 ? "down" : "neutral",
+                },
+                { label: "VOLUME", value: String(volume), subtext: "Wagered", trend: "neutral" },
+            ]);
+        } catch (e) {
+            console.error("QuantMetrics fetch failed", e);
+        }
     }, []);
+
+    useEffect(() => {
+        refresh();
+        const interval = setInterval(refresh, 10000);
+        return () => clearInterval(interval);
+    }, [refresh]);
+
+    useEffect(() => {
+        window.addEventListener("balance-updated", refresh);
+        return () => window.removeEventListener("balance-updated", refresh);
+    }, [refresh]);
 
     return (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">

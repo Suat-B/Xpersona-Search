@@ -111,27 +111,36 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         <div className="grid gap-6 grid-cols-1 justify-items-center">
           {GAMES.map((game) => (
             <div key={game.name} className="w-full max-w-sm">
-              <GlassCard
-                href={isLoggedIn ? game.href : undefined}
-                glow={true}
-                className={!isLoggedIn ? "opacity-60 cursor-not-allowed group-hover:!border-white/5" : ""}
-              >
-                <div className="flex flex-col h-full justify-between min-h-[140px]">
-                  <div>
-                    <h3 className="text-2xl font-bold tracking-tight mb-1 font-[family-name:var(--font-outfit)]">{game.name}</h3>
-                    <p className="text-sm text-text-secondary">{game.desc}</p>
-                  </div>
-                  {isLoggedIn ? (
-                    <div className="self-end mt-4 opacity-0 group-hover:opacity-100 transition-opacity text-accent-heart text-sm font-bold tracking-widest uppercase">
-                      Play &rarr;
+              {isLoggedIn ? (
+                <Link href={game.href} className="block h-full group">
+                  <GlassCard glow={true} className="h-full">
+                    <div className="flex flex-col h-full justify-between min-h-[140px]">
+                      <div>
+                        <h3 className="text-2xl font-bold tracking-tight mb-1 font-[family-name:var(--font-outfit)]">{game.name}</h3>
+                        <p className="text-sm text-text-secondary">{game.desc}</p>
+                      </div>
+                      <div className="self-end mt-4 opacity-0 group-hover:opacity-100 transition-opacity text-accent-heart text-sm font-bold tracking-widest uppercase">
+                        Play &rarr;
+                      </div>
                     </div>
-                  ) : (
+                  </GlassCard>
+                </Link>
+              ) : (
+                <GlassCard
+                  glow={true}
+                  className="opacity-60 cursor-not-allowed group-hover:!border-white/5"
+                >
+                  <div className="flex flex-col h-full justify-between min-h-[140px]">
+                    <div>
+                      <h3 className="text-2xl font-bold tracking-tight mb-1 font-[family-name:var(--font-outfit)]">{game.name}</h3>
+                      <p className="text-sm text-text-secondary">{game.desc}</p>
+                    </div>
                     <div className="self-end mt-4 text-xs text-text-secondary uppercase tracking-widest">
                       Locked
                     </div>
-                  )}
-                </div>
-              </GlassCard>
+                  </div>
+                </GlassCard>
+              )}
             </div>
           ))}
         </div>

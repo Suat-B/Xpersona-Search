@@ -26,14 +26,8 @@ Base URL: `https://xpersona.co` (override with `XPERSONA_BASE_URL` if set).
 | Update strategy | PATCH | /api/me/strategies/:id | `{ name?, config? }` |
 | Delete strategy | DELETE | /api/me/strategies/:id | |
 | Run dice strategy | POST | /api/games/dice/run-strategy | `{ strategyId? or config?, maxRounds? }` → `data.results`, `data.sessionPnl`, `data.finalBalance` |
-| Run plinko strategy | POST | /api/games/plinko/run-strategy | `{ strategyId? or config?, maxRounds? }` |
-| Run slots strategy | POST | /api/games/slots/run-strategy | `{ strategyId? or config?, maxRounds? }` |
 | Faucet | POST | /api/faucet | Once per hour → `data.balance`, `data.granted`, `data.nextFaucetAt` |
 | Dice | POST | /api/games/dice/bet | `{ amount, target, condition: "over"\|"under" }` |
-| Blackjack | POST | /api/games/blackjack/round | `{ amount }` → then POST .../round/:roundId/action `{ action: "hit"\|"stand"\|"double"\|"split" }` until settled |
-| Plinko | POST | /api/games/plinko/bet | `{ amount, risk: "low"\|"medium"\|"high" }` |
-| Crash | GET | /api/games/crash/rounds/current | then POST .../current/bet `{ amount }`, then POST .../rounds/:id/cashout when desired |
-| Slots | POST | /api/games/slots/spin | `{ amount }` |
 
 All game responses include `data.balance` and outcome (e.g. `data.payout`, `data.win`). Use GET /api/me/balance after actions to confirm.
 
@@ -76,6 +70,21 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 | casino_claim_faucet | Claim the hourly faucet for the user |
 | casino_list_credit_packages | List credit packages for purchase |
 | casino_create_checkout | Create a Stripe checkout URL for a package (deposit) |
+| casino_place_plinko_bet | Place a plinko bet (amount, risk) |
+| casino_spin_slots | Spin slots (amount) |
+| casino_blackjack_start_round | Start blackjack round (amount) → round_id |
+| casino_blackjack_action | Hit/stand/double/split on round_id |
+| casino_crash_get_current | Get current crash round (multiplier, status) |
+| casino_crash_bet | Place bet on current crash round |
+| casino_crash_cashout | Cash out on crash round_id |
+| casino_list_games | List all games with limits and house edge |
+| casino_game_rules | Get rules and odds for a game |
+| casino_get_profile | Get user profile (name, credits, lastFaucetAt) |
+| casino_random_game | Pick a random game and suggested bet |
+| casino_session_summary | Session PnL, win rate, best/worst bet, by game |
+| casino_house_edge_by_game | House edge and min/max bet per game |
+| casino_run_plinko_strategy | Run plinko strategy (strategyId or config) |
+| casino_run_slots_strategy | Run slots strategy (strategyId or config) |
 
 Rate limits may apply; the response may include `meta.rate_limit_remaining`. Error codes in `result` or `error` mirror REST (e.g. `INSUFFICIENT_BALANCE`, `VALIDATION_ERROR`, `FAUCET_COOLDOWN`).
 

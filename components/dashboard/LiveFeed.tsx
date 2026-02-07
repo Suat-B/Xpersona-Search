@@ -1,7 +1,7 @@
 "use client";
 
 import { GlassCard } from "@/components/ui/GlassCard";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 
 type FeedItem = {
@@ -14,36 +14,44 @@ type FeedItem = {
     type: "win" | "bet";
 };
 
-const MOCK_USERS = ["Alex", "Sarah", "QuantBot", "CryptoKing", "MoonWalker", "Satoshi", "AI_Agent_007"];
-const MOCK_GAMES = ["Dice"];
-
 export default function LiveFeed() {
     const [feed, setFeed] = useState<FeedItem[]>([]);
     const listRef = useRef<HTMLUListElement>(null);
 
-    const addMockItem = () => {
-        const type = Math.random() > 0.7 ? "win" : "bet";
-        const amount = (Math.random() * 100).toFixed(2);
-        const newItem: FeedItem = {
-            id: Math.random().toString(36).substring(7),
-            user: MOCK_USERS[Math.floor(Math.random() * MOCK_USERS.length)],
-            action: type === "win" ? "won" : "bet",
-            amount: `$${amount}`,
-            game: MOCK_GAMES[Math.floor(Math.random() * MOCK_GAMES.length)],
-            timestamp: Date.now(),
-            type,
-        };
-
-        setFeed(prev => [newItem, ...prev].slice(0, 10)); // Keep last 10
-    };
+    const refresh = useCallback(async () => {
+        try {
+            const res = await fetch("/api/me/bets?limit=15&gameType=dice", { credentials: "include" });
+            const data = await res.json();
+            if (!data.success || !Array.isArray(data.data?.bets)) {
+                setFeed([]);
+                return;
+            }
+            const bets = data.data.bets as { id: string; amount: number; outcome: string; payout: number; createdAt?: string }[];
+            const items: FeedItem[] = bets.map((b) => ({
+                id: b.id,
+                user: "You",
+                action: b.outcome === "win" ? "won" : "bet",
+                amount: b.outcome === "win" ? `+${b.payout}` : `-${b.amount}`,
+                game: "Dice",
+                timestamp: b.createdAt ? new Date(b.createdAt).getTime() : Date.now(),
+                type: b.outcome === "win" ? "win" : "bet",
+            }));
+            setFeed(items);
+        } catch (e) {
+            console.error("LiveFeed fetch failed", e);
+        }
+    }, []);
 
     useEffect(() => {
-        // Initial population
-        for (let i = 0; i < 5; i++) addMockItem();
-
-        const interval = setInterval(addMockItem, 3000 + Math.random() * 2000); // Random interval 3-5s
+        refresh();
+        const interval = setInterval(refresh, 8000);
         return () => clearInterval(interval);
-    }, []);
+    }, [refresh]);
+
+    useEffect(() => {
+        window.addEventListener("balance-updated", refresh);
+        return () => window.removeEventListener("balance-updated", refresh);
+    }, [refresh]);
 
     return (
         <GlassCard className="h-full flex flex-col p-0 overflow-hidden">
@@ -55,29 +63,35 @@ export default function LiveFeed() {
                     </span>
                     LIVE FEED
                 </h3>
-                <span className="text-[10px] text-[var(--text-secondary)] font-mono">GLOBAL</span>
+                <span className="text-[10px] text-[var(--text-secondary)] font-mono">YOUR BETS</span>
             </div>
             <div className="flex-1 overflow-y-auto p-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
                 <ul ref={listRef} className="space-y-1">
-                    {feed.map((item) => (
-                        <li key={item.id} className="animate-in fade-in slide-in-from-top-2 duration-500">
-                            <div className="flex items-center justify-between p-2 rounded hover:bg-white/5 transition-colors text-xs font-mono group">
-                                <div className="flex items-center gap-2 text-[var(--text-secondary)]">
-                                    <span className="text-[var(--text-primary)] font-medium">{item.user}</span>
-                                    <span>{item.action}</span>
-                                    <span className={cn(
-                                        "font-bold",
-                                        item.type === "win" ? "text-green-400" : "text-[var(--text-primary)]"
-                                    )}>{item.amount}</span>
-                                    <span>on</span>
-                                    <span className="text-[var(--accent-heart)]">{item.game}</span>
-                                </div>
-                                <span className="text-[10px] opacity-0 group-hover:opacity-50 transition-opacity">
-                                    {new Date(item.timestamp).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                                </span>
-                            </div>
+                    {feed.length === 0 ? (
+                        <li className="p-4 text-center text-xs text-[var(--text-secondary)]">
+                            No bets yet. Play a game to see activity here.
                         </li>
-                    ))}
+                    ) : (
+                        feed.map((item) => (
+                            <li key={item.id} className="animate-in fade-in slide-in-from-top-2 duration-300">
+                                <div className="flex items-center justify-between p-2 rounded hover:bg-white/5 transition-colors text-xs font-mono group">
+                                    <div className="flex items-center gap-2 text-[var(--text-secondary)]">
+                                        <span className="text-[var(--text-primary)] font-medium">{item.user}</span>
+                                        <span>{item.action}</span>
+                                        <span className={cn(
+                                            "font-bold",
+                                            item.type === "win" ? "text-green-400" : "text-red-400/90"
+                                        )}>{item.amount}</span>
+                                        <span>on</span>
+                                        <span className="text-[var(--accent-heart)]">{item.game}</span>
+                                    </div>
+                                    <span className="text-[10px] opacity-0 group-hover:opacity-50 transition-opacity">
+                                        {new Date(item.timestamp).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                                    </span>
+                                </div>
+                            </li>
+                        ))
+                    )}
                 </ul>
             </div>
         </GlassCard>

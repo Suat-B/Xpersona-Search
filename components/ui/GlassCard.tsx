@@ -33,7 +33,7 @@ export function GlassCard({
 
     if (href) {
         return (
-            <Link href={href} className="block h-full">
+            <Link href={href} className="block h-full cursor-pointer">
                 {content}
             </Link>
         );

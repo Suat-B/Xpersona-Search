@@ -12,6 +12,9 @@ import { gameBets, users, strategies, strategyCode, agentSessions, creditPackage
 import { eq, desc, and } from "drizzle-orm";
 import { DICE_HOUSE_EDGE, FAUCET_AMOUNT } from "@/lib/constants";
 import { executeDiceRound } from "@/lib/games/execute-dice";
+import { executePlinkoRound } from "@/lib/games/execute-plinko";
+import { executeSlotsRound } from "@/lib/games/execute-slots";
+import type { PlinkoRisk } from "@/lib/games/plinko";
 import { validatePythonStrategyCode } from "@/lib/strategy-python-validation";
 import { grantFaucet } from "@/lib/faucet";
 import Stripe from "stripe";
@@ -492,6 +495,80 @@ async function handleCalculateOdds(params: any, agentContext: AgentContext | nul
     expected_value: expectedValue,
     house_edge: DICE_HOUSE_EDGE * 100,
     risk_rating: probability < 0.3 ? "high" : probability > 0.7 ? "low" : "medium"
+  };
+}
+
+async function handleClaimFaucet(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) throw new Error(authResult.error);
+  const result = await grantFaucet(authResult.user.id);
+  if (!result.granted) {
+    return {
+      success: false,
+      error: "FAUCET_COOLDOWN",
+      next_faucet_at: result.nextFaucetAt.toISOString(),
+      message: "Next faucet at " + result.nextFaucetAt.toISOString()
+    };
+  }
+  return {
+    success: true,
+    balance: result.balance,
+    granted: FAUCET_AMOUNT,
+    next_faucet_at: result.nextFaucetAt.toISOString()
+  };
+}
+
+async function handleListCreditPackages(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) throw new Error(authResult.error);
+  const list = await db
+    .select({
+      id: creditPackages.id,
+      name: creditPackages.name,
+      credits: creditPackages.credits,
+      amountCents: creditPackages.amountCents,
+    })
+    .from(creditPackages)
+    .where(eq(creditPackages.active, true))
+    .orderBy(creditPackages.sortOrder);
+  return {
+    success: true,
+    packages: list.map((p) => ({
+      id: p.id,
+      name: p.name,
+      credits: p.credits,
+      amount_cents: p.amountCents,
+    }))
+  };
+}
+
+function getStripe(): Stripe {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error("STRIPE_SECRET_KEY not set");
+  return new Stripe(key, { apiVersion: "2025-02-24.acacia" });
+}
+
+async function handleCreateCheckout(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) throw new Error(authResult.error);
+  const packageId = params.package_id as string | undefined;
+  if (!packageId) return { success: false, error: "VALIDATION_ERROR", message: "package_id required" };
+  const [pkg] = await db.select().from(creditPackages).where(eq(creditPackages.id, packageId)).limit(1);
+  if (!pkg || !pkg.active) return { success: false, error: "NOT_FOUND", message: "Package not found or inactive" };
+  const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const stripe = getStripe();
+  const session = await stripe.checkout.sessions.create({
+    mode: "payment",
+    line_items: [{ price: pkg.stripePriceId, quantity: 1 }],
+    success_url: `${baseUrl}/dashboard/deposit?success=1`,
+    cancel_url: `${baseUrl}/dashboard/deposit`,
+    client_reference_id: authResult.user.id,
+    metadata: { userId: authResult.user.id, packageId: pkg.id, credits: String(pkg.credits) },
+  });
+  return {
+    success: true,
+    checkout_url: session.url ?? null,
+    expires_at: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : undefined
   };
 }
 
