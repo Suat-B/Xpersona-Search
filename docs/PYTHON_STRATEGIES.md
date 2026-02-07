@@ -2,15 +2,28 @@
 
 AI-first casino supports user-defined Python strategies for the dice game. The same contract works on the **web dashboard** (paste code, run with real bets) and via **OpenClaw** tools (`casino_deploy_strategy`, `casino_run_strategy`). Same contract for the web and for OpenClaw AI agents.
 
+## Dice game rules
+
+- **Min bet:** 1 credit. **Max bet:** 10,000 credits.
+- **Target:** 0–99.99. **Condition:** `"over"` (win when result &gt; target) or `"under"` (win when result &lt; target).
+- **House edge:** 3%. Payout multiplier is adjusted accordingly.
+
 ## Contract
 
 - Your code must define a **class** that implements at least:
   - **`on_round_start(self, ctx) -> BetDecision`**  
     Called each round. Return a bet decision or stop.
+  - **`on_round_complete(self, ctx, result)`** (optional)  
+    Called after each bet is settled. Use it to update internal state based on the outcome.
 
 - The runtime provides a **context** `ctx` with:
   - **`ctx.get_balance() -> float`** — current balance
   - **`ctx.get_history(n: int) -> list`** — last `n` round results (each has `result`, `win`, `payout`, `bet_amount`)
+  - **`ctx.round_number`** (property) — current round index (1-based)
+  - **`ctx.initial_balance`** (property) — starting balance for this session
+  - **`ctx.session_pnl`** (property) — session profit/loss so far
+  - **`ctx.get_limits() -> dict`** — dice limits: `min_bet`, `max_bet`, `house_edge`, `target_min`, `target_max`
+  - **`ctx.last_result()`** — last round result `{ result, win, payout, bet_amount }` or `None` before first round
   - **`ctx.calculate_odds(target, condition) -> dict`** — `win_probability`, `multiplier`
   - **`ctx.notify(message: str)`** — log a message
 
@@ -20,6 +33,11 @@ AI-first casino supports user-defined Python strategies for the dice game. The s
     `target`: 0–99.99.  
     `condition`: `"over"` or `"under"` (win when result &gt; target or &lt; target).
   - **`BetDecision.stop(reason="...")`** — stop the session.
+
+## Lifecycle
+
+- Each round: **`on_round_start(ctx)`** is called to get a decision (bet or stop).
+- After a bet is placed and settled, **`on_round_complete(ctx, result)`** is called with a **`RoundResult`** (`result`, `win`, `payout`, `balance`) so strategies can update internal state. Then the next round starts.
 
 ## Custom code
 
@@ -47,8 +65,9 @@ class Strategy:
 
 ## Validation (security)
 
-- Forbidden: `os`, `sys`, `subprocess`, `socket`, `requests`, `urllib`, `eval`, `exec`, `open`, `__import__`.
-- Max code length: 10,000 characters.
+- **Forbidden:** `os`, `sys`, `subprocess`, `socket`, `requests`, `urllib`, `eval`, `exec`, `open`, `__import__` (security blocklist only).
+- **Allowed stdlib:** `math` and `statistics` are safe and not blocked; use them for odds and analysis.
+- **Max code length:** 30,000 characters.
 - Same rules apply for strategies created via the **web** and via **OpenClaw** `casino_deploy_strategy`.
 
 ## Execution
@@ -58,4 +77,4 @@ class Strategy:
 
 ## Dice compatibility
 
-The dice bet API expects `amount`, `target`, and `condition` ("over" / "under"). Your `BetDecision` maps 1:1 to `POST /api/games/dice/bet`.
+The dice bet API expects `amount`, `target`, and `condition` ("over" / "under"). Your `BetDecision` maps 1:1 to `POST /api/games/dice/bet`. Limits and house edge are available via `ctx.get_limits()`.

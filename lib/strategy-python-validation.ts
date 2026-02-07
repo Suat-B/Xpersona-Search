@@ -3,7 +3,7 @@
  * Single source of truth for security and structure checks.
  */
 
-export const MAX_PYTHON_CODE_LENGTH = 10_000;
+export const MAX_PYTHON_CODE_LENGTH = 30_000;
 
 const DANGEROUS_PATTERNS: { pattern: RegExp; message: string }[] = [
   { pattern: /\bimport\s+os\b/, message: "Dangerous import 'os' not allowed" },

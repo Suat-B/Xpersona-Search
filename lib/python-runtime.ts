@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { MAX_PYTHON_CODE_LENGTH } from "./strategy-python-validation";
 
 // Pyodide instance type
 interface PyodideInstance {
@@ -194,6 +195,39 @@ class StrategyContext:
         return {"win_probability": 50.0, "multiplier": 2.0}
     
     @property
+    def round_number(self) -> int:
+        """Current round index (1-based)."""
+        if self._bridge and hasattr(self._bridge, 'get_round_number') and callable(getattr(self._bridge, 'get_round_number')):
+            return self._bridge.get_round_number()
+        return self._round_count
+    
+    @property
+    def initial_balance(self) -> float:
+        """Starting balance for this session."""
+        if self._bridge and hasattr(self._bridge, 'get_initial_balance') and callable(getattr(self._bridge, 'get_initial_balance')):
+            return self._bridge.get_initial_balance()
+        return 1000.0
+    
+    @property
+    def session_pnl(self) -> float:
+        """Session profit/loss so far."""
+        if self._bridge and hasattr(self._bridge, 'get_session_pnl') and callable(getattr(self._bridge, 'get_session_pnl')):
+            return self._bridge.get_session_pnl()
+        return 0.0
+    
+    def get_limits(self) -> dict:
+        """Dice game limits: min_bet, max_bet, house_edge, target_min, target_max."""
+        if self._bridge and hasattr(self._bridge, 'get_limits') and callable(getattr(self._bridge, 'get_limits')):
+            return self._bridge.get_limits()
+        return {"min_bet": 1, "max_bet": 10000, "house_edge": 0.03, "target_min": 0, "target_max": 99.99}
+    
+    def last_result(self):
+        """Last round result (result, win, payout, bet_amount) or None."""
+        if self._bridge and hasattr(self._bridge, 'get_last_result') and callable(getattr(self._bridge, 'get_last_result')):
+            return self._bridge.get_last_result()
+        return None
+    
+    @property
     def round_count(self) -> int:
         return self._round_count
     
@@ -362,6 +396,72 @@ json.dumps(result)
     }
   }
 
+  /**
+   * Call strategy.on_round_complete(ctx, round_result) and return updated state.
+   * Called by the engine after each settled bet.
+   */
+  async executeRoundComplete(
+    strategyCode: string,
+    bridge: CasinoBridge,
+    state: Record<string, unknown> | null,
+    roundResult: RoundResultPayload
+  ): Promise<{ success: boolean; state?: Record<string, unknown>; error?: string }> {
+    try {
+      this.pyodide.globals.set("js_bridge", bridge);
+      this.pyodide.globals.set("strategy_state", state);
+      this.pyodide.globals.set("_round_result_result", roundResult.result);
+      this.pyodide.globals.set("_round_result_win", roundResult.win);
+      this.pyodide.globals.set("_round_result_payout", roundResult.payout);
+      this.pyodide.globals.set("_round_result_balance", roundResult.balance);
+
+      const executionCode = `
+import json
+
+# Load strategy
+${strategyCode}
+
+# Find strategy class
+strategy_class = None
+for name in dir():
+    obj = eval(name)
+    if isinstance(obj, type) and name not in ['BetDecision', 'RoundResult', 'StrategyContext', 'BaseStrategy', 'json']:
+        if hasattr(obj, 'on_round_start'):
+            strategy_class = obj
+            break
+
+if strategy_class is None:
+    raise Exception("Strategy class not found")
+
+ctx = StrategyContext(js_bridge)
+
+if strategy_state:
+    strategy = strategy_class(strategy_state.get('config', {}))
+    for key, value in strategy_state.items():
+        if key != 'config':
+            setattr(strategy, key, value)
+else:
+    strategy = strategy_class({})
+
+round_result = RoundResult(_round_result_result, _round_result_win, _round_result_payout, _round_result_balance)
+strategy.on_round_complete(ctx, round_result)
+
+new_state = {
+    "config": getattr(strategy, 'config', {}),
+    **{k: v for k, v in strategy.__dict__.items() if not k.startswith('_')}
+}
+json.dumps(new_state)
+`;
+
+      const resultJson = await this.pyodide.runPythonAsync(executionCode);
+      const newState = JSON.parse(resultJson) as Record<string, unknown>;
+      return { success: true, state: newState };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn("[StrategyRuntime] on_round_complete error:", message);
+      return { success: false, state: state ?? undefined, error: message };
+    }
+  }
+
   // Validate Python code for security
   private validateCode(code: string): { valid: boolean; error?: string } {
     // Check for dangerous imports
@@ -389,9 +489,9 @@ json.dumps(result)
       }
     }
 
-    // Check code length
-    if (code.length > 10000) {
-      return { valid: false, error: "Code exceeds maximum length (10000 characters)" };
+    // Check code length (align with strategy-python-validation)
+    if (code.length > MAX_PYTHON_CODE_LENGTH) {
+      return { valid: false, error: `Code exceeds maximum length (${MAX_PYTHON_CODE_LENGTH} characters)` };
     }
 
     // Check for required method
@@ -409,12 +509,40 @@ json.dumps(result)
 }
 
 // Bridge interface for JavaScript -> Python communication
+export interface DiceLimits {
+  min_bet: number;
+  max_bet: number;
+  house_edge: number;
+  target_min: number;
+  target_max: number;
+}
+
+export interface LastResult {
+  result: number;
+  win: boolean;
+  payout: number;
+  bet_amount: number;
+}
+
 export interface CasinoBridge {
   get_balance: () => number;
   get_history: (n: number) => any[];
   place_bet: (amount: number, target: number, condition: string) => Promise<any>;
   notify: (message: string) => void;
   calculate_odds: (target: number, condition: string) => any;
+  get_round_number?: () => number;
+  get_initial_balance?: () => number;
+  get_session_pnl?: () => number;
+  get_limits?: () => DiceLimits;
+  get_last_result?: () => LastResult | null;
+}
+
+// Round result payload for on_round_complete callback
+export interface RoundResultPayload {
+  result: number;
+  win: boolean;
+  payout: number;
+  balance: number;
 }
 
 // Execution result interface

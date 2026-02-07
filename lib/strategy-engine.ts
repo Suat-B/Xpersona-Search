@@ -5,7 +5,7 @@
  */
 
 import type { StrategyRuntime, CasinoBridge } from "./python-runtime";
-import { DICE_HOUSE_EDGE } from "./constants";
+import { DICE_HOUSE_EDGE, MIN_BET, MAX_BET } from "./constants";
 
 export interface ExecutionSession {
   id: string;
@@ -195,6 +195,26 @@ export class StrategyExecutionEngine {
               multiplier: (1 - DICE_HOUSE_EDGE) / probability,
             };
           },
+          get_round_number: () => session.currentRound + 1,
+          get_initial_balance: () => session.initialBalance,
+          get_session_pnl: () => session.sessionPnl,
+          get_limits: () => ({
+            min_bet: MIN_BET,
+            max_bet: MAX_BET,
+            house_edge: DICE_HOUSE_EDGE,
+            target_min: 0,
+            target_max: 99.99,
+          }),
+          get_last_result: () => {
+            const last = session.results[session.results.length - 1];
+            if (!last) return null;
+            return {
+              result: last.result,
+              win: last.win,
+              payout: last.payout,
+              bet_amount: last.betAmount,
+            };
+          },
         };
 
         const executionResult = await this.runtime.executeRound(
@@ -241,6 +261,21 @@ export class StrategyExecutionEngine {
               win: result.win,
               payout: result.payout,
             };
+          }
+
+          const completeResult = await this.runtime.executeRoundComplete(
+            pythonCode,
+            bridge,
+            state,
+            {
+              result: result.result,
+              win: result.win,
+              payout: result.payout,
+              balance: result.balance,
+            }
+          );
+          if (completeResult.success && completeResult.state != null) {
+            state = completeResult.state;
           }
         }
 
