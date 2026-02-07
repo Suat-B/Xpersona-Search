@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
 import QuantMetrics from "@/components/dashboard/QuantMetrics";
-import LiveFeed from "@/components/dashboard/LiveFeed";
-import TransactionTable from "@/components/dashboard/TransactionTable";
+import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
 
 const GAMES = [
   { slug: "dice", name: "Dice", icon: "🎲", desc: "Roll over or under. Pure probability. AI-first." },
@@ -84,34 +83,20 @@ export default function DashboardPage() {
           </section>
         </div>
 
-        {/* Right: Live Feed & VIP (1/3 width) */}
-        <div className="space-y-6 flex flex-col">
-          {/* VIP Status Mock */}
-          <GlassCard className="p-5 relative overflow-hidden">
-            <div className="flex justify-between items-start mb-2">
-              <div>
-                <h3 className="text-sm font-bold text-[var(--text-primary)]">VIP STATUS</h3>
-                <p className="text-xs text-[var(--text-secondary)]">Level 3: Quant Trader</p>
-              </div>
-              <span className="text-xs font-mono bg-[var(--accent-heart)]/10 text-[var(--accent-heart)] px-2 py-1 rounded">Rank 452</span>
-            </div>
-            <div className="w-full bg-white/10 rounded-full h-1.5 mb-2 overflow-hidden">
-              <div className="bg-[var(--accent-heart)] h-1.5 rounded-full w-[65%] shadow-[0_0_10px_var(--accent-heart)]"></div>
-            </div>
-            <p className="text-[10px] text-right text-[var(--text-secondary)]">Next: Market Maker (65%)</p>
-          </GlassCard>
-
-          {/* Live Feed */}
-          <div className="flex-1 min-h-[300px]">
-            <LiveFeed />
-          </div>
+        {/* Right: API (1/3 width) */}
+        <div className="space-y-4 flex flex-col">
+          <ApiKeySection />
+          <Link
+            href="/dashboard/api"
+            className="inline-flex items-center gap-2 text-sm font-medium text-[var(--accent-heart)] hover:underline"
+          >
+            Full API docs and OpenClaw integration
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
         </div>
       </div>
-
-      {/* 3. Bottom: Transactions */}
-      <section>
-        <TransactionTable />
-      </section>
 
     </div>
   );

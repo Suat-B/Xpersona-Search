@@ -13,6 +13,7 @@ import { StatsSummary } from "@/components/ui/StatsSummary";
 import { DiceVerificationHistory } from "./DiceVerificationHistory";
 
 const ACTIVE_STRATEGY_KEY = "xpersona_active_strategy_run";
+const MAX_RECENT_RESULTS = 50;
 
 const DiceGame = dynamic(() => import("./DiceGame"), { ssr: false });
 
@@ -106,7 +107,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         setRecentResults(hydrated.slice(-MAX_RECENT_RESULTS));
         setRecentResultsHydrated(true);
       })
-      .catch(() => {});
+      .catch(() => { });
     return () => {
       cancelled = true;
     };
@@ -140,14 +141,14 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </svg>
           <span className="hidden sm:inline">Dashboard</span>
         </Link>
-        
+
         <div className="flex items-center gap-2">
           <span className="text-xl">🎲</span>
           <h1 className="text-lg font-bold font-[family-name:var(--font-outfit)] text-[var(--text-primary)]">
             Pure Dice
           </h1>
         </div>
-        
+
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--bg-matte)] border border-[var(--border)]">
             <svg className="w-4 h-4 text-[var(--accent-heart)]" fill="currentColor" viewBox="0 0 20 20">
@@ -170,6 +171,12 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             <span className="text-sm font-semibold truncate max-w-[180px]">{activeStrategyRun.name}</span>
             <span className="text-xs opacity-90">is placing dice bets</span>
           </div>
+          <Link
+            href="/dashboard/strategies"
+            className="text-xs font-medium text-red-400 hover:text-red-300 hover:underline"
+          >
+            Stop run →
+          </Link>
           <Link
             href="/dashboard/strategies"
             className="text-xs font-medium text-[var(--accent-heart)] hover:underline"
@@ -200,7 +207,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               onAmountChange={setAmount}
               onTargetChange={setTarget}
               onConditionChange={setCondition}
-              onRoundComplete={() => {}}
+              onRoundComplete={() => { }}
               onAutoPlayChange={setAutoPlayActive}
               onResult={handleResult}
             />
@@ -213,11 +220,10 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           <div className="flex-shrink-0 flex gap-1 p-1 rounded-lg bg-[var(--bg-matte)] border border-[var(--border)]">
             <button
               onClick={() => setActiveTab("stats")}
-              className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-all ${
-                activeTab === "stats"
+              className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-all ${activeTab === "stats"
                   ? "bg-[var(--accent-heart)] text-white shadow-lg shadow-[var(--accent-heart)]/30"
                   : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-              }`}
+                }`}
             >
               <span className="flex items-center justify-center gap-2">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -228,11 +234,10 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             </button>
             <button
               onClick={() => setActiveTab("strategy")}
-              className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-all ${
-                activeTab === "strategy"
+              className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-all ${activeTab === "strategy"
                   ? "bg-[var(--accent-heart)] text-white shadow-lg shadow-[var(--accent-heart)]/30"
                   : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-              }`}
+                }`}
             >
               <span className="flex items-center justify-center gap-2">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -356,7 +361,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           <span className="text-[var(--border)]">|</span>
           <span className="text-[var(--accent-heart)]">RTP 97%</span>
         </div>
-        
+
         <div className="flex items-center gap-3">
           <span className="text-xs text-[var(--text-secondary)]">
             Min: 1 | Max: 10,000

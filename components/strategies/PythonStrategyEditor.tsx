@@ -5,7 +5,7 @@
  * Full IDE for writing and running Python strategies
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useStrategyRuntime } from "@/lib/python-runtime";
 import { StrategyExecutionEngine, ExecutionSession, StopConditions } from "@/lib/strategy-engine";
 import { createClientBetExecutor } from "@/lib/strategy-engine-client";
@@ -169,6 +169,28 @@ export function PythonStrategyEditor({ userId, strategyId, strategyName, initial
   const [engine, setEngine] = useState<StrategyExecutionEngine | null>(null);
   const [activeTab, setActiveTab] = useState<"editor" | "output">("editor");
   const [strategyLoaded, setStrategyLoaded] = useState(false);
+  const sessionIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const engineSessionRef = useRef<{ engine: StrategyExecutionEngine; sessionId: string } | null>(null);
+
+  // On unmount: stop any running strategy and clear the polling interval
+  useEffect(() => {
+    return () => {
+      if (sessionIntervalRef.current != null) {
+        clearInterval(sessionIntervalRef.current);
+        sessionIntervalRef.current = null;
+      }
+      const current = engineSessionRef.current;
+      if (current) {
+        try {
+          current.engine.stopSession(current.sessionId, "unmount");
+        } catch {
+          // ignore
+        }
+        engineSessionRef.current = null;
+        syncStrategyRunState(false);
+      }
+    };
+  }, []);
 
   // Load saved strategy by id
   useEffect(() => {
@@ -257,6 +279,7 @@ export function PythonStrategyEditor({ userId, strategyId, strategyName, initial
       });
 
       setActiveSession(session);
+      engineSessionRef.current = { engine, sessionId: session.id };
       addLog(`Session started: ${session.id}`);
 
       if (onStrategyRun) {
@@ -269,7 +292,11 @@ export function PythonStrategyEditor({ userId, strategyId, strategyName, initial
           setActiveSession(updated);
 
           if (updated.status !== "running") {
-            clearInterval(interval);
+            if (sessionIntervalRef.current != null) {
+              clearInterval(sessionIntervalRef.current);
+              sessionIntervalRef.current = null;
+            }
+            engineSessionRef.current = null;
             setIsExecuting(false);
             addLog(`Session ${updated.status}: ${updated.stopReason || updated.error || "completed"}`);
             addLog(`Final PnL: ${updated.sessionPnl}`);
@@ -285,6 +312,7 @@ export function PythonStrategyEditor({ userId, strategyId, strategyName, initial
           }
         }
       }, 200);
+      sessionIntervalRef.current = interval;
     } catch (error) {
       addLog(`Error: ${error instanceof Error ? error.message : String(error)}`);
       setIsExecuting(false);

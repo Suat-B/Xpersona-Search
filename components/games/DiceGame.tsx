@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Dice3D } from "./Dice3D";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { QuickBetButtons } from "@/components/ui/QuickBetButtons";
@@ -105,15 +105,20 @@ export function DiceGame({
       if (!ok || stopRef.current) {
         setAutoPlay(false);
         onAutoPlayChange?.(false);
+        timeoutRef.current = null;
         return;
       }
-      setTimeout(loop, autoSpeed);
+      timeoutRef.current = setTimeout(loop, autoSpeed);
     };
     loop();
   }, [autoPlay, autoSpeed, runBet, onAutoPlayChange]);
 
   const stopAuto = useCallback(() => {
     stopRef.current = true;
+    if (timeoutRef.current != null) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
     setAutoPlay(false);
     onAutoPlayChange?.(false);
   }, [onAutoPlayChange]);

@@ -12,6 +12,7 @@ const SIDEBAR_LINKS = [
   { href: "/dashboard", label: "Dashboard", exact: true },
   { href: "/dashboard/strategies", label: "Strategies", exact: false },
   { href: "/dashboard/provably-fair", label: "Provably Fair", exact: false },
+  { href: "/dashboard/api", label: "API", exact: false },
 ] as const;
 
 const EXACT_HREFS = ["/games/dice", "/dashboard"];
