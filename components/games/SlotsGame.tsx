@@ -143,3 +143,5 @@ export function SlotsGame() {
     </div>
   );
 }
+
+export default SlotsGame;

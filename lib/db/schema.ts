@@ -216,3 +216,31 @@ export const verificationTokens = pgTable("verification_tokens", {
   token: varchar("token", { length: 255 }).notNull(),
   expires: timestamp("expires", { withTimezone: true }).notNull(),
 });
+
+// Agent Sessions for AI agents
+export const agentSessions = pgTable("agent_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  agentId: varchar("agent_id", { length: 100 }).notNull(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  token: varchar("token", { length: 255 }).notNull().unique(),
+  permissions: jsonb("permissions").default(["bet", "read"]),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).defaultNow(),
+});
+
+// Strategy code storage for Python strategies
+export const strategyCode = pgTable("strategy_code", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  strategyId: uuid("strategy_id")
+    .notNull()
+    .references(() => strategies.id, { onDelete: "cascade" }),
+  pythonCode: text("python_code"),
+  description: text("description"),
+  tags: jsonb("tags").default([]),
+  isPublic: boolean("is_public").default(false),
+  version: integer("version").default(1),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});

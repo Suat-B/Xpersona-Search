@@ -6,8 +6,8 @@ Single source of truth for operator/transparency. Values align with `lib/constan
 
 ## Dice
 
-- **House edge:** **2%** (explicit)
-- **Constant:** `DICE_HOUSE_EDGE = 0.02` in `lib/constants.ts`
+- **House edge:** **3%** (explicit)
+- **Constant:** `DICE_HOUSE_EDGE = 0.03` in `lib/constants.ts`
 - **Mechanism:** Win multiplier = `(1 - DICE_HOUSE_EDGE) / probability`, capped at `DICE_MAX_MULTIPLIER` (10). So for a 50% chance (e.g. over 50), multiplier = 0.98 / 0.5 = 1.96x; player RTP = 98%.
 
 ---
@@ -45,7 +45,7 @@ Single source of truth for operator/transparency. Values align with `lib/constan
 
 | Game      | House edge      | Notes                                      |
 |-----------|------------------|--------------------------------------------|
-| Dice      | **2%**           | Explicit in `DICE_HOUSE_EDGE`              |
+| Dice      | **3%**           | Explicit in `DICE_HOUSE_EDGE`              |
 | Blackjack | **~0.5%**        | From rules (2.5:1 BJ, stand 17)             |
 | Plinko    | **~2–4%**        | From bucket multipliers                    |
 | Slots     | Configurable     | Paytable + reels                           |

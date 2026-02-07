@@ -243,3 +243,5 @@ export function BlackjackGame() {
     </div>
   );
 }
+
+export default BlackjackGame;

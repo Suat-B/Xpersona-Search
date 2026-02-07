@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import type { DiceStrategyConfig } from "@/lib/strategies";
+
+/** Local type to avoid cross-folder import (games -> strategies) that can trigger .call bundling issues */
+type DiceConfig = { amount: number; target: number; condition: "over" | "under" };
 
 type StrategyOption = {
   id: string;
   name: string;
-  config: DiceStrategyConfig;
+  config: DiceConfig;
 };
 
 type DiceStrategyPanelProps = {
@@ -14,7 +16,7 @@ type DiceStrategyPanelProps = {
   target: number;
   condition: "over" | "under";
   disabled?: boolean;
-  onLoadConfig: (config: DiceStrategyConfig) => void;
+  onLoadConfig: (config: DiceConfig) => void;
   onBalanceUpdate?: () => void;
 };
 
@@ -49,7 +51,7 @@ export function DiceStrategyPanel({
           .map((s: { id: string; name: string; config: unknown }) => ({
             id: s.id,
             name: s.name,
-            config: s.config as DiceStrategyConfig,
+            config: s.config as DiceConfig,
           }));
         setStrategies(list);
         if (selectedId && !list.some((x: StrategyOption) => x.id === selectedId)) {
@@ -110,7 +112,7 @@ export function DiceStrategyPanel({
     setRunResult(null);
     setRunning(true);
     try {
-      const body: { strategyId?: string; config?: DiceStrategyConfig; maxRounds: number } = {
+      const body: { strategyId?: string; config?: DiceConfig; maxRounds: number } = {
         maxRounds: Math.min(100, Math.max(1, runMaxRounds)),
       };
       if (selectedId) {

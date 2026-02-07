@@ -5,11 +5,7 @@ import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import { GlassCard } from "@/components/ui/GlassCard";
 
 const GAMES = [
-  { name: "Dice", href: "/games/dice", desc: "Roll for probability" },
-  { name: "Blackjack", href: "/games/blackjack", desc: "Hit 21 or bust" },
-  { name: "Plinko", href: "/games/plinko", desc: "Gravity distribution" },
-  { name: "Crash", href: "/games/crash", desc: "Exit before collapse" },
-  { name: "Slots", href: "/games/slots", desc: "Pattern matching" },
+  { name: "Dice", href: "/games/dice", desc: "Roll for probability. Dice Casino AI-first." },
 ] as const;
 
 export default async function HomePage() {

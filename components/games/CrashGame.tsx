@@ -214,3 +214,5 @@ export function CrashGame() {
     </div>
   );
 }
+
+export default CrashGame;

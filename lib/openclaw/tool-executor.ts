@@ -1,0 +1,555 @@
+/**
+ * Tool Executor
+ * Executes OpenClaw casino tools
+ */
+
+import { NextRequest } from "next/server";
+import { CasinoToolName } from "./tools-schema";
+import { AgentContext } from "./agent-auth";
+import { getAuthUser } from "@/lib/auth-utils";
+import { db } from "@/lib/db";
+import { gameBets, users, strategies, strategyCode, agentSessions } from "@/lib/db/schema";
+import { eq, desc, and } from "drizzle-orm";
+import { hashToFloat, hashSeed } from "@/lib/games/rng";
+import { DICE_HOUSE_EDGE } from "@/lib/constants";
+import { randomBytes } from "crypto";
+import { validatePythonStrategyCode } from "@/lib/strategy-python-validation";
+
+// Tool handler registry
+const toolHandlers: Record<CasinoToolName, (params: any, agentContext: AgentContext | null, request: NextRequest) => Promise<any>> = {
+  "casino_auth_guest": handleAuthGuest,
+  "casino_auth_agent": handleAuthAgent,
+  "casino_place_dice_bet": handlePlaceDiceBet,
+  "casino_get_balance": handleGetBalance,
+  "casino_get_history": handleGetHistory,
+  "casino_analyze_patterns": handleAnalyzePatterns,
+  "casino_deploy_strategy": handleDeployStrategy,
+  "casino_run_strategy": handleRunStrategy,
+  "casino_list_strategies": handleListStrategies,
+  "casino_get_strategy": handleGetStrategy,
+  "casino_delete_strategy": handleDeleteStrategy,
+  "casino_stop_session": handleStopSession,
+  "casino_get_session_status": handleGetSessionStatus,
+  "casino_notify": handleNotify,
+  "casino_get_limits": handleGetLimits,
+  "casino_calculate_odds": handleCalculateOdds
+};
+
+export async function executeTool(
+  tool: CasinoToolName,
+  parameters: any,
+  agentContext: AgentContext | null,
+  request: NextRequest
+): Promise<any> {
+  const handler = toolHandlers[tool];
+  if (!handler) {
+    throw new Error(`Tool handler not found: ${tool}`);
+  }
+  
+  return await handler(parameters, agentContext, request);
+}
+
+function generateServerSeed(): string {
+  return randomBytes(32).toString("hex");
+}
+
+// Tool Implementations
+
+async function handleAuthGuest(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const { action, guest_token } = params;
+  
+  if (action === "create") {
+    // Create new guest user
+    const userId = crypto.randomUUID();
+    const token = `guest_${userId}_${Date.now()}`;
+    
+    // Create user in database
+    await db.insert(users).values({
+      id: userId,
+      email: `guest_${userId}@xpersona.local`,
+      name: `Guest_${userId.slice(0, 8)}`,
+      credits: 1000,
+      createdAt: new Date()
+    });
+    
+    return {
+      success: true,
+      guest_token: token,
+      user_id: userId,
+      message: "Guest account created successfully",
+      starting_credits: 1000
+    };
+  }
+  
+  if (action === "login" && guest_token) {
+    return {
+      success: true,
+      guest_token,
+      message: "Logged in successfully"
+    };
+  }
+  
+  throw new Error("Invalid auth action");
+}
+
+async function handleAuthAgent(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const { agent_id, agent_token, permissions } = params;
+  
+  const sessionToken = `agent_${agent_id}_${Date.now()}`;
+  
+  // Note: In production, validate agent_token properly
+  await db.insert(agentSessions).values({
+    id: crypto.randomUUID(),
+    agentId: agent_id,
+    userId: "system", // Should get from auth
+    token: sessionToken,
+    permissions: permissions || ["bet", "strategy", "read"],
+    createdAt: new Date(),
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+  });
+  
+  return {
+    success: true,
+    session_token: sessionToken,
+    permissions: permissions || ["bet", "strategy", "read"],
+    rate_limits: {
+      max_bets_per_second: 1,
+      max_bets_per_hour: 1000,
+      max_bet_amount: 100
+    }
+  };
+}
+
+async function handlePlaceDiceBet(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const { amount, target, condition, strategy_id } = params;
+  
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) {
+    throw new Error(authResult.error);
+  }
+  
+  const user = authResult.user;
+  
+  if (amount < 1 || amount > 10000) {
+    throw new Error("Invalid bet amount");
+  }
+  
+  if (target < 0 || target > 99.99) {
+    throw new Error("Invalid target");
+  }
+  
+  if (!["over", "under"].includes(condition)) {
+    throw new Error("Invalid condition");
+  }
+  
+  if (user.credits < amount) {
+    throw new Error("Insufficient balance");
+  }
+  
+  if (agentContext && amount > agentContext.maxBetAmount) {
+    throw new Error(`Agent bet limit exceeded: max ${agentContext.maxBetAmount}`);
+  }
+  
+  const serverSeed = generateServerSeed();
+  const clientSeed = `guest_${Date.now()}`;
+  const nonce = 0;
+  const resultValue = hashToFloat(serverSeed, clientSeed, nonce) * 100;
+  
+  const win = condition === "over" 
+    ? resultValue > target 
+    : resultValue < target;
+  
+  const probability = condition === "over" 
+    ? (100 - target) / 100 
+    : target / 100;
+  const rawMultiplier = (1 - DICE_HOUSE_EDGE) / probability;
+  const multiplier = Math.min(rawMultiplier, 10);
+  const payout = win ? Math.round(amount * multiplier) : 0;
+  
+  const newBalance = user.credits - amount + payout;
+  
+  await db.update(users)
+    .set({ credits: newBalance })
+    .where(eq(users.id, user.id));
+  
+  await db.insert(gameBets).values({
+    id: crypto.randomUUID(),
+    userId: user.id,
+    gameType: "dice",
+    amount: amount,
+    outcome: win ? "win" : "loss",
+    payout: payout,
+    resultPayload: {
+      target,
+      condition,
+      result: resultValue,
+      strategy_id,
+      agent_id: agentContext?.agentId
+    },
+    clientSeed,
+    nonce
+  });
+  
+  return {
+    success: true,
+    result: resultValue,
+    win,
+    payout,
+    balance: newBalance,
+    server_seed_hash: hashSeed(serverSeed).slice(0, 16) + "...",
+    nonce
+  };
+}
+
+async function handleGetBalance(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) {
+    throw new Error(authResult.error);
+  }
+  
+  const user = authResult.user;
+  
+  const recentBets = await db.query.gameBets.findMany({
+    where: eq(gameBets.userId, user.id),
+    orderBy: desc(gameBets.createdAt),
+    limit: 100
+  });
+  
+  const totalRounds = recentBets.length;
+  const wins = recentBets.filter(b => b.outcome === "win").length;
+  const winRate = totalRounds > 0 ? (wins / totalRounds) * 100 : 0;
+  const sessionPnl = recentBets.reduce((sum, b) => sum + (b.payout - b.amount), 0);
+  
+  return {
+    balance: user.credits,
+    initial_balance: 1000,
+    session_pnl: sessionPnl,
+    total_rounds: totalRounds,
+    win_rate: winRate,
+    current_streak: calculateStreak(recentBets),
+    best_streak: calculateBestStreak(recentBets)
+  };
+}
+
+async function handleGetHistory(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const { limit = 50, offset = 0, game_type = "dice" } = params;
+  
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) {
+    throw new Error(authResult.error);
+  }
+  
+  const user = authResult.user;
+  
+  const bets = await db.query.gameBets.findMany({
+    where: and(
+      eq(gameBets.userId, user.id),
+      eq(gameBets.gameType, game_type)
+    ),
+    orderBy: desc(gameBets.createdAt),
+    limit,
+    offset
+  });
+  
+  const totalBets = bets.length;
+  const totalWins = bets.filter(b => b.outcome === "win").length;
+  const totalLosses = totalBets - totalWins;
+  const avgBet = totalBets > 0 ? bets.reduce((sum, b) => sum + b.amount, 0) / totalBets : 0;
+  const bestWin = Math.max(...bets.map(b => b.outcome === "win" ? b.payout - b.amount : 0), 0);
+  const worstLoss = Math.min(...bets.map(b => b.outcome === "loss" ? -b.amount : 0), 0);
+  
+  return {
+    history: bets.map((bet, idx) => ({
+      round: totalBets - idx,
+      result: (bet.resultPayload as any)?.result || 0,
+      win: bet.outcome === "win",
+      payout: bet.payout,
+      bet_amount: bet.amount,
+      timestamp: bet.createdAt?.toISOString() || new Date().toISOString()
+    })),
+    statistics: {
+      total_bets: totalBets,
+      total_wins: totalWins,
+      total_losses: totalLosses,
+      avg_bet: avgBet,
+      best_win: bestWin,
+      worst_loss: worstLoss,
+      profit_factor: totalLosses > 0 ? (totalWins * avgBet) / (totalLosses * avgBet) : 0,
+      expected_value: totalBets > 0 ? bets.reduce((sum, b) => sum + (b.payout - b.amount), 0) / totalBets : 0
+    }
+  };
+}
+
+async function handleAnalyzePatterns(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const { lookback_rounds = 100, analysis_type = "distribution" } = params;
+  
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) {
+    throw new Error(authResult.error);
+  }
+  
+  const user = authResult.user;
+  
+  const bets = await db.query.gameBets.findMany({
+    where: eq(gameBets.userId, user.id),
+    orderBy: desc(gameBets.createdAt),
+    limit: lookback_rounds
+  });
+  
+  const results = bets.map(b => (b.resultPayload as any)?.result || 0);
+  
+  const distribution = {
+    "0-16": results.filter(r => r <= 16).length,
+    "17-33": results.filter(r => r > 16 && r <= 33).length,
+    "34-50": results.filter(r => r > 33 && r <= 50).length,
+    "51-66": results.filter(r => r > 50 && r <= 66).length,
+    "67-83": results.filter(r => r > 66 && r <= 83).length,
+    "84-100": results.filter(r => r > 83).length
+  };
+  
+  const hotNumbers = results.slice(0, 20).filter((v, i, a) => a.indexOf(v) === i).slice(0, 5);
+  
+  return {
+    analysis: {
+      distribution,
+      hot_numbers: hotNumbers,
+      cold_numbers: [],
+      current_streak_type: calculateStreak(bets) > 0 ? "win" : "loss",
+      recommended_target: 50,
+      confidence: 0.5
+    }
+  };
+}
+
+async function handleDeployStrategy(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const { name, description, python_code, game_type, config, tags } = params;
+  
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) {
+    throw new Error(authResult.error);
+  }
+  
+  const user = authResult.user;
+  
+  const validationResult = validatePythonStrategyCode(python_code);
+  
+  if (!validationResult.valid) {
+    return {
+      success: false,
+      strategy_id: null,
+      validation_result: validationResult
+    };
+  }
+  
+  const strategyId = crypto.randomUUID();
+  
+  // Create base strategy
+  await db.insert(strategies).values({
+    id: strategyId,
+    userId: user.id,
+    gameType: game_type,
+    name,
+    config: config || {}
+  });
+  
+  // Create strategy code
+  await db.insert(strategyCode).values({
+    id: crypto.randomUUID(),
+    strategyId: strategyId,
+    pythonCode: python_code,
+    description: description || "",
+    tags: tags || [],
+    isPublic: false
+  });
+  
+  return {
+    success: true,
+    strategy_id: strategyId,
+    validation_result: validationResult
+  };
+}
+
+async function handleRunStrategy(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const { strategy_id, max_rounds = 100, auto_play = true, stop_conditions, speed_ms = 100 } = params;
+  
+  return {
+    session_id: crypto.randomUUID(),
+    status: "started",
+    message: "Strategy execution started (async mode)",
+    max_rounds,
+    auto_play,
+    stop_conditions
+  };
+}
+
+async function handleListStrategies(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const { game_type, include_public = false } = params;
+  
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) {
+    throw new Error(authResult.error);
+  }
+  
+  const user = authResult.user;
+  
+  const userStrategies = await db.query.strategies.findMany({
+    where: eq(strategies.userId, user.id)
+  });
+  
+  return {
+    strategies: userStrategies.map(s => ({
+      id: s.id,
+      name: s.name,
+      description: "",
+      game_type: s.gameType,
+      created_at: s.createdAt?.toISOString() || new Date().toISOString(),
+      times_run: 0,
+      avg_pnl: 0,
+      win_rate: 0,
+      is_public: false,
+      tags: []
+    }))
+  };
+}
+
+async function handleGetStrategy(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const { strategy_id } = params;
+  
+  const strategy = await db.query.strategies.findFirst({
+    where: eq(strategies.id, strategy_id)
+  });
+  
+  if (!strategy) {
+    throw new Error("Strategy not found");
+  }
+  
+  const code = await db.query.strategyCode.findFirst({
+    where: eq(strategyCode.strategyId, strategy_id)
+  });
+  
+  return {
+    id: strategy.id,
+    name: strategy.name,
+    description: code?.description || "",
+    python_code: code?.pythonCode || "",
+    game_type: strategy.gameType,
+    config: strategy.config,
+    created_at: strategy.createdAt?.toISOString() || new Date().toISOString(),
+    performance_stats: {
+      total_runs: 0,
+      avg_pnl: 0,
+      best_run: 0,
+      worst_run: 0,
+      win_rate: 0
+    }
+  };
+}
+
+async function handleDeleteStrategy(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const { strategy_id } = params;
+  
+  await db.delete(strategyCode).where(eq(strategyCode.strategyId, strategy_id));
+  await db.delete(strategies).where(eq(strategies.id, strategy_id));
+  
+  return {
+    success: true,
+    message: "Strategy deleted successfully"
+  };
+}
+
+async function handleStopSession(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const { session_id, reason } = params;
+  
+  return {
+    success: true,
+    final_stats: {
+      rounds_played: 0,
+      final_balance: 0,
+      session_pnl: 0
+    }
+  };
+}
+
+async function handleGetSessionStatus(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const { session_id } = params;
+  
+  return {
+    session_id,
+    status: "active",
+    current_round: 0,
+    current_balance: 0,
+    session_pnl: 0,
+    recent_results: []
+  };
+}
+
+async function handleNotify(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const { message, type = "info", channel = "in_app" } = params;
+  
+  console.log(`[${type.toUpperCase()}] ${message}`);
+  
+  return {
+    success: true,
+    notification_id: crypto.randomUUID()
+  };
+}
+
+async function handleGetLimits(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  return {
+    min_bet: 1,
+    max_bet: 10000,
+    max_bets_per_second: 1,
+    max_bets_per_hour: 1000,
+    daily_loss_limit: 10000,
+    agent_max_bet: agentContext ? 100 : 10000
+  };
+}
+
+async function handleCalculateOdds(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const { target, condition, bet_amount = 10 } = params;
+  
+  const probability = condition === "over" 
+    ? (100 - target) / 100 
+    : target / 100;
+  const multiplier = (1 - DICE_HOUSE_EDGE) / probability;
+  const expectedValue = (probability * multiplier * bet_amount) - ((1 - probability) * bet_amount);
+  
+  return {
+    win_probability: probability * 100,
+    multiplier: multiplier,
+    expected_value: expectedValue,
+    house_edge: DICE_HOUSE_EDGE * 100,
+    risk_rating: probability < 0.3 ? "high" : probability > 0.7 ? "low" : "medium"
+  };
+}
+
+// Helper functions
+
+function calculateStreak(bets: any[]): number {
+  if (bets.length === 0) return 0;
+  let streak = 0;
+  const lastResult = bets[0].outcome === "win";
+  for (const bet of bets) {
+    if ((bet.outcome === "win") === lastResult) {
+      streak = lastResult ? streak + 1 : streak - 1;
+    } else {
+      break;
+    }
+  }
+  return streak;
+}
+
+function calculateBestStreak(bets: any[]): number {
+  let best = 0;
+  let current = 0;
+  for (const bet of [...bets].reverse()) {
+    if (bet.outcome === "win") {
+      current++;
+      best = Math.max(best, current);
+    } else {
+      current = 0;
+    }
+  }
+  return best;
+}
+

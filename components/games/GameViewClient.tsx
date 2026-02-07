@@ -1,6 +1,6 @@
 "use client";
 
 // Deprecated - use GamePageClient instead
-export function GameView() {
+export default function GameViewClient() {
   return null;
 }

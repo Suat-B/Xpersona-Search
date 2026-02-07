@@ -162,3 +162,5 @@ export function PlinkoGame() {
     </div>
   );
 }
+
+export default PlinkoGame;

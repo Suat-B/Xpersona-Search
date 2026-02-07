@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
-import { GameView } from "@/components/games/GameView";
+import GameViewClient, { type GameSlug } from "./GameViewClient";
 
-const GAMES = ["dice", "blackjack", "plinko", "crash", "slots"] as const;
+const GAMES: GameSlug[] = ["dice"];
 
 export default async function GamePage({
   params,
@@ -9,6 +9,7 @@ export default async function GamePage({
   params: Promise<{ game: string }>;
 }) {
   const { game } = await params;
-  if (!GAMES.includes(game as (typeof GAMES)[number])) notFound();
-  return <GameView game={game as (typeof GAMES)[number]} />;
+  if (!GAMES.includes(game as GameSlug)) notFound();
+
+  return <GameViewClient game={game as GameSlug} />;
 }

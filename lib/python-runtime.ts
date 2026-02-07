@@ -1,0 +1,460 @@
+"use client";
+
+/**
+ * Pyodide Python Runtime for Strategy Execution
+ * Browser-based Python execution with casino API bridge
+ */
+
+import { useState, useEffect, useRef, useCallback } from "react";
+
+// Pyodide instance type
+interface PyodideInstance {
+  runPython: (code: string) => any;
+  runPythonAsync: (code: string) => Promise<any>;
+  loadPackage: (packageName: string) => Promise<void>;
+  setStdout: (callback: (text: string) => void) => void;
+  setStderr: (callback: (text: string) => void) => void;
+  isPyProxy: (obj: any) => boolean;
+  pyimport: (name: string) => any;
+  globals: {
+    set: (name: string, value: any) => void;
+    get: (name: string) => any;
+  };
+  FS: {
+    writeFile: (path: string, data: string | Uint8Array) => void;
+    readFile: (path: string) => string | Uint8Array;
+    mkdir: (path: string) => void;
+  };
+}
+
+// Load Pyodide from CDN
+let pyodideInstance: PyodideInstance | null = null;
+let pyodideLoadingPromise: Promise<PyodideInstance> | null = null;
+
+export async function loadPyodideRuntime(): Promise<PyodideInstance> {
+  if (pyodideInstance) {
+    return pyodideInstance;
+  }
+
+  if (pyodideLoadingPromise) {
+    return pyodideLoadingPromise;
+  }
+
+  pyodideLoadingPromise = (async () => {
+    try {
+      // Load Pyodide from CDN (avoid bundling node-only deps from npm "pyodide")
+      const indexURL = "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/";
+      if (typeof window !== "undefined") {
+        const w = window as unknown as { loadPyodide?: (opts: { indexURL: string; stdout?: (t: string) => void; stderr?: (t: string) => void }) => Promise<unknown> };
+        if (!w.loadPyodide) {
+          await new Promise<void>((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = `${indexURL}pyodide.js`;
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error("Failed to load Pyodide script"));
+            document.head.appendChild(script);
+          });
+        }
+        const loadPyodide = (window as unknown as { loadPyodide: (opts: { indexURL: string; stdout?: (t: string) => void; stderr?: (t: string) => void }) => Promise<unknown> }).loadPyodide;
+        console.log("Loading Pyodide...");
+        const pyodide = await loadPyodide({
+          indexURL,
+          stdout: (text: string) => console.log("[Python]", text),
+          stderr: (text: string) => console.error("[Python Error]", text),
+        });
+        console.log("Pyodide loaded successfully!");
+        await (pyodide as PyodideInstance).loadPackage("numpy");
+        console.log("NumPy loaded!");
+        pyodideInstance = pyodide as PyodideInstance;
+        return pyodideInstance;
+      }
+      throw new Error("Pyodide is only supported in the browser");
+    } catch (error) {
+      console.error("Failed to load Pyodide:", error);
+      throw error;
+    }
+  })();
+
+  return pyodideLoadingPromise;
+}
+
+// React hook for Pyodide
+export function usePyodide() {
+  const [pyodide, setPyodide] = useState<PyodideInstance | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function init() {
+      try {
+        const instance = await loadPyodideRuntime();
+        if (mounted) {
+          setPyodide(instance);
+          setIsLoading(false);
+        }
+      } catch (err) {
+        if (mounted) {
+          setError(err instanceof Error ? err.message : "Failed to load Pyodide");
+          setIsLoading(false);
+        }
+      }
+    }
+
+    init();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  return { pyodide, isLoading, error };
+}
+
+// Strategy runtime class
+export class StrategyRuntime {
+  private pyodide: PyodideInstance;
+  private strategyModule: any = null;
+  private executionLog: string[] = [];
+
+  constructor(pyodide: PyodideInstance) {
+    this.pyodide = pyodide;
+  }
+
+  // Initialize the casino SDK in Python
+  async initializeCasinoSDK(): Promise<void> {
+    const sdkCode = `
+import json
+import sys
+from typing import Dict, Any, Optional, Callable
+
+class BetDecision:
+    """Decision to place a bet"""
+    def __init__(self, amount: float, target: float, condition: str):
+        self.amount = amount
+        self.target = target
+        self.condition = condition
+        self.action = "bet"
+    
+    def to_dict(self):
+        return {
+            "action": "bet",
+            "amount": self.amount,
+            "target": self.target,
+            "condition": self.condition
+        }
+    
+    @classmethod
+    def stop(cls, reason: str = "manual"):
+        """Create a stop decision"""
+        decision = cls(0, 0, "over")
+        decision.action = "stop"
+        decision.reason = reason
+        return decision
+
+class RoundResult:
+    """Result of a dice round"""
+    def __init__(self, result: float, win: bool, payout: float, balance: float):
+        self.result = result
+        self.win = win
+        self.payout = payout
+        self.balance = balance
+
+class StrategyContext:
+    """Context for strategy execution with bridge to JavaScript"""
+    
+    def __init__(self, bridge=None):
+        self._bridge = bridge
+        self._history = []
+        self._round_count = 0
+    
+    def get_balance(self) -> float:
+        """Get current balance"""
+        if self._bridge:
+            return self._bridge.get_balance()
+        return 1000.0
+    
+    def get_history(self, n: int = 50) -> list:
+        """Get last n round results"""
+        if self._bridge:
+            return self._bridge.get_history(n)
+        return []
+    
+    def notify(self, message: str):
+        """Send notification"""
+        if self._bridge:
+            self._bridge.notify(message)
+        print(f"[NOTIFY] {message}")
+    
+    def calculate_odds(self, target: float, condition: str) -> dict:
+        """Calculate theoretical odds"""
+        if self._bridge:
+            return self._bridge.calculate_odds(target, condition)
+        return {"win_probability": 50.0, "multiplier": 2.0}
+    
+    @property
+    def round_count(self) -> int:
+        return self._round_count
+    
+    def _increment_round(self):
+        self._round_count += 1
+
+class BaseStrategy:
+    """Base class for all strategies"""
+    
+    name = "BaseStrategy"
+    description = "Base strategy class"
+    version = "1.0.0"
+    
+    def __init__(self, config: Dict[str, Any] = None):
+        self.config = config or {}
+        self.initialized = False
+    
+    def initialize(self, ctx: StrategyContext):
+        """Called once before first round"""
+        self.initialized = True
+    
+    def on_round_start(self, ctx: StrategyContext) -> BetDecision:
+        """
+        Called before each round to decide bet.
+        Must return a BetDecision.
+        """
+        raise NotImplementedError("Strategy must implement on_round_start")
+    
+    def on_round_complete(self, ctx: StrategyContext, result: RoundResult):
+        """Called after each round with result"""
+        pass
+    
+    def should_stop(self, ctx: StrategyContext) -> bool:
+        """Return True to stop execution"""
+        return False
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Return strategy statistics"""
+        return {
+            "name": self.name,
+            "initialized": self.initialized
+        }
+
+# Export for use
+__all__ = ['BetDecision', 'RoundResult', 'StrategyContext', 'BaseStrategy']
+`;
+
+    await this.pyodide.runPythonAsync(sdkCode);
+    console.log("Casino SDK initialized in Python!");
+  }
+
+  // Load and validate a strategy
+  async loadStrategy(pythonCode: string): Promise<{ valid: boolean; error?: string; strategyClass?: any }> {
+    try {
+      // Pre-validation
+      const validation = this.validateCode(pythonCode);
+      if (!validation.valid) {
+        return { valid: false, error: validation.error };
+      }
+
+      // Wrap the code in a module
+      const wrappedCode = `
+${pythonCode}
+
+# Get the Strategy class (should be defined in the code above)
+_strategy_class = None
+for name in dir():
+    obj = eval(name)
+    if isinstance(obj, type) and name not in ['BetDecision', 'RoundResult', 'StrategyContext', 'BaseStrategy']:
+        if hasattr(obj, 'on_round_start'):
+            _strategy_class = obj
+            break
+
+if _strategy_class is None:
+    raise Exception("No Strategy class found. Define a class with on_round_start method.")
+
+_strategy_class
+`;
+
+      const strategyClass = await this.pyodide.runPythonAsync(wrappedCode);
+      
+      return { valid: true, strategyClass };
+    } catch (error) {
+      return { 
+        valid: false, 
+        error: error instanceof Error ? error.message : String(error) 
+      };
+    }
+  }
+
+  // Execute a strategy for one round
+  async executeRound(
+    strategyCode: string,
+    bridge: CasinoBridge,
+    state: any = null
+  ): Promise<ExecutionResult> {
+    try {
+      // Set up bridge
+      this.pyodide.globals.set("js_bridge", bridge);
+      this.pyodide.globals.set("strategy_state", state);
+
+      const executionCode = `
+import json
+
+# Load strategy
+${strategyCode}
+
+# Find strategy class
+strategy_class = None
+for name in dir():
+    obj = eval(name)
+    if isinstance(obj, type) and name not in ['BetDecision', 'RoundResult', 'StrategyContext', 'BaseStrategy', 'json']:
+        if hasattr(obj, 'on_round_start'):
+            strategy_class = obj
+            break
+
+if strategy_class is None:
+    raise Exception("Strategy class not found")
+
+# Create context
+ctx = StrategyContext(js_bridge)
+
+# Create or restore strategy instance
+if strategy_state:
+    strategy = strategy_class(strategy_state.get('config', {}))
+    # Restore state
+    for key, value in strategy_state.items():
+        if key != 'config':
+            setattr(strategy, key, value)
+else:
+    strategy = strategy_class({})
+    strategy.initialize(ctx)
+
+# Get decision
+decision = strategy.on_round_start(ctx)
+
+# Serialize result
+result = {
+    "decision": decision.to_dict() if hasattr(decision, 'to_dict') else {"action": "stop"},
+    "should_stop": strategy.should_stop(ctx),
+    "stats": strategy.get_stats(),
+    "state": {
+        "config": getattr(strategy, 'config', {}),
+        **{k: v for k, v in strategy.__dict__.items() if not k.startswith('_')}
+    }
+}
+
+json.dumps(result)
+`;
+
+      const resultJson = await this.pyodide.runPythonAsync(executionCode);
+      const result = JSON.parse(resultJson);
+
+      return {
+        success: true,
+        decision: result.decision,
+        shouldStop: result.should_stop,
+        stats: result.stats,
+        state: result.state
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  // Validate Python code for security
+  private validateCode(code: string): { valid: boolean; error?: string } {
+    // Check for dangerous imports
+    const dangerousPatterns = [
+      /import\s+os/,
+      /import\s+sys/,
+      /import\s+subprocess/,
+      /import\s+socket/,
+      /import\s+requests/,
+      /import\s+urllib/,
+      /__import__/,
+      /eval\s*\(/,
+      /exec\s*\(/,
+      /compile\s*\(/,
+      /open\s*\(/,
+      /file\s*\(/,
+    ];
+
+    for (const pattern of dangerousPatterns) {
+      if (pattern.test(code)) {
+        return { 
+          valid: false, 
+          error: `Security violation: Code contains forbidden pattern ${pattern}` 
+        };
+      }
+    }
+
+    // Check code length
+    if (code.length > 10000) {
+      return { valid: false, error: "Code exceeds maximum length (10000 characters)" };
+    }
+
+    // Check for required method
+    if (!code.includes("on_round_start")) {
+      return { valid: false, error: "Strategy must implement 'on_round_start' method" };
+    }
+
+    return { valid: true };
+  }
+
+  // Get execution log
+  getLog(): string[] {
+    return [...this.executionLog];
+  }
+}
+
+// Bridge interface for JavaScript -> Python communication
+export interface CasinoBridge {
+  get_balance: () => number;
+  get_history: (n: number) => any[];
+  place_bet: (amount: number, target: number, condition: string) => Promise<any>;
+  notify: (message: string) => void;
+  calculate_odds: (target: number, condition: string) => any;
+}
+
+// Execution result interface
+export interface ExecutionResult {
+  success: boolean;
+  decision?: {
+    action: string;
+    amount: number;
+    target: number;
+    condition: string;
+    reason?: string;
+  };
+  shouldStop?: boolean;
+  stats?: any;
+  state?: any;
+  error?: string;
+}
+
+// React hook for strategy runtime
+export function useStrategyRuntime() {
+  const { pyodide, isLoading, error } = usePyodide();
+  const [runtime, setRuntime] = useState<StrategyRuntime | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  useEffect(() => {
+    if (pyodide && !runtime) {
+      const rt = new StrategyRuntime(pyodide);
+      rt.initializeCasinoSDK().then(() => {
+        setRuntime(rt);
+        setIsInitialized(true);
+      });
+    }
+  }, [pyodide, runtime]);
+
+  return {
+    runtime,
+    isLoading: isLoading || !isInitialized,
+    error,
+    pyodide
+  };
+}
+
+export default StrategyRuntime;

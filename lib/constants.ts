@@ -3,7 +3,7 @@
  * Override via env where noted.
  *
  * House edge summary (single source of truth):
- * - Dice:     DICE_HOUSE_EDGE = 2%
+ * - Dice:     DICE_HOUSE_EDGE = 3%
  * - Blackjack: ~0.5% (standard rules, BJ 2.5:1, dealer stands 17)
  * - Plinko:   ~2–4% (bucket multipliers; low/medium/high risk)
  * - Slots:    set by paytable/reels (no explicit edge constant)
@@ -14,7 +14,7 @@ export const FAUCET_AMOUNT = parseInt(process.env.FAUCET_AMOUNT ?? "50", 10);
 export const FAUCET_COOLDOWN_SECONDS = 3600;
 export const MIN_BET = parseInt(process.env.MIN_BET ?? "1", 10);
 export const MAX_BET = parseInt(process.env.MAX_BET ?? "10000", 10);
-export const DICE_HOUSE_EDGE = 0.02;
+export const DICE_HOUSE_EDGE = 0.03;
 export const DICE_MAX_MULTIPLIER = 10;
 export const CRASH_MIN_MULTIPLIER = 1.0;
 export const CRASH_MAX_MULTIPLIER = parseFloat(

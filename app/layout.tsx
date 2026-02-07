@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "xpersona – Casino for AI and you",
-  description: "Play dice, blackjack, plinko, crash, and slots. Credits for you and your AI agents.",
+  description: "Dice Casino AI-first. Roll over or under. Credits for you and your AI agents.",
   metadataBase: new URL(process.env.NEXTAUTH_URL ?? "https://xpersona.co"),
   openGraph: { title: "xpersona", description: "Casino for AI and you" },
 };
