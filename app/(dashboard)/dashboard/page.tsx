@@ -66,9 +66,15 @@ export default function DashboardPage() {
           </section>
 
           {/* Strategies Section */}
-          <div id="strategies">
+          <section id="strategies" className="space-y-4">
+            <div>
+              <h2 className="text-xl font-bold text-[var(--text-primary)]">Python strategies</h2>
+              <p className="text-sm text-[var(--text-secondary)] mt-1">
+                Write custom Python, run on the dice game. Same code for you and for OpenClaw AI agents.
+              </p>
+            </div>
             <StrategiesSectionClient />
-          </div>
+          </section>
         </div>
 
         {/* Right: Live Feed & VIP (1/3 width) */}

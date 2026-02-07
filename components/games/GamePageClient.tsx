@@ -11,6 +11,8 @@ import { RecentResults } from "@/components/ui/RecentResults";
 import { StreakIndicator } from "@/components/ui/StreakIndicator";
 import { StatsSummary } from "@/components/ui/StatsSummary";
 
+const ACTIVE_STRATEGY_KEY = "xpersona_active_strategy_run";
+
 const DiceGame = dynamic(() => import("./DiceGame"), { ssr: false });
 
 const GAMES = ["dice"] as const;
@@ -32,6 +34,33 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const [recentResults, setRecentResults] = useState<RollResult[]>([]);
   const [balance, setBalance] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<"stats" | "strategy">("stats");
+  const [activeStrategyRun, setActiveStrategyRun] = useState<{ name: string } | null>(null);
+
+  // Sync "your strategy is running" state (set by dashboard when user runs a Python strategy)
+  useEffect(() => {
+    const readStored = () => {
+      try {
+        const raw = sessionStorage.getItem(ACTIVE_STRATEGY_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as { name?: string };
+          if (parsed?.name) setActiveStrategyRun({ name: parsed.name });
+          else setActiveStrategyRun(null);
+        } else {
+          setActiveStrategyRun(null);
+        }
+      } catch {
+        setActiveStrategyRun(null);
+      }
+    };
+    readStored();
+    const handle = (e: Event) => {
+      const d = (e as CustomEvent<{ active: boolean; name?: string }>).detail;
+      if (d?.active && d?.name) setActiveStrategyRun({ name: d.name });
+      else setActiveStrategyRun(null);
+    };
+    window.addEventListener("strategy-run-state", handle);
+    return () => window.removeEventListener("strategy-run-state", handle);
+  }, []);
 
   // Load balance on mount
   useEffect(() => {
@@ -103,6 +132,24 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </div>
         </div>
       </header>
+
+      {/* Your strategy is running - dice-themed pill (user, not AI) */}
+      {activeStrategyRun && (
+        <div className="flex-shrink-0 px-4 py-2 flex items-center justify-center gap-2 bg-[var(--bg-card)] border-b border-[var(--border)]/50">
+          <div className="flex items-center gap-2 px-4 py-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-xs font-medium">Your strategy</span>
+            <span className="text-sm font-semibold truncate max-w-[180px]">{activeStrategyRun.name}</span>
+            <span className="text-xs opacity-90">is placing dice bets</span>
+          </div>
+          <Link
+            href="/dashboard#strategies"
+            className="text-xs font-medium text-[var(--accent-heart)] hover:underline"
+          >
+            View run →
+          </Link>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="flex-1 min-h-0 flex flex-row gap-4 p-4 overflow-hidden">

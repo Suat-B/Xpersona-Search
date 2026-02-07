@@ -35,6 +35,7 @@ export function StrategiesSection() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createMode, setCreateMode] = useState<"config" | "python">("config");
   const [runStrategyId, setRunStrategyId] = useState<string | null>(null);
+  const [runStrategyName, setRunStrategyName] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<{
     strategyId: string;
@@ -128,18 +129,69 @@ export function StrategiesSection() {
   const list = strategies;
   const runnable = list.filter((s) => (GAMES_WITH_RUN as readonly string[]).includes(s.gameType));
 
+  const openCreatePython = () => {
+    setCreateOpen(true);
+    setCreateMode("python");
+  };
+
   return (
     <section>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold">My strategies</h2>
-        <button
-          type="button"
-          onClick={() => setCreateOpen((o) => !o)}
-          className="rounded bg-[var(--accent-heart)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-        >
-          {createOpen ? "Cancel" : "Create strategy"}
-        </button>
+      {/* Hero: Python strategies value prop + CTA */}
+      <div className="mb-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <ul className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-[var(--text-secondary)]">
+            <li className="flex items-center gap-2">
+              <span className="text-[var(--accent-heart)]">●</span>
+              Custom Python code
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="text-[var(--accent-heart)]">●</span>
+              Run with real dice bets
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="text-[var(--accent-heart)]">●</span>
+              <span className="inline-flex items-center gap-1">
+                OpenClaw compatible
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--accent-heart)]/10 text-[var(--accent-heart)] font-medium">AI</span>
+              </span>
+            </li>
+          </ul>
+          <button
+            type="button"
+            onClick={openCreatePython}
+            className="flex-shrink-0 rounded-xl bg-[var(--accent-heart)] px-5 py-2.5 text-sm font-bold text-white hover:opacity-90 transition-opacity"
+          >
+            Create Python strategy
+          </button>
+        </div>
       </div>
+
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-lg font-semibold text-[var(--text-primary)]">My strategies</h3>
+          <p className="text-xs text-[var(--text-secondary)] mt-0.5">Config-based or custom Python for dice.</p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={openCreatePython}
+            className="rounded border border-[var(--accent-heart)] bg-[var(--accent-heart)]/10 px-3 py-2 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
+          >
+            Create Python strategy
+          </button>
+          <button
+            type="button"
+            onClick={() => { setCreateOpen((o) => !o); if (!createOpen) setCreateMode("config"); }}
+            className="rounded bg-[var(--accent-heart)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+          >
+            {createOpen ? "Cancel" : "Create strategy"}
+          </button>
+        </div>
+      </div>
+
+      <p className="mb-4 text-xs text-[var(--text-secondary)]">
+        Python strategies: paste any code that defines a class with <code className="bg-white/10 px-1 rounded">on_round_start(ctx)</code> and returns a bet decision. Works for you and for OpenClaw.
+      </p>
 
       {error && (
         <p className="mb-4 text-sm text-red-400" role="alert">
@@ -199,7 +251,7 @@ export function StrategiesSection() {
             <h3 className="font-semibold text-[var(--text-primary)]">Run Python strategy</h3>
             <button
               type="button"
-              onClick={() => setRunStrategyId(null)}
+              onClick={() => { setRunStrategyId(null); setRunStrategyName(null); }}
               className="rounded border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:bg-white/5"
             >
               Close
@@ -208,6 +260,7 @@ export function StrategiesSection() {
           <PythonStrategyEditor
             userId={userId}
             strategyId={runStrategyId}
+            strategyName={runStrategyName ?? undefined}
             onStrategyRun={() => window.dispatchEvent(new Event("balance-updated"))}
           />
         </GlassCard>
@@ -486,8 +539,8 @@ function CreatePythonStrategyForm({
     <GlassCard className="mb-6 p-6">
       <form onSubmit={submit} className="space-y-4">
         <h3 className="font-semibold text-[var(--text-primary)]">New Python strategy</h3>
-        <p className="text-xs text-[var(--text-secondary)]">
-          Paste your Python strategy. It must define a class with <code className="bg-white/10 px-1 rounded">on_round_start(ctx)</code> returning a <code className="bg-white/10 px-1 rounded">BetDecision</code>. OpenClaw compatible.
+        <p className="text-sm text-[var(--text-secondary)]">
+          Any Python is allowed. Define a class with a method <code className="bg-white/10 px-1 rounded">on_round_start(self, ctx)</code> that returns a bet decision. Use <code className="bg-white/10 px-1 rounded">BetDecision(amount, target, &apos;over&apos;|&apos;under&apos;)</code> or <code className="bg-white/10 px-1 rounded">BetDecision.stop(reason)</code>. Same contract for OpenClaw AI.
         </p>
         <div>
           <label className="block text-sm text-[var(--text-secondary)]">Name</label>

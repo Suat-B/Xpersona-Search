@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 
 /** Local type to avoid cross-folder import (games -> strategies) that can trigger .call bundling issues */
 type DiceConfig = { amount: number; target: number; condition: "over" | "under" };
@@ -10,6 +11,21 @@ type StrategyOption = {
   name: string;
   config: DiceConfig;
 };
+
+type StrategyRowFromApi = {
+  id: string;
+  name: string;
+  config: Record<string, unknown>;
+  hasPythonCode?: boolean;
+};
+
+function isQuickConfig(c: Record<string, unknown>): c is DiceConfig {
+  return (
+    typeof (c as DiceConfig).amount === "number" &&
+    typeof (c as DiceConfig).target === "number" &&
+    ((c as DiceConfig).condition === "over" || (c as DiceConfig).condition === "under")
+  );
+}
 
 type DiceStrategyPanelProps = {
   amount: number;
@@ -41,25 +57,35 @@ export function DiceStrategyPanel({
   } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
+  const [pythonStrategies, setPythonStrategies] = useState<{ id: string; name: string }[]>([]);
+
   const fetchStrategies = useCallback(async () => {
     try {
       const res = await fetch("/api/me/strategies?gameType=dice");
       const data = await res.json();
       if (data.success && Array.isArray(data.data?.strategies)) {
-        const list = data.data.strategies
-          .filter((s: { gameType: string }) => s.gameType === "dice")
-          .map((s: { id: string; name: string; config: unknown }) => ({
+        const raw = (data.data.strategies as StrategyRowFromApi[]).filter(
+          (s: StrategyRowFromApi) => s.config != null
+        );
+        const quick = raw
+          .filter((s) => !s.hasPythonCode && isQuickConfig(s.config as Record<string, unknown>))
+          .map((s) => ({
             id: s.id,
             name: s.name,
             config: s.config as DiceConfig,
           }));
-        setStrategies(list);
-        if (selectedId && !list.some((x: StrategyOption) => x.id === selectedId)) {
+        const python = raw
+          .filter((s) => s.hasPythonCode)
+          .map((s) => ({ id: s.id, name: s.name }));
+        setStrategies(quick);
+        setPythonStrategies(python);
+        if (selectedId && !quick.some((x: StrategyOption) => x.id === selectedId)) {
           setSelectedId(null);
         }
       }
     } catch {
       setStrategies([]);
+      setPythonStrategies([]);
     }
   }, [selectedId]);
 
@@ -144,8 +170,8 @@ export function DiceStrategyPanel({
   };
 
   return (
-    <div className="rounded border border-[var(--border)] bg-[var(--bg-matte)]/50 p-4 space-y-3">
-      <p className="text-sm font-medium text-[var(--text-secondary)]">Strategy (save / load / run)</p>
+    <div className="rounded border border-[var(--border)] bg-[var(--bg-matte)]/50 p-4 space-y-4">
+      <p className="text-sm font-medium text-[var(--text-secondary)]">Quick strategies (save / load / run)</p>
       <div className="flex flex-wrap items-center gap-2">
         <select
           value={selectedId ?? ""}
@@ -197,6 +223,29 @@ export function DiceStrategyPanel({
           {running ? "Running…" : "Run strategy"}
         </button>
       </div>
+
+      {pythonStrategies.length > 0 && (
+        <div className="pt-3 border-t border-[var(--border)] space-y-2">
+          <p className="text-sm font-medium text-[var(--text-secondary)]">Python strategies</p>
+          <p className="text-xs text-[var(--text-secondary)]">
+            Python strategies run from the dashboard. OpenClaw AI can deploy and run the same strategies.
+          </p>
+          <ul className="space-y-1.5">
+            {pythonStrategies.map((s) => (
+              <li key={s.id} className="flex items-center justify-between gap-2">
+                <span className="text-sm text-[var(--text-primary)] truncate">{s.name}</span>
+                <Link
+                  href="/dashboard#strategies"
+                  className="flex-shrink-0 text-xs font-medium text-[var(--accent-heart)] hover:underline"
+                >
+                  Run in dashboard
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {saveOpen && (
         <form onSubmit={handleSave} className="flex items-center gap-2 pt-2 border-t border-[var(--border)]">
           <input

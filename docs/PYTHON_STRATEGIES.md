@@ -1,6 +1,6 @@
 # Python Strategies (Dice) — OpenClaw compatible
 
-AI-first casino supports user-defined Python strategies for the dice game. The same contract works on the **web dashboard** (paste code, run with real bets) and via **OpenClaw** tools (`casino_deploy_strategy`, `casino_run_strategy`).
+AI-first casino supports user-defined Python strategies for the dice game. The same contract works on the **web dashboard** (paste code, run with real bets) and via **OpenClaw** tools (`casino_deploy_strategy`, `casino_run_strategy`). Same contract for the web and for OpenClaw AI agents.
 
 ## Contract
 
@@ -20,6 +20,15 @@ AI-first casino supports user-defined Python strategies for the dice game. The s
     `target`: 0–99.99.  
     `condition`: `"over"` or `"under"` (win when result &gt; target or &lt; target).
   - **`BetDecision.stop(reason="...")`** — stop the session.
+
+## Custom code
+
+**Any** Python is allowed as long as it defines a class with **`on_round_start(self, ctx)`** returning an object that has **`to_dict()`** returning:
+
+- **Bet:** `{ "action": "bet", "amount", "target", "condition" }`
+- **Stop:** `{ "action": "stop", "reason"?: string }`
+
+`BetDecision` and `BetDecision.stop()` are provided by the runtime (you don't have to define them). You can also return your own type that implements `to_dict()` with the same shape. Same contract for the web and for **OpenClaw AI agents**.
 
 ## Example
 

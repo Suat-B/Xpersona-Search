@@ -9,6 +9,28 @@ import { useState, useEffect, useCallback } from "react";
 import { useStrategyRuntime } from "@/lib/python-runtime";
 import { StrategyExecutionEngine, ExecutionSession, StopConditions } from "@/lib/strategy-engine";
 import { createClientBetExecutor } from "@/lib/strategy-engine-client";
+import { StrategyRunningBanner } from "@/components/strategies/StrategyRunningBanner";
+
+const ACTIVE_STRATEGY_KEY = "xpersona_active_strategy_run";
+
+function syncStrategyRunState(active: boolean, name?: string) {
+  if (typeof window === "undefined") return;
+  if (active && name) {
+    try {
+      sessionStorage.setItem(ACTIVE_STRATEGY_KEY, JSON.stringify({ name, startedAt: Date.now() }));
+    } catch {
+      // ignore
+    }
+    window.dispatchEvent(new CustomEvent("strategy-run-state", { detail: { active: true, name } }));
+  } else {
+    try {
+      sessionStorage.removeItem(ACTIVE_STRATEGY_KEY);
+    } catch {
+      // ignore
+    }
+    window.dispatchEvent(new CustomEvent("strategy-run-state", { detail: { active: false } }));
+  }
+}
 
 // Sample strategies
 const SAMPLE_STRATEGIES = {
@@ -132,11 +154,12 @@ const SAMPLE_STRATEGIES = {
 interface StrategyEditorProps {
   userId: string;
   strategyId?: string;
+  strategyName?: string;
   initialCode?: string;
   onStrategyRun?: (session: ExecutionSession) => void;
 }
 
-export function PythonStrategyEditor({ userId, strategyId, initialCode, onStrategyRun }: StrategyEditorProps) {
+export function PythonStrategyEditor({ userId, strategyId, strategyName, initialCode, onStrategyRun }: StrategyEditorProps) {
   const { runtime, isLoading: runtimeLoading, error: runtimeError } = useStrategyRuntime();
   const [code, setCode] = useState(initialCode ?? SAMPLE_STRATEGIES.martingale);
   const [output, setOutput] = useState<string[]>([]);
@@ -265,6 +288,7 @@ export function PythonStrategyEditor({ userId, strategyId, initialCode, onStrate
     } catch (error) {
       addLog(`Error: ${error instanceof Error ? error.message : String(error)}`);
       setIsExecuting(false);
+      syncStrategyRunState(false);
     }
   };
 
@@ -272,6 +296,7 @@ export function PythonStrategyEditor({ userId, strategyId, initialCode, onStrate
   const stopStrategy = () => {
     if (engine && activeSession) {
       engine.stopSession(activeSession.id, "manual_stop");
+      syncStrategyRunState(false);
       addLog("Manual stop requested");
     }
   };
@@ -301,8 +326,27 @@ export function PythonStrategyEditor({ userId, strategyId, initialCode, onStrate
     );
   }
 
+  const displayName = strategyName ?? "Your strategy";
+  const winRatePercent = activeSession?.results?.length
+    ? (activeSession.results.filter((r) => r.win).length / activeSession.results.length) * 100
+    : 0;
+
   return (
     <div className="space-y-4">
+      {/* Dice-themed running banner when session is active */}
+      {activeSession && (
+        <StrategyRunningBanner
+          strategyName={displayName}
+          status={activeSession.status}
+          currentRound={activeSession.currentRound}
+          sessionPnl={activeSession.sessionPnl}
+          currentBalance={activeSession.currentBalance}
+          initialBalance={activeSession.initialBalance}
+          winRatePercent={winRatePercent}
+          onStop={activeSession.status === "running" ? stopStrategy : undefined}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -319,6 +363,10 @@ export function PythonStrategyEditor({ userId, strategyId, initialCode, onStrate
           </span>
         </div>
       </div>
+
+      <p className="text-xs text-[var(--text-secondary)]">
+        Fully custom: any class with <code className="bg-white/10 px-1 rounded">on_round_start(ctx)</code> works for dice. OpenClaw uses the same contract.
+      </p>
 
       {/* Sample Strategy Buttons */}
       <div className="flex gap-2">
@@ -392,7 +440,7 @@ export function PythonStrategyEditor({ userId, strategyId, initialCode, onStrate
               {activeSession?.status === "running" ? (
                 <span className="flex items-center gap-2">
                   <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                  Running: Round {activeSession.currentRound} | PnL: {activeSession.sessionPnl}
+                  <span className="font-mono">{displayName}</span> · Round {activeSession.currentRound} | PnL: {activeSession.sessionPnl >= 0 ? "+" : ""}{activeSession.sessionPnl}
                 </span>
               ) : (
                 <span>Ready to execute</span>
@@ -443,50 +491,16 @@ export function PythonStrategyEditor({ userId, strategyId, initialCode, onStrate
             </div>
           </div>
 
-          {/* Session Stats */}
-          {activeSession && (
-            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)]">
-              <div className="px-4 py-3 border-b border-[var(--border)]">
-                <h3 className="text-sm font-medium">Session Statistics</h3>
-              </div>
-              <div className="p-4">
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-[var(--text-secondary)]">Status:</span>{" "}
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                      activeSession.status === "running" 
-                        ? "bg-emerald-500/20 text-emerald-400" 
-                        : "bg-[var(--bg-matte)] text-[var(--text-secondary)]"
-                    }`}>
-                      {activeSession.status}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[var(--text-secondary)]">Rounds:</span>{" "}
-                    {activeSession.currentRound}
-                  </div>
-                  <div>
-                    <span className="text-[var(--text-secondary)]">Initial Balance:</span>{" "}
-                    {activeSession.initialBalance}
-                  </div>
-                  <div>
-                    <span className="text-[var(--text-secondary)]">Current Balance:</span>{" "}
-                    {activeSession.currentBalance}
-                  </div>
-                  <div>
-                    <span className="text-[var(--text-secondary)]">Session PnL:</span>{" "}
-                    <span className={activeSession.sessionPnl >= 0 ? "text-emerald-400" : "text-red-400"}>
-                      {activeSession.sessionPnl >= 0 ? "+" : ""}{activeSession.sessionPnl}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[var(--text-secondary)]">Win Rate:</span>{" "}
-                    {activeSession.results.length > 0 
-                      ? ((activeSession.results.filter(r => r.win).length / activeSession.results.length) * 100).toFixed(1)
-                      : 0}%
-                  </div>
-                </div>
-              </div>
+          {/* Session summary when stopped (banner above already shows live stats when running) */}
+          {activeSession && activeSession.status !== "running" && (
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-4">
+              <p className="text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider mb-2">Session ended</p>
+              <p className="text-sm font-mono text-[var(--text-primary)]">
+                Final PnL: <span className={activeSession.sessionPnl >= 0 ? "text-emerald-400" : "text-red-400"}>
+                  {activeSession.sessionPnl >= 0 ? "+" : ""}{activeSession.sessionPnl}
+                </span>
+                {" "}· Rounds: {activeSession.currentRound} · {activeSession.stopReason ?? activeSession.error ?? "completed"}
+              </p>
             </div>
           )}
         </div>
