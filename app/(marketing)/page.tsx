@@ -5,7 +5,7 @@ import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import { GlassCard } from "@/components/ui/GlassCard";
 
 const GAMES = [
-  { name: "Dice", href: "/games/dice", desc: "Roll for probability. Dice Casino AI-first." },
+  { name: "Dice", href: "/games/dice", desc: "Provably fair over/under dice. Set your target, roll, and verify every result. AI can write Python strategies that place real dice bets via API—same game for you and your agents." },
 ] as const;
 
 type HomePageProps = { searchParams: Promise<{ error?: string; message?: string }> };
@@ -41,11 +41,17 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         {/* Navigation / Header Area */}
         <header className="absolute top-0 right-0 p-4">
           {isLoggedIn ? (
-            <Link href="/dashboard" className="text-sm text-text-secondary hover:text-accent-heart transition-colors">
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm font-medium text-text-secondary hover:text-white hover:bg-white/10 hover:border-white/20 transition-all duration-200 backdrop-blur-sm"
+            >
               Dashboard &rarr;
             </Link>
           ) : (
-            <Link href="/api/auth/signin" className="text-sm text-text-secondary hover:text-white transition-colors">
+            <Link
+              href="/api/auth/signin"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-accent-heart/40 bg-accent-heart/10 text-sm font-semibold text-accent-heart hover:bg-accent-heart/20 hover:border-accent-heart/60 hover:shadow-[0_0_20px_-5px_rgba(244,63,94,0.3)] transition-all duration-200 backdrop-blur-sm"
+            >
               Login
             </Link>
           )}
@@ -59,7 +65,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               <span className="relative inline-flex rounded-full h-2 w-2 bg-success-green"></span>
             </span>
             <span className="text-xs font-medium tracking-wider text-text-secondary uppercase">
-              Quant Hardened &bull; Live
+              Live
             </span>
           </div>
 
@@ -76,7 +82,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           {!isLoggedIn && (
             <div className="flex flex-col gap-4 sm:flex-row">
               <Link
-                href="/api/auth/signin"
+                href="/login"
                 className="group relative px-8 py-3.5 bg-accent-heart text-white font-semibold rounded-lg overflow-hidden shadow-[0_0_20px_-5px_#f43f5e] hover:shadow-[0_0_30px_-5px_#f43f5e] transition-all duration-300 hover:scale-105"
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />

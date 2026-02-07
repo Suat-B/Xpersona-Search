@@ -32,7 +32,7 @@ const token = await getToken({ req, secret });
       const userId = await verifyGuestTokenEdge(guestToken);
       if (userId) return NextResponse.next();
     }
-    return NextResponse.redirect(new URL("/", req.nextUrl));
+    return NextResponse.redirect(new URL("/login", req.nextUrl));
   }
   return NextResponse.next();
 }
