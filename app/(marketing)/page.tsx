@@ -8,7 +8,9 @@ const GAMES = [
   { name: "Dice", href: "/games/dice", desc: "Roll for probability. Dice Casino AI-first." },
 ] as const;
 
-export default async function HomePage() {
+type HomePageProps = { searchParams: Promise<{ error?: string; message?: string }> };
+
+export default async function HomePage({ searchParams }: HomePageProps) {
   let session: Session | null = null;
   try {
     session = await auth();
@@ -19,9 +21,23 @@ export default async function HomePage() {
   const userIdFromCookie = getAuthUserFromCookie(cookieStore);
   const isLoggedIn = !!(session?.user || userIdFromCookie);
 
+  const params = await searchParams;
+  const authError = params?.error;
+  const authMessage = params?.message;
+
   return (
     <main className="min-h-screen relative overflow-hidden flex flex-col items-center justify-center p-6 md:p-8">
       <div className="mx-auto max-w-5xl w-full z-10 relative">
+        {/* Auth error banner (e.g. guest_failed, NEXTAUTH_SECRET not set) */}
+        {authError && (
+          <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            <p className="font-medium">{authError === "guest_failed" ? "Guest access failed" : "Auth error"}</p>
+            {authMessage && <p className="mt-1 opacity-90">{authMessage}</p>}
+            <p className="mt-2 text-xs text-red-300/80">
+              Add NEXTAUTH_SECRET and DATABASE_URL to .env.local (see .env.example). For DB: run <code className="rounded bg-white/10 px-1">docker compose up -d</code> then restart dev server.
+            </p>
+          </div>
+        )}
         {/* Navigation / Header Area */}
         <header className="absolute top-0 right-0 p-4">
           {isLoggedIn ? (
@@ -85,9 +101,10 @@ export default async function HomePage() {
           )}
         </div>
 
-        {/* Games Grid */}
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {GAMES.map((game) => (
+        {/* Games Grid - centered when single item */}
+        <div className="flex justify-center">
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 w-fit">
+            {GAMES.map((game) => (
             <GlassCard
               key={game.name}
               href={isLoggedIn ? game.href : undefined}
@@ -111,6 +128,7 @@ export default async function HomePage() {
               </div>
             </GlassCard>
           ))}
+          </div>
         </div>
 
         <div className="mt-16 text-center">
