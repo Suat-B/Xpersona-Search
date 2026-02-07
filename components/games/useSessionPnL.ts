@@ -47,16 +47,15 @@ export function useDiceSessionPnL() {
         return;
       }
       const bets = data.data.bets as { pnl: number }[];
-      const sessionPnl = data.data.sessionPnl as number | undefined;
       const roundCount = data.data.roundCount as number | undefined;
       const chronological = [...bets].reverse();
       let cum = 0;
       const newSeries: PnLPoint[] = chronological.map((b, i) => {
-        cum += b.pnl;
+        cum += Number(b.pnl);
         return { round: i + 1, pnl: cum };
       });
       setSeries(newSeries);
-      setTotalPnl(sessionPnl ?? cum);
+      setTotalPnl(cum);
       setRounds(roundCount ?? chronological.length);
     } catch {
       setSeries([]);
@@ -70,7 +69,9 @@ export function useDiceSessionPnL() {
   }, [refetch]);
 
   useEffect(() => {
-    const onBalanceUpdated = () => refetch();
+    const onBalanceUpdated = () => {
+      setTimeout(refetch, 150);
+    };
     window.addEventListener("balance-updated", onBalanceUpdated);
     return () => window.removeEventListener("balance-updated", onBalanceUpdated);
   }, [refetch]);

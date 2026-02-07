@@ -2,10 +2,9 @@
 
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
-import StrategiesSectionClient from "./StrategiesSectionClient";
-import { QuantMetrics } from "@/components/dashboard/QuantMetrics";
-import { LiveFeed } from "@/components/dashboard/LiveFeed";
-import { TransactionTable } from "@/components/dashboard/TransactionTable";
+import QuantMetrics from "@/components/dashboard/QuantMetrics";
+import LiveFeed from "@/components/dashboard/LiveFeed";
+import TransactionTable from "@/components/dashboard/TransactionTable";
 
 const GAMES = [
   { slug: "dice", name: "Dice", icon: "🎲", desc: "Roll over or under. Pure probability. AI-first." },
@@ -65,15 +64,23 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* Strategies Section */}
-          <section id="strategies" className="space-y-4">
-            <div>
-              <h2 className="text-xl font-bold text-[var(--text-primary)]">Python strategies</h2>
-              <p className="text-sm text-[var(--text-secondary)] mt-1">
-                Write custom Python, run on the dice game. Same code for you and for OpenClaw AI agents.
+          {/* Strategies card: link to full page */}
+          <section>
+            <GlassCard className="p-5">
+              <h3 className="text-lg font-bold text-[var(--text-primary)] mb-1">Strategies</h3>
+              <p className="text-sm text-[var(--text-secondary)] mb-4">
+                Create, run, and manage dice strategies. Python and quick config.
               </p>
-            </div>
-            <StrategiesSectionClient />
+              <Link
+                href="/dashboard/strategies"
+                className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/30 bg-[var(--accent-heart)]/10 px-4 py-2 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
+              >
+                Manage strategies
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
+            </GlassCard>
           </section>
         </div>
 

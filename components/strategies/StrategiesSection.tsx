@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { GlassCard } from "@/components/ui/GlassCard";
 
 const PythonStrategyEditor = dynamic(
-  () => import("@/components/strategies/PythonStrategyEditor").then((mod) => mod.PythonStrategyEditor),
+  () => import("@/components/strategies/PythonStrategyEditor"),
   { ssr: false, loading: () => <div className="p-4 text-sm text-[var(--text-secondary)]">Loading Python editor…</div> }
 );
 
@@ -200,7 +200,7 @@ export function StrategiesSection() {
           </button>
           <button
             type="button"
-            onClick={() => { setCreateOpen((o) => !o); if (!createOpen) setCreateMode("config"); }}
+            onClick={() => { setCreateOpen((o) => !o); if (!createOpen) setCreateMode("python"); }}
             className="rounded bg-[var(--accent-heart)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
           >
             {createOpen ? "Cancel" : "Create strategy"}
@@ -223,17 +223,6 @@ export function StrategiesSection() {
           <div className="flex gap-2 mb-4">
             <button
               type="button"
-              onClick={() => setCreateMode("config")}
-              className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-                createMode === "config"
-                  ? "bg-white/10 border-[var(--accent-heart)] text-[var(--text-primary)]"
-                  : "border-[var(--border)] text-[var(--text-secondary)] hover:bg-white/5"
-              }`}
-            >
-              Quick config
-            </button>
-            <button
-              type="button"
               onClick={() => setCreateMode("python")}
               className={`px-3 py-1.5 text-sm rounded border transition-colors ${
                 createMode === "python"
@@ -242,6 +231,17 @@ export function StrategiesSection() {
               }`}
             >
               Python strategy
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreateMode("config")}
+              className={`px-3 py-1.5 text-sm rounded border transition-colors ${
+                createMode === "config"
+                  ? "bg-white/10 border-[var(--accent-heart)] text-[var(--text-primary)]"
+                  : "border-[var(--border)] text-[var(--text-secondary)] hover:bg-white/5"
+              }`}
+            >
+              Quick config
             </button>
           </div>
           {createMode === "config" ? (
@@ -537,6 +537,7 @@ function CreatePythonStrategyForm({
       const res = await fetch("/api/me/strategies", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           gameType: "dice",
           name: trimmed,
@@ -545,11 +546,12 @@ function CreatePythonStrategyForm({
           config: {},
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (data.success) {
         onCreated();
       } else {
-        setErr(data.message ?? data.error ?? "Create failed");
+        const msg = typeof data.message === "string" ? data.message : data.error;
+        setErr(msg ?? (res.status === 401 ? "Please sign in" : "Create failed"));
       }
     } catch {
       setErr("Create failed");

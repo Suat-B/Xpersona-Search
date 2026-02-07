@@ -11,7 +11,7 @@ type Metric = {
     trend?: "up" | "down" | "neutral";
 };
 
-export function QuantMetrics() {
+export default function QuantMetrics() {
     const [metrics, setMetrics] = useState<Metric[]>([
         { label: "BALANCE", value: "$0.00", subtext: "Available", trend: "neutral" },
         { label: "SESSION PNL", value: "+$0.00", subtext: "0% ROI", trend: "neutral" },

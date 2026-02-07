@@ -235,7 +235,7 @@ export function DiceStrategyPanel({
               <li key={s.id} className="flex items-center justify-between gap-2">
                 <span className="text-sm text-[var(--text-primary)] truncate">{s.name}</span>
                 <Link
-                  href="/dashboard#strategies"
+                  href="/dashboard/strategies"
                   className="flex-shrink-0 text-xs font-medium text-[var(--accent-heart)] hover:underline"
                 >
                   Run in dashboard

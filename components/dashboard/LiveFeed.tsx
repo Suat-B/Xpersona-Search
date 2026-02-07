@@ -17,7 +17,7 @@ type FeedItem = {
 const MOCK_USERS = ["Alex", "Sarah", "QuantBot", "CryptoKing", "MoonWalker", "Satoshi", "AI_Agent_007"];
 const MOCK_GAMES = ["Dice"];
 
-export function LiveFeed() {
+export default function LiveFeed() {
     const [feed, setFeed] = useState<FeedItem[]>([]);
     const listRef = useRef<HTMLUListElement>(null);
 

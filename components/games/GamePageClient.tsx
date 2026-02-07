@@ -144,7 +144,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             <span className="text-xs opacity-90">is placing dice bets</span>
           </div>
           <Link
-            href="/dashboard#strategies"
+            href="/dashboard/strategies"
             className="text-xs font-medium text-[var(--accent-heart)] hover:underline"
           >
             View run →
@@ -260,7 +260,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   Load a saved strategy or run Python code. Running a strategy places real dice bets and updates your balance.
                 </p>
                 <Link
-                  href="/dashboard#strategies"
+                  href="/dashboard/strategies"
                   className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--accent-heart)] hover:underline"
                 >
                   Create & manage strategies

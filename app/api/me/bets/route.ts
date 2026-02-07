@@ -84,7 +84,9 @@ export async function GET(request: Request) {
 
   let sessionPnl = 0;
   const bets = rows.map((r) => {
-    const pnl = r.payout - r.amount;
+    const amount = Number(r.amount);
+    const payout = Number(r.payout);
+    const pnl = payout - amount;
     sessionPnl += pnl;
     const bet: Record<string, unknown> = {
       id: r.id,

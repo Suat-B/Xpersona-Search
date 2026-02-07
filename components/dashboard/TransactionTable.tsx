@@ -20,7 +20,7 @@ const MOCK_TRANSACTIONS = [
     { id: "tx_5", type: "deposit", amount: "+$1000.00", status: "completed", hash: "0x7d...f4e", timestamp: "Yesterday, 09:00 AM" },
 ];
 
-export function TransactionTable() {
+export default function TransactionTable() {
     return (
         <GlassCard className="w-full overflow-hidden">
             <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between">
