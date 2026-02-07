@@ -331,6 +331,7 @@ _strategy_class
 
       const executionCode = `
 import json
+import inspect
 
 # Load strategy
 ${strategyCode}
@@ -353,17 +354,26 @@ if strategy_class is None:
 # Create context
 ctx = StrategyContext(js_bridge)
 
-# Create or restore strategy instance
+# Config for instantiation (restore from state or empty)
+_config = strategy_state.get('config', {}) if strategy_state else {}
+
+# Instantiate: support both Strategy() and Strategy(config)
+try:
+    _sig = inspect.signature(strategy_class.__init__)
+    _params = [p for p in _sig.parameters if p != 'self']
+    if not _params:
+        strategy = strategy_class()
+    else:
+        strategy = strategy_class(_config)
+except Exception:
+    strategy = strategy_class(_config)
+
 if strategy_state:
-    strategy = strategy_class(strategy_state.get('config', {}))
-    # Restore state
     for key, value in strategy_state.items():
         if key != 'config':
             setattr(strategy, key, value)
-else:
-    strategy = strategy_class({})
-    if hasattr(strategy, 'initialize') and callable(getattr(strategy, 'initialize')):
-        strategy.initialize(ctx)
+elif hasattr(strategy, 'initialize') and callable(getattr(strategy, 'initialize')):
+    strategy.initialize(ctx)
 
 # Get decision
 decision = strategy.on_round_start(ctx)
@@ -422,6 +432,7 @@ json.dumps(result)
 
       const executionCode = `
 import json
+import inspect
 
 # Load strategy
 ${strategyCode}
@@ -443,13 +454,21 @@ if strategy_class is None:
 
 ctx = StrategyContext(js_bridge)
 
+_config = strategy_state.get('config', {}) if strategy_state else {}
+try:
+    _sig = inspect.signature(strategy_class.__init__)
+    _params = [p for p in _sig.parameters if p != 'self']
+    if not _params:
+        strategy = strategy_class()
+    else:
+        strategy = strategy_class(_config)
+except Exception:
+    strategy = strategy_class(_config)
+
 if strategy_state:
-    strategy = strategy_class(strategy_state.get('config', {}))
     for key, value in strategy_state.items():
         if key != 'config':
             setattr(strategy, key, value)
-else:
-    strategy = strategy_class({})
 
 round_result = RoundResult(_round_result_result, _round_result_win, _round_result_payout, _round_result_balance)
 if hasattr(strategy, 'on_round_complete') and callable(getattr(strategy, 'on_round_complete')):
