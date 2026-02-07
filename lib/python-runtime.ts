@@ -325,15 +325,18 @@ _strategy_class
     state: any = null
   ): Promise<ExecutionResult> {
     try {
-      // Set up bridge
+      // Set up bridge; pass state as JSON so Python gets a real dict (JsProxy has no .get())
       this.pyodide.globals.set("js_bridge", bridge);
-      this.pyodide.globals.set("strategy_state", state);
+      this.pyodide.globals.set("strategy_state_json", state != null ? JSON.stringify(state) : "null");
 
       const executionCode = `
 import json
 
 # Load strategy
 ${strategyCode}
+
+# Parse state from JSON so we have a real dict (not JsProxy)
+strategy_state = json.loads(strategy_state_json) if strategy_state_json and strategy_state_json != "null" else None
 
 # Find strategy class
 strategy_class = None
@@ -359,16 +362,19 @@ if strategy_state:
             setattr(strategy, key, value)
 else:
     strategy = strategy_class({})
-    strategy.initialize(ctx)
+    if hasattr(strategy, 'initialize') and callable(getattr(strategy, 'initialize')):
+        strategy.initialize(ctx)
 
 # Get decision
 decision = strategy.on_round_start(ctx)
 
 # Serialize result
+_should_stop = strategy.should_stop(ctx) if hasattr(strategy, 'should_stop') and callable(getattr(strategy, 'should_stop')) else False
+_stats = strategy.get_stats() if hasattr(strategy, 'get_stats') and callable(getattr(strategy, 'get_stats')) else {}
 result = {
     "decision": decision.to_dict() if hasattr(decision, 'to_dict') else {"action": "stop"},
-    "should_stop": strategy.should_stop(ctx),
-    "stats": strategy.get_stats(),
+    "should_stop": _should_stop,
+    "stats": _stats,
     "state": {
         "config": getattr(strategy, 'config', {}),
         **{k: v for k, v in strategy.__dict__.items() if not k.startswith('_')}
@@ -408,7 +414,7 @@ json.dumps(result)
   ): Promise<{ success: boolean; state?: Record<string, unknown>; error?: string }> {
     try {
       this.pyodide.globals.set("js_bridge", bridge);
-      this.pyodide.globals.set("strategy_state", state);
+      this.pyodide.globals.set("strategy_state_json", state != null ? JSON.stringify(state) : "null");
       this.pyodide.globals.set("_round_result_result", roundResult.result);
       this.pyodide.globals.set("_round_result_win", roundResult.win);
       this.pyodide.globals.set("_round_result_payout", roundResult.payout);
@@ -419,6 +425,9 @@ import json
 
 # Load strategy
 ${strategyCode}
+
+# Parse state from JSON so we have a real dict (not JsProxy)
+strategy_state = json.loads(strategy_state_json) if strategy_state_json and strategy_state_json != "null" else None
 
 # Find strategy class
 strategy_class = None
@@ -443,7 +452,8 @@ else:
     strategy = strategy_class({})
 
 round_result = RoundResult(_round_result_result, _round_result_win, _round_result_payout, _round_result_balance)
-strategy.on_round_complete(ctx, round_result)
+if hasattr(strategy, 'on_round_complete') and callable(getattr(strategy, 'on_round_complete')):
+    strategy.on_round_complete(ctx, round_result)
 
 new_state = {
     "config": getattr(strategy, 'config', {}),
