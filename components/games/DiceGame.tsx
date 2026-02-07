@@ -48,6 +48,7 @@ export function DiceGame({
   const [autoRounds, setAutoRounds] = useState(0);
   const [showWinEffects, setShowWinEffects] = useState(false);
   const stopRef = useRef(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const runBet = useCallback(async (): Promise<boolean> => {
     const res = await fetch("/api/games/dice/bet", {

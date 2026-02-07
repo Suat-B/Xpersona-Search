@@ -101,12 +101,11 @@ export default async function DashboardLayout({
       if (isActive) { activeHref = href; break; }
     }
     if (activeHref) {
-      document.body.setAttribute('data-dashboard-path', path);
       var el = document.getElementById('dashboard-nav-active-style');
       if (el) el.remove();
       var style = document.createElement('style');
       style.id = 'dashboard-nav-active-style';
-      style.textContent = 'body[data-dashboard-path] .dashboard-sidebar nav a[href="' + activeHref.replace(/"/g, '\\\\"') + '"] { background: color-mix(in srgb, var(--accent-heart) 10%, transparent); color: var(--accent-heart); }';
+      style.textContent = '.dashboard-sidebar nav a[href="' + activeHref.replace(/"/g, '\\\\"') + '"] { background: color-mix(in srgb, var(--accent-heart) 10%, transparent); color: var(--accent-heart); }';
       document.head.appendChild(style);
     }
   }

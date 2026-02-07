@@ -5,12 +5,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { ClientOnly } from "@/components/ClientOnly";
 import { useDiceSessionPnL } from "./useSessionPnL";
-import { SessionPnLChart } from "@/components/ui/SessionPnLChart";
 import { DiceStrategyPanel } from "./DiceStrategyPanel";
-import { RecentResults } from "@/components/ui/RecentResults";
-import { StreakIndicator } from "@/components/ui/StreakIndicator";
-import { StatsSummary } from "@/components/ui/StatsSummary";
-import { DiceVerificationHistory } from "./DiceVerificationHistory";
 
 const ACTIVE_STRATEGY_KEY = "xpersona_active_strategy_run";
 const MAX_RECENT_RESULTS = 50;
@@ -37,7 +32,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const [recentResults, setRecentResults] = useState<RollResult[]>([]);
   const [recentResultsHydrated, setRecentResultsHydrated] = useState(false);
   const [balance, setBalance] = useState<number>(0);
-  const [activeTab, setActiveTab] = useState<"stats" | "strategy">("stats");
+  const [activeTab, setActiveTab] = useState<"api" | "strategy">("api");
   const [activeStrategyRun, setActiveStrategyRun] = useState<{ name: string } | null>(null);
 
   // Sync "your strategy is running" state (set by dashboard when user runs a Python strategy)
@@ -214,22 +209,22 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </ClientOnly>
         </div>
 
-        {/* Right column: Stats & Strategy - 360px fixed */}
+        {/* Right column: API & Strategy - 360px fixed */}
         <aside className="w-[360px] flex-shrink-0 flex flex-col gap-3 min-h-0 overflow-hidden">
           {/* Tab Switcher */}
           <div className="flex-shrink-0 flex gap-1 p-1 rounded-lg bg-[var(--bg-matte)] border border-[var(--border)]">
             <button
-              onClick={() => setActiveTab("stats")}
-              className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-all ${activeTab === "stats"
+              onClick={() => setActiveTab("api")}
+              className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-all ${activeTab === "api"
                   ? "bg-[var(--accent-heart)] text-white shadow-lg shadow-[var(--accent-heart)]/30"
                   : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                 }`}
             >
               <span className="flex items-center justify-center gap-2">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                 </svg>
-                Stats
+                API
               </span>
             </button>
             <button
@@ -250,42 +245,67 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
 
           {/* Content Area - Scrollable */}
           <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3">
-            {activeTab === "stats" ? (
-              <>
-                {/* Session PnL Chart */}
-                <div className="flex-shrink-0">
-                  <SessionPnLChart
-                    series={series}
-                    totalPnl={totalPnl}
-                    rounds={rounds}
-                    onReset={handleReset}
-                  />
+            {activeTab === "api" ? (
+              <div className="flex-shrink-0 space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">AI agents at the casino</h3>
+                  <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                    Connect OpenClaw or any AI assistant to play dice with your balance. Same REST API and tools for humans and agents.
+                  </p>
                 </div>
 
-                {/* Quick Stats Row */}
-                <div className="flex-shrink-0 flex items-center justify-between px-1">
-                  <StreakIndicator results={recentResults} />
-                  <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
-                    <span className="text-xs uppercase tracking-wider">Rounds</span>
-                    <span className="font-mono font-bold text-[var(--text-primary)]">{rounds}</span>
-                  </div>
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3">
+                  <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">How it works</h4>
+                  <ul className="space-y-2 text-xs text-[var(--text-secondary)] list-disc list-inside">
+                    <li>Get your API key from <Link href="/dashboard/api" className="text-[var(--accent-heart)] hover:underline">Dashboard → API</Link> (or <Link href="/dashboard" className="text-[var(--accent-heart)] hover:underline">Dashboard</Link>).</li>
+                    <li>Set <code className="bg-white/10 px-1 rounded font-mono">XPERSONA_API_KEY</code> in your env so your agent can authenticate.</li>
+                    <li>Use REST (<code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/bet</code>) or OpenClaw tools to place bets and run strategies.</li>
+                  </ul>
                 </div>
 
-                {/* Recent Results - Compact */}
-                <div className="flex-shrink-0">
-                  <RecentResults results={recentResults} />
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3">
+                  <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">OpenClaw</h4>
+                  <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                    OpenClaw uses a Gateway (WebSocket) and first-class <strong className="text-[var(--text-primary)]">tools</strong> so agents can act without shelling. Your agent gets typed tools and a system prompt; the Gateway handles messaging and nodes.
+                  </p>
+                  <ul className="space-y-1.5 text-xs text-[var(--text-secondary)]">
+                    <li>
+                      <a href="https://docs.openclaw.ai/concepts/architecture" target="_blank" rel="noopener noreferrer" className="text-[var(--accent-heart)] hover:underline">
+                        Gateway architecture
+                      </a>
+                      {" "}— single Gateway, WebSocket API, clients & nodes.
+                    </li>
+                    <li>
+                      <a href="https://docs.openclaw.ai/tools" target="_blank" rel="noopener noreferrer" className="text-[var(--accent-heart)] hover:underline">
+                        Tools
+                      </a>
+                      {" "}— exec, browser, message, sessions, plugins.
+                    </li>
+                  </ul>
                 </div>
 
-                {/* Stats Summary - Compact */}
-                <div className="flex-shrink-0">
-                  <StatsSummary results={recentResults} />
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3">
+                  <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">xpersona + OpenClaw</h4>
+                  <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                    Install the xpersona-casino skill (e.g. from <code className="bg-white/10 px-1 rounded font-mono">skills/openclaw/xpersona-casino</code> or ClawHub). Your agent can then use tools such as:
+                  </p>
+                  <ul className="space-y-1 text-xs font-mono text-[var(--text-secondary)]">
+                    <li><code className="bg-white/10 px-1 rounded">casino_get_balance</code></li>
+                    <li><code className="bg-white/10 px-1 rounded">casino_place_dice_bet</code></li>
+                    <li><code className="bg-white/10 px-1 rounded">casino_deploy_strategy</code> / <code className="bg-white/10 px-1 rounded">casino_run_strategy</code></li>
+                    <li><code className="bg-white/10 px-1 rounded">casino_get_history</code>, <code className="bg-white/10 px-1 rounded">casino_calculate_odds</code></li>
+                  </ul>
+                  <Link
+                    href="/dashboard/api"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--accent-heart)] hover:underline"
+                  >
+                    Full API docs & Python strategies
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </Link>
                 </div>
-
-                {/* Verifiable dice history with Verify modal */}
-                <div className="flex-shrink-0">
-                  <DiceVerificationHistory />
-                </div>
-              </>
+              </div>
             ) : (
               <div className="flex-shrink-0 space-y-3">
                 <p className="text-sm text-[var(--text-secondary)]">

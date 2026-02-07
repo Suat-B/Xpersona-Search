@@ -86,6 +86,133 @@ export default function ApiDocsPage() {
         </div>
       </GlassCard>
 
+      {/* Creating strategies (for OpenClaw agents) */}
+      <GlassCard className="p-6">
+        <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
+          Creating strategies (for OpenClaw agents)
+        </h2>
+        <p className="text-sm text-[var(--text-primary)] mb-4">
+          You can create strategies in two ways: <strong>REST</strong> (<code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">POST /api/me/strategies</code>) or the <strong>OpenClaw tool</strong> (<code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">casino_deploy_strategy</code>). Same backend; agents can use either.
+        </p>
+        <div className="space-y-4 text-sm">
+          <div>
+            <h3 className="font-medium text-[var(--text-primary)] mb-2">REST</h3>
+            <ul className="space-y-1 text-[var(--text-secondary)] text-xs list-disc list-inside">
+              <li>Body: <code className="bg-white/10 px-1 rounded font-mono">gameType</code> (required, e.g. <code className="bg-white/10 px-1 rounded font-mono">&quot;dice&quot;</code>), <code className="bg-white/10 px-1 rounded font-mono">name</code> (required), <code className="bg-white/10 px-1 rounded font-mono">python_code</code> (required for Python strategy), <code className="bg-white/10 px-1 rounded font-mono">description</code> (optional), <code className="bg-white/10 px-1 rounded font-mono">config</code> (optional object).</li>
+              <li>Response: <code className="bg-white/10 px-1 rounded font-mono">{"{ success, data: { id, gameType, name, config, createdAt, hasPythonCode? } }"}</code></li>
+              <li>On validation failure: <code className="bg-white/10 px-1 rounded font-mono">VALIDATION_ERROR</code> with <code className="bg-white/10 px-1 rounded font-mono">validation_result</code> (errors, warnings).</li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-medium text-[var(--text-primary)] mb-2">OpenClaw tool casino_deploy_strategy</h3>
+            <ul className="space-y-1 text-[var(--text-secondary)] text-xs list-disc list-inside">
+              <li>Required: <code className="bg-white/10 px-1 rounded font-mono">name</code>, <code className="bg-white/10 px-1 rounded font-mono">python_code</code>, <code className="bg-white/10 px-1 rounded font-mono">game_type</code> (e.g. <code className="bg-white/10 px-1 rounded font-mono">&quot;dice&quot;</code>).</li>
+              <li>Optional: <code className="bg-white/10 px-1 rounded font-mono">description</code>, <code className="bg-white/10 px-1 rounded font-mono">config</code>, <code className="bg-white/10 px-1 rounded font-mono">tags</code>.</li>
+              <li>Returns: <code className="bg-white/10 px-1 rounded font-mono">success</code>, <code className="bg-white/10 px-1 rounded font-mono">strategy_id</code>, <code className="bg-white/10 px-1 rounded font-mono">validation_result</code>. Validation uses the same rules as REST.</li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-medium text-[var(--text-primary)] mb-2">Running a strategy</h3>
+            <ul className="space-y-1 text-[var(--text-secondary)] text-xs list-disc list-inside">
+              <li>REST: <code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/run-strategy</code> with <code className="bg-white/10 px-1 rounded font-mono">{"{ strategyId, maxRounds? }"}</code> (or inline <code className="bg-white/10 px-1 rounded font-mono">config</code> for simple non-Python runs).</li>
+              <li>OpenClaw: <code className="bg-white/10 px-1 rounded font-mono">casino_run_strategy</code> with <code className="bg-white/10 px-1 rounded font-mono">strategy_id</code>, optional <code className="bg-white/10 px-1 rounded font-mono">max_rounds</code>, <code className="bg-white/10 px-1 rounded font-mono">stop_conditions</code>. Execution is started async; the user can run the strategy from the dashboard (browser) for live execution.</li>
+            </ul>
+          </div>
+        </div>
+      </GlassCard>
+
+      {/* Python strategies in detail */}
+      <GlassCard className="p-6">
+        <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
+          Python strategies in detail
+        </h2>
+        <p className="text-sm text-[var(--text-primary)] mb-4">
+          The same contract applies on the website (Strategies page, Run Python), via REST, and via OpenClaw — one contract for all.
+        </p>
+        <div className="space-y-4 text-sm">
+          <div>
+            <h3 className="font-medium text-[var(--text-primary)] mb-2">Contract</h3>
+            <ul className="space-y-1 text-[var(--text-secondary)] text-xs list-disc list-inside">
+              <li>Your class must implement <code className="bg-white/10 px-1 rounded font-mono">on_round_start(self, ctx) -&gt; BetDecision</code> (or any type with <code className="bg-white/10 px-1 rounded font-mono">to_dict()</code> returning the same shape).</li>
+              <li>Optional: <code className="bg-white/10 px-1 rounded font-mono">on_round_complete(self, ctx, result)</code> for state updates after each round.</li>
+              <li>Constructor: <code className="bg-white/10 px-1 rounded font-mono">__init__(self, config)</code> — <code className="bg-white/10 px-1 rounded font-mono">config</code> is the optional config object from create/deploy.</li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-medium text-[var(--text-primary)] mb-2">Context ctx</h3>
+            <ul className="space-y-1 text-[var(--text-secondary)] font-mono text-xs">
+              <li><code className="bg-white/10 px-1 rounded">ctx.get_balance()</code>, <code className="bg-white/10 px-1 rounded">ctx.get_history(n)</code>, <code className="bg-white/10 px-1 rounded">ctx.round_number</code>, <code className="bg-white/10 px-1 rounded">ctx.initial_balance</code>, <code className="bg-white/10 px-1 rounded">ctx.session_pnl</code></li>
+              <li><code className="bg-white/10 px-1 rounded">ctx.get_limits()</code>, <code className="bg-white/10 px-1 rounded">ctx.last_result()</code>, <code className="bg-white/10 px-1 rounded">ctx.calculate_odds(target, condition)</code>, <code className="bg-white/10 px-1 rounded">ctx.notify(message)</code></li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-medium text-[var(--text-primary)] mb-2">Decisions</h3>
+            <ul className="space-y-1 text-[var(--text-secondary)] text-xs list-disc list-inside">
+              <li><code className="bg-white/10 px-1 rounded font-mono">BetDecision(amount, target, condition)</code> — <code className="bg-white/10 px-1 rounded font-mono">condition</code> is <code className="bg-white/10 px-1 rounded font-mono">&quot;over&quot;</code> or <code className="bg-white/10 px-1 rounded font-mono">&quot;under&quot;</code>.</li>
+              <li><code className="bg-white/10 px-1 rounded font-mono">BetDecision.stop(reason=&quot;...&quot;)</code> to end the session.</li>
+              <li>Custom types: must have <code className="bg-white/10 px-1 rounded font-mono">to_dict()</code> returning <code className="bg-white/10 px-1 rounded font-mono">{"{ \"action\": \"bet\", \"amount\", \"target\", \"condition\" }"}</code> or <code className="bg-white/10 px-1 rounded font-mono">{"{ \"action\": \"stop\", \"reason\"? }"}</code>.</li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-medium text-[var(--text-primary)] mb-2">Lifecycle</h3>
+            <p className="text-xs text-[var(--text-secondary)]">Each round: <code className="bg-white/10 px-1 rounded font-mono">on_round_start(ctx)</code> → place bet or stop → after settle, <code className="bg-white/10 px-1 rounded font-mono">on_round_complete(ctx, result)</code> → next round.</p>
+          </div>
+          <div>
+            <h3 className="font-medium text-[var(--text-primary)] mb-2">Dice rules</h3>
+            <p className="text-xs text-[var(--text-secondary)]">Min bet 1, max 10,000 credits. Target 0–99.99. House edge 3%. Maps to <code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/bet</code>.</p>
+          </div>
+          <div>
+            <h3 className="font-medium text-[var(--text-primary)] mb-2">Validation and security</h3>
+            <ul className="space-y-1 text-[var(--text-secondary)] text-xs list-disc list-inside">
+              <li>Blocklist: <code className="bg-white/10 px-1 rounded font-mono">os</code>, <code className="bg-white/10 px-1 rounded font-mono">sys</code>, <code className="bg-white/10 px-1 rounded font-mono">subprocess</code>, <code className="bg-white/10 px-1 rounded font-mono">socket</code>, <code className="bg-white/10 px-1 rounded font-mono">requests</code>, <code className="bg-white/10 px-1 rounded font-mono">urllib</code>, <code className="bg-white/10 px-1 rounded font-mono">eval</code>, <code className="bg-white/10 px-1 rounded font-mono">exec</code>, <code className="bg-white/10 px-1 rounded font-mono">open</code>, <code className="bg-white/10 px-1 rounded font-mono">__import__</code>.</li>
+              <li>Allowed: <code className="bg-white/10 px-1 rounded font-mono">math</code>, <code className="bg-white/10 px-1 rounded font-mono">statistics</code>. Max code length 30,000 characters.</li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-medium text-[var(--text-primary)] mb-2">How to create on the website</h3>
+            <p className="text-xs text-[var(--text-secondary)]">Dashboard → Strategies → Create strategy → paste Python code (or use a quick template) → save → &quot;Run (Python)&quot; to execute with live balance.</p>
+          </div>
+          <div>
+            <h3 className="font-medium text-[var(--text-primary)] mb-2">How to create via API / OpenClaw</h3>
+            <p className="text-xs text-[var(--text-secondary)]">See <strong>Creating strategies (for OpenClaw agents)</strong> above; same validation and contract.</p>
+          </div>
+          <div>
+            <h3 className="font-medium text-[var(--text-primary)] mb-2">Examples</h3>
+            <p className="text-xs text-[var(--text-secondary)] mb-2">These work identically on the web and for OpenClaw.</p>
+            <p className="text-xs text-[var(--text-secondary)] mb-1 font-medium">Minimal (fixed bet):</p>
+            <pre className="rounded-lg bg-[var(--bg-deep)] border border-[var(--border)] p-3 text-xs font-mono text-[var(--text-primary)] overflow-x-auto mb-3">
+{`class Strategy:
+  def __init__(self, config):
+    self.bet = config.get("bet_amount", 10)
+    self.target = 50
+    self.condition = "over"
+  def on_round_start(self, ctx):
+    if ctx.get_balance() < self.bet:
+      return BetDecision.stop("insufficient_balance")
+    return BetDecision(self.bet, self.target, self.condition)`}
+            </pre>
+            <p className="text-xs text-[var(--text-secondary)] mb-1 font-medium">Martingale (double on loss, reset on win):</p>
+            <pre className="rounded-lg bg-[var(--bg-deep)] border border-[var(--border)] p-3 text-xs font-mono text-[var(--text-primary)] overflow-x-auto">
+{`class Strategy:
+  def __init__(self, config):
+    self.base_bet = config.get('base_bet', 10)
+    self.max_bet = config.get('max_bet', 1000)
+    self.current_bet = self.base_bet
+  def on_round_start(self, ctx):
+    if self.current_bet > ctx.get_balance():
+      return BetDecision.stop("insufficient_balance")
+    return BetDecision(self.current_bet, 50, "over")
+  def on_round_complete(self, ctx, result):
+    if result.win:
+      self.current_bet = self.base_bet
+    else:
+      self.current_bet = min(self.current_bet * 2, self.max_bet, ctx.get_balance())`}
+            </pre>
+            <p className="text-xs text-[var(--text-secondary)] mt-3">Full reference: <code className="bg-white/10 px-1 rounded font-mono">docs/PYTHON_STRATEGIES.md</code> in the repo (same content).</p>
+          </div>
+        </div>
+      </GlassCard>
+
       {/* REST endpoint reference */}
       <GlassCard className="p-6">
         <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
@@ -162,6 +289,22 @@ export default function ApiDocsPage() {
             <pre className="rounded-lg bg-[var(--bg-deep)] border border-[var(--border)] p-4 text-xs font-mono text-[var(--text-primary)] overflow-x-auto">
 {`curl -s -X POST -H "Authorization: Bearer $XPERSONA_API_KEY" -H "Content-Type: application/json" \\
   -d '{"config":{"amount":10,"target":50,"condition":"over"},"maxRounds":20}' \\
+  https://xpersona.co/api/games/dice/run-strategy`}
+            </pre>
+          </div>
+          <div>
+            <p className="text-xs text-[var(--text-secondary)] mb-1">Create Python strategy (minimal)</p>
+            <pre className="rounded-lg bg-[var(--bg-deep)] border border-[var(--border)] p-4 text-xs font-mono text-[var(--text-primary)] overflow-x-auto">
+{`curl -s -X POST -H "Authorization: Bearer $XPERSONA_API_KEY" -H "Content-Type: application/json" \\
+  -d '{"gameType":"dice","name":"My Python Strategy","python_code":"class Strategy:\\n  def on_round_start(self, ctx):\\n    return BetDecision(10, 50, \\"over\\")"}' \\
+  https://xpersona.co/api/me/strategies`}
+            </pre>
+          </div>
+          <div>
+            <p className="text-xs text-[var(--text-secondary)] mb-1">Run dice strategy by strategyId (20 rounds)</p>
+            <pre className="rounded-lg bg-[var(--bg-deep)] border border-[var(--border)] p-4 text-xs font-mono text-[var(--text-primary)] overflow-x-auto">
+{`curl -s -X POST -H "Authorization: Bearer $XPERSONA_API_KEY" -H "Content-Type: application/json" \\
+  -d '{"strategyId":"<strategy-id-from-create>","maxRounds":20}' \\
   https://xpersona.co/api/games/dice/run-strategy`}
             </pre>
           </div>
