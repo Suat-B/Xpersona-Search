@@ -83,11 +83,11 @@ export function RecentResults({ results }: RecentResultsProps) {
                   </span>
                 </div>
                 
-                {/* Payout */}
+                {/* Payout / amount lost */}
                 <div className={`text-xs font-mono font-bold ${
                   roll.win ? "text-emerald-400" : "text-red-400"
                 }`}>
-                  {roll.win ? "+" : ""}{roll.payout}
+                  {roll.win ? `+${roll.payout}` : (roll.betAmount ?? 0)}
                 </div>
               </div>
             ))}

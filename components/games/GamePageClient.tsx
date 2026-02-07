@@ -23,6 +23,7 @@ interface RollResult {
   result: number;
   win: boolean;
   payout: number;
+  betAmount?: number;
 }
 
 export default function GamePageClient({ game }: { game: GameSlug }) {
@@ -33,6 +34,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const [strategyOpen, setStrategyOpen] = useState(false);
   const [autoPlayActive, setAutoPlayActive] = useState(false);
   const [recentResults, setRecentResults] = useState<RollResult[]>([]);
+  const [recentResultsHydrated, setRecentResultsHydrated] = useState(false);
   const [balance, setBalance] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<"stats" | "strategy">("stats");
   const [activeStrategyRun, setActiveStrategyRun] = useState<{ name: string } | null>(null);
@@ -85,14 +87,39 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     return () => window.removeEventListener("balance-updated", handleBalanceUpdate);
   }, []);
 
+  // Hydrate recent results from server so streak reflects full history (uncapped)
+  useEffect(() => {
+    if (game !== "dice" || recentResultsHydrated) return;
+    let cancelled = false;
+    fetch(`/api/me/bets?gameType=dice&limit=${MAX_RECENT_RESULTS}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled || !data.success || !Array.isArray(data.data?.bets)) return;
+        const bets = data.data.bets as { outcome: string; payout: number; amount: number }[];
+        const chronological = [...bets].reverse();
+        const hydrated: RollResult[] = chronological.map((b) => ({
+          result: 0,
+          win: b.outcome === "win",
+          payout: Number(b.payout),
+          betAmount: Number(b.amount),
+        }));
+        setRecentResults(hydrated.slice(-MAX_RECENT_RESULTS));
+        setRecentResultsHydrated(true);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [game, recentResultsHydrated]);
+
   const loadStrategyConfig = (config: { amount: number; target: number; condition: "over" | "under" }) => {
     setAmount(config.amount);
     setTarget(config.target);
     setCondition(config.condition);
   };
 
-  const handleResult = (result: RollResult) => {
-    setRecentResults(prev => [...prev, result].slice(-20));
+  const handleResult = (result: RollResult & { betAmount?: number }) => {
+    setRecentResults(prev => [...prev, { ...result, betAmount: result.betAmount ?? amount }].slice(-MAX_RECENT_RESULTS));
   };
 
   const handleReset = () => {

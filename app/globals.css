@@ -77,6 +77,8 @@ body {
   animation: glow-pulse 2s ease-in-out infinite;
 }
 
+/* Dashboard sidebar active link is styled via injected style (body[data-dashboard-path] + selector) to avoid hydration mismatch */
+
 /* Sparkle Animation */
 @keyframes sparkle {
   0% {

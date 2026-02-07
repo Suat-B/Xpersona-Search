@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
 import { gameBets, serverSeeds } from "@/lib/db/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 
 const DEFAULT_LIMIT = 50;
-const MAX_LIMIT = 200;
+const MAX_LIMIT = 2000;
 
 /**
  * GET /api/me/bets — Recent bets and session PnL for the authenticated user.
@@ -33,6 +33,14 @@ export async function GET(request: Request) {
     gameType != null
       ? and(eq(gameBets.userId, authResult.user.id), eq(gameBets.gameType, gameType))
       : eq(gameBets.userId, authResult.user.id);
+
+  const [aggRow] = await db
+    .select({
+      totalPnl: sql<number>`coalesce(sum(${gameBets.payout} - ${gameBets.amount}), 0)::int`,
+    })
+    .from(gameBets)
+    .where(whereClause);
+  const totalSessionPnl = typeof aggRow?.totalPnl === "number" ? aggRow.totalPnl : Number(aggRow?.totalPnl) || 0;
 
   let rows: Array<{
     id: string;
@@ -82,12 +90,10 @@ export async function GET(request: Request) {
       .limit(limit);
   }
 
-  let sessionPnl = 0;
   const bets = rows.map((r) => {
     const amount = Number(r.amount);
     const payout = Number(r.payout);
     const pnl = payout - amount;
-    sessionPnl += pnl;
     const bet: Record<string, unknown> = {
       id: r.id,
       gameType: r.gameType,
@@ -112,7 +118,7 @@ export async function GET(request: Request) {
     success: true,
     data: {
       bets,
-      sessionPnl,
+      sessionPnl: totalSessionPnl,
       roundCount: bets.length,
     },
   });

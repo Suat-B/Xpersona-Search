@@ -26,7 +26,7 @@ export type DiceGameProps = {
   onConditionChange: (v: "over" | "under") => void;
   onRoundComplete: (bet: number, payout: number) => void;
   onAutoPlayChange?: (active: boolean) => void;
-  onResult?: (result: { result: number; win: boolean; payout: number }) => void;
+  onResult?: (result: { result: number; win: boolean; payout: number; betAmount?: number }) => void;
 };
 
 export function DiceGame({
@@ -64,7 +64,7 @@ export function DiceGame({
         balance: data.data.balance,
       };
       setResult(newResult);
-      onResult?.(newResult);
+      onResult?.({ ...newResult, betAmount: amount });
       onRoundComplete(amount, data.data.payout);
       
       // Show win effects
@@ -185,7 +185,7 @@ export function DiceGame({
                   {result.win ? "YOU WIN!" : "You Lose"}
                 </span>
                 <span className="font-mono font-bold">
-                  {result.win ? "+" : ""}{result.payout} credits
+                  {result.win ? `+${result.payout}` : amount} credits
                 </span>
               </div>
             </div>

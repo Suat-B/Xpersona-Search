@@ -48,6 +48,7 @@ export function useDiceSessionPnL() {
       }
       const bets = data.data.bets as { pnl: number }[];
       const roundCount = data.data.roundCount as number | undefined;
+      const sessionPnl = typeof data.data.sessionPnl === "number" ? data.data.sessionPnl : Number(data.data.sessionPnl) || 0;
       const chronological = [...bets].reverse();
       let cum = 0;
       const newSeries: PnLPoint[] = chronological.map((b, i) => {
@@ -55,7 +56,7 @@ export function useDiceSessionPnL() {
         return { round: i + 1, pnl: cum };
       });
       setSeries(newSeries);
-      setTotalPnl(cum);
+      setTotalPnl(sessionPnl);
       setRounds(roundCount ?? chronological.length);
     } catch {
       setSeries([]);
