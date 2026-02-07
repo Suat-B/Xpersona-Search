@@ -1,6 +1,6 @@
 ---
 name: xpersona-casino
-description: Play xpersona.co casino (dice, blackjack, plinko, crash, slots) using the user's API key; check balance, claim faucet, place bets, get session PnL. AI-first: all responses are { success, data?, error? }; use GET /api/me/bets for session history and PnL without client state.
+description: Play xpersona.co casino (dice, blackjack, plinko, crash, slots) using the user's API key; check balance, claim faucet, place bets, get session PnL, create and run custom strategies (AI/OpenClaw). AI-first: all responses are { success, data?, error? }; use GET /api/me/bets for session history and GET/POST /api/me/strategies and POST /api/games/{game}/run-strategy for strategies.
 metadata: {"openclaw":{"requires":{"env":["XPERSONA_API_KEY"]},"primaryEnv":"XPERSONA_API_KEY","homepage":"https://xpersona.co"}}
 ---
 
@@ -20,6 +20,14 @@ Base URL: `https://xpersona.co` (override with `XPERSONA_BASE_URL` if set).
 |--------|--------|------|--------------|
 | Balance | GET | /api/me/balance | → `data.balance` |
 | Session PnL & history | GET | /api/me/bets?limit=50 | → `data.bets`, `data.sessionPnl`, `data.roundCount` |
+| List strategies | GET | /api/me/strategies?gameType=dice | → `data.strategies` |
+| Create strategy | POST | /api/me/strategies | `{ gameType, name, config }` |
+| Get strategy | GET | /api/me/strategies/:id | → `data` |
+| Update strategy | PATCH | /api/me/strategies/:id | `{ name?, config? }` |
+| Delete strategy | DELETE | /api/me/strategies/:id | |
+| Run dice strategy | POST | /api/games/dice/run-strategy | `{ strategyId? or config?, maxRounds? }` → `data.results`, `data.sessionPnl`, `data.finalBalance` |
+| Run plinko strategy | POST | /api/games/plinko/run-strategy | `{ strategyId? or config?, maxRounds? }` |
+| Run slots strategy | POST | /api/games/slots/run-strategy | `{ strategyId? or config?, maxRounds? }` |
 | Faucet | POST | /api/faucet | Once per hour → `data.balance`, `data.granted`, `data.nextFaucetAt` |
 | Dice | POST | /api/games/dice/bet | `{ amount, target, condition: "over"\|"under" }` |
 | Blackjack | POST | /api/games/blackjack/round | `{ amount }` → then POST .../round/:roundId/action `{ action: "hit"\|"stand"\|"double"\|"split" }` until settled |
@@ -52,6 +60,28 @@ The website’s auto-play uses the same endpoints. To auto-play as an agent:
 3. **Crash:** GET current round; when `status === "running"` and no bet yet, POST .../current/bet; when you have a bet and multiplier reaches a target, POST .../rounds/:id/cashout. Repeat for next round.
 
 Always check `data.balance` and stop if the user cannot afford another bet.
+
+---
+
+## Custom strategies (AI/OpenClaw)
+
+You can create, list, and run **saved strategies** so the user (or the AI) can define unique play styles per game.
+
+**Create a strategy:**  
+`POST /api/me/strategies` with `{ "gameType": "dice", "name": "Conservative over 50", "config": { "amount": 10, "target": 50, "condition": "over", "stopIfBalanceBelow": 100 } }`.  
+Config shape per game:
+- **dice:** `amount`, `target`, `condition` ("over"|"under"), optional `stopAfterRounds`, `stopIfBalanceBelow`, `stopIfBalanceAbove`
+- **plinko:** `amount`, `risk` ("low"|"medium"|"high"), optional stop conditions
+- **slots:** `amount`, optional stop conditions
+
+**List strategies:**  
+`GET /api/me/strategies` or `GET /api/me/strategies?gameType=dice` → `data.strategies` (id, gameType, name, config, createdAt).
+
+**Run a strategy (one API call, server runs up to maxRounds):**  
+- `POST /api/games/dice/run-strategy` with `{ "strategyId": "<id>" }` or `{ "config": { "amount": 10, "target": 50, "condition": "over" }, "maxRounds": 30 }`  
+- Response: `data.results`, `data.sessionPnl`, `data.finalBalance`, `data.roundsPlayed`, `data.stoppedReason` (e.g. "max_rounds", "insufficient_balance", "balance_below").
+
+Use this to let the user define strategies (e.g. “bet 10 on over 50, stop if balance under 100”) and run them in one request, or to run your own inline config without saving.
 
 ---
 

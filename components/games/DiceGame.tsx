@@ -3,6 +3,8 @@
 import { useState, useRef, useCallback } from "react";
 import { useSessionPnL } from "./useSessionPnL";
 import { SessionPnLChart } from "@/components/ui/SessionPnLChart";
+import { DiceStrategyPanel } from "@/components/strategies/DiceStrategyPanel";
+import type { DiceStrategyConfig } from "@/lib/strategies";
 
 type Result = {
   result: number;
@@ -25,6 +27,12 @@ export function DiceGame() {
   const [autoRounds, setAutoRounds] = useState(0);
   const stopRef = useRef(false);
   const { series, totalPnl, rounds, addRound, reset } = useSessionPnL();
+
+  const loadStrategyConfig = useCallback((config: DiceStrategyConfig) => {
+    setAmount(config.amount);
+    setTarget(config.target);
+    setCondition(config.condition);
+  }, []);
 
   const runBet = useCallback(async (): Promise<boolean> => {
     const res = await fetch("/api/games/dice/bet", {
@@ -90,7 +98,15 @@ export function DiceGame() {
 
       <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-6">
         <h2 className="mb-4 text-lg font-semibold">Dice</h2>
-        <form onSubmit={submit} className="space-y-4">
+        <DiceStrategyPanel
+          amount={amount}
+          target={target}
+          condition={condition}
+          disabled={autoPlay}
+          onLoadConfig={loadStrategyConfig}
+          onBalanceUpdate={() => window.dispatchEvent(new Event("balance-updated"))}
+        />
+        <form onSubmit={submit} className="space-y-4 mt-4">
           <div>
             <label htmlFor="dice-amount" className="block text-sm text-[var(--text-secondary)]">
               Amount (credits)

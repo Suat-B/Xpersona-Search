@@ -1,6 +1,13 @@
 /**
  * Central config - single source of truth for game and app constants.
  * Override via env where noted.
+ *
+ * House edge summary (single source of truth):
+ * - Dice:     DICE_HOUSE_EDGE = 2%
+ * - Blackjack: ~0.5% (standard rules, BJ 2.5:1, dealer stands 17)
+ * - Plinko:   ~2–4% (bucket multipliers; low/medium/high risk)
+ * - Slots:    set by paytable/reels (no explicit edge constant)
+ * - Crash:    strategy-dependent; crash point uniform [CRASH_MIN, CRASH_MAX]
  */
 export const SIGNUP_BONUS = parseInt(process.env.SIGNUP_BONUS ?? "500", 10);
 export const FAUCET_AMOUNT = parseInt(process.env.FAUCET_AMOUNT ?? "50", 10);

@@ -2,7 +2,7 @@ import { BalanceCard } from "@/components/dashboard/BalanceCard";
 import { FaucetButton } from "@/components/dashboard/FaucetButton";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
 import { PackageList } from "@/components/dashboard/PackageList";
-// import { GameCard } from "@/components/dashboard/GameCard"; // Replacing with GlassCard
+import { StrategiesSection } from "@/components/strategies/StrategiesSection";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { GuestBanner } from "@/components/dashboard/GuestBanner";
 
@@ -45,6 +45,11 @@ export default function DashboardPage() {
       </section>
 
       <ApiKeySection />
+
+      {/* My strategies (create, list, run — OpenClaw-friendly) */}
+      <section id="strategies">
+        <StrategiesSection />
+      </section>
 
       {/* Games Grid */}
       <section>

@@ -57,6 +57,7 @@ export default async function DashboardLayout({
         </div>
         <nav className="flex-1 space-y-1 px-4 py-4">
           <NavItem href="/dashboard" active>Dashboard</NavItem>
+          <NavItem href="/dashboard#strategies">Strategies</NavItem>
           <NavItem href="/transactions" disabled>Transactions</NavItem>
           <NavItem href="/settings" disabled>Settings</NavItem>
         </nav>

@@ -136,6 +136,27 @@ export const crashBets = pgTable(
   ]
 );
 
+export const strategies = pgTable(
+  "strategies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    gameType: varchar("game_type", { length: 20 }).notNull(),
+    name: varchar("name", { length: 100 }).notNull(),
+    config: jsonb("config").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("strategies_user_game_name_idx").on(
+      table.userId,
+      table.gameType,
+      table.name
+    ),
+  ]
+);
+
 export const faucetGrants = pgTable(
   "faucet_grants",
   {

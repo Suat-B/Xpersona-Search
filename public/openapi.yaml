@@ -53,6 +53,148 @@ paths:
           description: success, data.bets (array of id, gameType, amount, outcome, payout, pnl, createdAt), data.sessionPnl, data.roundCount
         "401":
           description: Unauthorized
+  /api/me/strategies:
+    get:
+      summary: List strategies (AI/OpenClaw)
+      description: Returns user's saved strategies. Query ?gameType=dice to filter.
+      parameters:
+        - name: gameType
+          in: query
+          schema: { type: string, enum: [dice, blackjack, plinko, crash, slots] }
+      responses:
+        "200":
+          description: success, data.strategies (array of id, gameType, name, config, createdAt)
+        "401":
+          description: Unauthorized
+    post:
+      summary: Create strategy (AI/OpenClaw)
+      description: Save a named strategy for a game. Body gameType, name, config (game-specific).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [gameType, name, config]
+              properties:
+                gameType: { type: string, enum: [dice, blackjack, plinko, crash, slots] }
+                name: { type: string, maxLength: 100 }
+                config: { type: object }
+      responses:
+        "200":
+          description: success, data (id, gameType, name, config, createdAt)
+        "400":
+          description: VALIDATION_ERROR
+        "401":
+          description: Unauthorized
+  /api/me/strategies/{id}:
+    get:
+      summary: Get one strategy
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: success, data (id, gameType, name, config, createdAt)
+        "404":
+          description: NOT_FOUND
+        "401":
+          description: Unauthorized
+    patch:
+      summary: Update strategy (name and/or config)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                config: { type: object }
+      responses:
+        "200":
+          description: success, data
+        "400":
+          description: VALIDATION_ERROR
+        "404":
+          description: NOT_FOUND
+        "401":
+          description: Unauthorized
+    delete:
+      summary: Delete strategy
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: success, data.id
+        "404":
+          description: NOT_FOUND
+        "401":
+          description: Unauthorized
+  /api/games/dice/run-strategy:
+    post:
+      summary: Run dice strategy (AI/OpenClaw)
+      description: Execute up to maxRounds (default 20, max 100) with strategyId or inline config. Returns results, sessionPnl, finalBalance, stoppedReason.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                strategyId: { type: string, format: uuid }
+                config: { type: object, description: "inline { amount, target, condition, stopAfterRounds?, stopIfBalanceBelow?, stopIfBalanceAbove? }" }
+                maxRounds: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: success, data.results, data.sessionPnl, data.finalBalance, data.roundsPlayed, data.stoppedReason
+        "400":
+          description: VALIDATION_ERROR
+        "404":
+          description: STRATEGY_NOT_FOUND
+        "401":
+          description: Unauthorized
+  /api/games/plinko/run-strategy:
+    post:
+      summary: Run plinko strategy (AI/OpenClaw)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                strategyId: { type: string, format: uuid }
+                config: { type: object, description: "inline { amount, risk }" }
+                maxRounds: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: success, data.results, data.sessionPnl, data.finalBalance, data.roundsPlayed, data.stoppedReason
+        "401":
+          description: Unauthorized
+  /api/games/slots/run-strategy:
+    post:
+      summary: Run slots strategy (AI/OpenClaw)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                strategyId: { type: string, format: uuid }
+                config: { type: object, description: "inline { amount }" }
+                maxRounds: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: success, data.results, data.sessionPnl, data.finalBalance, data.roundsPlayed, data.stoppedReason
+        "401":
+          description: Unauthorized
   /api/me/api-key:
     post:
       summary: Generate API key (returns plain key once)
