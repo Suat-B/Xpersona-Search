@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { cookies } from "next/headers";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
+import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
 
 type LoginPageProps = {
   searchParams: Promise<{ error?: string; callbackUrl?: string }>;
@@ -53,12 +54,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           </div>
 
           {/* Logo */}
-          <h1 className="mb-2 text-3xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-white/80 font-[family-name:var(--font-outfit)]">
+          <h1 className="mb-1 text-3xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-white/80 font-[family-name:var(--font-outfit)]">
             xpersona
             <span className="text-accent-heart drop-shadow-[0_0_15px_rgba(244,63,94,0.5)]">.</span>
           </h1>
+          <p className="text-[10px] text-[var(--accent-heart)]/80 uppercase tracking-wider mb-2">AI-ready</p>
           <p className="mb-6 text-sm text-text-secondary">
-            Sign in to play dice and manage your balance.
+            {AI_FIRST_MESSAGING.signInOrAgent}
           </p>
 
           {/* Auth error from NextAuth */}
@@ -113,6 +115,20 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               </Link>
             </div>
           )}
+
+          {/* Guest CTA */}
+          <div className="mt-4 text-center">
+            <Link
+              href="/dashboard"
+              className="text-sm text-[var(--text-secondary)] hover:text-[var(--accent-heart)] transition-colors"
+            >
+              Continue as guest
+            </Link>
+            <p className="mt-1 text-[10px] text-[var(--text-secondary)]">
+              {AI_FIRST_MESSAGING.guestAgentNote}{" "}
+              <Link href="/dashboard/api" className="text-[var(--accent-heart)] hover:underline">Dashboard → API</Link>
+            </p>
+          </div>
 
           {/* Secondary links */}
           <div className="mt-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm">

@@ -3,6 +3,9 @@ import { auth, type Session } from "@/lib/auth";
 import { cookies } from "next/headers";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { MarqueeStrip } from "@/components/ui/MarqueeStrip";
+import { AgentProofBlock } from "@/components/ui/AgentProofBlock";
+import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
 
 const GAMES = [
   { name: "Dice", href: "/games/dice", desc: "Provably fair over/under dice. OpenClaw skill + REST API. LangChain, CrewAI, AutoGen, LangGraph — agents bet via API. Python strategies or play yourself — same balance." },
@@ -121,7 +124,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       {/* No pink glow — clean dark background */}
       <div className="absolute inset-0 bg-black pointer-events-none" aria-hidden />
 
-      <div className="mx-auto max-w-5xl w-full z-10 relative flex flex-col items-center justify-center gap-2 md:gap-3 h-full min-h-0 py-2">
+      <div className="mx-auto max-w-5xl w-full z-10 relative flex flex-col items-center justify-center gap-2 md:gap-3 min-h-0 py-2 overflow-y-auto">
         {/* Auth error banner */}
         {authError && (
           <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-200 shrink-0">
@@ -176,6 +179,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             </div>
           </div>
 
+          <p className="text-sm md:text-base font-bold text-[var(--accent-heart)] tracking-wide uppercase">
+            The first casino designed for AI agents.
+          </p>
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-white/50 font-[family-name:var(--font-outfit)]">
             xpersona
             <span className="text-accent-heart drop-shadow-[0_0_15px_rgba(244,63,94,0.5)]">.</span>
@@ -184,6 +190,25 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           <p className="max-w-lg text-xs md:text-sm text-text-secondary font-light leading-snug">
             The dice casino built <span className="text-white font-semibold">for AI agents</span> — pure over/under. <span className="text-accent-heart/90">OpenClaw</span>, LangChain, CrewAI, AutoGen — your agents bet via API; humans watch, run Python strategies, or play — same balance.
           </p>
+        </div>
+
+        {/* Marquee strip */}
+        <MarqueeStrip />
+
+        {/* How it works — 3 steps */}
+        <div className="flex flex-wrap justify-center gap-3 max-w-2xl">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02] w-48">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[var(--accent-heart)]/20 text-[var(--accent-heart)] font-mono text-xs font-bold">1</span>
+            <span className="text-[10px] text-[var(--text-secondary)]">Agent gets API key</span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02] w-48">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[var(--accent-heart)]/20 text-[var(--accent-heart)] font-mono text-xs font-bold">2</span>
+            <span className="text-[10px] text-[var(--text-secondary)]">Agent bets via REST</span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02] w-48">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[var(--accent-heart)]/20 text-[var(--accent-heart)] font-mono text-xs font-bold">3</span>
+            <span className="text-[10px] text-[var(--text-secondary)]">Same balance, provably fair</span>
+          </div>
         </div>
 
         {/* Feature icons row */}
@@ -260,6 +285,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </p>
         </div>
 
+        {/* Agent proof block */}
+        <AgentProofBlock />
+
         {/* Dice card — compact */}
         <div className="flex-shrink-0 w-full max-w-sm">
           <p className="text-[10px] font-semibold tracking-[0.2em] text-accent-heart/80 uppercase mb-1">Pure dice</p>
@@ -304,6 +332,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
         {/* Footer — creative, integration-focused */}
         <div className="text-center shrink-0 space-y-1">
+          <p className="text-xs font-semibold text-[var(--text-primary)]">
+            {AI_FIRST_MESSAGING.builtFor}
+          </p>
           <p className="text-[11px] text-text-secondary/80">
             <span className="text-accent-heart/90 font-medium">OpenClaw integration</span> — skill on ClawHub. REST for LangChain, CrewAI, AutoGen, LangGraph. Same API for humans & agents.
           </p>

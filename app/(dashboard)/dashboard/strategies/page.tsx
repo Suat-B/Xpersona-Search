@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import StrategiesSectionClient from "../StrategiesSectionClient";
+import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
+import { GlassCard } from "@/components/ui/GlassCard";
 
 export default function StrategiesPage() {
   return (
@@ -16,14 +18,21 @@ export default function StrategiesPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-[var(--text-primary)] font-[family-name:var(--font-outfit)]">
-              Strategies
+              {AI_FIRST_MESSAGING.strategiesHero}
             </h1>
             <p className="text-sm text-[var(--text-secondary)]">
-              Create, run, and manage dice strategies with progression. Same API for you and OpenClaw agents.
+              {AI_FIRST_MESSAGING.strategiesSubtitle}
             </p>
           </div>
         </div>
       </section>
+
+      {/* Callout */}
+      <GlassCard className="p-4 border-[var(--accent-heart)]/10">
+        <p className="text-sm text-[var(--text-primary)]">
+          {AI_FIRST_MESSAGING.strategiesCallout}
+        </p>
+      </GlassCard>
 
       <StrategiesSectionClient />
 

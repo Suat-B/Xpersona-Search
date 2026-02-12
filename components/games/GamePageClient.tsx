@@ -128,11 +128,14 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           <span className="hidden sm:inline">Dashboard</span>
         </Link>
 
-        <div className="flex items-center gap-2">
-          <span className="text-xl">🎲</span>
-          <h1 className="text-lg font-bold font-[family-name:var(--font-outfit)] text-[var(--text-primary)]">
-            Pure Dice
-          </h1>
+        <div className="flex flex-col items-center">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🎲</span>
+            <h1 className="text-lg font-bold font-[family-name:var(--font-outfit)] text-[var(--text-primary)]">
+              Pure Dice
+            </h1>
+          </div>
+          <span className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider">AI agents bet via API</span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -214,7 +217,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                 </svg>
-                API
+                Agent API
               </span>
             </button>
             <button
@@ -388,6 +391,8 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           <span>3% House Edge</span>
           <span className="text-[var(--border)]">|</span>
           <span className="text-[var(--accent-heart)]">RTP 97%</span>
+          <span className="text-[var(--border)]">|</span>
+          <span>Agents use same API</span>
         </div>
 
         <div className="flex items-center gap-3">

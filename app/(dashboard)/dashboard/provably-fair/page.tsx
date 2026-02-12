@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { ProvablyFairBetHistory } from "@/components/dashboard/ProvablyFairBetHistory";
+import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
 
 export default function ProvablyFairPage() {
   return (
@@ -17,14 +18,21 @@ export default function ProvablyFairPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-[var(--text-primary)] font-[family-name:var(--font-outfit)]">
-              Provably Fair
+              {AI_FIRST_MESSAGING.provablyFairHero}
             </h1>
             <p className="text-sm text-[var(--text-secondary)]">
-              Every roll is verifiable. This casino is fair by design.
+              {AI_FIRST_MESSAGING.provablyFairSubtitle}
             </p>
           </div>
         </div>
       </section>
+
+      {/* Callout */}
+      <GlassCard className="p-4 border-emerald-500/10">
+        <p className="text-sm text-[var(--text-primary)]">
+          {AI_FIRST_MESSAGING.provablyFairCallout}
+        </p>
+      </GlassCard>
 
       {/* For players & AI */}
       <GlassCard className="p-6 border-emerald-500/10">

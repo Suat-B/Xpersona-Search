@@ -7,6 +7,7 @@ import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { EnsureGuest } from "@/components/auth/EnsureGuest";
 import { DashboardSidebarNav } from "@/components/layout/DashboardSidebarNav";
+import { AIFirstBanner } from "@/components/ui/AIFirstBanner";
 
 export default async function DashboardLayout({
   children,
@@ -46,11 +47,12 @@ export default async function DashboardLayout({
     <div className="flex min-h-screen">
       {needsGuest && <EnsureGuest needsGuest={true} />}
       <aside className="dashboard-sidebar hidden w-64 flex-col border-r border-white/5 bg-bg-card/50 backdrop-blur-md md:flex sticky top-0 h-screen">
-        <div className="flex h-16 items-center px-6">
+        <div className="flex h-16 items-center px-6 flex-col justify-center gap-0.5">
           <Link href="/" className="text-xl font-bold font-[family-name:var(--font-outfit)]">
             xpersona
             <span className="text-accent-heart">.</span>
           </Link>
+          <span className="text-[9px] text-[var(--text-secondary)] uppercase tracking-wider">AI-First Casino</span>
         </div>
         <DashboardSidebarNav />
         <div className="p-4 border-t border-white/5">
@@ -61,7 +63,8 @@ export default async function DashboardLayout({
         </div>
       </aside>
       <main className="flex-1 overflow-y-auto">
-        <div className="container mx-auto max-w-6xl p-6 md:p-8">
+        <div className="container mx-auto max-w-6xl p-6 md:p-8 space-y-4">
+          <AIFirstBanner />
           {children}
         </div>
       </main>

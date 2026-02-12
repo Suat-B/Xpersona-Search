@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
 
 export default function ApiDocsPage() {
   return (
@@ -16,14 +17,31 @@ export default function ApiDocsPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-[var(--text-primary)] font-[family-name:var(--font-outfit)]">
-              API
+              {AI_FIRST_MESSAGING.apiWhereAgentsPlay}
             </h1>
             <p className="text-sm text-[var(--text-secondary)]">
-              Integrate with OpenClaw and your personal AI assistant. Same REST API powers the site and all agents.
+              Same REST API for humans and agents. OpenClaw, LangChain, CrewAI.
+            </p>
+            <p className="mt-2 text-xs text-[var(--accent-heart)] font-medium">
+              Copy your API key. Set <code className="bg-white/10 px-1 rounded font-mono">XPERSONA_API_KEY</code>. Your AI can play.
             </p>
           </div>
         </div>
       </section>
+
+      {/* Agent in 5 minutes */}
+      <GlassCard className="p-6 border-[var(--accent-heart)]/20">
+        <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
+          {AI_FIRST_MESSAGING.agentIn5Minutes}
+        </h2>
+        <ol className="space-y-3 text-sm text-[var(--text-primary)] list-decimal list-inside">
+          <li>Generate API key below (or in Dashboard).</li>
+          <li>Set <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> in your env.</li>
+          <li><code className="bg-white/10 px-1 rounded font-mono">GET /api/me/balance</code> — verify auth.</li>
+          <li><code className="bg-white/10 px-1 rounded font-mono">POST /api/faucet</code> — claim credits.</li>
+          <li><code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/bet</code> — place a bet.</li>
+        </ol>
+      </GlassCard>
 
       {/* Getting started */}
       <GlassCard className="p-6">
@@ -74,14 +92,14 @@ export default function ApiDocsPage() {
               </tr>
             </thead>
             <tbody className="text-[var(--text-primary)]">
-              <tr className="border-b border-white/5"><td className="py-2 pr-4">Session stats (AI-first)</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/session-stats?gameType=dice&limit=50</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4">Session stats <span className="text-[var(--accent-heart)] text-[10px]">AI-first</span></td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/session-stats?gameType=dice&limit=50</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Balance</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/balance</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Session PnL and history</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/bets?limit=50</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">List strategies</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/strategies?gameType=dice</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Create strategy</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">{"{ gameType, name, config }"}</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Run dice strategy</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/games/dice/run-strategy — strategyId or config, maxRounds</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4">Faucet</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/faucet</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4">Dice bet</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/games/dice/bet — {"{ amount, target, condition: \"over\"|\"under\" }"}</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4">Faucet <span className="text-[var(--accent-heart)] text-[10px]">AI-first</span></td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/faucet</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4">Dice bet <span className="text-[var(--accent-heart)] text-[10px]">AI-first</span></td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/games/dice/bet — {"{ amount, target, condition: \"over\"|\"under\" }"}</td></tr>
             </tbody>
           </table>
         </div>

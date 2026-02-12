@@ -36,7 +36,10 @@ export default function DashboardPage() {
       {/* 1. Top Section: Metrics */}
       <section>
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-          <h2 className="text-xl font-bold font-mono tracking-tight glow-text-white">PILOT</h2>
+          <div>
+            <h2 className="text-xl font-bold font-mono tracking-tight glow-text-white">PILOT</h2>
+            <p className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider mt-0.5">AI-First Casino — Piloting your agents</p>
+          </div>
           <div className="flex items-center gap-4">
             <div className="rounded-lg border border-white/10 bg-white/5 px-4 py-2">
               <span className="text-xs font-mono text-[var(--text-secondary)] uppercase tracking-wider">Balance</span>
@@ -117,7 +120,7 @@ export default function DashboardPage() {
             <GlassCard className="p-5">
               <h3 className="text-lg font-bold text-[var(--text-primary)] mb-1">Strategies</h3>
               <p className="text-sm text-[var(--text-secondary)] mb-4">
-                Create, run, and manage dice strategies. Python and quick config.
+                Create, run, and manage dice strategies. Python and quick config. AI agents can run strategies via OpenClaw tools.
               </p>
               <Link
                 href="/dashboard/strategies"

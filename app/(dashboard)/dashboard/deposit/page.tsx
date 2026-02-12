@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState, useCallback } from "react";
+import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
 import { useSearchParams } from "next/navigation";
 import { GlassCard } from "@/components/ui/GlassCard";
 
@@ -72,7 +73,7 @@ function DepositPageClient() {
           Deposit funds
         </h1>
         <p className="mt-1 text-sm text-[var(--text-secondary)]">
-          Add credits to your balance to play Dice and use strategies. Secure payment via Stripe.
+          {AI_FIRST_MESSAGING.depositSubtitle} Secure payment via Stripe.
         </p>
       </section>
 
