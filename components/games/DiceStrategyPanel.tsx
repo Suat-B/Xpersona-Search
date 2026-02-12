@@ -16,7 +16,6 @@ type StrategyRowFromApi = {
   id: string;
   name: string;
   config: Record<string, unknown>;
-  hasPythonCode?: boolean;
 };
 
 function isQuickConfig(c: Record<string, unknown>): c is DiceConfig {
@@ -57,8 +56,6 @@ export function DiceStrategyPanel({
   } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const [pythonStrategies, setPythonStrategies] = useState<{ id: string; name: string }[]>([]);
-
   const fetchStrategies = useCallback(async () => {
     try {
       const res = await fetch("/api/me/strategies?gameType=dice", { credentials: "include" });
@@ -68,7 +65,6 @@ export function DiceStrategyPanel({
         data = text ? JSON.parse(text) : {};
       } catch {
         setStrategies([]);
-        setPythonStrategies([]);
         return;
       }
       if (data.success && Array.isArray(data.data?.strategies)) {
@@ -76,24 +72,19 @@ export function DiceStrategyPanel({
           (s: StrategyRowFromApi) => s.config != null
         );
         const quick = raw
-          .filter((s) => !s.hasPythonCode && isQuickConfig(s.config as Record<string, unknown>))
+          .filter((s) => isQuickConfig(s.config as Record<string, unknown>))
           .map((s) => ({
             id: s.id,
             name: s.name,
             config: s.config as DiceConfig,
           }));
-        const python = raw
-          .filter((s) => s.hasPythonCode)
-          .map((s) => ({ id: s.id, name: s.name }));
         setStrategies(quick);
-        setPythonStrategies(python);
         if (selectedId && !quick.some((x: StrategyOption) => x.id === selectedId)) {
           setSelectedId(null);
         }
       }
     } catch {
       setStrategies([]);
-      setPythonStrategies([]);
     }
   }, [selectedId]);
 
@@ -154,13 +145,13 @@ export function DiceStrategyPanel({
     setRunResult(null);
     setRunning(true);
     try {
-      const body: { strategyId?: string; config?: DiceConfig; maxRounds: number } = {
+      const body: { strategyId?: string; config?: DiceConfig & { progressionType?: "flat" }; maxRounds: number } = {
         maxRounds: Math.min(100, Math.max(1, runMaxRounds)),
       };
       if (selectedId) {
         body.strategyId = selectedId;
       } else {
-        body.config = { amount, target, condition };
+        body.config = { amount, target, condition, progressionType: "flat" as const };
       }
       const res = await fetch("/api/games/dice/run-strategy", {
         method: "POST",
@@ -248,27 +239,9 @@ export function DiceStrategyPanel({
         </button>
       </div>
 
-      {pythonStrategies.length > 0 && (
-        <div className="pt-3 border-t border-[var(--border)] space-y-2">
-          <p className="text-sm font-medium text-[var(--text-secondary)]">Python strategies</p>
-          <p className="text-xs text-[var(--text-secondary)]">
-            Python strategies run from the dashboard. OpenClaw AI can deploy and run the same strategies.
-          </p>
-          <ul className="space-y-1.5">
-            {pythonStrategies.map((s) => (
-              <li key={s.id} className="flex items-center justify-between gap-2">
-                <span className="text-sm text-[var(--text-primary)] truncate">{s.name}</span>
-                <Link
-                  href="/dashboard/strategies"
-                  className="flex-shrink-0 text-xs font-medium text-[var(--accent-heart)] hover:underline"
-                >
-                  Run in dashboard
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <p className="text-xs text-[var(--text-secondary)]">
+        Load saved presets or run current settings. More strategies (Martingale, Paroli, etc.) on the <Link href="/dashboard/strategies" className="text-[var(--accent-heart)] hover:underline">Strategies</Link> page.
+      </p>
 
       {saveOpen && (
         <form onSubmit={handleSave} className="flex items-center gap-2 pt-2 border-t border-[var(--border)]">

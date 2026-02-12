@@ -216,66 +216,36 @@ export const CasinoToolsSchema = {
   },
 
   // Strategy Management Tools
-  "casino_deploy_strategy": {
-    name: "casino_deploy_strategy",
-    description: "Deploy a Python strategy to the casino",
+  "casino_run_strategy": {
+    name: "casino_run_strategy",
+    description: "Execute a dice strategy for multiple rounds. Use strategy_id (saved strategy) or config (inline amount, target, condition, progression_type).",
     parameters: {
       type: "object",
       properties: {
-        name: { type: "string" },
-        description: { type: "string" },
-        python_code: { type: "string" },
-        game_type: { 
-          type: "string", 
-          enum: ["dice", "blackjack", "plinko", "crash", "slots"]
+        strategy_id: {
+          type: "string",
+          description: "ID of a saved strategy to run",
         },
-        config: { type: "object" },
-        tags: { type: "array", items: { type: "string" } }
+        config: {
+          type: "object",
+          description: "Inline config when strategy_id omitted: amount, target, condition, optional progression_type (flat|martingale|paroli|dalembert|fibonacci|labouchere|oscar|kelly)",
+          properties: {
+            amount: { type: "number" },
+            target: { type: "number" },
+            condition: { type: "string", enum: ["over", "under"] },
+            progression_type: { type: "string", enum: ["flat", "martingale", "paroli", "dalembert", "fibonacci", "labouchere", "oscar", "kelly"] },
+            max_bet: { type: "number" },
+            max_consecutive_losses: { type: "number" },
+            max_consecutive_wins: { type: "number" },
+          },
+        },
+        max_rounds: { type: "number", default: 20, description: "Max rounds to play (1–100)" },
       },
-      required: ["name", "python_code", "game_type"]
     },
     returns: {
       type: "object",
       properties: {
         success: { type: "boolean" },
-        strategy_id: { type: "string" },
-        validation_result: {
-          type: "object",
-          properties: {
-            valid: { type: "boolean" },
-            errors: { type: "array", items: { type: "string" } },
-            warnings: { type: "array", items: { type: "string" } }
-          }
-        }
-      }
-    }
-  },
-
-  "casino_run_strategy": {
-    name: "casino_run_strategy",
-    description: "Execute a deployed strategy for multiple rounds",
-    parameters: {
-      type: "object",
-      properties: {
-        strategy_id: { type: "string" },
-        max_rounds: { type: "number", default: 100 },
-        auto_play: { type: "boolean", default: true },
-        stop_conditions: {
-          type: "object",
-          properties: {
-            max_loss_percentage: { type: "number" },
-            target_profit_percentage: { type: "number" },
-            max_time_seconds: { type: "number" },
-            consecutive_losses: { type: "number" }
-          }
-        },
-        speed_ms: { type: "number", default: 100 }
-      },
-      required: ["strategy_id"]
-    },
-    returns: {
-      type: "object",
-      properties: {
         session_id: { type: "string" },
         status: { type: "string" },
         total_rounds: { type: "number" },
@@ -283,9 +253,8 @@ export const CasinoToolsSchema = {
         session_pnl: { type: "number" },
         stopped_reason: { type: "string" },
         results: { type: "array" },
-        execution_time_seconds: { type: "number" }
-      }
-    }
+      },
+    },
   },
 
   "casino_list_strategies": {
@@ -325,23 +294,22 @@ export const CasinoToolsSchema = {
 
   "casino_get_strategy": {
     name: "casino_get_strategy",
-    description: "Get strategy details and code",
+    description: "Get strategy details",
     parameters: {
       type: "object",
       properties: {
-        strategy_id: { type: "string" }
+        strategy_id: { type: "string" },
       },
-      required: ["strategy_id"]
+      required: ["strategy_id"],
     },
     returns: {
       type: "object",
       properties: {
         id: { type: "string" },
         name: { type: "string" },
-        description: { type: "string" },
-        python_code: { type: "string" },
         game_type: { type: "string" },
         config: { type: "object" },
+        progression_type: { type: "string" },
         created_at: { type: "string" },
         performance_stats: {
           type: "object",
@@ -350,11 +318,11 @@ export const CasinoToolsSchema = {
             avg_pnl: { type: "number" },
             best_run: { type: "number" },
             worst_run: { type: "number" },
-            win_rate: { type: "number" }
-          }
-        }
-      }
-    }
+            win_rate: { type: "number" },
+          },
+        },
+      },
+    },
   },
 
   "casino_delete_strategy": {

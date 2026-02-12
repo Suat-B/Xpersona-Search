@@ -5,6 +5,11 @@ import { strategies } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { executeDiceRound } from "@/lib/games/execute-dice";
 import type { DiceStrategyConfig } from "@/lib/strategies";
+import {
+  createProgressionState,
+  getNextBet,
+  type RoundResult,
+} from "@/lib/dice-progression";
 
 const MAX_ROUNDS = 100;
 
@@ -54,15 +59,18 @@ export async function POST(request: Request) {
     );
   }
 
-  const { amount, target, condition } = cfg;
+  const { target, condition } = cfg;
   const stopAfterRounds = cfg.stopAfterRounds ?? maxRounds;
   const stopIfBalanceBelow = cfg.stopIfBalanceBelow;
   const stopIfBalanceAbove = cfg.stopIfBalanceAbove;
   const limit = Math.min(maxRounds, stopAfterRounds);
 
-  const results: { round: number; result: number; win: boolean; payout: number; balance: number }[] = [];
+  let balance = authResult.user.credits;
+  let state = createProgressionState(cfg, balance);
+  let { nextBet: amount } = getNextBet(state, null, cfg, balance);
+  const results: { round: number; result: number; win: boolean; payout: number; balance: number; betAmount?: number }[] = [];
   let sessionPnl = 0;
-  let finalBalance = authResult.user.credits;
+  let finalBalance = balance;
   let stoppedReason = "max_rounds";
 
   for (let r = 0; r < limit; r++) {
@@ -74,6 +82,7 @@ export async function POST(request: Request) {
         condition
       );
       finalBalance = roundResult.balance;
+      balance = roundResult.balance;
       const pnl = roundResult.payout - amount;
       sessionPnl += pnl;
       results.push({
@@ -82,7 +91,17 @@ export async function POST(request: Request) {
         win: roundResult.win,
         payout: roundResult.payout,
         balance: roundResult.balance,
+        betAmount: amount,
       });
+      const roundResultForState: RoundResult = {
+        win: roundResult.win,
+        payout: roundResult.payout,
+        betAmount: amount,
+      };
+      const { nextBet, nextState } = getNextBet(state, roundResultForState, cfg, balance);
+      state = nextState;
+      amount = nextBet;
+
       if (stopIfBalanceBelow != null && roundResult.balance < stopIfBalanceBelow) {
         stoppedReason = "balance_below";
         break;

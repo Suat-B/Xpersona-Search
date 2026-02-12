@@ -8,14 +8,13 @@ import { CasinoToolName } from "./tools-schema";
 import { AgentContext } from "./agent-auth";
 import { getAuthUser } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
-import { gameBets, users, strategies, strategyCode, agentSessions, creditPackages } from "@/lib/db/schema";
+import { gameBets, users, strategies, agentSessions, creditPackages } from "@/lib/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { DICE_HOUSE_EDGE, FAUCET_AMOUNT } from "@/lib/constants";
 import { executeDiceRound } from "@/lib/games/execute-dice";
 import { executePlinkoRound } from "@/lib/games/execute-plinko";
 import { executeSlotsRound } from "@/lib/games/execute-slots";
 import type { PlinkoRisk } from "@/lib/games/plinko";
-import { validatePythonStrategyCode } from "@/lib/strategy-python-validation";
 import { grantFaucet } from "@/lib/faucet";
 import Stripe from "stripe";
 
@@ -27,7 +26,6 @@ const toolHandlers: Record<CasinoToolName, (params: any, agentContext: AgentCont
   "casino_get_balance": handleGetBalance,
   "casino_get_history": handleGetHistory,
   "casino_analyze_patterns": handleAnalyzePatterns,
-  "casino_deploy_strategy": handleDeployStrategy,
   "casino_run_strategy": handleRunStrategy,
   "casino_list_strategies": handleListStrategies,
   "casino_get_strategy": handleGetStrategy,
@@ -296,64 +294,60 @@ async function handleAnalyzePatterns(params: any, agentContext: AgentContext | n
   };
 }
 
-async function handleDeployStrategy(params: any, agentContext: AgentContext | null, request: NextRequest) {
-  const { name, description, python_code, game_type, config, tags } = params;
-  
+async function handleRunStrategy(params: any, agentContext: AgentContext | null, request: NextRequest) {
+  const { strategy_id, config: inlineConfig, max_rounds = 20 } = params;
+
   const authResult = await getAuthUser(request);
   if ("error" in authResult) {
     throw new Error(authResult.error);
   }
-  
   const user = authResult.user;
-  
-  const validationResult = validatePythonStrategyCode(python_code);
-  
-  if (!validationResult.valid) {
-    return {
-      success: false,
-      strategy_id: null,
-      validation_result: validationResult
-    };
+
+  if (!strategy_id && !inlineConfig) {
+    throw new Error("strategy_id or config (amount, target, condition) required");
   }
-  
-  const strategyId = crypto.randomUUID();
-  
-  // Create base strategy
-  await db.insert(strategies).values({
-    id: strategyId,
-    userId: user.id,
-    gameType: game_type,
-    name,
-    config: config || {}
+
+  const configForApi =
+    inlineConfig && typeof inlineConfig === "object"
+      ? {
+          amount: inlineConfig.amount,
+          target: inlineConfig.target,
+          condition: inlineConfig.condition,
+          progressionType: inlineConfig.progression_type ?? inlineConfig.progressionType,
+          maxBet: inlineConfig.max_bet ?? inlineConfig.maxBet,
+          maxConsecutiveLosses: inlineConfig.max_consecutive_losses ?? inlineConfig.maxConsecutiveLosses,
+          maxConsecutiveWins: inlineConfig.max_consecutive_wins ?? inlineConfig.maxConsecutiveWins,
+        }
+      : undefined;
+
+  const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const cookie = request.headers.get("cookie");
+  if (cookie) headers.Cookie = cookie;
+  const auth = request.headers.get("authorization");
+  if (auth) headers.Authorization = auth;
+  const res = await fetch(`${baseUrl}/api/games/dice/run-strategy`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      ...(strategy_id ? { strategyId: strategy_id } : { config: configForApi }),
+      maxRounds: Math.min(100, Math.max(1, max_rounds ?? 20)),
+    }),
   });
-  
-  // Create strategy code
-  await db.insert(strategyCode).values({
-    id: crypto.randomUUID(),
-    strategyId: strategyId,
-    pythonCode: python_code,
-    description: description || "",
-    tags: tags || [],
-    isPublic: false
-  });
-  
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    throw new Error(data.error ?? data.message ?? "Run strategy failed");
+  }
+  const d = data.data ?? {};
   return {
     success: true,
-    strategy_id: strategyId,
-    validation_result: validationResult
-  };
-}
-
-async function handleRunStrategy(params: any, agentContext: AgentContext | null, request: NextRequest) {
-  const { strategy_id, max_rounds = 100, auto_play = true, stop_conditions, speed_ms = 100 } = params;
-  
-  return {
     session_id: crypto.randomUUID(),
-    status: "started",
-    message: "Strategy execution started (async mode)",
-    max_rounds,
-    auto_play,
-    stop_conditions
+    status: "completed",
+    total_rounds: d.roundsPlayed ?? 0,
+    final_balance: d.finalBalance ?? user.credits,
+    session_pnl: d.sessionPnl ?? 0,
+    stopped_reason: d.stoppedReason ?? "max_rounds",
+    results: d.results ?? [],
   };
 }
 
@@ -389,46 +383,56 @@ async function handleListStrategies(params: any, agentContext: AgentContext | nu
 
 async function handleGetStrategy(params: any, agentContext: AgentContext | null, request: NextRequest) {
   const { strategy_id } = params;
-  
-  const strategy = await db.query.strategies.findFirst({
-    where: eq(strategies.id, strategy_id)
-  });
-  
+
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) throw new Error(authResult.error);
+
+  const [strategy] = await db
+    .select()
+    .from(strategies)
+    .where(and(eq(strategies.id, strategy_id), eq(strategies.userId, authResult.user.id)))
+    .limit(1);
+
   if (!strategy) {
     throw new Error("Strategy not found");
   }
-  
-  const code = await db.query.strategyCode.findFirst({
-    where: eq(strategyCode.strategyId, strategy_id)
-  });
-  
+
+  const cfg = strategy.config as Record<string, unknown> | null;
   return {
     id: strategy.id,
     name: strategy.name,
-    description: code?.description || "",
-    python_code: code?.pythonCode || "",
     game_type: strategy.gameType,
-    config: strategy.config,
+    config: cfg ?? {},
+    progression_type: cfg?.progressionType ?? "flat",
     created_at: strategy.createdAt?.toISOString() || new Date().toISOString(),
     performance_stats: {
       total_runs: 0,
       avg_pnl: 0,
       best_run: 0,
       worst_run: 0,
-      win_rate: 0
-    }
+      win_rate: 0,
+    },
   };
 }
 
 async function handleDeleteStrategy(params: any, agentContext: AgentContext | null, request: NextRequest) {
   const { strategy_id } = params;
-  
-  await db.delete(strategyCode).where(eq(strategyCode.strategyId, strategy_id));
-  await db.delete(strategies).where(eq(strategies.id, strategy_id));
-  
+
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) throw new Error(authResult.error);
+
+  const [deleted] = await db
+    .delete(strategies)
+    .where(and(eq(strategies.id, strategy_id), eq(strategies.userId, authResult.user.id)))
+    .returning({ id: strategies.id });
+
+  if (!deleted) {
+    throw new Error("Strategy not found");
+  }
+
   return {
     success: true,
-    message: "Strategy deleted successfully"
+    message: "Strategy deleted successfully",
   };
 }
 

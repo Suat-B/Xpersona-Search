@@ -7,7 +7,10 @@ info:
     Every response is JSON with shape `{ success: boolean, data?: object, error?: string }`.
     On success, use `data`; on 4xx/5xx, body includes `error` (e.g. INSUFFICIENT_BALANCE, VALIDATION_ERROR).
     Optimized for programmatic and AI agent use: same endpoints power the web UI and OpenClaw/agents.
-    For session PnL without client state, use GET /api/me/bets. For auto-play, loop game endpoints with a short delay (e.g. 200–500ms).
+    **AI guidance:** Prefer GET /api/me/session-stats over /api/me/balance + /api/me/bets for single-call stats.
+    For auto-play, loop game endpoints with a short delay (e.g. 200–500ms).
+    **Error recovery:** INSUFFICIENT_BALANCE → POST /api/faucet or GET /api/credits/packages + checkout.
+    FAUCET_COOLDOWN → wait until data.nextFaucetAt. ROUND_ENDED (Crash) → GET current round and retry.
   version: 1.0.0
 servers:
   - url: https://xpersona.co
@@ -51,6 +54,42 @@ paths:
       responses:
         "200":
           description: success, data.bets (array of id, gameType, amount, outcome, payout, pnl, createdAt), data.sessionPnl, data.roundCount
+        "401":
+          description: Unauthorized
+  /api/me/session-stats:
+    get:
+      summary: Session stats (AI agentic)
+      description: |
+        Unified stats for agents - balance, rounds, PnL, win rate, recent bets. Machine-readable.
+        **AI:** Prefer this over GET /api/me/balance + /api/me/bets for "how am I doing?" queries.
+      parameters:
+        - name: gameType
+          in: query
+          schema: { type: string, default: dice }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: success, data.balance, data.rounds, data.sessionPnl, data.winRate, data.recentBets
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  balance: 1250
+                  rounds: 42
+                  sessionPnl: 250
+                  winRate: 52.38
+                  recentBets:
+                    - amount: 10
+                      outcome: win
+                      payout: 19
+                      pnl: 9
+                    - amount: 10
+                      outcome: loss
+                      payout: 0
+                      pnl: -10
         "401":
           description: Unauthorized
   /api/me/strategies:
@@ -150,7 +189,7 @@ paths:
               type: object
               properties:
                 strategyId: { type: string, format: uuid }
-                config: { type: object, description: "inline { amount, target, condition, stopAfterRounds?, stopIfBalanceBelow?, stopIfBalanceAbove? }" }
+                config: { type: object, description: "inline { amount, target, condition, progressionType?: flat|martingale|paroli|dalembert|fibonacci|labouchere|oscar|kelly, maxBet?, maxConsecutiveLosses?, maxConsecutiveWins?, unitStep?, stopAfterRounds?, stopIfBalanceBelow?, stopIfBalanceAbove? }" }
                 maxRounds: { type: integer, minimum: 1, maximum: 100, default: 20 }
       responses:
         "200":

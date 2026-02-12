@@ -1,5 +1,12 @@
 "use client";
 
+import { useState } from "react";
+import Link from "next/link";
+import { SessionPnLChart, type PnLPoint } from "@/components/ui/SessionPnLChart";
+import { CREATIVE_DICE_STRATEGIES } from "@/lib/dice-strategies";
+import type { DiceConfig, CreativeStrategy } from "@/lib/dice-strategies";
+import type { DiceStrategyConfig } from "@/lib/strategies";
+
 /**
  * Statistics panel for dice game — designed for AI agentic consumption.
  * Key elements have data-agent-* attributes for DOM scraping.
@@ -13,30 +20,6 @@ interface RollResult {
   betAmount?: number;
 }
 
-type DiceConfig = { amount: number; target: number; condition: "over" | "under" };
-
-const STRATEGIES: {
-  id: string;
-  name: string;
-  desc: string;
-  risk: "LOW" | "MEDIUM" | "HIGH" | "CALCULATED";
-  config: DiceConfig;
-  icon: string;
-}[] = [
-  { id: "martingale", name: "Martingale", desc: "Double bet after each loss, reset on win. High variance.", risk: "HIGH", config: { amount: 10, target: 50, condition: "over" }, icon: "📈" },
-  { id: "paroli", name: "Paroli", desc: "Triple bet on win, reset after 3 wins. Capitalizes on hot streaks.", risk: "LOW", config: { amount: 10, target: 50, condition: "over" }, icon: "🔥" },
-  { id: "dalembert", name: "D'Alembert", desc: "Increase bet by 1 on loss, decrease on win. Gentle progression.", risk: "MEDIUM", config: { amount: 10, target: 50, condition: "over" }, icon: "⚖️" },
-  { id: "fibonacci", name: "Fibonacci", desc: "Follow Fibonacci sequence. Classic progression system.", risk: "MEDIUM", config: { amount: 10, target: 50, condition: "over" }, icon: "🐚" },
-  { id: "labouchere", name: "Labouchere", desc: "Line-based betting. Cancel numbers on win.", risk: "HIGH", config: { amount: 10, target: 50, condition: "over" }, icon: "📋" },
-  { id: "oscar", name: "Oscar's Grind", desc: "Add 1 unit on win only. Very conservative.", risk: "LOW", config: { amount: 10, target: 50, condition: "over" }, icon: "🎯" },
-  { id: "kelly", name: "Kelly Criterion", desc: "Math-optimal bet sizing. Maximizes long-term growth.", risk: "CALCULATED", config: { amount: 10, target: 50, condition: "over" }, icon: "📐" },
-  { id: "flat", name: "Flat / Simple", desc: "Constant bet every round. Lowest variance.", risk: "LOW", config: { amount: 10, target: 50, condition: "over" }, icon: "📊" },
-  { id: "high-roller", name: "High Roller", desc: "Big bets on 75% Over. Chase big wins.", risk: "HIGH", config: { amount: 50, target: 75, condition: "over" }, icon: "💎" },
-  { id: "conservative", name: "Conservative", desc: "Small bets, 50 Under. Steady, low-risk play.", risk: "LOW", config: { amount: 5, target: 50, condition: "under" }, icon: "🛡️" },
-  { id: "lucky-7", name: "Lucky 7", desc: "Bet on 7% Under. Long odds, high payout.", risk: "HIGH", config: { amount: 10, target: 7, condition: "under" }, icon: "🍀" },
-  { id: "center", name: "Center Strike", desc: "50% target, balanced Over. RTP-focused.", risk: "MEDIUM", config: { amount: 20, target: 50, condition: "over" }, icon: "⭕" },
-];
-
 function riskColor(risk: string): string {
   switch (risk) {
     case "LOW": return "text-emerald-400 bg-emerald-500/10";
@@ -48,6 +31,7 @@ function riskColor(risk: string): string {
 }
 
 interface DiceStatisticsPanelProps {
+  series: PnLPoint[];
   rounds: number;
   totalPnl: number;
   recentResults: RollResult[];
@@ -55,22 +39,53 @@ interface DiceStatisticsPanelProps {
   target: number;
   condition: "over" | "under";
   onLoadConfig: (config: DiceConfig) => void;
+  onReset: () => void;
+}
+
+function toApiConfig(c: CreativeStrategy["config"]): DiceStrategyConfig {
+  return {
+    amount: c.amount,
+    target: c.target,
+    condition: c.condition,
+    progressionType: c.progressionType ?? "flat",
+  };
 }
 
 export function DiceStatisticsPanel({
+  series,
   rounds,
   totalPnl,
   recentResults,
   onLoadConfig,
+  onReset,
 }: DiceStatisticsPanelProps) {
+  const [runningId, setRunningId] = useState<string | null>(null);
   const wins = recentResults.filter((r) => r.win).length;
   const winRate = recentResults.length > 0 ? (wins / recentResults.length) * 100 : 0;
 
+  const handleRun = async (s: CreativeStrategy) => {
+    setRunningId(s.id);
+    try {
+      const res = await fetch("/api/games/dice/run-strategy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: toApiConfig(s.config), maxRounds: 20 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.success) window.dispatchEvent(new Event("balance-updated"));
+    } finally {
+      setRunningId(null);
+    }
+  };
+
   return (
     <div className="flex-shrink-0 space-y-4" data-agent="statistics-panel">
+      {/* PnL chart */}
+      <SessionPnLChart series={series} totalPnl={totalPnl} rounds={rounds} onReset={onReset} />
+
       {/* Session stats — machine-readable for agents */}
       <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3" data-agent="session-stats">
-        <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">Your session</h4>
+        <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">This session (since page load)</h4>
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-lg bg-[var(--bg-matte)] p-3 text-center" data-agent="stat-rounds" data-value={rounds}>
             <div className="text-lg font-bold font-mono text-[var(--text-primary)]">{rounds}</div>
@@ -114,10 +129,13 @@ export function DiceStatisticsPanel({
           Creative dice strategies
         </h4>
         <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
-          {STRATEGIES.map((s) => (
+          {CREATIVE_DICE_STRATEGIES.map((s) => (
             <div
               key={s.id}
               className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-3 hover:border-[var(--accent-heart)]/40 transition-colors"
+              data-agent="strategy-card"
+              data-strategy-id={s.id}
+              data-config={JSON.stringify(s.config)}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
@@ -133,12 +151,34 @@ export function DiceStatisticsPanel({
                     {s.config.amount} cr · {s.config.target}% {s.config.condition}
                   </p>
                 </div>
-                <button
-                  onClick={() => onLoadConfig(s.config)}
-                  className="flex-shrink-0 px-2 py-1 text-[10px] font-medium rounded-md border border-[var(--accent-heart)]/40 bg-[var(--accent-heart)]/10 text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
-                >
-                  Apply
-                </button>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onLoadConfig(s.config);
+                    }}
+                    className="px-2 py-1 text-[10px] font-medium rounded-md border border-[var(--accent-heart)]/40 bg-[var(--accent-heart)]/10 text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
+                  >
+                    Apply
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRun(s); }}
+                    disabled={runningId !== null}
+                    className="px-2 py-1 text-[10px] font-medium rounded-md border border-green-500/40 bg-green-500/10 text-green-400 hover:bg-green-500/20 disabled:opacity-50 transition-colors"
+                  >
+                    {runningId === s.id ? "…" : "Run (20)"}
+                  </button>
+                  <Link
+                    href="/dashboard/strategies"
+                    className="px-2 py-1 text-[10px] font-medium rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:bg-white/5 transition-colors"
+                    title="Open strategies page"
+                  >
+                    →
+                  </Link>
+                </div>
               </div>
             </div>
           ))}

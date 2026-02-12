@@ -19,6 +19,6 @@ const GameViewClient = dynamic(() => import("./GameViewClient"), {
 export default function GamePage() {
   const params = useParams();
   const game = params?.game as string | undefined;
-  if (!game || !GAMES.includes(game)) notFound();
+  if (!game || !(GAMES as readonly string[]).includes(game)) notFound();
   return <GameViewClient game={game as GameSlug} />;
 }

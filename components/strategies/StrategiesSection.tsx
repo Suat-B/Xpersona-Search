@@ -1,13 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import dynamic from "next/dynamic";
 import { GlassCard } from "@/components/ui/GlassCard";
-
-const PythonStrategyEditor = dynamic(
-  () => import("@/components/strategies/PythonStrategyEditor"),
-  { ssr: false, loading: () => <div className="p-4 text-sm text-[var(--text-secondary)]">Loading Python editor…</div> }
-);
+import { CREATIVE_DICE_STRATEGIES, TARGET_PRESETS } from "@/lib/dice-strategies";
+import type { CreativeStrategy } from "@/lib/dice-strategies";
+import type { DiceStrategyConfig } from "@/lib/strategies";
 
 type StrategyRow = {
   id: string;
@@ -15,8 +12,6 @@ type StrategyRow = {
   name: string;
   config: Record<string, unknown>;
   createdAt: string;
-  hasPythonCode?: boolean;
-  description?: string;
 };
 
 const GAMES_WITH_RUN = ["dice"] as const;
@@ -25,7 +20,23 @@ function configSummary(_gameType: string, config: Record<string, unknown>): stri
   const amount = config.amount ?? "?";
   const target = config.target ?? "?";
   const cond = config.condition ?? "?";
-  return `Bet ${amount} @ ${cond} ${target}`;
+  const prog = config.progressionType ?? "flat";
+  return `Bet ${amount} @ ${cond} ${target} (${prog})`;
+}
+
+function riskColor(risk: string): string {
+  switch (risk) {
+    case "LOW":
+      return "text-emerald-400 bg-emerald-500/10";
+    case "MEDIUM":
+      return "text-amber-400 bg-amber-500/10";
+    case "HIGH":
+      return "text-red-400 bg-red-500/10";
+    case "CALCULATED":
+      return "text-violet-400 bg-violet-500/10";
+    default:
+      return "text-[var(--text-secondary)] bg-white/5";
+  }
 }
 
 export function StrategiesSection() {
@@ -33,26 +44,16 @@ export function StrategiesSection() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [createMode, setCreateMode] = useState<"config" | "python">("config");
-  const [runStrategyId, setRunStrategyId] = useState<string | null>(null);
-  const [runStrategyName, setRunStrategyName] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [builderOpen, setBuilderOpen] = useState(false);
   const [runResult, setRunResult] = useState<{
-    strategyId: string;
+    strategyId?: string;
     sessionPnl: number;
     roundsPlayed: number;
     finalBalance: number;
     stoppedReason: string;
   } | null>(null);
-
-  useEffect(() => {
-    fetch("/api/me", { credentials: "include" })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data?.success && data?.data?.id) setUserId(data.data.id);
-      })
-      .catch(() => {});
-  }, []);
+  const [running, setRunning] = useState(false);
+  const runAbortRef = useRef<AbortController | null>(null);
 
   const fetchIdRef = useRef(0);
 
@@ -82,6 +83,86 @@ export function StrategiesSection() {
     fetchStrategies();
   }, [fetchStrategies]);
 
+  const runWithConfig = useCallback(
+    async (config: DiceStrategyConfig, maxRounds: number) => {
+      setError(null);
+      setRunResult(null);
+      setRunning(true);
+      runAbortRef.current = new AbortController();
+      try {
+        const res = await fetch("/api/games/dice/run-strategy", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ config, maxRounds }),
+          signal: runAbortRef.current.signal,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.success && data.data) {
+          setRunResult({
+            sessionPnl: data.data.sessionPnl ?? 0,
+            roundsPlayed: data.data.roundsPlayed ?? 0,
+            finalBalance: data.data.finalBalance ?? 0,
+            stoppedReason: data.data.stoppedReason ?? "—",
+          });
+          window.dispatchEvent(new Event("balance-updated"));
+        } else {
+          setError(data.error ?? data.message ?? "Run failed");
+        }
+      } catch (e) {
+        if ((e as Error).name !== "AbortError") {
+          setError("Run failed");
+        }
+      } finally {
+        setRunning(false);
+        runAbortRef.current = null;
+      }
+    },
+    []
+  );
+
+  const handleRunSaved = useCallback(
+    async (s: StrategyRow, maxRounds = 20) => {
+      if (!(GAMES_WITH_RUN as readonly string[]).includes(s.gameType)) return;
+      setError(null);
+      setRunResult(null);
+      setRunning(true);
+      runAbortRef.current = new AbortController();
+      try {
+        const res = await fetch(`/api/games/dice/run-strategy`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ strategyId: s.id, maxRounds }),
+          signal: runAbortRef.current?.signal,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.success && data.data) {
+          setRunResult({
+            strategyId: s.id,
+            sessionPnl: data.data.sessionPnl ?? 0,
+            roundsPlayed: data.data.roundsPlayed ?? 0,
+            finalBalance: data.data.finalBalance ?? 0,
+            stoppedReason: data.data.stoppedReason ?? "—",
+          });
+          window.dispatchEvent(new Event("balance-updated"));
+        } else {
+          setError(data.error ?? data.message ?? "Run failed");
+        }
+      } catch (e) {
+        if ((e as Error).name !== "AbortError") {
+          setError("Run failed");
+        }
+      } finally {
+        setRunning(false);
+        runAbortRef.current = null;
+      }
+    },
+    []
+  );
+
+  const handleStopRun = useCallback(() => {
+    if (runAbortRef.current) runAbortRef.current.abort();
+  }, []);
+
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this strategy?")) return;
     try {
@@ -98,119 +179,87 @@ export function StrategiesSection() {
     }
   };
 
-  const handleRun = async (s: StrategyRow) => {
-    const gameType = s.gameType;
-    if (!(GAMES_WITH_RUN as readonly string[]).includes(gameType)) return;
-    setError(null);
-    setRunResult(null);
-    if (s.hasPythonCode && gameType === "dice") {
-      setRunStrategyId(s.id);
-      return;
-    }
-    try {
-      const res = await fetch(`/api/games/${gameType}/run-strategy`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ strategyId: s.id, maxRounds: 20 }),
-      });
-      const data = await res.json();
-      if (data.success && data.data) {
-        setRunResult({
-          strategyId: s.id,
-          sessionPnl: data.data.sessionPnl ?? 0,
-          roundsPlayed: data.data.roundsPlayed ?? 0,
-          finalBalance: data.data.finalBalance ?? 0,
-          stoppedReason: data.data.stoppedReason ?? "—",
-        });
-        window.dispatchEvent(new Event("balance-updated"));
-      } else {
-        setError(data.error ?? data.message ?? "Run failed");
-      }
-    } catch {
-      setError("Run failed");
-    }
-  };
-
-  const list = strategies;
-  const runnable = list.filter((s) => (GAMES_WITH_RUN as readonly string[]).includes(s.gameType));
-
-  const openCreatePython = () => {
-    setCreateOpen(true);
-    setCreateMode("python");
-  };
+  const runnable = strategies.filter((s) => (GAMES_WITH_RUN as readonly string[]).includes(s.gameType));
 
   return (
-    <section>
-      {/* Hero: Python strategies value prop + CTA */}
-      <div className="mb-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <ul className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-[var(--text-secondary)]">
-            <li className="flex items-center gap-2">
-              <span className="text-[var(--accent-heart)]">●</span>
-              Custom Python code
-            </li>
-            <li className="flex items-center gap-2">
-              <span className="text-[var(--accent-heart)]">●</span>
-              Run with real dice bets
-            </li>
-            <li className="flex items-center gap-2">
-              <span className="text-[var(--accent-heart)]">●</span>
-              <span className="inline-flex items-center gap-1">
-                OpenClaw compatible
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--accent-heart)]/10 text-[var(--accent-heart)] font-medium">AI</span>
-              </span>
-            </li>
-          </ul>
-          <button
-            type="button"
-            onClick={openCreatePython}
-            className="flex-shrink-0 rounded-xl bg-[var(--accent-heart)] px-5 py-2.5 text-sm font-bold text-white hover:opacity-90 transition-opacity"
-          >
-            Create Python strategy
-          </button>
-        </div>
-        <p className="mt-3 text-sm text-[var(--text-secondary)]">
-          Strategies are saved presets or Python code; running them places real dice bets using your balance.
+    <section data-agent="strategies-section">
+      {/* Creative strategy grid */}
+      <div className="mb-8" data-agent="creative-strategies">
+        <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4" data-agent="header">
+          Dice Strategies for AI Agents
+        </h2>
+        <p className="text-sm text-[var(--text-secondary)] mb-4">
+          For AI agents: <code className="bg-white/10 px-1 rounded text-xs">POST /api/games/dice/run-strategy</code> with <code className="bg-white/10 px-1 rounded text-xs">config</code> (JSON).
         </p>
-      </div>
-
-      {/* What you can do */}
-      <div className="mb-6 rounded-xl border border-[var(--border)] bg-[var(--bg-card)]/50 p-4">
-        <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">What you can do</h4>
-        <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-[var(--text-secondary)]">
-          <li><strong className="text-[var(--text-primary)]">Create</strong> — Save a quick preset (amount/target/condition) or custom Python code.</li>
-          <li><strong className="text-[var(--text-primary)]">Run</strong> — Execute a strategy to place many dice bets automatically (uses your balance).</li>
-          <li><strong className="text-[var(--text-primary)]">Save from Dice</strong> — On the dice page, save your current settings as a strategy.</li>
-          <li><strong className="text-[var(--text-primary)]">Delete</strong> — Remove strategies from this list.</li>
-        </ul>
-      </div>
-
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className="text-lg font-semibold text-[var(--text-primary)]">My strategies</h3>
-          <p className="text-xs text-[var(--text-secondary)] mt-0.5">Config-based or custom Python for dice.</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={openCreatePython}
-            className="rounded border border-[var(--accent-heart)] bg-[var(--accent-heart)]/10 px-3 py-2 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
-          >
-            Create Python strategy
-          </button>
-          <button
-            type="button"
-            onClick={() => { setCreateOpen((o) => !o); if (!createOpen) setCreateMode("python"); }}
-            className="rounded bg-[var(--accent-heart)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-          >
-            {createOpen ? "Cancel" : "Create strategy"}
-          </button>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {CREATIVE_DICE_STRATEGIES.map((s) => (
+            <CreativeStrategyCard
+              key={s.id}
+              strategy={s}
+              onRun={(maxRounds) => runWithConfig(toApiConfig(s.config), maxRounds)}
+              running={running}
+            />
+          ))}
         </div>
       </div>
 
-      <p className="mb-4 text-xs text-[var(--text-secondary)]">
-        Python strategies: paste any code that defines a class with <code className="bg-white/10 px-1 rounded">on_round_start(ctx)</code> and returns a bet decision. Works for you and for OpenClaw.
-      </p>
+      {/* Last run result / live run */}
+      {(runResult || running) && (
+        <div className="mb-6 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4" data-agent="run-result">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-semibold text-[var(--text-primary)]">
+              {running ? "Running…" : "Last run result"}
+            </h4>
+            {running && (
+              <button
+                type="button"
+                onClick={handleStopRun}
+                className="rounded border border-red-500/50 bg-red-500/10 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/20"
+              >
+                Stop
+              </button>
+            )}
+          </div>
+          {runResult && (
+            <p className="mt-2 text-sm">
+              Session PnL:{" "}
+              <span className={runResult.sessionPnl >= 0 ? "text-emerald-400" : "text-red-400"}>
+                {runResult.sessionPnl >= 0 ? "+" : ""}
+                {runResult.sessionPnl}
+              </span>{" "}
+              · Rounds: {runResult.roundsPlayed} · Balance: {runResult.finalBalance} · Stopped:{" "}
+              {runResult.stoppedReason}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Custom strategy builder (collapsible) */}
+      <div className="mb-6">
+        <button
+          type="button"
+          onClick={() => setBuilderOpen((o) => !o)}
+          className="flex items-center gap-2 w-full text-left text-sm font-medium text-[var(--text-primary)] py-2"
+          data-agent="builder-toggle"
+        >
+          <span className="text-[var(--accent-heart)]">{builderOpen ? "▼" : "▶"}</span>
+          Custom strategy builder
+        </button>
+        {builderOpen && (
+          <div className="mt-2">
+            <CustomStrategyBuilder
+              onRun={(cfg, maxRounds) => runWithConfig(cfg, maxRounds)}
+              running={running}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* My saved strategies */}
+      <div className="mb-4">
+        <h3 className="text-lg font-semibold text-[var(--text-primary)]">My strategies</h3>
+        <p className="text-xs text-[var(--text-secondary)] mt-0.5">Saved presets with progression.</p>
+      </div>
 
       {error && (
         <p className="mb-4 text-sm text-red-400" role="alert">
@@ -218,109 +267,46 @@ export function StrategiesSection() {
         </p>
       )}
 
+      <div className="flex gap-2 mb-4">
+        <button
+          type="button"
+          onClick={() => setCreateOpen((o) => !o)}
+          className="rounded bg-[var(--accent-heart)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+        >
+          {createOpen ? "Cancel" : "Create strategy"}
+        </button>
+      </div>
+
       {createOpen && (
-        <>
-          <div className="flex gap-2 mb-4">
-            <button
-              type="button"
-              onClick={() => setCreateMode("python")}
-              className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-                createMode === "python"
-                  ? "bg-white/10 border-[var(--accent-heart)] text-[var(--text-primary)]"
-                  : "border-[var(--border)] text-[var(--text-secondary)] hover:bg-white/5"
-              }`}
-            >
-              Python strategy
-            </button>
-            <button
-              type="button"
-              onClick={() => setCreateMode("config")}
-              className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-                createMode === "config"
-                  ? "bg-white/10 border-[var(--accent-heart)] text-[var(--text-primary)]"
-                  : "border-[var(--border)] text-[var(--text-secondary)] hover:bg-white/5"
-              }`}
-            >
-              Quick config
-            </button>
-          </div>
-          {createMode === "config" ? (
-            <CreateStrategyForm
-              onCreated={() => {
-                setCreateOpen(false);
-                fetchStrategies();
-              }}
-              onCancel={() => setCreateOpen(false)}
-            />
-          ) : (
-            <CreatePythonStrategyForm
-              onCreated={() => {
-                setCreateOpen(false);
-                fetchStrategies();
-              }}
-              onCancel={() => setCreateOpen(false)}
-            />
-          )}
-        </>
-      )}
-
-      {runStrategyId && userId && (
-        <GlassCard className="mb-6 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-[var(--text-primary)]">Run Python strategy</h3>
-            <button
-              type="button"
-              onClick={() => { setRunStrategyId(null); setRunStrategyName(null); }}
-              className="rounded border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:bg-white/5"
-            >
-              Close
-            </button>
-          </div>
-          <PythonStrategyEditor
-            userId={userId}
-            strategyId={runStrategyId}
-            strategyName={runStrategyName ?? undefined}
-            onStrategyRun={() => window.dispatchEvent(new Event("balance-updated"))}
-          />
-        </GlassCard>
-      )}
-
-      {runResult && (
-        <div className="mb-4 rounded border border-white/10 bg-white/5 p-4 text-sm">
-          <p className="font-medium text-[var(--text-primary)]">Last run result</p>
-          <p>Session PnL: <span className={runResult.sessionPnl >= 0 ? "text-green-400" : "text-red-400"}>{runResult.sessionPnl}</span> · Rounds: {runResult.roundsPlayed} · Balance: {runResult.finalBalance} · Stopped: {runResult.stoppedReason}</p>
-        </div>
+        <CreateStrategyForm
+          onCreated={() => {
+            setCreateOpen(false);
+            fetchStrategies();
+          }}
+          onCancel={() => setCreateOpen(false)}
+        />
       )}
 
       {loading ? (
         <p className="text-sm text-[var(--text-secondary)]">Loading strategies…</p>
       ) : runnable.length === 0 ? (
-        <p className="text-sm text-[var(--text-secondary)]">No strategies yet. Create one or save from a game (e.g. Dice).</p>
+        <p className="text-sm text-[var(--text-secondary)]">No saved strategies yet. Create one or save from Dice.</p>
       ) : (
         <div className="space-y-2">
           {runnable.map((s) => (
             <GlassCard key={s.id} className="flex items-center justify-between gap-4 p-4">
               <div>
                 <p className="font-medium text-[var(--text-primary)]">{s.name}</p>
-                <p className="text-xs text-[var(--text-secondary)]">
-                  {s.gameType}
-                  {s.hasPythonCode ? (
-                    <span className="ml-2 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-medium">Python</span>
-                  ) : (
-                    <> — {configSummary(s.gameType, s.config)}</>
-                  )}
-                  {s.description ? ` · ${s.description}` : ""}
-                </p>
+                <p className="text-xs text-[var(--text-secondary)]">{configSummary(s.gameType, s.config)}</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => handleRun(s)}
-                  className="rounded border border-green-500/50 bg-green-500/10 px-3 py-1.5 text-sm text-green-400 hover:bg-green-500/20"
-                  title={s.hasPythonCode ? "Opens runner to start strategy" : "Run this strategy to place dice bets automatically"}
-                  aria-label={s.hasPythonCode ? "Run Python strategy (opens runner)" : "Run strategy to place dice bets automatically"}
+                  onClick={() => handleRunSaved(s, 20)}
+                  disabled={running}
+                  className="rounded border border-green-500/50 bg-green-500/10 px-3 py-1.5 text-sm text-green-400 hover:bg-green-500/20 disabled:opacity-50"
                 >
-                  {s.hasPythonCode && s.gameType === "dice" ? "Run (Python)" : "Run (20)"}
+                  Run (20)
                 </button>
                 <button
                   type="button"
@@ -338,17 +324,285 @@ export function StrategiesSection() {
   );
 }
 
-function CreateStrategyForm({
-  onCreated,
-  onCancel,
+function toApiConfig(c: CreativeStrategy["config"]): DiceStrategyConfig {
+  return {
+    amount: c.amount,
+    target: c.target,
+    condition: c.condition,
+    progressionType: c.progressionType ?? "flat",
+  };
+}
+
+function CreativeStrategyCard({
+  strategy,
+  onRun,
+  running,
 }: {
-  onCreated: () => void;
-  onCancel: () => void;
+  strategy: CreativeStrategy;
+  onRun: (maxRounds: number) => void;
+  running: boolean;
 }) {
+  return (
+    <div
+      className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 hover:border-[var(--accent-heart)]/40 transition-colors"
+      data-agent="strategy-card"
+      data-strategy-id={strategy.id}
+      data-config={JSON.stringify(strategy.config)}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-lg" aria-hidden>
+          {strategy.icon}
+        </span>
+        <span className="font-semibold text-[var(--text-primary)]">{strategy.name}</span>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${riskColor(strategy.risk)}`}>
+          {strategy.risk}
+        </span>
+      </div>
+      <p className="text-xs text-[var(--text-secondary)] mb-3 line-clamp-2">{strategy.desc}</p>
+      <p className="text-[10px] text-[var(--text-secondary)]/80 font-mono mb-3">
+        {strategy.config.amount} cr · {strategy.config.target}% {strategy.config.condition}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => onRun(20)}
+          disabled={running}
+          className="rounded border border-green-500/50 bg-green-500/10 px-2 py-1 text-xs text-green-400 hover:bg-green-500/20 disabled:opacity-50"
+        >
+          Run (20)
+        </button>
+        <button
+          type="button"
+          onClick={() => onRun(50)}
+          disabled={running}
+          className="rounded border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-2 py-1 text-xs text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 disabled:opacity-50"
+        >
+          Auto-run (50)
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CustomStrategyBuilder({
+  onRun,
+  running,
+}: {
+  onRun: (config: DiceStrategyConfig, maxRounds: number) => void;
+  running: boolean;
+}) {
+  const [mode, setMode] = useState<"tweak" | "compose">("tweak");
+  const [baseStrategyId, setBaseStrategyId] = useState("flat");
+  const [amount, setAmount] = useState(10);
+  const [target, setTarget] = useState(50);
+  const [condition, setCondition] = useState<"over" | "under">("over");
+  const [progressionType, setProgressionType] = useState<string>("flat");
+  const [composeProgression, setComposeProgression] = useState("flat");
+  const [composeTargetPreset, setComposeTargetPreset] = useState("50-over");
+
+  const baseStrategy = CREATIVE_DICE_STRATEGIES.find((s) => s.id === baseStrategyId) ?? CREATIVE_DICE_STRATEGIES[0]!;
+  const targetPreset = TARGET_PRESETS.find((p) => p.id === composeTargetPreset) ?? TARGET_PRESETS[0]!;
+
+  const buildConfig = (): DiceStrategyConfig => {
+    if (mode === "compose") {
+      return {
+        amount,
+        target: targetPreset.target,
+        condition: targetPreset.condition,
+        progressionType: (composeProgression as DiceStrategyConfig["progressionType"]) ?? "flat",
+      };
+    }
+    return {
+      amount,
+      target,
+      condition,
+      progressionType: (progressionType as DiceStrategyConfig["progressionType"]) ?? "flat",
+    };
+  };
+
+  return (
+    <GlassCard className="p-6">
+      <div className="flex gap-2 mb-4">
+        <button
+          type="button"
+          onClick={() => setMode("tweak")}
+          className={`px-3 py-1.5 text-sm rounded border ${
+            mode === "tweak"
+              ? "bg-white/10 border-[var(--accent-heart)] text-[var(--text-primary)]"
+              : "border-[var(--border)] text-[var(--text-secondary)] hover:bg-white/5"
+          }`}
+        >
+          Tweak
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("compose")}
+          className={`px-3 py-1.5 text-sm rounded border ${
+            mode === "compose"
+              ? "bg-white/10 border-[var(--accent-heart)] text-[var(--text-primary)]"
+              : "border-[var(--border)] text-[var(--text-secondary)] hover:bg-white/5"
+          }`}
+        >
+          Compose
+        </button>
+      </div>
+
+      {mode === "tweak" && (
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm text-[var(--text-secondary)]">Base strategy</label>
+            <select
+              value={baseStrategyId}
+              onChange={(e) => {
+                setBaseStrategyId(e.target.value);
+                const s = CREATIVE_DICE_STRATEGIES.find((x) => x.id === e.target.value);
+                if (s) {
+                  setAmount(s.config.amount);
+                  setTarget(s.config.target);
+                  setCondition(s.config.condition);
+                  setProgressionType(s.config.progressionType ?? "flat");
+                }
+              }}
+              className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
+            >
+              {CREATIVE_DICE_STRATEGIES.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.icon} {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-xs text-[var(--text-secondary)]">Amount</label>
+              <input
+                type="number"
+                min={1}
+                value={amount}
+                onChange={(e) => setAmount(Number(e.target.value))}
+                className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-[var(--text-secondary)]">Target</label>
+              <input
+                type="number"
+                min={0}
+                max={99}
+                value={target}
+                onChange={(e) => setTarget(Number(e.target.value))}
+                className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]"
+              />
+            </div>
+            <div>
+              <span className="block text-xs text-[var(--text-secondary)]">Condition</span>
+              <div className="mt-1 flex gap-2">
+                <label className="flex items-center gap-1">
+                  <input type="radio" checked={condition === "over"} onChange={() => setCondition("over")} />
+                  Over
+                </label>
+                <label className="flex items-center gap-1">
+                  <input type="radio" checked={condition === "under"} onChange={() => setCondition("under")} />
+                  Under
+                </label>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-[var(--text-secondary)]">Progression</label>
+              <select
+                value={progressionType}
+                onChange={(e) => setProgressionType(e.target.value)}
+                className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]"
+              >
+                <option value="flat">Flat</option>
+                <option value="martingale">Martingale</option>
+                <option value="paroli">Paroli</option>
+                <option value="dalembert">D&apos;Alembert</option>
+                <option value="fibonacci">Fibonacci</option>
+                <option value="labouchere">Labouchere</option>
+                <option value="oscar">Oscar</option>
+                <option value="kelly">Kelly</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {mode === "compose" && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-[var(--text-secondary)]">Progression</label>
+              <select
+                value={composeProgression}
+                onChange={(e) => setComposeProgression(e.target.value)}
+                className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
+              >
+                {["flat", "martingale", "paroli", "dalembert", "fibonacci", "labouchere", "oscar", "kelly"].map(
+                  (p) => (
+                    <option key={p} value={p}>
+                      {p.charAt(0).toUpperCase() + p.slice(1)}
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-[var(--text-secondary)]">Target / Condition</label>
+              <select
+                value={composeTargetPreset}
+                onChange={(e) => setComposeTargetPreset(e.target.value)}
+                className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
+              >
+                {TARGET_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm text-[var(--text-secondary)]">Base amount</label>
+            <input
+              type="number"
+              min={1}
+              value={amount}
+              onChange={(e) => setAmount(Number(e.target.value))}
+              className="mt-1 w-full max-w-[120px] rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-2 mt-4">
+        <button
+          type="button"
+          onClick={() => onRun(buildConfig(), 20)}
+          disabled={running}
+          className="rounded bg-green-500/20 border border-green-500/50 px-4 py-2 text-sm text-green-400 hover:bg-green-500/30 disabled:opacity-50"
+        >
+          Run (20)
+        </button>
+        <button
+          type="button"
+          onClick={() => onRun(buildConfig(), 50)}
+          disabled={running}
+          className="rounded bg-[var(--accent-heart)]/20 border border-[var(--accent-heart)]/50 px-4 py-2 text-sm text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/30 disabled:opacity-50"
+        >
+          Auto-run (50)
+        </button>
+      </div>
+    </GlassCard>
+  );
+}
+
+function CreateStrategyForm({ onCreated, onCancel }: { onCreated: () => void; onCancel: () => void }) {
   const [name, setName] = useState("");
   const [amount, setAmount] = useState(10);
   const [target, setTarget] = useState(50);
   const [condition, setCondition] = useState<"over" | "under">("over");
+  const [progressionType, setProgressionType] = useState<string>("flat");
   const [stopAfterRounds, setStopAfterRounds] = useState("");
   const [stopIfBalanceBelow, setStopIfBalanceBelow] = useState("");
   const [stopIfBalanceAbove, setStopIfBalanceAbove] = useState("");
@@ -357,6 +611,7 @@ function CreateStrategyForm({
 
   const buildConfig = (): Record<string, unknown> => {
     const base: Record<string, unknown> = { amount, target, condition };
+    if (progressionType && progressionType !== "flat") base.progressionType = progressionType;
     const stopR = parseInt(stopAfterRounds, 10);
     if (!Number.isNaN(stopR) && stopR > 0) base.stopAfterRounds = stopR;
     const stopB = parseFloat(stopIfBalanceBelow);
@@ -401,16 +656,6 @@ function CreateStrategyForm({
       <form onSubmit={submit} className="space-y-4">
         <h3 className="font-semibold text-[var(--text-primary)]">New strategy</h3>
         <div>
-          <label className="block text-sm text-[var(--text-secondary)]">Game</label>
-          <select
-            disabled
-            className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-secondary)] disabled:cursor-not-allowed"
-          >
-            <option value="dice">Dice</option>
-          </select>
-          <p className="mt-1 text-xs text-[var(--text-secondary)]">Currently only Dice strategies are supported</p>
-        </div>
-        <div>
           <label className="block text-sm text-[var(--text-secondary)]">Name</label>
           <input
             type="text"
@@ -422,200 +667,57 @@ function CreateStrategyForm({
           />
         </div>
         <div>
-          <label className="block text-sm text-[var(--text-secondary)]">Bet amount</label>
-          <input
-            type="number"
-            min={1}
-            value={amount}
-            onChange={(e) => setAmount(Number(e.target.value))}
+          <label className="block text-sm text-[var(--text-secondary)]">Progression type</label>
+          <select
+            value={progressionType}
+            onChange={(e) => setProgressionType(e.target.value)}
             className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
-          />
+          >
+            <option value="flat">Flat</option>
+            <option value="martingale">Martingale</option>
+            <option value="paroli">Paroli</option>
+            <option value="dalembert">D&apos;Alembert</option>
+            <option value="fibonacci">Fibonacci</option>
+            <option value="labouchere">Labouchere</option>
+            <option value="oscar">Oscar&apos;s Grind</option>
+            <option value="kelly">Kelly Criterion</option>
+          </select>
         </div>
-        <div>
-          <label className="block text-sm text-[var(--text-secondary)]">Target (0–99.99)</label>
-          <input
-            type="number"
-            min={0}
-            max={99.99}
-            step={0.01}
-            value={target}
-            onChange={(e) => setTarget(Number(e.target.value))}
-            className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
-          />
-        </div>
-        <div>
-          <span className="block text-sm text-[var(--text-secondary)]">Condition</span>
-          <div className="mt-1 flex gap-4">
-            <label className="flex items-center gap-2">
-              <input type="radio" checked={condition === "over"} onChange={() => setCondition("over")} />
-              Over
-            </label>
-            <label className="flex items-center gap-2">
-              <input type="radio" checked={condition === "under"} onChange={() => setCondition("under")} />
-              Under
-            </label>
-          </div>
-        </div>
-        <div className="grid grid-cols-3 gap-4 text-sm">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <div>
-            <label className="block text-[var(--text-secondary)]">Stop after rounds (optional)</label>
+            <label className="block text-sm text-[var(--text-secondary)]">Bet amount</label>
             <input
               type="number"
               min={1}
-              placeholder="—"
-              value={stopAfterRounds}
-              onChange={(e) => setStopAfterRounds(e.target.value)}
-              className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]"
+              value={amount}
+              onChange={(e) => setAmount(Number(e.target.value))}
+              className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
             />
           </div>
           <div>
-            <label className="block text-[var(--text-secondary)]">Stop if balance below</label>
+            <label className="block text-sm text-[var(--text-secondary)]">Target (0–99)</label>
             <input
               type="number"
-              placeholder="—"
-              value={stopIfBalanceBelow}
-              onChange={(e) => setStopIfBalanceBelow(e.target.value)}
-              className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]"
+              min={0}
+              max={99}
+              value={target}
+              onChange={(e) => setTarget(Number(e.target.value))}
+              className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
             />
           </div>
           <div>
-            <label className="block text-[var(--text-secondary)]">Stop if balance above</label>
-            <input
-              type="number"
-              placeholder="—"
-              value={stopIfBalanceAbove}
-              onChange={(e) => setStopIfBalanceAbove(e.target.value)}
-              className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]"
-            />
+            <span className="block text-sm text-[var(--text-secondary)]">Condition</span>
+            <div className="mt-1 flex gap-4">
+              <label className="flex items-center gap-2">
+                <input type="radio" checked={condition === "over"} onChange={() => setCondition("over")} />
+                Over
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="radio" checked={condition === "under"} onChange={() => setCondition("under")} />
+                Under
+              </label>
+            </div>
           </div>
-        </div>
-        {err && <p className="text-sm text-red-400">{err}</p>}
-        <div className="flex gap-2">
-          <button
-            type="submit"
-            disabled={submitting}
-            className="rounded bg-[var(--accent-heart)] px-4 py-2 font-medium text-white disabled:opacity-50"
-          >
-            {submitting ? "Creating…" : "Create"}
-          </button>
-          <button type="button" onClick={onCancel} className="rounded border border-[var(--border)] px-4 py-2 text-[var(--text-primary)]">
-            Cancel
-          </button>
-        </div>
-      </form>
-    </GlassCard>
-  );
-}
-
-function CreatePythonStrategyForm({
-  onCreated,
-  onCancel,
-}: {
-  onCreated: () => void;
-  onCancel: () => void;
-}) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [pythonCode, setPythonCode] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErr(null);
-    const trimmed = name.trim();
-    if (!trimmed) {
-      setErr("Name is required");
-      return;
-    }
-    if (!pythonCode.trim()) {
-      setErr("Python code is required");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/me/strategies", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          gameType: "dice",
-          name: trimmed,
-          description: description.trim() || undefined,
-          python_code: pythonCode,
-          config: {},
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (data.success) {
-        onCreated();
-      } else {
-        const msg = typeof data.message === "string" ? data.message : data.error;
-        const validationErrors = data.validation_result?.errors;
-        const detail = Array.isArray(validationErrors) && validationErrors.length > 0
-          ? validationErrors.join(". ")
-          : msg ?? (res.status === 401 ? "Please sign in" : `Create failed (${res.status} ${res.statusText || "error"})`);
-        setErr(detail);
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Network or server error";
-      setErr(`Create failed: ${msg}`);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const minimalTestStrategy = `class Strategy:
-  def on_round_start(self, ctx):
-    if ctx.get_balance() < 10:
-      return BetDecision.stop("insufficient_balance")
-    return BetDecision(10, 50, "over")`;
-
-  return (
-    <GlassCard className="mb-6 p-6">
-      <form onSubmit={submit} className="space-y-4">
-        <h3 className="font-semibold text-[var(--text-primary)]">New Python strategy</h3>
-        <p className="text-sm text-[var(--text-secondary)]">
-          Any Python is allowed. Define a class with a method <code className="bg-white/10 px-1 rounded">on_round_start(self, ctx)</code> that returns a bet decision. Use <code className="bg-white/10 px-1 rounded">BetDecision(amount, target, &apos;over&apos;|&apos;under&apos;)</code> or <code className="bg-white/10 px-1 rounded">BetDecision.stop(reason)</code>. Same contract for OpenClaw AI.
-        </p>
-        <p className="text-xs text-[var(--text-secondary)]">
-          Try this minimal strategy (paste into the code box below):
-        </p>
-        <pre className="rounded border border-[var(--border)] bg-[var(--bg-deep)] p-3 text-xs font-mono text-[var(--text-primary)] overflow-x-auto whitespace-pre-wrap">
-          {minimalTestStrategy}
-        </pre>
-        <div>
-          <label className="block text-sm text-[var(--text-secondary)]">Name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Martingale v1"
-            maxLength={100}
-            className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
-          />
-        </div>
-        <div>
-          <label className="block text-sm text-[var(--text-secondary)]">Description (optional)</label>
-          <input
-            type="text"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Short description"
-            maxLength={200}
-            className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
-          />
-        </div>
-        <div>
-          <label className="block text-sm text-[var(--text-secondary)]">Python code</label>
-          <textarea
-            value={pythonCode}
-            onChange={(e) => setPythonCode(e.target.value)}
-            placeholder="class Strategy:\n  def on_round_start(self, ctx):\n    return BetDecision(10, 50, 'over')"
-            rows={14}
-            className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 font-mono text-sm text-[var(--text-primary)] resize-y"
-            spellCheck={false}
-          />
         </div>
         {err && <p className="text-sm text-red-400">{err}</p>}
         <div className="flex gap-2">

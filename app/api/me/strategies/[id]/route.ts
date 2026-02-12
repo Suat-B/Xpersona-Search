@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
-import { strategies, strategyCode } from "@/lib/db/schema";
+import { strategies } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import {
   type GameType,
-  GAME_TYPES,
   validateStrategyConfig,
 } from "@/lib/strategies";
 
-/** GET /api/me/strategies/[id] — includes python_code and description when present */
+/** GET /api/me/strategies/[id] */
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -33,35 +32,15 @@ export async function GET(
       { status: 404 }
     );
   }
-  const [codeRow] = await db
-    .select({ pythonCode: strategyCode.pythonCode, description: strategyCode.description })
-    .from(strategyCode)
-    .where(eq(strategyCode.strategyId, id))
-    .limit(1);
-  const data: {
-    id: string;
-    gameType: string;
-    name: string;
-    config: object;
-    createdAt: Date | null;
-    python_code?: string;
-    description?: string;
-    hasPythonCode?: boolean;
-  } = {
-    id: row.id,
-    gameType: row.gameType,
-    name: row.name,
-    config: row.config as object,
-    createdAt: row.createdAt,
-  };
-  if (codeRow?.pythonCode) {
-    data.python_code = codeRow.pythonCode;
-    data.description = codeRow.description ?? undefined;
-    data.hasPythonCode = true;
-  }
   return NextResponse.json({
     success: true,
-    data,
+    data: {
+      id: row.id,
+      gameType: row.gameType,
+      name: row.name,
+      config: row.config as object,
+      createdAt: row.createdAt,
+    },
   });
 }
 

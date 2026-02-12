@@ -6,10 +6,27 @@
 export const GAME_TYPES = ["dice", "blackjack", "plinko", "crash", "slots"] as const;
 export type GameType = (typeof GAME_TYPES)[number];
 
+export const DICE_PROGRESSION_TYPES = [
+  "flat",
+  "martingale",
+  "paroli",
+  "dalembert",
+  "fibonacci",
+  "labouchere",
+  "oscar",
+  "kelly",
+] as const;
+export type DiceProgressionType = (typeof DICE_PROGRESSION_TYPES)[number];
+
 export type DiceStrategyConfig = {
   amount: number;
   target: number;
   condition: "over" | "under";
+  progressionType?: DiceProgressionType;
+  maxBet?: number;
+  maxConsecutiveLosses?: number;
+  maxConsecutiveWins?: number;
+  unitStep?: number;
   stopAfterRounds?: number;
   stopIfBalanceBelow?: number;
   stopIfBalanceAbove?: number;

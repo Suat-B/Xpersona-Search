@@ -1,6 +1,6 @@
 ---
 name: xpersona-casino
-description: Play xpersona.co casino (dice, blackjack, plinko, crash, slots) using the user's API key; check balance, claim faucet, place bets, get session PnL, create and run custom strategies (AI/OpenClaw). AI-first: all responses are { success, data?, error? }; use GET /api/me/bets for session history and GET/POST /api/me/strategies and POST /api/games/{game}/run-strategy for strategies.
+description: Play xpersona.co casino (dice, blackjack, plinko, crash, slots) using the user's API key; check balance, claim faucet, place bets, get session PnL, create and run custom strategies (AI/OpenClaw). AI-first: all responses are { success, data?, error? }; use GET /api/me/session-stats for single-call stats; GET /api/me/bets for history; REST for plinko/blackjack/crash/slots (no tools).
 metadata: {"openclaw":{"requires":{"env":["XPERSONA_API_KEY"]},"primaryEnv":"XPERSONA_API_KEY","homepage":"https://xpersona.co"}}
 ---
 
@@ -18,6 +18,7 @@ Base URL: `https://xpersona.co` (override with `XPERSONA_BASE_URL` if set).
 
 | Action | Method | Path | Body / Notes |
 |--------|--------|------|--------------|
+| **Session stats (AI-first)** | GET | /api/me/session-stats?gameType=dice&limit=50 | → `data.balance`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentBets` — prefer this for "how am I doing?" |
 | Balance | GET | /api/me/balance | → `data.balance` |
 | Session PnL & history | GET | /api/me/bets?limit=50 | → `data.bets`, `data.sessionPnl`, `data.roundCount` |
 | List strategies | GET | /api/me/strategies?gameType=dice | → `data.strategies` |
@@ -27,9 +28,25 @@ Base URL: `https://xpersona.co` (override with `XPERSONA_BASE_URL` if set).
 | Delete strategy | DELETE | /api/me/strategies/:id | |
 | Run dice strategy | POST | /api/games/dice/run-strategy | `{ strategyId? or config?, maxRounds? }` → `data.results`, `data.sessionPnl`, `data.finalBalance` |
 | Faucet | POST | /api/faucet | Once per hour → `data.balance`, `data.granted`, `data.nextFaucetAt` |
-| Dice | POST | /api/games/dice/bet | `{ amount, target, condition: "over"\|"under" }` |
+| Dice bet | POST | /api/games/dice/bet | `{ amount, target, condition: "over"\|"under" }` |
+| Plinko bet | POST | /api/games/plinko/bet | `{ amount, risk: "low"\|"medium"\|"high" }` |
+| Slots spin | POST | /api/games/slots/spin | `{ amount }` |
+| Blackjack round | POST | /api/games/blackjack/round | `{ amount }` → roundId, then POST .../round/:roundId/action `{ action: "hit"\|"stand"\|"double"\|"split" }` |
+| Crash current | GET | /api/games/crash/rounds/current | → roundId, status, multiplier |
+| Crash bet | POST | /api/games/crash/rounds/current/bet | `{ amount }` |
+| Crash cashout | POST | /api/games/crash/rounds/:id/cashout | |
 
-All game responses include `data.balance` and outcome (e.g. `data.payout`, `data.win`). Use GET /api/me/balance after actions to confirm.
+All game responses include `data.balance` and outcome. Use GET /api/me/session-stats for single-call stats.
+
+---
+
+## Dice rules and odds (for explaining to users)
+
+- **House edge:** 3%
+- **Min bet:** 1, **max bet:** 10000 credits
+- **Win probability:** over X → (100-X)/100; under X → X/100. Example: over 50 = 49% win chance.
+- **Multiplier:** (1 - 0.03) / winProbability = 0.97 / winProbability (rounded). Over 50 ≈ 1.98x payout.
+- **Faucet:** 100 credits per claim, 1 hour cooldown.
 
 ---
 
@@ -45,109 +62,90 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 
 **Response:** `{ "success": true, "tool": "<name>", "result": { ... }, "meta": { "timestamp", "agent_id", "rate_limit_remaining" } }` or `{ "success": false, "error": "..." }`. On error the HTTP status may be 400, 401, or 429 (rate limit).
 
-**Tool discovery:** `GET /api/openclaw/tools` returns `{ "success": true, "tools": { ... } }` with the full schema (tool names, parameters, returns). Use this for programmatic discovery. Full parameter details: https://xpersona.co/dashboard/api.
+**Tool discovery:** `GET /api/openclaw/tools` returns `{ "success": true, "tools": { ... } }` with the full schema. Full parameter details: https://xpersona.co/dashboard/api.
 
-**Tool list (one-line purpose):**
+**Implemented tools only (use REST for other games):**
 
 | Tool | Purpose |
 |------|---------|
 | casino_auth_guest | Create or authenticate as a guest user |
 | casino_auth_agent | Authenticate as an AI agent with permissions |
 | casino_place_dice_bet | Place a dice bet (amount, target, condition) |
-| casino_get_balance | Get balance and session stats |
-| casino_get_history | Get bet history and statistics |
-| casino_analyze_patterns | Analyze patterns and trends |
-| casino_deploy_strategy | Deploy a Python strategy (name, python_code, game_type) |
-| casino_run_strategy | Execute a deployed strategy |
+| casino_get_balance | Get balance and session stats (win rate, streak, session PnL) |
+| casino_get_history | Get bet history and statistics by game_type |
+| casino_analyze_patterns | Analyze dice patterns and trends |
+| casino_run_strategy | Run dice strategy (strategy_id or inline config with progression_type) |
 | casino_list_strategies | List deployed strategies |
-| casino_get_strategy | Get strategy details and code |
+| casino_get_strategy | Get strategy details (config, progression_type) |
 | casino_delete_strategy | Delete a strategy |
-| casino_stop_session | Stop an active strategy session |
-| casino_get_session_status | Get status of active or recent session |
 | casino_notify | Send notification about game events |
 | casino_get_limits | Get betting and rate limits |
-| casino_calculate_odds | Calculate odds and expected value for dice |
+| casino_calculate_odds | Calculate dice odds and expected value |
 | casino_claim_faucet | Claim the hourly faucet for the user |
 | casino_list_credit_packages | List credit packages for purchase |
 | casino_create_checkout | Create a Stripe checkout URL for a package (deposit) |
-| casino_place_plinko_bet | Place a plinko bet (amount, risk) |
-| casino_spin_slots | Spin slots (amount) |
-| casino_blackjack_start_round | Start blackjack round (amount) → round_id |
-| casino_blackjack_action | Hit/stand/double/split on round_id |
-| casino_crash_get_current | Get current crash round (multiplier, status) |
-| casino_crash_bet | Place bet on current crash round |
-| casino_crash_cashout | Cash out on crash round_id |
-| casino_list_games | List all games with limits and house edge |
-| casino_game_rules | Get rules and odds for a game |
-| casino_get_profile | Get user profile (name, credits, lastFaucetAt) |
-| casino_random_game | Pick a random game and suggested bet |
-| casino_session_summary | Session PnL, win rate, best/worst bet, by game |
-| casino_house_edge_by_game | House edge and min/max bet per game |
-| casino_run_plinko_strategy | Run plinko strategy (strategyId or config) |
-| casino_run_slots_strategy | Run slots strategy (strategyId or config) |
 
-Rate limits may apply; the response may include `meta.rate_limit_remaining`. Error codes in `result` or `error` mirror REST (e.g. `INSUFFICIENT_BALANCE`, `VALIDATION_ERROR`, `FAUCET_COOLDOWN`).
+**Note:** `casino_stop_session` and `casino_get_session_status` exist in the schema but are reserved for future async sessions. Strategy runs are synchronous; there is no active session to stop. Use `casino_run_strategy` result directly.
 
-**Recommended flow for an agent:** (1) Get balance (`casino_get_balance`). (2) If low, claim faucet (`casino_claim_faucet`) or suggest deposit (`casino_list_credit_packages` then `casino_create_checkout` and share the URL). (3) Place bets (`casino_place_dice_bet`) or run a strategy (`casino_run_strategy`). (4) Report session PnL from `casino_get_balance` or `casino_get_history`.
+**Plinko, Slots, Blackjack, Crash:** No tools. Use REST endpoints (see Quick reference above).
+
+---
+
+## Agent flow guidance (when user says X, do Y)
+
+| User intent | Action |
+|-------------|--------|
+| "Bet 10 on over 50" | `casino_place_dice_bet` or POST /api/games/dice/bet with `{ amount: 10, target: 50, condition: "over" }` |
+| "How am I doing?" | GET /api/me/session-stats (single call) or `casino_get_balance` |
+| "Run my Martingale" / "Run strategy X" | `casino_run_strategy` with `strategy_id` or `config` |
+| "I'm out of credits" | `casino_claim_faucet` (if cooldown passed); else `casino_list_credit_packages` → `casino_create_checkout` → share URL |
+| "Play plinko 5 credits low risk" | POST /api/games/plinko/bet `{ amount: 5, risk: "low" }` |
+| "Spin slots 10" | POST /api/games/slots/spin `{ amount: 10 }` |
+| "What are the odds for over 70?" | `casino_calculate_odds` with `{ target: 70, condition: "over" }` |
+| "List my strategies" | `casino_list_strategies` or GET /api/me/strategies |
+
+**Recommended flow:** (1) Get balance (`casino_get_balance` or GET /api/me/session-stats). (2) If low, claim faucet (`casino_claim_faucet`) or suggest deposit. (3) Place bets or run strategy. (4) Report session PnL from session-stats or `casino_get_balance`.
 
 ---
 
 ## Session PnL (AI-first)
 
-**GET /api/me/bets?limit=50** returns the user’s recent bets and session PnL so the AI can report performance without keeping state:
+**GET /api/me/session-stats?gameType=dice&limit=50** — unified stats, preferred for "how am I doing?":
 
-- `data.bets`: array of `{ id, gameType, amount, outcome, payout, pnl, createdAt }` (pnl = payout - amount)
-- `data.sessionPnl`: sum of pnl over returned bets
-- `data.roundCount`: number of bets returned (up to limit, max 200)
+- `data.balance`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentBets`
 
-Use this to answer “how am I doing this session?” or to show a simple PnL summary.
+**GET /api/me/bets?limit=50** — detailed history:
+
+- `data.bets`: array of `{ id, gameType, amount, outcome, payout, pnl, createdAt }`
+- `data.sessionPnl`, `data.roundCount`
 
 ---
 
 ## Auto-play (AI pattern)
 
-The website’s auto-play uses the same endpoints. To auto-play as an agent:
+1. **Dice / Plinko / Slots:** Call bet/spin endpoint in a loop with 200–500 ms delay. Stop on `INSUFFICIENT_BALANCE` or user stop.
+2. **Blackjack:** POST .../round, then loop POST .../round/:roundId/action (hit until ≥17, then stand); when `data.status === "settled"`, next round.
+3. **Crash:** GET current round; if `status === "running"` and no bet, POST .../current/bet; when multiplier reaches target, POST .../rounds/:id/cashout.
 
-1. **Dice / Plinko / Slots:** Call the bet/spin endpoint in a loop with a short delay (e.g. 200–500 ms). Stop on `success: false` (e.g. `INSUFFICIENT_BALANCE`) or when the user asks to stop.
-2. **Blackjack:** For each round, POST .../round, then in a loop POST .../round/:roundId/action with `hit` until hand value ≥ 17, then `stand`; when `data.status === "settled"`, record outcome and start next round if auto continues.
-3. **Crash:** GET current round; when `status === "running"` and no bet yet, POST .../current/bet; when you have a bet and multiplier reaches a target, POST .../rounds/:id/cashout. Repeat for next round.
-
-Always check `data.balance` and stop if the user cannot afford another bet.
+Always check `data.balance` before each bet.
 
 ---
 
 ## Custom strategies (AI/OpenClaw)
 
-You can create, list, and run **saved strategies** so the user (or the AI) can define unique play styles per game.
+**Create:** `POST /api/me/strategies` with `{ gameType, name, config }`. Dice config: `amount`, `target`, `condition`, optional `progressionType` (flat|martingale|paroli|dalembert|fibonacci|labouchere|oscar|kelly), `maxBet`, `maxConsecutiveLosses`, `maxConsecutiveWins`, `stopIfBalanceBelow`, `stopIfBalanceAbove`.
 
-**Create a strategy:**  
-`POST /api/me/strategies` with `{ "gameType": "dice", "name": "Conservative over 50", "config": { "amount": 10, "target": 50, "condition": "over", "stopIfBalanceBelow": 100 } }`.  
-Config shape per game:
-- **dice:** `amount`, `target`, `condition` ("over"|"under"), optional `stopAfterRounds`, `stopIfBalanceBelow`, `stopIfBalanceAbove`
-- **plinko:** `amount`, `risk` ("low"|"medium"|"high"), optional stop conditions
-- **slots:** `amount`, optional stop conditions
+**Run (one call):** `POST /api/games/dice/run-strategy` with `{ strategyId }` or `{ config, maxRounds }`. Response: `data.results`, `data.sessionPnl`, `data.finalBalance`, `data.stoppedReason`.
 
-**List strategies:**  
-`GET /api/me/strategies` or `GET /api/me/strategies?gameType=dice` → `data.strategies` (id, gameType, name, config, createdAt).
-
-**Run a strategy (one API call, server runs up to maxRounds):**  
-- `POST /api/games/dice/run-strategy` with `{ "strategyId": "<id>" }` or `{ "config": { "amount": 10, "target": 50, "condition": "over" }, "maxRounds": 30 }`  
-- Response: `data.results`, `data.sessionPnl`, `data.finalBalance`, `data.roundsPlayed`, `data.stoppedReason` (e.g. "max_rounds", "insufficient_balance", "balance_below").
-
-Use this to let the user define strategies (e.g. “bet 10 on over 50, stop if balance under 100”) and run them in one request, or to run your own inline config without saving.
+Plinko and slots strategies: same REST pattern (`POST /api/games/plinko/run-strategy`, `POST /api/games/slots/run-strategy`).
 
 ---
 
 ## Example (curl)
 
-Check balance:
+Session stats (AI-first):
 ```bash
-curl -s -H "Authorization: Bearer $XPERSONA_API_KEY" https://xpersona.co/api/me/balance
-```
-
-Session PnL and last 20 bets:
-```bash
-curl -s -H "Authorization: Bearer $XPERSONA_API_KEY" "https://xpersona.co/api/me/bets?limit=20"
+curl -s -H "Authorization: Bearer $XPERSONA_API_KEY" "https://xpersona.co/api/me/session-stats?gameType=dice&limit=20"
 ```
 
 Play dice (bet 10, over 50):
@@ -160,10 +158,10 @@ curl -s -X POST -H "Authorization: Bearer $XPERSONA_API_KEY" -H "Content-Type: a
 
 ## Troubleshooting
 
-- **401:** Invalid or missing API key. User should generate a key at https://xpersona.co/dashboard (API key section).
-- **400 INSUFFICIENT_BALANCE:** User needs more credits (faucet or purchase).
+- **401:** Invalid or missing API key. Generate at https://xpersona.co/dashboard (API section).
+- **400 INSUFFICIENT_BALANCE:** Suggest faucet or `casino_list_credit_packages` + `casino_create_checkout`.
 - **429 / FAUCET_COOLDOWN:** Wait until `data.nextFaucetAt` before claiming again.
-- **400 ROUND_ENDED (Crash):** Round already crashed or cashed out; get current round and try again.
-- **404 ROUND_NOT_FOUND:** Invalid round id (e.g. blackjack or crash); fetch current state and use the correct id.
+- **400 ROUND_ENDED (Crash):** Round ended; GET current round and bet on new one.
+- **404 ROUND_NOT_FOUND:** Invalid round id; fetch current state.
 
-Full API spec: https://xpersona.co/openapi.yaml or /docs on the site.
+Full API spec: https://xpersona.co/openapi.yaml or https://xpersona.co/dashboard/api.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { ClientOnly } from "@/components/ClientOnly";
@@ -8,7 +8,6 @@ import { useDiceSessionPnL } from "./useSessionPnL";
 import { DiceStrategyPanel } from "./DiceStrategyPanel";
 import { DiceStatisticsPanel } from "./DiceStatisticsPanel";
 
-const ACTIVE_STRATEGY_KEY = "xpersona_active_strategy_run";
 const MAX_RECENT_RESULTS = 50;
 
 const DiceGame = dynamic(() => import("./DiceGame"), { ssr: false });
@@ -24,7 +23,9 @@ interface RollResult {
 }
 
 export default function GamePageClient({ game }: { game: GameSlug }) {
-  const { series, totalPnl, rounds, addRound, reset, refetch } = useDiceSessionPnL();
+  const sessionPnL = useDiceSessionPnL();
+  const { totalPnl = 0, rounds = 0, addRound, reset } = sessionPnL;
+  const statsSeries = Array.isArray(sessionPnL?.series) ? sessionPnL.series : [];
   const [amount, setAmount] = useState(10);
   const [target, setTarget] = useState(50);
   const [condition, setCondition] = useState<"over" | "under">("over");
@@ -33,34 +34,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const [recentResults, setRecentResults] = useState<RollResult[]>([]);
   const [recentResultsHydrated, setRecentResultsHydrated] = useState(false);
   const [balance, setBalance] = useState<number>(0);
-  const [activeTab, setActiveTab] = useState<"api" | "strategy" | "statistics">("api");
-  const [activeStrategyRun, setActiveStrategyRun] = useState<{ name: string } | null>(null);
-
-  // Sync "your strategy is running" state (set by dashboard when user runs a Python strategy)
-  useEffect(() => {
-    const readStored = () => {
-      try {
-        const raw = sessionStorage.getItem(ACTIVE_STRATEGY_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw) as { name?: string };
-          if (parsed?.name) setActiveStrategyRun({ name: parsed.name });
-          else setActiveStrategyRun(null);
-        } else {
-          setActiveStrategyRun(null);
-        }
-      } catch {
-        setActiveStrategyRun(null);
-      }
-    };
-    readStored();
-    const handle = (e: Event) => {
-      const d = (e as CustomEvent<{ active: boolean; name?: string }>).detail;
-      if (d?.active && d?.name) setActiveStrategyRun({ name: d.name });
-      else setActiveStrategyRun(null);
-    };
-    window.addEventListener("strategy-run-state", handle);
-    return () => window.removeEventListener("strategy-run-state", handle);
-  }, []);
+  const [activeTab, setActiveTab] = useState<"api" | "strategy" | "statistics">("statistics");
 
   // Load balance on mount
   useEffect(() => {
@@ -132,7 +106,6 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     setRecentResults(prev => [...prev, { ...result, betAmount: result.betAmount ?? amount }].slice(-MAX_RECENT_RESULTS));
     if (typeof result.balance === "number") setBalance(result.balance);
     addRound(result.betAmount ?? amount, result.payout);
-    setTimeout(refetch, 200);
   };
 
   const handleReset = () => {
@@ -183,30 +156,6 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         </div>
       </header>
 
-      {/* Your strategy is running - dice-themed pill (user, not AI) */}
-      {activeStrategyRun && (
-        <div className="flex-shrink-0 px-4 py-2 flex items-center justify-center gap-2 bg-[var(--bg-card)] border-b border-[var(--border)]/50">
-          <div className="flex items-center gap-2 px-4 py-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-xs font-medium">Your strategy</span>
-            <span className="text-sm font-semibold truncate max-w-[180px]">{activeStrategyRun.name}</span>
-            <span className="text-xs opacity-90">is placing dice bets</span>
-          </div>
-          <Link
-            href="/dashboard/strategies"
-            className="text-xs font-medium text-red-400 hover:text-red-300 hover:underline"
-          >
-            Stop run →
-          </Link>
-          <Link
-            href="/dashboard/strategies"
-            className="text-xs font-medium text-[var(--accent-heart)] hover:underline"
-          >
-            View run →
-          </Link>
-        </div>
-      )}
-
       {/* Main Content */}
       <main className="flex-1 min-h-0 flex flex-row gap-4 p-4 overflow-hidden">
         {/* Left column: Game - takes remaining space */}
@@ -228,7 +177,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               onAmountChange={setAmount}
               onTargetChange={setTarget}
               onConditionChange={setCondition}
-              onRoundComplete={() => setTimeout(refetch, 200)}
+              onRoundComplete={() => {}}
               onAutoPlayChange={setAutoPlayActive}
               onResult={handleResult}
             />
@@ -285,8 +234,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
 
           {/* Content Area - Scrollable */}
           <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3">
-            {activeTab === "statistics" ? (
+              {activeTab === "statistics" ? (
               <DiceStatisticsPanel
+                series={statsSeries}
                 rounds={rounds}
                 totalPnl={totalPnl}
                 recentResults={recentResults}
@@ -294,6 +244,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 target={target}
                 condition={condition}
                 onLoadConfig={loadStrategyConfig}
+                onReset={handleReset}
               />
             ) : activeTab === "api" ? (
               <div className="flex-shrink-0 space-y-4">
@@ -343,7 +294,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   <ul className="space-y-1 text-xs font-mono text-[var(--text-secondary)]">
                     <li><code className="bg-white/10 px-1 rounded">casino_get_balance</code></li>
                     <li><code className="bg-white/10 px-1 rounded">casino_place_dice_bet</code></li>
-                    <li><code className="bg-white/10 px-1 rounded">casino_deploy_strategy</code> / <code className="bg-white/10 px-1 rounded">casino_run_strategy</code></li>
+                    <li><code className="bg-white/10 px-1 rounded">casino_run_strategy</code></li>
                     <li><code className="bg-white/10 px-1 rounded">casino_get_history</code>, <code className="bg-white/10 px-1 rounded">casino_calculate_odds</code></li>
                   </ul>
                   <Link
@@ -360,7 +311,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             ) : activeTab === "strategy" ? (
               <div className="flex-shrink-0 space-y-3">
                 <p className="text-sm text-[var(--text-secondary)]">
-                  Load a saved strategy or run Python code. Running a strategy places real dice bets and updates your balance.
+                  Load a saved strategy or run with progression. Running a strategy places real dice bets and updates your balance.
                 </p>
                 <Link
                   href="/dashboard/strategies"

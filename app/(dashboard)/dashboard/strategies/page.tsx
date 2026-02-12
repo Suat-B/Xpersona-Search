@@ -19,7 +19,7 @@ export default function StrategiesPage() {
               Strategies
             </h1>
             <p className="text-sm text-[var(--text-secondary)]">
-              Create, run, and manage dice strategies. Python and quick config. Same code for you and OpenClaw.
+              Create, run, and manage dice strategies with progression. Same API for you and OpenClaw agents.
             </p>
           </div>
         </div>
