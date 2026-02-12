@@ -1,9 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { SessionPnLChart, type PnLPoint } from "@/components/ui/SessionPnLChart";
-import { StrategyRunModal } from "@/components/strategies/StrategyRunModal";
 import { AgentApiSection } from "./AgentApiSection";
 import { CREATIVE_DICE_STRATEGIES } from "@/lib/dice-strategies";
 import type { DiceConfig, CreativeStrategy } from "@/lib/dice-strategies";
@@ -44,6 +42,7 @@ interface DiceStatisticsPanelProps {
   onLoadConfig: (config: DiceConfig) => void;
   onReset: () => void;
   onStrategyComplete?: (sessionPnl: number, roundsPlayed: number, wins: number) => void;
+  onStartStrategyRun?: (config: DiceStrategyConfig, maxRounds: number, strategyName: string) => void;
 }
 
 function toApiConfig(c: CreativeStrategy["config"]): DiceStrategyConfig {
@@ -64,20 +63,12 @@ export function DiceStatisticsPanel({
   onLoadConfig,
   onReset,
   onStrategyComplete,
+  onStartStrategyRun,
 }: DiceStatisticsPanelProps) {
-  const [runModalOpen, setRunModalOpen] = useState(false);
-  const [runStrategy, setRunStrategy] = useState<CreativeStrategy | null>(null);
   const winRate = rounds > 0 ? (wins / rounds) * 100 : 0;
 
-  const handleOpenRun = (s: CreativeStrategy) => {
-    setRunStrategy(s);
-    setRunModalOpen(true);
-  };
-
-  const handleRunComplete = (sessionPnl: number, roundsPlayed: number, runWins: number) => {
-    onStrategyComplete?.(sessionPnl, roundsPlayed, runWins);
-    setRunModalOpen(false);
-    setRunStrategy(null);
+  const handleRunStrategy = (s: CreativeStrategy) => {
+    onStartStrategyRun?.(toApiConfig(s.config), 20, s.name);
     window.dispatchEvent(new Event("balance-updated"));
   };
 
@@ -135,7 +126,7 @@ export function DiceStatisticsPanel({
                   </div>
                   <p className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">{s.desc}</p>
                   <p className="text-[10px] text-[var(--text-secondary)]/80 mt-1 font-mono">
-                    {s.config.amount} cr · {s.config.target}% {s.config.condition}
+                    {s.config.amount} credits · {s.config.target}% {s.config.condition}
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -170,17 +161,6 @@ export function DiceStatisticsPanel({
           ))}
         </div>
       </div>
-
-      {runStrategy && (
-        <StrategyRunModal
-          isOpen={runModalOpen}
-          onClose={() => { setRunModalOpen(false); setRunStrategy(null); }}
-          strategyName={runStrategy.name}
-          config={toApiConfig(runStrategy.config)}
-          defaultRounds={20}
-          onComplete={(sessionPnl, roundsPlayed, runWins, _finalBalance) => handleRunComplete(sessionPnl, roundsPlayed, runWins)}
-        />
-      )}
     </div>
   );
 }

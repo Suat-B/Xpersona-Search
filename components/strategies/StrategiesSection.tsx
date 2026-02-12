@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { GlassCard } from "@/components/ui/GlassCard";
-import { StrategyRunModal } from "@/components/strategies/StrategyRunModal";
+import { saveStrategyRunPayload } from "@/lib/strategy-run-payload";
 import { CREATIVE_DICE_STRATEGIES, TARGET_PRESETS } from "@/lib/dice-strategies";
 import type { CreativeStrategy } from "@/lib/dice-strategies";
 import type { DiceStrategyConfig } from "@/lib/strategies";
@@ -41,19 +42,12 @@ function riskColor(risk: string): string {
 }
 
 export function StrategiesSection() {
+  const router = useRouter();
   const [strategies, setStrategies] = useState<StrategyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [builderOpen, setBuilderOpen] = useState(false);
-  const [runResult, setRunResult] = useState<{
-    strategyId?: string;
-    sessionPnl: number;
-    roundsPlayed: number;
-    finalBalance: number;
-    stoppedReason: string;
-  } | null>(null);
-  const [running, setRunning] = useState(false);
 
   const fetchIdRef = useRef(0);
 
@@ -136,7 +130,6 @@ export function StrategiesSection() {
       const data = await res.json();
       if (data.success) {
         setStrategies((prev) => prev.filter((s) => s.id !== id));
-        setRunResult((prev) => (prev?.strategyId === id ? null : prev));
       } else {
         setError(data.error ?? "Delete failed");
       }
@@ -169,22 +162,6 @@ export function StrategiesSection() {
         </div>
       </div>
 
-      {/* Last run result */}
-      {runResult && (
-        <div className="mb-6 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4" data-agent="run-result">
-          <h4 className="text-sm font-semibold text-[var(--text-primary)]">Last run result</h4>
-          <p className="mt-2 text-sm">
-            Session PnL:{" "}
-            <span className={runResult.sessionPnl >= 0 ? "text-emerald-400" : "text-red-400"}>
-              {runResult.sessionPnl >= 0 ? "+" : ""}
-              {runResult.sessionPnl}
-            </span>{" "}
-            · Rounds: {runResult.roundsPlayed} · Balance: {runResult.finalBalance} · Stopped:{" "}
-            {runResult.stoppedReason}
-          </p>
-        </div>
-      )}
-
       {/* Custom strategy builder (collapsible) */}
       <div className="mb-6">
         <button
@@ -200,7 +177,6 @@ export function StrategiesSection() {
           <div className="mt-2">
             <CustomStrategyBuilder
               onRun={(cfg, maxRounds) => runWithConfig(cfg, maxRounds, "Custom")}
-              running={running}
             />
           </div>
         )}
@@ -272,16 +248,6 @@ export function StrategiesSection() {
         </div>
       )}
 
-      {runModalConfig && (
-        <StrategyRunModal
-          isOpen={runModalOpen}
-          onClose={handleRunModalClose}
-          strategyName={runModalConfig.name}
-          config={runModalConfig.config}
-          defaultRounds={runModalConfig.defaultRounds}
-          onComplete={handleRunComplete}
-        />
-      )}
     </section>
   );
 }
@@ -298,11 +264,9 @@ function toApiConfig(c: CreativeStrategy["config"]): DiceStrategyConfig {
 function CreativeStrategyCard({
   strategy,
   onRun,
-  running,
 }: {
   strategy: CreativeStrategy;
   onRun: (maxRounds: number) => void;
-  running: boolean;
 }) {
   return (
     <div
@@ -322,22 +286,20 @@ function CreativeStrategyCard({
       </div>
       <p className="text-xs text-[var(--text-secondary)] mb-3 line-clamp-2">{strategy.desc}</p>
       <p className="text-[10px] text-[var(--text-secondary)]/80 font-mono mb-3">
-        {strategy.config.amount} cr · {strategy.config.target}% {strategy.config.condition}
+        {strategy.config.amount} credits · {strategy.config.target}% {strategy.config.condition}
       </p>
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
           onClick={() => onRun(20)}
-          disabled={running}
-          className="rounded border border-green-500/50 bg-green-500/10 px-2 py-1 text-xs text-green-400 hover:bg-green-500/20 disabled:opacity-50"
+          className="rounded border border-green-500/50 bg-green-500/10 px-2 py-1 text-xs text-green-400 hover:bg-green-500/20"
         >
           Run (20)
         </button>
         <button
           type="button"
           onClick={() => onRun(50)}
-          disabled={running}
-          className="rounded border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-2 py-1 text-xs text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 disabled:opacity-50"
+          className="rounded border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-2 py-1 text-xs text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20"
         >
           Auto-run (50)
         </button>
@@ -348,10 +310,8 @@ function CreativeStrategyCard({
 
 function CustomStrategyBuilder({
   onRun,
-  running,
 }: {
   onRun: (config: DiceStrategyConfig, maxRounds: number) => void;
-  running: boolean;
 }) {
   const [mode, setMode] = useState<"tweak" | "compose">("tweak");
   const [baseStrategyId, setBaseStrategyId] = useState("flat");
@@ -541,16 +501,14 @@ function CustomStrategyBuilder({
         <button
           type="button"
           onClick={() => onRun(buildConfig(), 20)}
-          disabled={running}
-          className="rounded bg-green-500/20 border border-green-500/50 px-4 py-2 text-sm text-green-400 hover:bg-green-500/30 disabled:opacity-50"
+          className="rounded bg-green-500/20 border border-green-500/50 px-4 py-2 text-sm text-green-400 hover:bg-green-500/30"
         >
           Run (20)
         </button>
         <button
           type="button"
           onClick={() => onRun(buildConfig(), 50)}
-          disabled={running}
-          className="rounded bg-[var(--accent-heart)]/20 border border-[var(--accent-heart)]/50 px-4 py-2 text-sm text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/30 disabled:opacity-50"
+          className="rounded bg-[var(--accent-heart)]/20 border border-[var(--accent-heart)]/50 px-4 py-2 text-sm text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/30"
         >
           Auto-run (50)
         </button>

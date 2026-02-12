@@ -201,7 +201,7 @@ export function ProvablyFairBetHistory() {
                     <td className="px-4 py-4 font-medium text-[var(--text-primary)]">
                       {GAME_LABELS[b.gameType] ?? b.gameType}
                     </td>
-                    <td className="px-4 py-4 font-mono">{b.amount} cr</td>
+                    <td className="px-4 py-4 font-mono">{b.amount} credits</td>
                     <td className="px-4 py-4">
                       {typeof value(b) === "number" ? (
                         <span className="font-mono">{value(b)!.toFixed(2)}</span>
@@ -218,7 +218,7 @@ export function ProvablyFairBetHistory() {
                         )}
                       </span>
                     </td>
-                    <td className="px-4 py-4 font-mono">{b.payout} cr</td>
+                    <td className="px-4 py-4 font-mono">{b.payout} credits</td>
                     <td className="px-4 py-4">
                       <span
                         className={`font-mono font-bold ${

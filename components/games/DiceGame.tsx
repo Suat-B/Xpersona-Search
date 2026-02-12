@@ -6,6 +6,8 @@ import { Dice3D } from "./Dice3D";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { QuickBetButtons } from "@/components/ui/QuickBetButtons";
 import { Sparkles, Confetti } from "@/components/ui/Sparkles";
+import { createProgressionState, getNextBet, type ProgressionState, type RoundResult } from "@/lib/dice-progression";
+import type { DiceStrategyConfig } from "@/lib/strategies";
 
 type Result = {
   result: number;
@@ -40,6 +42,9 @@ export function DiceGame({
   onRoundComplete,
   onAutoPlayChange,
   onResult,
+  strategyRun,
+  onStrategyComplete,
+  onStrategyStop,
 }: DiceGameProps) {
   const [result, setResult] = useState<Result>(null);
   const [loading, setLoading] = useState(false);
@@ -51,6 +56,9 @@ export function DiceGame({
   const stopRef = useRef(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const betInputRef = useRef<HTMLInputElement | null>(null);
+  const strategyStateRef = useRef<ProgressionState | null>(null);
+  const strategyStopRef = useRef(false);
+  const lastBetResultRef = useRef<{ win: boolean; payout: number; balance: number } | null>(null);
 
   // Ensure BET input reflects external updates (e.g. strategy Apply) when it has focus
   useEffect(() => {
@@ -60,31 +68,33 @@ export function DiceGame({
     }
   }, [amount]);
 
-  const runBet = useCallback(async (): Promise<boolean> => {
-    type BetRes = { success?: boolean; data?: { result: number; win: boolean; payout: number; balance: number }; error?: string; message?: string };
-    let httpStatus: number;
-    let data: BetRes;
-    try {
-      const response = await fetch("/api/games/dice/bet", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ amount, target, condition }),
-      });
-      httpStatus = response.status;
-      const raw = await response.text();
+  const runBet = useCallback(
+    async (betAmountOverride?: number): Promise<boolean> => {
+      const betAmount = betAmountOverride ?? amount;
+      type BetRes = { success?: boolean; data?: { result: number; win: boolean; payout: number; balance: number }; error?: string; message?: string };
+      let httpStatus: number;
+      let data: BetRes;
       try {
-        data = (raw.length > 0 ? JSON.parse(raw) : {}) as BetRes;
-      } catch {
-        setError(response.ok ? "Invalid response" : `Bet failed (${httpStatus})`);
+        const response = await fetch("/api/games/dice/bet", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ amount: betAmount, target, condition }),
+        });
+        httpStatus = response.status;
+        const raw = await response.text();
+        try {
+          data = (raw.length > 0 ? JSON.parse(raw) : {}) as BetRes;
+        } catch {
+          setError(response.ok ? "Invalid response" : `Bet failed (${httpStatus})`);
+          return false;
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Connection failed";
+        setError(`Network error — ${msg}`);
+        if (process.env.NODE_ENV === "development") console.error("[DiceGame] Fetch error:", e);
         return false;
       }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Connection failed";
-      setError(`Network error — ${msg}`);
-      if (process.env.NODE_ENV === "development") console.error("[DiceGame] Fetch error:", e);
-      return false;
-    }
     if (process.env.NODE_ENV === "development" && !data.success) {
       console.warn("[DiceGame] Bet failed:", { status: httpStatus, data });
     }
@@ -96,9 +106,14 @@ export function DiceGame({
         balance: data.data.balance,
       };
       setResult(newResult);
-      onResult?.({ ...newResult, betAmount: amount });
-      onRoundComplete(amount, data.data.payout);
-      
+      lastBetResultRef.current = {
+        win: newResult.win,
+        payout: newResult.payout,
+        balance: data.data.balance,
+      };
+      onResult?.({ ...newResult, betAmount });
+      onRoundComplete(betAmount, data.data.payout);
+
       // Show win effects
       if (newResult.win) {
         setShowWinEffects(true);
@@ -108,6 +123,7 @@ export function DiceGame({
       setTimeout(() => window.dispatchEvent(new Event("balance-updated")), 0);
       return true;
     }
+    lastBetResultRef.current = null;
     const errCode = data.error || data.message;
     const friendlyMessage =
       errCode === "UNAUTHORIZED"
@@ -131,7 +147,89 @@ export function DiceGame({
                     : `Something went wrong${httpStatus ? ` (${httpStatus})` : ""}`;
     setError(friendlyMessage);
     return false;
-  }, [amount, target, condition, onRoundComplete, onResult]);
+  },
+  [amount, target, condition, onRoundComplete, onResult]
+  );
+
+  // Strategy run: when strategyRun is set, fetch balance and start progression loop
+  useEffect(() => {
+    if (!strategyRun) return;
+    const config = strategyRun.config;
+    const maxRounds = strategyRun.maxRounds;
+    strategyStopRef.current = false;
+    setAutoPlay(true);
+    onAutoPlayChange?.(true);
+    setError(null);
+
+    const runStrategy = async () => {
+      let balance = 0;
+      try {
+        const res = await fetch("/api/me/balance", { credentials: "include" });
+        const data = await res.json().catch(() => ({}));
+        if (data.success && typeof data.data?.balance === "number") {
+          balance = data.data.balance;
+        }
+      } catch {
+        setError("Failed to load balance");
+        onStrategyComplete?.(0, 0, 0);
+        onStrategyStop?.();
+        setAutoPlay(false);
+        onAutoPlayChange?.(false);
+        return;
+      }
+
+      const initialState = createProgressionState(config, balance);
+      strategyStateRef.current = initialState;
+      let currentBet = initialState.currentBet;
+      let sessionPnl = 0;
+      let wins = 0;
+      let roundsPlayed = 0;
+      onAmountChange(currentBet);
+
+      for (let i = 0; i < maxRounds; i++) {
+        if (strategyStopRef.current) break;
+
+        setLoading(true);
+        setResult(null);
+        lastBetResultRef.current = null;
+        const ok = await runBet(currentBet);
+        setLoading(false);
+
+        if (!ok) break;
+        roundsPlayed += 1;
+
+        const lastResult = lastBetResultRef.current;
+        if (!lastResult) break;
+        const { win, payout, balance: newBalance } = lastResult;
+        const pnl = payout - currentBet;
+        sessionPnl += pnl;
+        if (win) wins += 1;
+        balance = newBalance;
+
+        const state = strategyStateRef.current;
+        if (state) {
+          const roundResult: RoundResult = { win, payout, betAmount: currentBet };
+          const { nextBet, nextState } = getNextBet(state, roundResult, config, newBalance);
+          strategyStateRef.current = nextState;
+          currentBet = nextBet;
+          onAmountChange(currentBet);
+        }
+
+        if (i < maxRounds - 1) {
+          await new Promise((r) => setTimeout(r, STRATEGY_ROUND_DELAY_MS));
+        }
+      }
+
+      onStrategyComplete?.(sessionPnl, roundsPlayed, wins);
+      onStrategyStop?.();
+      setAutoPlay(false);
+      onAutoPlayChange?.(false);
+      strategyStateRef.current = null;
+    };
+
+    runStrategy();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only run when strategyRun is set
+  }, [strategyRun]);
 
   const handleRoll = useCallback(async () => {
     if (autoPlay) return;
@@ -167,14 +265,18 @@ export function DiceGame({
   }, [autoPlay, autoSpeed, runBet, onAutoPlayChange]);
 
   const stopAuto = useCallback(() => {
-    stopRef.current = true;
-    if (timeoutRef.current != null) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
+    if (strategyRun) {
+      strategyStopRef.current = true;
+    } else {
+      stopRef.current = true;
+      if (timeoutRef.current != null) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      setAutoPlay(false);
+      onAutoPlayChange?.(false);
     }
-    setAutoPlay(false);
-    onAutoPlayChange?.(false);
-  }, [onAutoPlayChange]);
+  }, [onAutoPlayChange, strategyRun]);
 
   // Quick bet handlers
   const handleHalf = () => {
@@ -209,6 +311,11 @@ export function DiceGame({
         
         {/* Header - Compact */}
         <div className="flex-shrink-0 px-6 pt-4 pb-3 text-center border-b border-[var(--border)]/50">
+          {strategyRun && (
+            <div className="mb-2 text-sm font-semibold text-[var(--accent-heart)]">
+              Running: {strategyRun.strategyName}
+            </div>
+          )}
           <div className="flex items-center justify-center gap-4 text-xs text-[var(--text-secondary)]">
             <span className="flex items-center gap-1">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

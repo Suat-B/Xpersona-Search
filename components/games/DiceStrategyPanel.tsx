@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { StrategyRunModal } from "@/components/strategies/StrategyRunModal";
 import type { DiceStrategyConfig } from "@/lib/strategies";
 
 /** Local type to avoid cross-folder import (games -> strategies) that can trigger .call bundling issues */
@@ -36,6 +35,7 @@ type DiceStrategyPanelProps = {
   onLoadConfig: (config: DiceConfig) => void;
   onBalanceUpdate?: () => void;
   onStrategyComplete?: (sessionPnl: number, roundsPlayed: number, wins: number) => void;
+  onStartStrategyRun?: (config: DiceStrategyConfig, maxRounds: number, strategyName: string) => void;
 };
 
 export function DiceStrategyPanel({
@@ -46,18 +46,13 @@ export function DiceStrategyPanel({
   onLoadConfig,
   onBalanceUpdate,
   onStrategyComplete,
+  onStartStrategyRun,
 }: DiceStrategyPanelProps) {
   const [strategies, setStrategies] = useState<StrategyOption[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [saveName, setSaveName] = useState("");
   const [saveOpen, setSaveOpen] = useState(false);
   const [runMaxRounds, setRunMaxRounds] = useState(20);
-  const [runModalOpen, setRunModalOpen] = useState(false);
-  const [runResult, setRunResult] = useState<{
-    sessionPnl: number;
-    roundsPlayed: number;
-    stoppedReason: string;
-  } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const fetchStrategies = useCallback(async () => {
@@ -230,8 +225,8 @@ export function DiceStrategyPanel({
         </label>
         <button
           type="button"
-          onClick={handleOpenRunModal}
-          disabled={disabled}
+          onClick={handleRunStrategy}
+          disabled={disabled || !onStartStrategyRun}
           className="rounded bg-green-600/80 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 hover:bg-green-600"
         >
           Run strategy
@@ -261,20 +256,6 @@ export function DiceStrategyPanel({
         </form>
       )}
       {message && <p className="text-sm text-amber-400">{message}</p>}
-      {runResult && (
-        <p className="text-sm text-[var(--text-primary)]">
-          Run: PnL <span className={runResult.sessionPnl >= 0 ? "text-green-400" : "text-red-400"}>{runResult.sessionPnl}</span>, {runResult.roundsPlayed} rounds, stopped: {runResult.stoppedReason}
-        </p>
-      )}
-
-      <StrategyRunModal
-        isOpen={runModalOpen}
-        onClose={() => setRunModalOpen(false)}
-        strategyName={selected?.name ?? "Quick run"}
-        config={buildRunConfig()}
-        defaultRounds={runMaxRounds}
-        onComplete={(sessionPnl, roundsPlayed, _wins, finalBalance) => handleRunComplete(sessionPnl, roundsPlayed, _wins, finalBalance)}
-      />
     </div>
   );
 }

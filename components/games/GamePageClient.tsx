@@ -2,12 +2,16 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { ClientOnly } from "@/components/ClientOnly";
 import { useDiceSessionPnL } from "./useSessionPnL";
 import { DiceStrategyPanel } from "./DiceStrategyPanel";
 import { DiceStatisticsPanel } from "./DiceStatisticsPanel";
 import { AgentApiSection } from "./AgentApiSection";
+import { getAndClearStrategyRunPayload } from "@/lib/strategy-run-payload";
+import type { DiceStrategyConfig } from "@/lib/strategies";
+import type { StrategyRunConfig } from "./DiceGame";
 
 const MAX_RECENT_RESULTS = 50;
 
@@ -24,18 +28,68 @@ interface RollResult {
 }
 
 export default function GamePageClient({ game }: { game: GameSlug }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const sessionPnL = useDiceSessionPnL();
   const { totalPnl = 0, rounds = 0, wins = 0, addRound, addBulkSession, reset } = sessionPnL;
   const statsSeries = Array.isArray(sessionPnL?.series) ? sessionPnL.series : [];
   const [amount, setAmount] = useState(10);
   const [target, setTarget] = useState(50);
   const [condition, setCondition] = useState<"over" | "under">("over");
-  const [strategyOpen, setStrategyOpen] = useState(false);
   const [autoPlayActive, setAutoPlayActive] = useState(false);
   const [recentResults, setRecentResults] = useState<RollResult[]>([]);
   const [recentResultsHydrated, setRecentResultsHydrated] = useState(false);
   const [balance, setBalance] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<"api" | "strategy" | "statistics">("statistics");
+  const [strategyRun, setStrategyRun] = useState<StrategyRunConfig | null>(null);
+
+  // Read strategy-run payload when ?run=1, then redirect
+  useEffect(() => {
+    if (game !== "dice" || searchParams.get("run") !== "1") return;
+    const payload = getAndClearStrategyRunPayload();
+    if (!payload) {
+      router.replace("/games/dice");
+      return;
+    }
+
+    const applyConfig = (config: DiceStrategyConfig) => {
+      setAmount(config.amount);
+      setTarget(config.target);
+      setCondition(config.condition);
+      setStrategyRun({
+        config,
+        maxRounds: payload.maxRounds,
+        strategyName: payload.strategyName,
+      });
+    };
+
+    if (payload.strategyId) {
+      fetch("/api/me/strategies?gameType=dice", { credentials: "include" })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && Array.isArray(data.data?.strategies)) {
+            const s = data.data.strategies.find((x: { id: string }) => x.id === payload.strategyId);
+            if (s?.config) {
+              const cfg = s.config as Record<string, unknown>;
+              const config: DiceStrategyConfig = {
+                amount: typeof cfg.amount === "number" ? cfg.amount : 10,
+                target: typeof cfg.target === "number" ? cfg.target : 50,
+                condition: (cfg.condition === "over" || cfg.condition === "under" ? cfg.condition : "over") as "over" | "under",
+                progressionType: (cfg.progressionType as DiceStrategyConfig["progressionType"]) ?? "flat",
+              };
+              applyConfig(config);
+            }
+          }
+          router.replace("/games/dice");
+        })
+        .catch(() => router.replace("/games/dice"));
+    } else if (payload.config) {
+      applyConfig(payload.config);
+      router.replace("/games/dice");
+    } else {
+      router.replace("/games/dice");
+    }
+  }, [game, searchParams, router]);
 
   // Load balance on mount
   useEffect(() => {
@@ -183,6 +237,13 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               onRoundComplete={() => {}}
               onAutoPlayChange={setAutoPlayActive}
               onResult={handleResult}
+              strategyRun={strategyRun}
+              onStrategyComplete={(sessionPnl, roundsPlayed, wins) => {
+                setStrategyRun(null);
+                addBulkSession(sessionPnl, roundsPlayed, wins);
+                window.dispatchEvent(new Event("balance-updated"));
+              }}
+              onStrategyStop={() => setStrategyRun(null)}
             />
           </ClientOnly>
         </div>
@@ -250,6 +311,12 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 onLoadConfig={loadStrategyConfig}
                 onReset={handleReset}
                 onStrategyComplete={addBulkSession}
+                onStartStrategyRun={(config, maxRounds, strategyName) => {
+                  setAmount(config.amount);
+                  setTarget(config.target);
+                  setCondition(config.condition);
+                  setStrategyRun({ config, maxRounds, strategyName });
+                }}
               />
             ) : activeTab === "api" ? (
               <div className="flex-shrink-0 space-y-4">
@@ -318,7 +385,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             ) : activeTab === "strategy" ? (
               <div className="flex-shrink-0 space-y-3">
                 <p className="text-sm text-[var(--text-secondary)]">
-                  Load a saved strategy or run with current settings. <strong className="text-[var(--text-primary)]">Run strategy</strong> opens a modal with the full dice animation, live balance & bet per round, and custom runs (1–1000). Progression types (Martingale, Paroli, etc.) from saved strategies apply.
+                  Load a saved strategy or run with current settings. <strong className="text-[var(--text-primary)]">Run strategy</strong> starts auto-play here with the full dice animation, live balance & bet per round. Progression types (Martingale, Paroli, etc.) from saved strategies apply.
                 </p>
                 <Link
                   href="/dashboard/strategies"
@@ -339,6 +406,13 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                       onLoadConfig={loadStrategyConfig}
                       onBalanceUpdate={() => window.dispatchEvent(new Event("balance-updated"))}
                       onStrategyComplete={addBulkSession}
+                      onStartStrategyRun={(config, maxRounds, strategyName) => {
+                        setAmount(config.amount);
+                        setTarget(config.target);
+                        setCondition(config.condition);
+                        setStrategyRun({ config, maxRounds, strategyName });
+                        setActiveTab("statistics");
+                      }}
                     />
                   </div>
                 </div>
