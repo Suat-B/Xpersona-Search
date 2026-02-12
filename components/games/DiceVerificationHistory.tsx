@@ -32,8 +32,15 @@ export function DiceVerificationHistory() {
   const fetchBets = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/me/bets?gameType=dice&limit=15");
-      const data = await res.json();
+      const res = await fetch("/api/me/bets?gameType=dice&limit=15", { credentials: "include" });
+      const text = await res.text();
+      let data: { success?: boolean; data?: { bets?: DiceBet[] } };
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        setBets([]);
+        return;
+      }
       if (data.success && Array.isArray(data.data?.bets)) {
         setBets(data.data.bets);
       } else {
@@ -62,8 +69,15 @@ export function DiceVerificationHistory() {
     setRevealed(false);
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/me/bets/${betId}`);
-      const data = await res.json();
+      const res = await fetch(`/api/me/bets/${betId}`, { credentials: "include" });
+      const text = await res.text();
+      let data: { success?: boolean; data?: { verification?: VerificationDetail } };
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        setDetail(null);
+        return;
+      }
       if (data.success && data.data?.verification) {
         setDetail({
           serverSeedHash: data.data.verification.serverSeedHash ?? null,
@@ -83,8 +97,14 @@ export function DiceVerificationHistory() {
     if (!verifyId) return;
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/me/bets/${verifyId}?reveal=1`);
-      const data = await res.json();
+      const res = await fetch(`/api/me/bets/${verifyId}?reveal=1`, { credentials: "include" });
+      const text = await res.text();
+      let data: { success?: boolean; data?: { verification?: VerificationDetail & { serverSeed?: string } } };
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        return;
+      }
       if (data.success && data.data?.verification) {
         setDetail((prev) =>
           prev

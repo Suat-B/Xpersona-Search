@@ -61,8 +61,16 @@ export function DiceStrategyPanel({
 
   const fetchStrategies = useCallback(async () => {
     try {
-      const res = await fetch("/api/me/strategies?gameType=dice");
-      const data = await res.json();
+      const res = await fetch("/api/me/strategies?gameType=dice", { credentials: "include" });
+      const text = await res.text();
+      let data: { success?: boolean; data?: { strategies?: StrategyRowFromApi[] } };
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        setStrategies([]);
+        setPythonStrategies([]);
+        return;
+      }
       if (data.success && Array.isArray(data.data?.strategies)) {
         const raw = (data.data.strategies as StrategyRowFromApi[]).filter(
           (s: StrategyRowFromApi) => s.config != null
@@ -112,13 +120,21 @@ export function DiceStrategyPanel({
       const res = await fetch("/api/me/strategies", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           gameType: "dice",
           name,
           config: { amount, target, condition },
         }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: { success?: boolean; message?: string; error?: string };
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        setMessage("Save failed");
+        return;
+      }
       if (data.success) {
         setSaveOpen(false);
         setSaveName("");
@@ -149,9 +165,17 @@ export function DiceStrategyPanel({
       const res = await fetch("/api/games/dice/run-strategy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: { success?: boolean; data?: { sessionPnl?: number; roundsPlayed?: number; stoppedReason?: string }; error?: string; message?: string };
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        setMessage("Run failed");
+        return;
+      }
       if (data.success && data.data) {
         setRunResult({
           sessionPnl: data.data.sessionPnl ?? 0,

@@ -1,24 +1,52 @@
 "use client";
 
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
 import QuantMetrics from "@/components/dashboard/QuantMetrics";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
+import { FaucetButton } from "@/components/dashboard/FaucetButton";
+import { safeFetchJson } from "@/lib/safeFetch";
 
 const GAMES = [
   { slug: "dice", name: "Dice", icon: "🎲", desc: "Roll over or under. Pure probability. AI-first." },
 ];
 
 export default function DashboardPage() {
+  const [balance, setBalance] = useState<number | null>(null);
+  const refreshBalance = useCallback(async () => {
+    const { data } = await safeFetchJson<{ success?: boolean; data?: { balance?: number } }>("/api/me/balance");
+    if (data?.success && typeof data?.data?.balance === "number") setBalance(data.data.balance);
+  }, []);
+  useEffect(() => {
+    refreshBalance();
+    const onUpdate = () => refreshBalance();
+    window.addEventListener("balance-updated", onUpdate);
+    return () => window.removeEventListener("balance-updated", onUpdate);
+  }, [refreshBalance]);
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
 
       {/* 1. Top Section: Metrics */}
       <section>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
           <h2 className="text-xl font-bold font-mono tracking-tight glow-text-white">DASHBOARD_V2</h2>
-          <div className="flex gap-2">
-            <Link
+          <div className="flex items-center gap-4">
+            <div className="rounded-lg border border-white/10 bg-white/5 px-4 py-2">
+              <span className="text-xs font-mono text-[var(--text-secondary)] uppercase tracking-wider">Balance</span>
+              <p className="text-lg font-mono font-bold text-[var(--text-primary)]">
+                {balance !== null ? balance.toLocaleString() : "—"} <span className="text-xs font-normal text-[var(--text-secondary)]">credits</span>
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Link
+              href="#faucet"
+              className="px-3 py-1.5 text-xs font-mono border border-emerald-500/30 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition"
+            >
+              CLAIM FAUCET
+              </Link>
+              <Link
               href="/dashboard/deposit"
               className="px-3 py-1.5 text-xs font-mono border border-[var(--accent-heart)]/30 rounded bg-[var(--accent-heart)]/10 text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition"
             >
@@ -26,7 +54,8 @@ export default function DashboardPage() {
             </Link>
             <button disabled className="px-3 py-1.5 text-xs font-mono border border-white/10 rounded bg-white/5 text-[var(--text-secondary)] hover:bg-white/10 transition">
               WITHDRAW
-            </button>
+              </button>
+            </div>
           </div>
         </div>
         <QuantMetrics />
@@ -86,8 +115,11 @@ export default function DashboardPage() {
           </section>
         </div>
 
-        {/* Right: API (1/3 width) */}
+        {/* Right: Faucet + API (1/3 width) */}
         <div className="space-y-4 flex flex-col">
+          <section id="faucet" className="scroll-mt-6">
+            <FaucetButton />
+          </section>
           <ApiKeySection />
           <Link
             href="/dashboard/api"

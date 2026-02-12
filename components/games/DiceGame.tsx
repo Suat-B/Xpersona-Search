@@ -51,13 +51,34 @@ export function DiceGame({
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const runBet = useCallback(async (): Promise<boolean> => {
-    const res = await fetch("/api/games/dice/bet", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amount, target, condition }),
-    });
-    const data = await res.json();
-    if (data.success) {
+    type BetRes = { success?: boolean; data?: { result: number; win: boolean; payout: number; balance: number }; error?: string; message?: string };
+    let httpStatus: number;
+    let data: BetRes;
+    try {
+      const response = await fetch("/api/games/dice/bet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ amount, target, condition }),
+      });
+      httpStatus = response.status;
+      const raw = await response.text();
+      try {
+        data = (raw.length > 0 ? JSON.parse(raw) : {}) as BetRes;
+      } catch {
+        setError(response.ok ? "Invalid response" : `Bet failed (${httpStatus})`);
+        return false;
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Connection failed";
+      setError(`Network error — ${msg}`);
+      if (process.env.NODE_ENV === "development") console.error("[DiceGame] Fetch error:", e);
+      return false;
+    }
+    if (process.env.NODE_ENV === "development" && !data.success) {
+      console.warn("[DiceGame] Bet failed:", { status: httpStatus, data });
+    }
+    if (data.success && data.data) {
       const newResult = {
         result: data.data.result,
         win: data.data.win,
@@ -74,10 +95,31 @@ export function DiceGame({
         setTimeout(() => setShowWinEffects(false), 2000);
       }
       
-      window.dispatchEvent(new Event("balance-updated"));
+      setTimeout(() => window.dispatchEvent(new Event("balance-updated")), 0);
       return true;
     }
-    setError(data.error || "Something went wrong");
+    const errCode = data.error || data.message;
+    const friendlyMessage =
+      errCode === "UNAUTHORIZED"
+        ? "Session not ready — wait a moment and try again"
+        : errCode === "INSUFFICIENT_BALANCE"
+          ? "Not enough credits — claim faucet or deposit"
+          : errCode === "BET_TOO_LOW"
+            ? "Bet too low"
+            : errCode === "BET_TOO_HIGH"
+              ? "Bet too high"
+              : errCode === "VALIDATION_ERROR"
+                ? "Invalid bet — check amount and target"
+                : errCode === "INTERNAL_ERROR"
+              ? (data.message as string) || "Server error — try again shortly"
+              : typeof errCode === "string"
+                ? errCode
+                : httpStatus === 401
+                  ? "Session not ready — wait a moment and try again"
+                  : httpStatus >= 500
+                    ? `Server error (${httpStatus}) — try again shortly`
+                    : `Something went wrong${httpStatus ? ` (${httpStatus})` : ""}`;
+    setError(friendlyMessage);
     return false;
   }, [amount, target, condition, onRoundComplete, onResult]);
 

@@ -1,11 +1,11 @@
 import { auth, type Session } from "@/lib/auth";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { EnsureGuest } from "@/components/auth/EnsureGuest";
 
 const SIDEBAR_LINKS = [
   { href: "/games/dice", label: "Play Dice", exact: true },
@@ -34,12 +34,9 @@ export default async function DashboardLayout({
   const userIdFromCookie = getAuthUserFromCookie(cookieStore);
   const hasSession = !!session?.user;
   const hasGuest = !!userIdFromCookie;
+  const needsGuest = !hasSession && !hasGuest;
 
-  if (!hasSession && !hasGuest) {
-    redirect("/");
-  }
-
-  let displayName = "User";
+  let displayName = needsGuest ? "Guest" : "User";
   if (hasSession && session?.user) {
     displayName = session.user.name ?? session.user.email ?? "User";
   } else if (hasGuest && userIdFromCookie) {
@@ -57,6 +54,7 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex min-h-screen">
+      {needsGuest && <EnsureGuest needsGuest={true} />}
       <aside className="dashboard-sidebar hidden w-64 flex-col border-r border-white/5 bg-bg-card/50 backdrop-blur-md md:flex sticky top-0 h-screen">
         <div className="flex h-16 items-center px-6">
           <Link href="/" className="text-xl font-bold font-[family-name:var(--font-outfit)]">

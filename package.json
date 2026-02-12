@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --turbopack",
+    "dev:fresh": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true}); console.log('Cache cleared')\" && next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

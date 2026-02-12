@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
 import { users, gameBets, serverSeeds } from "@/lib/db/schema";
@@ -8,8 +8,28 @@ import { runDiceBet, validateDiceBet } from "@/lib/games/dice";
 import { hashSeed } from "@/lib/games/rng";
 import { randomBytes } from "crypto";
 
-export async function POST(request: Request) {
-  const authResult = await getAuthUser(request as any);
+export async function POST(request: NextRequest) {
+  let authResult: Awaited<ReturnType<typeof getAuthUser>>;
+  try {
+    authResult = await getAuthUser(request);
+  } catch (authErr) {
+    const err = authErr as Error;
+    console.error("[dice/bet] auth error:", err.message, err.stack);
+    const isDb =
+      err.message?.includes("connect") ||
+      err.message?.includes("ECONNREFUSED") ||
+      (err as { code?: string }).code === "ECONNREFUSED";
+    return NextResponse.json(
+      {
+        success: false,
+        error: "INTERNAL_ERROR",
+        message: isDb
+          ? "Database unavailable — ensure Postgres is running (docker compose up -d)"
+          : "Auth failed",
+      },
+      { status: 500 }
+    );
+  }
   if ("error" in authResult) {
     return NextResponse.json(
       { success: false, error: authResult.error },
@@ -111,9 +131,20 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    console.error(e);
+    console.error("[dice/bet] 500:", err.message, err.stack);
+    const isDbError =
+      err.message?.includes("connect") ||
+      err.message?.includes("ECONNREFUSED") ||
+      err.message?.includes("connection") ||
+      (err as { code?: string }).code === "ECONNREFUSED";
     return NextResponse.json(
-      { success: false, error: "INTERNAL_ERROR" },
+      {
+        success: false,
+        error: "INTERNAL_ERROR",
+        message: isDbError
+          ? "Database unavailable — ensure Postgres is running (docker compose up -d)"
+          : undefined,
+      },
       { status: 500 }
     );
   }

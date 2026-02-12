@@ -48,7 +48,13 @@ export function createClientBetExecutor(): IBetExecutor {
         credentials: "include",
         body: JSON.stringify({ amount: a, target: t, condition: c }),
       });
-      const data = await res.json();
+      const raw = await res.text();
+      let data: { success?: boolean; data?: { result: number; win: boolean; payout: number; balance: number }; error?: string; message?: string };
+      try {
+        data = raw.length > 0 ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error("Invalid response");
+      }
       if (!data.success || !data.data) {
         const msg = data.error || data.message || "Bet failed";
         throw new Error(msg);

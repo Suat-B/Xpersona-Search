@@ -8,19 +8,32 @@ export function ApiKeySection() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/me")
-      .then((r) => r.json())
-      .then((data) => data.success && setPrefix(data.data.apiKeyPrefix ?? null));
+    fetch("/api/me", { credentials: "include" })
+      .then(async (r) => {
+        const text = await r.text();
+        try {
+          return text ? JSON.parse(text) : {};
+        } catch {
+          return {};
+        }
+      })
+      .then((data) => data.success && setPrefix(data.data?.apiKeyPrefix ?? null));
   }, []);
 
   const generate = async () => {
     setLoading(true);
-    const res = await fetch("/api/me/api-key", { method: "POST" });
-    const data = await res.json();
+    const res = await fetch("/api/me/api-key", { method: "POST", credentials: "include" });
+    const text = await res.text();
+    let data: { success?: boolean; data?: { apiKey?: string; apiKeyPrefix?: string } };
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = {};
+    }
     setLoading(false);
-    if (data.success) {
-      setModalKey(data.data.apiKey);
-      setPrefix(data.data.apiKeyPrefix);
+    if (data.success && data.data) {
+      setModalKey(data.data.apiKey ?? null);
+      setPrefix(data.data.apiKeyPrefix ?? null);
     }
   };
 

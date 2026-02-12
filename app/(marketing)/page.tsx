@@ -48,12 +48,20 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               Dashboard &rarr;
             </Link>
           ) : (
-            <Link
-              href="/api/auth/signin"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-accent-heart/40 bg-accent-heart/10 text-sm font-semibold text-accent-heart hover:bg-accent-heart/20 hover:border-accent-heart/60 hover:shadow-[0_0_20px_-5px_rgba(244,63,94,0.3)] transition-all duration-200 backdrop-blur-sm"
-            >
-              Login
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-accent-heart/40 bg-accent-heart/10 text-sm font-semibold text-accent-heart hover:bg-accent-heart/20 hover:border-accent-heart/60 hover:shadow-[0_0_20px_-5px_rgba(244,63,94,0.3)] transition-all duration-200 backdrop-blur-sm"
+              >
+                Play
+              </Link>
+              <Link
+                href="/api/auth/signin"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-sm font-medium text-text-secondary hover:bg-white/10 hover:text-white transition-all duration-200 backdrop-blur-sm"
+              >
+                Login
+              </Link>
+            </div>
           )}
         </header>
 

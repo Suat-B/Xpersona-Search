@@ -26,8 +26,16 @@ export default function QuantMetrics() {
                 fetch("/api/me/balance", { credentials: "include" }),
                 fetch("/api/me/bets?limit=100&gameType=dice", { credentials: "include" }),
             ]);
-            const balanceData = await balanceRes.json();
-            const betsData = await betsRes.json();
+            const parseJson = async (res: Response) => {
+                const text = await res.text();
+                try {
+                    return text ? JSON.parse(text) : {};
+                } catch {
+                    return {};
+                }
+            };
+            const balanceData = await parseJson(balanceRes);
+            const betsData = await parseJson(betsRes);
 
             const balance = balanceData.success && typeof balanceData.data?.balance === "number"
                 ? balanceData.data.balance

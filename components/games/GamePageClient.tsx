@@ -65,9 +65,15 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   useEffect(() => {
     const loadBalance = async () => {
       try {
-        const res = await fetch("/api/me/balance");
-        const data = await res.json();
-        if (data.success) {
+        const res = await fetch("/api/me/balance", { credentials: "include" });
+        const text = await res.text();
+        let data: { success?: boolean; data?: { balance?: number } };
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch {
+          return;
+        }
+        if (data.success && typeof data.data?.balance === "number") {
           setBalance(data.data.balance);
         }
       } catch {
@@ -87,8 +93,15 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   useEffect(() => {
     if (game !== "dice" || recentResultsHydrated) return;
     let cancelled = false;
-    fetch(`/api/me/bets?gameType=dice&limit=${MAX_RECENT_RESULTS}`)
-      .then((res) => res.json())
+    fetch(`/api/me/bets?gameType=dice&limit=${MAX_RECENT_RESULTS}`, { credentials: "include" })
+      .then(async (res) => {
+        const text = await res.text();
+        try {
+          return text ? JSON.parse(text) : {};
+        } catch {
+          return {};
+        }
+      })
       .then((data) => {
         if (cancelled || !data.success || !Array.isArray(data.data?.bets)) return;
         const bets = data.data.bets as { outcome: string; payout: number; amount: number }[];

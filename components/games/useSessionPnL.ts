@@ -38,8 +38,17 @@ export function useDiceSessionPnL() {
 
   const refetch = useCallback(async () => {
     try {
-      const res = await fetch(`/api/me/bets?gameType=dice&limit=${DICE_BETS_LIMIT}`);
-      const data = await res.json();
+      const res = await fetch(`/api/me/bets?gameType=dice&limit=${DICE_BETS_LIMIT}`, { credentials: "include" });
+      const text = await res.text();
+      let data: { success?: boolean; data?: { bets?: unknown[]; roundCount?: number; sessionPnl?: number } };
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        setSeries([]);
+        setTotalPnl(0);
+        setRounds(0);
+        return;
+      }
       if (!data.success || !Array.isArray(data.data?.bets)) {
         setSeries([]);
         setTotalPnl(0);

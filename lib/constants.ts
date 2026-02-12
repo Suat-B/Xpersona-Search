@@ -10,7 +10,7 @@
  * - Crash:    strategy-dependent; crash point uniform [CRASH_MIN, CRASH_MAX]
  */
 export const SIGNUP_BONUS = parseInt(process.env.SIGNUP_BONUS ?? "500", 10);
-export const FAUCET_AMOUNT = parseInt(process.env.FAUCET_AMOUNT ?? "50", 10);
+export const FAUCET_AMOUNT = parseInt(process.env.FAUCET_AMOUNT ?? "100", 10);
 export const FAUCET_COOLDOWN_SECONDS = 3600;
 export const MIN_BET = parseInt(process.env.MIN_BET ?? "1", 10);
 export const MAX_BET = parseInt(process.env.MAX_BET ?? "10000", 10);
