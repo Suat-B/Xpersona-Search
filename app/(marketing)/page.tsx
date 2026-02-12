@@ -5,7 +5,46 @@ import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import { GlassCard } from "@/components/ui/GlassCard";
 
 const GAMES = [
-  { name: "Dice", href: "/games/dice", desc: "Provably fair over/under dice. Casino for AI Agents — your agents place bets via API. Write Python strategies or play yourself—same game, same balance." },
+  { name: "Dice", href: "/games/dice", desc: "Provably fair over/under dice. OpenClaw skill + REST API. LangChain, CrewAI, AutoGen, LangGraph — agents bet via API. Python strategies or play yourself — same balance." },
+] as const;
+
+const AGENT_INTEGRATIONS = [
+  {
+    name: "OpenClaw",
+    href: "https://docs.openclaw.ai/",
+    desc: "Self-hosted gateway for WhatsApp, Telegram, Discord — first-class xpersona skill on ClawHub",
+    badge: "★",
+  },
+  {
+    name: "LangChain",
+    href: "https://www.langchain.com/",
+    desc: "REST + tools. 1000+ integrations, ReAct agents, LangGraph durability",
+    badge: null,
+  },
+  {
+    name: "CrewAI",
+    href: "https://www.crewai.com/",
+    desc: "Role/task orchestration. Crews, flows, parallel agents",
+    badge: null,
+  },
+  {
+    name: "AutoGen",
+    href: "https://microsoft.github.io/autogen/",
+    desc: "Microsoft multi-agent with GraphFlow DAG, async, cross-language",
+    badge: null,
+  },
+  {
+    name: "LangGraph",
+    href: "https://langchain-ai.github.io/langgraph/",
+    desc: "Stateful agents, durable execution, checkpointing",
+    badge: null,
+  },
+  {
+    name: "Claude / GPT",
+    href: "/dashboard/api",
+    desc: "Any LLM with REST. Bearer token, same API for humans and agents",
+    badge: null,
+  },
 ] as const;
 
 const FEATURES = [
@@ -32,6 +71,14 @@ const FEATURES = [
       </svg>
     ),
     label: "Python Strategies",
+  },
+  {
+    icon: (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+    ),
+    label: "OpenClaw + LangChain + CrewAI",
   },
   {
     icon: (
@@ -135,7 +182,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </h1>
 
           <p className="max-w-lg text-xs md:text-sm text-text-secondary font-light leading-snug">
-            The dice casino built <span className="text-white font-semibold">for AI agents</span> — pure over/under. Your agents bet via API; humans watch, run Python strategies, or play — same balance.
+            The dice casino built <span className="text-white font-semibold">for AI agents</span> — pure over/under. <span className="text-accent-heart/90">OpenClaw</span>, LangChain, CrewAI, AutoGen — your agents bet via API; humans watch, run Python strategies, or play — same balance.
           </p>
         </div>
 
@@ -184,6 +231,35 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           )}
         </div>
 
+        {/* Agent integrations — creative pill strip */}
+        <div className="flex-shrink-0 w-full max-w-2xl">
+          <p className="text-[10px] font-semibold tracking-[0.2em] text-accent-heart/80 uppercase mb-2">
+            Works with your agent stack
+          </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {AGENT_INTEGRATIONS.map(({ name, href, desc, badge }) => (
+              <a
+                key={name}
+                href={href}
+                target={href.startsWith("http") ? "_blank" : undefined}
+                rel={href.startsWith("http") ? "noopener noreferrer" : undefined}
+                className="group flex items-center gap-2 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02] hover:bg-white/10 hover:border-accent-heart/30 transition-all duration-200"
+                title={desc}
+              >
+                {badge && (
+                  <span className="text-accent-heart text-xs" aria-hidden>{badge}</span>
+                )}
+                <span className="text-xs font-semibold text-text-secondary group-hover:text-white transition-colors">
+                  {name}
+                </span>
+              </a>
+            ))}
+          </div>
+          <p className="mt-2 text-[10px] text-text-secondary/70 text-center max-w-md mx-auto">
+            <span className="text-accent-heart/90 font-medium">OpenClaw</span> ships a first-class xpersona-casino skill. REST API works with LangChain, CrewAI, AutoGen, LangGraph, or any LLM.
+          </p>
+        </div>
+
         {/* Dice card — compact */}
         <div className="flex-shrink-0 w-full max-w-sm">
           <p className="text-[10px] font-semibold tracking-[0.2em] text-accent-heart/80 uppercase mb-1">Pure dice</p>
@@ -226,11 +302,24 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           ))}
         </div>
 
-        {/* Footer — minimal */}
-        <div className="text-center shrink-0 space-y-0.5">
+        {/* Footer — creative, integration-focused */}
+        <div className="text-center shrink-0 space-y-1">
           <p className="text-[11px] text-text-secondary/80">
-            REST API + OpenClaw tools • <Link href="/docs" className="text-accent-heart/90 hover:text-accent-heart transition-colors underline decoration-accent-heart/30 hover:decoration-accent-heart">View API docs</Link>
+            <span className="text-accent-heart/90 font-medium">OpenClaw integration</span> — skill on ClawHub. REST for LangChain, CrewAI, AutoGen, LangGraph. Same API for humans & agents.
           </p>
+          <div className="flex flex-wrap justify-center gap-3 text-[10px]">
+            <Link href="/docs" className="text-accent-heart/90 hover:text-accent-heart transition-colors underline decoration-accent-heart/30 hover:decoration-accent-heart">
+              API docs
+            </Link>
+            <span className="text-white/30">·</span>
+            <Link href="/dashboard/api" className="text-accent-heart/90 hover:text-accent-heart transition-colors">
+              Dashboard API
+            </Link>
+            <span className="text-white/30">·</span>
+            <a href="https://docs.openclaw.ai/" target="_blank" rel="noopener noreferrer" className="text-accent-heart/90 hover:text-accent-heart transition-colors">
+              OpenClaw docs
+            </a>
+          </div>
         </div>
       </div>
     </main>
