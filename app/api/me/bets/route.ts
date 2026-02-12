@@ -5,12 +5,12 @@ import { gameBets, serverSeeds } from "@/lib/db/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 
 const DEFAULT_LIMIT = 50;
-const MAX_LIMIT = 2000;
+const MAX_LIMIT = 10000;
 
 /**
- * GET /api/me/bets — Recent bets and session PnL for the authenticated user.
- * When gameType=dice, each bet includes verification fields (serverSeedHash, clientSeed, nonce) and resultPayload for provably fair audit.
- * Query: limit (default 50, max 200), gameType (optional, e.g. "dice").
+ * GET /api/me/bets — All bets for the authenticated user (provably fair audit).
+ * Every game is tracked in game_bets. Each bet includes verification when available (serverSeedHash, clientSeed, nonce).
+ * Query: limit (default 50, max 10000), gameType (optional), offset (for pagination).
  */
 export async function GET(request: Request) {
   const authResult = await getAuthUser(request as any);
@@ -26,8 +26,8 @@ export async function GET(request: Request) {
     MAX_LIMIT,
     Math.max(1, parseInt(url.searchParams.get("limit") ?? String(DEFAULT_LIMIT), 10) || DEFAULT_LIMIT)
   );
+  const offset = Math.max(0, parseInt(url.searchParams.get("offset") ?? "0", 10) || 0);
   const gameType = url.searchParams.get("gameType")?.trim() || null;
-  const includeVerification = gameType === "dice";
 
   const whereClause =
     gameType != null
@@ -37,58 +37,32 @@ export async function GET(request: Request) {
   const [aggRow] = await db
     .select({
       totalPnl: sql<number>`coalesce(sum(${gameBets.payout} - ${gameBets.amount}), 0)::int`,
+      totalCount: sql<number>`count(*)::int`,
     })
     .from(gameBets)
     .where(whereClause);
   const totalSessionPnl = typeof aggRow?.totalPnl === "number" ? aggRow.totalPnl : Number(aggRow?.totalPnl) || 0;
+  const totalCount = typeof aggRow?.totalCount === "number" ? aggRow.totalCount : Number(aggRow?.totalCount) || 0;
 
-  let rows: Array<{
-    id: string;
-    gameType: string;
-    amount: number;
-    outcome: string;
-    payout: number;
-    createdAt: Date | null;
-    resultPayload?: unknown;
-    clientSeed?: string | null;
-    nonce?: number | null;
-    serverSeedHash?: string | null;
-  }>;
-
-  if (includeVerification) {
-    rows = await db
-      .select({
-        id: gameBets.id,
-        gameType: gameBets.gameType,
-        amount: gameBets.amount,
-        outcome: gameBets.outcome,
-        payout: gameBets.payout,
-        createdAt: gameBets.createdAt,
-        resultPayload: gameBets.resultPayload,
-        clientSeed: gameBets.clientSeed,
-        nonce: gameBets.nonce,
-        serverSeedHash: serverSeeds.seedHash,
-      })
-      .from(gameBets)
-      .leftJoin(serverSeeds, eq(gameBets.serverSeedId, serverSeeds.id))
-      .where(whereClause)
-      .orderBy(desc(gameBets.createdAt))
-      .limit(limit);
-  } else {
-    rows = await db
-      .select({
-        id: gameBets.id,
-        gameType: gameBets.gameType,
-        amount: gameBets.amount,
-        outcome: gameBets.outcome,
-        payout: gameBets.payout,
-        createdAt: gameBets.createdAt,
-      })
-      .from(gameBets)
-      .where(whereClause)
-      .orderBy(desc(gameBets.createdAt))
-      .limit(limit);
-  }
+  const rows = await db
+    .select({
+      id: gameBets.id,
+      gameType: gameBets.gameType,
+      amount: gameBets.amount,
+      outcome: gameBets.outcome,
+      payout: gameBets.payout,
+      createdAt: gameBets.createdAt,
+      resultPayload: gameBets.resultPayload,
+      clientSeed: gameBets.clientSeed,
+      nonce: gameBets.nonce,
+      serverSeedHash: serverSeeds.seedHash,
+    })
+    .from(gameBets)
+    .leftJoin(serverSeeds, eq(gameBets.serverSeedId, serverSeeds.id))
+    .where(whereClause)
+    .orderBy(desc(gameBets.createdAt))
+    .limit(limit)
+    .offset(offset);
 
   const bets = rows.map((r) => {
     const amount = Number(r.amount);
@@ -102,15 +76,13 @@ export async function GET(request: Request) {
       payout: r.payout,
       pnl,
       createdAt: r.createdAt,
-    };
-    if (includeVerification && "resultPayload" in r) {
-      bet.resultPayload = r.resultPayload ?? null;
-      bet.verification = {
+      resultPayload: r.resultPayload ?? null,
+      verification: {
         serverSeedHash: r.serverSeedHash ?? null,
         clientSeed: r.clientSeed ?? "",
         nonce: r.nonce ?? 0,
-      };
-    }
+      },
+    };
     return bet;
   });
 
@@ -120,6 +92,9 @@ export async function GET(request: Request) {
       bets,
       sessionPnl: totalSessionPnl,
       roundCount: bets.length,
+      totalCount,
+      offset,
+      limit,
     },
   });
 }

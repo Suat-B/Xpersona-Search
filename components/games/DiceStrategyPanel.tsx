@@ -179,7 +179,9 @@ export function DiceStrategyPanel({
 
   return (
     <div className="rounded border border-[var(--border)] bg-[var(--bg-matte)]/50 p-4 space-y-4">
-      <p className="text-sm font-medium text-[var(--text-secondary)]">Quick strategies (save / load / run)</p>
+      <p className="text-sm font-medium text-[var(--text-secondary)]">
+        Quick strategies — save, load, run with dice animation
+      </p>
       <div className="flex flex-wrap items-center gap-2">
         <select
           value={selectedId ?? ""}
@@ -218,9 +220,10 @@ export function DiceStrategyPanel({
             max={1000}
             value={runMaxRounds}
             onChange={(e) => setRunMaxRounds(Number(e.target.value) || 20)}
+            title="1–1000 rounds"
             className="w-16 rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1 text-[var(--text-primary)]"
           />
-          rounds
+          rounds (1–1000)
         </label>
         <button
           type="button"
@@ -233,7 +236,7 @@ export function DiceStrategyPanel({
       </div>
 
       <p className="text-xs text-[var(--text-secondary)]">
-        Load saved presets or run current settings. More strategies (Martingale, Paroli, etc.) on the <Link href="/dashboard/strategies" className="text-[var(--accent-heart)] hover:underline">Strategies</Link> page.
+        Choose rounds (1–1000), then Run strategy. Opens a modal with live dice animation, balance, and bet per round. More strategies (Martingale, Paroli, etc.) on the <Link href="/dashboard/strategies" className="text-[var(--accent-heart)] hover:underline">Strategies</Link> page.
       </p>
 
       {saveOpen && (

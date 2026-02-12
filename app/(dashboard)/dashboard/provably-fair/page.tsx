@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { ProvablyFairBetHistory } from "@/components/dashboard/ProvablyFairBetHistory";
 
 export default function ProvablyFairPage() {
   return (
@@ -89,13 +90,24 @@ export default function ProvablyFairPage() {
         </pre>
       </GlassCard>
 
-      {/* Verify your bets */}
-      <GlassCard className="p-6">
+      {/* All past bets — Provably fair audit */}
+      <section>
         <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
-          Verify your bets
+          All past bets — Provably fair audit
         </h2>
         <p className="text-sm text-[var(--text-secondary)] mb-4">
-          On the dice game page, open the <strong className="text-[var(--text-primary)]">Stats</strong> tab and use the <strong className="text-[var(--text-primary)]">Verifiable history</strong> section. Click <strong className="text-[var(--accent-heart)]">Verify</strong> on any bet to see server seed hash, client seed, nonce, and the formula. You can reveal the server seed to run the calculation yourself.
+          Every game is tracked in <code className="bg-white/10 px-1 rounded font-mono text-xs">game_bets</code>. Click <strong className="text-[var(--accent-heart)]">Verify</strong> on any bet to see server seed hash, client seed, nonce, and the formula. Reveal the server seed to run the calculation yourself.
+        </p>
+        <ProvablyFairBetHistory />
+      </section>
+
+      {/* Quick link to dice */}
+      <GlassCard className="p-6">
+        <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
+          Play dice
+        </h2>
+        <p className="text-sm text-[var(--text-secondary)] mb-4">
+          On the dice game page, the <strong className="text-[var(--text-primary)]">Stats</strong> tab also has a compact <strong className="text-[var(--text-primary)]">Verifiable history</strong> section. All bets are tracked here too.
         </p>
         <Link
           href="/games/dice"
@@ -116,10 +128,10 @@ export default function ProvablyFairPage() {
         </h2>
         <ul className="space-y-2 text-sm text-[var(--text-secondary)]">
           <li>
-            <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">GET /api/me/bets?gameType=dice</code> — List recent dice bets with verification data (serverSeedHash, clientSeed, nonce, resultPayload).
+            <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">GET /api/me/bets</code> — All past bets (limit, offset, gameType). Every bet includes verification when available.
           </li>
           <li>
-            <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">GET /api/me/bets/[id]</code> — Fetch a single bet with full verification. Use <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">?reveal=1</code> to include the server seed.
+            <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">GET /api/me/bets/[id]</code> — Single bet with full verification. Use <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">?reveal=1</code> to include the server seed.
           </li>
         </ul>
       </GlassCard>

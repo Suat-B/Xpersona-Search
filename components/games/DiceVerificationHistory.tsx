@@ -106,9 +106,10 @@ export function DiceVerificationHistory() {
         return;
       }
       if (data.success && data.data?.verification) {
+        const v = data.data?.verification;
         setDetail((prev) =>
-          prev
-            ? { ...prev, serverSeed: data.data.verification.serverSeed }
+          prev && v
+            ? { ...prev, serverSeed: v.serverSeed }
             : null
         );
         setRevealed(true);
@@ -148,7 +149,10 @@ export function DiceVerificationHistory() {
               {bets.slice(0, 8).map((b) => (
                 <li key={b.id} className="px-3 py-2 flex items-center justify-between gap-2 text-xs">
                   <span className="text-[var(--text-secondary)] truncate">
-                    {typeof value(b) === "number" ? value(b).toFixed(2) : "—"} · {b.amount} · {b.outcome === "win" ? "+" : ""}{b.pnl}
+                    {(() => {
+                      const v = value(b);
+                      return typeof v === "number" ? v.toFixed(2) : "—";
+                    })()} · {b.amount} · {b.outcome === "win" ? "+" : ""}{b.pnl}
                   </span>
                   <button
                     type="button"

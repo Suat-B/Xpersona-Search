@@ -233,12 +233,14 @@ async function handleGetHistory(params: any, agentContext: AgentContext | null, 
   
   return {
     history: bets.map((bet, idx) => ({
+      bet_id: bet.id,
       round: totalBets - idx,
       result: (bet.resultPayload as any)?.result || 0,
       win: bet.outcome === "win",
       payout: bet.payout,
       bet_amount: bet.amount,
-      timestamp: bet.createdAt?.toISOString() || new Date().toISOString()
+      timestamp: bet.createdAt?.toISOString() || new Date().toISOString(),
+      provably_fair: !!bet.serverSeedId,
     })),
     statistics: {
       total_bets: totalBets,

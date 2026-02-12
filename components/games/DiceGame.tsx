@@ -350,47 +350,55 @@ export function DiceGame({
               </span>
             </button>
 
-            <button
-              type="button"
-              onClick={autoPlay ? stopAuto : startAuto}
-              disabled={loading && !autoPlay}
-              className={`rounded-xl border-2 px-4 py-3.5 text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-1.5 ${
-                autoPlay
-                  ? "border-red-500 bg-red-500/10 text-red-400 hover:bg-red-500/20"
-                  : "border-emerald-500 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
-              }`}
-            >
-              {autoPlay ? (
-                <>
-                  <svg className="w-4 h-4 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
-                  </svg>
-                  STOP
-                  <span className="text-xs opacity-70">({autoRounds})</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                  </svg>
-                  AUTO
-                </>
-              )}
-            </button>
-
-            {autoPlay && (
-              <select
-                value={autoSpeed}
-                onChange={(e) => setAutoSpeed(Number(e.target.value))}
-                className="rounded-xl border-2 border-[var(--border)] bg-[var(--bg-matte)] px-3 py-3 text-sm font-medium text-[var(--text-primary)] focus:border-[var(--accent-heart)] focus:outline-none"
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={autoPlay ? stopAuto : startAuto}
+                disabled={loading && !autoPlay}
+                className={`rounded-xl border-2 px-5 py-3.5 text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2 shrink-0 ${
+                  autoPlay
+                    ? "border-red-500 bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                    : "border-emerald-500 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                }`}
               >
-                {AUTO_SPEEDS.map((ms) => (
-                  <option key={ms} value={ms}>
-                    {ms === 100 ? "⚡" : ms === 250 ? "▶" : ms === 500 ? "◐" : "◐"}
-                  </option>
-                ))}
-              </select>
-            )}
+                {autoPlay ? (
+                  <>
+                    <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
+                    </svg>
+                    <span>STOP</span>
+                    <span className="text-xs font-medium opacity-80 tabular-nums">{autoRounds}</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                    </svg>
+                    AUTO
+                  </>
+                )}
+              </button>
+
+              {autoPlay && (
+                <div className="flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--bg-matte)] p-1">
+                  {AUTO_SPEEDS.map((ms) => (
+                    <button
+                      key={ms}
+                      type="button"
+                      onClick={() => setAutoSpeed(ms)}
+                      className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                        autoSpeed === ms
+                          ? "bg-[var(--accent-heart)]/20 text-[var(--accent-heart)]"
+                          : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5"
+                      }`}
+                      title={`${ms}ms between rolls`}
+                    >
+                      {ms === 100 ? "0.1s" : ms === 250 ? "0.25s" : ms === 500 ? "0.5s" : "1s"}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {error && (

@@ -189,6 +189,20 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           {/* Tab Switcher */}
           <div className="flex-shrink-0 flex gap-1 p-1 rounded-lg bg-[var(--bg-matte)] border border-[var(--border)]">
             <button
+              onClick={() => setActiveTab("statistics")}
+              className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-all ${activeTab === "statistics"
+                  ? "bg-[var(--accent-heart)] text-white shadow-lg shadow-[var(--accent-heart)]/30"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                }`}
+            >
+              <span className="flex items-center justify-center gap-2">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                Statistics
+              </span>
+            </button>
+            <button
               onClick={() => setActiveTab("api")}
               className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-all ${activeTab === "api"
                   ? "bg-[var(--accent-heart)] text-white shadow-lg shadow-[var(--accent-heart)]/30"
@@ -214,20 +228,6 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                 </svg>
                 Strategy
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveTab("statistics")}
-              className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-all ${activeTab === "statistics"
-                  ? "bg-[var(--accent-heart)] text-white shadow-lg shadow-[var(--accent-heart)]/30"
-                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                }`}
-            >
-              <span className="flex items-center justify-center gap-2">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-                Statistics
               </span>
             </button>
           </div>
@@ -311,7 +311,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             ) : activeTab === "strategy" ? (
               <div className="flex-shrink-0 space-y-3">
                 <p className="text-sm text-[var(--text-secondary)]">
-                  Load a saved strategy or run with progression. Running a strategy places real dice bets and updates your balance.
+                  Load a saved strategy or run with current settings. <strong className="text-[var(--text-primary)]">Run strategy</strong> opens a modal with the full dice animation, live balance & bet per round, and custom runs (1–1000). Progression types (Martingale, Paroli, etc.) from saved strategies apply.
                 </p>
                 <Link
                   href="/dashboard/strategies"
