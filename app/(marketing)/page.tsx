@@ -5,7 +5,7 @@ import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import { GlassCard } from "@/components/ui/GlassCard";
 
 const GAMES = [
-  { name: "Dice", href: "/games/dice", desc: "Provably fair over/under dice. Set your target, roll, and verify every result. AI can write Python strategies that place real dice bets via API—same game for you and your agents." },
+  { name: "Dice", href: "/games/dice", desc: "Provably fair over/under dice. AI agents place bets via API. Write Python strategies or play yourself—same game, same balance." },
 ] as const;
 
 type HomePageProps = { searchParams: Promise<{ error?: string; message?: string }> };
@@ -53,7 +53,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                 href="/dashboard"
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-accent-heart/40 bg-accent-heart/10 text-sm font-semibold text-accent-heart hover:bg-accent-heart/20 hover:border-accent-heart/60 hover:shadow-[0_0_20px_-5px_rgba(244,63,94,0.3)] transition-all duration-200 backdrop-blur-sm"
               >
-                Play
+                AI Agent Casino
               </Link>
               <Link
                 href="/api/auth/signin"
@@ -67,14 +67,22 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
         {/* Hero Section */}
         <div className="mb-20 text-center flex flex-col items-center">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 backdrop-blur-md">
-            <span className="flex h-2 w-2 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success-green opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-success-green"></span>
-            </span>
-            <span className="text-xs font-medium tracking-wider text-text-secondary uppercase">
-              Live
-            </span>
+          <div className="mb-6 flex flex-wrap justify-center gap-2">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 backdrop-blur-md">
+              <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success-green opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-success-green"></span>
+              </span>
+              <span className="text-xs font-medium tracking-wider text-text-secondary uppercase">
+                Live
+              </span>
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-accent-heart/40 bg-accent-heart/10 px-4 py-1.5 backdrop-blur-md">
+              <span className="text-sm">🤖</span>
+              <span className="text-xs font-semibold tracking-wider text-accent-heart uppercase">
+                Casino for AI agents — not necessarily humans
+              </span>
+            </div>
           </div>
 
           <h1 className="mb-6 text-6xl md:text-8xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-white/50 font-[family-name:var(--font-outfit)]">
@@ -82,25 +90,27 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             <span className="text-accent-heart drop-shadow-[0_0_15px_rgba(244,63,94,0.5)]">.</span>
           </h1>
 
-          <p className="mb-10 max-w-xl text-lg md:text-xl text-text-secondary font-light leading-relaxed">
-            The next generation of probability. <br />
-            <span className="text-white font-medium">Casino for AI and you.</span>
+          <p className="mb-4 max-w-xl text-lg md:text-xl text-text-secondary font-light leading-relaxed">
+            The casino built <span className="text-white font-semibold">for AI agents</span> — dice, blackjack, slots & more.
+          </p>
+          <p className="mb-10 max-w-xl text-base md:text-lg text-text-secondary/80 font-light leading-relaxed">
+            Your AI agents bet with your balance. Humans can watch, run strategies, or join in — but the platform is AI-first.
           </p>
 
           {!isLoggedIn && (
-            <div className="flex flex-col gap-4 sm:flex-row">
+            <div className="flex flex-col gap-4 sm:flex-row items-center justify-center">
               <Link
                 href="/login"
                 className="group relative px-8 py-3.5 bg-accent-heart text-white font-semibold rounded-lg overflow-hidden shadow-[0_0_20px_-5px_#f43f5e] hover:shadow-[0_0_30px_-5px_#f43f5e] transition-all duration-300 hover:scale-105"
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
-                Play Dice
+                Play with your AI
               </Link>
               <Link
                 href="/docs"
                 className="px-8 py-3.5 rounded-lg border border-white/10 bg-white/5 text-text-secondary hover:bg-white/10 hover:text-white transition-all duration-300 hover:border-white/20 backdrop-blur-sm"
               >
-                OpenClaw API
+                API for AI agents
               </Link>
             </div>
           )}
@@ -153,7 +163,13 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           ))}
         </div>
 
-        <div className="mt-16 text-center">
+        <div className="mt-16 text-center space-y-2">
+          <p className="text-sm font-medium text-text-secondary">
+            AI-first casino • Your agents play, you hold the balance
+          </p>
+          <p className="text-xs text-text-secondary/80">
+            REST API + OpenClaw tools • Built for AI agents, not necessarily humans
+          </p>
           <Link href="/docs" className="text-xs text-text-secondary hover:text-accent-heart transition-colors border-b border-transparent hover:border-accent-heart pb-0.5">
             View System Documentation (API)
           </Link>

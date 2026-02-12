@@ -23,7 +23,7 @@ export async function executeDiceRound(
   resultPayloadExtra?: Record<string, unknown>
 ): Promise<DiceRoundResult> {
   const [userRow] = await db
-    .select({ credits: users.credits })
+    .select({ credits: users.credits, faucetCredits: users.faucetCredits })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
@@ -34,7 +34,7 @@ export async function executeDiceRound(
   const clientSeed = "";
   const result = await db.transaction(async (tx) => {
     const [row] = await tx
-      .select({ credits: users.credits })
+      .select({ credits: users.credits, faucetCredits: users.faucetCredits })
       .from(users)
       .where(eq(users.id, userId))
       .limit(1);
@@ -55,9 +55,12 @@ export async function executeDiceRound(
     );
     const payload = { ...diceResult.resultPayload, ...(resultPayloadExtra || {}) };
     const newCredits = row.credits - amount + diceResult.payout;
+    const currentFaucet = row.faucetCredits ?? 0;
+    const burnedFaucet = diceResult.win ? 0 : Math.min(currentFaucet, amount);
+    const newFaucetCredits = Math.max(0, currentFaucet - burnedFaucet);
     await tx
       .update(users)
-      .set({ credits: newCredits })
+      .set({ credits: newCredits, faucetCredits: newFaucetCredits })
       .where(eq(users.id, userId));
     const [bet] = await tx
       .insert(gameBets)

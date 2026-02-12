@@ -23,6 +23,8 @@ export const users = pgTable(
     emailVerified: timestamp("email_verified", { withTimezone: true }),
     googleId: varchar("google_id", { length: 255 }).unique(),
     credits: integer("credits").notNull().default(0),
+    /** Portion of credits from faucet; cannot be withdrawn. */
+    faucetCredits: integer("faucet_credits").notNull().default(0),
     apiKeyHash: varchar("api_key_hash", { length: 64 }).unique(),
     apiKeyPrefix: varchar("api_key_prefix", { length: 12 }),
     apiKeyCreatedAt: timestamp("api_key_created_at", { withTimezone: true }),

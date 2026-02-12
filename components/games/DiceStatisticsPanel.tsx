@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { SessionPnLChart, type PnLPoint } from "@/components/ui/SessionPnLChart";
+import { StrategyRunModal } from "@/components/strategies/StrategyRunModal";
 import { CREATIVE_DICE_STRATEGIES } from "@/lib/dice-strategies";
 import type { DiceConfig, CreativeStrategy } from "@/lib/dice-strategies";
 import type { DiceStrategyConfig } from "@/lib/strategies";
@@ -59,23 +60,20 @@ export function DiceStatisticsPanel({
   onLoadConfig,
   onReset,
 }: DiceStatisticsPanelProps) {
-  const [runningId, setRunningId] = useState<string | null>(null);
+  const [runModalOpen, setRunModalOpen] = useState(false);
+  const [runStrategy, setRunStrategy] = useState<CreativeStrategy | null>(null);
   const wins = recentResults.filter((r) => r.win).length;
   const winRate = recentResults.length > 0 ? (wins / recentResults.length) * 100 : 0;
 
-  const handleRun = async (s: CreativeStrategy) => {
-    setRunningId(s.id);
-    try {
-      const res = await fetch("/api/games/dice/run-strategy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ config: toApiConfig(s.config), maxRounds: 20 }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (data.success) window.dispatchEvent(new Event("balance-updated"));
-    } finally {
-      setRunningId(null);
-    }
+  const handleOpenRun = (s: CreativeStrategy) => {
+    setRunStrategy(s);
+    setRunModalOpen(true);
+  };
+
+  const handleRunComplete = () => {
+    setRunModalOpen(false);
+    setRunStrategy(null);
+    window.dispatchEvent(new Event("balance-updated"));
   };
 
   return (
@@ -165,11 +163,10 @@ export function DiceStatisticsPanel({
                   </button>
                   <button
                     type="button"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRun(s); }}
-                    disabled={runningId !== null}
-                    className="px-2 py-1 text-[10px] font-medium rounded-md border border-green-500/40 bg-green-500/10 text-green-400 hover:bg-green-500/20 disabled:opacity-50 transition-colors"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleOpenRun(s); }}
+                    className="px-2 py-1 text-[10px] font-medium rounded-md border border-green-500/40 bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
                   >
-                    {runningId === s.id ? "…" : "Run (20)"}
+                    Run
                   </button>
                   <Link
                     href="/dashboard/strategies"
@@ -184,6 +181,17 @@ export function DiceStatisticsPanel({
           ))}
         </div>
       </div>
+
+      {runStrategy && (
+        <StrategyRunModal
+          isOpen={runModalOpen}
+          onClose={() => { setRunModalOpen(false); setRunStrategy(null); }}
+          strategyName={runStrategy.name}
+          config={toApiConfig(runStrategy.config)}
+          defaultRounds={20}
+          onComplete={handleRunComplete}
+        />
+      )}
     </div>
   );
 }

@@ -74,6 +74,7 @@ export default function ApiDocsPage() {
               </tr>
             </thead>
             <tbody className="text-[var(--text-primary)]">
+              <tr className="border-b border-white/5"><td className="py-2 pr-4">Session stats (AI-first)</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/session-stats?gameType=dice&limit=50</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Balance</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/balance</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Session PnL and history</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/bets?limit=50</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">List strategies</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/strategies?gameType=dice</td></tr>
@@ -84,6 +85,32 @@ export default function ApiDocsPage() {
             </tbody>
           </table>
         </div>
+      </GlassCard>
+
+      {/* For AI agents */}
+      <GlassCard className="p-6">
+        <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
+          For AI agents
+        </h2>
+        <ul className="space-y-2 text-sm text-[var(--text-primary)]">
+          <li><strong>Session stats:</strong> Prefer <code className="bg-white/10 px-1 rounded font-mono text-xs">GET /api/me/session-stats</code> over balance + bets for &quot;how am I doing?&quot; — single call returns balance, rounds, PnL, win rate, recent bets.</li>
+          <li><strong>Tools vs REST:</strong> Use Tools API (<code className="bg-white/10 px-1 rounded font-mono text-xs">POST /api/openclaw/tools</code>) when OpenClaw is configured for it. Otherwise use REST with the same auth.</li>
+          <li><strong>Recommended flow:</strong> (1) Get balance or session-stats. (2) If low, claim faucet or suggest deposit. (3) Place bets or run strategy. (4) Report PnL.</li>
+        </ul>
+      </GlassCard>
+
+      {/* Dice odds */}
+      <GlassCard className="p-6">
+        <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
+          Dice rules and odds
+        </h2>
+        <ul className="space-y-2 text-sm text-[var(--text-secondary)]">
+          <li><strong className="text-[var(--text-primary)]">House edge:</strong> 3%</li>
+          <li><strong className="text-[var(--text-primary)]">Min/max bet:</strong> 1 – 10000 credits</li>
+          <li><strong className="text-[var(--text-primary)]">Win probability:</strong> over X → (100-X)/100; under X → X/100 (e.g. over 50 = 49% win)</li>
+          <li><strong className="text-[var(--text-primary)]">Multiplier:</strong> 0.97 / winProbability (e.g. over 50 ≈ 1.98x payout)</li>
+          <li><strong className="text-[var(--text-primary)]">Faucet:</strong> 100 credits, 1h cooldown</li>
+        </ul>
       </GlassCard>
 
       {/* Creating strategies (for OpenClaw agents) */}
@@ -130,7 +157,8 @@ export default function ApiDocsPage() {
           <div>
             <h3 className="font-medium text-[var(--text-primary)] mb-2">Bets and session PnL</h3>
             <ul className="space-y-1 text-[var(--text-secondary)] font-mono text-xs">
-              <li>GET /api/me/bets?limit=50 — Recent bets, data.sessionPnl, data.roundCount (max limit 2000)</li>
+              <li>GET /api/me/session-stats?gameType=dice&limit=50 — Balance, rounds, PnL, win rate, recent bets (AI-first)</li>
+              <li>GET /api/me/bets?limit=50 — Recent bets, data.sessionPnl, data.roundCount (max limit 200)</li>
             </ul>
           </div>
           <div>
@@ -171,6 +199,12 @@ export default function ApiDocsPage() {
           Examples (curl)
         </h2>
         <div className="space-y-4">
+          <div>
+            <p className="text-xs text-[var(--text-secondary)] mb-1">Session stats (AI-first)</p>
+            <pre className="rounded-lg bg-[var(--bg-deep)] border border-[var(--border)] p-4 text-xs font-mono text-[var(--text-primary)] overflow-x-auto">
+{`curl -s -H "Authorization: Bearer $XPERSONA_API_KEY" "https://xpersona.co/api/me/session-stats?gameType=dice&limit=20"`}
+            </pre>
+          </div>
           <div>
             <p className="text-xs text-[var(--text-secondary)] mb-1">Check balance</p>
             <pre className="rounded-lg bg-[var(--bg-deep)] border border-[var(--border)] p-4 text-xs font-mono text-[var(--text-primary)] overflow-x-auto">
@@ -225,6 +259,9 @@ export default function ApiDocsPage() {
         <p className="text-sm text-[var(--text-secondary)] mb-4">
           <strong className="text-[var(--text-primary)]">Discovery:</strong> <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">GET /api/openclaw/tools</code> returns the full tool schema (tool names, parameters, returns) for programmatic discovery.
         </p>
+        <p className="text-xs text-[var(--text-secondary)] mb-4">
+          Plinko, Slots, Blackjack, Crash have no tools — use REST (POST /api/games/plinko/bet, /api/games/slots/spin, etc.).
+        </p>
         <p className="text-xs text-[var(--text-secondary)] mb-2">Example: get balance</p>
         <pre className="rounded-lg bg-[var(--bg-deep)] border border-[var(--border)] p-3 text-xs font-mono text-[var(--text-primary)] overflow-x-auto mb-4">
 {`curl -s -X POST -H "Authorization: Bearer $XPERSONA_API_KEY" -H "Content-Type: application/json" \\
@@ -245,15 +282,13 @@ export default function ApiDocsPage() {
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_get_balance</td><td className="py-2">Get balance and session info</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_get_history</td><td className="py-2">Get game history and stats</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_analyze_patterns</td><td className="py-2">Analyze patterns and trends</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_run_strategy</td><td className="py-2">Run strategy (strategy_id or inline config)</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_run_strategy</td><td className="py-2">Run dice strategy (strategy_id or inline config)</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_list_strategies</td><td className="py-2">List deployed strategies</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_get_strategy</td><td className="py-2">Get strategy details (config, progression_type)</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_delete_strategy</td><td className="py-2">Delete a strategy</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_stop_session</td><td className="py-2">Stop an active strategy session</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_get_session_status</td><td className="py-2">Get session status</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_notify</td><td className="py-2">Send notification</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_get_limits</td><td className="py-2">Get betting and rate limits</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_calculate_odds</td><td className="py-2">Calculate odds and expected value</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_calculate_odds</td><td className="py-2">Calculate dice odds and expected value</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_claim_faucet</td><td className="py-2">Claim hourly faucet</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_list_credit_packages</td><td className="py-2">List credit packages for purchase</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_create_checkout</td><td className="py-2">Create Stripe checkout URL for deposit</td></tr>

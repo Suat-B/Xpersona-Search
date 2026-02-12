@@ -72,24 +72,6 @@ paths:
       responses:
         "200":
           description: success, data.balance, data.rounds, data.sessionPnl, data.winRate, data.recentBets
-          content:
-            application/json:
-              example:
-                success: true
-                data:
-                  balance: 1250
-                  rounds: 42
-                  sessionPnl: 250
-                  winRate: 52.38
-                  recentBets:
-                    - amount: 10
-                      outcome: win
-                      payout: 19
-                      pnl: 9
-                    - amount: 10
-                      outcome: loss
-                      payout: 0
-                      pnl: -10
         "401":
           description: Unauthorized
   /api/me/strategies:
@@ -181,7 +163,7 @@ paths:
   /api/games/dice/run-strategy:
     post:
       summary: Run dice strategy (AI/OpenClaw)
-      description: Execute up to maxRounds (default 20, max 100) with strategyId or inline config. Returns results, sessionPnl, finalBalance, stoppedReason.
+      description: Execute up to maxRounds (default 20, max 100). Returns results, sessionPnl, finalBalance, stoppedReason.
       requestBody:
         content:
           application/json:
@@ -191,13 +173,28 @@ paths:
                 strategyId: { type: string, format: uuid }
                 config: { type: object, description: "inline { amount, target, condition, progressionType?: flat|martingale|paroli|dalembert|fibonacci|labouchere|oscar|kelly, maxBet?, maxConsecutiveLosses?, maxConsecutiveWins?, unitStep?, stopAfterRounds?, stopIfBalanceBelow?, stopIfBalanceAbove? }" }
                 maxRounds: { type: integer, minimum: 1, maximum: 100, default: 20 }
+            examples:
+              inlineMartingale:
+                summary: Inline Martingale
+                value:
+                  config:
+                    amount: 10
+                    target: 50
+                    condition: over
+                    progressionType: martingale
+                  maxRounds: 20
+              savedStrategy:
+                summary: By strategy ID
+                value:
+                  strategyId: "uuid-from-create"
+                  maxRounds: 30
       responses:
         "200":
           description: success, data.results, data.sessionPnl, data.finalBalance, data.roundsPlayed, data.stoppedReason
         "400":
-          description: VALIDATION_ERROR
+          description: VALIDATION_ERROR - config must include amount, target, condition for dice
         "404":
-          description: STRATEGY_NOT_FOUND
+          description: STRATEGY_NOT_FOUND - invalid strategyId
         "401":
           description: Unauthorized
   /api/games/plinko/run-strategy:
@@ -239,17 +236,18 @@ paths:
       summary: Generate API key (returns plain key once)
       responses:
         "200":
-          description: { apiKey, apiKeyPrefix }
+          description: Returns apiKey and apiKeyPrefix (key shown once only)
         "401":
           description: Unauthorized
   /api/faucet:
     post:
       summary: Claim hourly faucet
+      description: Grants 100 credits. 1 hour cooldown. On 429 wait until data.nextFaucetAt.
       responses:
         "200":
-          description: { balance, granted, nextFaucetAt }
+          description: success, data.balance, data.granted, data.nextFaucetAt
         "429":
-          description: Faucet cooldown
+          description: FAUCET_COOLDOWN - wait until data.nextFaucetAt (ISO string) before claiming again
         "401":
           description: Unauthorized
   /api/credits/packages:
@@ -269,10 +267,12 @@ paths:
               type: object
               required: [packageId]
               properties:
-                packageId: { type: string, format: uuid }
+                packageId:
+                  type: string
+                  format: uuid
       responses:
         "200":
-          description: { url }
+          description: Returns checkout url
         "401":
           description: Unauthorized
   /api/openclaw/tools:
@@ -308,6 +308,7 @@ paths:
   /api/games/dice/bet:
     post:
       summary: Place dice bet (auto-play: call repeatedly with delay)
+      description: Dice rules - house edge 3%, multiplier = 0.97/winProbability. Over 50 = 49% win, ~1.98x payout.
       requestBody:
         content:
           application/json:
@@ -315,14 +316,21 @@ paths:
               type: object
               required: [amount, target, condition]
               properties:
-                amount: { type: integer, minimum: 1 }
-                target: { type: number, minimum: 0, maximum: 100 }
-                condition: { type: string, enum: [over, under] }
+                amount:
+                  type: integer
+                  minimum: 1
+                target:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+                condition:
+                  type: string
+                  enum: [over, under]
       responses:
         "200":
           description: betId, result, win, payout, balance, verification
         "400":
-          description: VALIDATION_ERROR, INSUFFICIENT_BALANCE, BET_TOO_LOW, BET_TOO_HIGH
+          description: VALIDATION_ERROR, INSUFFICIENT_BALANCE (suggest faucet or purchase), BET_TOO_LOW, BET_TOO_HIGH (min 1 max 10000)
         "401":
           description: Unauthorized
   /api/games/blackjack/round:
@@ -335,7 +343,9 @@ paths:
               type: object
               required: [amount]
               properties:
-                amount: { type: integer, minimum: 1 }
+                amount:
+                  type: integer
+                  minimum: 1
       responses:
         "200":
           description: roundId, playerHand, dealerUp, balance, status
@@ -380,8 +390,12 @@ paths:
               type: object
               required: [amount, risk]
               properties:
-                amount: { type: integer, minimum: 1 }
-                risk: { type: string, enum: [low, medium, high] }
+                amount:
+                  type: integer
+                  minimum: 1
+                risk:
+                  type: string
+                  enum: [low, medium, high]
       responses:
         "200":
           description: betId, path, bucketIndex, multiplier, payout, balance, verification
@@ -407,7 +421,9 @@ paths:
               type: object
               required: [amount]
               properties:
-                amount: { type: integer, minimum: 1 }
+                amount:
+                  type: integer
+                  minimum: 1
       responses:
         "200":
           description: betId, roundId, amount, balance
@@ -420,6 +436,7 @@ paths:
   /api/games/crash/rounds/{id}/cashout:
     post:
       summary: Cash out on crash round
+      description: On 400/404 round ended or invalid. Use GET /api/games/crash/rounds/current for new round.
       parameters:
         - name: id
           in: path
@@ -429,9 +446,9 @@ paths:
         "200":
           description: cashedOutAt, payout, balance
         "400":
-          description: ROUND_ENDED
+          description: ROUND_ENDED - round already crashed; fetch current round and place new bet
         "404":
-          description: ROUND_NOT_FOUND
+          description: ROUND_NOT_FOUND - invalid round id; use GET /api/games/crash/rounds/current
         "401":
           description: Unauthorized
   /api/games/slots/spin:
@@ -444,7 +461,9 @@ paths:
               type: object
               required: [amount]
               properties:
-                amount: { type: integer, minimum: 1 }
+                amount:
+                  type: integer
+                  minimum: 1
       responses:
         "200":
           description: betId, reels, wins, totalPayout, balance, verification

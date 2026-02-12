@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
 import { gameBets, serverSeeds } from "@/lib/db/schema";
@@ -15,7 +15,7 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authResult = await getAuthUser(request as Request);
+  const authResult = await getAuthUser(request as NextRequest);
   if ("error" in authResult) {
     return NextResponse.json(
       { success: false, error: authResult.error },

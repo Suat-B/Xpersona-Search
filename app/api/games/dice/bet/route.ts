@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
   try {
     const result = await db.transaction(async (tx) => {
       const [userRow] = await tx
-        .select({ credits: users.credits })
+        .select({ credits: users.credits, faucetCredits: users.faucetCredits })
         .from(users)
         .where(eq(users.id, authResult.user.id))
         .limit(1);
@@ -88,9 +88,12 @@ export async function POST(request: NextRequest) {
         0
       );
       const newCredits = userRow.credits - amount + diceResult.payout;
+      const currentFaucet = userRow.faucetCredits ?? 0;
+      const burnedFaucet = diceResult.win ? 0 : Math.min(currentFaucet, amount);
+      const newFaucetCredits = Math.max(0, currentFaucet - burnedFaucet);
       await tx
         .update(users)
-        .set({ credits: newCredits })
+        .set({ credits: newCredits, faucetCredits: newFaucetCredits })
         .where(eq(users.id, authResult.user.id));
       const [bet] = await tx
         .insert(gameBets)

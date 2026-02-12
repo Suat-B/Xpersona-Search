@@ -114,7 +114,7 @@ export const CasinoToolsSchema = {
 
   "casino_get_balance": {
     name: "casino_get_balance",
-    description: "Get current user balance and session info",
+    description: "Get current user balance and session info (balance, session_pnl, win_rate, streaks). initial_balance is placeholder when session start unknown; prefer GET /api/me/session-stats for single-call stats.",
     parameters: {
       type: "object",
       properties: {}
@@ -344,10 +344,10 @@ export const CasinoToolsSchema = {
     }
   },
 
-  // Session Management Tools
+  // Session Management Tools (reserved for future async sessions; strategy runs are synchronous)
   "casino_stop_session": {
     name: "casino_stop_session",
-    description: "Stop an active strategy session",
+    description: "Reserved for future async strategy sessions. Current strategy runs (casino_run_strategy) are synchronous; no active session to stop. Returns placeholder.",
     parameters: {
       type: "object",
       properties: {
@@ -374,7 +374,7 @@ export const CasinoToolsSchema = {
 
   "casino_get_session_status": {
     name: "casino_get_session_status",
-    description: "Get status of active or recent session",
+    description: "Reserved for future async sessions. Strategy runs are synchronous; use casino_run_strategy result or GET /api/me/session-stats for current stats.",
     parameters: {
       type: "object",
       properties: {

@@ -1,31 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { safeFetchJson } from "@/lib/safeFetch";
 
 export function BalanceCard() {
   const [balance, setBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetch("/api/me/balance")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success) setBalance(data.data.balance);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    const { data } = await safeFetchJson<{ success?: boolean; data?: { balance?: number } }>("/api/me/balance");
+    if (data?.success && typeof data?.data?.balance === "number") setBalance(data.data.balance);
+    setLoading(false);
   }, []);
 
-  const refresh = () => {
-    setLoading(true);
-    fetch("/api/me/balance")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success) setBalance(data.data.balance);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  };
+  useEffect(() => {
+    refresh();
+    const handler = () => refresh();
+    window.addEventListener("balance-updated", handler);
+    return () => window.removeEventListener("balance-updated", handler);
+  }, [refresh]);
 
   return (
     <div

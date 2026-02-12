@@ -105,6 +105,8 @@ export type AuthUser = {
   name: string | null;
   image: string | null;
   credits: number;
+  /** Credits from faucet; cannot be withdrawn. withdrawable = credits - faucetCredits */
+  faucetCredits: number;
   apiKeyPrefix: string | null;
   createdAt: Date | null;
   lastFaucetAt: Date | null;
@@ -126,6 +128,7 @@ export async function getAuthUser(
         name: users.name,
         image: users.image,
         credits: users.credits,
+        faucetCredits: users.faucetCredits,
         apiKeyPrefix: users.apiKeyPrefix,
         createdAt: users.createdAt,
         lastFaucetAt: users.lastFaucetAt,
@@ -148,6 +151,7 @@ export async function getAuthUser(
           name: users.name,
           image: users.image,
           credits: users.credits,
+          faucetCredits: users.faucetCredits,
           apiKeyPrefix: users.apiKeyPrefix,
           createdAt: users.createdAt,
           lastFaucetAt: users.lastFaucetAt,
@@ -170,6 +174,7 @@ export async function getAuthUser(
           name: users.name,
           image: users.image,
           credits: users.credits,
+          faucetCredits: users.faucetCredits,
           apiKeyPrefix: users.apiKeyPrefix,
           createdAt: users.createdAt,
           lastFaucetAt: users.lastFaucetAt,
@@ -192,6 +197,7 @@ export async function getAuthUser(
           name: users.name,
           image: users.image,
           credits: users.credits,
+          faucetCredits: users.faucetCredits,
           apiKeyPrefix: users.apiKeyPrefix,
           createdAt: users.createdAt,
           lastFaucetAt: users.lastFaucetAt,

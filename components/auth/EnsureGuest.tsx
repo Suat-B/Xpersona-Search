@@ -25,8 +25,16 @@ export function EnsureGuest({ needsGuest }: EnsureGuestProps) {
       credentials: "include",
       headers: { "Content-Type": "application/json" },
     })
-      .then((r) => {
-        if (!r.ok) return r.json().then((d) => ({ ok: false, ...d }));
+      .then(async (r) => {
+        if (!r.ok) {
+          const text = await r.text();
+          try {
+            const d = text ? JSON.parse(text) : {};
+            return { ok: false, ...d };
+          } catch {
+            return { ok: false };
+          }
+        }
         return { ok: true };
       })
       .then((result) => {

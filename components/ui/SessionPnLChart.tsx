@@ -101,7 +101,17 @@ export function SessionPnLChart({
         aria-hidden
       >
         <defs>
-          <linearGradient id="pnl-fill-session" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id="pnl-fill-up" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0%" stopColor="#10b981" stopOpacity={0} />
+            <stop offset="50%" stopColor="#10b981" stopOpacity={0.2} />
+            <stop offset="100%" stopColor="#10b981" stopOpacity={0.4} />
+          </linearGradient>
+          <linearGradient id="pnl-fill-down" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ef4444" stopOpacity={0.4} />
+            <stop offset="50%" stopColor="#ef4444" stopOpacity={0.2} />
+            <stop offset="100%" stopColor="#ef4444" stopOpacity={0} />
+          </linearGradient>
+          <linearGradient id="pnl-fill-neutral" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--accent-heart)" stopOpacity={0.3} />
             <stop offset="100%" stopColor="var(--accent-heart)" stopOpacity={0} />
           </linearGradient>
@@ -117,12 +127,21 @@ export function SessionPnLChart({
             strokeDasharray="4 2"
           />
         )}
-        <path d={fillD} fill="url(#pnl-fill-session)" />
+        <path
+          d={fillD}
+          fill={
+            totalPnl > 0
+              ? "url(#pnl-fill-up)"
+              : totalPnl < 0
+                ? "url(#pnl-fill-down)"
+                : "url(#pnl-fill-neutral)"
+          }
+        />
         <path
           d={pathD}
           fill="none"
-          stroke="var(--accent-heart)"
-          strokeWidth={2}
+          stroke={totalPnl >= 0 ? "#10b981" : "#ef4444"}
+          strokeWidth={2.5}
           strokeLinecap="round"
           strokeLinejoin="round"
         />

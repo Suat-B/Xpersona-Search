@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { StrategyRunModal } from "@/components/strategies/StrategyRunModal";
+import type { DiceStrategyConfig } from "@/lib/strategies";
 
 /** Local type to avoid cross-folder import (games -> strategies) that can trigger .call bundling issues */
 type DiceConfig = { amount: number; target: number; condition: "over" | "under" };
@@ -9,7 +11,7 @@ type DiceConfig = { amount: number; target: number; condition: "over" | "under" 
 type StrategyOption = {
   id: string;
   name: string;
-  config: DiceConfig;
+  config: DiceConfig & { progressionType?: DiceStrategyConfig["progressionType"] };
 };
 
 type StrategyRowFromApi = {
@@ -48,7 +50,7 @@ export function DiceStrategyPanel({
   const [saveName, setSaveName] = useState("");
   const [saveOpen, setSaveOpen] = useState(false);
   const [runMaxRounds, setRunMaxRounds] = useState(20);
-  const [running, setRunning] = useState(false);
+  const [runModalOpen, setRunModalOpen] = useState(false);
   const [runResult, setRunResult] = useState<{
     sessionPnl: number;
     roundsPlayed: number;
@@ -73,11 +75,20 @@ export function DiceStrategyPanel({
         );
         const quick = raw
           .filter((s) => isQuickConfig(s.config as Record<string, unknown>))
-          .map((s) => ({
-            id: s.id,
-            name: s.name,
-            config: s.config as DiceConfig,
-          }));
+          .map((s) => {
+            const cfg = s.config as Record<string, unknown>;
+            return {
+              id: s.id,
+              name: s.name,
+              config: {
+                ...cfg,
+                amount: cfg.amount as number,
+                target: cfg.target as number,
+                condition: cfg.condition as "over" | "under",
+                progressionType: (cfg.progressionType as DiceStrategyConfig["progressionType"]) ?? "flat",
+              },
+            };
+          });
         setStrategies(quick);
         if (selectedId && !quick.some((x: StrategyOption) => x.id === selectedId)) {
           setSelectedId(null);
@@ -140,48 +151,30 @@ export function DiceStrategyPanel({
     }
   };
 
-  const handleRun = async () => {
+  const buildRunConfig = (): DiceStrategyConfig => {
+    const c = selected?.config ?? { amount, target, condition };
+    return {
+      amount: c.amount,
+      target: c.target,
+      condition: c.condition,
+      progressionType: selected?.config?.progressionType ?? "flat",
+    };
+  };
+
+  const handleOpenRunModal = () => {
     setMessage(null);
     setRunResult(null);
-    setRunning(true);
-    try {
-      const body: { strategyId?: string; config?: DiceConfig & { progressionType?: "flat" }; maxRounds: number } = {
-        maxRounds: Math.min(100, Math.max(1, runMaxRounds)),
-      };
-      if (selectedId) {
-        body.strategyId = selectedId;
-      } else {
-        body.config = { amount, target, condition, progressionType: "flat" as const };
-      }
-      const res = await fetch("/api/games/dice/run-strategy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(body),
-      });
-      const text = await res.text();
-      let data: { success?: boolean; data?: { sessionPnl?: number; roundsPlayed?: number; stoppedReason?: string }; error?: string; message?: string };
-      try {
-        data = text ? JSON.parse(text) : {};
-      } catch {
-        setMessage("Run failed");
-        return;
-      }
-      if (data.success && data.data) {
-        setRunResult({
-          sessionPnl: data.data.sessionPnl ?? 0,
-          roundsPlayed: data.data.roundsPlayed ?? 0,
-          stoppedReason: data.data.stoppedReason ?? "—",
-        });
-        onBalanceUpdate?.();
-      } else {
-        setMessage(data.error ?? data.message ?? "Run failed");
-      }
-    } catch {
-      setMessage("Run failed");
-    } finally {
-      setRunning(false);
-    }
+    setRunModalOpen(true);
+  };
+
+  const handleRunComplete = (_sessionPnl: number, roundsPlayed: number, _finalBalance: number) => {
+    setRunModalOpen(false);
+    setRunResult({
+      sessionPnl: _sessionPnl,
+      roundsPlayed,
+      stoppedReason: "—",
+    });
+    onBalanceUpdate?.();
   };
 
   return (
@@ -222,20 +215,20 @@ export function DiceStrategyPanel({
           <input
             type="number"
             min={1}
-            max={100}
+            max={1000}
             value={runMaxRounds}
             onChange={(e) => setRunMaxRounds(Number(e.target.value) || 20)}
-            className="w-14 rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1 text-[var(--text-primary)]"
+            className="w-16 rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1 text-[var(--text-primary)]"
           />
           rounds
         </label>
         <button
           type="button"
-          onClick={handleRun}
-          disabled={disabled || running}
-          className="rounded bg-green-600/80 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          onClick={handleOpenRunModal}
+          disabled={disabled}
+          className="rounded bg-green-600/80 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 hover:bg-green-600"
         >
-          {running ? "Running…" : "Run strategy"}
+          Run strategy
         </button>
       </div>
 
@@ -267,6 +260,15 @@ export function DiceStrategyPanel({
           Run: PnL <span className={runResult.sessionPnl >= 0 ? "text-green-400" : "text-red-400"}>{runResult.sessionPnl}</span>, {runResult.roundsPlayed} rounds, stopped: {runResult.stoppedReason}
         </p>
       )}
+
+      <StrategyRunModal
+        isOpen={runModalOpen}
+        onClose={() => setRunModalOpen(false)}
+        strategyName={selected?.name ?? "Quick run"}
+        config={buildRunConfig()}
+        defaultRounds={runMaxRounds}
+        onComplete={handleRunComplete}
+      />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 
 export type PnLPoint = { round: number; pnl: number };
 
@@ -28,63 +28,15 @@ export function useSessionPnL() {
   return { series, totalPnl, rounds, addRound, reset };
 }
 
-const DICE_BETS_LIMIT = 100;
-
-/** Server-backed session PnL for the dice page: all dice bets (manual + strategy runs). */
+/**
+ * Session PnL for the dice page.
+ * "Your session" = rounds & PnL since page load (client-side only).
+ * Chart series is built purely from addRound — no server overwrite.
+ */
 export function useDiceSessionPnL() {
   const [series, setSeries] = useState<PnLPoint[]>([]);
   const [totalPnl, setTotalPnl] = useState(0);
   const [rounds, setRounds] = useState(0);
-
-  const refetch = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/me/bets?gameType=dice&limit=${DICE_BETS_LIMIT}`, { credentials: "include" });
-      const text = await res.text();
-      let data: { success?: boolean; data?: { bets?: unknown[]; roundCount?: number; sessionPnl?: number } };
-      try {
-        data = text ? JSON.parse(text) : {};
-      } catch {
-        setSeries([]);
-        setTotalPnl(0);
-        setRounds(0);
-        return;
-      }
-      if (!data.success || !Array.isArray(data.data?.bets)) {
-        setSeries([]);
-        setTotalPnl(0);
-        setRounds(0);
-        return;
-      }
-      const bets = data.data.bets as { pnl: number }[];
-      const roundCount = data.data.roundCount as number | undefined;
-      const sessionPnl = typeof data.data.sessionPnl === "number" ? data.data.sessionPnl : Number(data.data.sessionPnl) || 0;
-      const chronological = [...bets].reverse();
-      let cum = 0;
-      const newSeries: PnLPoint[] = chronological.map((b, i) => {
-        cum += Number(b.pnl);
-        return { round: i + 1, pnl: cum };
-      });
-      setSeries(newSeries);
-      setTotalPnl(sessionPnl);
-      setRounds(roundCount ?? chronological.length);
-    } catch {
-      setSeries([]);
-      setTotalPnl(0);
-      setRounds(0);
-    }
-  }, []);
-
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
-
-  useEffect(() => {
-    const onBalanceUpdated = () => {
-      setTimeout(refetch, 150);
-    };
-    window.addEventListener("balance-updated", onBalanceUpdated);
-    return () => window.removeEventListener("balance-updated", onBalanceUpdated);
-  }, [refetch]);
 
   const addRound = useCallback((bet: number, payout: number) => {
     const delta = payout - bet;
@@ -97,8 +49,10 @@ export function useDiceSessionPnL() {
   }, []);
 
   const reset = useCallback(() => {
-    refetch();
-  }, [refetch]);
+    setRounds(0);
+    setTotalPnl(0);
+    setSeries([]);
+  }, []);
 
-  return { series, totalPnl, rounds, addRound, reset, refetch };
+  return { series, totalPnl, rounds, addRound, reset };
 }

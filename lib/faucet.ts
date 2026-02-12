@@ -16,7 +16,11 @@ export async function grantFaucet(
   userId: string
 ): Promise<FaucetResult> {
   const [user] = await db
-    .select({ credits: users.credits, lastFaucetAt: users.lastFaucetAt })
+    .select({
+      credits: users.credits,
+      faucetCredits: users.faucetCredits,
+      lastFaucetAt: users.lastFaucetAt,
+    })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
@@ -28,11 +32,13 @@ export async function grantFaucet(
   if (nextEligible > now) {
     return { granted: false, nextFaucetAt: nextEligible };
   }
+  const newFaucetCredits = (user.faucetCredits ?? 0) + FAUCET_AMOUNT;
   await db.transaction(async (tx) => {
     await tx
       .update(users)
       .set({
         credits: user.credits + FAUCET_AMOUNT,
+        faucetCredits: newFaucetCredits,
         lastFaucetAt: now,
       })
       .where(eq(users.id, userId));

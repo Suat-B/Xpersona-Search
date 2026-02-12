@@ -49,6 +49,15 @@ export function DiceGame({
   const [showWinEffects, setShowWinEffects] = useState(false);
   const stopRef = useRef(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const betInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Ensure BET input reflects external updates (e.g. strategy Apply) when it has focus
+  useEffect(() => {
+    const el = betInputRef.current;
+    if (el && document.activeElement === el && el.value !== String(amount)) {
+      el.value = String(amount);
+    }
+  }, [amount]);
 
   const runBet = useCallback(async (): Promise<boolean> => {
     type BetRes = { success?: boolean; data?: { result: number; win: boolean; payout: number; balance: number }; error?: string; message?: string };
@@ -298,6 +307,7 @@ export function DiceGame({
               </label>
               <div className="relative">
                 <input
+                  ref={betInputRef}
                   type="number"
                   min={MIN_BET}
                   max={MAX_BET}

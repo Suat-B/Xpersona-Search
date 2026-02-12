@@ -91,7 +91,7 @@ export default function QuantMetrics() {
     return (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             {metrics.map((m, i) => (
-                <GlassCard key={i} className={cn("p-4 flex flex-col justify-between relative overflow-hidden group", i === 0 ? "min-h-24 h-auto" : "h-24")}>
+                <GlassCard key={m.label} className={cn("p-4 flex flex-col justify-between relative overflow-hidden group", i === 0 ? "min-h-24 h-auto" : "h-24")}>
                     {/* Scanline effect */}
                     <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent opacity-0 group-hover:opacity-20 transition-opacity pointer-events-none" />
 
