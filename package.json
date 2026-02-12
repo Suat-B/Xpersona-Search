@@ -12,6 +12,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "setup": "docker compose up -d && npm run db:push",
     "seed": "tsx scripts/seed-packages.ts"
   },
   "dependencies": {

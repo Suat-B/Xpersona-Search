@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { ClientOnly } from "@/components/ClientOnly";
 import { useDiceSessionPnL } from "./useSessionPnL";
 import { DiceStrategyPanel } from "./DiceStrategyPanel";
+import { DiceStatisticsPanel } from "./DiceStatisticsPanel";
 
 const ACTIVE_STRATEGY_KEY = "xpersona_active_strategy_run";
 const MAX_RECENT_RESULTS = 50;
@@ -23,7 +24,7 @@ interface RollResult {
 }
 
 export default function GamePageClient({ game }: { game: GameSlug }) {
-  const { series, totalPnl, rounds, reset } = useDiceSessionPnL();
+  const { series, totalPnl, rounds, addRound, reset, refetch } = useDiceSessionPnL();
   const [amount, setAmount] = useState(10);
   const [target, setTarget] = useState(50);
   const [condition, setCondition] = useState<"over" | "under">("over");
@@ -32,7 +33,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const [recentResults, setRecentResults] = useState<RollResult[]>([]);
   const [recentResultsHydrated, setRecentResultsHydrated] = useState(false);
   const [balance, setBalance] = useState<number>(0);
-  const [activeTab, setActiveTab] = useState<"api" | "strategy">("api");
+  const [activeTab, setActiveTab] = useState<"api" | "strategy" | "statistics">("api");
   const [activeStrategyRun, setActiveStrategyRun] = useState<{ name: string } | null>(null);
 
   // Sync "your strategy is running" state (set by dashboard when user runs a Python strategy)
@@ -127,8 +128,11 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     setCondition(config.condition);
   };
 
-  const handleResult = (result: RollResult & { betAmount?: number }) => {
+  const handleResult = (result: RollResult & { betAmount?: number; balance?: number }) => {
     setRecentResults(prev => [...prev, { ...result, betAmount: result.betAmount ?? amount }].slice(-MAX_RECENT_RESULTS));
+    if (typeof result.balance === "number") setBalance(result.balance);
+    addRound(result.betAmount ?? amount, result.payout);
+    setTimeout(refetch, 200);
   };
 
   const handleReset = () => {
@@ -158,7 +162,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--bg-matte)] border border-[var(--border)]">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--bg-matte)] border border-[var(--border)]" data-agent="balance-display" data-value={balance}>
             <svg className="w-4 h-4 text-[var(--accent-heart)]" fill="currentColor" viewBox="0 0 20 20">
               <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
             </svg>
@@ -224,7 +228,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               onAmountChange={setAmount}
               onTargetChange={setTarget}
               onConditionChange={setCondition}
-              onRoundComplete={() => { }}
+              onRoundComplete={() => setTimeout(refetch, 200)}
               onAutoPlayChange={setAutoPlayActive}
               onResult={handleResult}
             />
@@ -263,11 +267,35 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 Strategy
               </span>
             </button>
+            <button
+              onClick={() => setActiveTab("statistics")}
+              className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-all ${activeTab === "statistics"
+                  ? "bg-[var(--accent-heart)] text-white shadow-lg shadow-[var(--accent-heart)]/30"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                }`}
+            >
+              <span className="flex items-center justify-center gap-2">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                Statistics
+              </span>
+            </button>
           </div>
 
           {/* Content Area - Scrollable */}
           <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3">
-            {activeTab === "api" ? (
+            {activeTab === "statistics" ? (
+              <DiceStatisticsPanel
+                rounds={rounds}
+                totalPnl={totalPnl}
+                recentResults={recentResults}
+                amount={amount}
+                target={target}
+                condition={condition}
+                onLoadConfig={loadStrategyConfig}
+              />
+            ) : activeTab === "api" ? (
               <div className="flex-shrink-0 space-y-4">
                 <div>
                   <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">AI agents at the casino</h3>
@@ -276,12 +304,13 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   </p>
                 </div>
 
-                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3">
-                  <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">How it works</h4>
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3" data-agent="api-instructions">
+                  <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">How it works (AI agents)</h4>
                   <ul className="space-y-2 text-xs text-[var(--text-secondary)] list-disc list-inside">
-                    <li>Get your API key from <Link href="/dashboard/api" className="text-[var(--accent-heart)] hover:underline">Dashboard → API</Link> (or <Link href="/dashboard" className="text-[var(--accent-heart)] hover:underline">Dashboard</Link>).</li>
+                    <li>Get your API key from <Link href="/dashboard/api" className="text-[var(--accent-heart)] hover:underline">Dashboard → API</Link>.</li>
                     <li>Set <code className="bg-white/10 px-1 rounded font-mono">XPERSONA_API_KEY</code> in your env so your agent can authenticate.</li>
-                    <li>Use REST (<code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/bet</code>) or OpenClaw tools to place bets and run strategies.</li>
+                    <li>Use REST (<code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/bet</code>) or OpenClaw tools to place bets.</li>
+                    <li>Fetch stats: <code className="bg-white/10 px-1 rounded font-mono">GET /api/me/session-stats</code> → balance, rounds, PnL, winRate.</li>
                   </ul>
                 </div>
 
@@ -328,7 +357,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   </Link>
                 </div>
               </div>
-            ) : (
+            ) : activeTab === "strategy" ? (
               <div className="flex-shrink-0 space-y-3">
                 <p className="text-sm text-[var(--text-secondary)]">
                   Load a saved strategy or run Python code. Running a strategy places real dice bets and updates your balance.
@@ -355,7 +384,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   </div>
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* Quick Actions Footer */}

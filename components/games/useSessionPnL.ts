@@ -86,9 +86,19 @@ export function useDiceSessionPnL() {
     return () => window.removeEventListener("balance-updated", onBalanceUpdated);
   }, [refetch]);
 
+  const addRound = useCallback((bet: number, payout: number) => {
+    const delta = payout - bet;
+    setRounds((n) => n + 1);
+    setTotalPnl((prev) => prev + delta);
+    setSeries((prev) => {
+      const nextPnl = prev.length > 0 ? prev[prev.length - 1].pnl + delta : delta;
+      return [...prev, { round: prev.length + 1, pnl: nextPnl }];
+    });
+  }, []);
+
   const reset = useCallback(() => {
     refetch();
   }, [refetch]);
 
-  return { series, totalPnl, rounds, reset };
+  return { series, totalPnl, rounds, addRound, reset, refetch };
 }
