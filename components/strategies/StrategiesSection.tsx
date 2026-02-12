@@ -4,7 +4,12 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { saveStrategyRunPayload } from "@/lib/strategy-run-payload";
-import { CREATIVE_DICE_STRATEGIES, TARGET_PRESETS } from "@/lib/dice-strategies";
+import {
+  CREATIVE_DICE_STRATEGIES,
+  TARGET_PRESETS,
+  PAYOUT_PRESETS,
+  RISK_PROFILES,
+} from "@/lib/dice-strategies";
 import type { CreativeStrategy } from "@/lib/dice-strategies";
 import type { DiceStrategyConfig } from "@/lib/strategies";
 
@@ -77,51 +82,28 @@ export function StrategiesSection() {
     fetchStrategies();
   }, [fetchStrategies]);
 
-  const runWithConfig = useCallback((config: DiceStrategyConfig, maxRounds: number, strategyName: string) => {
-    setError(null);
-    setRunModalConfig({ name: strategyName, config, defaultRounds: maxRounds });
-    setRunModalOpen(true);
-    setRunning(true);
-  }, []);
+  const runWithConfig = useCallback(
+    (config: DiceStrategyConfig, maxRounds: number, strategyName: string) => {
+      setError(null);
+      saveStrategyRunPayload({ config, strategyName, maxRounds });
+      router.push("/games/dice?run=1");
+    },
+    [router]
+  );
 
   const handleRunSaved = useCallback(
     (s: StrategyRow, maxRounds = 20) => {
       if (!(GAMES_WITH_RUN as readonly string[]).includes(s.gameType)) return;
-      const cfg = s.config as Record<string, unknown>;
-      const config: DiceStrategyConfig = {
-        amount: typeof cfg.amount === "number" ? cfg.amount : 10,
-        target: typeof cfg.target === "number" ? cfg.target : 50,
-        condition: (cfg.condition === "over" || cfg.condition === "under" ? cfg.condition : "over") as "over" | "under",
-        progressionType: (cfg.progressionType as DiceStrategyConfig["progressionType"]) ?? "flat",
-      };
       setError(null);
-      setRunModalConfig({ name: s.name, config, defaultRounds: maxRounds });
-      setRunModalOpen(true);
-    },
-    []
-  );
-
-  const handleRunComplete = useCallback(
-    (sessionPnl: number, roundsPlayed: number, _wins: number, finalBalance: number) => {
-      setRunResult({
-        sessionPnl,
-        roundsPlayed,
-        finalBalance,
-        stoppedReason: "—",
+      saveStrategyRunPayload({
+        strategyId: s.id,
+        strategyName: s.name,
+        maxRounds,
       });
-      setRunModalOpen(false);
-      setRunModalConfig(null);
-      setRunning(false);
-      window.dispatchEvent(new Event("balance-updated"));
+      router.push("/games/dice?run=1");
     },
-    []
+    [router]
   );
-
-  const handleRunModalClose = useCallback(() => {
-    setRunModalOpen(false);
-    setRunModalConfig(null);
-    setRunning(false);
-  }, []);
 
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this strategy?")) return;
@@ -156,7 +138,6 @@ export function StrategiesSection() {
               key={s.id}
               strategy={s}
               onRun={(maxRounds) => runWithConfig(toApiConfig(s.config), maxRounds, s.name)}
-              running={running}
             />
           ))}
         </div>
@@ -230,7 +211,6 @@ export function StrategiesSection() {
                 <button
                   type="button"
                   onClick={() => handleRunSaved(s, 20)}
-                  disabled={running}
                   className="rounded border border-green-500/50 bg-green-500/10 px-3 py-1.5 text-sm text-green-400 hover:bg-green-500/20 disabled:opacity-50"
                 >
                   Run (20)
@@ -308,12 +288,14 @@ function CreativeStrategyCard({
   );
 }
 
+const PROGRESSION_TYPES = ["flat", "martingale", "paroli", "dalembert", "fibonacci", "labouchere", "oscar", "kelly"] as const;
+
 function CustomStrategyBuilder({
   onRun,
 }: {
   onRun: (config: DiceStrategyConfig, maxRounds: number) => void;
 }) {
-  const [mode, setMode] = useState<"tweak" | "compose">("tweak");
+  const [mode, setMode] = useState<"tweak" | "compose" | "advanced">("tweak");
   const [baseStrategyId, setBaseStrategyId] = useState("flat");
   const [amount, setAmount] = useState(10);
   const [target, setTarget] = useState(50);
@@ -321,52 +303,169 @@ function CustomStrategyBuilder({
   const [progressionType, setProgressionType] = useState<string>("flat");
   const [composeProgression, setComposeProgression] = useState("flat");
   const [composeTargetPreset, setComposeTargetPreset] = useState("50-over");
+  const [riskProfileId, setRiskProfileId] = useState("");
+  const [payoutPresetId, setPayoutPresetId] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [maxBet, setMaxBet] = useState("");
+  const [maxConsecutiveLosses, setMaxConsecutiveLosses] = useState("");
+  const [maxConsecutiveWins, setMaxConsecutiveWins] = useState("");
+  const [unitStep, setUnitStep] = useState("");
+  const [stopAfterRounds, setStopAfterRounds] = useState("");
+  const [stopIfBalanceBelow, setStopIfBalanceBelow] = useState("");
+  const [stopIfBalanceAbove, setStopIfBalanceAbove] = useState("");
+  const [jsonImport, setJsonImport] = useState("");
+  const [jsonError, setJsonError] = useState<string | null>(null);
 
   const baseStrategy = CREATIVE_DICE_STRATEGIES.find((s) => s.id === baseStrategyId) ?? CREATIVE_DICE_STRATEGIES[0]!;
   const targetPreset = TARGET_PRESETS.find((p) => p.id === composeTargetPreset) ?? TARGET_PRESETS[0]!;
 
-  const buildConfig = (): DiceStrategyConfig => {
-    if (mode === "compose") {
-      return {
-        amount,
-        target: targetPreset.target,
-        condition: targetPreset.condition,
-        progressionType: (composeProgression as DiceStrategyConfig["progressionType"]) ?? "flat",
-      };
+  const applyRiskProfile = (profileId: string) => {
+    const p = RISK_PROFILES.find((r) => r.id === profileId);
+    if (!p) return;
+    setAmount(p.amount);
+    setMaxBet(String(p.maxBet));
+    setProgressionType(p.progressionType);
+    setComposeProgression(p.progressionType);
+    setMaxConsecutiveLosses(String(p.maxConsecutiveLosses));
+    setMaxConsecutiveWins(String(p.maxConsecutiveWins));
+  };
+
+  const applyPayoutPreset = (presetId: string) => {
+    const p = PAYOUT_PRESETS.find((x) => x.id === presetId);
+    if (!p) return;
+    setTarget(p.target);
+    setCondition(p.condition);
+    const tp = TARGET_PRESETS.find((x) => x.target === p.target && x.condition === p.condition);
+    if (tp) setComposeTargetPreset(tp.id);
+  };
+
+  const handleRandomize = () => {
+    const prog = PROGRESSION_TYPES[Math.floor(Math.random() * PROGRESSION_TYPES.length)]!;
+    const preset = TARGET_PRESETS[Math.floor(Math.random() * TARGET_PRESETS.length)]!;
+    const amt = Math.floor(Math.random() * 99) + 1;
+    setProgressionType(prog);
+    setComposeProgression(prog);
+    setAmount(amt);
+    setTarget(preset.target);
+    setCondition(preset.condition);
+    setComposeTargetPreset(preset.id);
+    if (Math.random() > 0.5) {
+      applyRiskProfile(RISK_PROFILES[Math.floor(Math.random() * RISK_PROFILES.length)]!.id);
     }
-    return {
-      amount,
-      target,
-      condition,
-      progressionType: (progressionType as DiceStrategyConfig["progressionType"]) ?? "flat",
-    };
+  };
+
+  const loadFromJson = () => {
+    setJsonError(null);
+    try {
+      const parsed = JSON.parse(jsonImport) as Record<string, unknown>;
+      if (typeof parsed.amount === "number") setAmount(parsed.amount);
+      if (typeof parsed.target === "number") setTarget(parsed.target);
+      if (parsed.condition === "over" || parsed.condition === "under") setCondition(parsed.condition);
+      if (typeof parsed.progressionType === "string") {
+        setProgressionType(parsed.progressionType);
+        setComposeProgression(parsed.progressionType);
+      }
+      if (typeof parsed.maxBet === "number") setMaxBet(String(parsed.maxBet));
+      if (typeof parsed.maxConsecutiveLosses === "number") setMaxConsecutiveLosses(String(parsed.maxConsecutiveLosses));
+      if (typeof parsed.maxConsecutiveWins === "number") setMaxConsecutiveWins(String(parsed.maxConsecutiveWins));
+      if (typeof parsed.unitStep === "number") setUnitStep(String(parsed.unitStep));
+      if (typeof parsed.stopAfterRounds === "number") setStopAfterRounds(String(parsed.stopAfterRounds));
+      if (typeof parsed.stopIfBalanceBelow === "number") setStopIfBalanceBelow(String(parsed.stopIfBalanceBelow));
+      if (typeof parsed.stopIfBalanceAbove === "number") setStopIfBalanceAbove(String(parsed.stopIfBalanceAbove));
+      setJsonImport("");
+    } catch {
+      setJsonError("Invalid JSON");
+    }
+  };
+
+  const copyConfigJson = () => {
+    const cfg = buildConfig();
+    const str = `// POST /api/games/dice/run-strategy\n${JSON.stringify(cfg, null, 2)}`;
+    void navigator.clipboard.writeText(str);
+  };
+
+  const buildConfig = (): DiceStrategyConfig => {
+    const base: DiceStrategyConfig = mode === "compose"
+      ? { amount, target: targetPreset.target, condition: targetPreset.condition, progressionType: (composeProgression as DiceStrategyConfig["progressionType"]) ?? "flat" }
+      : { amount, target, condition, progressionType: (progressionType as DiceStrategyConfig["progressionType"]) ?? "flat" };
+    const maxB = parseInt(maxBet, 10);
+    if (!Number.isNaN(maxB) && maxB >= 1) base.maxBet = maxB;
+    const mcl = parseInt(maxConsecutiveLosses, 10);
+    if (!Number.isNaN(mcl) && mcl >= 1) base.maxConsecutiveLosses = mcl;
+    const mcw = parseInt(maxConsecutiveWins, 10);
+    if (!Number.isNaN(mcw) && mcw >= 1) base.maxConsecutiveWins = mcw;
+    const us = parseFloat(unitStep);
+    if (!Number.isNaN(us) && us > 0) base.unitStep = us;
+    const stopR = parseInt(stopAfterRounds, 10);
+    if (!Number.isNaN(stopR) && stopR > 0) base.stopAfterRounds = stopR;
+    const stopB = parseFloat(stopIfBalanceBelow);
+    if (!Number.isNaN(stopB)) base.stopIfBalanceBelow = stopB;
+    const stopA = parseFloat(stopIfBalanceAbove);
+    if (!Number.isNaN(stopA)) base.stopIfBalanceAbove = stopA;
+    return base;
   };
 
   return (
     <GlassCard className="p-6">
-      <div className="flex gap-2 mb-4">
-        <button
-          type="button"
-          onClick={() => setMode("tweak")}
-          className={`px-3 py-1.5 text-sm rounded border ${
-            mode === "tweak"
-              ? "bg-white/10 border-[var(--accent-heart)] text-[var(--text-primary)]"
-              : "border-[var(--border)] text-[var(--text-secondary)] hover:bg-white/5"
-          }`}
-        >
-          Tweak
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode("compose")}
-          className={`px-3 py-1.5 text-sm rounded border ${
-            mode === "compose"
-              ? "bg-white/10 border-[var(--accent-heart)] text-[var(--text-primary)]"
-              : "border-[var(--border)] text-[var(--text-secondary)] hover:bg-white/5"
-          }`}
-        >
-          Compose
-        </button>
+      <div className="flex flex-wrap gap-2 mb-4">
+        {(["tweak", "compose", "advanced"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            className={`px-3 py-1.5 text-sm rounded border ${
+              mode === m ? "bg-white/10 border-[var(--accent-heart)] text-[var(--text-primary)]" : "border-[var(--border)] text-[var(--text-secondary)] hover:bg-white/5"
+            }`}
+          >
+            {m.charAt(0).toUpperCase() + m.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      <div className="mb-4 flex flex-wrap gap-4">
+        <div>
+          <label className="block text-xs text-[var(--text-secondary)]">Risk profile</label>
+          <select
+            value={riskProfileId}
+            onChange={(e) => {
+              const v = e.target.value;
+              setRiskProfileId(v);
+              if (v) applyRiskProfile(v);
+            }}
+            className="mt-1 rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-sm text-[var(--text-primary)]"
+          >
+            <option value="">— None —</option>
+            {RISK_PROFILES.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-[var(--text-secondary)]">Payout preset</label>
+          <select
+            value={payoutPresetId}
+            onChange={(e) => {
+              const v = e.target.value;
+              setPayoutPresetId(v);
+              if (v) applyPayoutPreset(v);
+            }}
+            className="mt-1 rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-sm text-[var(--text-primary)]"
+          >
+            <option value="">— None —</option>
+            {PAYOUT_PRESETS.map((p) => (
+              <option key={p.id} value={p.id}>{p.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-end">
+          <button
+            type="button"
+            onClick={handleRandomize}
+            className="rounded border border-violet-500/40 bg-violet-500/10 px-3 py-1.5 text-sm text-violet-400 hover:bg-violet-500/20"
+          >
+            Surprise me
+          </button>
+        </div>
       </div>
 
       {mode === "tweak" && (
@@ -388,62 +487,26 @@ function CustomStrategyBuilder({
               className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
             >
               {CREATIVE_DICE_STRATEGIES.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.icon} {s.name}
-                </option>
+                <option key={s.id} value={s.id}>{s.icon} {s.name}</option>
               ))}
             </select>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-xs text-[var(--text-secondary)]">Amount</label>
-              <input
-                type="number"
-                min={1}
-                value={amount}
-                onChange={(e) => setAmount(Number(e.target.value))}
-                className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]"
-              />
+            <div><label className="block text-xs text-[var(--text-secondary)]">Amount</label>
+              <input type="number" min={1} value={amount} onChange={(e) => setAmount(Number(e.target.value))} className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]" />
             </div>
-            <div>
-              <label className="block text-xs text-[var(--text-secondary)]">Target</label>
-              <input
-                type="number"
-                min={0}
-                max={99}
-                value={target}
-                onChange={(e) => setTarget(Number(e.target.value))}
-                className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]"
-              />
+            <div><label className="block text-xs text-[var(--text-secondary)]">Target</label>
+              <input type="number" min={0} max={99} value={target} onChange={(e) => setTarget(Number(e.target.value))} className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]" />
             </div>
-            <div>
-              <span className="block text-xs text-[var(--text-secondary)]">Condition</span>
+            <div><span className="block text-xs text-[var(--text-secondary)]">Condition</span>
               <div className="mt-1 flex gap-2">
-                <label className="flex items-center gap-1">
-                  <input type="radio" checked={condition === "over"} onChange={() => setCondition("over")} />
-                  Over
-                </label>
-                <label className="flex items-center gap-1">
-                  <input type="radio" checked={condition === "under"} onChange={() => setCondition("under")} />
-                  Under
-                </label>
+                <label className="flex items-center gap-1"><input type="radio" checked={condition === "over"} onChange={() => setCondition("over")} /> Over</label>
+                <label className="flex items-center gap-1"><input type="radio" checked={condition === "under"} onChange={() => setCondition("under")} /> Under</label>
               </div>
             </div>
-            <div>
-              <label className="block text-xs text-[var(--text-secondary)]">Progression</label>
-              <select
-                value={progressionType}
-                onChange={(e) => setProgressionType(e.target.value)}
-                className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]"
-              >
-                <option value="flat">Flat</option>
-                <option value="martingale">Martingale</option>
-                <option value="paroli">Paroli</option>
-                <option value="dalembert">D&apos;Alembert</option>
-                <option value="fibonacci">Fibonacci</option>
-                <option value="labouchere">Labouchere</option>
-                <option value="oscar">Oscar</option>
-                <option value="kelly">Kelly</option>
+            <div><label className="block text-xs text-[var(--text-secondary)]">Progression</label>
+              <select value={progressionType} onChange={(e) => setProgressionType(e.target.value)} className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]">
+                {PROGRESSION_TYPES.map((p) => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
               </select>
             </div>
           </div>
@@ -453,65 +516,93 @@ function CustomStrategyBuilder({
       {mode === "compose" && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-[var(--text-secondary)]">Progression</label>
-              <select
-                value={composeProgression}
-                onChange={(e) => setComposeProgression(e.target.value)}
-                className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
-              >
-                {["flat", "martingale", "paroli", "dalembert", "fibonacci", "labouchere", "oscar", "kelly"].map(
-                  (p) => (
-                    <option key={p} value={p}>
-                      {p.charAt(0).toUpperCase() + p.slice(1)}
-                    </option>
-                  )
-                )}
+            <div><label className="block text-sm text-[var(--text-secondary)]">Progression</label>
+              <select value={composeProgression} onChange={(e) => setComposeProgression(e.target.value)} className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]">
+                {PROGRESSION_TYPES.map((p) => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
               </select>
             </div>
-            <div>
-              <label className="block text-sm text-[var(--text-secondary)]">Target / Condition</label>
-              <select
-                value={composeTargetPreset}
-                onChange={(e) => setComposeTargetPreset(e.target.value)}
-                className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
-              >
-                {TARGET_PRESETS.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
+            <div><label className="block text-sm text-[var(--text-secondary)]">Target / Condition</label>
+              <select value={composeTargetPreset} onChange={(e) => setComposeTargetPreset(e.target.value)} className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]">
+                {TARGET_PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
               </select>
             </div>
           </div>
-          <div>
-            <label className="block text-sm text-[var(--text-secondary)]">Base amount</label>
-            <input
-              type="number"
-              min={1}
-              value={amount}
-              onChange={(e) => setAmount(Number(e.target.value))}
-              className="mt-1 w-full max-w-[120px] rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
-            />
+          <div><label className="block text-sm text-[var(--text-secondary)]">Base amount</label>
+            <input type="number" min={1} value={amount} onChange={(e) => setAmount(Number(e.target.value))} className="mt-1 w-full max-w-[120px] rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]" />
           </div>
         </div>
       )}
 
-      <div className="flex gap-2 mt-4">
-        <button
-          type="button"
-          onClick={() => onRun(buildConfig(), 20)}
-          className="rounded bg-green-500/20 border border-green-500/50 px-4 py-2 text-sm text-green-400 hover:bg-green-500/30"
-        >
-          Run (20)
-        </button>
-        <button
-          type="button"
-          onClick={() => onRun(buildConfig(), 50)}
-          className="rounded bg-[var(--accent-heart)]/20 border border-[var(--accent-heart)]/50 px-4 py-2 text-sm text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/30"
-        >
-          Auto-run (50)
-        </button>
+      {mode === "advanced" && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div><label className="block text-xs text-[var(--text-secondary)]">Amount</label>
+              <input type="number" min={1} value={amount} onChange={(e) => setAmount(Number(e.target.value))} className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]" />
+            </div>
+            <div><label className="block text-xs text-[var(--text-secondary)]">Target</label>
+              <input type="number" min={0} max={99} value={target} onChange={(e) => setTarget(Number(e.target.value))} className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]" />
+            </div>
+            <div><span className="block text-xs text-[var(--text-secondary)]">Condition</span>
+              <div className="mt-1 flex gap-2">
+                <label className="flex items-center gap-1"><input type="radio" checked={condition === "over"} onChange={() => setCondition("over")} /> Over</label>
+                <label className="flex items-center gap-1"><input type="radio" checked={condition === "under"} onChange={() => setCondition("under")} /> Under</label>
+              </div>
+            </div>
+            <div><label className="block text-xs text-[var(--text-secondary)]">Progression</label>
+              <select value={progressionType} onChange={(e) => setProgressionType(e.target.value)} className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]">
+                {PROGRESSION_TYPES.map((p) => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
+              </select>
+            </div>
+          </div>
+          <button type="button" onClick={() => setAdvancedOpen((o) => !o)} className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+            {advancedOpen ? "▼" : "▶"} Progression tuning & stop conditions
+          </button>
+          {advancedOpen && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2 border-t border-[var(--border)]">
+              <div><label className="block text-xs text-[var(--text-secondary)]">Max bet</label>
+                <input type="number" min={1} max={10000} placeholder="10000" value={maxBet} onChange={(e) => setMaxBet(e.target.value)} className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]" />
+              </div>
+              <div><label className="block text-xs text-[var(--text-secondary)]">Max consec. losses</label>
+                <input type="number" min={1} max={20} placeholder="10" value={maxConsecutiveLosses} onChange={(e) => setMaxConsecutiveLosses(e.target.value)} className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]" />
+              </div>
+              <div><label className="block text-xs text-[var(--text-secondary)]">Max consec. wins</label>
+                <input type="number" min={1} max={10} placeholder="3" value={maxConsecutiveWins} onChange={(e) => setMaxConsecutiveWins(e.target.value)} className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]" />
+              </div>
+              <div><label className="block text-xs text-[var(--text-secondary)]">Unit step</label>
+                <input type="number" min={0.25} max={2} step={0.25} placeholder="1" value={unitStep} onChange={(e) => setUnitStep(e.target.value)} className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]" />
+              </div>
+              <div><label className="block text-xs text-[var(--text-secondary)]">Stop after rounds</label>
+                <input type="number" min={1} placeholder="—" value={stopAfterRounds} onChange={(e) => setStopAfterRounds(e.target.value)} className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]" />
+              </div>
+              <div><label className="block text-xs text-[var(--text-secondary)]">Stop if bal. below</label>
+                <input type="number" min={0} placeholder="—" value={stopIfBalanceBelow} onChange={(e) => setStopIfBalanceBelow(e.target.value)} className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]" />
+              </div>
+              <div><label className="block text-xs text-[var(--text-secondary)]">Stop if bal. above</label>
+                <input type="number" min={0} placeholder="—" value={stopIfBalanceAbove} onChange={(e) => setStopIfBalanceAbove(e.target.value)} className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[var(--text-primary)]" />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2 mt-4">
+        <button type="button" onClick={() => onRun(buildConfig(), 20)} className="rounded bg-green-500/20 border border-green-500/50 px-4 py-2 text-sm text-green-400 hover:bg-green-500/30">Run (20)</button>
+        <button type="button" onClick={() => onRun(buildConfig(), 50)} className="rounded bg-[var(--accent-heart)]/20 border border-[var(--accent-heart)]/50 px-4 py-2 text-sm text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/30">Auto-run (50)</button>
+        <button type="button" onClick={copyConfigJson} className="rounded border border-[var(--border)] bg-[var(--bg-matte)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]">Copy as JSON</button>
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-[var(--border)]">
+        <label className="block text-xs text-[var(--text-secondary)] mb-1">Import from JSON (for API config)</label>
+        <div className="flex gap-2">
+          <textarea
+            value={jsonImport}
+            onChange={(e) => { setJsonImport(e.target.value); setJsonError(null); }}
+            placeholder='{"amount":10,"target":50,"condition":"over","progressionType":"martingale"}'
+            className="flex-1 min-h-[60px] rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-xs font-mono text-[var(--text-primary)]"
+          />
+          <button type="button" onClick={loadFromJson} className="shrink-0 rounded border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text-primary)] hover:bg-white/5">Load</button>
+        </div>
+        {jsonError && <p className="mt-1 text-xs text-red-400">{jsonError}</p>}
       </div>
     </GlassCard>
   );
@@ -523,9 +614,14 @@ function CreateStrategyForm({ onCreated, onCancel }: { onCreated: () => void; on
   const [target, setTarget] = useState(50);
   const [condition, setCondition] = useState<"over" | "under">("over");
   const [progressionType, setProgressionType] = useState<string>("flat");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [stopAfterRounds, setStopAfterRounds] = useState("");
   const [stopIfBalanceBelow, setStopIfBalanceBelow] = useState("");
   const [stopIfBalanceAbove, setStopIfBalanceAbove] = useState("");
+  const [maxBet, setMaxBet] = useState("");
+  const [maxConsecutiveLosses, setMaxConsecutiveLosses] = useState("");
+  const [maxConsecutiveWins, setMaxConsecutiveWins] = useState("");
+  const [unitStep, setUnitStep] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -538,6 +634,14 @@ function CreateStrategyForm({ onCreated, onCancel }: { onCreated: () => void; on
     if (!Number.isNaN(stopB)) base.stopIfBalanceBelow = stopB;
     const stopA = parseFloat(stopIfBalanceAbove);
     if (!Number.isNaN(stopA)) base.stopIfBalanceAbove = stopA;
+    const maxB = parseInt(maxBet, 10);
+    if (!Number.isNaN(maxB) && maxB >= 1) base.maxBet = maxB;
+    const mcl = parseInt(maxConsecutiveLosses, 10);
+    if (!Number.isNaN(mcl) && mcl >= 1) base.maxConsecutiveLosses = mcl;
+    const mcw = parseInt(maxConsecutiveWins, 10);
+    if (!Number.isNaN(mcw) && mcw >= 1) base.maxConsecutiveWins = mcw;
+    const us = parseFloat(unitStep);
+    if (!Number.isNaN(us) && us > 0) base.unitStep = us;
     return base;
   };
 
@@ -639,6 +743,107 @@ function CreateStrategyForm({ onCreated, onCancel }: { onCreated: () => void; on
             </div>
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((o) => !o)}
+          className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+        >
+          {advancedOpen ? "▼" : "▶"} Advanced: stop conditions & progression tuning
+        </button>
+        {advancedOpen && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2 border-t border-[var(--border)]">
+            <div>
+              <label className="block text-sm text-[var(--text-secondary)]">Stop after rounds</label>
+              <input
+                type="number"
+                min={1}
+                placeholder="—"
+                value={stopAfterRounds}
+                onChange={(e) => setStopAfterRounds(e.target.value)}
+                className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-[var(--text-secondary)]">Stop if balance below</label>
+              <input
+                type="number"
+                min={0}
+                placeholder="—"
+                value={stopIfBalanceBelow}
+                onChange={(e) => setStopIfBalanceBelow(e.target.value)}
+                className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-[var(--text-secondary)]">Stop if balance above</label>
+              <input
+                type="number"
+                min={0}
+                placeholder="—"
+                value={stopIfBalanceAbove}
+                onChange={(e) => setStopIfBalanceAbove(e.target.value)}
+                className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-[var(--text-secondary)]">Max bet</label>
+              <input
+                type="number"
+                min={1}
+                max={10000}
+                placeholder="10000"
+                value={maxBet}
+                onChange={(e) => setMaxBet(e.target.value)}
+                className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
+              />
+            </div>
+            {(progressionType === "martingale" || progressionType === "paroli") && (
+              <>
+                <div>
+                  <label className="block text-sm text-[var(--text-secondary)]">Max consec. losses</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    placeholder="10"
+                    value={maxConsecutiveLosses}
+                    onChange={(e) => setMaxConsecutiveLosses(e.target.value)}
+                    className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-[var(--text-secondary)]">Max consec. wins</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    placeholder="3"
+                    value={maxConsecutiveWins}
+                    onChange={(e) => setMaxConsecutiveWins(e.target.value)}
+                    className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
+                  />
+                </div>
+              </>
+            )}
+            {(progressionType === "dalembert" || progressionType === "oscar") && (
+              <div>
+                <label className="block text-sm text-[var(--text-secondary)]">Unit step</label>
+                <input
+                  type="number"
+                  min={0.25}
+                  max={2}
+                  step={0.25}
+                  placeholder="1"
+                  value={unitStep}
+                  onChange={(e) => setUnitStep(e.target.value)}
+                  className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-[var(--text-primary)]"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
         {err && <p className="text-sm text-red-400">{err}</p>}
         <div className="flex gap-2">
           <button
