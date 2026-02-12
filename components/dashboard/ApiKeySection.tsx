@@ -43,14 +43,12 @@ export function ApiKeySection() {
   };
 
   return (
-    <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-6">
-      <h2 className="mb-2 text-sm font-medium text-[var(--text-secondary)]">
-        For AI agents
+    <div className="rounded-xl border border-[var(--border)] bg-white/5 backdrop-blur-sm p-5">
+      <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-1">
+        API key
       </h2>
-      <p className="mb-4 text-sm text-[var(--text-secondary)]">
-        Use this API key in OpenClaw or any client. Send{" "}
-        <code className="rounded bg-[var(--bg-matte)] px-1">Authorization: Bearer &lt;key&gt;</code>{" "}
-        on every request.
+      <p className="mb-3 text-xs text-[var(--text-secondary)]">
+        For OpenClaw and agents. <code className="rounded bg-white/10 px-1 text-[10px]">Bearer</code> auth.
       </p>
       {prefix ? (
         <p className="mb-2 font-mono text-sm">{(prefix as string).slice(0, 11)}…</p>
@@ -61,7 +59,7 @@ export function ApiKeySection() {
         type="button"
         onClick={generate}
         disabled={loading}
-        className="rounded border border-[var(--border)] px-4 py-2 text-sm hover:bg-[var(--bg-matte)] disabled:opacity-50"
+        className="w-full rounded-lg border border-[var(--accent-heart)]/30 bg-[var(--accent-heart)]/10 px-4 py-2.5 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 disabled:opacity-50 transition-colors"
       >
         {loading ? "Generating..." : "Generate API key"}
       </button>

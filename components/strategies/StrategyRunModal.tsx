@@ -50,11 +50,13 @@ export function StrategyRunModal({
   const [showWinEffects, setShowWinEffects] = useState(false);
   const [sessionPnl, setSessionPnl] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [completedRounds, setCompletedRounds] = useState<{ round: number; result: number; win: boolean; payout: number; betAmount: number }[]>([]);
   const stateRef = useRef<ProgressionState | null>(null);
   const stopRef = useRef(false);
   const balanceRef = useRef(0);
   const sessionPnlRef = useRef(0);
   const winsRef = useRef(0);
+  const roundIndexRef = useRef(0);
 
   // Load initial balance when modal opens
   useEffect(() => {
@@ -123,6 +125,11 @@ export function StrategyRunModal({
 
       setResult({ result: diceResult, win, payout });
       if (win) winsRef.current += 1;
+      const rIdx = roundIndexRef.current;
+      setCompletedRounds((prev) => [
+        ...prev,
+        { round: rIdx, result: diceResult, win, payout, betAmount: amount },
+      ]);
       const newBalance = data.data.balance;
       setSessionPnl((s) => {
         const next = s + pnl;
@@ -204,7 +211,7 @@ export function StrategyRunModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] shadow-2xl overflow-hidden">
+      <div className="w-full max-w-2xl max-h-[90vh] rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] shadow-2xl overflow-hidden flex flex-col">
         <Sparkles active={showWinEffects} count={25} />
         <Confetti active={showWinEffects && (result?.payout ?? 0) > (currentBet || 1) * 2} />
 
@@ -266,8 +273,8 @@ export function StrategyRunModal({
           )}
 
           {(phase === "running" || phase === "complete") && (
-            <>
-              <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="flex-1 min-h-0 flex flex-col gap-4 overflow-hidden">
+              <div className="grid grid-cols-3 gap-2 text-center flex-shrink-0">
                 <div className="rounded-lg bg-[var(--bg-matte)] p-2">
                   <div className="text-[10px] uppercase text-[var(--text-secondary)]">Balance</div>
                   <div className="text-lg font-mono font-bold text-[var(--text-primary)]">{balance} cr</div>
@@ -284,30 +291,67 @@ export function StrategyRunModal({
                 </div>
               </div>
 
-              <div className="flex flex-col items-center justify-center py-4">
-                {result && !isRolling && (
-                  <div className="mb-4 text-center animate-bounce-in">
-                    <div
-                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${
-                        result.win
-                          ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                          : "bg-red-500/20 text-red-400 border border-red-500/30"
-                      }`}
-                    >
-                      <span className="text-lg">{result.win ? "🎉" : "😔"}</span>
-                      <span className="font-bold">{result.win ? "WIN!" : "Lose"}</span>
-                      <span className="font-mono font-bold">
-                        {result.win ? `+${result.payout}` : currentBet} cr
-                      </span>
+              <div className="flex flex-col sm:flex-row gap-4 flex-1 min-h-0">
+                {/* Dice area — same as real dice game */}
+                <div className="flex flex-col items-center justify-center py-4 flex-shrink-0">
+                  {result && !isRolling && (
+                    <div className="mb-4 text-center animate-bounce-in">
+                      <div
+                        className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${
+                          result.win
+                            ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                            : "bg-red-500/20 text-red-400 border border-red-500/30"
+                        }`}
+                      >
+                        <span className="text-lg">{result.win ? "🎉" : "😔"}</span>
+                        <span className="font-bold">{result.win ? "WIN!" : "Lose"}</span>
+                        <span className="font-mono font-bold">
+                          {result.win ? `+${result.payout}` : currentBet} cr
+                        </span>
+                      </div>
                     </div>
+                  )}
+                  <div className="relative z-10">
+                    <Dice3D
+                      value={result?.result ?? null}
+                      isRolling={isRolling}
+                      win={result?.win ?? null}
+                    />
                   </div>
-                )}
-                <div className="relative z-10">
-                  <Dice3D
-                    value={result?.result ?? null}
-                    isRolling={isRolling}
-                    win={result?.win ?? null}
-                  />
+                </div>
+
+                {/* Live bet feed — all bets stream in realtime like dice game */}
+                <div className="flex-1 min-h-0 flex flex-col rounded-xl border border-[var(--border)] bg-[var(--bg-matte)] overflow-hidden">
+                  <div className="flex-shrink-0 px-3 py-2 border-b border-[var(--border)]">
+                    <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+                      Live bets
+                    </h4>
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1.5">
+                    {completedRounds.length === 0 && !isRolling && (
+                      <p className="text-xs text-[var(--text-secondary)] text-center py-4 animate-pulse">
+                        Bets will appear here as they complete…
+                      </p>
+                    )}
+                    {completedRounds.map((r) => (
+                      <div
+                        key={r.round}
+                        className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs animate-in fade-in slide-in-from-bottom-2 duration-300 ${
+                          r.win
+                            ? "bg-emerald-500/10 border border-emerald-500/20"
+                            : "bg-red-500/10 border border-red-500/20"
+                        }`}
+                      >
+                        <span className="font-mono text-[var(--text-secondary)]">#{r.round}</span>
+                        <span className={`font-mono font-bold ${r.win ? "text-emerald-400" : "text-red-400"}`}>
+                          {r.result.toFixed(2)}
+                        </span>
+                        <span className={r.win ? "text-emerald-400" : "text-red-400"}>
+                          {r.win ? `+${r.payout}` : `-${r.betAmount}`} cr
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -339,7 +383,7 @@ export function StrategyRunModal({
                   </button>
                 )}
               </div>
-            </>
+            </div>
           )}
 
           {error && (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { DICE_HOUSE_EDGE } from "@/lib/constants";
 import { Dice3D } from "./Dice3D";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { QuickBetButtons } from "@/components/ui/QuickBetButtons";
@@ -190,10 +191,10 @@ export function DiceGame({
     onAmountChange(MAX_BET);
   };
 
-  // Calculate multiplier based on target and condition
+  // Calculate multiplier based on target and condition (global DICE_HOUSE_EDGE)
   const getMultiplier = () => {
     const probability = condition === "over" ? (100 - target) / 100 : target / 100;
-    const multiplier = 0.97 / probability; // 3% house edge
+    const multiplier = (1 - DICE_HOUSE_EDGE) / probability;
     return multiplier.toFixed(2);
   };
 

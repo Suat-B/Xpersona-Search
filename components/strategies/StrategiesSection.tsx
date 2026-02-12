@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { StrategyRunModal } from "@/components/strategies/StrategyRunModal";
 import { CREATIVE_DICE_STRATEGIES, TARGET_PRESETS } from "@/lib/dice-strategies";
 import type { CreativeStrategy } from "@/lib/dice-strategies";
 import type { DiceStrategyConfig } from "@/lib/strategies";
@@ -53,7 +54,6 @@ export function StrategiesSection() {
     stoppedReason: string;
   } | null>(null);
   const [running, setRunning] = useState(false);
-  const runAbortRef = useRef<AbortController | null>(null);
 
   const fetchIdRef = useRef(0);
 
@@ -83,84 +83,50 @@ export function StrategiesSection() {
     fetchStrategies();
   }, [fetchStrategies]);
 
-  const runWithConfig = useCallback(
-    async (config: DiceStrategyConfig, maxRounds: number) => {
-      setError(null);
-      setRunResult(null);
-      setRunning(true);
-      runAbortRef.current = new AbortController();
-      try {
-        const res = await fetch("/api/games/dice/run-strategy", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ config, maxRounds }),
-          signal: runAbortRef.current.signal,
-        });
-        const data = await res.json().catch(() => ({}));
-        if (data.success && data.data) {
-          setRunResult({
-            sessionPnl: data.data.sessionPnl ?? 0,
-            roundsPlayed: data.data.roundsPlayed ?? 0,
-            finalBalance: data.data.finalBalance ?? 0,
-            stoppedReason: data.data.stoppedReason ?? "—",
-          });
-          window.dispatchEvent(new Event("balance-updated"));
-        } else {
-          setError(data.error ?? data.message ?? "Run failed");
-        }
-      } catch (e) {
-        if ((e as Error).name !== "AbortError") {
-          setError("Run failed");
-        }
-      } finally {
-        setRunning(false);
-        runAbortRef.current = null;
-      }
-    },
-    []
-  );
+  const runWithConfig = useCallback((config: DiceStrategyConfig, maxRounds: number, strategyName: string) => {
+    setError(null);
+    setRunModalConfig({ name: strategyName, config, defaultRounds: maxRounds });
+    setRunModalOpen(true);
+    setRunning(true);
+  }, []);
 
   const handleRunSaved = useCallback(
-    async (s: StrategyRow, maxRounds = 20) => {
+    (s: StrategyRow, maxRounds = 20) => {
       if (!(GAMES_WITH_RUN as readonly string[]).includes(s.gameType)) return;
+      const cfg = s.config as Record<string, unknown>;
+      const config: DiceStrategyConfig = {
+        amount: typeof cfg.amount === "number" ? cfg.amount : 10,
+        target: typeof cfg.target === "number" ? cfg.target : 50,
+        condition: (cfg.condition === "over" || cfg.condition === "under" ? cfg.condition : "over") as "over" | "under",
+        progressionType: (cfg.progressionType as DiceStrategyConfig["progressionType"]) ?? "flat",
+      };
       setError(null);
-      setRunResult(null);
-      setRunning(true);
-      runAbortRef.current = new AbortController();
-      try {
-        const res = await fetch(`/api/games/dice/run-strategy`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ strategyId: s.id, maxRounds }),
-          signal: runAbortRef.current?.signal,
-        });
-        const data = await res.json().catch(() => ({}));
-        if (data.success && data.data) {
-          setRunResult({
-            strategyId: s.id,
-            sessionPnl: data.data.sessionPnl ?? 0,
-            roundsPlayed: data.data.roundsPlayed ?? 0,
-            finalBalance: data.data.finalBalance ?? 0,
-            stoppedReason: data.data.stoppedReason ?? "—",
-          });
-          window.dispatchEvent(new Event("balance-updated"));
-        } else {
-          setError(data.error ?? data.message ?? "Run failed");
-        }
-      } catch (e) {
-        if ((e as Error).name !== "AbortError") {
-          setError("Run failed");
-        }
-      } finally {
-        setRunning(false);
-        runAbortRef.current = null;
-      }
+      setRunModalConfig({ name: s.name, config, defaultRounds: maxRounds });
+      setRunModalOpen(true);
     },
     []
   );
 
-  const handleStopRun = useCallback(() => {
-    if (runAbortRef.current) runAbortRef.current.abort();
+  const handleRunComplete = useCallback(
+    (sessionPnl: number, roundsPlayed: number, _wins: number, finalBalance: number) => {
+      setRunResult({
+        sessionPnl,
+        roundsPlayed,
+        finalBalance,
+        stoppedReason: "—",
+      });
+      setRunModalOpen(false);
+      setRunModalConfig(null);
+      setRunning(false);
+      window.dispatchEvent(new Event("balance-updated"));
+    },
+    []
+  );
+
+  const handleRunModalClose = useCallback(() => {
+    setRunModalOpen(false);
+    setRunModalConfig(null);
+    setRunning(false);
   }, []);
 
   const handleDelete = async (id: string) => {
@@ -196,41 +162,26 @@ export function StrategiesSection() {
             <CreativeStrategyCard
               key={s.id}
               strategy={s}
-              onRun={(maxRounds) => runWithConfig(toApiConfig(s.config), maxRounds)}
+              onRun={(maxRounds) => runWithConfig(toApiConfig(s.config), maxRounds, s.name)}
               running={running}
             />
           ))}
         </div>
       </div>
 
-      {/* Last run result / live run */}
-      {(runResult || running) && (
+      {/* Last run result */}
+      {runResult && (
         <div className="mb-6 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4" data-agent="run-result">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-semibold text-[var(--text-primary)]">
-              {running ? "Running…" : "Last run result"}
-            </h4>
-            {running && (
-              <button
-                type="button"
-                onClick={handleStopRun}
-                className="rounded border border-red-500/50 bg-red-500/10 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/20"
-              >
-                Stop
-              </button>
-            )}
-          </div>
-          {runResult && (
-            <p className="mt-2 text-sm">
-              Session PnL:{" "}
-              <span className={runResult.sessionPnl >= 0 ? "text-emerald-400" : "text-red-400"}>
-                {runResult.sessionPnl >= 0 ? "+" : ""}
-                {runResult.sessionPnl}
-              </span>{" "}
-              · Rounds: {runResult.roundsPlayed} · Balance: {runResult.finalBalance} · Stopped:{" "}
-              {runResult.stoppedReason}
-            </p>
-          )}
+          <h4 className="text-sm font-semibold text-[var(--text-primary)]">Last run result</h4>
+          <p className="mt-2 text-sm">
+            Session PnL:{" "}
+            <span className={runResult.sessionPnl >= 0 ? "text-emerald-400" : "text-red-400"}>
+              {runResult.sessionPnl >= 0 ? "+" : ""}
+              {runResult.sessionPnl}
+            </span>{" "}
+            · Rounds: {runResult.roundsPlayed} · Balance: {runResult.finalBalance} · Stopped:{" "}
+            {runResult.stoppedReason}
+          </p>
         </div>
       )}
 
@@ -248,7 +199,7 @@ export function StrategiesSection() {
         {builderOpen && (
           <div className="mt-2">
             <CustomStrategyBuilder
-              onRun={(cfg, maxRounds) => runWithConfig(cfg, maxRounds)}
+              onRun={(cfg, maxRounds) => runWithConfig(cfg, maxRounds, "Custom")}
               running={running}
             />
           </div>
@@ -319,6 +270,17 @@ export function StrategiesSection() {
             </GlassCard>
           ))}
         </div>
+      )}
+
+      {runModalConfig && (
+        <StrategyRunModal
+          isOpen={runModalOpen}
+          onClose={handleRunModalClose}
+          strategyName={runModalConfig.name}
+          config={runModalConfig.config}
+          defaultRounds={runModalConfig.defaultRounds}
+          onComplete={handleRunComplete}
+        />
       )}
     </section>
   );

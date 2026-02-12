@@ -11,102 +11,96 @@ import { FortuneCard } from "@/components/dashboard/FortuneCard";
 import { MiniPnLSparkline } from "@/components/dashboard/MiniPnLSparkline";
 import { AgentReadyBadge } from "@/components/dashboard/AgentReadyBadge";
 import { QuickLaunchCard } from "@/components/dashboard/QuickLaunchCard";
-import { safeFetchJson } from "@/lib/safeFetch";
 
 const GAMES = [
-  { slug: "dice", name: "Dice", icon: "🎲", desc: "Roll over or under. Pure probability. AI-first." },
+  {
+    slug: "dice",
+    name: "Dice",
+    icon: "🎲",
+    desc: "Roll over or under. Pure probability.",
+  },
 ];
 
 export default function DashboardPage() {
-  const [balance, setBalance] = useState<number | null>(null);
-  const refreshBalance = useCallback(async () => {
-    const { data } = await safeFetchJson<{ success?: boolean; data?: { balance?: number } }>("/api/me/balance");
-    if (data?.success && typeof data?.data?.balance === "number") setBalance(data.data.balance);
-  }, []);
-  useEffect(() => {
-    refreshBalance();
-    const onUpdate = () => refreshBalance();
-    window.addEventListener("balance-updated", onUpdate);
-    return () => window.removeEventListener("balance-updated", onUpdate);
-  }, [refreshBalance]);
-
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-8 animate-in fade-in duration-500">
+      {/* Hero: Clean header + primary CTA */}
+      <header className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold font-[family-name:var(--font-outfit)] text-[var(--text-primary)] tracking-tight">
+            Dashboard
+          </h1>
+          <p className="mt-1 text-sm text-[var(--text-secondary)]">
+            AI-First Casino — pilot your agents, track your session
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Link
+            href="/games/dice"
+            className="inline-flex items-center gap-2 rounded-xl bg-[var(--accent-heart)] px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-[var(--accent-heart)]/25 hover:opacity-95 transition-opacity"
+          >
+            <span>🎲</span>
+            Play Dice
+          </Link>
+          <Link
+            href="/dashboard/deposit"
+            className="inline-flex items-center gap-2 rounded-xl border border-[var(--border)] bg-white/5 px-4 py-2.5 text-sm font-medium text-[var(--text-primary)] hover:bg-white/10 transition-colors"
+          >
+            Deposit
+          </Link>
+          <a
+            href="#faucet"
+            className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+          >
+            Faucet
+          </a>
+        </div>
+      </header>
 
-      {/* 1. Top Section: Metrics */}
+      {/* Metrics strip */}
       <section>
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-          <div>
-            <h2 className="text-xl font-bold font-mono tracking-tight glow-text-white">PILOT</h2>
-            <p className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider mt-0.5">AI-First Casino — Piloting your agents</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="rounded-lg border border-white/10 bg-white/5 px-4 py-2">
-              <span className="text-xs font-mono text-[var(--text-secondary)] uppercase tracking-wider">Balance</span>
-              <p className="text-lg font-mono font-bold text-[var(--text-primary)]">
-                {balance !== null ? balance.toLocaleString() : "—"} <span className="text-xs font-normal text-[var(--text-secondary)]">credits</span>
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Link
-              href="#faucet"
-              className="px-3 py-1.5 text-xs font-mono border border-emerald-500/30 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition"
-            >
-              CLAIM FAUCET
-              </Link>
-              <Link
-              href="/dashboard/deposit"
-              className="px-3 py-1.5 text-xs font-mono border border-[var(--accent-heart)]/30 rounded bg-[var(--accent-heart)]/10 text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition"
-            >
-              DEPOSIT
-            </Link>
-            <button
-              disabled
-              title="Faucet credits cannot be withdrawn."
-              className="px-3 py-1.5 text-xs font-mono border border-white/10 rounded bg-white/5 text-[var(--text-secondary)] hover:bg-white/10 transition cursor-not-allowed"
-            >
-              WITHDRAW
-            </button>
-            </div>
-          </div>
-        </div>
         <QuantMetrics />
-
-        {/* Creative row: Luck, Fortune, Sparkline, Agent */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-          <LuckStreakCard />
-          <FortuneCard />
-          <MiniPnLSparkline />
-          <AgentReadyBadge />
-        </div>
       </section>
 
-      {/* 2. Main Grid: Games & Feed */}
+      {/* Stats + Play: Two-column on large screens */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-        {/* Left: Game Grid (2/3 width) */}
+        {/* Left: Stats cards + Games (2/3) */}
         <div className="lg:col-span-2 space-y-6">
-          <section>
-            <h3 className="text-sm font-semibold mb-3 text-[var(--text-secondary)] uppercase tracking-wider">Dice Casino — AI First</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* Stats row: Luck, Fortune, PnL, Agent */}
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
+            <LuckStreakCard />
+            <FortuneCard />
+            <MiniPnLSparkline />
+            <AgentReadyBadge />
+          </div>
+
+          {/* Games section */}
+          <section className="space-y-4">
+            <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+              Games
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {GAMES.map((game) => (
-                <Link href={`/games/${game.slug}`} key={game.slug} className="group block h-full">
-                  <GlassCard className="h-full p-5 hover:bg-white/5 hover:border-white/20 transition-all duration-300 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-2 opacity-10 text-4xl group-hover:scale-110 group-hover:opacity-20 transition-transform">
-                      {game.icon}
-                    </div>
-                    <div className="relative z-10 flex flex-col h-full justify-between">
-                      <div>
-                        <div className="text-2xl mb-2">{game.icon}</div>
-                        <h3 className="font-bold text-lg text-[var(--text-primary)] group-hover:text-[var(--accent-heart)] transition-colors">
+                <Link
+                  href={`/games/${game.slug}`}
+                  key={game.slug}
+                  className="group block"
+                >
+                  <GlassCard className="h-full p-5 hover:bg-white/5 hover:border-[var(--accent-heart)]/30 transition-all duration-300">
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-heart)]/10 text-2xl group-hover:scale-105 transition-transform">
+                        {game.icon}
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="font-semibold text-[var(--text-primary)] group-hover:text-[var(--accent-heart)] transition-colors">
                           {game.name}
                         </h3>
-                        <p className="text-xs text-[var(--text-secondary)] mt-1 line-clamp-2">
+                        <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
                           {game.desc}
                         </p>
-                      </div>
-                      <div className="mt-4 flex items-center text-xs font-medium text-[var(--accent-heart)] opacity-0 group-hover:opacity-100 transition-opacity translate-y-2 group-hover:translate-y-0">
-                        Launch Protocol →
+                        <span className="mt-2 inline-block text-xs font-medium text-[var(--accent-heart)] opacity-0 group-hover:opacity-100 transition-opacity">
+                          Launch →
+                        </span>
                       </div>
                     </div>
                   </GlassCard>
@@ -115,28 +109,32 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* Strategies card: link to full page */}
-          <section>
-            <GlassCard className="p-5">
-              <h3 className="text-lg font-bold text-[var(--text-primary)] mb-1">Strategies</h3>
-              <p className="text-sm text-[var(--text-secondary)] mb-4">
-                Create, run, and manage dice strategies. Python and quick config. AI agents can run strategies via OpenClaw tools.
-              </p>
+          {/* Strategies */}
+          <GlassCard className="p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="font-semibold text-[var(--text-primary)]">
+                  Strategies
+                </h3>
+                <p className="mt-0.5 text-sm text-[var(--text-secondary)]">
+                  Run Martingale, Paroli, Kelly, and more. Same API for you and agents.
+                </p>
+              </div>
               <Link
                 href="/dashboard/strategies"
-                className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/30 bg-[var(--accent-heart)]/10 px-4 py-2 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
+                className="shrink-0 inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/30 bg-[var(--accent-heart)]/10 px-4 py-2 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
               >
-                Manage strategies
+                Manage
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </Link>
-            </GlassCard>
-          </section>
+            </div>
+          </GlassCard>
         </div>
 
-        {/* Right: Quick Launch, Faucet + API (1/3 width) */}
-        <div className="space-y-4 flex flex-col">
+        {/* Right sidebar: Quick launch, Faucet, API (1/3) */}
+        <aside className="space-y-4">
           <QuickLaunchCard />
           <section id="faucet" className="scroll-mt-6">
             <FaucetButton />
@@ -144,16 +142,13 @@ export default function DashboardPage() {
           <ApiKeySection />
           <Link
             href="/dashboard/api"
-            className="inline-flex items-center gap-2 text-sm font-medium text-[var(--accent-heart)] hover:underline"
+            className="block rounded-lg border border-[var(--border)] bg-white/5 px-4 py-3 text-sm text-[var(--text-secondary)] hover:bg-white/10 hover:text-[var(--text-primary)] transition-colors"
           >
-            Full API docs and OpenClaw integration
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
+            <span className="font-medium text-[var(--accent-heart)]">API & OpenClaw</span>
+            <span className="ml-1">— full docs</span>
           </Link>
-        </div>
+        </aside>
       </div>
-
     </div>
   );
 }

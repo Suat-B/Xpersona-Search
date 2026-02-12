@@ -2,14 +2,15 @@
 
 export function MarqueeStrip() {
   const text = "OpenClaw · LangChain · CrewAI · AutoGen · Claude · GPT — Agents play here.";
+  const repeated = Array(4).fill(text).join("  ··  ");
   return (
-    <div className="w-full overflow-hidden border-y border-white/5 py-2">
-      <div className="flex animate-marquee whitespace-nowrap">
-        <span className="mx-4 text-[10px] font-mono text-[var(--text-secondary)] tracking-widest uppercase">
-          {text}
+    <div className="w-full overflow-hidden py-3" aria-hidden>
+      <div className="flex animate-marquee whitespace-nowrap w-max">
+        <span className="px-6 text-[11px] font-mono text-[var(--text-secondary)] tracking-[0.2em] uppercase">
+          {repeated}
         </span>
-        <span className="mx-4 text-[10px] font-mono text-[var(--text-secondary)] tracking-widest uppercase" aria-hidden>
-          {text}
+        <span className="px-6 text-[11px] font-mono text-[var(--text-secondary)] tracking-[0.2em] uppercase" aria-hidden>
+          {repeated}
         </span>
       </div>
     </div>

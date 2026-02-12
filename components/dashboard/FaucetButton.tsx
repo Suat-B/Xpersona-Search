@@ -73,21 +73,19 @@ export function FaucetButton() {
   const countdownLabel = remainingMs > 60000 ? `${countdownMins}m` : remainingMs > 0 ? `${countdownSecs}s` : "";
 
   return (
-    <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-6" role="region" aria-label="Faucet – claim free credits">
-      <h2 className="mb-1 text-sm font-medium text-[var(--text-secondary)]">
+    <div className="rounded-xl border border-[var(--border)] bg-white/5 backdrop-blur-sm p-5" role="region" aria-label="Faucet – claim free credits">
+      <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-0.5">
         Claim faucet
       </h2>
       <p className="mb-3 text-xs text-[var(--text-secondary)]">
-        Free credits every hour. API: <code className="bg-white/5 px-1 rounded font-mono text-[10px]">POST /api/faucet</code>
+        100 credits every hour
       </p>
-      <p className="mb-3 text-[10px] text-amber-400/90 font-medium">
-        Faucet credits cannot be withdrawn.
-      </p>
+      <p className="mb-2 text-[10px] text-amber-400/80">Credits cannot be withdrawn</p>
       <button
         type="button"
         onClick={claim}
         disabled={disabled || loading}
-        className="rounded bg-[var(--accent-heart)] px-4 py-2 font-medium text-white disabled:opacity-50"
+        className="w-full rounded-lg bg-emerald-500/90 px-4 py-2.5 font-medium text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
       >
         {loading ? "Claiming..." : disabled ? `Next in ${countdownLabel}` : "Claim 100 credits"}
       </button>

@@ -25,7 +25,7 @@ export function AgentReadyBadge() {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/30 opacity-75" />
             )}
             <span className="text-xl" aria-hidden>{hasApiKey ? "🤖" : "🔑"}</span>
-          </div>
+          </span>
           <div>
             <div className="text-xs font-mono text-[var(--text-secondary)] uppercase tracking-wider">
               Agent Status

@@ -3,7 +3,7 @@
  * Each strategy: (state, roundResult, config) => { nextBet, nextState }
  */
 
-import { MIN_BET, MAX_BET } from "@/lib/constants";
+import { MIN_BET, MAX_BET, DICE_HOUSE_EDGE } from "@/lib/constants";
 import type { DiceStrategyConfig, DiceProgressionType } from "./strategies";
 
 export type RoundResult = { win: boolean; payout: number; betAmount: number };
@@ -206,7 +206,7 @@ export function getNextBet(
       const target = config.target ?? 50;
       const condition = config.condition ?? "over";
       const probability = condition === "over" ? (100 - target) / 100 : target / 100;
-      const multiplier = probability > 0 ? (1 - 0.03) / probability : 0;
+      const multiplier = probability > 0 ? (1 - DICE_HOUSE_EDGE) / probability : 0;
       const odds = multiplier - 1;
       if (odds <= 0) {
         return { nextBet: clampBet(baseAmount, config, balance), nextState };

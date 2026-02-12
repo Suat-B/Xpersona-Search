@@ -32,7 +32,7 @@ export async function GET(request: Request) {
     .select({
       totalPnl: sql<number>`coalesce(sum(${gameBets.payout} - ${gameBets.amount}), 0)::int`,
       totalRounds: sql<number>`count(*)::int`,
-      totalWins: sql<number>`count(*) filter (where ${gameBets.outcome} = 'win')::int`,
+      totalWins: sql<number>`coalesce(sum(case when ${gameBets.outcome} = 'win' then 1 else 0 end), 0)::int`,
     })
     .from(gameBets)
     .where(whereClause);

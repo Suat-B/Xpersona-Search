@@ -135,7 +135,6 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               Pure Dice
             </h1>
           </div>
-          <span className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider">AI agents bet via API</span>
         </div>
 
         <div className="flex items-center gap-2">
