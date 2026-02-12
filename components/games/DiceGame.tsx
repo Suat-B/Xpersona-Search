@@ -66,6 +66,7 @@ export function DiceGame({
   const [autoPlay, setAutoPlay] = useState(false);
   const [autoSpeed, setAutoSpeed] = useState(250);
   const [autoRounds, setAutoRounds] = useState(0);
+  const [strategyRoundsPlayed, setStrategyRoundsPlayed] = useState(0);
   const [showWinEffects, setShowWinEffects] = useState(false);
   const stopRef = useRef(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -177,6 +178,7 @@ export function DiceGame({
     const maxRounds = strategyRun.maxRounds;
     strategyStopRef.current = false;
     abortControllerRef.current = new AbortController();
+    setStrategyRoundsPlayed(0);
     setAutoPlay(true);
     onAutoPlayChange?.(true);
     setError(null);
@@ -217,6 +219,7 @@ export function DiceGame({
 
         if (!ok) break;
         roundsPlayed += 1;
+        setStrategyRoundsPlayed(roundsPlayed);
 
         const lastResult = lastBetResultRef.current;
         if (!lastResult) break;
@@ -549,7 +552,9 @@ export function DiceGame({
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
                     </svg>
                     <span>STOP</span>
-                    <span className="text-xs font-medium opacity-80 tabular-nums">{autoRounds}</span>
+                    <span className="text-xs font-medium opacity-80 tabular-nums">
+                      {strategyRun ? strategyRoundsPlayed : autoRounds}
+                    </span>
                   </>
                 ) : (
                   <>
