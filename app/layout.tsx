@@ -19,7 +19,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{
+            __html: `(function(){var t=localStorage.getItem("theme")||"dark";if(t==="system")t=window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.setAttribute("data-theme",t);})();`,
+          }}
+        />
+      </head>
       <body
         className={`${outfit.variable} ${inter.variable} min-h-screen bg-[var(--bg-deep)] font-sans text-[var(--text-primary)] antialiased`}
       >

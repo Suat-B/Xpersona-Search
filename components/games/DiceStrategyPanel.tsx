@@ -19,20 +19,24 @@ type StrategyRowFromApi = {
   config: Record<string, unknown>;
 };
 
-function isQuickConfig(c: Record<string, unknown>): c is DiceConfig {
-  return (
-    typeof (c as DiceConfig).amount === "number" &&
-    typeof (c as DiceConfig).target === "number" &&
-    ((c as DiceConfig).condition === "over" || (c as DiceConfig).condition === "under")
-  );
+function isDiceConfig(c: Record<string, unknown>): boolean {
+  const amount = c.amount;
+  const target = c.target;
+  const condition = c.condition;
+  const hasAmount = typeof amount === "number" || (typeof amount === "string" && !Number.isNaN(Number(amount)));
+  const hasTarget = typeof target === "number" || (typeof target === "string" && !Number.isNaN(Number(target)));
+  const hasCondition = condition === "over" || condition === "under";
+  return !!(hasAmount && hasTarget && hasCondition);
 }
 
 type DiceStrategyPanelProps = {
   amount: number;
   target: number;
   condition: "over" | "under";
+  progressionType?: DiceStrategyConfig["progressionType"];
+  activeStrategyName?: string | null;
   disabled?: boolean;
-  onLoadConfig: (config: DiceConfig) => void;
+  onLoadConfig: (config: DiceConfig & { progressionType?: DiceStrategyConfig["progressionType"] }, strategyName?: string) => void;
   onBalanceUpdate?: () => void;
   onStrategyComplete?: (sessionPnl: number, roundsPlayed: number, wins: number) => void;
   onStartStrategyRun?: (config: DiceStrategyConfig, maxRounds: number, strategyName: string) => void;
@@ -42,6 +46,8 @@ export function DiceStrategyPanel({
   amount,
   target,
   condition,
+  progressionType = "flat",
+  activeStrategyName,
   disabled,
   onLoadConfig,
   onBalanceUpdate,
@@ -70,24 +76,27 @@ export function DiceStrategyPanel({
         const raw = (data.data.strategies as StrategyRowFromApi[]).filter(
           (s: StrategyRowFromApi) => s.config != null
         );
-        const quick = raw
-          .filter((s) => isQuickConfig(s.config as Record<string, unknown>))
+        const mapped = raw
+          .filter((s) => isDiceConfig(s.config as Record<string, unknown>))
           .map((s) => {
             const cfg = s.config as Record<string, unknown>;
+            const amount = typeof cfg.amount === "number" ? cfg.amount : Number(cfg.amount) || 10;
+            const target = typeof cfg.target === "number" ? cfg.target : Number(cfg.target) || 50;
+            const condition = cfg.condition === "over" || cfg.condition === "under" ? cfg.condition : "over";
             return {
               id: s.id,
               name: s.name,
               config: {
                 ...cfg,
-                amount: cfg.amount as number,
-                target: cfg.target as number,
-                condition: cfg.condition as "over" | "under",
+                amount,
+                target,
+                condition,
                 progressionType: (cfg.progressionType as DiceStrategyConfig["progressionType"]) ?? "flat",
               },
             };
           });
-        setStrategies(quick);
-        if (selectedId && !quick.some((x: StrategyOption) => x.id === selectedId)) {
+        setStrategies(mapped);
+        if (selectedId && !mapped.some((x: StrategyOption) => x.id === selectedId)) {
           setSelectedId(null);
         }
       }
@@ -104,7 +113,7 @@ export function DiceStrategyPanel({
 
   const handleLoad = () => {
     if (selected) {
-      onLoadConfig(selected.config);
+      onLoadConfig(selected.config, selected.name);
       setMessage(`Loaded "${selected.name}"`);
       setTimeout(() => setMessage(null), 3000);
     }
@@ -158,20 +167,11 @@ export function DiceStrategyPanel({
     };
   };
 
-  const handleOpenRunModal = () => {
+  const handleRunStrategy = () => {
     setMessage(null);
-    setRunResult(null);
-    setRunModalOpen(true);
-  };
-
-  const handleRunComplete = (_sessionPnl: number, roundsPlayed: number, wins: number, _finalBalance: number) => {
-    setRunModalOpen(false);
-    setRunResult({
-      sessionPnl: _sessionPnl,
-      roundsPlayed,
-      stoppedReason: "—",
-    });
-    onStrategyComplete?.(_sessionPnl, roundsPlayed, wins);
+    const config = buildRunConfig();
+    const strategyName = selected?.name ?? "Quick run";
+    onStartStrategyRun?.(config, runMaxRounds, strategyName);
     onBalanceUpdate?.();
   };
 
@@ -180,10 +180,22 @@ export function DiceStrategyPanel({
       <p className="text-sm font-medium text-[var(--text-secondary)]">
         Quick strategies — save, load, run with dice animation
       </p>
+      {strategies.length === 0 && (
+        <p className="text-xs text-amber-400/90">
+          No saved strategies yet. Use &quot;Save as strategy&quot; below with your current bet/target, or create one on the <Link href="/dashboard/strategies" className="text-[var(--accent-heart)] hover:underline">Strategies</Link> page.
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <select
           value={selectedId ?? ""}
-          onChange={(e) => setSelectedId(e.target.value || null)}
+          onChange={(e) => {
+            const id = e.target.value || null;
+            setSelectedId(id);
+            const s = id ? strategies.find((x) => x.id === id) : null;
+            if (s) {
+              onLoadConfig(s.config, s.name);
+            }
+          }}
           disabled={disabled}
           className="rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-sm text-[var(--text-primary)]"
         >
@@ -234,7 +246,7 @@ export function DiceStrategyPanel({
       </div>
 
       <p className="text-xs text-[var(--text-secondary)]">
-        Choose rounds (1–1000), then Run strategy. Opens a modal with live dice animation, balance, and bet per round. More strategies (Martingale, Paroli, etc.) on the <Link href="/dashboard/strategies" className="text-[var(--accent-heart)] hover:underline">Strategies</Link> page.
+        Choose rounds (1–1000), then Run strategy. Runs auto-play with live dice animation, balance, and bet per round. More strategies (Martingale, Paroli, etc.) on the <Link href="/dashboard/strategies" className="text-[var(--accent-heart)] hover:underline">Strategies</Link> page.
       </p>
 
       {saveOpen && (

@@ -48,6 +48,12 @@ export default function DashboardPage() {
           >
             Deposit
           </Link>
+          <Link
+            href="/dashboard/withdraw"
+            className="inline-flex items-center gap-2 rounded-xl border border-[var(--border)] bg-white/5 px-4 py-2.5 text-sm font-medium text-[var(--text-primary)] hover:bg-white/10 transition-colors"
+          >
+            Withdraw
+          </Link>
           <a
             href="#faucet"
             className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors"

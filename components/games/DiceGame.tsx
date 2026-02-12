@@ -16,26 +16,40 @@ type Result = {
   balance: number;
 } | null;
 
+export type StrategyRunConfig = {
+  config: DiceStrategyConfig;
+  maxRounds: number;
+  strategyName: string;
+};
+
 const AUTO_SPEEDS = [100, 250, 500, 1000] as const;
 const MAX_BET = 10000;
 const MIN_BET = 1;
+const STRATEGY_ROUND_DELAY_MS = 400;
 
 export type DiceGameProps = {
   amount: number;
   target: number;
   condition: "over" | "under";
+  activeStrategyName?: string | null;
+  progressionType?: string;
   onAmountChange: (v: number) => void;
   onTargetChange: (v: number) => void;
   onConditionChange: (v: "over" | "under") => void;
   onRoundComplete: (bet: number, payout: number) => void;
   onAutoPlayChange?: (active: boolean) => void;
   onResult?: (result: { result: number; win: boolean; payout: number; betAmount?: number }) => void;
+  strategyRun?: StrategyRunConfig | null;
+  onStrategyComplete?: (sessionPnl: number, roundsPlayed: number, wins: number) => void;
+  onStrategyStop?: () => void;
 };
 
 export function DiceGame({
   amount,
   target,
   condition,
+  activeStrategyName,
+  progressionType = "flat",
   onAmountChange,
   onTargetChange,
   onConditionChange,
@@ -59,6 +73,7 @@ export function DiceGame({
   const strategyStateRef = useRef<ProgressionState | null>(null);
   const strategyStopRef = useRef(false);
   const lastBetResultRef = useRef<{ win: boolean; payout: number; balance: number } | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Ensure BET input reflects external updates (e.g. strategy Apply) when it has focus
   useEffect(() => {
@@ -71,6 +86,7 @@ export function DiceGame({
   const runBet = useCallback(
     async (betAmountOverride?: number): Promise<boolean> => {
       const betAmount = betAmountOverride ?? amount;
+      const signal = abortControllerRef.current?.signal;
       type BetRes = { success?: boolean; data?: { result: number; win: boolean; payout: number; balance: number }; error?: string; message?: string };
       let httpStatus: number;
       let data: BetRes;
@@ -80,6 +96,7 @@ export function DiceGame({
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ amount: betAmount, target, condition }),
+          signal,
         });
         httpStatus = response.status;
         const raw = await response.text();
@@ -90,6 +107,7 @@ export function DiceGame({
           return false;
         }
       } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") return false;
         const msg = e instanceof Error ? e.message : "Connection failed";
         setError(`Network error — ${msg}`);
         if (process.env.NODE_ENV === "development") console.error("[DiceGame] Fetch error:", e);
@@ -151,12 +169,14 @@ export function DiceGame({
   [amount, target, condition, onRoundComplete, onResult]
   );
 
+
   // Strategy run: when strategyRun is set, fetch balance and start progression loop
   useEffect(() => {
     if (!strategyRun) return;
     const config = strategyRun.config;
     const maxRounds = strategyRun.maxRounds;
     strategyStopRef.current = false;
+    abortControllerRef.current = new AbortController();
     setAutoPlay(true);
     onAutoPlayChange?.(true);
     setError(null);
@@ -228,8 +248,47 @@ export function DiceGame({
     };
 
     runStrategy();
+    return () => {
+      strategyStopRef.current = true;
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only run when strategyRun is set
   }, [strategyRun]);
+
+  // Stop all loops on unmount (e.g. navigating away from dice page)
+  useEffect(() => {
+    return () => {
+      stopRef.current = true;
+      strategyStopRef.current = true;
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+      if (timeoutRef.current != null) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  // Pause when tab is hidden (prevents ghost games in background)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) {
+        stopRef.current = true;
+        strategyStopRef.current = true;
+        abortControllerRef.current?.abort();
+        abortControllerRef.current = null;
+        if (timeoutRef.current != null) {
+          clearTimeout(timeoutRef.current);
+          timeoutRef.current = null;
+        }
+        setAutoPlay(false);
+        onAutoPlayChange?.(false);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [onAutoPlayChange]);
 
   const handleRoll = useCallback(async () => {
     if (autoPlay) return;
@@ -246,6 +305,7 @@ export function DiceGame({
     onAutoPlayChange?.(true);
     setError(null);
     stopRef.current = false;
+    abortControllerRef.current = new AbortController();
     setAutoRounds(0);
     const loop = async () => {
       setLoading(true);
@@ -267,8 +327,12 @@ export function DiceGame({
   const stopAuto = useCallback(() => {
     if (strategyRun) {
       strategyStopRef.current = true;
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
     } else {
       stopRef.current = true;
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
       if (timeoutRef.current != null) {
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
@@ -300,8 +364,10 @@ export function DiceGame({
     return multiplier.toFixed(2);
   };
 
+  const aiState = { amount, target, condition, progressionType, activeStrategyName: activeStrategyName ?? undefined };
+
   return (
-    <div className="h-full flex flex-col min-h-0">
+    <div className="h-full flex flex-col min-h-0" data-agent="dice-game" data-config={JSON.stringify(aiState)}>
       {/* Win Effects */}
       <Sparkles active={showWinEffects} count={25} />
       <Confetti active={showWinEffects && (result?.payout || 0) > amount * 2} />
@@ -310,13 +376,21 @@ export function DiceGame({
       <div className="flex-1 flex flex-col min-h-0 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] overflow-hidden">
         
         {/* Header - Compact */}
-        <div className="flex-shrink-0 px-6 pt-4 pb-3 text-center border-b border-[var(--border)]/50">
-          {strategyRun && (
-            <div className="mb-2 text-sm font-semibold text-[var(--accent-heart)]">
+        <div className="flex-shrink-0 px-6 pt-4 pb-3 text-center border-b border-[var(--border)]/50" data-agent="dice-header">
+          {strategyRun ? (
+            <div className="mb-2 text-sm font-semibold text-[var(--accent-heart)]" data-agent="strategy-running" data-value={strategyRun.strategyName}>
               Running: {strategyRun.strategyName}
             </div>
-          )}
-          <div className="flex items-center justify-center gap-4 text-xs text-[var(--text-secondary)]">
+          ) : activeStrategyName ? (
+            <div className="mb-2 text-xs font-medium text-[var(--text-secondary)]" data-agent="strategy-applied" data-value={activeStrategyName} data-progression={progressionType}>
+              <span className="text-[var(--accent-heart)]/80">{activeStrategyName}</span>
+              <span className="mx-1">·</span>
+              <span className="font-mono">{amount}</span> credits
+              <span className="mx-1">·</span>
+              <span className="font-mono">{target}%</span> {condition}
+            </div>
+          ) : null}
+          <div className="flex items-center justify-center gap-4 text-xs text-[var(--text-secondary)]" data-agent="dice-config" data-amount={amount} data-target={target} data-condition={condition} data-progression={progressionType}>
             <span className="flex items-center gap-1">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />

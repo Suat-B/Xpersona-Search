@@ -115,10 +115,63 @@ export const CREATIVE_DICE_STRATEGIES: CreativeStrategy[] = [
   },
 ];
 
-export const TARGET_PRESETS: { id: string; label: string; target: number; condition: "over" | "under" }[] = [
-  { id: "50-over", label: "50% Over", target: 50, condition: "over" },
-  { id: "50-under", label: "50% Under", target: 50, condition: "under" },
-  { id: "75-over", label: "75% Over", target: 75, condition: "over" },
-  { id: "7-under", label: "7% Under", target: 7, condition: "under" },
-  { id: "25-over", label: "25% Over", target: 25, condition: "over" },
+export type TargetPreset = { id: string; label: string; target: number; condition: "over" | "under"; category?: string };
+
+export const TARGET_PRESETS: TargetPreset[] = [
+  // High Payout (low odds)
+  { id: "5-over", label: "5% Over (~20x)", target: 5, condition: "over", category: "High Payout" },
+  { id: "10-over", label: "10% Over (~10x)", target: 10, condition: "over", category: "High Payout" },
+  { id: "15-over", label: "15% Over (~6x)", target: 15, condition: "over", category: "High Payout" },
+  { id: "7-under", label: "7% Under (~15x)", target: 7, condition: "under", category: "High Payout" },
+  { id: "3-under", label: "3% Under (~30x)", target: 3, condition: "under", category: "High Payout" },
+  { id: "20-over", label: "20% Over (~5x)", target: 20, condition: "over", category: "High Payout" },
+  // Balanced
+  { id: "25-over", label: "25% Over (~4x)", target: 25, condition: "over", category: "Balanced" },
+  { id: "33-over", label: "33% Over (~3x)", target: 33, condition: "over", category: "Balanced" },
+  { id: "33-under", label: "33% Under (~3x)", target: 33, condition: "under", category: "Balanced" },
+  { id: "50-over", label: "50% Over (~2x)", target: 50, condition: "over", category: "Balanced" },
+  { id: "50-under", label: "50% Under (~2x)", target: 50, condition: "under", category: "Balanced" },
+  { id: "66-over", label: "66% Over (~1.5x)", target: 66, condition: "over", category: "Balanced" },
+  // High Probability (low payout)
+  { id: "75-over", label: "75% Over", target: 75, condition: "over", category: "High Probability" },
+  { id: "80-over", label: "80% Over", target: 80, condition: "over", category: "High Probability" },
+  { id: "90-over", label: "90% Over", target: 90, condition: "over", category: "High Probability" },
+  { id: "90-under", label: "90% Under", target: 90, condition: "under", category: "High Probability" },
+  { id: "95-over", label: "95% Over", target: 95, condition: "over", category: "High Probability" },
+  // Extreme
+  { id: "1-over", label: "1% Over (extreme)", target: 1, condition: "over", category: "Extreme" },
+  { id: "99-over", label: "99% Over (extreme)", target: 99, condition: "over", category: "Extreme" },
+  { id: "2-under", label: "2% Under (extreme)", target: 2, condition: "under", category: "Extreme" },
+];
+
+export type PayoutPreset = { id: string; label: string; target: number; condition: "over" | "under" };
+
+export const PAYOUT_PRESETS: PayoutPreset[] = [
+  { id: "2x-50-over", label: "~2x (50 Over)", target: 50, condition: "over" },
+  { id: "2x-50-under", label: "~2x (50 Under)", target: 50, condition: "under" },
+  { id: "3x-33-over", label: "~3x (33 Over)", target: 33, condition: "over" },
+  { id: "3x-33-under", label: "~3x (33 Under)", target: 33, condition: "under" },
+  { id: "5x-20-over", label: "~5x (20 Over)", target: 20, condition: "over" },
+  { id: "10x-10-over", label: "~10x (10 Over)", target: 10, condition: "over" },
+  { id: "15x-7-under", label: "~15x (7 Under)", target: 7, condition: "under" },
+  { id: "20x-5-over", label: "~20x (5 Over)", target: 5, condition: "over" },
+  { id: "30x-3-under", label: "~30x (3 Under)", target: 3, condition: "under" },
+];
+
+export type RiskProfile = {
+  id: string;
+  name: string;
+  amount: number;
+  maxBet: number;
+  progressionType: DiceProgressionType;
+  maxConsecutiveLosses: number;
+  maxConsecutiveWins: number;
+};
+
+export const RISK_PROFILES: RiskProfile[] = [
+  { id: "aggressive", name: "Aggressive", amount: 25, maxBet: 5000, progressionType: "martingale", maxConsecutiveLosses: 5, maxConsecutiveWins: 3 },
+  { id: "balanced", name: "Balanced", amount: 10, maxBet: 500, progressionType: "paroli", maxConsecutiveLosses: 10, maxConsecutiveWins: 3 },
+  { id: "conservative", name: "Conservative", amount: 5, maxBet: 100, progressionType: "flat", maxConsecutiveLosses: 3, maxConsecutiveWins: 2 },
+  { id: "yolo", name: "YOLO", amount: 50, maxBet: 10000, progressionType: "martingale", maxConsecutiveLosses: 15, maxConsecutiveWins: 5 },
+  { id: "grinder", name: "Grinder", amount: 5, maxBet: 200, progressionType: "oscar", maxConsecutiveLosses: 5, maxConsecutiveWins: 2 },
 ];

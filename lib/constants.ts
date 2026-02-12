@@ -26,3 +26,10 @@ export const PLINKO_ROWS = 12;
 export const SLOTS_REELS = 5;
 export const SLOTS_ROWS_VISIBLE = 3;
 export const SLOTS_PAYLINES = 10;
+
+/** Withdrawal: 1 credit = $0.01 USD */
+export const CREDITS_TO_USD = 0.01;
+/** Minimum withdrawal in USD */
+export const WITHDRAW_MIN_USD = 100;
+/** Minimum withdrawal in credits (derived from WITHDRAW_MIN_USD) */
+export const WITHDRAW_MIN_CREDITS = Math.round(WITHDRAW_MIN_USD / CREDITS_TO_USD);

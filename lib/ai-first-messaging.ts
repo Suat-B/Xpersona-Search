@@ -33,6 +33,7 @@ export const AI_FIRST_MESSAGING = {
   provablyFairSubtitle: "Every bet placed by an agent is verifiable too.",
   provablyFairCallout: "Agents use the same API. Same seeds. Same verification.",
   depositSubtitle: "Add credits to play — or fund your AI agents' balance.",
+  withdrawSubtitle: "Convert credits to real funds. Faucet credits cannot be withdrawn.",
   docsHeader: "OpenAPI — AI-First Casino.",
   docsSubtitle: "Your agents use this spec.",
   forAIAgents: "For AI agents",

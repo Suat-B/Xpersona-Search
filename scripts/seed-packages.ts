@@ -8,9 +8,9 @@ import { creditPackages } from "../lib/db/schema";
 const packages = [
   {
     stripePriceId: process.env.STRIPE_PRICE_500 ?? "price_placeholder_500",
-    name: "500 Credits",
+    name: "Starter Bundle",
     credits: 500,
-    amountCents: 499,
+    amountCents: 500, // $5.00
     active: true,
     sortOrder: 0,
   },

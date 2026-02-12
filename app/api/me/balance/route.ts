@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth-utils";
+import { getWithdrawableBalance } from "@/lib/withdrawable";
 
 export async function GET(request: Request) {
   const authResult = await getAuthUser(request as any);
@@ -9,8 +10,14 @@ export async function GET(request: Request) {
       { status: 401 }
     );
   }
+  const { credits, faucetCredits } = authResult.user;
+  const withdrawable = getWithdrawableBalance(credits, faucetCredits ?? 0);
   return NextResponse.json({
     success: true,
-    data: { balance: authResult.user.credits },
+    data: {
+      balance: credits,
+      faucetCredits: faucetCredits ?? 0,
+      withdrawable,
+    },
   });
 }

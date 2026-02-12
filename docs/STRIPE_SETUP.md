@@ -30,9 +30,9 @@ You need three one-time prices that match the seed script.
 ### Option A: Stripe Dashboard (easiest)
 
 1. Go to **Product catalog** → **Add product**.
-2. Create **Product 1**:
-   - **Name**: `500 Credits`
-   - **One-time payment**, **Price**: `$4.99` (or your currency).
+2. Create **Product 1** (Starter Bundle):
+   - **Name**: `Starter Bundle` or `500 Credits`
+   - **One-time payment**, **Price**: `$5.00`
    - Save → copy the **Price ID** (e.g. `price_1ABC...`). This is **STRIPE_PRICE_500**.
 3. Create **Product 2**:
    - **Name**: `2000 Credits`
@@ -144,3 +144,23 @@ Your app reads packages from the `credit_packages` table; each row must have a v
 | **STRIPE_PRICE_10000** | Product/Price “10000 Credits” → Price ID | Seeding DB |
 
 If anything fails, check: correct keys (test vs live), webhook URL and event type, and that metadata (`userId`, `packageId`, `credits`) is sent on the Checkout Session (the app already sets this in `checkout/route.ts`).
+
+---
+
+## How the integration works
+
+```
+User clicks "Get 500 credits"  →  POST /api/credits/checkout { packageId }
+       ↓
+Checkout API creates Stripe Session with metadata: { userId, credits: "500" }
+       ↓
+User is redirected to Stripe Checkout (hosted by Stripe)
+       ↓
+User pays  →  Stripe sends checkout.session.completed to /api/stripe/webhook
+       ↓
+Webhook reads metadata.userId + metadata.credits  →  Adds credits to user in DB
+       ↓
+User is redirected back to /dashboard/deposit?success=1
+```
+
+**Important**: Do not use Stripe Payment Links directly. They do not include `userId` in metadata, so the webhook cannot credit the correct user. Always use the app's checkout flow (`/api/credits/checkout`).
