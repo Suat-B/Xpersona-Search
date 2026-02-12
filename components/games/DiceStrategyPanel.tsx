@@ -35,6 +35,7 @@ type DiceStrategyPanelProps = {
   disabled?: boolean;
   onLoadConfig: (config: DiceConfig) => void;
   onBalanceUpdate?: () => void;
+  onStrategyComplete?: (sessionPnl: number, roundsPlayed: number, wins: number) => void;
 };
 
 export function DiceStrategyPanel({
@@ -44,6 +45,7 @@ export function DiceStrategyPanel({
   disabled,
   onLoadConfig,
   onBalanceUpdate,
+  onStrategyComplete,
 }: DiceStrategyPanelProps) {
   const [strategies, setStrategies] = useState<StrategyOption[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -167,13 +169,14 @@ export function DiceStrategyPanel({
     setRunModalOpen(true);
   };
 
-  const handleRunComplete = (_sessionPnl: number, roundsPlayed: number, _finalBalance: number) => {
+  const handleRunComplete = (_sessionPnl: number, roundsPlayed: number, wins: number, _finalBalance: number) => {
     setRunModalOpen(false);
     setRunResult({
       sessionPnl: _sessionPnl,
       roundsPlayed,
       stoppedReason: "—",
     });
+    onStrategyComplete?.(_sessionPnl, roundsPlayed, wins);
     onBalanceUpdate?.();
   };
 
@@ -270,7 +273,7 @@ export function DiceStrategyPanel({
         strategyName={selected?.name ?? "Quick run"}
         config={buildRunConfig()}
         defaultRounds={runMaxRounds}
-        onComplete={handleRunComplete}
+        onComplete={(sessionPnl, roundsPlayed, _wins, finalBalance) => handleRunComplete(sessionPnl, roundsPlayed, _wins, finalBalance)}
       />
     </div>
   );

@@ -32,12 +32,14 @@ export async function GET(request: Request) {
     .select({
       totalPnl: sql<number>`coalesce(sum(${gameBets.payout} - ${gameBets.amount}), 0)::int`,
       totalRounds: sql<number>`count(*)::int`,
+      totalWins: sql<number>`count(*) filter (where ${gameBets.outcome} = 'win')::int`,
     })
     .from(gameBets)
     .where(whereClause);
 
   const totalPnl = typeof agg?.totalPnl === "number" ? agg.totalPnl : Number(agg?.totalPnl) || 0;
   const totalRounds = typeof agg?.totalRounds === "number" ? agg.totalRounds : Number(agg?.totalRounds) || 0;
+  const totalWins = typeof (agg as { totalWins?: number })?.totalWins === "number" ? (agg as { totalWins: number }).totalWins : 0;
 
   const rows = await db
     .select({
@@ -57,8 +59,7 @@ export async function GET(request: Request) {
     pnl: Number(r.payout) - Number(r.amount),
   }));
 
-  const wins = recentBets.filter((b) => b.outcome === "win").length;
-  const winRate = recentBets.length > 0 ? (wins / recentBets.length) * 100 : 0;
+  const winRate = totalRounds > 0 ? (totalWins / totalRounds) * 100 : 0;
 
   return NextResponse.json({
     success: true,

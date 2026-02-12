@@ -31,7 +31,7 @@ export default function DashboardPage() {
       {/* 1. Top Section: Metrics */}
       <section>
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-          <h2 className="text-xl font-bold font-mono tracking-tight glow-text-white">DASHBOARD_V2</h2>
+          <h2 className="text-xl font-bold font-mono tracking-tight glow-text-white">PILOT</h2>
           <div className="flex items-center gap-4">
             <div className="rounded-lg border border-white/10 bg-white/5 px-4 py-2">
               <span className="text-xs font-mono text-[var(--text-secondary)] uppercase tracking-wider">Balance</span>

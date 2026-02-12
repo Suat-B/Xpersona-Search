@@ -36,12 +36,14 @@ interface DiceStatisticsPanelProps {
   series: PnLPoint[];
   rounds: number;
   totalPnl: number;
+  wins: number;
   recentResults: RollResult[];
   amount: number;
   target: number;
   condition: "over" | "under";
   onLoadConfig: (config: DiceConfig) => void;
   onReset: () => void;
+  onStrategyComplete?: (sessionPnl: number, roundsPlayed: number, wins: number) => void;
 }
 
 function toApiConfig(c: CreativeStrategy["config"]): DiceStrategyConfig {
@@ -57,21 +59,23 @@ export function DiceStatisticsPanel({
   series,
   rounds,
   totalPnl,
+  wins,
   recentResults,
   onLoadConfig,
   onReset,
+  onStrategyComplete,
 }: DiceStatisticsPanelProps) {
   const [runModalOpen, setRunModalOpen] = useState(false);
   const [runStrategy, setRunStrategy] = useState<CreativeStrategy | null>(null);
-  const wins = recentResults.filter((r) => r.win).length;
-  const winRate = recentResults.length > 0 ? (wins / recentResults.length) * 100 : 0;
+  const winRate = rounds > 0 ? (wins / rounds) * 100 : 0;
 
   const handleOpenRun = (s: CreativeStrategy) => {
     setRunStrategy(s);
     setRunModalOpen(true);
   };
 
-  const handleRunComplete = () => {
+  const handleRunComplete = (sessionPnl: number, roundsPlayed: number, runWins: number) => {
+    onStrategyComplete?.(sessionPnl, roundsPlayed, runWins);
     setRunModalOpen(false);
     setRunStrategy(null);
     window.dispatchEvent(new Event("balance-updated"));
@@ -174,7 +178,7 @@ export function DiceStatisticsPanel({
           strategyName={runStrategy.name}
           config={toApiConfig(runStrategy.config)}
           defaultRounds={20}
-          onComplete={handleRunComplete}
+          onComplete={(sessionPnl, roundsPlayed, runWins, _finalBalance) => handleRunComplete(sessionPnl, roundsPlayed, runWins)}
         />
       )}
     </div>

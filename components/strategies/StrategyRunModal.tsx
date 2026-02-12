@@ -28,7 +28,7 @@ export type StrategyRunModalProps = {
   strategyName: string;
   config: DiceStrategyConfig;
   defaultRounds?: number;
-  onComplete?: (sessionPnl: number, roundsPlayed: number, finalBalance: number) => void;
+  onComplete?: (sessionPnl: number, roundsPlayed: number, wins: number, finalBalance: number) => void;
 };
 
 export function StrategyRunModal({
@@ -54,6 +54,7 @@ export function StrategyRunModal({
   const stopRef = useRef(false);
   const balanceRef = useRef(0);
   const sessionPnlRef = useRef(0);
+  const winsRef = useRef(0);
 
   // Load initial balance when modal opens
   useEffect(() => {
@@ -121,6 +122,7 @@ export function StrategyRunModal({
       if (stopRef.current) return false;
 
       setResult({ result: diceResult, win, payout });
+      if (win) winsRef.current += 1;
       const newBalance = data.data.balance;
       setSessionPnl((s) => {
         const next = s + pnl;
@@ -165,6 +167,7 @@ export function StrategyRunModal({
     setRoundIndex(0);
     setSessionPnl(0);
     sessionPnlRef.current = 0;
+    winsRef.current = 0;
     balanceRef.current = balance;
 
     const initialState = createProgressionState(config, balance);
@@ -184,7 +187,7 @@ export function StrategyRunModal({
     }
 
     setPhase("complete");
-    onComplete?.(sessionPnlRef.current, lastRoundPlayed, balanceRef.current);
+    onComplete?.(sessionPnlRef.current, lastRoundPlayed, winsRef.current, balanceRef.current);
   }, [roundsInput, balance, config, runRound, onComplete]);
 
   const handleStop = useCallback(() => {

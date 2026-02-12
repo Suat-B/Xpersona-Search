@@ -25,7 +25,7 @@ interface RollResult {
 
 export default function GamePageClient({ game }: { game: GameSlug }) {
   const sessionPnL = useDiceSessionPnL();
-  const { totalPnl = 0, rounds = 0, addRound, reset } = sessionPnL;
+  const { totalPnl = 0, rounds = 0, wins = 0, addRound, addBulkSession, reset } = sessionPnL;
   const statsSeries = Array.isArray(sessionPnL?.series) ? sessionPnL.series : [];
   const [amount, setAmount] = useState(10);
   const [target, setTarget] = useState(50);
@@ -240,12 +240,14 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 series={statsSeries}
                 rounds={rounds}
                 totalPnl={totalPnl}
+                wins={wins}
                 recentResults={recentResults}
                 amount={amount}
                 target={target}
                 condition={condition}
                 onLoadConfig={loadStrategyConfig}
                 onReset={handleReset}
+                onStrategyComplete={addBulkSession}
               />
             ) : activeTab === "api" ? (
               <div className="flex-shrink-0 space-y-4">
@@ -334,6 +336,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                       disabled={autoPlayActive}
                       onLoadConfig={loadStrategyConfig}
                       onBalanceUpdate={() => window.dispatchEvent(new Event("balance-updated"))}
+                      onStrategyComplete={addBulkSession}
                     />
                   </div>
                 </div>
