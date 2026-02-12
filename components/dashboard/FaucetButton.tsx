@@ -29,22 +29,32 @@ export function FaucetButton() {
   const claim = async () => {
     setLoading(true);
     setMessage(null);
-    const { data } = await safeFetchJson<{
-      success?: boolean;
-      data?: { balance?: number; granted?: number; nextFaucetAt?: string };
-      error?: string;
-      nextFaucetAt?: string;
-    }>("/api/faucet", { method: "POST" });
-    setLoading(false);
-    if (data?.success && data?.data) {
-      setNextFaucetAt(data.data.nextFaucetAt ?? null);
-      setMessage(`Claimed ${data.data.granted ?? 100} credits. Next in 1 hour.`);
-      window.dispatchEvent(new Event("balance-updated"));
-    } else if (data?.error === "FAUCET_COOLDOWN" && data?.nextFaucetAt) {
-      setNextFaucetAt(data.nextFaucetAt);
-      setMessage("Next faucet at " + new Date(data.nextFaucetAt).toLocaleTimeString());
-    } else if (data?.error) {
-      setMessage("Unable to claim. Try again.");
+    try {
+      const { ok, status, data } = await safeFetchJson<{
+        success?: boolean;
+        data?: { balance?: number; granted?: number; nextFaucetAt?: string };
+        error?: string;
+        nextFaucetAt?: string;
+      }>("/api/faucet", { method: "POST" });
+      if (data?.success && data?.data) {
+        setNextFaucetAt(data.data.nextFaucetAt ?? null);
+        setMessage(`Claimed ${data.data.granted ?? 100} credits. Next in 1 hour.`);
+        window.dispatchEvent(new Event("balance-updated"));
+      } else if (data?.error === "FAUCET_COOLDOWN" && data?.nextFaucetAt) {
+        setNextFaucetAt(data.nextFaucetAt);
+        setMessage("Next faucet at " + new Date(data.nextFaucetAt).toLocaleTimeString());
+      } else if (status === 401) {
+        setMessage("Please log in or continue as guest to claim.");
+      } else if (data?.error) {
+        setMessage(data.error === "UNAUTHORIZED" ? "Please log in or continue as guest to claim." : "Unable to claim. Try again.");
+      } else {
+        setMessage("Unable to claim. Try again.");
+      }
+    } catch (e) {
+      setMessage("Network error. Try again.");
+      console.error("[FaucetButton] claim error:", e);
+    } finally {
+      setLoading(false);
     }
   };
 

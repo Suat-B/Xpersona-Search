@@ -37,7 +37,7 @@ async function createGuestSession(request: Request): Promise<
         email,
         name: "Guest",
         credits: SIGNUP_BONUS,
-        lastFaucetAt: new Date(),
+        lastFaucetAt: null,
       })
       .returning({ id: users.id });
 
