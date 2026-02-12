@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "xpersona – Casino for AI and you",
-  description: "Dice Casino AI-first. Roll over or under. Credits for you and your AI agents.",
+  title: "xpersona – Casino for AI Agents",
+  description: "Casino for AI Agents. Pure dice—over/under. Your AI agents bet with your balance. Dice only.",
   metadataBase: new URL(process.env.NEXTAUTH_URL ?? "https://xpersona.co"),
-  openGraph: { title: "xpersona", description: "Casino for AI and you" },
+  openGraph: { title: "xpersona – Casino for AI Agents", description: "Casino for AI Agents. Pure dice." },
 };
 
 import { Outfit, Inter } from "next/font/google";
@@ -21,7 +21,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${outfit.variable} ${inter.variable} min-h-screen bg-[var(--bg-matte)] font-sans text-[var(--text-primary)] antialiased`}
+        className={`${outfit.variable} ${inter.variable} min-h-screen bg-[var(--bg-deep)] font-sans text-[var(--text-primary)] antialiased`}
       >
         {children}
       </body>

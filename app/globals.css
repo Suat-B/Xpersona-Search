@@ -4,9 +4,9 @@
 
 @layer base {
   :root {
-    --bg-deep: #030303;
-    --bg-matte: #0a0a0a;
-    --bg-card: #111;
+    --bg-deep: #000000;
+    --bg-matte: #050505;
+    --bg-card: #0a0a0a;
     --text-primary: #ededed;
     --text-secondary: #a1a1aa;
     --accent-heart: #f43f5e;
