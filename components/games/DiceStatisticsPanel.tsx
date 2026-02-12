@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { SessionPnLChart, type PnLPoint } from "@/components/ui/SessionPnLChart";
 import { StrategyRunModal } from "@/components/strategies/StrategyRunModal";
+import { AgentApiSection } from "./AgentApiSection";
 import { CREATIVE_DICE_STRATEGIES } from "@/lib/dice-strategies";
 import type { DiceConfig, CreativeStrategy } from "@/lib/dice-strategies";
 import type { DiceStrategyConfig } from "@/lib/strategies";
@@ -102,24 +103,8 @@ export function DiceStatisticsPanel({
         </div>
       </div>
 
-      {/* Agent API — for AI agents to fetch stats programmatically */}
-      <div className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-4 space-y-2">
-        <h4 className="text-xs font-semibold text-violet-300 uppercase tracking-wider flex items-center gap-1.5">
-          <span aria-hidden>🤖</span> Agent API
-        </h4>
-        <p className="text-xs text-[var(--text-secondary)]">
-          Fetch session stats for your AI agent:
-        </p>
-        <pre className="text-[10px] font-mono bg-black/30 rounded p-2 overflow-x-auto text-emerald-400 whitespace-pre">
-{`GET /api/me/session-stats
-?gameType=dice&limit=50
-
-→ balance, rounds, sessionPnl, winRate, recentBets`}
-        </pre>
-        <p className="text-[10px] text-[var(--text-secondary)]">
-          Use <code className="bg-white/10 px-1 rounded">Authorization: Bearer {'<API_KEY>'}</code> or session cookie.
-        </p>
-      </div>
+      {/* Agent API — interactive UI for AI agents to explore and test */}
+      <AgentApiSection />
 
       {/* Strategy cards */}
       <div>

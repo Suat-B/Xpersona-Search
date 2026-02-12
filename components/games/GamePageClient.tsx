@@ -7,6 +7,7 @@ import { ClientOnly } from "@/components/ClientOnly";
 import { useDiceSessionPnL } from "./useSessionPnL";
 import { DiceStrategyPanel } from "./DiceStrategyPanel";
 import { DiceStatisticsPanel } from "./DiceStatisticsPanel";
+import { AgentApiSection } from "./AgentApiSection";
 
 const MAX_RECENT_RESULTS = 50;
 
@@ -254,6 +255,8 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                     Connect OpenClaw or any AI assistant to play dice with your balance. Same REST API and tools for humans and agents.
                   </p>
                 </div>
+
+                <AgentApiSection />
 
                 <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3" data-agent="api-instructions">
                   <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">How it works (AI agents)</h4>
