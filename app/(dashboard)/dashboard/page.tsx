@@ -6,6 +6,11 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import QuantMetrics from "@/components/dashboard/QuantMetrics";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
 import { FaucetButton } from "@/components/dashboard/FaucetButton";
+import { LuckStreakCard } from "@/components/dashboard/LuckStreakCard";
+import { FortuneCard } from "@/components/dashboard/FortuneCard";
+import { MiniPnLSparkline } from "@/components/dashboard/MiniPnLSparkline";
+import { AgentReadyBadge } from "@/components/dashboard/AgentReadyBadge";
+import { QuickLaunchCard } from "@/components/dashboard/QuickLaunchCard";
 import { safeFetchJson } from "@/lib/safeFetch";
 
 const GAMES = [
@@ -63,6 +68,14 @@ export default function DashboardPage() {
           </div>
         </div>
         <QuantMetrics />
+
+        {/* Creative row: Luck, Fortune, Sparkline, Agent */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+          <LuckStreakCard />
+          <FortuneCard />
+          <MiniPnLSparkline />
+          <AgentReadyBadge />
+        </div>
       </section>
 
       {/* 2. Main Grid: Games & Feed */}
@@ -119,8 +132,9 @@ export default function DashboardPage() {
           </section>
         </div>
 
-        {/* Right: Faucet + API (1/3 width) */}
+        {/* Right: Quick Launch, Faucet + API (1/3 width) */}
         <div className="space-y-4 flex flex-col">
+          <QuickLaunchCard />
           <section id="faucet" className="scroll-mt-6">
             <FaucetButton />
           </section>
