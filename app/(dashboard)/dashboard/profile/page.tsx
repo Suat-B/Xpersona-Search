@@ -97,6 +97,8 @@ function ProfilePageClient() {
   const isGuest = user?.email?.endsWith?.("@xpersona.guest");
   const hasGoogleProvider = true; // We assume Google is configured if user sees this
 
+  const formatNumber = (n: number) => n.toLocaleString();
+
   const formatDate = (s: string | null) => {
     if (!s) return "—";
     try {
@@ -112,7 +114,7 @@ function ProfilePageClient() {
 
   const gamesWithActivity = stats
     ? Object.entries(stats.byGame)
-        .filter(([, s]) => s.bets > 0)
+        .filter(([gameType, s]) => gameType === "dice" && s.bets > 0)
         .sort(([, a], [, b]) => b.bets - a.bets)
     : [];
 
@@ -189,11 +191,11 @@ function ProfilePageClient() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <ProfileStatsCard
                 label="Balance"
-                value={stats ? `${stats.balance} credits` : "—"}
+                value={stats ? `${formatNumber(stats.balance)} credits` : "—"}
               />
               <ProfileStatsCard
                 label="Total PnL"
-                value={stats ? (stats.totalPnl >= 0 ? `+${stats.totalPnl}` : stats.totalPnl) : "—"}
+                value={stats ? (stats.totalPnl >= 0 ? `+${formatNumber(stats.totalPnl)}` : formatNumber(stats.totalPnl)) : "—"}
                 valueColor={
                   stats
                     ? stats.totalPnl >= 0
@@ -207,13 +209,13 @@ function ProfilePageClient() {
                 value={stats ? `${stats.winRate}%` : "—"}
                 subtext={
                   stats && stats.totalBets > 0
-                    ? `${stats.totalBets} rounds`
+                    ? `${formatNumber(stats.totalBets)} rounds`
                     : undefined
                 }
               />
               <ProfileStatsCard
                 label="Total Wagered"
-                value={stats ? `${stats.totalWagered} credits` : "—"}
+                value={stats ? `${formatNumber(stats.totalWagered)} credits` : "—"}
                 subtext={
                   stats?.lastBetAt
                     ? `Last bet ${formatDate(stats.lastBetAt)}`
@@ -246,12 +248,12 @@ function ProfilePageClient() {
                             s.pnl >= 0 ? "text-emerald-400" : "text-red-400"
                           }`}
                         >
-                          {s.pnl >= 0 ? `+${s.pnl}` : s.pnl}
+                          {s.pnl >= 0 ? `+${formatNumber(s.pnl)}` : formatNumber(s.pnl)}
                         </span>
                       </div>
                       <div className="mt-2 flex gap-4 text-xs text-[var(--text-secondary)]">
-                        <span>{s.bets} bets</span>
-                        <span>{s.wagered} wagered</span>
+                        <span>{formatNumber(s.bets)} bets</span>
+                        <span>{formatNumber(s.wagered)} wagered</span>
                         <span>{s.winRate}% win</span>
                       </div>
                       <span className="mt-2 inline-block text-xs font-medium text-[var(--accent-heart)] opacity-0 group-hover:opacity-100 transition-opacity">

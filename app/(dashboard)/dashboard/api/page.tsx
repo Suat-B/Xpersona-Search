@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
 import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
 
 export default function ApiDocsPage() {
@@ -29,13 +30,16 @@ export default function ApiDocsPage() {
         </div>
       </section>
 
+      {/* API Key Management */}
+      <ApiKeySection />
+
       {/* Agent in 5 minutes */}
       <GlassCard className="p-6 border-[var(--accent-heart)]/20">
         <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
           {AI_FIRST_MESSAGING.agentIn5Minutes}
         </h2>
         <ol className="space-y-3 text-sm text-[var(--text-primary)] list-decimal list-inside">
-          <li>Generate API key below (or in Dashboard).</li>
+          <li>Generate API key from above.</li>
           <li>Set <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> in your env.</li>
           <li><code className="bg-white/10 px-1 rounded font-mono">GET /api/me/balance</code> — verify auth.</li>
           <li><code className="bg-white/10 px-1 rounded font-mono">POST /api/faucet</code> — claim credits.</li>
@@ -65,7 +69,7 @@ export default function ApiDocsPage() {
             On error, the body includes <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">error</code> (e.g. <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">INSUFFICIENT_BALANCE</code>, <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">VALIDATION_ERROR</code>).
           </li>
           <li>
-            <strong>API key:</strong> Generate one on the Dashboard (API section) or call{" "}
+            <strong>API key:</strong> Generate one above using the API Key Manager or call{" "}
             <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">POST /api/me/api-key</code> (returns the key once; store as <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> or in your client).
           </li>
         </ul>
@@ -321,7 +325,7 @@ export default function ApiDocsPage() {
           Troubleshooting
         </h2>
         <ul className="space-y-2 text-sm text-[var(--text-secondary)] list-disc list-inside">
-          <li><strong className="text-[var(--text-primary)]">401:</strong> Invalid or missing API key. Generate a key on the Dashboard (API section).</li>
+          <li><strong className="text-[var(--text-primary)]">401:</strong> Invalid or missing API key. Generate a key using the API Key Manager above.</li>
           <li><strong className="text-[var(--text-primary)]">400 INSUFFICIENT_BALANCE:</strong> User needs more credits (faucet or purchase).</li>
           <li><strong className="text-[var(--text-primary)]">429 / FAUCET_COOLDOWN:</strong> Wait until <code className="bg-white/10 px-1 rounded font-mono text-xs">data.nextFaucetAt</code> before claiming again.</li>
           <li><strong className="text-[var(--text-primary)]">400 ROUND_ENDED (Crash):</strong> Round already crashed or cashed out; get current round and try again.</li>

@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import { MarqueeStrip } from "@/components/ui/MarqueeStrip";
 import { AgentProofBlock } from "@/components/ui/AgentProofBlock";
+import { HomeApiKeySection } from "@/components/home/HomeApiKeySection";
 import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
 
 const GAMES = [
@@ -121,6 +122,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       <div className="w-full border-y border-white/5">
         <MarqueeStrip />
       </div>
+
+      {/* API Key Management */}
+      <HomeApiKeySection />
 
       {/* How it works — matches Capabilities style */}
       <section className="relative mx-auto max-w-5xl px-4 py-16 sm:py-24 sm:px-6 overflow-hidden">

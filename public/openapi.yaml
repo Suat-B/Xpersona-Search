@@ -12,170 +12,1077 @@ info:
     **Error recovery:** INSUFFICIENT_BALANCE → POST /api/faucet or GET /api/credits/packages + checkout.
     FAUCET_COOLDOWN → wait until data.nextFaucetAt. ROUND_ENDED (Crash) → GET current round and retry.
   version: 1.0.0
+  contact:
+    name: xpersona Support
+    email: support@xpersona.co
+  license:
+    name: Proprietary
 servers:
   - url: https://xpersona.co
+    description: Production server
   - url: http://localhost:3000
     description: Local development
+
 security:
   - bearerAuth: []
+
 paths:
+  # ==================== HEALTH & UTILITY ====================
   /api/health:
     get:
       summary: Health check
+      description: Check API availability and status
       security: []
       responses:
         "200":
-          description: OK
+          description: API is operational
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                success: true
+                data:
+                  status: "healthy"
+                  timestamp: "2024-01-15T10:30:00Z"
+
+  /api/docs:
+    get:
+      summary: API documentation redirect
+      description: Redirects to the interactive API documentation at /docs
+      security: []
+      responses:
+        "302":
+          description: Redirects to /docs
+          headers:
+            Location:
+              schema:
+                type: string
+              example: "/docs"
+
+  # ==================== AUTHENTICATION ====================
+  /api/auth/guest:
+    get:
+      summary: Create guest session (redirect)
+      description: Creates a guest user and redirects to dashboard. Sets guest cookie automatically.
+      security: []
+      responses:
+        "302":
+          description: Redirects to dashboard with guest cookie set
+          headers:
+            Location:
+              schema:
+                type: string
+              example: "/dashboard"
+            Set-Cookie:
+              schema:
+                type: string
+              example: "xpersona_guest_token=eyJhbGciOiJIUzI1NiIs...; Path=/; HttpOnly; SameSite=Lax"
+        "500":
+          description: Server error (missing NEXTAUTH_SECRET or DATABASE_URL)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      summary: Create guest session (API)
+      description: Creates a guest user via API. Returns redirect URL and sets cookie in response.
+      security: []
+      responses:
+        "200":
+          description: Guest session created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      redirectUrl:
+                        type: string
+                        example: "https://xpersona.co/dashboard"
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              example: "xpersona_guest_token=eyJhbGciOiJIUzI1NiIs...; Path=/; HttpOnly; SameSite=Lax"
+        "500":
+          description: Server configuration error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/link-guest:
+    post:
+      summary: Link guest account to authenticated user
+      description: Merges a guest account into the current authenticated user. Transfers credits and bet history.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - guestUserId
+              properties:
+                guestUserId:
+                  type: string
+                  format: uuid
+                  description: The guest user ID to merge into current account
+      responses:
+        "200":
+          description: Guest account linked successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "Guest account linked successfully"
+                      transferredCredits:
+                        type: integer
+        "400":
+          description: Invalid guest user ID or already linked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/guest/signout:
+    get:
+      summary: Sign out guest session
+      description: Clears the guest cookie and redirects to home page
+      security: []
+      responses:
+        "302":
+          description: Redirects to home page with cookie cleared
+          headers:
+            Location:
+              schema:
+                type: string
+              example: "/"
+            Set-Cookie:
+              schema:
+                type: string
+              example: "xpersona_guest_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+
+  /api/auth/{...nextauth}:
+    get:
+      summary: NextAuth.js authentication handlers
+      description: OAuth authentication endpoints (Google OAuth). Handled by NextAuth.js library.
+      parameters:
+        - name: ...nextauth
+          in: path
+          required: true
+          schema:
+            type: array
+            items:
+              type: string
+          description: NextAuth.js path segments (e.g., ['providers', 'google'])
+      security: []
+      responses:
+        "200":
+          description: OAuth flow response
+        "302":
+          description: OAuth redirect
+    post:
+      summary: NextAuth.js authentication handlers
+      description: OAuth callback and session management. Handled by NextAuth.js library.
+      parameters:
+        - name: ...nextauth
+          in: path
+          required: true
+          schema:
+            type: array
+            items:
+              type: string
+      security: []
+      responses:
+        "200":
+          description: Authentication response
+
+  /api-auth/agent:
+    get:
+      summary: Authenticate agent via API key
+      description: Returns an agent token for programmatic/API access
+      security: []
+      parameters:
+        - name: api_key
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Your API key from the dashboard
+      responses:
+        "200":
+          description: Agent authenticated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      agent_token:
+                        type: string
+                        description: Token for subsequent API calls
+                      expires_at:
+                        type: string
+                        format: date-time
+        "401":
+          description: Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      summary: Authenticate agent via API key (POST)
+      description: Alternative to GET for agent authentication
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - api_key
+              properties:
+                api_key:
+                  type: string
+      responses:
+        "200":
+          description: Agent authenticated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      agent_token:
+                        type: string
+                      expires_at:
+                        type: string
+                        format: date-time
+        "401":
+          description: Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ==================== USER ENDPOINTS ====================
   /api/me:
     get:
-      summary: Current user
+      summary: Get current user profile
+      description: Returns the authenticated user's profile information
       responses:
         "200":
-          description: User profile (id, email, name, image, credits, apiKeyPrefix, createdAt)
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/User'
         "401":
-          description: Unauthorized
+          description: Unauthorized - invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/me/balance:
     get:
-      summary: Balance
-      description: Use before/after bets to confirm credits. AI should check balance before placing bets.
+      summary: Get user balance
+      description: Returns the user's credit balance. Use before/after bets to confirm credits.
       responses:
         "200":
-          description: success, data.balance (integer)
+          description: Balance retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      balance:
+                        type: integer
+                        description: Current credit balance
+                        example: 15000
+                      withdrawableBalance:
+                        type: integer
+                        description: Balance available for withdrawal (excludes faucet credits)
+                        example: 12000
         "401":
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/me/bets:
     get:
-      summary: Recent bets and session PnL (AI-first)
-      description: Returns last N bets with per-bet pnl and aggregate sessionPnl. No client-side state needed. Query limit (default 50, max 200).
+      summary: Get user bets with provably fair verification
+      description: Returns all bets for the authenticated user with verification data for provably fair auditing.
       parameters:
         - name: limit
           in: query
-          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 50
+          description: Number of bets to return
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Pagination offset
+        - name: gameType
+          in: query
+          schema:
+            type: string
+            enum: [dice, plinko, slots, blackjack, crash]
+          description: Filter by game type
       responses:
         "200":
-          description: success, data.bets (array of id, gameType, amount, outcome, payout, pnl, createdAt), data.sessionPnl, data.roundCount
+          description: Bets retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      bets:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Bet'
+                      sessionPnl:
+                        type: integer
+                        description: Total profit/loss across all returned bets
+                      roundCount:
+                        type: integer
+                        description: Number of bets in this response
+                      totalCount:
+                        type: integer
+                        description: Total number of bets matching the filter
+                      offset:
+                        type: integer
+                      limit:
+                        type: integer
         "401":
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/me/bets/{id}:
+    get:
+      summary: Get single bet details
+      description: Fetch a single bet with full provably fair verification data. Use `?reveal=1` to include the server seed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Bet ID
+        - name: reveal
+          in: query
+          schema:
+            type: integer
+            enum: [0, 1]
+            default: 0
+          description: Set to 1 to include serverSeed in verification data
+      responses:
+        "200":
+          description: Bet details retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/BetDetail'
+        "400":
+          description: Invalid bet ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Bet not found or not owned by user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/me/profile-stats:
+    get:
+      summary: Get comprehensive profile statistics
+      description: Aggregate stats across all games including per-game breakdown. Returns balance, total stats, and detailed breakdown by game type.
+      responses:
+        "200":
+          description: Profile stats retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ProfileStats'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/me/session-stats:
     get:
-      summary: Session stats (AI agentic)
+      summary: Get session statistics (AI-optimized)
       description: |
-        Unified stats for agents - balance, rounds, PnL, win rate, recent bets. Machine-readable.
-        **AI:** Prefer this over GET /api/me/balance + /api/me/bets for "how am I doing?" queries.
+        Unified stats for AI agents - balance, rounds, PnL, win rate, recent bets in a single call.
+        **AI Recommendation:** Use this instead of multiple calls to /api/me/balance + /api/me/bets for "how am I doing?" queries.
       parameters:
         - name: gameType
           in: query
-          schema: { type: string, default: dice }
+          schema:
+            type: string
+            enum: [dice, plinko, slots, blackjack, crash]
+            default: dice
+          description: Filter stats by game type
         - name: limit
           in: query
-          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Number of recent bets to include
       responses:
         "200":
-          description: success, data.balance, data.rounds, data.sessionPnl, data.winRate, data.recentBets
+          description: Session stats retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/SessionStats'
         "401":
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/me/transactions:
+    get:
+      summary: Get unified transaction history
+      description: Returns a unified activity feed combining bets and faucet grants, sorted by date.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          description: Number of transactions to return
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Pagination offset
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [all, bet, faucet]
+            default: all
+          description: Filter by transaction type
+      responses:
+        "200":
+          description: Transactions retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      transactions:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Transaction'
+                      sessionPnl:
+                        type: integer
+                      limit:
+                        type: integer
+                      offset:
+                        type: integer
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/me/faucet-grants:
+    get:
+      summary: Get faucet grant history
+      description: Returns a list of all faucet claims for the authenticated user.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 200
+          description: Number of grants to return
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Pagination offset
+      responses:
+        "200":
+          description: Faucet grants retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      grants:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/FaucetGrant'
+                      limit:
+                        type: integer
+                      offset:
+                        type: integer
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/me/api-key:
+    post:
+      summary: Generate new API key
+      description: Generates a new API key for programmatic access. **Important:** The key is only shown once. Store it securely.
+      responses:
+        "200":
+          description: API key generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      apiKey:
+                        type: string
+                        description: The API key (shown once only)
+                        example: "xp_live_abc123xyz789"
+                      apiKeyPrefix:
+                        type: string
+                        description: First 8 characters of the key for identification
+                        example: "xp_live_a"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/me/withdraw:
+    post:
+      summary: Request withdrawal
+      description: |
+        Request withdrawal of credits. Minimum withdrawal is $100 (10,000 credits).
+        Withdrawable balance excludes faucet credits.
+        **Note:** Withdrawal processing is coming soon (Stripe Connect, bank transfer).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - amount
+              properties:
+                amount:
+                  type: integer
+                  minimum: 1
+                  description: Amount of credits to withdraw (min 10,000)
+      responses:
+        "200":
+          description: Withdrawal request submitted (when implemented)
+        "400":
+          description: Validation error or insufficient withdrawable balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                insufficientBalance:
+                  summary: Insufficient withdrawable balance
+                  value:
+                    success: false
+                    error: "Maximum withdrawable: 5000 credits"
+                belowMinimum:
+                  summary: Below minimum withdrawal
+                  value:
+                    success: false
+                    error: "Minimum withdrawal is $100 (10,000 credits)."
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Withdrawal processing not yet implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Withdrawal processing is coming soon. Stay tuned."
+
+  # ==================== STRATEGY ENDPOINTS ====================
   /api/me/strategies:
     get:
-      summary: List strategies (AI/OpenClaw)
-      description: Returns user's saved strategies. Query ?gameType=dice to filter.
+      summary: List saved strategies
+      description: Returns all saved betting strategies for the authenticated user.
       parameters:
         - name: gameType
           in: query
-          schema: { type: string, enum: [dice, blackjack, plinko, crash, slots] }
+          schema:
+            type: string
+            enum: [dice, blackjack, plinko, crash, slots]
+          description: Filter strategies by game type
       responses:
         "200":
-          description: success, data.strategies (array of id, gameType, name, config, createdAt)
+          description: Strategies retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      strategies:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Strategy'
         "401":
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     post:
-      summary: Create strategy (AI/OpenClaw)
-      description: Save a named strategy for a game. Body gameType, name, config (game-specific).
+      summary: Create new strategy
+      description: Save a named betting strategy for later use with run-strategy endpoints.
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              required: [gameType, name, config]
+              required:
+                - gameType
+                - name
+                - config
               properties:
-                gameType: { type: string, enum: [dice, blackjack, plinko, crash, slots] }
-                name: { type: string, maxLength: 100 }
-                config: { type: object }
+                gameType:
+                  type: string
+                  enum: [dice, blackjack, plinko, crash, slots]
+                  description: Game type this strategy applies to
+                name:
+                  type: string
+                  maxLength: 100
+                  description: Strategy name
+                config:
+                  type: object
+                  description: Game-specific strategy configuration
       responses:
         "200":
-          description: success, data (id, gameType, name, config, createdAt)
+          description: Strategy created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Strategy'
         "400":
-          description: VALIDATION_ERROR
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/me/strategies/{id}:
     get:
-      summary: Get one strategy
+      summary: Get specific strategy
+      description: Retrieve a single strategy by ID.
       parameters:
         - name: id
           in: path
           required: true
-          schema: { type: string, format: uuid }
+          schema:
+            type: string
+            format: uuid
+          description: Strategy ID
       responses:
         "200":
-          description: success, data (id, gameType, name, config, createdAt)
-        "404":
-          description: NOT_FOUND
+          description: Strategy retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Strategy'
         "401":
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Strategy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     patch:
-      summary: Update strategy (name and/or config)
+      summary: Update strategy
+      description: Update strategy name and/or configuration.
       parameters:
         - name: id
           in: path
           required: true
-          schema: { type: string, format: uuid }
+          schema:
+            type: string
+            format: uuid
+          description: Strategy ID
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
               properties:
-                name: { type: string }
-                config: { type: object }
+                name:
+                  type: string
+                  maxLength: 100
+                config:
+                  type: object
       responses:
         "200":
-          description: success, data
+          description: Strategy updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Strategy'
         "400":
-          description: VALIDATION_ERROR
-        "404":
-          description: NOT_FOUND
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Strategy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     delete:
       summary: Delete strategy
+      description: Permanently delete a saved strategy.
       parameters:
         - name: id
           in: path
           required: true
-          schema: { type: string, format: uuid }
+          schema:
+            type: string
+            format: uuid
+          description: Strategy ID
       responses:
         "200":
-          description: success, data.id
-        "404":
-          description: NOT_FOUND
+          description: Strategy deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
         "401":
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Strategy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ==================== GAME ENDPOINTS - DICE ====================
+  /api/games/dice/bet:
+    post:
+      summary: Place a dice bet
+      description: |
+        Place a bet on dice game. House edge is 3%. Multiplier = 0.97/winProbability.
+        Example: Over 50 = 49% win chance, ~1.98x payout.
+        **Auto-play tip:** Call repeatedly with 200-500ms delays.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - amount
+                - target
+                - condition
+              properties:
+                amount:
+                  type: integer
+                  minimum: 1
+                  maximum: 10000
+                  description: Bet amount in credits
+                target:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+                  description: Target number for the bet
+                condition:
+                  type: string
+                  enum: [over, under]
+                  description: Bet on roll being over or under target
+      responses:
+        "200":
+          description: Bet placed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      betId:
+                        type: string
+                        format: uuid
+                      result:
+                        type: number
+                        description: The dice roll result
+                      win:
+                        type: boolean
+                      payout:
+                        type: integer
+                      balance:
+                        type: integer
+                      verification:
+                        type: object
+                        properties:
+                          serverSeedHash:
+                            type: string
+                          clientSeed:
+                            type: string
+                          nonce:
+                            type: integer
+        "400":
+          description: Bet error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                insufficientBalance:
+                  value:
+                    success: false
+                    error: "INSUFFICIENT_BALANCE"
+                betTooLow:
+                  value:
+                    success: false
+                    error: "BET_TOO_LOW"
+                betTooHigh:
+                  value:
+                    success: false
+                    error: "BET_TOO_HIGH"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/games/dice/run-strategy:
     post:
-      summary: Run dice strategy (AI/OpenClaw)
-      description: Execute up to maxRounds (default 20, max 100). Returns results, sessionPnl, finalBalance, stoppedReason.
+      summary: Run dice strategy (auto-play)
+      description: |
+        Execute a dice strategy for multiple rounds (max 100). Can use saved strategy or inline config.
+        Supports progression types: flat, martingale, paroli, dalembert, fibonacci, labouchere, oscar, kelly.
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
               properties:
-                strategyId: { type: string, format: uuid }
-                config: { type: object, description: "inline { amount, target, condition, progressionType?: flat|martingale|paroli|dalembert|fibonacci|labouchere|oscar|kelly, maxBet?, maxConsecutiveLosses?, maxConsecutiveWins?, unitStep?, stopAfterRounds?, stopIfBalanceBelow?, stopIfBalanceAbove? }" }
-                maxRounds: { type: integer, minimum: 1, maximum: 100, default: 20 }
+                strategyId:
+                  type: string
+                  format: uuid
+                  description: ID of saved strategy (optional, use instead of config)
+                config:
+                  type: object
+                  description: Inline strategy configuration
+                  properties:
+                    amount:
+                      type: integer
+                      minimum: 1
+                    target:
+                      type: number
+                    condition:
+                      type: string
+                      enum: [over, under]
+                    progressionType:
+                      type: string
+                      enum: [flat, martingale, paroli, dalembert, fibonacci, labouchere, oscar, kelly]
+                    maxBet:
+                      type: integer
+                    maxConsecutiveLosses:
+                      type: integer
+                    maxConsecutiveWins:
+                      type: integer
+                    unitStep:
+                      type: integer
+                    stopAfterRounds:
+                      type: integer
+                    stopIfBalanceBelow:
+                      type: integer
+                    stopIfBalanceAbove:
+                      type: integer
+                maxRounds:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+                  default: 20
+                  description: Maximum rounds to execute
             examples:
               inlineMartingale:
-                summary: Inline Martingale
+                summary: Inline Martingale Strategy
                 value:
                   config:
                     amount: 10
@@ -184,297 +1091,1158 @@ paths:
                     progressionType: martingale
                   maxRounds: 20
               savedStrategy:
-                summary: By strategy ID
+                summary: Using Saved Strategy
                 value:
-                  strategyId: "uuid-from-create"
+                  strategyId: "550e8400-e29b-41d4-a716-446655440000"
                   maxRounds: 30
       responses:
         "200":
-          description: success, data.results, data.sessionPnl, data.finalBalance, data.roundsPlayed, data.stoppedReason
+          description: Strategy executed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      results:
+                        type: array
+                        items:
+                          type: object
+                      sessionPnl:
+                        type: integer
+                      finalBalance:
+                        type: integer
+                      roundsPlayed:
+                        type: integer
+                      stoppedReason:
+                        type: string
+                        enum: [completed, insufficient_balance, max_rounds_reached, stop_condition_met]
         "400":
-          description: VALIDATION_ERROR - config must include amount, target, condition for dice
+          description: Validation error or invalid config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "404":
-          description: STRATEGY_NOT_FOUND - invalid strategyId
+          description: Strategy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Unauthorized
-  /api/games/plinko/run-strategy:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ==================== GAME ENDPOINTS - SLOTS ====================
+  /api/games/slots/spin:
     post:
-      summary: Run plinko strategy (AI/OpenClaw)
+      summary: Spin the slots
+      description: |
+        Place a bet and spin the slot machine. Returns reel results and payout.
+        **Auto-play tip:** Call repeatedly with 200-500ms delays.
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
+              required:
+                - amount
               properties:
-                strategyId: { type: string, format: uuid }
-                config: { type: object, description: "inline { amount, risk }" }
-                maxRounds: { type: integer, minimum: 1, maximum: 100, default: 20 }
+                amount:
+                  type: integer
+                  minimum: 1
+                  description: Bet amount in credits
       responses:
         "200":
-          description: success, data.results, data.sessionPnl, data.finalBalance, data.roundsPlayed, data.stoppedReason
+          description: Spin completed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      betId:
+                        type: string
+                        format: uuid
+                      reels:
+                        type: array
+                        items:
+                          type: array
+                          items:
+                            type: string
+                        description: 3x3 grid of slot symbols
+                      wins:
+                        type: array
+                        description: Winning paylines
+                      totalPayout:
+                        type: integer
+                      balance:
+                        type: integer
+                      verification:
+                        type: object
+        "400":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/games/slots/run-strategy:
     post:
-      summary: Run slots strategy (AI/OpenClaw)
+      summary: Run slots strategy (auto-play)
+      description: Execute a slots strategy for multiple rounds (max 100).
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
               properties:
-                strategyId: { type: string, format: uuid }
-                config: { type: object, description: "inline { amount }" }
-                maxRounds: { type: integer, minimum: 1, maximum: 100, default: 20 }
-      responses:
-        "200":
-          description: success, data.results, data.sessionPnl, data.finalBalance, data.roundsPlayed, data.stoppedReason
-        "401":
-          description: Unauthorized
-  /api/me/api-key:
-    post:
-      summary: Generate API key (returns plain key once)
-      responses:
-        "200":
-          description: Returns apiKey and apiKeyPrefix (key shown once only)
-        "401":
-          description: Unauthorized
-  /api/faucet:
-    post:
-      summary: Claim hourly faucet
-      description: Grants 100 credits. 1 hour cooldown. On 429 wait until data.nextFaucetAt.
-      responses:
-        "200":
-          description: success, data.balance, data.granted, data.nextFaucetAt
-        "429":
-          description: FAUCET_COOLDOWN - wait until data.nextFaucetAt (ISO string) before claiming again
-        "401":
-          description: Unauthorized
-  /api/credits/packages:
-    get:
-      summary: List credit packages
-      security: []
-      responses:
-        "200":
-          description: List of packages (id, name, credits, amountCents, stripePriceId)
-  /api/credits/checkout:
-    post:
-      summary: Create Stripe Checkout session
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [packageId]
-              properties:
-                packageId:
+                strategyId:
                   type: string
                   format: uuid
+                config:
+                  type: object
+                  description: Inline config with amount
+                  properties:
+                    amount:
+                      type: integer
+                      minimum: 1
+                maxRounds:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+                  default: 20
       responses:
         "200":
-          description: Returns checkout url
+          description: Strategy executed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      results:
+                        type: array
+                      sessionPnl:
+                        type: integer
+                      finalBalance:
+                        type: integer
+                      roundsPlayed:
+                        type: integer
+                      stoppedReason:
+                        type: string
         "401":
           description: Unauthorized
-  /api/openclaw/tools:
-    get:
-      summary: OpenClaw tool discovery
-      description: Returns the full tool schema (tool names, parameters, returns) for programmatic discovery. Same auth as REST; Bearer optional for schema.
-      security: []
-      responses:
-        "200":
-          description: success, tools (object mapping tool name to schema with parameters and returns)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ==================== GAME ENDPOINTS - PLINKO ====================
+  /api/games/plinko/bet:
     post:
-      summary: Execute OpenClaw tool
-      description: OpenClaw-native tools endpoint. Single POST per action; body specifies tool name and parameters. Requires Authorization Bearer API key (except for casino_auth_guest).
+      summary: Place a plinko bet
+      description: |
+        Drop a ball in plinko. Risk level affects multiplier distribution.
+        **Auto-play tip:** Call repeatedly with 200-500ms delays.
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              required: [tool, parameters]
-              properties:
-                tool: { type: string, description: Tool name (e.g. casino_get_balance, casino_place_dice_bet) }
-                parameters: { type: object, description: Tool-specific parameters }
-                agent_token: { type: string, description: Optional agent context token }
-      responses:
-        "200":
-          description: success true, tool, result (tool output), meta (e.g. rate_limit_remaining)
-        "400":
-          description: Invalid tool name or parameters
-        "401":
-          description: Unauthorized (missing or invalid Bearer token)
-        "429":
-          description: Rate limit exceeded
-  /api/games/dice/bet:
-    post:
-      summary: Place dice bet (auto-play: call repeatedly with delay)
-      description: Dice rules - house edge 3%, multiplier = 0.97/winProbability. Over 50 = 49% win, ~1.98x payout.
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [amount, target, condition]
+              required:
+                - amount
+                - risk
               properties:
                 amount:
                   type: integer
                   minimum: 1
-                target:
-                  type: number
-                  minimum: 0
-                  maximum: 100
-                condition:
+                  description: Bet amount in credits
+                risk:
                   type: string
-                  enum: [over, under]
+                  enum: [low, medium, high]
+                  description: Risk level affecting multipliers
       responses:
         "200":
-          description: betId, result, win, payout, balance, verification
+          description: Bet placed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      betId:
+                        type: string
+                        format: uuid
+                      path:
+                        type: array
+                        items:
+                          type: string
+                          enum: [L, R]
+                        description: Left/Right path taken
+                      bucketIndex:
+                        type: integer
+                        description: Which bucket the ball landed in
+                      multiplier:
+                        type: number
+                        description: Multiplier applied to bet
+                      payout:
+                        type: integer
+                      balance:
+                        type: integer
+                      verification:
+                        type: object
         "400":
-          description: VALIDATION_ERROR, INSUFFICIENT_BALANCE (suggest faucet or purchase), BET_TOO_LOW, BET_TOO_HIGH (min 1 max 10000)
+          description: Validation or balance error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/games/plinko/run-strategy:
+    post:
+      summary: Run plinko strategy (auto-play)
+      description: Execute a plinko strategy for multiple rounds (max 100).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                strategyId:
+                  type: string
+                  format: uuid
+                config:
+                  type: object
+                  description: Inline config with amount and risk
+                  properties:
+                    amount:
+                      type: integer
+                      minimum: 1
+                    risk:
+                      type: string
+                      enum: [low, medium, high]
+                maxRounds:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+                  default: 20
+      responses:
+        "200":
+          description: Strategy executed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      results:
+                        type: array
+                      sessionPnl:
+                        type: integer
+                      finalBalance:
+                        type: integer
+                      roundsPlayed:
+                        type: integer
+                      stoppedReason:
+                        type: string
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ==================== GAME ENDPOINTS - BLACKJACK ====================
   /api/games/blackjack/round:
     post:
-      summary: Start blackjack round
+      summary: Start a blackjack round
+      description: Start a new blackjack round with an initial bet.
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              required: [amount]
+              required:
+                - amount
               properties:
                 amount:
                   type: integer
                   minimum: 1
+                  description: Bet amount in credits
       responses:
         "200":
-          description: roundId, playerHand, dealerUp, balance, status
+          description: Round started successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      roundId:
+                        type: string
+                        format: uuid
+                      playerHand:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            rank:
+                              type: string
+                            suit:
+                              type: string
+                      dealerUp:
+                        type: object
+                        properties:
+                          rank:
+                            type: string
+                          suit:
+                            type: string
+                      balance:
+                        type: integer
+                      status:
+                        type: string
+                        enum: [active, blackjack, bust, settled]
         "400":
-          description: INSUFFICIENT_BALANCE
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/games/blackjack/round/{roundId}/action:
     post:
-      summary: Hit, stand, double, or split
+      summary: Perform blackjack action
+      description: Hit, stand, double down, or split in an active blackjack round.
       parameters:
         - name: roundId
           in: path
           required: true
-          schema: { type: string, format: uuid }
+          schema:
+            type: string
+            format: uuid
+          description: The round ID from the initial round creation
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              required: [action]
+              required:
+                - action
               properties:
-                action: { type: string, enum: [hit, stand, double, split] }
-      responses:
-        "200":
-          description: Updated hands or settled outcome
-        "400":
-          description: ROUND_ENDED, VALIDATION_ERROR
-        "403":
-          description: ROUND_NOT_YOURS
-        "404":
-          description: ROUND_NOT_FOUND
-        "401":
-          description: Unauthorized
-  /api/games/plinko/bet:
-    post:
-      summary: Place plinko bet (auto-play: call repeatedly with delay)
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [amount, risk]
-              properties:
-                amount:
-                  type: integer
-                  minimum: 1
-                risk:
+                action:
                   type: string
-                  enum: [low, medium, high]
+                  enum: [hit, stand, double, split]
+                  description: Action to perform
       responses:
         "200":
-          description: betId, path, bucketIndex, multiplier, payout, balance, verification
+          description: Action performed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      roundId:
+                        type: string
+                      playerHand:
+                        type: array
+                      dealerHand:
+                        type: array
+                      status:
+                        type: string
+                      payout:
+                        type: integer
+                      balance:
+                        type: integer
         "400":
-          description: Validation or balance error
+          description: Invalid action or round ended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                roundEnded:
+                  value:
+                    success: false
+                    error: "ROUND_ENDED"
+        "403":
+          description: Round does not belong to user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Round not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ==================== GAME ENDPOINTS - CRASH ====================
   /api/games/crash/rounds/current:
     get:
-      summary: Current crash round (or new one created)
+      summary: Get current crash round
+      description: Returns the current active crash round or creates a new one if needed.
       responses:
         "200":
-          description: roundId, startedAt, currentMultiplier, status
+          description: Current round retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      roundId:
+                        type: string
+                        format: uuid
+                      startedAt:
+                        type: string
+                        format: date-time
+                      currentMultiplier:
+                        type: number
+                        description: Current multiplier (increases over time)
+                      status:
+                        type: string
+                        enum: [waiting, active, crashed]
         "401":
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/games/crash/rounds/current/bet:
     post:
       summary: Place bet on current crash round
+      description: Place a bet on the currently active crash round.
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              required: [amount]
+              required:
+                - amount
               properties:
                 amount:
                   type: integer
                   minimum: 1
+                  description: Bet amount in credits
       responses:
         "200":
-          description: betId, roundId, amount, balance
+          description: Bet placed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      betId:
+                        type: string
+                        format: uuid
+                      roundId:
+                        type: string
+                      amount:
+                        type: integer
+                      balance:
+                        type: integer
         "400":
-          description: ROUND_ENDED, INSUFFICIENT_BALANCE
+          description: Round ended or insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                roundEnded:
+                  value:
+                    success: false
+                    error: "ROUND_ENDED"
         "404":
-          description: ROUND_NOT_FOUND
+          description: Round not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/games/crash/rounds/{id}/cashout:
     post:
-      summary: Cash out on crash round
-      description: On 400/404 round ended or invalid. Use GET /api/games/crash/rounds/current for new round.
+      summary: Cash out from crash round
+      description: Cash out at the current multiplier. Must be done before the round crashes.
       parameters:
         - name: id
           in: path
           required: true
-          schema: { type: string, format: uuid }
+          schema:
+            type: string
+            format: uuid
+          description: Round ID
       responses:
         "200":
-          description: cashedOutAt, payout, balance
+          description: Cashout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      cashedOutAt:
+                        type: number
+                        description: Multiplier at cashout
+                      payout:
+                        type: integer
+                      balance:
+                        type: integer
         "400":
-          description: ROUND_ENDED - round already crashed; fetch current round and place new bet
+          description: Round already ended/crashed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "ROUND_ENDED"
         "404":
-          description: ROUND_NOT_FOUND - invalid round id; use GET /api/games/crash/rounds/current
+          description: Round not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Unauthorized
-  /api/games/slots/spin:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ==================== FAUCET & CREDITS ====================
+  /api/faucet:
     post:
-      summary: Spin slots (auto-play: call repeatedly with delay)
+      summary: Claim free credits from faucet
+      description: |
+        Claim 100 free credits. 1 hour cooldown between claims.
+        On 429, wait until data.nextFaucetAt before claiming again.
+      responses:
+        "200":
+          description: Credits claimed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      balance:
+                        type: integer
+                      granted:
+                        type: integer
+                        example: 100
+                      nextFaucetAt:
+                        type: string
+                        format: date-time
+                        description: When you can claim again
+        "429":
+          description: Faucet cooldown active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "FAUCET_COOLDOWN"
+                data:
+                  nextFaucetAt: "2024-01-15T11:30:00Z"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/credits/packages:
+    get:
+      summary: List available credit packages
+      description: Returns all available credit packages for purchase via Stripe.
+      security: []
+      responses:
+        "200":
+          description: Packages retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CreditPackage'
+
+  /api/credits/checkout:
+    post:
+      summary: Create Stripe checkout session
+      description: Creates a Stripe Checkout session for purchasing credits.
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              required: [amount]
+              required:
+                - packageId
               properties:
-                amount:
-                  type: integer
-                  minimum: 1
+                packageId:
+                  type: string
+                  format: uuid
+                  description: ID of the credit package to purchase
       responses:
         "200":
-          description: betId, reels, wins, totalPayout, balance, verification
+          description: Checkout session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      checkoutUrl:
+                        type: string
+                        format: uri
+                        description: URL to redirect user to Stripe Checkout
         "400":
-          description: INSUFFICIENT_BALANCE
+          description: Invalid package ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ==================== PAYMENT WEBHOOK ====================
+  /api/stripe/webhook:
+    post:
+      summary: Stripe webhook handler
+      description: |
+        Internal endpoint for Stripe to send payment event notifications.
+        Not for direct use - Stripe calls this automatically.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Stripe event object
+      parameters:
+        - name: stripe-signature
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Stripe signature for verification
+      responses:
+        "200":
+          description: Webhook processed successfully
+        "400":
+          description: Invalid signature or payload
+        "401":
+          description: Missing signature
+
+  # ==================== OPENCLAW / AI TOOLS ====================
+  /api/openclaw/tools:
+    get:
+      summary: List OpenClaw tools (schema discovery)
+      description: |
+        Returns the full tool schema for programmatic discovery.
+        Includes tool names, parameters, and return types for AI agents.
+      security: []
+      responses:
+        "200":
+          description: Tool schema retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      tools:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            description:
+                              type: string
+                            parameters:
+                              type: object
+                            returns:
+                              type: object
+    post:
+      summary: Execute OpenClaw tool
+      description: |
+        Execute a casino tool via OpenClaw interface. Single POST per action.
+        Requires Authorization Bearer API key (except for casino_auth_guest).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tool
+                - parameters
+              properties:
+                tool:
+                  type: string
+                  description: Tool name (e.g., casino_get_balance, casino_place_dice_bet)
+                  example: "casino_place_dice_bet"
+                parameters:
+                  type: object
+                  description: Tool-specific parameters
+                  example:
+                    amount: 100
+                    target: 50
+                    condition: "over"
+                agent_token:
+                  type: string
+                  description: Optional agent context token
+      responses:
+        "200":
+          description: Tool executed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  tool:
+                    type: string
+                  result:
+                    type: object
+                    description: Tool output
+                  meta:
+                    type: object
+                    properties:
+                      rate_limit_remaining:
+                        type: integer
+        "400":
+          description: Invalid tool name or parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized (missing or invalid Bearer token)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+# ==================== COMPONENTS ====================
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: API Key
-      description: User API key from dashboard (Generate API key)
+      description: "User API key from dashboard (Generate API key). Format: Authorization: Bearer YOUR_API_KEY"
+
+  schemas:
+    # Core Response Types
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          description: Error code or message
+          example: "INSUFFICIENT_BALANCE"
+        data:
+          type: object
+          description: Additional error data (optional)
+
+    SuccessResponse:
+      type: object
+      required:
+        - success
+        - data
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+
+    HealthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            status:
+              type: string
+              example: "healthy"
+            timestamp:
+              type: string
+              format: date-time
+
+    # User & Account
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        image:
+          type: string
+          format: uri
+          nullable: true
+        credits:
+          type: integer
+          description: Current credit balance
+        apiKeyPrefix:
+          type: string
+          description: First 8 chars of API key for identification
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        lastFaucetAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    # Betting & Games
+    Bet:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        gameType:
+          type: string
+          enum: [dice, plinko, slots, blackjack, crash]
+        amount:
+          type: integer
+        outcome:
+          type: string
+          enum: [win, loss, push]
+        payout:
+          type: integer
+        pnl:
+          type: integer
+          description: Profit/loss (payout - amount)
+        createdAt:
+          type: string
+          format: date-time
+        resultPayload:
+          type: object
+          nullable: true
+          description: Game-specific result details
+        verification:
+          type: object
+          properties:
+            serverSeedHash:
+              type: string
+              nullable: true
+            clientSeed:
+              type: string
+            nonce:
+              type: integer
+
+    BetDetail:
+      allOf:
+        - $ref: '#/components/schemas/Bet'
+        - type: object
+          properties:
+            verification:
+              type: object
+              properties:
+                serverSeedHash:
+                  type: string
+                  nullable: true
+                clientSeed:
+                  type: string
+                nonce:
+                  type: integer
+                verificationFormula:
+                  type: string
+                  description: How to verify the result
+                serverSeed:
+                  type: string
+                  nullable: true
+                  description: Only included when ?reveal=1
+
+    Transaction:
+      oneOf:
+        - $ref: '#/components/schemas/BetTransaction'
+        - $ref: '#/components/schemas/FaucetTransaction'
+
+    BetTransaction:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [bet]
+        gameType:
+          type: string
+        amount:
+          type: integer
+        outcome:
+          type: string
+        payout:
+          type: integer
+        pnl:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    FaucetTransaction:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [faucet]
+        amount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    FaucetGrant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        amount:
+          type: integer
+          example: 100
+        createdAt:
+          type: string
+          format: date-time
+
+    # Strategies
+    Strategy:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        gameType:
+          type: string
+          enum: [dice, blackjack, plinko, crash, slots]
+        name:
+          type: string
+        config:
+          type: object
+          description: Game-specific strategy configuration
+        createdAt:
+          type: string
+          format: date-time
+
+    # Statistics
+    GameStats:
+      type: object
+      properties:
+        bets:
+          type: integer
+        wagered:
+          type: integer
+        pnl:
+          type: integer
+        wins:
+          type: integer
+        winRate:
+          type: number
+          format: float
+          description: Win rate as percentage (e.g., 45.5 for 45.5%)
+
+    ProfileStats:
+      type: object
+      properties:
+        balance:
+          type: integer
+        credits:
+          type: integer
+        faucetCredits:
+          type: integer
+        memberSince:
+          type: string
+          format: date-time
+        lastBetAt:
+          type: string
+          format: date-time
+          nullable: true
+        totalBets:
+          type: integer
+        totalWagered:
+          type: integer
+        totalPnl:
+          type: integer
+        winRate:
+          type: number
+          format: float
+        byGame:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/GameStats'
+
+    SessionStats:
+      type: object
+      properties:
+        balance:
+          type: integer
+        rounds:
+          type: integer
+        sessionPnl:
+          type: integer
+        winRate:
+          type: number
+          format: float
+        recentBets:
+          type: array
+          items:
+            $ref: '#/components/schemas/Bet'
+
+    # Payments
+    CreditPackage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "Starter Pack"
+        credits:
+          type: integer
+          example: 5000
+        amountCents:
+          type: integer
+          description: Price in cents (USD)
+          example: 500
+        stripePriceId:
+          type: string
+          description: Stripe price identifier

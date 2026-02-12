@@ -124,15 +124,31 @@ export function StrategiesSection() {
   const runnable = strategies.filter((s) => (GAMES_WITH_RUN as readonly string[]).includes(s.gameType));
 
   return (
-    <section data-agent="strategies-section">
+    <section data-agent="strategies-section" className="space-y-8">
+      {/* Error display */}
+      {error && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3" role="alert">
+          <p className="text-sm text-red-400 flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            {error}
+          </p>
+        </div>
+      )}
+
       {/* Creative strategy grid */}
-      <div className="mb-8" data-agent="creative-strategies">
-        <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4" data-agent="header">
-          Dice Strategies for AI Agents
-        </h2>
-        <p className="text-sm text-[var(--text-secondary)] mb-4">
-          For AI agents: <code className="bg-white/10 px-1 rounded text-xs">POST /api/games/dice/run-strategy</code> with <code className="bg-white/10 px-1 rounded text-xs">config</code> (JSON).
-        </p>
+      <div data-agent="creative-strategies">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]" data-agent="header">
+              Preset Strategies
+            </h2>
+            <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+              Ready-to-use strategies with proven configurations
+            </p>
+          </div>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {CREATIVE_DICE_STRATEGIES.map((s) => (
             <CreativeStrategyCard
@@ -144,19 +160,47 @@ export function StrategiesSection() {
         </div>
       </div>
 
-      {/* Custom strategy builder (collapsible) */}
-      <div className="mb-6">
-        <button
-          type="button"
-          onClick={() => setBuilderOpen((o) => !o)}
-          className="flex items-center gap-2 w-full text-left text-sm font-medium text-[var(--text-primary)] py-2"
-          data-agent="builder-toggle"
-        >
-          <span className="text-[var(--accent-heart)]">{builderOpen ? "▼" : "▶"}</span>
-          Custom strategy builder
-        </button>
+      {/* Strategy Builder */}
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] overflow-hidden">
+        <div className="p-4 border-b border-[var(--border)] bg-[var(--bg-matte)]/50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-[var(--accent-heart)]/10 flex items-center justify-center">
+                <svg className="w-5 h-5 text-[var(--accent-heart)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-[var(--text-primary)]">Custom Strategy Builder</h3>
+                <p className="text-xs text-[var(--text-secondary)]">Create and save your own strategy</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setBuilderOpen((o) => !o)}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent-heart)]/30 transition-colors"
+            >
+              {builderOpen ? (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                  </svg>
+                  Hide
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                  Open Builder
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
         {builderOpen && (
-          <div className="mt-2">
+          <div className="p-4">
             <CustomStrategyBuilder
               onRun={(cfg, maxRounds) => runWithConfig(cfg, maxRounds, "Custom")}
               onSaveRequest={(cfg) => setSaveFormConfig(cfg)}
@@ -165,75 +209,107 @@ export function StrategiesSection() {
         )}
       </div>
 
-      {/* My saved strategies */}
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold text-[var(--text-primary)]">My strategies</h3>
-        <p className="text-xs text-[var(--text-secondary)] mt-0.5">Saved presets with progression.</p>
-      </div>
-
-      {error && (
-        <p className="mb-4 text-sm text-red-400" role="alert">
-          {error}
-        </p>
-      )}
-
-      <div className="flex gap-2 mb-4">
-        <button
-          type="button"
-          onClick={() => {
-            setBuilderOpen(true);
-            builderRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }}
-          className="rounded bg-[var(--accent-heart)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-        >
-          Create strategy
-        </button>
-      </div>
-
+      {/* Create Strategy Form (modal-like) */}
       {saveFormConfig && (
-        <CreateStrategyForm
-          initialConfig={saveFormConfig}
-          onCreated={() => {
-            setSaveFormConfig(null);
-            fetchStrategies();
-          }}
-          onCancel={() => setSaveFormConfig(null)}
-        />
-      )}
-
-      {loading ? (
-        <p className="text-sm text-[var(--text-secondary)]">Loading strategies…</p>
-      ) : runnable.length === 0 ? (
-        <p className="text-sm text-[var(--text-secondary)]">No saved strategies yet. Create one or save from Dice.</p>
-      ) : (
-        <div className="space-y-2">
-          {runnable.map((s) => (
-            <GlassCard key={s.id} className="flex items-center justify-between gap-4 p-4">
-              <div>
-                <p className="font-medium text-[var(--text-primary)]">{s.name}</p>
-                <p className="text-xs text-[var(--text-secondary)]">{configSummary(s.gameType, s.config)}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleRunSaved(s, 20)}
-                  className="rounded border border-green-500/50 bg-green-500/10 px-3 py-1.5 text-sm text-green-400 hover:bg-green-500/20 disabled:opacity-50"
-                >
-                  Run (20)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(s.id)}
-                  className="rounded border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/20"
-                >
-                  Delete
-                </button>
-              </div>
-            </GlassCard>
-          ))}
+        <div className="rounded-xl border border-[var(--accent-heart)]/30 bg-[var(--bg-card)] overflow-hidden">
+          <div className="p-4 border-b border-[var(--border)] bg-[var(--accent-heart)]/5">
+            <h3 className="text-base font-semibold text-[var(--text-primary)]">Save Strategy</h3>
+            <p className="text-xs text-[var(--text-secondary)]">Name your custom strategy to save it</p>
+          </div>
+          <div className="p-4">
+            <CreateStrategyForm
+              initialConfig={saveFormConfig}
+              onCreated={() => {
+                setSaveFormConfig(null);
+                fetchStrategies();
+              }}
+              onCancel={() => setSaveFormConfig(null)}
+            />
+          </div>
         </div>
       )}
 
+      {/* My saved strategies */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-[var(--text-primary)]">My Strategies</h3>
+            <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+              {loading ? "Loading..." : `${runnable.length} saved strategy${runnable.length !== 1 ? "ies" : "y"}`}
+            </p>
+          </div>
+          {!builderOpen && (
+            <button
+              type="button"
+              onClick={() => setBuilderOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--accent-heart)] text-white hover:bg-[var(--accent-heart)]/90 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Create New
+            </button>
+          )}
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-8 text-sm text-[var(--text-secondary)]">
+            <div className="w-4 h-4 border-2 border-[var(--accent-heart)] border-t-transparent rounded-full animate-spin" />
+            Loading strategies...
+          </div>
+        ) : runnable.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--bg-matte)]/30 p-8 text-center">
+            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-[var(--bg-card)] flex items-center justify-center">
+              <svg className="w-6 h-6 text-[var(--text-secondary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+              </svg>
+            </div>
+            <p className="text-sm text-[var(--text-secondary)] mb-1">No saved strategies yet</p>
+            <p className="text-xs text-[var(--text-secondary)]/70">Create a custom strategy or save from the dice game</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {runnable.map((s) => (
+              <GlassCard key={s.id} className="group p-4 hover:border-[var(--accent-heart)]/30 transition-colors">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="font-medium text-[var(--text-primary)] truncate">{s.name}</p>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--bg-matte)] text-[var(--text-secondary)] border border-[var(--border)]">
+                        {(s.config.progressionType as string) || "flat"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[var(--text-secondary)]">{configSummary(s.gameType, s.config)}</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleRunSaved(s, 20)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-green-500/40 bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Run
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(s.id)}
+                      className="p-1.5 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                      title="Delete strategy"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </GlassCard>
+            ))}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import StrategiesSectionClient from "../StrategiesSectionClient";
 import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -35,22 +34,6 @@ export default function StrategiesPage() {
       </GlassCard>
 
       <StrategiesSectionClient />
-
-      {/* Footer: use on Dice */}
-      <section className="pt-4 border-t border-[var(--border)]">
-        <div className="flex flex-wrap items-center gap-4 text-sm text-[var(--text-secondary)]">
-          <span>Use strategies on the dice game:</span>
-          <Link
-            href="/games/dice"
-            className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/30 bg-[var(--accent-heart)]/10 px-4 py-2 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
-          >
-            Open Dice
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </Link>
-        </div>
-      </section>
     </div>
   );
 }
