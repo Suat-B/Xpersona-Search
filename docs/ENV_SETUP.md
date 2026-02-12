@@ -15,10 +15,9 @@ Without `NEXTAUTH_SECRET` you’ll see:
 
 1. Start **Docker Desktop** (must be running).
 2. From the project root run:
-   ```powershell
-   .\scripts\dev-db-setup.ps1
-   ```
-   This starts PostgreSQL in Docker and runs `npm run db:push` to create tables.
+   - **Mac:** `./scripts/dev-db-setup.sh` (see [DOCKER_MAC_SETUP.md](./DOCKER_MAC_SETUP.md))
+   - **Windows (PowerShell):** `.\scripts\dev-db-setup.ps1`
+   - **Or:** `npm run setup` (works on both)
 3. `.env.local` already has `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/xpersona` which matches the container.
 
 ## Google OAuth (free, ~5 min)
