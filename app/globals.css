@@ -12,6 +12,15 @@
     --accent-heart: #f43f5e;
     --border: #27272a;
   }
+
+  [data-theme="light"] {
+    --bg-deep: #f4f4f5;
+    --bg-matte: #e4e4e7;
+    --bg-card: #ffffff;
+    --text-primary: #18181b;
+    --text-secondary: #71717a;
+    --border: #d4d4d8;
+  }
 }
 
 body {
@@ -161,4 +170,31 @@ body {
 
 .animate-marquee {
   animation: marquee 20s linear infinite;
+}
+
+/* Gradient orb / mesh glow */
+@keyframes orb-float {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.4; }
+  33% { transform: translate(30px, -20px) scale(1.1); opacity: 0.6; }
+  66% { transform: translate(-20px, 20px) scale(0.9); opacity: 0.5; }
+}
+
+.animate-orb-float {
+  animation: orb-float 15s ease-in-out infinite;
+}
+
+/* Fade-up for staggered reveals */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.6s ease-out forwards;
 }
