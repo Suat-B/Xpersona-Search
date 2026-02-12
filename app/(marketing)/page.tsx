@@ -2,6 +2,7 @@ import Link from "next/link";
 import { auth, type Session } from "@/lib/auth";
 import { cookies } from "next/headers";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
+import { GlassCard } from "@/components/ui/GlassCard";
 import { MarqueeStrip } from "@/components/ui/MarqueeStrip";
 import { AgentProofBlock } from "@/components/ui/AgentProofBlock";
 import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
@@ -21,15 +22,6 @@ const AGENT_INTEGRATIONS = [
   { name: "AutoGen", href: "https://microsoft.github.io/autogen/", badge: null },
   { name: "LangGraph", href: "https://langchain-ai.github.io/langgraph/", badge: null },
   { name: "Claude / GPT", href: "/dashboard/api", badge: null },
-] as const;
-
-const FEATURES = [
-  { icon: "🤖", label: "AI Agents Bet" },
-  { icon: "✓", label: "Provably Fair" },
-  { icon: "</>", label: "Python Strategies" },
-  { icon: "⚡", label: "OpenClaw + LangChain + CrewAI" },
-  { icon: "👥", label: "Shared Balance" },
-  { icon: "👁", label: "Watch & Play" },
 ] as const;
 
 type HomePageProps = { searchParams: Promise<{ error?: string; message?: string }> };
@@ -98,157 +90,205 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         </div>
       )}
 
-      {/* Hero — Apple: clean, spacious, confident */}
-      <section className="mx-auto max-w-3xl px-4 pt-24 pb-32 sm:pt-32 sm:pb-40 sm:px-6 text-center">
-        <h1 className="text-5xl font-semibold tracking-tight sm:text-6xl md:text-7xl font-[family-name:var(--font-outfit)] text-white">
-          xpersona<span className="text-[var(--accent-heart)]">.</span>
+      {/* Hero */}
+      <section className="mx-auto max-w-4xl px-4 py-12 sm:py-16 sm:px-6 text-center">
+        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl font-[family-name:var(--font-outfit)]">
+          <span className="bg-gradient-to-b from-white to-white/70 bg-clip-text text-transparent">xpersona</span>
+          <span className="text-[var(--accent-heart)]">.</span>
         </h1>
-        <p className="mt-6 text-xl sm:text-2xl font-medium text-white/90 tracking-tight">
+        <p className="mt-4 text-lg sm:text-xl text-[var(--accent-heart)] font-semibold">
           The first casino designed for AI agents
         </p>
-        <p className="mt-4 max-w-lg mx-auto text-base text-white/50 leading-relaxed">
+        <p className="mt-3 max-w-xl mx-auto text-sm sm:text-base text-[var(--text-secondary)] leading-relaxed">
           Pure over/under dice. Your agents bet via API. Same balance for humans and AI — OpenClaw, LangChain, CrewAI.
         </p>
-        <div className="mt-12 flex flex-wrap items-center justify-center gap-4">
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <Link
             href={isLoggedIn ? "/dashboard" : "/login"}
-            className="inline-flex items-center gap-2 rounded-full bg-white px-8 py-3.5 text-sm font-medium text-black hover:bg-white/90 transition-colors"
+            className="inline-flex items-center gap-2 rounded-xl bg-[var(--accent-heart)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-[var(--accent-heart)]/25 hover:opacity-95 transition-opacity"
           >
             {isLoggedIn ? "Play now →" : "Play with your AI"}
           </Link>
           <Link
             href="/docs"
-            className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-6 py-3.5 text-sm font-medium text-white/90 hover:bg-white/10 transition-colors"
+            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-medium hover:bg-white/10 transition-colors"
           >
             API docs
           </Link>
         </div>
       </section>
 
-      {/* Marquee — subtle divider */}
-      <div className="w-full border-y border-white/[0.06]">
+      {/* Marquee — full width */}
+      <div className="w-full border-y border-white/5">
         <MarqueeStrip />
       </div>
 
-      {/* How it works — Apple: frosted cards, subtle steps */}
-      <section className="mx-auto max-w-4xl px-4 py-20 sm:py-28 sm:px-6">
-        <h2 className="text-center text-[11px] font-medium uppercase tracking-[0.3em] text-white/40 mb-16">
+      {/* How it works — pipeline flow */}
+      <section className="mx-auto max-w-4xl px-4 py-14 sm:py-20 sm:px-6">
+        <h2 className="text-center text-xs font-semibold uppercase tracking-[0.25em] text-[var(--text-secondary)] mb-12">
           How it works
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-8">
-          {[
-            { num: "01", title: "Agent gets API key", sub: "Dashboard → API" },
-            { num: "02", title: "Agent bets via REST", sub: "POST /api/games/dice/bet" },
-            { num: "03", title: "Same balance, provably fair", sub: "Verify every roll" },
-          ].map((step) => (
-            <div
-              key={step.num}
-              className="frosted rounded-2xl p-8 sm:p-10 text-center transition-colors duration-300 hover:bg-white/[0.06]"
-            >
-              <span className="text-2xl font-light text-white/30 tabular-nums">{step.num}</span>
-              <p className="mt-6 text-lg font-semibold text-white">{step.title}</p>
-              <p className="mt-2 text-sm text-white/50 font-mono">{step.sub}</p>
+        <div className="relative flex flex-col sm:flex-row items-stretch gap-4 sm:gap-0">
+          {/* Step 1 */}
+          <div className="relative flex-1 group">
+            <div className="absolute inset-0 bg-gradient-to-b from-[var(--accent-heart)]/5 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            <div className="relative rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.03] to-transparent p-6 sm:p-7 text-center transition-all duration-300 hover:border-[var(--accent-heart)]/30 hover:shadow-[0_0_30px_-10px_rgba(244,63,94,0.15)]">
+              <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent-heart)]/20 text-[var(--accent-heart)] font-mono text-sm font-bold ring-2 ring-[var(--accent-heart)]/10 mb-4">
+                1
+              </div>
+              <p className="text-base font-semibold text-[var(--text-primary)]">Agent gets API key</p>
+              <p className="mt-2 text-xs font-mono text-[var(--text-secondary)]/90">Dashboard → API</p>
             </div>
-          ))}
+            {/* Connector arrow — desktop */}
+            <div className="hidden sm:block absolute top-1/2 -right-4 w-8 h-px bg-gradient-to-r from-white/20 to-transparent z-10" />
+            <div className="hidden sm:block absolute top-1/2 -right-5 w-0 h-0 border-t-[4px] border-t-transparent border-b-[4px] border-b-transparent border-l-[6px] border-l-[var(--accent-heart)]/40 -translate-y-1/2 z-10" />
+          </div>
+
+          {/* Step 2 */}
+          <div className="relative flex-1 group">
+            <div className="absolute inset-0 bg-gradient-to-b from-[var(--accent-heart)]/5 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            <div className="relative rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.03] to-transparent p-6 sm:p-7 text-center transition-all duration-300 hover:border-[var(--accent-heart)]/30 hover:shadow-[0_0_30px_-10px_rgba(244,63,94,0.15)] mx-0 sm:mx-1">
+              <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent-heart)]/20 text-[var(--accent-heart)] font-mono text-sm font-bold ring-2 ring-[var(--accent-heart)]/10 mb-4">
+                2
+              </div>
+              <p className="text-base font-semibold text-[var(--text-primary)]">Agent bets via REST</p>
+              <p className="mt-2 text-xs font-mono text-emerald-400/80 bg-black/30 rounded px-2 py-1 inline-block">POST /api/games/dice/bet</p>
+            </div>
+            <div className="hidden sm:block absolute top-1/2 -right-4 w-8 h-px bg-gradient-to-r from-white/20 to-transparent z-10" />
+            <div className="hidden sm:block absolute top-1/2 -right-5 w-0 h-0 border-t-[4px] border-t-transparent border-b-[4px] border-b-transparent border-l-[6px] border-l-[var(--accent-heart)]/40 -translate-y-1/2 z-10" />
+          </div>
+
+          {/* Step 3 */}
+          <div className="relative flex-1 group">
+            <div className="absolute inset-0 bg-gradient-to-b from-[var(--accent-heart)]/5 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            <div className="relative rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.03] to-transparent p-6 sm:p-7 text-center transition-all duration-300 hover:border-[var(--accent-heart)]/30 hover:shadow-[0_0_30px_-10px_rgba(244,63,94,0.15)]">
+              <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent-heart)]/20 text-[var(--accent-heart)] font-mono text-sm font-bold ring-2 ring-[var(--accent-heart)]/10 mb-4">
+                3
+              </div>
+              <p className="text-base font-semibold text-[var(--text-primary)]">Same balance, provably fair</p>
+              <p className="mt-2 text-xs font-mono text-[var(--text-secondary)]/90">Verify every roll</p>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* What you get — Apple: equal-weight frosted cards */}
-      <section className="mx-auto max-w-4xl px-4 py-20 sm:py-28 sm:px-6">
-        <h2 className="text-center text-[11px] font-medium uppercase tracking-[0.3em] text-white/40 mb-16">
-          What you get
-        </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-5">
-          {FEATURES.map(({ icon, label }) => (
-            <div
-              key={label}
-              className="frosted flex flex-col items-center justify-center rounded-2xl p-6 sm:p-8 text-center transition-colors duration-300 hover:bg-white/[0.06] min-h-[140px] sm:min-h-[160px]"
-            >
-              <span className="text-3xl sm:text-4xl mb-4 text-white/80" aria-hidden>{icon}</span>
-              <span className="text-sm font-medium text-white/80 leading-snug">{label}</span>
+      {/* Features — bento grid */}
+      <section className="mx-auto max-w-4xl px-4 py-10 sm:py-14 sm:px-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+          <div className="col-span-2 sm:col-span-2 rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--accent-heart)]/10 via-transparent to-transparent p-5 sm:p-6 flex items-center gap-4 hover:border-[var(--accent-heart)]/25 transition-all duration-300 group">
+            <span className="text-3xl sm:text-4xl opacity-90 group-hover:scale-110 transition-transform">🤖</span>
+            <div>
+              <p className="font-semibold text-[var(--text-primary)]">AI Agents Bet</p>
+              <p className="text-xs text-[var(--text-secondary)] mt-0.5">Your agents play — same API, same balance</p>
             </div>
-          ))}
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 flex flex-col justify-center hover:border-white/20 hover:bg-white/[0.04] transition-all duration-300">
+            <span className="text-2xl mb-2">✓</span>
+            <p className="font-medium text-[var(--text-primary)] text-sm">Provably Fair</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 flex flex-col justify-center hover:border-white/20 hover:bg-white/[0.04] transition-all duration-300">
+            <span className="text-2xl mb-2 font-mono text-amber-400/90">&lt;/&gt;</span>
+            <p className="font-medium text-[var(--text-primary)] text-sm">Python Strategies</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 flex flex-col justify-center hover:border-white/20 hover:bg-white/[0.04] transition-all duration-300">
+            <span className="text-2xl mb-2">⚡</span>
+            <p className="font-medium text-[var(--text-primary)] text-sm">OpenClaw + LangChain + CrewAI</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 flex flex-col justify-center hover:border-white/20 hover:bg-white/[0.04] transition-all duration-300">
+            <span className="text-2xl mb-2">👥</span>
+            <p className="font-medium text-[var(--text-primary)] text-sm">Shared Balance</p>
+          </div>
+          <div className="col-span-2 rounded-2xl border border-white/10 bg-gradient-to-bl from-white/[0.03] to-transparent p-4 sm:p-5 flex items-center gap-4 hover:border-white/20 transition-all duration-300 group">
+            <span className="text-3xl opacity-90 group-hover:scale-110 transition-transform">👁</span>
+            <div>
+              <p className="font-semibold text-[var(--text-primary)]">Watch & Play</p>
+              <p className="text-xs text-[var(--text-secondary)] mt-0.5">Humans and agents — one balance, one experience</p>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* Dice — Apple: frosted hero card */}
-      <section className="mx-auto max-w-4xl px-4 py-20 sm:py-28 sm:px-6">
-        <h2 className="text-[11px] font-medium uppercase tracking-[0.3em] text-white/40 mb-6">Pure Dice</h2>
+      {/* Integrations — constellation showcase */}
+      <section className="mx-auto max-w-4xl px-4 py-14 sm:py-20 sm:px-6">
+        <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.02] to-black/50 p-8 sm:p-10">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_0%,rgba(244,63,94,0.08),transparent_70%)]" />
+          <div className="relative">
+            <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-[var(--accent-heart)] mb-6">
+              Works with your stack
+            </h2>
+            <div className="flex flex-wrap gap-2 sm:gap-3">
+              {AGENT_INTEGRATIONS.map(({ name, href, badge }) => (
+                <a
+                  key={name}
+                  href={href}
+                  target={href.startsWith("http") ? "_blank" : undefined}
+                  rel={href.startsWith("http") ? "noopener noreferrer" : undefined}
+                  className="group/integration rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/10 hover:text-white hover:border-[var(--accent-heart)]/40 transition-all duration-200 hover:scale-[1.02] hover:shadow-[0_0_20px_-5px_rgba(244,63,94,0.2)]"
+                >
+                  {badge && <span className="text-[var(--accent-heart)] mr-1.5">{badge}</span>}
+                  {name}
+                </a>
+              ))}
+            </div>
+            <p className="mt-4 text-sm text-[var(--text-secondary)]/90 max-w-xl">
+              OpenClaw ships the xpersona-casino skill. REST works with LangChain, CrewAI, AutoGen, or any LLM.
+            </p>
+            <div className="mt-8 flex flex-wrap justify-center sm:justify-start">
+              <AgentProofBlock />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Dice card */}
+      <section className="mx-auto max-w-4xl px-4 py-14 sm:py-20 sm:px-6">
+        <h2 className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--text-secondary)] mb-6">Pure Dice</h2>
         {GAMES.map((game) => (
           <div key={game.name}>
             {isLoggedIn ? (
               <Link href={game.href} className="block group">
-                <div className="frosted-strong rounded-3xl p-8 sm:p-12 transition-all duration-300 hover:bg-white/[0.09]">
-                  <div className="flex flex-col sm:flex-row items-start gap-8">
-                    <span className="text-5xl sm:text-6xl" aria-hidden>🎲</span>
-                    <div className="flex-1">
-                      <h3 className="text-2xl font-semibold font-[family-name:var(--font-outfit)] text-white group-hover:text-white transition-colors">
+                <GlassCard glow className="p-6 hover:border-[var(--accent-heart)]/30 transition-colors">
+                  <div className="flex items-start gap-4">
+                    <span className="text-3xl">🎲</span>
+                    <div>
+                      <h3 className="text-lg font-bold font-[family-name:var(--font-outfit)] group-hover:text-[var(--accent-heart)] transition-colors">
                         {game.name}
                       </h3>
-                      <p className="mt-3 text-base text-white/60 leading-relaxed">{game.desc}</p>
-                      <span className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-white/90">
-                        Play now →
+                      <p className="mt-1 text-sm text-[var(--text-secondary)]">{game.desc}</p>
+                      <span className="mt-2 inline-block text-xs font-semibold text-[var(--accent-heart)] opacity-0 group-hover:opacity-100 transition-opacity">
+                        Play →
                       </span>
                     </div>
                   </div>
-                </div>
+                </GlassCard>
               </Link>
             ) : (
-              <div className="frosted rounded-3xl p-8 sm:p-12 opacity-90">
-                <div className="flex flex-col sm:flex-row items-start gap-8">
-                  <span className="text-5xl sm:text-6xl" aria-hidden>🎲</span>
+              <GlassCard className="p-6 opacity-70">
+                <div className="flex items-start gap-4">
+                  <span className="text-3xl">🎲</span>
                   <div>
-                    <h3 className="text-2xl font-semibold font-[family-name:var(--font-outfit)] text-white">{game.name}</h3>
-                    <p className="mt-3 text-base text-white/60 leading-relaxed">{game.desc}</p>
-                    <p className="mt-6 text-xs text-white/40 uppercase tracking-wider">Login to play</p>
+                    <h3 className="text-lg font-bold font-[family-name:var(--font-outfit)]">{game.name}</h3>
+                    <p className="mt-1 text-sm text-[var(--text-secondary)]">{game.desc}</p>
+                    <p className="mt-2 text-xs text-[var(--text-secondary)] uppercase">Login to play</p>
                   </div>
                 </div>
-              </div>
+              </GlassCard>
             )}
           </div>
         ))}
       </section>
 
-      {/* Integrations + Proof — Apple: minimal, refined */}
-      <section className="mx-auto max-w-4xl px-4 py-20 sm:py-28 sm:px-6 space-y-16">
-        <div>
-          <h2 className="text-[11px] font-medium uppercase tracking-[0.3em] text-white/40 mb-8">
-            Works with your stack
-          </h2>
-          <div className="flex flex-wrap gap-3">
-            {AGENT_INTEGRATIONS.map(({ name, href, badge }) => (
-              <a
-                key={name}
-                href={href}
-                target={href.startsWith("http") ? "_blank" : undefined}
-                rel={href.startsWith("http") ? "noopener noreferrer" : undefined}
-                className="frosted rounded-full px-5 py-2.5 text-sm font-medium text-white/80 hover:text-white hover:bg-white/[0.08] transition-colors"
-              >
-                {badge && <span className="text-[var(--accent-heart)] mr-1.5">{badge}</span>}
-                {name}
-              </a>
-            ))}
-          </div>
-          <p className="mt-6 text-sm text-white/50 max-w-xl leading-relaxed">
-            OpenClaw ships the xpersona-casino skill. REST works with LangChain, CrewAI, AutoGen, or any LLM.
-          </p>
-        </div>
-        <div className="flex justify-center">
-          <AgentProofBlock />
-        </div>
-      </section>
-
-      {/* Footer — Apple: minimal */}
-      <footer className="border-t border-white/[0.06] py-16">
-        <div className="mx-auto max-w-4xl px-4 sm:px-6 text-center space-y-6">
-          <p className="text-sm font-medium text-white/70">{AI_FIRST_MESSAGING.builtFor}</p>
-          <p className="text-xs text-white/40 max-w-md mx-auto leading-relaxed">
+      {/* Footer */}
+      <footer className="border-t border-white/5 py-8">
+        <div className="mx-auto max-w-4xl px-4 sm:px-6 text-center space-y-3">
+          <p className="text-sm font-semibold">{AI_FIRST_MESSAGING.builtFor}</p>
+          <p className="text-xs text-[var(--text-secondary)]">
             OpenClaw skill on ClawHub · REST for LangChain, CrewAI, AutoGen · Same API for humans & agents
           </p>
-          <div className="flex flex-wrap justify-center gap-8 text-xs">
-            <Link href="/docs" className="text-white/50 hover:text-white transition-colors">API docs</Link>
-            <Link href="/dashboard/api" className="text-white/50 hover:text-white transition-colors">Dashboard API</Link>
-            <a href="https://docs.openclaw.ai/" target="_blank" rel="noopener noreferrer" className="text-white/50 hover:text-white transition-colors">OpenClaw</a>
+          <div className="flex flex-wrap justify-center gap-4 text-xs">
+            <Link href="/docs" className="text-[var(--accent-heart)] hover:underline">API docs</Link>
+            <Link href="/dashboard/api" className="text-[var(--accent-heart)] hover:underline">Dashboard API</Link>
+            <a href="https://docs.openclaw.ai/" target="_blank" rel="noopener noreferrer" className="text-[var(--accent-heart)] hover:underline">OpenClaw</a>
           </div>
         </div>
       </footer>
