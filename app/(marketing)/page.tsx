@@ -123,112 +123,66 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         <MarqueeStrip />
       </div>
 
-      {/* How it works — flowing pipeline with rich detail */}
+      {/* How it works — matches Capabilities style */}
       <section className="relative mx-auto max-w-5xl px-4 py-16 sm:py-24 sm:px-6 overflow-hidden">
-        {/* Layered background */}
-        <div className="absolute inset-0 dot-grid -z-10" aria-hidden="true" />
-        <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_120%_60%_at_50%_-30%,rgba(244,63,94,0.12),transparent_50%)]" aria-hidden="true" />
-        <div className="absolute top-1/4 left-1/4 w-64 h-64 rounded-full bg-[var(--accent-heart)]/8 blur-3xl animate-orb-float -z-10" aria-hidden="true" />
-        <div className="absolute bottom-1/4 right-1/4 w-48 h-48 rounded-full bg-cyan-500/6 blur-3xl animate-orb-float -z-10 [animation-delay:-3s]" aria-hidden="true" />
-
-        <div className="text-center mb-14 sm:mb-16">
-          <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest text-[var(--accent-heart)]/80 bg-[var(--accent-heart)]/10 border border-[var(--accent-heart)]/20 mb-4">
+        <div className="absolute inset-0 dot-grid -z-10 opacity-50" aria-hidden="true" />
+        <div className="mb-12">
+          <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest text-cyan-400/80 bg-cyan-500/10 border border-cyan-500/20 mb-4">
             Agent flow
           </span>
           <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
             Three steps to AI-powered dice
           </h2>
-          <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-md mx-auto">
+          <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-lg">
             From dashboard to verified roll — your agents bet in under a minute.
           </p>
         </div>
 
-        {/* Pipeline — horizontal on desktop, vertical on mobile */}
-        <div className="relative flex flex-col sm:flex-row items-stretch sm:items-start gap-8 sm:gap-0">
-          {/* Animated flow line — desktop only */}
-          <div className="hidden sm:block absolute top-[4.5rem] left-[12%] right-[12%] h-px bg-gradient-to-r from-transparent via-[var(--accent-heart)]/40 to-transparent animate-gradient-flow" aria-hidden="true" />
-
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5">
           {/* Step 1 — Setup */}
-          <div className="relative flex-1 group min-w-0">
-            <div className="relative rounded-2xl sm:rounded-3xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md overflow-hidden transition-all duration-400 group-hover:border-[var(--accent-heart)]/30 group-hover:shadow-[0_0_60px_-20px_rgba(244,63,94,0.2)] group-hover:-translate-y-2">
-              <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent-heart)]/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              <div className="relative p-6 sm:p-8">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[var(--accent-heart)] to-[var(--accent-heart)]/60 text-white font-bold text-xl shadow-lg shadow-[var(--accent-heart)]/25 ring-2 ring-white/10">
-                    1
-                  </span>
-                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wider text-[var(--accent-heart)]/90 bg-[var(--accent-heart)]/15 border border-[var(--accent-heart)]/20">
-                    Setup
-                  </span>
-                </div>
-                <h3 className="text-lg font-semibold text-white">Generate your agent key</h3>
-                <p className="mt-2 text-sm text-[var(--text-secondary)] leading-relaxed">
-                  One-click in Dashboard → API. Copy the bearer token — no OAuth, no sessions.
-                </p>
-                <div className="mt-4 inline-flex items-center gap-2 rounded-lg bg-white/5 border border-white/10 px-3 py-2 font-mono text-xs text-[var(--text-secondary)]">
-                  <span className="text-[var(--accent-heart)]/80">Bearer</span>
-                  <span>xp_••••••••••••</span>
-                </div>
-              </div>
+          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md p-5 sm:p-6 hover:border-[var(--accent-heart)]/25 hover:bg-[var(--accent-heart)]/5 transition-all duration-400 group">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-heart)]/20 text-[var(--accent-heart)] font-bold text-lg mb-4 group-hover:scale-105 transition-transform">
+              1
             </div>
-            <div className="hidden sm:flex absolute top-[4.5rem] right-0 w-8 items-center justify-center -translate-y-1/2 translate-x-1/2 z-10">
-              <div className="w-2 h-2 rounded-full bg-[var(--accent-heart)]/60 animate-pulse" />
+            <h3 className="font-semibold text-white">Generate your agent key</h3>
+            <p className="mt-1.5 text-xs text-[var(--text-secondary)] leading-relaxed">
+              One-click in Dashboard → API. Copy the bearer token — no OAuth, no sessions.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 text-[var(--text-secondary)]">Bearer</span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 text-[var(--text-secondary)]">xp_••••••</span>
             </div>
           </div>
 
-          {/* Step 2 — Core (emphasized) */}
-          <div className="relative flex-1 group min-w-0 sm:-mt-4">
-            <div className="relative rounded-2xl sm:rounded-3xl border-2 border-[var(--accent-heart)]/25 bg-gradient-to-b from-[var(--accent-heart)]/10 via-[var(--accent-heart)]/5 to-transparent backdrop-blur-md overflow-hidden transition-all duration-400 group-hover:border-[var(--accent-heart)]/50 group-hover:shadow-[0_0_80px_-25px_rgba(244,63,94,0.35)] group-hover:-translate-y-2 group-hover:scale-[1.02]">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-[var(--accent-heart)]/10 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2 group-hover:scale-150 transition-transform duration-500" />
-              <div className="relative p-6 sm:p-8">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[var(--accent-heart)] to-[var(--accent-heart)]/70 text-white font-bold text-xl shadow-lg shadow-[var(--accent-heart)]/30 ring-2 ring-[var(--accent-heart)]/30">
-                    2
-                  </span>
-                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wider text-emerald-400/90 bg-emerald-500/20 border border-emerald-500/30">
-                    Core
-                  </span>
-                </div>
-                <h3 className="text-lg font-semibold text-white">Place bets via REST</h3>
-                <p className="mt-2 text-sm text-[var(--text-secondary)] leading-relaxed">
-                  POST to the dice endpoint with amount, target, and condition. Same API for OpenClaw and raw HTTP.
-                </p>
-                <div className="mt-4 rounded-lg bg-emerald-500/10 border border-emerald-500/25 px-3 py-2.5 font-mono text-xs">
-                  <span className="text-emerald-400/90">POST</span>
-                  <span className="text-white/90"> /api/games/dice/bet</span>
-                  <span className="block mt-1 text-[var(--text-secondary)]">{`{ amount, target, condition }`}</span>
-                </div>
-              </div>
+          {/* Step 2 — Core */}
+          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md p-5 sm:p-6 hover:border-emerald-500/25 hover:bg-emerald-500/5 transition-all duration-400 group">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 font-bold text-lg mb-4 group-hover:scale-105 transition-transform">
+              2
             </div>
-            <div className="hidden sm:flex absolute top-[4.5rem] right-0 w-8 items-center justify-center -translate-y-1/2 translate-x-1/2 z-10">
-              <div className="w-2.5 h-2.5 rounded-full bg-[var(--accent-heart)] animate-pulse" />
+            <h3 className="font-semibold text-white">Place bets via REST</h3>
+            <p className="mt-1.5 text-xs text-[var(--text-secondary)] leading-relaxed">
+              POST to the dice endpoint with amount, target, and condition. Same API for OpenClaw and raw HTTP.
+            </p>
+            <div className="mt-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-2 font-mono text-[10px]">
+              <span className="text-emerald-400/90">POST</span>
+              <span className="text-white/90"> /api/games/dice/bet</span>
             </div>
           </div>
 
           {/* Step 3 — Trust */}
-          <div className="relative flex-1 group min-w-0">
-            <div className="relative rounded-2xl sm:rounded-3xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md overflow-hidden transition-all duration-400 group-hover:border-[var(--accent-heart)]/30 group-hover:shadow-[0_0_60px_-20px_rgba(244,63,94,0.2)] group-hover:-translate-y-2">
-              <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent-heart)]/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              <div className="relative p-6 sm:p-8">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[var(--accent-heart)] to-[var(--accent-heart)]/60 text-white font-bold text-xl shadow-lg shadow-[var(--accent-heart)]/25 ring-2 ring-white/10">
-                    3
-                  </span>
-                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wider text-cyan-400/90 bg-cyan-500/15 border border-cyan-500/25">
-                    Trust
-                  </span>
-                </div>
-                <h3 className="text-lg font-semibold text-white">Verify & share balance</h3>
-                <p className="mt-2 text-sm text-[var(--text-secondary)] leading-relaxed">
-                  Every roll is verifiable. One balance for humans and AI — watch your agents play live.
-                </p>
-                <div className="mt-4 flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md p-5 sm:p-6 hover:border-cyan-500/25 hover:bg-cyan-500/5 transition-all duration-400 group">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 font-bold text-lg mb-4 group-hover:scale-105 transition-transform">
+              3
+            </div>
+            <h3 className="font-semibold text-white">Verify & share balance</h3>
+            <p className="mt-1.5 text-xs text-[var(--text-secondary)] leading-relaxed">
+              Every roll is verifiable. One balance for humans and AI — watch your agents play live.
+            </p>
+            <div className="mt-3 flex items-center gap-2 text-xs text-[var(--text-secondary)]">
                   <svg className="w-4 h-4 text-cyan-400/80 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
                   </svg>
-                  <span>Provably fair · Shared balance · Dashboard verification</span>
-                </div>
-              </div>
+              <span>Provably fair · Shared balance</span>
             </div>
           </div>
         </div>
@@ -242,7 +196,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             Capabilities
           </span>
           <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-            Built for agents and quants
+            Built for agents and players
           </h2>
           <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-lg">
             Same API, same balance. Deploy Python strategies, OpenClaw skills, or watch your LLM play.
