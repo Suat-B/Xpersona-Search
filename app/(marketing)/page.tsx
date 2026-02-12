@@ -2,7 +2,6 @@ import Link from "next/link";
 import { auth, type Session } from "@/lib/auth";
 import { cookies } from "next/headers";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
-import { GlassCard } from "@/components/ui/GlassCard";
 import { MarqueeStrip } from "@/components/ui/MarqueeStrip";
 import { AgentProofBlock } from "@/components/ui/AgentProofBlock";
 import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
@@ -302,71 +301,95 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         </div>
       </section>
 
-      {/* Integrations — constellation showcase */}
-      <section className="mx-auto max-w-4xl px-4 py-14 sm:py-20 sm:px-6">
-        <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.02] to-black/50 p-8 sm:p-10">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_0%,rgba(244,63,94,0.08),transparent_70%)]" />
-          <div className="relative">
-            <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-[var(--accent-heart)] mb-6">
-              Works with your stack
-            </h2>
-            <div className="flex flex-wrap gap-2 sm:gap-3">
-              {AGENT_INTEGRATIONS.map(({ name, href, badge }) => (
-                <a
-                  key={name}
-                  href={href}
-                  target={href.startsWith("http") ? "_blank" : undefined}
-                  rel={href.startsWith("http") ? "noopener noreferrer" : undefined}
-                  className="group/integration rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/10 hover:text-white hover:border-[var(--accent-heart)]/40 transition-all duration-200 hover:scale-[1.02] hover:shadow-[0_0_20px_-5px_rgba(244,63,94,0.2)]"
-                >
-                  {badge && <span className="text-[var(--accent-heart)] mr-1.5">{badge}</span>}
-                  {name}
-                </a>
-              ))}
-            </div>
-            <p className="mt-4 text-sm text-[var(--text-secondary)]/90 max-w-xl">
-              OpenClaw ships the xpersona-casino skill. REST works with LangChain, CrewAI, AutoGen, or any LLM.
-            </p>
-            <div className="mt-8 flex flex-wrap justify-center sm:justify-start">
-              <AgentProofBlock />
-            </div>
+      {/* Integrations — matches Capabilities style */}
+      <section className="relative mx-auto max-w-5xl px-4 py-16 sm:py-24 sm:px-6 overflow-hidden">
+        <div className="absolute inset-0 dot-grid -z-10 opacity-50" aria-hidden="true" />
+        <div className="mb-12">
+          <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest text-cyan-400/80 bg-cyan-500/10 border border-cyan-500/20 mb-4">
+            Integrations
+          </span>
+          <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
+            Works with your stack
+          </h2>
+          <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-lg">
+            OpenClaw ships the xpersona-casino skill. REST works with LangChain, CrewAI, AutoGen, or any LLM.
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md p-6 sm:p-8 hover:border-[var(--accent-heart)]/25 transition-all duration-400">
+          <div className="flex flex-wrap gap-2 sm:gap-3">
+            {AGENT_INTEGRATIONS.map(({ name, href, badge }) => (
+              <a
+                key={name}
+                href={href}
+                target={href.startsWith("http") ? "_blank" : undefined}
+                rel={href.startsWith("http") ? "noopener noreferrer" : undefined}
+                className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/[0.08] hover:text-white hover:border-[var(--accent-heart)]/30 transition-all duration-300"
+              >
+                {badge && <span className="text-[var(--accent-heart)] mr-1.5">{badge}</span>}
+                {name}
+              </a>
+            ))}
+          </div>
+          <div className="mt-6">
+            <AgentProofBlock />
           </div>
         </div>
       </section>
 
-      {/* Dice card */}
-      <section className="mx-auto max-w-4xl px-4 py-14 sm:py-20 sm:px-6">
-        <h2 className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--text-secondary)] mb-6">Pure Dice</h2>
+      {/* Pure Dice — matches Capabilities style */}
+      <section className="relative mx-auto max-w-5xl px-4 py-16 sm:py-24 sm:px-6 overflow-hidden">
+        <div className="absolute inset-0 dot-grid -z-10 opacity-50" aria-hidden="true" />
+        <div className="mb-12">
+          <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest text-cyan-400/80 bg-cyan-500/10 border border-cyan-500/20 mb-4">
+            Games
+          </span>
+          <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
+            Pure Dice
+          </h2>
+          <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-lg">
+            Provably fair over/under. Python strategies or play — same balance.
+          </p>
+        </div>
+
         {GAMES.map((game) => (
           <div key={game.name}>
             {isLoggedIn ? (
               <Link href={game.href} className="block group">
-                <GlassCard glow className="p-6 hover:border-[var(--accent-heart)]/30 transition-colors">
+                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md p-5 sm:p-6 hover:border-[var(--accent-heart)]/25 hover:bg-[var(--accent-heart)]/5 transition-all duration-400">
                   <div className="flex items-start gap-4">
-                    <span className="text-3xl">🎲</span>
-                    <div>
-                      <h3 className="text-lg font-bold font-[family-name:var(--font-outfit)] group-hover:text-[var(--accent-heart)] transition-colors">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-heart)]/20 text-[var(--accent-heart)] group-hover:scale-105 transition-transform">
+                      <span className="text-2xl">🎲</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg font-semibold text-white group-hover:text-[var(--accent-heart)] transition-colors">
                         {game.name}
                       </h3>
-                      <p className="mt-1 text-sm text-[var(--text-secondary)]">{game.desc}</p>
+                      <p className="mt-1.5 text-sm text-[var(--text-secondary)] leading-relaxed">
+                        {game.desc}
+                      </p>
                       <span className="mt-2 inline-block text-xs font-semibold text-[var(--accent-heart)] opacity-0 group-hover:opacity-100 transition-opacity">
                         Play →
                       </span>
                     </div>
                   </div>
-                </GlassCard>
+                </div>
               </Link>
             ) : (
-              <GlassCard className="p-6 opacity-70">
+              <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md p-5 sm:p-6 opacity-70">
                 <div className="flex items-start gap-4">
-                  <span className="text-3xl">🎲</span>
-                  <div>
-                    <h3 className="text-lg font-bold font-[family-name:var(--font-outfit)]">{game.name}</h3>
-                    <p className="mt-1 text-sm text-[var(--text-secondary)]">{game.desc}</p>
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white/90">
+                    <span className="text-2xl">🎲</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-lg font-semibold text-white">{game.name}</h3>
+                    <p className="mt-1.5 text-sm text-[var(--text-secondary)] leading-relaxed">
+                      {game.desc}
+                    </p>
                     <p className="mt-2 text-xs text-[var(--text-secondary)] uppercase">Login to play</p>
                   </div>
                 </div>
-              </GlassCard>
+              </div>
             )}
           </div>
         ))}
