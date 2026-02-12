@@ -27,7 +27,7 @@ function toApiConfig(c: CreativeStrategy["config"]): DiceStrategyConfig {
 
 type CreativeDiceStrategiesSectionProps = {
   activeStrategyName?: string | null;
-  onLoadConfig: (config: DiceConfig & { progressionType?: string }, strategyName?: string) => void;
+  onLoadConfig: (config: DiceConfig & { progressionType?: DiceStrategyConfig["progressionType"] }, strategyName?: string) => void;
   onStartStrategyRun?: (config: DiceStrategyConfig, maxRounds: number, strategyName: string) => void;
 };
 
@@ -60,46 +60,80 @@ export function CreativeDiceStrategiesSection({
   }, [lastApplied]);
 
   return (
-    <div>
-      <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider mb-3">
-        Creative dice strategies
-      </h4>
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">
+          Creative strategies
+        </h4>
+        <span className="text-[10px] text-[var(--text-secondary)]">
+          {CREATIVE_DICE_STRATEGIES.length} presets
+        </span>
+      </div>
+
+      {/* Success message */}
       {lastApplied && (
         <div
           role="status"
-          className="mb-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-400 animate-in fade-in slide-in-from-top-1"
+          className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-400 flex items-center gap-2"
         >
-          ✓ Applied <span className="font-semibold">{lastApplied}</span> — bet, target & condition updated
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          Applied <span className="font-semibold">{lastApplied}</span>
         </div>
       )}
-      <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
+
+      {/* Strategy grid */}
+      <div className="grid grid-cols-1 gap-2 max-h-[320px] overflow-y-auto pr-1">
         {CREATIVE_DICE_STRATEGIES.map((s) => (
           <div
             key={s.id}
-            className={`rounded-lg border p-3 transition-colors ${
+            className={`group rounded-xl border p-3 transition-all duration-200 ${
               activeStrategyName === s.name
-                ? "border-[var(--accent-heart)]/60 bg-[var(--accent-heart)]/10 hover:border-[var(--accent-heart)]/70"
-                : "border-[var(--border)] bg-[var(--bg-card)] hover:border-[var(--accent-heart)]/40"
+                ? "border-[var(--accent-heart)]/60 bg-[var(--accent-heart)]/10 shadow-lg shadow-[var(--accent-heart)]/10"
+                : "border-[var(--border)] bg-[var(--bg-card)] hover:border-[var(--accent-heart)]/40 hover:bg-[var(--bg-matte)]"
             }`}
             data-agent="strategy-card"
             data-strategy-id={s.id}
             data-config={JSON.stringify(s.config)}
           >
-            <div className="flex items-start justify-between gap-2">
+            <div className="flex items-start gap-3">
+              {/* Icon */}
+              <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-xl ${
+                activeStrategyName === s.name
+                  ? "bg-[var(--accent-heart)]/20"
+                  : "bg-[var(--bg-matte)] group-hover:bg-[var(--bg-card)]"
+              }`}>
+                {s.icon}
+              </div>
+
+              {/* Content */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-base" aria-hidden>{s.icon}</span>
+                <div className="flex items-center gap-2 mb-1">
                   <span className="text-sm font-semibold text-[var(--text-primary)]">{s.name}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${riskColor(s.risk)}`}>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${riskColor(s.risk)}`}>
                     {s.risk}
                   </span>
                 </div>
-                <p className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">{s.desc}</p>
-                <p className="text-[10px] text-[var(--text-secondary)]/80 mt-1 font-mono">
-                  {s.config.amount} credits · {s.config.target}% {s.config.condition}
-                </p>
+                <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed line-clamp-2">{s.desc}</p>
+                
+                {/* Config summary */}
+                <div className="flex items-center gap-2 mt-2 text-[10px] text-[var(--text-secondary)]">
+                  <span className="px-1.5 py-0.5 rounded bg-[var(--bg-matte)] border border-[var(--border)]">
+                    {s.config.amount} credits
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-[var(--bg-matte)] border border-[var(--border)]">
+                    {s.config.target}% {s.config.condition}
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-[var(--bg-matte)] border border-[var(--border)]">
+                    {s.config.progressionType || "flat"}
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 flex-shrink-0">
+
+              {/* Actions */}
+              <div className="flex flex-col gap-1.5 flex-shrink-0">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -107,7 +141,7 @@ export function CreativeDiceStrategiesSection({
                     e.stopPropagation();
                     handleApply(s);
                   }}
-                  className="px-2 py-1 text-[10px] font-medium rounded-md border border-[var(--accent-heart)]/40 bg-[var(--accent-heart)]/10 text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
+                  className="px-3 py-1.5 text-[10px] font-medium rounded-md border border-[var(--accent-heart)]/40 bg-[var(--accent-heart)]/10 text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
                 >
                   Apply
                 </button>
@@ -115,23 +149,31 @@ export function CreativeDiceStrategiesSection({
                   <button
                     type="button"
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRunStrategy(s); }}
-                    className="px-2 py-1 text-[10px] font-medium rounded-md border border-green-500/40 bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
+                    className="px-3 py-1.5 text-[10px] font-medium rounded-md border border-green-500/40 bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors flex items-center justify-center gap-1"
                   >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
                     Run
                   </button>
                 )}
-                <Link
-                  href="/dashboard/strategies"
-                  className="px-2 py-1 text-[10px] font-medium rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:bg-white/5 transition-colors"
-                  title="Open strategies page"
-                >
-                  →
-                </Link>
               </div>
             </div>
           </div>
         ))}
       </div>
+
+      {/* Footer link */}
+      <Link
+        href="/dashboard/strategies"
+        className="flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-[var(--accent-heart)] hover:underline border border-dashed border-[var(--border)] rounded-lg hover:border-[var(--accent-heart)]/30 hover:bg-[var(--accent-heart)]/5 transition-colors"
+      >
+        View all strategies
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </Link>
     </div>
   );
 }

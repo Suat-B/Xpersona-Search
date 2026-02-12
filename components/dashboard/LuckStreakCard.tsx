@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { GlassCard } from "@/components/ui/GlassCard";
+import { cn } from "@/lib/utils";
 
 type StreakState = "hot" | "cold" | "neutral";
 
@@ -21,7 +21,6 @@ export function LuckStreakCard() {
       setRecentTotal(bets.length);
       setRecentWins(wins);
 
-      // Compute current streak (from most recent)
       let currentStreak = 0;
       const isWin = (b: { outcome: string }) => b.outcome === "win";
       for (let i = 0; i < bets.length; i++) {
@@ -33,7 +32,6 @@ export function LuckStreakCard() {
       }
       setStreak(currentStreak);
 
-      // Hot/cold from recent win rate
       const rate = bets.length > 0 ? wins / bets.length : 0.5;
       if (rate >= 0.55) setState("hot");
       else if (rate <= 0.45) setState("cold");
@@ -50,34 +48,103 @@ export function LuckStreakCard() {
     return () => window.removeEventListener("balance-updated", refresh);
   }, [refresh]);
 
-  const label = state === "hot" ? "Running Hot" : state === "cold" ? "Running Cold" : "Neutral";
-  const emoji = state === "hot" ? "🔥" : state === "cold" ? "🧊" : "◎";
-  const glowClass = state === "hot" ? "border-emerald-500/30 text-emerald-400" : state === "cold" ? "border-red-500/30 text-red-400" : "border-white/10 text-[var(--text-secondary)]";
+  const config = {
+    hot: {
+      gradient: "from-[#30d158]/20 via-[#30d158]/10 to-transparent",
+      border: "border-[#30d158]/30",
+      iconBg: "bg-[#30d158]/10 border-[#30d158]/20 text-[#30d158]",
+      text: "text-[#30d158]",
+      label: "Running Hot",
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
+        </svg>
+      ),
+      glow: "shadow-[0_0_30px_rgba(48,209,88,0.15)]",
+    },
+    cold: {
+      gradient: "from-[#0a84ff]/20 via-[#0a84ff]/10 to-transparent",
+      border: "border-[#0a84ff]/30",
+      iconBg: "bg-[#0a84ff]/10 border-[#0a84ff]/20 text-[#0a84ff]",
+      text: "text-[#0a84ff]",
+      label: "Running Cold",
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+      glow: "shadow-[0_0_30px_rgba(10,132,255,0.15)]",
+    },
+    neutral: {
+      gradient: "from-white/10 via-white/5 to-transparent",
+      border: "border-white/10",
+      iconBg: "bg-white/[0.04] border-white/[0.08] text-[var(--text-tertiary)]",
+      text: "text-[var(--text-secondary)]",
+      label: "Neutral",
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+      glow: "",
+    },
+  }[state];
 
   return (
-    <GlassCard className={`p-4 border-2 ${glowClass} transition-all duration-300`}>
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="text-2xl animate-pulse" aria-hidden>{emoji}</span>
+    <div className={cn(
+      "agent-card p-5 h-[140px] flex flex-col justify-between transition-all duration-300",
+      config.border,
+      config.glow,
+      "hover:border-[var(--border-strong)]"
+    )}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className={cn(
+            "flex h-11 w-11 items-center justify-center rounded-xl border",
+            config.iconBg
+          )}
+          >
+            {config.icon}
+          </div>
+          
           <div>
-            <div className="text-xs font-mono text-[var(--text-secondary)] uppercase tracking-wider">Luck</div>
-            <div className={`text-sm font-bold ${state === "hot" ? "text-emerald-400" : state === "cold" ? "text-red-400" : "text-[var(--text-primary)]"}`}>
-              {label}
+            <div className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Luck</div>
+            <div className={cn("text-sm font-semibold", config.text)}>
+              {config.label}
             </div>
           </div>
         </div>
+        
         <div className="text-right">
-          <div className="text-2xl font-mono font-bold tabular-nums">
+          <div className={cn("text-3xl font-semibold tabular-nums", config.text)}>
             {streak > 0 ? `+${streak}` : streak}
           </div>
-          <div className="text-[10px] text-[var(--text-secondary)] uppercase">Streak</div>
+          <div className="text-xs text-[var(--text-tertiary)] font-medium">Streak</div>
         </div>
       </div>
-      {recentTotal > 0 && (
-        <p className="mt-2 text-[10px] text-[var(--text-secondary)]">
-          Last {recentTotal} bets: {recentWins}W · {recentTotal - recentWins}L
-        </p>
-      )}
-    </GlassCard>
+      
+      <div className="flex items-center justify-between">
+        {recentTotal > 0 ? (
+          <span className="text-xs text-[var(--text-tertiary)]">
+            Last {recentTotal} bets: {recentWins}W · {recentTotal - recentWins}L
+          </span>
+        ) : (
+          <span className="text-xs text-[var(--text-tertiary)]">Awaiting data...</span>
+        )}
+        
+        <div className="flex gap-0.5">
+          {[...Array(5)].map((_, i) => (
+            <div 
+              key={i}
+              className={cn(
+                "w-1 h-1 rounded-full",
+                i < (recentWins / (recentTotal || 1)) * 5 ? config.text.replace("text-", "bg-") : "bg-white/10"
+              )}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }

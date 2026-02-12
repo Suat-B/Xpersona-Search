@@ -298,8 +298,10 @@ const PROGRESSION_TYPES = ["flat", "martingale", "paroli", "dalembert", "fibonac
 
 function CustomStrategyBuilder({
   onRun,
+  onSaveRequest,
 }: {
   onRun: (config: DiceStrategyConfig, maxRounds: number) => void;
+  onSaveRequest?: (config: DiceStrategyConfig) => void;
 }) {
   const [mode, setMode] = useState<"tweak" | "compose" | "advanced">("tweak");
   const [baseStrategyId, setBaseStrategyId] = useState("flat");

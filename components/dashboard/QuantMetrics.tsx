@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { GlassCard } from "@/components/ui/GlassCard";
 import { useEffect, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 
@@ -10,14 +9,50 @@ type Metric = {
     value: string;
     subtext?: string;
     trend?: "up" | "down" | "neutral";
+    icon: React.ReactNode;
+};
+
+const icons = {
+    balance: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+    ),
+    pnl: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+    ),
+    winrate: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+        </svg>
+    ),
+    volume: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+        </svg>
+    ),
+};
+
+const trendBg = {
+    up: "bg-[#30d158]/10 border-[#30d158]/20 text-[#30d158]",
+    down: "bg-[#ff453a]/10 border-[#ff453a]/20 text-[#ff453a]",
+    neutral: "bg-white/[0.04] border-white/[0.08] text-[var(--text-tertiary)]",
+};
+
+const trendText = {
+    up: "text-[#30d158]",
+    down: "text-[#ff453a]",
+    neutral: "text-[var(--text-primary)]",
 };
 
 export default function QuantMetrics() {
     const [metrics, setMetrics] = useState<Metric[]>([
-        { label: "BALANCE", value: "0", subtext: "credits", trend: "neutral" },
-        { label: "SESSION PNL", value: "+0", subtext: "0 bets", trend: "neutral" },
-        { label: "WIN RATE", value: "0%", subtext: "0 Bets", trend: "neutral" },
-        { label: "VOLUME", value: "0", subtext: "Wagered", trend: "neutral" },
+        { label: "Balance", value: "0", subtext: "credits", trend: "neutral", icon: icons.balance },
+        { label: "Session P&L", value: "+0", subtext: "0 bets", trend: "neutral", icon: icons.pnl },
+        { label: "Win Rate", value: "0%", subtext: "0 Bets", trend: "neutral", icon: icons.winrate },
+        { label: "Volume", value: "0", subtext: "Wagered", trend: "neutral", icon: icons.volume },
     ]);
 
     const refresh = useCallback(async () => {
@@ -26,14 +61,12 @@ export default function QuantMetrics() {
                 fetch("/api/me/balance", { credentials: "include" }),
                 fetch("/api/me/bets?limit=100&gameType=dice", { credentials: "include" }),
             ]);
+            
             const parseJson = async (res: Response) => {
                 const text = await res.text();
-                try {
-                    return text ? JSON.parse(text) : {};
-                } catch {
-                    return {};
-                }
+                try { return text ? JSON.parse(text) : {}; } catch { return {}; }
             };
+            
             const balanceData = await parseJson(balanceRes);
             const betsData = await parseJson(betsRes);
 
@@ -45,6 +78,7 @@ export default function QuantMetrics() {
             let roundCount = 0;
             let wins = 0;
             let volume = 0;
+            
             if (betsData.success && Array.isArray(betsData.data?.bets)) {
                 sessionPnl = typeof betsData.data.sessionPnl === "number" ? betsData.data.sessionPnl : 0;
                 const bets = betsData.data.bets as { amount: number; outcome: string }[];
@@ -57,20 +91,22 @@ export default function QuantMetrics() {
             const pnlTrend: "up" | "down" | "neutral" = sessionPnl > 0 ? "up" : sessionPnl < 0 ? "down" : "neutral";
 
             setMetrics([
-                { label: "BALANCE", value: String(balance), subtext: "credits", trend: "neutral" },
+                { label: "Balance", value: String(balance), subtext: "credits", trend: "neutral", icon: icons.balance },
                 {
-                    label: "SESSION PNL",
+                    label: "Session P&L",
                     value: (sessionPnl >= 0 ? "+" : "") + String(sessionPnl),
                     subtext: `${roundCount} bets`,
                     trend: pnlTrend,
+                    icon: icons.pnl,
                 },
                 {
-                    label: "WIN RATE",
+                    label: "Win Rate",
                     value: `${winRatePct.toFixed(1)}%`,
                     subtext: `${roundCount} Bets`,
                     trend: winRatePct >= 50 ? "up" : winRatePct < 50 ? "down" : "neutral",
+                    icon: icons.winrate,
                 },
-                { label: "VOLUME", value: String(volume), subtext: "Wagered", trend: "neutral" },
+                { label: "Volume", value: String(volume), subtext: "Wagered", trend: "neutral", icon: icons.volume },
             ]);
         } catch (e) {
             console.error("QuantMetrics fetch failed", e);
@@ -89,40 +125,71 @@ export default function QuantMetrics() {
     }, [refresh]);
 
     return (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {metrics.map((m, i) => (
-                <GlassCard key={m.label} className={cn("p-4 flex flex-col justify-between relative overflow-hidden group", i === 0 ? "min-h-24 h-auto" : "h-24")}>
-                    {/* Scanline effect */}
-                    <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent opacity-0 group-hover:opacity-20 transition-opacity pointer-events-none" />
-
-                    <span className="text-xs font-mono text-[var(--text-secondary)] tracking-widest uppercase mb-1">
-                        {m.label}
-                    </span>
-                    <div className="flex items-end justify-between">
-                        <span className={cn(
-                            "text-xl font-bold font-mono tracking-tight",
-                            m.trend === "up" ? "text-green-400" : m.trend === "down" ? "text-red-400" : "text-[var(--text-primary)]"
-                        )}>
-                            {m.value}
+                <div 
+                    key={m.label}
+                    className={cn(
+                        "agent-card p-5 h-[140px] flex flex-col justify-between transition-all duration-300 hover:border-[var(--border-strong)]",
+                    )}
+                >
+                    <div className="flex items-start justify-between">
+                        <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider"
+                        >
+                            {m.label}
                         </span>
-                        {m.subtext && (
+                        
+                        <div className={cn(
+                            "flex items-center justify-center w-10 h-10 rounded-xl border",
+                            trendBg[m.trend || "neutral"]
+                        )}
+                        >
+                            {m.icon}
+                        </div>
+                    </div>
+                    
+                    <div className="mt-auto">
+                        <div className="flex items-baseline gap-2">
+                            <span className={cn("text-3xl font-semibold tracking-tight", trendText[m.trend || "neutral"])}
+                            >
+                                {m.value}
+                            </span>
+                            
+                            {m.trend === "up" && (
+                                <svg className="w-4 h-4 text-[#30d158]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                                </svg>
+                            )}
+                            
+                            {m.trend === "down" && (
+                                <svg className="w-4 h-4 text-[#ff453a]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
+                                </svg>
+                            )}
+                        </div>
+                        
+                        <div className="flex items-center justify-between">
                             <span className={cn(
-                                "text-[10px] font-mono",
-                                m.trend === "up" ? "text-green-500/70" : m.trend === "down" ? "text-red-500/70" : "text-[var(--text-secondary)]"
-                            )}>
+                                "text-xs font-medium",
+                                m.trend === "up" ? "text-[#30d158]/70" : 
+                                m.trend === "down" ? "text-[#ff453a]/70" : 
+                                "text-[var(--text-tertiary)]"
+                            )}
+                            >
                                 {m.subtext}
                             </span>
-                        )}
+                            
+                            {i === 0 && (
+                                <Link
+                                    href="/dashboard/deposit"
+                                    className="text-xs font-medium text-[#ff2d55] hover:underline"
+                                >
+                                    Deposit →
+                                </Link>
+                            )}
+                        </div>
                     </div>
-                    {i === 0 && (
-                        <Link
-                            href="/dashboard/deposit"
-                            className="mt-2 text-[10px] font-medium text-[var(--accent-heart)] hover:underline"
-                        >
-                            Deposit
-                        </Link>
-                    )}
-                </GlassCard>
+                </div>
             ))}
         </div>
     );

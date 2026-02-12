@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { GlassCard } from "@/components/ui/GlassCard";
+import { cn } from "@/lib/utils";
 
 const FORTUNES = [
   "The house always has an edge. Play with it, not against it.",
@@ -37,18 +37,43 @@ export function FortuneCard() {
   const fortune = useMemo(() => getFortuneForDay(), []);
 
   return (
-    <GlassCard className="p-4 border border-violet-500/20 bg-violet-500/5 overflow-hidden">
-      <div className="flex items-start gap-2">
-        <span className="text-lg opacity-80" aria-hidden>✦</span>
-        <div>
-          <div className="text-[10px] font-mono text-violet-400/80 uppercase tracking-wider mb-1">
-            Fortune of the day
+    <div className={cn(
+      "agent-card p-5 h-[140px] flex flex-col justify-between",
+      "border-[#bf5af2]/20",
+      "hover:border-[#bf5af2]/40 transition-all duration-300"
+    )}
+    >
+      <div className="flex items-start gap-3">
+        <div className={cn(
+          "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
+          "bg-[#bf5af2]/10 border border-[#bf5af2]/20 text-[#bf5af2]"
+        )}
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+          </svg>
+        </div>
+        
+        <div className="flex-1 min-w-0">
+          <div className="text-[10px] font-semibold text-[#bf5af2]/80 uppercase tracking-wider mb-1">
+            Fortune of the Day
           </div>
-          <p className="text-xs text-[var(--text-secondary)] leading-relaxed italic">
+          <p className="text-sm text-[var(--text-secondary)] leading-relaxed line-clamp-2">
             &ldquo;{fortune}&rdquo;
           </p>
         </div>
       </div>
-    </GlassCard>
+      
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] text-[var(--text-quaternary)]">
+          Updated daily at 00:00 UTC
+        </span>
+        
+        <div className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#bf5af2] animate-pulse" />
+          <span className="text-[10px] text-[#bf5af2]/70">Active</span>
+        </div>
+      </div>
+    </div>
   );
 }

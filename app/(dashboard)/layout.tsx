@@ -44,26 +44,61 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-black">
       {needsGuest && <EnsureGuest needsGuest={true} />}
-      <aside className="dashboard-sidebar hidden w-64 flex-col border-r border-white/5 bg-bg-card/50 backdrop-blur-md md:flex sticky top-0 h-screen">
-        <div className="flex h-16 items-center px-6 flex-col justify-center gap-0.5">
-          <Link href="/" className="text-xl font-bold font-[family-name:var(--font-outfit)]">
-            xpersona
-            <span className="text-accent-heart">.</span>
-          </Link>
-          <span className="text-[9px] text-[var(--text-secondary)] uppercase tracking-wider">AI-First Casino</span>
-        </div>
-        <DashboardSidebarNav />
-        <div className="p-4 border-t border-white/5">
-          <div className="text-xs text-[var(--text-secondary)]">
-            Logged in as <br />
-            <span className="text-white font-medium truncate block">{displayName}</span>
+      
+      {/* Sidebar - Apple Style */}
+      <aside className="dashboard-sidebar hidden w-[280px] flex-col md:flex sticky top-0 h-screen border-r border-[var(--border)]">
+        {/* Glassmorphism background */}
+        <div className="absolute inset-0 bg-[var(--bg-matte)]/80 backdrop-blur-xl" />
+        
+        <div className="relative flex h-full flex-col">
+          {/* Logo Section */}
+          <div className="flex h-20 items-center px-6 border-b border-[var(--border)]">
+            <Link href="/" className="flex items-center gap-3 group">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--accent-heart)] to-[var(--accent-purple)] shadow-lg shadow-[var(--accent-heart)]/20 group-hover:shadow-[var(--accent-heart)]/40 transition-shadow">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-lg font-semibold tracking-tight text-[var(--text-primary)]">
+                  xpersona
+                </span>
+                <span className="text-[10px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">
+                  AI-First Casino
+                </span>
+              </div>
+            </Link>
+          </div>
+          
+          {/* Navigation */}
+          <DashboardSidebarNav />
+          
+          {/* User Section */}
+          <div className="p-4 border-t border-[var(--border)]">
+            <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-white/[0.03] border border-[var(--border)]">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent-blue)] to-[var(--accent-purple)]">
+                <span className="text-sm font-semibold text-white">
+                  {displayName.charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-[var(--text-tertiary)] truncate">
+                  Logged in as
+                </p>
+                <p className="text-sm font-medium text-[var(--text-primary)] truncate">
+                  {displayName}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </aside>
+      
+      {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
-        <div className="container mx-auto max-w-6xl p-6 md:p-8 space-y-4">
+        <div className="container mx-auto max-w-7xl p-6 md:p-8 space-y-6">
           <AIFirstBanner />
           {children}
         </div>

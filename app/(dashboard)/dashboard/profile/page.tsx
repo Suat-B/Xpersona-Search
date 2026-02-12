@@ -31,18 +31,10 @@ type UserData = {
 
 const GAME_LABELS: Record<string, string> = {
   dice: "Dice",
-  plinko: "Plinko",
-  slots: "Slots",
-  blackjack: "Blackjack",
-  crash: "Crash",
 };
 
 const GAME_LINKS: Record<string, string> = {
   dice: "/games/dice",
-  plinko: "/games/plinko",
-  slots: "/games/slots",
-  blackjack: "/games/blackjack",
-  crash: "/games/crash",
 };
 
 function ProfilePageClient() {
@@ -131,7 +123,7 @@ function ProfilePageClient() {
           Profile
         </h1>
         <p className="mt-1 text-sm text-[var(--text-secondary)]">
-          Your stats and performance across all games
+          Your stats and performance
         </p>
       </header>
 

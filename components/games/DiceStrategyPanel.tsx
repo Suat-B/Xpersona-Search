@@ -78,16 +78,16 @@ export function DiceStrategyPanel({
         );
         const mapped = raw
           .filter((s) => isDiceConfig(s.config as Record<string, unknown>))
-          .map((s) => {
+          .map((s): StrategyOption => {
             const cfg = s.config as Record<string, unknown>;
             const amount = typeof cfg.amount === "number" ? cfg.amount : Number(cfg.amount) || 10;
             const target = typeof cfg.target === "number" ? cfg.target : Number(cfg.target) || 50;
-            const condition = cfg.condition === "over" || cfg.condition === "under" ? cfg.condition : "over";
+            const conditionRaw = cfg.condition === "over" || cfg.condition === "under" ? cfg.condition : "over";
+            const condition = conditionRaw as "over" | "under";
             return {
               id: s.id,
               name: s.name,
               config: {
-                ...cfg,
                 amount,
                 target,
                 condition,
@@ -176,41 +176,87 @@ export function DiceStrategyPanel({
   };
 
   return (
-    <div className="rounded border border-[var(--border)] bg-[var(--bg-matte)]/50 p-4 space-y-4">
-      <p className="text-sm font-medium text-[var(--text-secondary)]">
-        Quick strategies — save, load, run with dice animation
-      </p>
-      {strategies.length === 0 && (
-        <p className="text-xs text-amber-400/90">
-          No saved strategies yet. Use &quot;Save as strategy&quot; below with your current bet/target, or create one on the <Link href="/dashboard/strategies" className="text-[var(--accent-heart)] hover:underline">Strategies</Link> page.
-        </p>
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">
+          Saved strategies
+        </h4>
+        <span className="text-[10px] text-[var(--text-secondary)]">
+          {strategies.length} saved
+        </span>
+      </div>
+
+      {/* Empty state */}
+      {strategies.length === 0 && !saveOpen && (
+        <div className="rounded-lg border border-dashed border-[var(--border)] bg-[var(--bg-matte)]/30 p-4 text-center">
+          <p className="text-xs text-[var(--text-secondary)]">
+            No saved strategies yet
+          </p>
+          <p className="text-[10px] text-[var(--text-secondary)]/70 mt-1">
+            Save your current settings or create strategies on the{" "}
+            <Link href="/dashboard/strategies" className="text-[var(--accent-heart)] hover:underline">
+              Strategies
+            </Link>{" "}
+            page
+          </p>
+        </div>
       )}
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          value={selectedId ?? ""}
-          onChange={(e) => {
-            const id = e.target.value || null;
-            setSelectedId(id);
-            const s = id ? strategies.find((x) => x.id === id) : null;
-            if (s) {
-              onLoadConfig(s.config, s.name);
-            }
-          }}
-          disabled={disabled}
-          className="rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-sm text-[var(--text-primary)]"
-        >
-          <option value="">— Load strategy —</option>
-          {strategies.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
+
+      {/* Strategy selector & actions */}
+      {strategies.length > 0 && (
+        <div className="space-y-3">
+          <div className="relative">
+            <select
+              value={selectedId ?? ""}
+              onChange={(e) => {
+                const id = e.target.value || null;
+                setSelectedId(id);
+                const s = id ? strategies.find((x) => x.id === id) : null;
+                if (s) {
+                  onLoadConfig(s.config, s.name);
+                }
+              }}
+              disabled={disabled}
+              className="w-full appearance-none rounded-lg border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2.5 text-sm text-[var(--text-primary)] focus:border-[var(--accent-heart)] focus:outline-none focus:ring-1 focus:ring-[var(--accent-heart)]/30"
+            >
+              <option value="">Select a strategy...</option>
+              {strategies.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <svg className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-secondary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+
+          {selected && (
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-matte)]/50 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-[var(--text-primary)]">{selected.name}</span>
+                <span className="text-[10px] text-[var(--text-secondary)] px-1.5 py-0.5 rounded bg-[var(--bg-card)]">
+                  {selected.config.progressionType || "flat"}
+                </span>
+              </div>
+              <div className="flex items-center gap-3 text-[10px] text-[var(--text-secondary)]">
+                <span>Bet: {selected.config.amount}</span>
+                <span className="text-[var(--border)]">|</span>
+                <span>Target: {selected.config.target}% {selected.config.condition}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Quick actions */}
+      <div className="flex gap-2">
         <button
           type="button"
           onClick={handleLoad}
           disabled={disabled || !selectedId}
-          className="rounded border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text-primary)] disabled:opacity-50"
+          className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] transition-colors hover:border-[var(--accent-heart)]/50 hover:bg-[var(--accent-heart)]/5 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Load
         </button>
@@ -218,56 +264,109 @@ export function DiceStrategyPanel({
           type="button"
           onClick={() => setSaveOpen((o) => !o)}
           disabled={disabled}
-          className="rounded border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text-primary)] disabled:opacity-50"
+          className="flex-1 rounded-lg border border-[var(--accent-heart)]/30 bg-[var(--accent-heart)]/10 px-3 py-2 text-xs font-medium text-[var(--accent-heart)] transition-colors hover:bg-[var(--accent-heart)]/20 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Save as strategy
+          {saveOpen ? "Cancel" : "Save new"}
         </button>
-        <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
-          Run
-          <input
-            type="number"
-            min={1}
-            max={1000}
-            value={runMaxRounds}
-            onChange={(e) => setRunMaxRounds(Number(e.target.value) || 20)}
-            title="1–1000 rounds"
-            className="w-16 rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1 text-[var(--text-primary)]"
-          />
-          rounds (1–1000)
-        </label>
+      </div>
+
+      {/* Save form */}
+      {saveOpen && (
+        <form onSubmit={handleSave} className="rounded-lg border border-[var(--border)] bg-[var(--bg-matte)]/30 p-3 space-y-3">
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+              Strategy name
+            </label>
+            <input
+              type="text"
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              placeholder="e.g., Conservative Over 50"
+              maxLength={100}
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/50 focus:border-[var(--accent-heart)] focus:outline-none focus:ring-1 focus:ring-[var(--accent-heart)]/30"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={!saveName.trim()}
+              className="flex-1 rounded-lg bg-[var(--accent-heart)] px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-[var(--accent-heart)]/90 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save strategy
+            </button>
+            <button
+              type="button"
+              onClick={() => { setSaveOpen(false); setSaveName(""); }}
+              className="rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Run strategy section */}
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-matte)]/30 p-3 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-[var(--text-primary)]">Auto-run strategy</span>
+          <span className="text-[10px] text-[var(--text-secondary)]">With dice animation</span>
+        </div>
+        
+        <div className="flex items-center gap-3">
+          <div className="flex-1">
+            <label className="block text-[10px] text-[var(--text-secondary)] mb-1">Rounds</label>
+            <input
+              type="number"
+              min={1}
+              max={1000}
+              value={runMaxRounds}
+              onChange={(e) => setRunMaxRounds(Number(e.target.value) || 20)}
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-primary)] text-center focus:border-[var(--accent-heart)] focus:outline-none focus:ring-1 focus:ring-[var(--accent-heart)]/30"
+            />
+          </div>
+          <div className="flex gap-1">
+            {[10, 20, 50, 100].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setRunMaxRounds(n)}
+                className={`px-2 py-1.5 text-[10px] rounded-md transition-colors ${
+                  runMaxRounds === n
+                    ? "bg-[var(--accent-heart)]/20 text-[var(--accent-heart)] border border-[var(--accent-heart)]/30"
+                    : "border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--text-primary)]/30"
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <button
           type="button"
           onClick={handleRunStrategy}
           disabled={disabled || !onStartStrategyRun}
-          className="rounded bg-green-600/80 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 hover:bg-green-600"
+          className="w-full rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/20 transition-all hover:shadow-green-500/30 hover:from-green-500 hover:to-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none flex items-center justify-center gap-2"
         >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
           Run strategy
         </button>
       </div>
 
-      <p className="text-xs text-[var(--text-secondary)]">
-        Choose rounds (1–1000), then Run strategy. Runs auto-play with live dice animation, balance, and bet per round. More strategies (Martingale, Paroli, etc.) on the <Link href="/dashboard/strategies" className="text-[var(--accent-heart)] hover:underline">Strategies</Link> page.
-      </p>
-
-      {saveOpen && (
-        <form onSubmit={handleSave} className="flex items-center gap-2 pt-2 border-t border-[var(--border)]">
-          <input
-            type="text"
-            value={saveName}
-            onChange={(e) => setSaveName(e.target.value)}
-            placeholder="Strategy name"
-            maxLength={100}
-            className="rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-sm text-[var(--text-primary)] w-48"
-          />
-          <button type="submit" disabled={!saveName.trim()} className="rounded bg-[var(--accent-heart)] px-3 py-1.5 text-sm text-white disabled:opacity-50">
-            Save
-          </button>
-          <button type="button" onClick={() => { setSaveOpen(false); setSaveName(""); }} className="text-sm text-[var(--text-secondary)]">
-            Cancel
-          </button>
-        </form>
+      {/* Message */}
+      {message && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+          <p className="text-xs text-amber-400 flex items-center gap-2">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            {message}
+          </p>
+        </div>
       )}
-      {message && <p className="text-sm text-amber-400">{message}</p>}
     </div>
   );
 }
