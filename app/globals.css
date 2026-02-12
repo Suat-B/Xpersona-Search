@@ -172,15 +172,13 @@ body {
   animation: marquee 20s linear infinite;
 }
 
-/* Gradient orb / mesh glow */
-@keyframes orb-float {
-  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.4; }
-  33% { transform: translate(30px, -20px) scale(1.1); opacity: 0.6; }
-  66% { transform: translate(-20px, 20px) scale(0.9); opacity: 0.5; }
+/* Frosted glass — Apple-style */
+.frosted {
+  @apply backdrop-blur-xl bg-white/[0.04] border border-white/[0.06];
 }
 
-.animate-orb-float {
-  animation: orb-float 15s ease-in-out infinite;
+.frosted-strong {
+  @apply backdrop-blur-2xl bg-white/[0.07] border border-white/[0.08];
 }
 
 /* Fade-up for staggered reveals */

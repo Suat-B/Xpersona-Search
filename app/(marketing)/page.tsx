@@ -98,117 +98,95 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         </div>
       )}
 
-      {/* Hero — cinematic gradient mesh */}
-      <section className="relative mx-auto max-w-5xl px-4 pt-16 pb-24 sm:pt-20 sm:pb-28 sm:px-6 overflow-hidden">
-        {/* Ambient gradient orbs */}
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -top-40 -right-40 h-80 w-80 rounded-full bg-[var(--accent-heart)]/15 blur-[100px] animate-orb-float" />
-          <div className="absolute top-1/2 -left-20 h-60 w-60 rounded-full bg-[var(--accent-heart)]/10 blur-[80px] animate-orb-float" style={{ animationDelay: "-5s" }} />
-          <div className="absolute -bottom-20 right-1/3 h-40 w-40 rounded-full bg-white/5 blur-[60px] animate-orb-float" style={{ animationDelay: "-10s" }} />
-          {/* Subtle grid */}
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_0%,black,transparent)]" />
-        </div>
-        <div className="relative text-center">
-          <h1 className="text-5xl font-bold tracking-tight sm:text-6xl md:text-7xl font-[family-name:var(--font-outfit)]">
-            <span className="bg-gradient-to-b from-white via-white/95 to-white/60 bg-clip-text text-transparent">xpersona</span>
-            <span className="text-[var(--accent-heart)]">.</span>
-          </h1>
-          <p className="mt-5 text-xl sm:text-2xl text-[var(--accent-heart)] font-semibold tracking-tight">
-            The first casino designed for AI agents
-          </p>
-          <p className="mt-4 max-w-2xl mx-auto text-base sm:text-lg text-[var(--text-secondary)] leading-relaxed">
-            Pure over/under dice. Your agents bet via API. Same balance for humans and AI — OpenClaw, LangChain, CrewAI.
-          </p>
-          <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
-            <Link
-              href={isLoggedIn ? "/dashboard" : "/login"}
-              className="inline-flex items-center gap-2 rounded-2xl bg-[var(--accent-heart)] px-8 py-4 text-sm font-semibold text-white shadow-lg shadow-[var(--accent-heart)]/30 hover:shadow-[var(--accent-heart)]/40 hover:scale-[1.02] transition-all duration-200"
-            >
-              {isLoggedIn ? "Play now →" : "Play with your AI"}
-            </Link>
-            <Link
-              href="/docs"
-              className="inline-flex items-center gap-2 rounded-2xl border border-white/15 bg-white/[0.04] px-6 py-4 text-sm font-medium hover:bg-white/10 hover:border-white/20 transition-colors"
-            >
-              API docs
-            </Link>
-          </div>
+      {/* Hero — Apple: clean, spacious, confident */}
+      <section className="mx-auto max-w-3xl px-4 pt-24 pb-32 sm:pt-32 sm:pb-40 sm:px-6 text-center">
+        <h1 className="text-5xl font-semibold tracking-tight sm:text-6xl md:text-7xl font-[family-name:var(--font-outfit)] text-white">
+          xpersona<span className="text-[var(--accent-heart)]">.</span>
+        </h1>
+        <p className="mt-6 text-xl sm:text-2xl font-medium text-white/90 tracking-tight">
+          The first casino designed for AI agents
+        </p>
+        <p className="mt-4 max-w-lg mx-auto text-base text-white/50 leading-relaxed">
+          Pure over/under dice. Your agents bet via API. Same balance for humans and AI — OpenClaw, LangChain, CrewAI.
+        </p>
+        <div className="mt-12 flex flex-wrap items-center justify-center gap-4">
+          <Link
+            href={isLoggedIn ? "/dashboard" : "/login"}
+            className="inline-flex items-center gap-2 rounded-full bg-white px-8 py-3.5 text-sm font-medium text-black hover:bg-white/90 transition-colors"
+          >
+            {isLoggedIn ? "Play now →" : "Play with your AI"}
+          </Link>
+          <Link
+            href="/docs"
+            className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-6 py-3.5 text-sm font-medium text-white/90 hover:bg-white/10 transition-colors"
+          >
+            API docs
+          </Link>
         </div>
       </section>
 
-      {/* Marquee */}
-      <div className="w-full border-y border-white/5">
+      {/* Marquee — subtle divider */}
+      <div className="w-full border-y border-white/[0.06]">
         <MarqueeStrip />
       </div>
 
-      {/* How it works — horizontal flow diagram */}
-      <section className="mx-auto max-w-5xl px-4 py-16 sm:py-20 sm:px-6">
-        <h2 className="text-center text-[11px] font-semibold uppercase tracking-[0.25em] text-[var(--text-secondary)] mb-12">
+      {/* How it works — Apple: frosted cards, subtle steps */}
+      <section className="mx-auto max-w-4xl px-4 py-20 sm:py-28 sm:px-6">
+        <h2 className="text-center text-[11px] font-medium uppercase tracking-[0.3em] text-white/40 mb-16">
           How it works
         </h2>
-        <div className="relative flex flex-col sm:flex-row items-stretch gap-6 sm:gap-0">
-          {/* Connecting line — desktop */}
-          <div className="hidden sm:block absolute top-12 left-[15%] right-[15%] h-px bg-gradient-to-r from-transparent via-[var(--accent-heart)]/40 to-transparent" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-8">
           {[
-            { num: 1, title: "Agent gets API key", sub: "Dashboard → API", delay: "0ms" },
-            { num: 2, title: "Agent bets via REST", sub: "POST /api/games/dice/bet", delay: "100ms" },
-            { num: 3, title: "Same balance, provably fair", sub: "Verify every roll", delay: "200ms" },
+            { num: "01", title: "Agent gets API key", sub: "Dashboard → API" },
+            { num: "02", title: "Agent bets via REST", sub: "POST /api/games/dice/bet" },
+            { num: "03", title: "Same balance, provably fair", sub: "Verify every roll" },
           ].map((step) => (
             <div
               key={step.num}
-              className="relative flex-1 group"
-              style={{ animationDelay: step.delay }}
+              className="frosted rounded-2xl p-8 sm:p-10 text-center transition-colors duration-300 hover:bg-white/[0.06]"
             >
-              <div className="relative rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.06] to-transparent p-6 sm:p-8 text-center transition-all duration-300 hover:border-[var(--accent-heart)]/30 hover:from-white/[0.08] hover:shadow-[0_0_30px_-10px_rgba(244,63,94,0.15)]">
-                <span className="relative z-10 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-heart)]/20 text-[var(--accent-heart)] font-mono text-lg font-bold ring-4 ring-black/50">
-                  {step.num}
-                </span>
-                <p className="mt-5 text-base font-semibold text-[var(--text-primary)]">{step.title}</p>
-                <p className="mt-2 text-xs font-mono text-[var(--text-secondary)]">{step.sub}</p>
-              </div>
+              <span className="text-2xl font-light text-white/30 tabular-nums">{step.num}</span>
+              <p className="mt-6 text-lg font-semibold text-white">{step.title}</p>
+              <p className="mt-2 text-sm text-white/50 font-mono">{step.sub}</p>
             </div>
           ))}
         </div>
       </section>
 
-      {/* Features — bento grid */}
-      <section className="mx-auto max-w-5xl px-4 py-16 sm:py-20 sm:px-6">
-        <h2 className="text-center text-[11px] font-semibold uppercase tracking-[0.25em] text-[var(--text-secondary)] mb-10">
+      {/* What you get — Apple: equal-weight frosted cards */}
+      <section className="mx-auto max-w-4xl px-4 py-20 sm:py-28 sm:px-6">
+        <h2 className="text-center text-[11px] font-medium uppercase tracking-[0.3em] text-white/40 mb-16">
           What you get
         </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-          {FEATURES.map(({ icon, label }, i) => {
-            const isWide = label.includes("OpenClaw") || label.includes("Shared");
-            return (
-              <div
-                key={label}
-                className={`flex items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-4 sm:px-5 sm:py-5 hover:bg-white/[0.06] hover:border-white/10 transition-all duration-300 hover:-translate-y-0.5 ${isWide ? "col-span-2" : ""}`}
-              >
-                <span className="text-2xl sm:text-3xl shrink-0 opacity-90">{icon}</span>
-                <span className="text-xs sm:text-sm font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]">{label}</span>
-              </div>
-            );
-          })}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-5">
+          {FEATURES.map(({ icon, label }) => (
+            <div
+              key={label}
+              className="frosted flex flex-col items-center justify-center rounded-2xl p-6 sm:p-8 text-center transition-colors duration-300 hover:bg-white/[0.06] min-h-[140px] sm:min-h-[160px]"
+            >
+              <span className="text-3xl sm:text-4xl mb-4 text-white/80" aria-hidden>{icon}</span>
+              <span className="text-sm font-medium text-white/80 leading-snug">{label}</span>
+            </div>
+          ))}
         </div>
       </section>
 
-      {/* Dice — hero card */}
-      <section className="mx-auto max-w-5xl px-4 py-16 sm:py-20 sm:px-6">
-        <h2 className="text-[11px] font-semibold uppercase tracking-[0.25em] text-[var(--accent-heart)] mb-6">Pure Dice</h2>
+      {/* Dice — Apple: frosted hero card */}
+      <section className="mx-auto max-w-4xl px-4 py-20 sm:py-28 sm:px-6">
+        <h2 className="text-[11px] font-medium uppercase tracking-[0.3em] text-white/40 mb-6">Pure Dice</h2>
         {GAMES.map((game) => (
           <div key={game.name}>
             {isLoggedIn ? (
               <Link href={game.href} className="block group">
-                <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.08] to-white/[0.02] p-8 sm:p-10 transition-all duration-300 hover:border-[var(--accent-heart)]/40 hover:shadow-[0_0_40px_-15px_rgba(244,63,94,0.2)]">
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(244,63,94,0.08),transparent_50%)] opacity-0 group-hover:opacity-100 transition-opacity" />
-                  <div className="relative flex flex-col sm:flex-row items-start gap-6">
-                    <span className="text-5xl sm:text-6xl">🎲</span>
+                <div className="frosted-strong rounded-3xl p-8 sm:p-12 transition-all duration-300 hover:bg-white/[0.09]">
+                  <div className="flex flex-col sm:flex-row items-start gap-8">
+                    <span className="text-5xl sm:text-6xl" aria-hidden>🎲</span>
                     <div className="flex-1">
-                      <h3 className="text-2xl font-bold font-[family-name:var(--font-outfit)] group-hover:text-[var(--accent-heart)] transition-colors">
+                      <h3 className="text-2xl font-semibold font-[family-name:var(--font-outfit)] text-white group-hover:text-white transition-colors">
                         {game.name}
                       </h3>
-                      <p className="mt-2 text-base text-[var(--text-secondary)]">{game.desc}</p>
-                      <span className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[var(--accent-heart)] opacity-80 group-hover:opacity-100 transition-opacity">
+                      <p className="mt-3 text-base text-white/60 leading-relaxed">{game.desc}</p>
+                      <span className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-white/90">
                         Play now →
                       </span>
                     </div>
@@ -216,13 +194,13 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                 </div>
               </Link>
             ) : (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 sm:p-10 opacity-80">
-                <div className="flex flex-col sm:flex-row items-start gap-6">
-                  <span className="text-5xl sm:text-6xl">🎲</span>
+              <div className="frosted rounded-3xl p-8 sm:p-12 opacity-90">
+                <div className="flex flex-col sm:flex-row items-start gap-8">
+                  <span className="text-5xl sm:text-6xl" aria-hidden>🎲</span>
                   <div>
-                    <h3 className="text-2xl font-bold font-[family-name:var(--font-outfit)]">{game.name}</h3>
-                    <p className="mt-2 text-base text-[var(--text-secondary)]">{game.desc}</p>
-                    <p className="mt-4 text-xs text-[var(--text-secondary)] uppercase tracking-wider">Login to play</p>
+                    <h3 className="text-2xl font-semibold font-[family-name:var(--font-outfit)] text-white">{game.name}</h3>
+                    <p className="mt-3 text-base text-white/60 leading-relaxed">{game.desc}</p>
+                    <p className="mt-6 text-xs text-white/40 uppercase tracking-wider">Login to play</p>
                   </div>
                 </div>
               </div>
@@ -231,10 +209,10 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         ))}
       </section>
 
-      {/* Integrations + Proof — stacked */}
-      <section className="mx-auto max-w-5xl px-4 py-16 sm:py-20 sm:px-6 space-y-10">
+      {/* Integrations + Proof — Apple: minimal, refined */}
+      <section className="mx-auto max-w-4xl px-4 py-20 sm:py-28 sm:px-6 space-y-16">
         <div>
-          <h2 className="text-[11px] font-semibold uppercase tracking-[0.25em] text-[var(--accent-heart)] mb-5">
+          <h2 className="text-[11px] font-medium uppercase tracking-[0.3em] text-white/40 mb-8">
             Works with your stack
           </h2>
           <div className="flex flex-wrap gap-3">
@@ -244,14 +222,14 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                 href={href}
                 target={href.startsWith("http") ? "_blank" : undefined}
                 rel={href.startsWith("http") ? "noopener noreferrer" : undefined}
-                className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/10 hover:text-white hover:border-[var(--accent-heart)]/40 hover:-translate-y-0.5 transition-all duration-200"
+                className="frosted rounded-full px-5 py-2.5 text-sm font-medium text-white/80 hover:text-white hover:bg-white/[0.08] transition-colors"
               >
                 {badge && <span className="text-[var(--accent-heart)] mr-1.5">{badge}</span>}
                 {name}
               </a>
             ))}
           </div>
-          <p className="mt-4 text-sm text-[var(--text-secondary)] max-w-xl">
+          <p className="mt-6 text-sm text-white/50 max-w-xl leading-relaxed">
             OpenClaw ships the xpersona-casino skill. REST works with LangChain, CrewAI, AutoGen, or any LLM.
           </p>
         </div>
@@ -260,17 +238,17 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-white/5 py-10">
-        <div className="mx-auto max-w-5xl px-4 sm:px-6 text-center space-y-4">
-          <p className="text-sm font-semibold text-[var(--text-primary)]">{AI_FIRST_MESSAGING.builtFor}</p>
-          <p className="text-xs text-[var(--text-secondary)] max-w-md mx-auto">
+      {/* Footer — Apple: minimal */}
+      <footer className="border-t border-white/[0.06] py-16">
+        <div className="mx-auto max-w-4xl px-4 sm:px-6 text-center space-y-6">
+          <p className="text-sm font-medium text-white/70">{AI_FIRST_MESSAGING.builtFor}</p>
+          <p className="text-xs text-white/40 max-w-md mx-auto leading-relaxed">
             OpenClaw skill on ClawHub · REST for LangChain, CrewAI, AutoGen · Same API for humans & agents
           </p>
-          <div className="flex flex-wrap justify-center gap-6 text-xs">
-            <Link href="/docs" className="text-[var(--accent-heart)] hover:underline">API docs</Link>
-            <Link href="/dashboard/api" className="text-[var(--accent-heart)] hover:underline">Dashboard API</Link>
-            <a href="https://docs.openclaw.ai/" target="_blank" rel="noopener noreferrer" className="text-[var(--accent-heart)] hover:underline">OpenClaw</a>
+          <div className="flex flex-wrap justify-center gap-8 text-xs">
+            <Link href="/docs" className="text-white/50 hover:text-white transition-colors">API docs</Link>
+            <Link href="/dashboard/api" className="text-white/50 hover:text-white transition-colors">Dashboard API</Link>
+            <a href="https://docs.openclaw.ai/" target="_blank" rel="noopener noreferrer" className="text-white/50 hover:text-white transition-colors">OpenClaw</a>
           </div>
         </div>
       </footer>

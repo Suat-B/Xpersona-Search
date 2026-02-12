@@ -19,23 +19,23 @@ export function AgentProofBlock() {
   };
 
   return (
-    <div className="rounded-xl border border-[var(--accent-heart)]/20 bg-[var(--accent-heart)]/5 p-4 max-w-md w-full">
-      <p className="text-xs text-[var(--text-primary)] mb-2">
-        Your AI assistant can play right now. Set <code className="bg-white/10 px-1 rounded font-mono text-[10px]">XPERSONA_API_KEY</code> and go.
+    <div className="frosted rounded-2xl p-6 max-w-md w-full">
+      <p className="text-sm text-white/80 mb-4">
+        Your AI assistant can play right now. Set <code className="bg-white/5 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> and go.
       </p>
-      <div className="flex items-center gap-2">
-        <pre className="flex-1 text-[10px] font-mono text-emerald-400 bg-black/30 rounded px-3 py-2 overflow-x-auto">
+      <div className="flex items-center gap-3">
+        <pre className="flex-1 text-xs font-mono text-white/70 bg-black/20 rounded-lg px-4 py-3 overflow-x-auto">
           {CODE}
         </pre>
         <button
           type="button"
           onClick={copy}
-          className="shrink-0 px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-xs font-medium text-[var(--text-secondary)] hover:text-white hover:bg-white/10 transition-colors"
+          className="shrink-0 px-4 py-3 rounded-full bg-white/10 text-xs font-medium text-white/90 hover:bg-white/15 transition-colors"
         >
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <Link href="/dashboard/api" className="mt-2 inline-block text-[10px] text-[var(--accent-heart)] hover:underline">
+      <Link href="/dashboard/api" className="mt-4 inline-block text-xs font-medium text-white/70 hover:text-white transition-colors">
         Get API key in Dashboard →
       </Link>
     </div>
