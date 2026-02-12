@@ -81,9 +81,17 @@ function SettingsPageClient() {
               </p>
             </div>
             {isGuest && (
-              <p className="text-xs text-amber-400">
-                Guest account — sign in with Google for a persistent profile.
-              </p>
+              <div className="space-y-2">
+                <p className="text-xs text-amber-400">
+                  Guest account — sign in with Google for a persistent profile.
+                </p>
+                <Link
+                  href="/api/auth/signin/google?callbackUrl=%2Fdashboard%2Fprofile%3Flink_guest%3D1"
+                  className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-4 py-2 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
+                >
+                  Upgrade to Google
+                </Link>
+              </div>
             )}
           </div>
         ) : (
