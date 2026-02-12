@@ -51,8 +51,9 @@ export function StrategiesSection() {
   const [strategies, setStrategies] = useState<StrategyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
   const [builderOpen, setBuilderOpen] = useState(false);
+  const [saveFormConfig, setSaveFormConfig] = useState<DiceStrategyConfig | null>(null);
+  const builderRef = useRef<HTMLDivElement>(null);
 
   const fetchIdRef = useRef(0);
 
@@ -158,6 +159,7 @@ export function StrategiesSection() {
           <div className="mt-2">
             <CustomStrategyBuilder
               onRun={(cfg, maxRounds) => runWithConfig(cfg, maxRounds, "Custom")}
+              onSaveRequest={(cfg) => setSaveFormConfig(cfg)}
             />
           </div>
         )}
@@ -178,20 +180,24 @@ export function StrategiesSection() {
       <div className="flex gap-2 mb-4">
         <button
           type="button"
-          onClick={() => setCreateOpen((o) => !o)}
+          onClick={() => {
+            setBuilderOpen(true);
+            builderRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }}
           className="rounded bg-[var(--accent-heart)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
         >
-          {createOpen ? "Cancel" : "Create strategy"}
+          Create strategy
         </button>
       </div>
 
-      {createOpen && (
+      {saveFormConfig && (
         <CreateStrategyForm
+          initialConfig={saveFormConfig}
           onCreated={() => {
-            setCreateOpen(false);
+            setSaveFormConfig(null);
             fetchStrategies();
           }}
-          onCancel={() => setCreateOpen(false)}
+          onCancel={() => setSaveFormConfig(null)}
         />
       )}
 
@@ -588,6 +594,9 @@ function CustomStrategyBuilder({
       <div className="flex flex-wrap gap-2 mt-4">
         <button type="button" onClick={() => onRun(buildConfig(), 20)} className="rounded bg-green-500/20 border border-green-500/50 px-4 py-2 text-sm text-green-400 hover:bg-green-500/30">Run (20)</button>
         <button type="button" onClick={() => onRun(buildConfig(), 50)} className="rounded bg-[var(--accent-heart)]/20 border border-[var(--accent-heart)]/50 px-4 py-2 text-sm text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/30">Auto-run (50)</button>
+        {onSaveRequest && (
+          <button type="button" onClick={() => onSaveRequest(buildConfig())} className="rounded border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-4 py-2 text-sm text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20">Save to My strategies</button>
+        )}
         <button type="button" onClick={copyConfigJson} className="rounded border border-[var(--border)] bg-[var(--bg-matte)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]">Copy as JSON</button>
       </div>
 
@@ -608,20 +617,46 @@ function CustomStrategyBuilder({
   );
 }
 
-function CreateStrategyForm({ onCreated, onCancel }: { onCreated: () => void; onCancel: () => void }) {
+function CreateStrategyForm({
+  onCreated,
+  onCancel,
+  initialConfig,
+}: {
+  onCreated: () => void;
+  onCancel: () => void;
+  initialConfig?: DiceStrategyConfig;
+}) {
   const [name, setName] = useState("");
-  const [amount, setAmount] = useState(10);
-  const [target, setTarget] = useState(50);
-  const [condition, setCondition] = useState<"over" | "under">("over");
-  const [progressionType, setProgressionType] = useState<string>("flat");
+  const [amount, setAmount] = useState(initialConfig?.amount ?? 10);
+  const [target, setTarget] = useState(initialConfig?.target ?? 50);
+  const [condition, setCondition] = useState<"over" | "under">(
+    initialConfig?.condition ?? "over"
+  );
+  const [progressionType, setProgressionType] = useState<string>(
+    initialConfig?.progressionType ?? "flat"
+  );
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [stopAfterRounds, setStopAfterRounds] = useState("");
-  const [stopIfBalanceBelow, setStopIfBalanceBelow] = useState("");
-  const [stopIfBalanceAbove, setStopIfBalanceAbove] = useState("");
-  const [maxBet, setMaxBet] = useState("");
-  const [maxConsecutiveLosses, setMaxConsecutiveLosses] = useState("");
-  const [maxConsecutiveWins, setMaxConsecutiveWins] = useState("");
-  const [unitStep, setUnitStep] = useState("");
+  const [stopAfterRounds, setStopAfterRounds] = useState(
+    initialConfig?.stopAfterRounds ? String(initialConfig.stopAfterRounds) : ""
+  );
+  const [stopIfBalanceBelow, setStopIfBalanceBelow] = useState(
+    initialConfig?.stopIfBalanceBelow != null ? String(initialConfig.stopIfBalanceBelow) : ""
+  );
+  const [stopIfBalanceAbove, setStopIfBalanceAbove] = useState(
+    initialConfig?.stopIfBalanceAbove != null ? String(initialConfig.stopIfBalanceAbove) : ""
+  );
+  const [maxBet, setMaxBet] = useState(
+    initialConfig?.maxBet ? String(initialConfig.maxBet) : ""
+  );
+  const [maxConsecutiveLosses, setMaxConsecutiveLosses] = useState(
+    initialConfig?.maxConsecutiveLosses ? String(initialConfig.maxConsecutiveLosses) : ""
+  );
+  const [maxConsecutiveWins, setMaxConsecutiveWins] = useState(
+    initialConfig?.maxConsecutiveWins ? String(initialConfig.maxConsecutiveWins) : ""
+  );
+  const [unitStep, setUnitStep] = useState(
+    initialConfig?.unitStep ? String(initialConfig.unitStep) : ""
+  );
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
