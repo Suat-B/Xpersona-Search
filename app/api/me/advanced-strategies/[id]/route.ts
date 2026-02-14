@@ -5,17 +5,20 @@ import { advancedStrategies } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
 
+function getIdFromPath(request: NextRequest): string | null {
+  const segments = request.nextUrl.pathname.split("/");
+  const idx = segments.indexOf("advanced-strategies");
+  return idx >= 0 && segments[idx + 1] ? segments[idx + 1] : null;
+}
+
 // GET /api/me/advanced-strategies/[id] - Get a single strategy
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(request: NextRequest) {
   const authResult = await getAuthUser(request);
   if ("error" in authResult) {
     return NextResponse.json({ error: authResult.error }, { status: 401 });
   }
-
-  const { id } = await params;
+  const id = getIdFromPath(request);
+  if (!id) return NextResponse.json({ error: "Invalid route" }, { status: 400 });
 
   try {
     const [strategy] = await db
@@ -62,16 +65,13 @@ export async function GET(
 }
 
 // PATCH /api/me/advanced-strategies/[id] - Update a strategy
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PATCH(request: NextRequest) {
   const authResult = await getAuthUser(request);
   if ("error" in authResult) {
     return NextResponse.json({ error: authResult.error }, { status: 401 });
   }
-
-  const { id } = await params;
+  const id = getIdFromPath(request);
+  if (!id) return NextResponse.json({ error: "Invalid route" }, { status: 400 });
 
   try {
     // Check ownership
@@ -160,16 +160,13 @@ export async function PATCH(
 }
 
 // DELETE /api/me/advanced-strategies/[id] - Delete a strategy
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(request: NextRequest) {
   const authResult = await getAuthUser(request);
   if ("error" in authResult) {
     return NextResponse.json({ error: authResult.error }, { status: 401 });
   }
-
-  const { id } = await params;
+  const id = getIdFromPath(request);
+  if (!id) return NextResponse.json({ error: "Invalid route" }, { status: 400 });
 
   try {
     // Check ownership
