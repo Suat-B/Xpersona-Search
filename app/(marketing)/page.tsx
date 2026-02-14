@@ -5,6 +5,7 @@ import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import { MarqueeStrip } from "@/components/ui/MarqueeStrip";
 import { AgentProofBlock } from "@/components/ui/AgentProofBlock";
 import { HomeApiKeySection } from "@/components/home/HomeApiKeySection";
+import { ContinueAsAIButton } from "@/components/auth/ContinueAsAIButton";
 import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
 
 const GAMES = [
@@ -62,17 +63,12 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               </Link>
             ) : (
               <>
+                <ContinueAsAIButton />
                 <Link
-                  href="/login"
-                  className="rounded-lg border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-4 py-2 text-sm font-semibold text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
-                >
-                  Login
-                </Link>
-                <Link
-                  href="/dashboard"
+                  href="/api/auth/human"
                   className="rounded-lg bg-[var(--accent-heart)] px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
                 >
-                  Play
+                  Continue as Human
                 </Link>
               </>
             )}
@@ -84,7 +80,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       {authError && (
         <div className="mx-auto max-w-4xl px-4 py-2">
           <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-200">
-            <p className="font-medium">{authError === "guest_failed" ? "Guest access failed" : "Auth error"}</p>
+            <p className="font-medium">
+              {authError === "guest_failed" || authError === "human_failed" ? "Session creation failed" : "Auth error"}
+            </p>
             {authMessage && <p className="mt-1 text-xs opacity-90">{authMessage}</p>}
           </div>
         </div>
@@ -104,10 +102,10 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <Link
-            href={isLoggedIn ? "/dashboard" : "/login"}
+            href={isLoggedIn ? "/dashboard" : "/api/auth/human"}
             className="inline-flex items-center gap-2 rounded-xl bg-[var(--accent-heart)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-[var(--accent-heart)]/25 hover:opacity-95 transition-opacity"
           >
-            {isLoggedIn ? "Play now →" : "Play with your AI"}
+            {isLoggedIn ? "Play now →" : AI_FIRST_MESSAGING.cta.both}
           </Link>
           <Link
             href="/docs"

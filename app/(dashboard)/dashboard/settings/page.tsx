@@ -41,7 +41,7 @@ function SettingsPageClient() {
       .finally(() => setLoading(false));
   }, []);
 
-  const isGuest = user?.email?.endsWith?.("@xpersona.guest");
+  const isGuest = user?.email?.endsWith?.("@xpersona.guest") || user?.email?.endsWith?.("@xpersona.human");
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">

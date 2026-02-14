@@ -1,31 +1,36 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 export function ApiKeySection() {
   const [prefix, setPrefix] = useState<string | null>(null);
   const [modalKey, setModalKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/me", { credentials: "include" })
       .then(async (r) => {
         const text = await r.text();
         try {
-          return text ? JSON.parse(text) : {};
+          return { ok: r.ok, data: text ? JSON.parse(text) : {} };
         } catch {
-          return {};
+          return { ok: false, data: {} };
         }
       })
-      .then((data) => data.success && setPrefix(data.data?.apiKeyPrefix ?? null));
+      .then(({ ok, data }) => {
+        if (ok && data.success) setPrefix(data.data?.apiKeyPrefix ?? null);
+      });
   }, []);
 
   const generate = async () => {
+    setError(null);
     setLoading(true);
     const res = await fetch("/api/me/api-key", { method: "POST", credentials: "include" });
     const text = await res.text();
-    let data: { success?: boolean; data?: { apiKey?: string; apiKeyPrefix?: string } };
+    let data: { success?: boolean; data?: { apiKey?: string; apiKeyPrefix?: string }; error?: string };
     try {
       data = text ? JSON.parse(text) : {};
     } catch {
@@ -35,6 +40,10 @@ export function ApiKeySection() {
     if (data.success && data.data) {
       setModalKey(data.data.apiKey ?? null);
       setPrefix(data.data.apiKeyPrefix ?? null);
+    } else if (res.status === 401) {
+      setError("auth");
+    } else {
+      setError("generic");
     }
   };
 
@@ -122,6 +131,42 @@ export function ApiKeySection() {
           </span>
         )}
       </button>
+
+      {error === "auth" && (
+        <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          <p className="font-medium">Sign in to generate an API key</p>
+          <p className="mt-1 text-xs text-amber-200/90">
+            Continue as Human or Continue as AI to create your key.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href="/api/auth/human"
+              className="inline-flex items-center rounded-lg bg-[var(--accent-heart)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+            >
+              Continue as Human
+            </Link>
+            <Link
+              href="/"
+              className="inline-flex items-center rounded-lg border border-white/20 px-3 py-1.5 text-xs font-medium hover:bg-white/5"
+            >
+              Home
+            </Link>
+          </div>
+        </div>
+      )}
+      {error === "generic" && (
+        <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <p className="font-medium">Something went wrong</p>
+          <p className="mt-1 text-xs opacity-90">Please try again or sign in first.</p>
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            className="mt-2 text-xs font-medium hover:underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       
       {modalKey && (
         <div

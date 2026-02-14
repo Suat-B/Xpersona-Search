@@ -94,7 +94,7 @@ function ProfilePageClient() {
       .catch(() => {});
   }, [searchParams, router]);
 
-  const isGuest = user?.email?.endsWith?.("@xpersona.guest");
+  const isGuest = user?.email?.endsWith?.("@xpersona.guest") || user?.email?.endsWith?.("@xpersona.human");
   const hasGoogleProvider = true; // We assume Google is configured if user sees this
 
   const formatNumber = (n: number) => n.toLocaleString();

@@ -9,8 +9,8 @@ interface EnsureGuestProps {
 }
 
 /**
- * Auto-creates a guest session when user accesses dashboard/games without auth.
- * Login is not required; this provides seamless guest play.
+ * Auto-creates a human session when user accesses dashboard/games without auth.
+ * Login is not required; this provides seamless play.
  */
 export function EnsureGuest({ needsGuest }: EnsureGuestProps) {
   const router = useRouter();
@@ -20,7 +20,7 @@ export function EnsureGuest({ needsGuest }: EnsureGuestProps) {
     if (!needsGuest || started.current) return;
     started.current = true;
 
-    fetch("/api/auth/guest", {
+    fetch("/api/auth/human", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
