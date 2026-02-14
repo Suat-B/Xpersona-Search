@@ -5,6 +5,13 @@ import Link from "next/link";
 import { GlassCard, MetricCard } from "@/components/ui/GlassCard";
 import { cn } from "@/lib/utils";
 
+type RevenuePeriod = {
+  earnings: number;
+  volume: number;
+  betCount?: number;
+  theoreticalEdge?: number;
+};
+
 type OverviewData = {
   users: { total: number; recent: Array<{ id: string; email: string; name: string | null; credits: number; createdAt: string }> };
   bets: {
@@ -26,6 +33,13 @@ type OverviewData = {
   stripe: { totalEvents: number };
   strategies: { basic: number; advanced: number };
   creditsInCirculation: number;
+  revenue?: {
+    daily: RevenuePeriod;
+    weekly: RevenuePeriod;
+    monthly: RevenuePeriod;
+    total: RevenuePeriod;
+    houseEdgePercent: number;
+  };
 };
 
 type Tab = "overview" | "games" | "users";
@@ -207,6 +221,68 @@ export default function AdminPage() {
 
       {tab === "overview" && overview && (
         <div className="space-y-8">
+          {/* Revenue & House Edge Section */}
+          {overview.revenue && (
+            <GlassCard className="p-6 border-amber-500/20 bg-gradient-to-br from-amber-500/5 via-transparent to-transparent">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-amber-400/90 mb-4 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Revenue & House Edge ({overview.revenue.houseEdgePercent}%)
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="rounded-xl border border-amber-500/20 bg-black/20 p-4">
+                  <p className="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Today</p>
+                  <p className={cn("mt-1 text-2xl font-semibold", overview.revenue.daily.earnings >= 0 ? "text-[#30d158]" : "text-[#ff453a]")}>
+                    {overview.revenue.daily.earnings >= 0 ? "+" : ""}{overview.revenue.daily.earnings}
+                  </p>
+                  <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
+                    {overview.revenue.daily.volume.toLocaleString()} vol · {overview.revenue.daily.betCount ?? 0} bets
+                  </p>
+                  {overview.revenue.daily.theoreticalEdge != null && (
+                    <p className="mt-1 text-[10px] text-amber-400/70">~{overview.revenue.daily.theoreticalEdge} theoretical (3%)</p>
+                  )}
+                </div>
+                <div className="rounded-xl border border-amber-500/20 bg-black/20 p-4">
+                  <p className="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider">7 Days</p>
+                  <p className={cn("mt-1 text-2xl font-semibold", overview.revenue.weekly.earnings >= 0 ? "text-[#30d158]" : "text-[#ff453a]")}>
+                    {overview.revenue.weekly.earnings >= 0 ? "+" : ""}{overview.revenue.weekly.earnings}
+                  </p>
+                  <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
+                    {overview.revenue.weekly.volume.toLocaleString()} vol · {overview.revenue.weekly.betCount ?? 0} bets
+                  </p>
+                  {overview.revenue.weekly.theoreticalEdge != null && (
+                    <p className="mt-1 text-[10px] text-amber-400/70">~{overview.revenue.weekly.theoreticalEdge} theoretical (3%)</p>
+                  )}
+                </div>
+                <div className="rounded-xl border border-amber-500/20 bg-black/20 p-4">
+                  <p className="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider">30 Days</p>
+                  <p className={cn("mt-1 text-2xl font-semibold", overview.revenue.monthly.earnings >= 0 ? "text-[#30d158]" : "text-[#ff453a]")}>
+                    {overview.revenue.monthly.earnings >= 0 ? "+" : ""}{overview.revenue.monthly.earnings}
+                  </p>
+                  <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
+                    {overview.revenue.monthly.volume.toLocaleString()} vol · {overview.revenue.monthly.betCount ?? 0} bets
+                  </p>
+                  {overview.revenue.monthly.theoreticalEdge != null && (
+                    <p className="mt-1 text-[10px] text-amber-400/70">~{overview.revenue.monthly.theoreticalEdge} theoretical (3%)</p>
+                  )}
+                </div>
+                <div className="rounded-xl border border-amber-500/20 bg-black/20 p-4">
+                  <p className="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider">All Time</p>
+                  <p className={cn("mt-1 text-2xl font-semibold", overview.revenue.total.earnings >= 0 ? "text-[#30d158]" : "text-[#ff453a]")}>
+                    {overview.revenue.total.earnings >= 0 ? "+" : ""}{overview.revenue.total.earnings}
+                  </p>
+                  <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
+                    {overview.revenue.total.volume.toLocaleString()} total volume
+                  </p>
+                  {overview.revenue.total.theoreticalEdge != null && (
+                    <p className="mt-1 text-[10px] text-amber-400/70">~{overview.revenue.total.theoreticalEdge} theoretical (3%)</p>
+                  )}
+                </div>
+              </div>
+            </GlassCard>
+          )}
+
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
             <MetricCard label="Total Users" value={overview.users.total} />
             <MetricCard label="Total Bets" value={overview.bets.totalCount} />

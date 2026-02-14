@@ -11,6 +11,7 @@ import {
   advancedStrategies,
 } from "@/lib/db/schema";
 import { sql, desc } from "drizzle-orm";
+import { DICE_HOUSE_EDGE } from "@/lib/constants";
 
 /**
  * GET /api/admin/overview — Platform-wide metrics (admin only).
@@ -75,6 +76,39 @@ export async function GET(request: Request) {
       })
       .from(users);
 
+    // Revenue metrics: house earnings = amount - payout (what we keep)
+    // Daily: today (server timezone)
+    const [dailyRevenue] = await db
+      .select({
+        revenue: sql<number>`coalesce(sum(${gameBets.amount} - ${gameBets.payout}), 0)::bigint`,
+        volume: sql<number>`coalesce(sum(${gameBets.amount}), 0)::bigint`,
+        betCount: sql<number>`count(*)::int`,
+      })
+      .from(gameBets)
+      .where(sql`${gameBets.createdAt} >= date_trunc('day', now())`);
+
+    // Weekly: last 7 days
+    const [weeklyRevenue] = await db
+      .select({
+        revenue: sql<number>`coalesce(sum(${gameBets.amount} - ${gameBets.payout}), 0)::bigint`,
+        volume: sql<number>`coalesce(sum(${gameBets.amount}), 0)::bigint`,
+        betCount: sql<number>`count(*)::int`,
+      })
+      .from(gameBets)
+      .where(sql`${gameBets.createdAt} >= now() - interval '7 days'`);
+
+    // Monthly: last 30 days
+    const [monthlyRevenue] = await db
+      .select({
+        revenue: sql<number>`coalesce(sum(${gameBets.amount} - ${gameBets.payout}), 0)::bigint`,
+        volume: sql<number>`coalesce(sum(${gameBets.amount}), 0)::bigint`,
+        betCount: sql<number>`count(*)::int`,
+      })
+      .from(gameBets)
+      .where(sql`${gameBets.createdAt} >= now() - interval '30 days'`);
+
+    const totalHouseRevenue = Number(betStats?.totalVolume ?? 0) - Number(betStats?.totalPayout ?? 0);
+
     const recentBets = await db
       .select({
         id: gameBets.id,
@@ -127,6 +161,32 @@ export async function GET(request: Request) {
           advanced: advancedCount?.count ?? 0,
         },
         creditsInCirculation: Number(creditsInCirculation?.total ?? 0),
+        revenue: {
+          daily: {
+            earnings: Number(dailyRevenue?.revenue ?? 0),
+            volume: Number(dailyRevenue?.volume ?? 0),
+            betCount: dailyRevenue?.betCount ?? 0,
+            theoreticalEdge: Math.round(Number(dailyRevenue?.volume ?? 0) * DICE_HOUSE_EDGE),
+          },
+          weekly: {
+            earnings: Number(weeklyRevenue?.revenue ?? 0),
+            volume: Number(weeklyRevenue?.volume ?? 0),
+            betCount: weeklyRevenue?.betCount ?? 0,
+            theoreticalEdge: Math.round(Number(weeklyRevenue?.volume ?? 0) * DICE_HOUSE_EDGE),
+          },
+          monthly: {
+            earnings: Number(monthlyRevenue?.revenue ?? 0),
+            volume: Number(monthlyRevenue?.volume ?? 0),
+            betCount: monthlyRevenue?.betCount ?? 0,
+            theoreticalEdge: Math.round(Number(monthlyRevenue?.volume ?? 0) * DICE_HOUSE_EDGE),
+          },
+          total: {
+            earnings: totalHouseRevenue,
+            volume: Number(betStats?.totalVolume ?? 0),
+            theoreticalEdge: Math.round(Number(betStats?.totalVolume ?? 0) * DICE_HOUSE_EDGE),
+          },
+          houseEdgePercent: DICE_HOUSE_EDGE * 100,
+        },
       },
     });
   } catch (err) {
