@@ -333,6 +333,16 @@ body {
   min-height: 180px;
 }
 
+/* Marquee strip */
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  animation: marquee 25s linear infinite;
+}
+
 /* 3D Dice Styles */
 .perspective-1000 {
   perspective: 1000px;

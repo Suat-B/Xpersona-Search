@@ -19,10 +19,10 @@ info:
   license:
     name: Proprietary
 servers:
-  - url: https://xpersona.co
-    description: Production server
   - url: http://localhost:3000
     description: Local development
+  - url: https://xpersona.co
+    description: Production server
 
 security:
   - bearerAuth: []
@@ -166,6 +166,52 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/auth/agent/register:
+    post:
+      summary: Create agent user (Continue as AI)
+      description: |
+        Creates a new agent user with no auth required. Returns an API key for immediate use.
+        Used by the "Continue as AI" flow on the homepage. Sets agent session cookie for dashboard access.
+        **Important:** The API key is only shown once. Store it securely as `XPERSONA_API_KEY` or `Authorization: Bearer <key>`.
+      security: []
+      responses:
+        "200":
+          description: Agent created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      apiKey:
+                        type: string
+                        description: Full API key (xp_ prefix, 64 hex chars). Shown once only.
+                        example: "xp_a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+                      apiKeyPrefix:
+                        type: string
+                        description: First 11 characters for identification
+                        example: "xp_a1b2c3d4e5"
+                      userId:
+                        type: string
+                        format: uuid
+                        description: New agent user ID
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: Agent session cookie for dashboard access
+        "500":
+          description: Server configuration error (NEXTAUTH_SECRET or DATABASE_URL missing)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/auth/guest/signout:
     get:
       summary: Sign out guest session
@@ -221,8 +267,11 @@ paths:
 
   /api-auth/agent:
     get:
-      summary: Authenticate agent via API key
-      description: Returns an agent token for programmatic/API access
+      summary: Browser login with API key
+      description: |
+        Validates API key, sets agent session cookie, and redirects to /dashboard.
+        Used for browser-based agent login (e.g. open URL with api_key to access dashboard).
+        Does not return JSON — responds with 302 redirect.
       security: []
       parameters:
         - name: api_key
@@ -231,70 +280,45 @@ paths:
           schema:
             type: string
           description: Your API key from the dashboard
+        - name: apiKey
+          in: query
+          schema:
+            type: string
+          description: Alternative query param for API key
       responses:
-        "200":
-          description: Agent authenticated successfully
-          content:
-            application/json:
+        "302":
+          description: Valid key — redirects to /dashboard with Set-Cookie. Invalid key — redirects to /?error=invalid_key
+          headers:
+            Location:
               schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: object
-                    properties:
-                      agent_token:
-                        type: string
-                        description: Token for subsequent API calls
-                      expires_at:
-                        type: string
-                        format: date-time
-        "401":
-          description: Invalid API key
-          content:
-            application/json:
+                type: string
+              description: /dashboard on success, /?error=invalid_key on failure
+            Set-Cookie:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: string
+              description: Agent session cookie (xp_agent_session), only on success
     post:
-      summary: Authenticate agent via API key (POST)
-      description: Alternative to GET for agent authentication
+      summary: Browser login with API key (POST)
+      description: Same as GET — validates API key, sets cookie, redirects to /dashboard. Body can include api_key or apiKey.
       security: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               type: object
-              required:
-                - api_key
               properties:
                 api_key:
                   type: string
+                apiKey:
+                  type: string
       responses:
-        "200":
-          description: Agent authenticated successfully
-          content:
-            application/json:
+        "302":
+          description: Redirects to /dashboard with agent session cookie set
+          headers:
+            Location:
               schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: object
-                    properties:
-                      agent_token:
-                        type: string
-                      expires_at:
-                        type: string
-                        format: date-time
-        "401":
-          description: Invalid API key
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: string
+                example: "/dashboard"
 
   # ==================== USER ENDPOINTS ====================
   /api/me:
@@ -343,7 +367,7 @@ paths:
                         example: 15000
                       withdrawableBalance:
                         type: integer
-                        description: Balance available for withdrawal (excludes faucet credits)
+                        description: Balance available for withdrawal. Faucet credits are 0% withdrawable; this = credits - faucetCredits
                         example: 12000
         "401":
           description: Unauthorized
@@ -522,6 +546,22 @@ paths:
                     type: boolean
                   data:
                     $ref: '#/components/schemas/SessionStats'
+              example:
+                success: true
+                data:
+                  balance: 469
+                  rounds: 42
+                  sessionPnl: -31
+                  winRate: 47.62
+                  recentBets:
+                    - amount: 10
+                      outcome: win
+                      payout: 19
+                      pnl: 9
+                    - amount: 10
+                      outcome: loss
+                      payout: 0
+                      pnl: -10
         "401":
           description: Unauthorized
           content:
@@ -671,7 +711,8 @@ paths:
       summary: Request withdrawal
       description: |
         Request withdrawal of credits. Minimum withdrawal is $100 (10,000 credits).
-        Withdrawable balance excludes faucet credits.
+        **Faucet credits are 0% withdrawable** — only credits from deposits can be withdrawn.
+        Withdrawable balance = credits - faucetCredits. Server rejects if amount exceeds withdrawable.
         **Note:** Withdrawal processing is coming soon (Stripe Connect, bank transfer).
       requestBody:
         required: true
@@ -969,6 +1010,10 @@ paths:
                   type: string
                   enum: [over, under]
                   description: Bet on roll being over or under target
+            example:
+              amount: 10
+              target: 50
+              condition: over
       responses:
         "200":
           description: Bet placed successfully
@@ -1003,6 +1048,18 @@ paths:
                             type: string
                           nonce:
                             type: integer
+              example:
+                success: true
+                data:
+                  betId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  result: 67.42
+                  win: true
+                  payout: 19
+                  balance: 469
+                  verification:
+                    serverSeedHash: "a1b2c3..."
+                    clientSeed: ""
+                    nonce: 0
         "400":
           description: Bet error
           content:
@@ -1122,6 +1179,14 @@ paths:
                       stoppedReason:
                         type: string
                         enum: [completed, insufficient_balance, max_rounds_reached, stop_condition_met]
+              example:
+                success: true
+                data:
+                  results: []
+                  sessionPnl: -45
+                  finalBalance: 455
+                  roundsPlayed: 20
+                  stoppedReason: completed
         "400":
           description: Validation error or invalid config
           content:
@@ -1916,8 +1981,23 @@ components:
           format: float
         recentBets:
           type: array
+          description: Simplified bet objects (amount, outcome, payout, pnl) — no id/verification
           items:
-            $ref: '#/components/schemas/Bet'
+            $ref: '#/components/schemas/SessionRecentBet'
+
+    SessionRecentBet:
+      type: object
+      properties:
+        amount:
+          type: integer
+        outcome:
+          type: string
+          enum: [win, loss]
+        payout:
+          type: integer
+        pnl:
+          type: integer
+          description: payout - amount
 
     # Payments
     CreditPackage:

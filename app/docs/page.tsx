@@ -29,7 +29,7 @@ export default function DocsPage() {
 
   return (
     <main className="min-h-screen bg-[var(--bg-matte)]">
-      <div className="border-b border-[var(--border)] bg-[var(--bg-primary)]/80 backdrop-blur-sm px-6 py-4">
+      <div className="border-b border-[var(--border)] bg-[var(--bg-card)]/80 backdrop-blur-sm px-6 py-4">
         <div className="max-w-4xl mx-auto flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold text-[var(--text-primary)] font-[family-name:var(--font-outfit)]">

@@ -397,7 +397,7 @@ export const CasinoToolsSchema = {
 
   "casino_withdraw": {
     name: "casino_withdraw",
-    description: "Request withdrawal of credits. Min 10,000 credits ($100). Withdrawal processing (Stripe Connect) may take 2-7 business days.",
+    description: "Request withdrawal of credits. Min 10,000 credits ($100). Faucet credits are 0% withdrawable — only deposit credits. Withdrawal processing (Stripe Connect) may take 2-7 business days.",
     parameters: {
       type: "object",
       properties: {

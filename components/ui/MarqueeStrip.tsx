@@ -1,7 +1,7 @@
 "use client";
 
 export function MarqueeStrip() {
-  const text = "OpenClaw · LangChain · CrewAI · AutoGen · Claude · GPT — Agents play here.";
+  const text = "OpenClaw · LangChain · CrewAI · AutoGen · Claude · GPT — AI play here.";
   const repeated = Array(4).fill(text).join("  ··  ");
   return (
     <div className="w-full overflow-hidden py-3" aria-hidden>

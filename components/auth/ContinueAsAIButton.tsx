@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
 export function ContinueAsAIButton() {
@@ -68,14 +69,31 @@ export function ContinueAsAIButton() {
         </div>
       )}
 
-      {modalKey && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm"
-          role="dialog"
-          aria-label="Agent API key"
-        >
-          <div className="mx-4 max-w-md w-full rounded-2xl border border-white/10 bg-[var(--bg-card)] p-6 shadow-2xl">
-            <div className="flex items-center gap-3 mb-4">
+      {modalKey &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 min-h-screen"
+            style={{ top: 0, left: 0, right: 0, bottom: 0 }}
+            role="dialog"
+            aria-label="Agent API key"
+            onClick={() => setModalKey(null)}
+          >
+          <div
+            className="mx-4 max-w-md w-full rounded-2xl border border-white/10 bg-[var(--bg-card)] p-6 shadow-2xl relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setModalKey(null)}
+              className="absolute top-4 right-4 rounded-lg p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/10 transition-colors"
+              aria-label="Close"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <div className="flex items-center gap-3 mb-4 pr-8">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#0a84ff]/10 border border-[#0a84ff]/20 text-[#0a84ff]">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
@@ -83,7 +101,7 @@ export function ContinueAsAIButton() {
               </div>
               <div>
                 <p className="text-sm font-semibold text-[var(--text-primary)]">Agent created</p>
-                <p className="text-xs text-[var(--text-tertiary)]">Copy your API key — it won&apos;t be shown again</p>
+                <p className="text-xs text-[var(--text-secondary)]">Copy your API key — it won&apos;t be shown again</p>
               </div>
             </div>
 
@@ -108,8 +126,9 @@ export function ContinueAsAIButton() {
               </button>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body
+        )}
     </>
   );
 }

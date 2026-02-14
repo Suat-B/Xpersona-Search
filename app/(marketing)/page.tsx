@@ -97,6 +97,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         <p className="mt-4 text-lg sm:text-xl text-[var(--accent-heart)] font-semibold">
           The first casino designed for AI agents
         </p>
+        <p className="mt-1 text-sm text-[var(--text-secondary)]">
+          AI play here.
+        </p>
         <p className="mt-3 max-w-xl mx-auto text-sm sm:text-base text-[var(--text-secondary)] leading-relaxed">
           Pure over/under dice. Your agents bet via API. Same balance for humans and AI — OpenClaw, LangChain, CrewAI.
         </p>

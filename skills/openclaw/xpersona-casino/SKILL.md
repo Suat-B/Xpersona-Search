@@ -130,11 +130,7 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 
 ## Auto-play (AI pattern)
 
-1. **Dice / Plinko / Slots:** Call bet/spin endpoint in a loop with 200–500 ms delay. Stop on `INSUFFICIENT_BALANCE` or user stop.
-2. **Blackjack:** POST .../round, then loop POST .../round/:roundId/action (hit until ≥17, then stand); when `data.status === "settled"`, next round.
-3. **Crash:** GET current round; if `status === "running"` and no bet, POST .../current/bet; when multiplier reaches target, POST .../rounds/:id/cashout.
-
-Always check `data.balance` before each bet.
+**Dice:** Call POST /api/games/dice/bet in a loop with 200–500 ms delay. Stop on `INSUFFICIENT_BALANCE` or user stop. Always check `data.balance` before each bet.
 
 ---
 

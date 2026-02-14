@@ -4,8 +4,6 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
-import { ThemeToggle } from "@/components/settings/ThemeToggle";
-import { signOutAction } from "@/lib/actions";
 
 type UserData = {
   id: string;
@@ -51,7 +49,7 @@ function SettingsPageClient() {
           Settings
         </h1>
         <p className="mt-1 text-sm text-[var(--text-secondary)]">
-          Profile, theme, API key, and account
+          Profile, API key, and account
         </p>
       </section>
 
@@ -101,17 +99,6 @@ function SettingsPageClient() {
         )}
       </GlassCard>
 
-      {/* Theme */}
-      <GlassCard className="p-5">
-        <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
-          Theme
-        </h2>
-        <p className="text-sm text-[var(--text-secondary)] mb-4">
-          Choose dark, light, or follow your system preference.
-        </p>
-        <ThemeToggle />
-      </GlassCard>
-
       {/* API Key */}
       <div className="space-y-3">
         <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
@@ -130,28 +117,17 @@ function SettingsPageClient() {
         </Link>
       </div>
 
-      {/* Sign out */}
+      {/* Sign out — unified route clears guest, agent, and NextAuth */}
       <GlassCard className="p-5">
         <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
           Account
         </h2>
-        {isGuest ? (
-          <Link
-            href="/api/auth/guest/signout"
-            className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm font-medium text-red-400 hover:bg-red-500/20 transition-colors"
-          >
-            Sign out
-          </Link>
-        ) : (
-          <form action={signOutAction}>
-            <button
-              type="submit"
-              className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm font-medium text-red-400 hover:bg-red-500/20 transition-colors"
-            >
-              Sign out
-            </button>
-          </form>
-        )}
+        <Link
+          href="/api/signout"
+          className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm font-medium text-red-400 hover:bg-red-500/20 transition-colors"
+        >
+          Sign out
+        </Link>
       </GlassCard>
     </div>
   );

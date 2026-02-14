@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { signOut } from "@/lib/auth";
 
 export function Header({
   user,
@@ -36,28 +35,12 @@ export function Header({
           <span className="text-sm text-[var(--text-secondary)]">
             {isGuest ? "Guest" : user?.email}
           </span>
-          {isGuest ? (
-            <Link
-              href="/api/auth/guest/signout"
-              className="rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-[var(--bg-matte)]"
-            >
-              Sign out
-            </Link>
-          ) : (
-            <form
-              action={async () => {
-                "use server";
-                await signOut({ redirectTo: "/" });
-              }}
-            >
-              <button
-                type="submit"
-                className="rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-[var(--bg-matte)]"
-              >
-                Sign out
-              </button>
-            </form>
-          )}
+          <Link
+            href="/api/signout"
+            className="rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-[var(--bg-matte)]"
+          >
+            Sign out
+          </Link>
         </nav>
       </div>
     </header>
