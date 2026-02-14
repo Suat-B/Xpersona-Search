@@ -11,6 +11,8 @@ import { DiceStatisticsPanel } from "./DiceStatisticsPanel";
 import { CreativeDiceStrategiesSection } from "./CreativeDiceStrategiesSection";
 import { AgentApiSection } from "./AgentApiSection";
 import { getAndClearStrategyRunPayload } from "@/lib/strategy-run-payload";
+import { useStreak, StreakDisplay, AchievementsPanel } from "./StreakCounter";
+import { KeyboardShortcutsHelp } from "./KeyboardShortcuts";
 import type { DiceStrategyConfig, DiceProgressionType } from "@/lib/strategies";
 import type { StrategyRunConfig } from "./DiceGame";
 
@@ -173,6 +175,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     setRecentResults([]);
   };
 
+  // Calculate streak data
+  const { currentStreak, bestStreak, isWinStreak } = useStreak(recentResults);
+
   return (
     <div className="h-screen w-full flex flex-col min-h-0 overflow-hidden bg-[var(--bg-deep)]">
       {/* Header - Compact 56px */}
@@ -245,6 +250,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               amount={amount}
               target={target}
               condition={condition}
+              balance={balance}
               activeStrategyName={activeStrategyName}
               progressionType={progressionType}
               onAmountChange={setAmount}
@@ -315,17 +321,37 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           {/* Content Area - Scrollable */}
           <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3">
               {activeTab === "statistics" ? (
-              <DiceStatisticsPanel
-                series={statsSeries}
-                rounds={rounds}
-                totalPnl={totalPnl}
-                wins={wins}
-                recentResults={recentResults}
-                amount={amount}
-                target={target}
-                condition={condition}
-                onReset={handleReset}
-              />
+              <div className="space-y-3">
+                {/* Streak Counter */}
+                <StreakDisplay
+                  currentStreak={currentStreak}
+                  bestStreak={bestStreak}
+                  isWinStreak={isWinStreak}
+                />
+                
+                {/* Achievements Panel */}
+                <AchievementsPanel
+                  rounds={rounds}
+                  wins={wins}
+                  totalPnl={totalPnl}
+                  bestStreak={bestStreak}
+                />
+                
+                <DiceStatisticsPanel
+                  series={statsSeries}
+                  rounds={rounds}
+                  totalPnl={totalPnl}
+                  wins={wins}
+                  recentResults={recentResults}
+                  amount={amount}
+                  target={target}
+                  condition={condition}
+                  onReset={handleReset}
+                />
+                
+                {/* Keyboard Shortcuts Help */}
+                <KeyboardShortcutsHelp />
+              </div>
             ) : activeTab === "api" ? (
               <div className="flex-shrink-0 space-y-4">
                 <div>

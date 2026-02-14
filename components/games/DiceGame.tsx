@@ -5,7 +5,12 @@ import { DICE_HOUSE_EDGE } from "@/lib/constants";
 import { Dice3D } from "./Dice3D";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { QuickBetButtons } from "@/components/ui/QuickBetButtons";
-import { Sparkles, Confetti } from "@/components/ui/Sparkles";
+import { AmbientParticles } from "./AmbientParticles";
+import { WinEffects } from "./WinEffects";
+import { ProbabilityBar } from "./ProbabilityBar";
+import { BetPercentageButtons } from "./BetPercentageButtons";
+import { WinPreview } from "./WinPreview";
+import { useKeyboardShortcuts } from "./KeyboardShortcuts";
 import { createProgressionState, getNextBet, type ProgressionState, type RoundResult } from "@/lib/dice-progression";
 import type { DiceStrategyConfig } from "@/lib/strategies";
 
@@ -31,6 +36,7 @@ export type DiceGameProps = {
   amount: number;
   target: number;
   condition: "over" | "under";
+  balance?: number;
   activeStrategyName?: string | null;
   progressionType?: string;
   onAmountChange: (v: number) => void;
@@ -48,6 +54,7 @@ export function DiceGame({
   amount,
   target,
   condition,
+  balance = 0,
   activeStrategyName,
   progressionType = "flat",
   onAmountChange,
@@ -136,7 +143,7 @@ export function DiceGame({
       // Show win effects
       if (newResult.win) {
         setShowWinEffects(true);
-        setTimeout(() => setShowWinEffects(false), 2000);
+        setTimeout(() => setShowWinEffects(false), 3000);
       }
       
       setTimeout(() => window.dispatchEvent(new Event("balance-updated")), 0);
@@ -360,6 +367,27 @@ export function DiceGame({
     onAmountChange(MAX_BET);
   };
 
+  const handleIncreaseBet = () => {
+    const newAmount = Math.min(MAX_BET, amount + 1);
+    onAmountChange(newAmount);
+  };
+
+  const handleDecreaseBet = () => {
+    const newAmount = Math.max(MIN_BET, amount - 1);
+    onAmountChange(newAmount);
+  };
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onRoll: handleRoll,
+    onIncreaseBet: handleIncreaseBet,
+    onDecreaseBet: handleDecreaseBet,
+    onHalfBet: handleHalf,
+    onDoubleBet: handleDouble,
+    onMaxBet: handleMax,
+    disabled: autoPlay || loading,
+  });
+
   // Calculate multiplier based on target and condition (global DICE_HOUSE_EDGE)
   const getMultiplier = () => {
     const probability = condition === "over" ? (100 - target) / 100 : target / 100;
@@ -372,8 +400,12 @@ export function DiceGame({
   return (
     <div className="h-full flex flex-col min-h-0" data-agent="dice-game" data-config={JSON.stringify(aiState)}>
       {/* Win Effects */}
-      <Sparkles active={showWinEffects} count={25} />
-      <Confetti active={showWinEffects && (result?.payout || 0) > amount * 2} />
+      <WinEffects 
+        active={showWinEffects} 
+        win={result?.win ?? false}
+        payout={result?.payout ?? 0}
+        betAmount={amount}
+      />
       
       {/* Game Container */}
       <div className="flex-1 flex flex-col min-h-0 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] overflow-hidden">
@@ -409,6 +441,9 @@ export function DiceGame({
 
         {/* Main Game Area - Compact Layout */}
         <div className="flex-1 flex flex-col items-center justify-center min-h-0 py-4 relative">
+          {/* Ambient Particles */}
+          <AmbientParticles />
+          
           {/* Background glow */}
           <div className="absolute inset-0 bg-gradient-to-b from-[var(--accent-heart)]/5 via-transparent to-transparent pointer-events-none" />
           
@@ -445,13 +480,19 @@ export function DiceGame({
           {/* Empty state message */}
           {!result && !loading && (
             <div className="mt-8 text-center text-sm text-[var(--text-secondary)] animate-pulse">
-              Click ROLL DICE to start
+              Press SPACE or Click ROLL to start
             </div>
           )}
         </div>
 
         {/* Controls Section - Compact */}
         <div className="flex-shrink-0 px-6 pb-5 space-y-3">
+          {/* Probability Bar */}
+          <ProbabilityBar target={target} condition={condition} />
+          
+          {/* Win Preview */}
+          <WinPreview amount={amount} target={target} condition={condition} />
+          
           {/* Target and Condition Row */}
           <div className="flex items-end justify-center gap-3">
             <div className="space-y-1">
@@ -503,6 +544,16 @@ export function DiceGame({
                 />
               </div>
             </div>
+          </div>
+
+          {/* Bet Percentage Buttons */}
+          <div className="flex justify-center">
+            <BetPercentageButtons
+              balance={balance}
+              currentBet={amount}
+              onBetChange={onAmountChange}
+              disabled={autoPlay}
+            />
           </div>
 
           {/* Quick Bet Buttons */}
@@ -561,7 +612,7 @@ export function DiceGame({
                     <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
                     </svg>
-                    AUTO
+                    <span>AUTO</span>
                   </>
                 )}
               </button>
