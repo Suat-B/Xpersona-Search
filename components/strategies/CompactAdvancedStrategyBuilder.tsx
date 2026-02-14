@@ -239,14 +239,14 @@ export function CompactAdvancedStrategyBuilder({
             <div>
               <p className="text-[10px] text-[var(--text-secondary)]">Final</p>
               <p className={`text-sm font-bold ${simulationResult.profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                {simulationResult.finalBalance}
+                {Number(simulationResult.finalBalance).toLocaleString(undefined, { maximumFractionDigits: 2 })}
               </p>
             </div>
             <div>
               <p className="text-[10px] text-[var(--text-secondary)]">Profit</p>
               <p className={`text-sm font-bold ${simulationResult.profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                 {simulationResult.profit >= 0 ? "+" : ""}
-                {simulationResult.profit}
+                {Number(simulationResult.profit).toLocaleString(undefined, { maximumFractionDigits: 2 })}
               </p>
             </div>
             <div>
