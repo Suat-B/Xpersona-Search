@@ -42,7 +42,7 @@ export default function ApiDocsPage() {
           <li>Generate API key from above.</li>
           <li>Set <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> in your env.</li>
           <li><code className="bg-white/10 px-1 rounded font-mono">GET /api/me/balance</code> — verify auth.</li>
-          <li><code className="bg-white/10 px-1 rounded font-mono">POST /api/faucet</code> — claim credits.</li>
+          <li><code className="bg-white/10 px-1 rounded font-mono">POST /api/faucet</code> — claim Free Credits.</li>
           <li><code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/bet</code> — place a bet.</li>
         </ol>
       </GlassCard>
@@ -84,7 +84,7 @@ export default function ApiDocsPage() {
           Use the same REST API from OpenClaw or any AI assistant. Set the user&apos;s API key (e.g. env <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code>), then call the endpoints below. No separate agent API — the website and all agents use the same routes.
         </p>
         <p className="text-sm text-[var(--text-secondary)] mb-4">
-          <strong className="text-[var(--text-primary)]">OpenClaw skill:</strong> Install or copy the xpersona-casino skill (e.g. from <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">skills/openclaw/xpersona-casino</code> or ClawHub if published). Set <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> in your env. The skill documents all endpoints and patterns (balance, faucet, bets, strategies). To create and run strategies, see <strong>Creating strategies (for OpenClaw agents)</strong> below.
+          <strong className="text-[var(--text-primary)]">OpenClaw skill:</strong> Install or copy the xpersona-casino skill (e.g. from <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">skills/openclaw/xpersona-casino</code> or ClawHub if published). Set <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> in your env. The skill documents all endpoints and patterns (balance, Free Credits, bets, strategies). To create and run strategies, see <strong>Creating strategies (for OpenClaw agents)</strong> below.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
@@ -110,7 +110,7 @@ export default function ApiDocsPage() {
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Transactions</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/transactions?limit=50&offset=0&type=all|bet|faucet</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Verify bet (provably fair)</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/bets/:id?reveal=1</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Withdraw</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/me/withdraw — {"{ amount }"} (min 10,000 credits)</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4">Faucet <span className="text-[var(--accent-heart)] text-[10px]">AI-first</span></td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/faucet</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4">Free Credits <span className="text-[var(--accent-heart)] text-[10px]">AI-first</span></td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/faucet</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Dice bet <span className="text-[var(--accent-heart)] text-[10px]">AI-first</span></td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/games/dice/bet — {"{ amount, target, condition: \"over\"|\"under\" }"}</td></tr>
             </tbody>
           </table>
@@ -125,7 +125,7 @@ export default function ApiDocsPage() {
         <ul className="space-y-2 text-sm text-[var(--text-primary)]">
           <li><strong>Session stats:</strong> Prefer <code className="bg-white/10 px-1 rounded font-mono text-xs">GET /api/me/session-stats</code> over balance + bets for &quot;how am I doing?&quot; — single call returns balance, rounds, PnL, win rate, recent bets.</li>
           <li><strong>Tools vs REST:</strong> Use Tools API (<code className="bg-white/10 px-1 rounded font-mono text-xs">POST /api/openclaw/tools</code>) when OpenClaw is configured for it. Otherwise use REST with the same auth.</li>
-          <li><strong>Recommended flow:</strong> (1) Get balance or session-stats. (2) If low, claim faucet or suggest deposit. (3) Place bets or run strategy. (4) Report PnL.</li>
+          <li><strong>Recommended flow:</strong> (1) Get balance or session-stats. (2) If low, claim Free Credits or suggest deposit. (3) Place bets or run strategy. (4) Report PnL.</li>
           <li><strong>API fallback:</strong> If API fails (5xx, network error, 429 rate limit), suggest user play via website: <Link href="/games/dice" className="text-[var(--accent-heart)] hover:underline">/games/dice</Link> — same games, same balance, full advanced strategy builder.</li>
         </ul>
       </GlassCard>
@@ -140,7 +140,7 @@ export default function ApiDocsPage() {
           <li><strong className="text-[var(--text-primary)]">Min/max bet:</strong> 1 – 10000 credits</li>
           <li><strong className="text-[var(--text-primary)]">Win probability:</strong> over X → (100-X)/100; under X → X/100 (e.g. over 50 = 49% win)</li>
           <li><strong className="text-[var(--text-primary)]">Multiplier:</strong> 0.97 / winProbability (e.g. over 50 ≈ 1.98x payout)</li>
-          <li><strong className="text-[var(--text-primary)]">Faucet:</strong> 100 credits, 1h cooldown</li>
+          <li><strong className="text-[var(--text-primary)]">Free Credits:</strong> 100 credits, 1h cooldown</li>
         </ul>
       </GlassCard>
 
@@ -204,9 +204,9 @@ export default function ApiDocsPage() {
             </ul>
           </div>
           <div>
-            <h3 className="font-medium text-[var(--text-primary)] mb-2">Faucet and games</h3>
+            <h3 className="font-medium text-[var(--text-primary)] mb-2">Free Credits and games</h3>
             <ul className="space-y-1 text-[var(--text-secondary)] font-mono text-xs">
-              <li>POST /api/faucet — Claim hourly faucet</li>
+              <li>POST /api/faucet — Claim hourly Free Credits</li>
               <li>POST /api/games/dice/bet — {"{ amount, target, condition }"}</li>
             </ul>
           </div>
@@ -313,7 +313,7 @@ export default function ApiDocsPage() {
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_notify</td><td className="py-2">Send notification</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_get_limits</td><td className="py-2">Get betting and rate limits</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_calculate_odds</td><td className="py-2">Calculate dice odds and expected value</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_claim_faucet</td><td className="py-2">Claim hourly faucet</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_claim_faucet</td><td className="py-2">Claim hourly Free Credits</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_list_credit_packages</td><td className="py-2">List credit packages for purchase</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_create_checkout</td><td className="py-2">Create Stripe checkout URL for deposit</td></tr>
             </tbody>
@@ -328,7 +328,7 @@ export default function ApiDocsPage() {
         </h2>
         <ul className="space-y-2 text-sm text-[var(--text-secondary)] list-disc list-inside">
           <li><strong className="text-[var(--text-primary)]">401:</strong> Invalid or missing API key. Generate a key using the API Key Manager above.</li>
-          <li><strong className="text-[var(--text-primary)]">400 INSUFFICIENT_BALANCE:</strong> User needs more credits (faucet or purchase).</li>
+          <li><strong className="text-[var(--text-primary)]">400 INSUFFICIENT_BALANCE:</strong> User needs more credits (Free Credits or purchase).</li>
           <li><strong className="text-[var(--text-primary)]">429 / FAUCET_COOLDOWN:</strong> Wait until <code className="bg-white/10 px-1 rounded font-mono text-xs">data.nextFaucetAt</code> before claiming again.</li>
         </ul>
         <div className="mt-4 pt-4 border-t border-[var(--border)]">

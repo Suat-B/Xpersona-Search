@@ -110,7 +110,7 @@ function TransactionsPageClient() {
           Transactions
         </h1>
         <p className="mt-1 text-sm text-[var(--text-secondary)]">
-          All activity — bets, faucet claims, and balance changes
+          All activity — bets, Free Credit claims, and balance changes
         </p>
       </section>
 
@@ -139,7 +139,7 @@ function TransactionsPageClient() {
         </GlassCard>
         <GlassCard className="p-5">
           <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-1">
-            Faucet claims
+            Free Credit claims
           </p>
           <p className="text-2xl font-mono font-bold text-emerald-400">
             {faucetCount}
@@ -164,7 +164,7 @@ function TransactionsPageClient() {
                   : "bg-white/5 text-[var(--text-secondary)] hover:bg-white/10 hover:text-[var(--text-primary)]"
               }`}
             >
-              {t === "all" ? "All" : t === "bet" ? "Bets" : "Faucet"}
+              {t === "all" ? "All" : t === "bet" ? "Bets" : "Free Credits"}
             </button>
           ))}
           <Link
@@ -190,7 +190,7 @@ function TransactionsPageClient() {
                 No transactions yet.
               </p>
               <p className="mt-1 text-xs text-[var(--text-secondary)]/80">
-                Play dice or claim from the faucet to see activity here.
+                Play dice or claim Free Credits to see activity here.
               </p>
               <Link
                 href="/dashboard"
@@ -234,7 +234,7 @@ function TransactionsPageClient() {
                         <span className="inline-flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-emerald-400" />
                           <span className="font-medium text-emerald-400">
-                            Faucet
+                            Free Credits
                           </span>
                         </span>
                       )}
@@ -242,7 +242,7 @@ function TransactionsPageClient() {
                     <td className="px-4 py-4 text-[var(--text-primary)]">
                       {tx.type === "bet"
                         ? `${GAME_LABELS[tx.gameType] ?? tx.gameType} · ${tx.outcome}`
-                        : "Faucet claim"}
+                        : "Free Credit claim"}
                     </td>
                     <td className="px-4 py-4 font-mono">
                       {tx.type === "bet"

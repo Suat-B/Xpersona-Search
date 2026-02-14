@@ -99,7 +99,7 @@ function WithdrawPageClient() {
           Withdraw funds
         </h1>
         <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-xl">
-          Convert your deposited credits back to real funds. Faucet credits cannot be withdrawn — only credits purchased via deposit are eligible.
+          Convert your deposited credits back to real funds. Free Credits cannot be withdrawn — only credits purchased via deposit are eligible.
         </p>
       </section>
 
@@ -124,7 +124,7 @@ function WithdrawPageClient() {
             </span>
             <div>
               <span className="font-medium text-[var(--text-primary)]">Review</span>
-              {" "}— Faucet credits are 0% withdrawable. Only credits from deposits can be withdrawn.
+              {" "}— Free Credits are 0% withdrawable. Only credits from deposits can be withdrawn.
             </div>
           </li>
           <li className="flex gap-4">
@@ -149,7 +149,7 @@ function WithdrawPageClient() {
         <div className="mt-5 pt-4 border-t border-[var(--border)]">
           <p className="text-xs text-[var(--text-secondary)]">
             <strong className="text-[var(--text-primary)]">Important:</strong> Minimum withdrawal is $100 ({WITHDRAW_MIN_CREDITS.toLocaleString()} credits). 
-            Processing takes 2–7 business days. Credits from the faucet cannot be withdrawn.
+            Processing takes 2–7 business days. Free Credits cannot be withdrawn.
           </p>
         </div>
       </GlassCard>
@@ -171,7 +171,7 @@ function WithdrawPageClient() {
               <span className="text-[var(--accent-heart)] font-medium"> (${withdrawableUsd} USD)</span>
               {balanceData.faucetCredits > 0 && (
                 <span className="block mt-1 text-[var(--text-secondary)]/80">
-                  {balanceData.faucetCredits.toLocaleString()} faucet credits (0% withdrawable)
+                  {balanceData.faucetCredits.toLocaleString()} Free Credits (0% withdrawable)
                 </span>
               )}
             </p>
@@ -239,7 +239,7 @@ function WithdrawPageClient() {
       {balanceData && balanceData.withdrawable === 0 && (
         <GlassCard className="p-5 border-amber-500/30 bg-amber-500/10">
           <p className="text-sm text-amber-400">
-            No withdrawable credits. Faucet credits are 0% withdrawable — only deposit credits can be withdrawn.
+            No withdrawable credits. Free Credits are 0% withdrawable — only deposit credits can be withdrawn.
           </p>
           <Link
             href="/dashboard/deposit"
@@ -278,7 +278,7 @@ function WithdrawPageClient() {
       <GlassCard className="p-4 border-[var(--border)]">
         <p className="text-xs text-[var(--text-secondary)]">
           <strong className="text-[var(--text-primary)]">Withdrawal policy:</strong> Minimum ${WITHDRAW_MIN_USD} ({WITHDRAW_MIN_CREDITS.toLocaleString()} credits). 
-          Processing takes 2–7 business days. Only credits from deposits are eligible; faucet credits cannot be withdrawn. 
+          Processing takes 2–7 business days. Only credits from deposits are eligible; Free Credits cannot be withdrawn. 
           Funds are returned to your original payment method when available.
         </p>
       </GlassCard>

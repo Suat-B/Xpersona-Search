@@ -13,7 +13,9 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "setup": "docker compose up -d && npm run db:push",
-    "seed": "tsx scripts/seed-packages.ts"
+    "seed": "tsx scripts/seed-packages.ts",
+    "deploy": "node scripts/deploy.mjs",
+    "setup:prod": "node scripts/setup-production.mjs"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.7.2",

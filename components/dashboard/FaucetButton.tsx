@@ -77,7 +77,7 @@ export function FaucetButton() {
     <div 
       className="agent-card p-5"
       role="region" 
-      aria-label="Neural Faucet"
+      aria-label="Free Credits"
     >
       <div className="flex items-start gap-3 mb-4">
         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#30d158]/10 border border-[#30d158]/20 text-[#30d158]"
@@ -103,7 +103,7 @@ export function FaucetButton() {
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          Free credits cannot be withdrawn — 0%
+          Free Credits cannot be withdrawn — 0%
         </p>
       </div>
       
@@ -129,7 +129,7 @@ export function FaucetButton() {
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            Next drop in {countdownLabel}
+            Next claim in {countdownLabel}
           </span>
         ) : (
           <span className="flex items-center justify-center gap-2">

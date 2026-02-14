@@ -160,7 +160,7 @@ export function DiceGame({
       errCode === "UNAUTHORIZED"
         ? "Session not ready — wait a moment and try again"
         : errCode === "INSUFFICIENT_BALANCE"
-          ? "Not enough credits — claim faucet or deposit"
+          ? "Not enough credits — claim Free Credits or deposit"
           : errCode === "BET_TOO_LOW"
             ? "Bet too low"
             : errCode === "BET_TOO_HIGH"

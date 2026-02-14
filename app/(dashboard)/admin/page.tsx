@@ -297,7 +297,7 @@ export default function AdminPage() {
               trend={overview.bets.totalPnl >= 0 ? "up" : "down"}
               subtext="credits"
             />
-            <MetricCard label="Faucet Grants" value={overview.faucet.totalGrants} subtext={`${overview.faucet.totalCredits} credits`} />
+            <MetricCard label="Free Credit grants" value={overview.faucet.totalGrants} subtext={`${overview.faucet.totalCredits} credits`} />
             <MetricCard label="Credits in Circulation" value={overview.creditsInCirculation.toLocaleString()} />
           </div>
 
