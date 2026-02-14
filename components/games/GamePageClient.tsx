@@ -256,7 +256,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               onAmountChange={setAmount}
               onTargetChange={setTarget}
               onConditionChange={setCondition}
-              onRoundComplete={() => {}}
+              onRoundComplete={(bet, payout) => addRound(bet, payout)}
               onAutoPlayChange={setAutoPlayActive}
               onResult={handleResult}
               strategyRun={strategyRun}

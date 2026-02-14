@@ -246,3 +246,65 @@ export const strategyCode = pgTable("strategy_code", {
   version: integer("version").default(1),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
+
+// Advanced strategies with rule-based system
+export const advancedStrategies = pgTable(
+  "advanced_strategies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 100 }).notNull(),
+    description: text("description"),
+    // Base configuration
+    baseConfig: jsonb("base_config").notNull().$type<{
+      amount: number;
+      target: number;
+      condition: "over" | "under";
+    }>(),
+    // Rules array
+    rules: jsonb("rules").notNull().$type<Array<{
+      id: string;
+      order: number;
+      enabled: boolean;
+      name?: string;
+      trigger: {
+        type: string;
+        value?: number;
+        value2?: number;
+        pattern?: string;
+      };
+      action: {
+        type: string;
+        value?: number;
+        targetRuleId?: string;
+      };
+      cooldownRounds?: number;
+      maxExecutions?: number;
+    }>>(),
+    // Global limits
+    globalLimits: jsonb("global_limits").$type<{
+      maxBet?: number;
+      minBet?: number;
+      maxRounds?: number;
+      stopIfBalanceBelow?: number;
+      stopIfBalanceAbove?: number;
+      stopOnConsecutiveLosses?: number;
+      stopOnConsecutiveWins?: number;
+      stopOnProfitAbove?: number;
+      stopOnLossAbove?: number;
+    }>(),
+    executionMode: varchar("execution_mode", { length: 20 }).notNull().default("sequential"),
+    isPublic: boolean("is_public").default(false),
+    tags: jsonb("tags").$type<string[]>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("advanced_strategies_user_name_idx").on(
+      table.userId,
+      table.name
+    ),
+  ]
+);

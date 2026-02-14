@@ -483,11 +483,16 @@ export function DiceGame({
               <div className="relative">
                 <input
                   type="number"
-                  min={0}
+                  min={0.01}
                   max={99.99}
                   step={0.01}
                   value={target}
-                  onChange={(e) => onTargetChange(Number(e.target.value))}
+                  onChange={(e) => {
+                    const value = Number(e.target.value);
+                    if (value > 0 && value < 100) {
+                      onTargetChange(value);
+                    }
+                  }}
                   disabled={autoPlay}
                   className="w-20 h-10 rounded-lg border-2 border-[var(--border)] bg-[var(--bg-matte)] px-2 text-center text-lg font-mono font-bold text-[var(--text-primary)] disabled:opacity-60 focus:border-[var(--accent-heart)] focus:outline-none transition-colors"
                 />

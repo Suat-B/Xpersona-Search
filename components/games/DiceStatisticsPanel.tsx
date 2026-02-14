@@ -45,7 +45,7 @@ export function DiceStatisticsPanel({
 
       {/* Session stats — machine-readable for agents */}
       <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3" data-agent="session-stats">
-        <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">This session (since page load)</h4>
+        <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">This session</h4>
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-lg bg-[var(--bg-matte)] p-3 text-center" data-agent="stat-rounds" data-value={rounds}>
             <div className="text-lg font-bold font-mono text-[var(--text-primary)]">{rounds}</div>
