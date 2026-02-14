@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useId } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +8,7 @@ const HEIGHT = 48;
 const POINTS = 32;
 
 export function MiniPnLSparkline() {
+  const id = useId();
   const [points, setPoints] = useState<number[]>([]);
   const [totalPnl, setTotalPnl] = useState(0);
 
@@ -108,8 +109,7 @@ export function MiniPnLSparkline() {
         <svg viewBox={`0 0 100 ${HEIGHT}`} preserveAspectRatio="none" className="w-full h-full"
         >
           <defs>
-            <linearGradient id="sparklineGrad" x1="0" y1="0" x2="0" y2="1"
-            >
+            <linearGradient id={`sparkline-${id}`} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={isPositive ? "#30d158" : "#ff453a"} stopOpacity={0.3} />
               <stop offset="100%" stopColor={isPositive ? "#30d158" : "#ff453a"} stopOpacity={0} />
             </linearGradient>
@@ -124,7 +124,7 @@ export function MiniPnLSparkline() {
           />
           <path
             d={`${pathD} L 100 ${HEIGHT} L 0 ${HEIGHT} Z`}
-            fill="url(#sparklineGrad)"
+            fill={`url(#sparkline-${id})`}
           />
         </svg>
         
