@@ -6,19 +6,17 @@ import { eq, and } from "drizzle-orm";
 import { simulateStrategy } from "@/lib/dice-rule-engine";
 import { DICE_HOUSE_EDGE } from "@/lib/constants";
 
-function getIdFromPath(request: NextRequest): string | null {
-  const segments = request.nextUrl.pathname.split("/");
-  const idx = segments.indexOf("advanced-strategies");
-  return idx >= 0 && segments[idx + 1] ? segments[idx + 1] : null;
-}
-
 // POST /api/me/advanced-strategies/[id]/simulate - Simulate a strategy
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest,
+  context: { params: Promise<Record<string, string | string[] | undefined>> }
+) {
   const authResult = await getAuthUser(request);
   if ("error" in authResult) {
     return NextResponse.json({ error: authResult.error }, { status: 401 });
   }
-  const id = getIdFromPath(request);
+  const resolved = await context.params;
+  const id = typeof resolved.id === "string" ? resolved.id : resolved.id?.[0];
   if (!id) return NextResponse.json({ error: "Invalid route" }, { status: 400 });
 
   try {

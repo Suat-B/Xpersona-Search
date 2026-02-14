@@ -5,19 +5,17 @@ import { advancedStrategies } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
 
-function getIdFromPath(request: NextRequest): string | null {
-  const segments = request.nextUrl.pathname.split("/");
-  const idx = segments.indexOf("advanced-strategies");
-  return idx >= 0 && segments[idx + 1] ? segments[idx + 1] : null;
-}
-
 // GET /api/me/advanced-strategies/[id] - Get a single strategy
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<Record<string, string | string[] | undefined>> }
+) {
   const authResult = await getAuthUser(request);
   if ("error" in authResult) {
     return NextResponse.json({ error: authResult.error }, { status: 401 });
   }
-  const id = getIdFromPath(request);
+  const resolved = await context.params;
+  const id = typeof resolved.id === "string" ? resolved.id : resolved.id?.[0];
   if (!id) return NextResponse.json({ error: "Invalid route" }, { status: 400 });
 
   try {
@@ -65,12 +63,16 @@ export async function GET(request: NextRequest) {
 }
 
 // PATCH /api/me/advanced-strategies/[id] - Update a strategy
-export async function PATCH(request: NextRequest) {
+export async function PATCH(
+  request: NextRequest,
+  context: { params: Promise<Record<string, string | string[] | undefined>> }
+) {
   const authResult = await getAuthUser(request);
   if ("error" in authResult) {
     return NextResponse.json({ error: authResult.error }, { status: 401 });
   }
-  const id = getIdFromPath(request);
+  const resolved = await context.params;
+  const id = typeof resolved.id === "string" ? resolved.id : resolved.id?.[0];
   if (!id) return NextResponse.json({ error: "Invalid route" }, { status: 400 });
 
   try {
@@ -160,12 +162,16 @@ export async function PATCH(request: NextRequest) {
 }
 
 // DELETE /api/me/advanced-strategies/[id] - Delete a strategy
-export async function DELETE(request: NextRequest) {
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<Record<string, string | string[] | undefined>> }
+) {
   const authResult = await getAuthUser(request);
   if ("error" in authResult) {
     return NextResponse.json({ error: authResult.error }, { status: 401 });
   }
-  const id = getIdFromPath(request);
+  const resolved = await context.params;
+  const id = typeof resolved.id === "string" ? resolved.id : resolved.id?.[0];
   if (!id) return NextResponse.json({ error: "Invalid route" }, { status: 400 });
 
   try {
