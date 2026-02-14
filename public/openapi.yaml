@@ -11,6 +11,7 @@ info:
     For auto-play, loop game endpoints with a short delay (e.g. 200–500ms).
     **Error recovery:** INSUFFICIENT_BALANCE → POST /api/faucet or GET /api/credits/packages + checkout.
     FAUCET_COOLDOWN → wait until data.nextFaucetAt.
+    **API fallback:** If API fails (5xx, network, 429) → suggest user play via website: https://xpersona.co/games/dice (same games, same balance).
   version: 1.0.0
   contact:
     name: xpersona Support
@@ -1140,6 +1141,198 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  # ==================== ADVANCED STRATEGIES (rule-based) ====================
+  /api/me/advanced-strategies:
+    get:
+      summary: List advanced strategies
+      description: List all rule-based strategies (38+ trigger types, 25+ action types).
+      responses:
+        "200":
+          description: Strategies retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      strategies:
+                        type: array
+                        items: { $ref: '#/components/schemas/AdvancedStrategy' }
+        "401":
+          description: Unauthorized
+    post:
+      summary: Create advanced strategy
+      description: Create a rule-based strategy. Requires baseConfig (amount, target, condition) and rules array.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdvancedStrategyInput'
+      responses:
+        "200":
+          description: Strategy created
+        "400":
+          description: Validation error
+        "409":
+          description: Name already exists
+        "401":
+          description: Unauthorized
+
+  /api/me/advanced-strategies/simulate:
+    post:
+      summary: Simulate advanced strategy (inline, no save)
+      description: Dry run with no real bets. Accepts inline strategy object.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                strategy: { $ref: '#/components/schemas/AdvancedStrategyInput' }
+                rounds: { type: integer, default: 100 }
+                startingBalance: { type: integer, default: 1000 }
+      responses:
+        "200":
+          description: Simulation results (finalBalance, profit, winRate, shouldStop, stopReason)
+        "400":
+          description: Invalid strategy
+        "401":
+          description: Unauthorized
+
+  /api/me/advanced-strategies/{id}:
+    get:
+      summary: Get advanced strategy
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Strategy retrieved
+        "404":
+          description: Strategy not found
+        "401":
+          description: Unauthorized
+    patch:
+      summary: Update advanced strategy
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                baseConfig: { type: object }
+                rules: { type: array }
+                globalLimits: { type: object }
+                executionMode: { type: string, enum: [sequential, all_matching] }
+      responses:
+        "200":
+          description: Strategy updated
+        "404":
+          description: Strategy not found
+        "401":
+          description: Unauthorized
+    delete:
+      summary: Delete advanced strategy
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Strategy deleted
+        "404":
+          description: Strategy not found
+        "401":
+          description: Unauthorized
+
+  /api/me/advanced-strategies/{id}/simulate:
+    post:
+      summary: Simulate saved advanced strategy
+      description: Dry run with no real bets.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rounds: { type: integer, default: 100 }
+                startingBalance: { type: integer, default: 1000 }
+      responses:
+        "200":
+          description: Simulation results
+        "404":
+          description: Strategy not found
+        "401":
+          description: Unauthorized
+
+  /api/games/dice/run-advanced-strategy:
+    post:
+      summary: Run advanced strategy (real bets)
+      description: Execute rule-based strategy for up to 100 rounds. Use strategyId or inline strategy.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                strategyId:
+                  type: string
+                  format: uuid
+                  description: ID of saved strategy
+                strategy:
+                  type: object
+                  description: Inline strategy (name, baseConfig, rules, executionMode, globalLimits)
+                maxRounds:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+                  default: 20
+      responses:
+        "200":
+          description: Strategy executed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      results: { type: array }
+                      sessionPnl: { type: integer }
+                      finalBalance: { type: integer }
+                      roundsPlayed: { type: integer }
+                      stoppedReason: { type: string }
+                      totalWins: { type: integer }
+                      totalLosses: { type: integer }
+                      winRate: { type: number }
+        "400":
+          description: Validation error
+        "404":
+          description: Strategy not found
+        "401":
+          description: Unauthorized
+
   # ==================== FAUCET & CREDITS ====================
   /api/faucet:
     post:
@@ -1509,6 +1702,60 @@ components:
               type: string
             nonce:
               type: integer
+
+    AdvancedStrategy:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        baseConfig:
+          type: object
+          properties:
+            amount: { type: number }
+            target: { type: number }
+            condition: { type: string, enum: [over, under] }
+        rules:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              order: { type: number }
+              enabled: { type: boolean }
+              trigger: { type: object, properties: { type: { type: string }, value: { type: number } } }
+              action: { type: object, properties: { type: { type: string }, value: { type: number } } }
+        executionMode: { type: string, enum: [sequential, all_matching] }
+        globalLimits: { type: object }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    AdvancedStrategyInput:
+      type: object
+      required: [name, baseConfig, rules]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        baseConfig:
+          type: object
+          required: [amount, target, condition]
+          properties:
+            amount: { type: number }
+            target: { type: number }
+            condition: { type: string, enum: [over, under] }
+        rules:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              order: { type: number }
+              enabled: { type: boolean }
+              trigger: { type: object }
+              action: { type: object }
+        executionMode: { type: string, enum: [sequential, all_matching] }
+        globalLimits: { type: object }
+        tags: { type: array, items: { type: string } }
 
     BetDetail:
       allOf:

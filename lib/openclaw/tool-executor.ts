@@ -8,12 +8,14 @@ import { CasinoToolName } from "./tools-schema";
 import { AgentContext } from "./agent-auth";
 import { getAuthUser } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
-import { gameBets, users, strategies, agentSessions, creditPackages } from "@/lib/db/schema";
+import { gameBets, users, strategies, advancedStrategies, agentSessions, creditPackages } from "@/lib/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { DICE_HOUSE_EDGE, FAUCET_AMOUNT } from "@/lib/constants";
 import { executeDiceRound } from "@/lib/games/execute-dice";
 import { grantFaucet } from "@/lib/faucet";
 import Stripe from "stripe";
+import { simulateStrategy } from "@/lib/dice-rule-engine";
+import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
 
 // Tool handler registry
 const toolHandlers: Record<CasinoToolName, (params: any, agentContext: AgentContext | null, request: NextRequest) => Promise<any>> = {
@@ -34,7 +36,14 @@ const toolHandlers: Record<CasinoToolName, (params: any, agentContext: AgentCont
   "casino_calculate_odds": handleCalculateOdds,
   "casino_claim_faucet": handleClaimFaucet,
   "casino_list_credit_packages": handleListCreditPackages,
-  "casino_create_checkout": handleCreateCheckout
+  "casino_create_checkout": handleCreateCheckout,
+  "casino_list_advanced_strategies": handleListAdvancedStrategies,
+  "casino_create_advanced_strategy": handleCreateAdvancedStrategy,
+  "casino_get_advanced_strategy": handleGetAdvancedStrategy,
+  "casino_update_advanced_strategy": handleUpdateAdvancedStrategy,
+  "casino_delete_advanced_strategy": handleDeleteAdvancedStrategy,
+  "casino_simulate_advanced_strategy": handleSimulateAdvancedStrategy,
+  "casino_run_advanced_strategy": handleRunAdvancedStrategy,
 };
 
 export async function executeTool(
@@ -411,6 +420,280 @@ async function handleGetStrategy(params: any, agentContext: AgentContext | null,
       worst_run: 0,
       win_rate: 0,
     },
+  };
+}
+
+// Advanced strategy handlers (rule-based: triggers + actions)
+async function handleListAdvancedStrategies(
+  params: any,
+  agentContext: AgentContext | null,
+  request: NextRequest
+) {
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) throw new Error(authResult.error);
+
+  const rows = await db
+    .select({
+      id: advancedStrategies.id,
+      name: advancedStrategies.name,
+      description: advancedStrategies.description,
+      baseConfig: advancedStrategies.baseConfig,
+      rules: advancedStrategies.rules,
+      executionMode: advancedStrategies.executionMode,
+      createdAt: advancedStrategies.createdAt,
+    })
+    .from(advancedStrategies)
+    .where(eq(advancedStrategies.userId, authResult.user.id))
+    .orderBy(advancedStrategies.createdAt);
+
+  return {
+    strategies: rows.map((s) => ({
+      id: s.id,
+      name: s.name,
+      description: s.description ?? "",
+      baseConfig: s.baseConfig,
+      rules_count: Array.isArray(s.rules) ? s.rules.length : 0,
+      executionMode: s.executionMode ?? "sequential",
+      createdAt: s.createdAt?.toISOString() ?? new Date().toISOString(),
+    })),
+  };
+}
+
+async function handleCreateAdvancedStrategy(
+  params: any,
+  agentContext: AgentContext | null,
+  request: NextRequest
+) {
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) throw new Error(authResult.error);
+
+  const strategy = params.strategy as AdvancedDiceStrategy;
+  if (!strategy?.name || !strategy?.baseConfig || !strategy?.rules) {
+    throw new Error("strategy requires name, baseConfig (amount, target, condition), and rules array");
+  }
+
+  const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const auth = request.headers.get("authorization");
+  if (auth) headers.Authorization = auth;
+
+  const res = await fetch(`${baseUrl}/api/me/advanced-strategies`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      name: strategy.name,
+      description: strategy.description,
+      baseConfig: strategy.baseConfig,
+      rules: strategy.rules,
+      globalLimits: strategy.globalLimits,
+      executionMode: strategy.executionMode ?? "sequential",
+      tags: strategy.tags,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    throw new Error(data.error ?? "Create advanced strategy failed");
+  }
+  const s = data.data?.strategy ?? {};
+  return {
+    success: true,
+    strategy: { id: s.id, name: s.name },
+  };
+}
+
+async function handleGetAdvancedStrategy(
+  params: any,
+  agentContext: AgentContext | null,
+  request: NextRequest
+) {
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) throw new Error(authResult.error);
+
+  const { strategy_id } = params;
+  const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const headers: Record<string, string> = {};
+  const auth = request.headers.get("authorization");
+  if (auth) headers.Authorization = auth;
+
+  const res = await fetch(`${baseUrl}/api/me/advanced-strategies/${strategy_id}`, { headers });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    throw new Error(data.error ?? "Strategy not found");
+  }
+  return { strategy: data.data?.strategy ?? {} };
+}
+
+async function handleUpdateAdvancedStrategy(
+  params: any,
+  agentContext: AgentContext | null,
+  request: NextRequest
+) {
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) throw new Error(authResult.error);
+
+  const { strategy_id, strategy } = params;
+  const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const auth = request.headers.get("authorization");
+  if (auth) headers.Authorization = auth;
+
+  const res = await fetch(`${baseUrl}/api/me/advanced-strategies/${strategy_id}`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify(strategy ?? {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    throw new Error(data.error ?? "Update advanced strategy failed");
+  }
+  return { success: true, strategy: data.data?.strategy ?? {} };
+}
+
+async function handleDeleteAdvancedStrategy(
+  params: any,
+  agentContext: AgentContext | null,
+  request: NextRequest
+) {
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) throw new Error(authResult.error);
+
+  const { strategy_id } = params;
+  const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const headers: Record<string, string> = {};
+  const auth = request.headers.get("authorization");
+  if (auth) headers.Authorization = auth;
+
+  const res = await fetch(`${baseUrl}/api/me/advanced-strategies/${strategy_id}`, {
+    method: "DELETE",
+    headers,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error ?? "Delete advanced strategy failed");
+  }
+  return { success: true, message: "Strategy deleted successfully" };
+}
+
+async function handleSimulateAdvancedStrategy(
+  params: any,
+  agentContext: AgentContext | null,
+  request: NextRequest
+) {
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) throw new Error(authResult.error);
+
+  const { strategy_id, strategy: inlineStrategy, rounds = 100, starting_balance = 1000 } = params;
+
+  const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const auth = request.headers.get("authorization");
+  if (auth) headers.Authorization = auth;
+
+  if (strategy_id) {
+    const res = await fetch(`${baseUrl}/api/me/advanced-strategies/${strategy_id}/simulate`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ rounds, startingBalance: starting_balance }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      throw new Error(data.error ?? "Simulate advanced strategy failed");
+    }
+    const sim = data.data?.simulation ?? {};
+    return {
+      simulation: {
+        rounds: sim.rounds,
+        finalBalance: sim.finalBalance,
+        profit: sim.profit,
+        winRate: sim.winRate,
+        totalWins: sim.totalWins,
+        totalLosses: sim.totalLosses,
+        maxBalance: sim.maxBalance,
+        minBalance: sim.minBalance,
+        shouldStop: sim.shouldStop,
+        stopReason: sim.stopReason,
+      },
+    };
+  }
+
+  if (inlineStrategy?.baseConfig && Array.isArray(inlineStrategy.rules)) {
+    const res = await fetch(`${baseUrl}/api/me/advanced-strategies/simulate`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        strategy: inlineStrategy,
+        rounds,
+        startingBalance: starting_balance,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      throw new Error(data.error ?? "Simulate advanced strategy failed");
+    }
+    const sim = data.data?.simulation ?? {};
+    return {
+      simulation: {
+        rounds: sim.rounds,
+        finalBalance: sim.finalBalance,
+        profit: sim.profit,
+        winRate: sim.winRate,
+        totalWins: sim.totalWins,
+        totalLosses: sim.totalLosses,
+        maxBalance: sim.maxBalance,
+        minBalance: sim.minBalance,
+        shouldStop: sim.shouldStop,
+        stopReason: sim.stopReason,
+      },
+    };
+  }
+
+  throw new Error("strategy_id or strategy (inline) required");
+}
+
+async function handleRunAdvancedStrategy(
+  params: any,
+  agentContext: AgentContext | null,
+  request: NextRequest
+) {
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) throw new Error(authResult.error);
+
+  const { strategy_id, strategy: inlineStrategy, max_rounds = 20 } = params;
+  if (!strategy_id && !inlineStrategy) {
+    throw new Error("strategy_id or strategy (inline) required");
+  }
+
+  const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const auth = request.headers.get("authorization");
+  if (auth) headers.Authorization = auth;
+
+  const body: Record<string, unknown> = {
+    maxRounds: Math.min(100, Math.max(1, max_rounds ?? 20)),
+  };
+  if (strategy_id) body.strategyId = strategy_id;
+  else if (inlineStrategy?.baseConfig && Array.isArray(inlineStrategy.rules)) body.strategy = inlineStrategy;
+
+  const res = await fetch(`${baseUrl}/api/games/dice/run-advanced-strategy`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    throw new Error(data.error ?? "Run advanced strategy failed");
+  }
+  const d = data.data ?? {};
+  return {
+    success: true,
+    results: d.results ?? [],
+    session_pnl: d.sessionPnl ?? 0,
+    final_balance: d.finalBalance ?? authResult.user.credits,
+    rounds_played: d.roundsPlayed ?? 0,
+    stopped_reason: d.stoppedReason ?? "max_rounds",
+    total_wins: d.totalWins ?? 0,
+    total_losses: d.totalLosses ?? 0,
+    win_rate: d.winRate ?? 0,
   };
 }
 

@@ -344,6 +344,212 @@ export const CasinoToolsSchema = {
     }
   },
 
+  // Advanced Strategy Tools (rule-based: 38+ triggers, 25+ actions)
+  "casino_list_advanced_strategies": {
+    name: "casino_list_advanced_strategies",
+    description: "List all advanced (rule-based) strategies. Advanced strategies use triggers and actions — e.g. on loss → double bet.",
+    parameters: {
+      type: "object",
+      properties: {}
+    },
+    returns: {
+      type: "object",
+      properties: {
+        strategies: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              name: { type: "string" },
+              description: { type: "string" },
+              baseConfig: { type: "object" },
+              rules_count: { type: "number" },
+              executionMode: { type: "string" },
+              createdAt: { type: "string" }
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "casino_create_advanced_strategy": {
+    name: "casino_create_advanced_strategy",
+    description: "Create an advanced strategy. Structure: { name, baseConfig: { amount, target, condition }, rules: [{ id, order, enabled, trigger: { type, value? }, action: { type, value? } }], executionMode?: 'sequential'|'all_matching', globalLimits?: {} }. Triggers: win, loss, streak_loss_at_least, profit_above, balance_below, etc. Actions: double_bet, reset_bet, switch_over_under, stop, etc.",
+    parameters: {
+      type: "object",
+      properties: {
+        strategy: {
+          type: "object",
+          description: "Full AdvancedDiceStrategy: name, baseConfig { amount, target, condition }, rules array",
+          properties: {
+            name: { type: "string" },
+            baseConfig: {
+              type: "object",
+              properties: {
+                amount: { type: "number" },
+                target: { type: "number" },
+                condition: { type: "string", enum: ["over", "under"] }
+              },
+              required: ["amount", "target", "condition"]
+            },
+            rules: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "string" },
+                  order: { type: "number" },
+                  enabled: { type: "boolean" },
+                  trigger: { type: "object", properties: { type: { type: "string" }, value: { type: "number" } } },
+                  action: { type: "object", properties: { type: { type: "string" }, value: { type: "number" } } }
+                }
+              }
+            },
+            executionMode: { type: "string", enum: ["sequential", "all_matching"] },
+            globalLimits: { type: "object" },
+            description: { type: "string" },
+            tags: { type: "array", items: { type: "string" } }
+          },
+          required: ["name", "baseConfig", "rules"]
+        }
+      },
+      required: ["strategy"]
+    },
+    returns: {
+      type: "object",
+      properties: {
+        success: { type: "boolean" },
+        strategy: { type: "object", properties: { id: { type: "string" }, name: { type: "string" } } }
+      }
+    }
+  },
+
+  "casino_get_advanced_strategy": {
+    name: "casino_get_advanced_strategy",
+    description: "Get a single advanced strategy by ID",
+    parameters: {
+      type: "object",
+      properties: {
+        strategy_id: { type: "string" }
+      },
+      required: ["strategy_id"]
+    },
+    returns: {
+      type: "object",
+      properties: {
+        strategy: { type: "object" }
+      }
+    }
+  },
+
+  "casino_update_advanced_strategy": {
+    name: "casino_update_advanced_strategy",
+    description: "Update an advanced strategy. Pass partial strategy object (name, baseConfig, rules, globalLimits, executionMode).",
+    parameters: {
+      type: "object",
+      properties: {
+        strategy_id: { type: "string" },
+        strategy: { type: "object", description: "Partial strategy fields to update" }
+      },
+      required: ["strategy_id", "strategy"]
+    },
+    returns: {
+      type: "object",
+      properties: {
+        success: { type: "boolean" },
+        strategy: { type: "object" }
+      }
+    }
+  },
+
+  "casino_delete_advanced_strategy": {
+    name: "casino_delete_advanced_strategy",
+    description: "Delete an advanced strategy",
+    parameters: {
+      type: "object",
+      properties: {
+        strategy_id: { type: "string" }
+      },
+      required: ["strategy_id"]
+    },
+    returns: {
+      type: "object",
+      properties: {
+        success: { type: "boolean" },
+        message: { type: "string" }
+      }
+    }
+  },
+
+  "casino_simulate_advanced_strategy": {
+    name: "casino_simulate_advanced_strategy",
+    description: "Simulate an advanced strategy (dry run, no real bets). Use strategy_id (saved) or strategy (inline object). Returns finalBalance, profit, winRate, shouldStop, stopReason.",
+    parameters: {
+      type: "object",
+      properties: {
+        strategy_id: { type: "string", description: "ID of saved strategy" },
+        strategy: {
+          type: "object",
+          description: "Inline strategy when strategy_id omitted: name, baseConfig, rules, executionMode"
+        },
+        rounds: { type: "number", default: 100 },
+        starting_balance: { type: "number", default: 1000 }
+      }
+    },
+    returns: {
+      type: "object",
+      properties: {
+        simulation: {
+          type: "object",
+          properties: {
+            rounds: { type: "number" },
+            finalBalance: { type: "number" },
+            profit: { type: "number" },
+            winRate: { type: "number" },
+            totalWins: { type: "number" },
+            totalLosses: { type: "number" },
+            maxBalance: { type: "number" },
+            minBalance: { type: "number" },
+            shouldStop: { type: "boolean" },
+            stopReason: { type: "string" }
+          }
+        }
+      }
+    }
+  },
+
+  "casino_run_advanced_strategy": {
+    name: "casino_run_advanced_strategy",
+    description: "Run an advanced strategy for real (places actual bets). Use strategy_id (saved) or strategy (inline object). Max 100 rounds per run.",
+    parameters: {
+      type: "object",
+      properties: {
+        strategy_id: { type: "string", description: "ID of saved strategy" },
+        strategy: {
+          type: "object",
+          description: "Inline strategy when strategy_id omitted: name, baseConfig, rules, executionMode, globalLimits"
+        },
+        max_rounds: { type: "number", default: 20, description: "Max rounds to play (1–100)" }
+      }
+    },
+    returns: {
+      type: "object",
+      properties: {
+        success: { type: "boolean" },
+        results: { type: "array" },
+        session_pnl: { type: "number" },
+        final_balance: { type: "number" },
+        rounds_played: { type: "number" },
+        stopped_reason: { type: "string" },
+        total_wins: { type: "number" },
+        total_losses: { type: "number" },
+        win_rate: { type: "number" }
+      }
+    }
+  },
+
   // Session Management Tools (reserved for future async sessions; strategy runs are synchronous)
   "casino_stop_session": {
     name: "casino_stop_session",

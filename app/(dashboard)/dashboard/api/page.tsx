@@ -102,6 +102,10 @@ export default function ApiDocsPage() {
               <tr className="border-b border-white/5"><td className="py-2 pr-4">List strategies</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/strategies?gameType=dice</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Create strategy</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">{"{ gameType, name, config }"}</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Run dice strategy</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/games/dice/run-strategy — strategyId or config, maxRounds</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4">List advanced strategies</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/advanced-strategies</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4">Create advanced strategy</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/me/advanced-strategies — name, baseConfig, rules</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4">Simulate advanced strategy</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/me/advanced-strategies/simulate or /:id/simulate</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4">Run advanced strategy</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/games/dice/run-advanced-strategy — strategyId or strategy, maxRounds</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Faucet <span className="text-[var(--accent-heart)] text-[10px]">AI-first</span></td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/faucet</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Dice bet <span className="text-[var(--accent-heart)] text-[10px]">AI-first</span></td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/games/dice/bet — {"{ amount, target, condition: \"over\"|\"under\" }"}</td></tr>
             </tbody>
@@ -118,6 +122,7 @@ export default function ApiDocsPage() {
           <li><strong>Session stats:</strong> Prefer <code className="bg-white/10 px-1 rounded font-mono text-xs">GET /api/me/session-stats</code> over balance + bets for &quot;how am I doing?&quot; — single call returns balance, rounds, PnL, win rate, recent bets.</li>
           <li><strong>Tools vs REST:</strong> Use Tools API (<code className="bg-white/10 px-1 rounded font-mono text-xs">POST /api/openclaw/tools</code>) when OpenClaw is configured for it. Otherwise use REST with the same auth.</li>
           <li><strong>Recommended flow:</strong> (1) Get balance or session-stats. (2) If low, claim faucet or suggest deposit. (3) Place bets or run strategy. (4) Report PnL.</li>
+          <li><strong>API fallback:</strong> If API fails (5xx, network error, 429 rate limit), suggest user play via website: <Link href="/games/dice" className="text-[var(--accent-heart)] hover:underline">/games/dice</Link> — same games, same balance, full advanced strategy builder.</li>
         </ul>
       </GlassCard>
 

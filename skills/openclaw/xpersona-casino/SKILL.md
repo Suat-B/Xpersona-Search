@@ -78,8 +78,16 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 | casino_claim_faucet | Claim the hourly faucet for the user |
 | casino_list_credit_packages | List credit packages for purchase |
 | casino_create_checkout | Create a Stripe checkout URL for a package (deposit) |
+| **Advanced strategies (rule-based)** | |
+| casino_list_advanced_strategies | List advanced strategies (38+ triggers, 25+ actions) |
+| casino_create_advanced_strategy | Create advanced strategy (baseConfig + rules array) |
+| casino_get_advanced_strategy | Get advanced strategy by ID |
+| casino_update_advanced_strategy | Update advanced strategy |
+| casino_delete_advanced_strategy | Delete advanced strategy |
+| casino_simulate_advanced_strategy | Simulate (dry run, no real bets) |
+| casino_run_advanced_strategy | Run for real (strategy_id or inline strategy) |
 
-**Note:** `casino_stop_session` and `casino_get_session_status` exist in the schema but are reserved for future async sessions. Strategy runs are synchronous; there is no active session to stop. Use `casino_run_strategy` result directly.
+**Note:** `casino_stop_session` and `casino_get_session_status` exist in the schema but are reserved for future async sessions. Strategy runs are synchronous; there is no active session to stop. Use `casino_run_strategy` or `casino_run_advanced_strategy` result directly.
 
 ---
 
@@ -123,9 +131,19 @@ Always check `data.balance` before each bet.
 
 ## Custom strategies (AI/OpenClaw)
 
+### Basic strategies (progression: martingale, paroli, etc.)
 **Create:** `POST /api/me/strategies` with `{ gameType, name, config }`. Dice config: `amount`, `target`, `condition`, optional `progressionType` (flat|martingale|paroli|dalembert|fibonacci|labouchere|oscar|kelly), `maxBet`, `maxConsecutiveLosses`, `maxConsecutiveWins`, `stopIfBalanceBelow`, `stopIfBalanceAbove`.
 
 **Run (one call):** `POST /api/games/dice/run-strategy` with `{ strategyId }` or `{ config, maxRounds }`. Response: `data.results`, `data.sessionPnl`, `data.finalBalance`, `data.stoppedReason`.
+
+### Advanced strategies (rule-based: triggers + actions)
+**Create:** `POST /api/me/advanced-strategies` with `{ name, baseConfig: { amount, target, condition }, rules: [{ id, order, enabled, trigger: { type, value? }, action: { type, value? } }], executionMode?, globalLimits? }`. Triggers: win, loss, streak_loss_at_least, profit_above, balance_below, win_rate_above, etc. Actions: double_bet, reset_bet, switch_over_under, stop, increase_bet_percent, etc.
+
+**List:** `GET /api/me/advanced-strategies`. **Get/Update/Delete:** `GET|PATCH|DELETE /api/me/advanced-strategies/:id`.
+
+**Simulate (dry run):** `POST /api/me/advanced-strategies/simulate` with `{ strategy, rounds?, startingBalance? }` or `POST /api/me/advanced-strategies/:id/simulate` with `{ rounds?, startingBalance? }`.
+
+**Run (real bets):** `POST /api/games/dice/run-advanced-strategy` with `{ strategyId }` or `{ strategy, maxRounds }`. Max 100 rounds per run.
 
 
 ---
@@ -150,5 +168,6 @@ curl -s -X POST -H "Authorization: Bearer $XPERSONA_API_KEY" -H "Content-Type: a
 - **401:** Invalid or missing API key. Generate at https://xpersona.co/dashboard (API section).
 - **400 INSUFFICIENT_BALANCE:** Suggest faucet or `casino_list_credit_packages` + `casino_create_checkout`.
 - **429 / FAUCET_COOLDOWN:** Wait until `data.nextFaucetAt` before claiming again.
+- **5xx / network / timeout: API fallback** — If the API is unavailable (5xx, timeout, 429), suggest the user play via the website: https://xpersona.co/games/dice (same games, same balance, full strategy builder). Do not retry excessively.
 
 Full API spec: https://xpersona.co/openapi.yaml or https://xpersona.co/dashboard/api.
