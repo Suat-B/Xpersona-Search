@@ -125,10 +125,10 @@ export function DashboardSidebarNav({ isAdmin = false }: DashboardSidebarNavProp
       {isAdmin && (
         <div className="mt-4 pt-4 border-t border-[var(--divider)]">
           <Link
-            href="/dashboard/admin"
+            href="/admin"
             className={cn(
               "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-              (pathname ?? "").startsWith("/dashboard/admin")
+              (pathname ?? "").startsWith("/admin")
                 ? "bg-amber-500/10 text-amber-400 shadow-[inset_0_1px_0_rgba(251,191,36,0.1)]"
                 : "text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-amber-400"
             )}
@@ -136,7 +136,7 @@ export function DashboardSidebarNav({ isAdmin = false }: DashboardSidebarNavProp
             <span
               className={cn(
                 "flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200",
-                (pathname ?? "").startsWith("/dashboard/admin")
+                (pathname ?? "").startsWith("/admin")
                   ? "bg-amber-500/20 text-amber-400"
                   : "bg-white/[0.04] text-[var(--text-tertiary)] group-hover:bg-amber-500/10 group-hover:text-amber-400"
               )}
