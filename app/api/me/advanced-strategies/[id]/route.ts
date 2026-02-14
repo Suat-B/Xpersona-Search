@@ -8,12 +8,14 @@ import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
 // GET /api/me/advanced-strategies/[id] - Get a single strategy
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const authResult = await getAuthUser(request);
   if ("error" in authResult) {
     return NextResponse.json({ error: authResult.error }, { status: 401 });
   }
+
+  const { id } = await params;
 
   try {
     const [strategy] = await db
@@ -33,7 +35,7 @@ export async function GET(
       .from(advancedStrategies)
       .where(
         and(
-          eq(advancedStrategies.id, params.id),
+          eq(advancedStrategies.id, id),
           eq(advancedStrategies.userId, authResult.user.id)
         )
       )
@@ -62,12 +64,14 @@ export async function GET(
 // PATCH /api/me/advanced-strategies/[id] - Update a strategy
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const authResult = await getAuthUser(request);
   if ("error" in authResult) {
     return NextResponse.json({ error: authResult.error }, { status: 401 });
   }
+
+  const { id } = await params;
 
   try {
     // Check ownership
@@ -76,7 +80,7 @@ export async function PATCH(
       .from(advancedStrategies)
       .where(
         and(
-          eq(advancedStrategies.id, params.id),
+          eq(advancedStrategies.id, id),
           eq(advancedStrategies.userId, authResult.user.id)
         )
       )
@@ -127,7 +131,7 @@ export async function PATCH(
     const [updated] = await db
       .update(advancedStrategies)
       .set(updateData)
-      .where(eq(advancedStrategies.id, params.id))
+      .where(eq(advancedStrategies.id, id))
       .returning({
         id: advancedStrategies.id,
         name: advancedStrategies.name,
@@ -158,12 +162,14 @@ export async function PATCH(
 // DELETE /api/me/advanced-strategies/[id] - Delete a strategy
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const authResult = await getAuthUser(request);
   if ("error" in authResult) {
     return NextResponse.json({ error: authResult.error }, { status: 401 });
   }
+
+  const { id } = await params;
 
   try {
     // Check ownership
@@ -172,7 +178,7 @@ export async function DELETE(
       .from(advancedStrategies)
       .where(
         and(
-          eq(advancedStrategies.id, params.id),
+          eq(advancedStrategies.id, id),
           eq(advancedStrategies.userId, authResult.user.id)
         )
       )
@@ -187,7 +193,7 @@ export async function DELETE(
 
     await db
       .delete(advancedStrategies)
-      .where(eq(advancedStrategies.id, params.id));
+      .where(eq(advancedStrategies.id, id));
 
     return NextResponse.json({
       success: true,

@@ -9,12 +9,14 @@ import { DICE_HOUSE_EDGE } from "@/lib/constants";
 // POST /api/me/advanced-strategies/[id]/simulate - Simulate a strategy
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const authResult = await getAuthUser(request);
   if ("error" in authResult) {
     return NextResponse.json({ error: authResult.error }, { status: 401 });
   }
+
+  const { id } = await params;
 
   try {
     const body = await request.json();
@@ -34,7 +36,7 @@ export async function POST(
       .from(advancedStrategies)
       .where(
         and(
-          eq(advancedStrategies.id, params.id),
+          eq(advancedStrategies.id, id),
           eq(advancedStrategies.userId, authResult.user.id)
         )
       )
