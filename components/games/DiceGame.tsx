@@ -5,7 +5,6 @@ import { DICE_HOUSE_EDGE } from "@/lib/constants";
 import { Dice3D } from "./Dice3D";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { QuickBetButtons } from "@/components/ui/QuickBetButtons";
-import { AmbientParticles } from "./AmbientParticles";
 import { WinEffects } from "./WinEffects";
 import { ProbabilityBar } from "./ProbabilityBar";
 import { BetPercentageButtons } from "./BetPercentageButtons";
@@ -439,34 +438,8 @@ export function DiceGame({
           </div>
         </div>
 
-        {/* Main Game Area - Compact Layout */}
-        <div className="flex-1 flex flex-col items-center justify-center min-h-0 py-4 relative">
-          {/* Ambient Particles */}
-          <AmbientParticles />
-          
-          {/* Background glow */}
-          <div className="absolute inset-0 bg-gradient-to-b from-[var(--accent-heart)]/5 via-transparent to-transparent pointer-events-none" />
-          
-          {/* Result Banner - Above dice */}
-          {result && !loading && (
-            <div className="mb-4 text-center animate-bounce-in">
-              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${
-                result.win 
-                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" 
-                  : "bg-red-500/20 text-red-400 border border-red-500/30"
-              }`}>
-                <span className="text-lg">
-                  {result.win ? "🎉" : "😔"}
-                </span>
-                <span className="font-bold">
-                  {result.win ? "YOU WIN!" : "You Lose"}
-                </span>
-                <span className="font-mono font-bold">
-                  {result.win ? `+${result.payout}` : amount} credits
-                </span>
-              </div>
-            </div>
-          )}
+        {/* Main Game Area - Clean Layout */}
+        <div className="flex-1 flex flex-col items-center justify-center min-h-0 py-2 relative">
           
           {/* 3D Dice */}
           <div className="relative z-10">
@@ -476,24 +449,11 @@ export function DiceGame({
               win={result?.win ?? null}
             />
           </div>
-
-          {/* Empty state message */}
-          {!result && !loading && (
-            <div className="mt-8 text-center text-sm text-[var(--text-secondary)] animate-pulse">
-              Press SPACE or Click ROLL to start
-            </div>
-          )}
         </div>
 
-        {/* Controls Section - Compact */}
-        <div className="flex-shrink-0 px-6 pb-5 space-y-3">
-          {/* Probability Bar */}
-          <ProbabilityBar target={target} condition={condition} />
-          
-          {/* Win Preview */}
-          <WinPreview amount={amount} target={target} condition={condition} />
-          
-          {/* Target and Condition Row */}
+        {/* Controls Section - Clean */}
+        <div className="flex-shrink-0 px-6 pb-4 space-y-2">
+          {/* Target, Condition, Bet Row */}
           <div className="flex items-end justify-center gap-3">
             <div className="space-y-1">
               <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
@@ -508,7 +468,7 @@ export function DiceGame({
                   value={target}
                   onChange={(e) => onTargetChange(Number(e.target.value))}
                   disabled={autoPlay}
-                  className="w-24 h-12 rounded-xl border-2 border-[var(--border)] bg-[var(--bg-matte)] px-3 text-center text-xl font-mono font-bold text-[var(--text-primary)] disabled:opacity-60 focus:border-[var(--accent-heart)] focus:outline-none transition-colors"
+                  className="w-20 h-10 rounded-lg border-2 border-[var(--border)] bg-[var(--bg-matte)] px-2 text-center text-lg font-mono font-bold text-[var(--text-primary)] disabled:opacity-60 focus:border-[var(--accent-heart)] focus:outline-none transition-colors"
                 />
                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--text-secondary)]">
                   %
@@ -540,24 +500,21 @@ export function DiceGame({
                   value={amount}
                   onChange={(e) => onAmountChange(Number(e.target.value))}
                   disabled={autoPlay}
-                  className="w-24 h-12 rounded-xl border-2 border-[var(--border)] bg-[var(--bg-matte)] px-3 text-center text-lg font-mono font-bold text-[var(--text-primary)] disabled:opacity-60 focus:border-[var(--accent-heart)] focus:outline-none transition-colors"
+                  className="w-24 h-10 rounded-lg border-2 border-[var(--border)] bg-[var(--bg-matte)] px-2 text-center text-base font-mono font-bold text-[var(--text-primary)] disabled:opacity-60 focus:border-[var(--accent-heart)] focus:outline-none transition-colors"
                 />
               </div>
             </div>
           </div>
 
-          {/* Bet Percentage Buttons */}
-          <div className="flex justify-center">
+          {/* Bet Controls Row - Combined */}
+          <div className="flex items-center justify-center gap-2">
             <BetPercentageButtons
               balance={balance}
               currentBet={amount}
               onBetChange={onAmountChange}
               disabled={autoPlay}
             />
-          </div>
-
-          {/* Quick Bet Buttons */}
-          <div className="flex justify-center">
+            <div className="w-px h-6 bg-[var(--border)] mx-1" />
             <QuickBetButtons
               onHalf={handleHalf}
               onDouble={handleDouble}
@@ -567,6 +524,9 @@ export function DiceGame({
               maxAmount={MAX_BET}
             />
           </div>
+
+          {/* Probability & Win Info */}
+          <ProbabilityBar target={target} condition={condition} className="py-1" />
 
           {/* Action Buttons */}
           <div className="flex items-center justify-center gap-2 pt-1">

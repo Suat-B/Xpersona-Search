@@ -11,7 +11,7 @@ import { DiceStatisticsPanel } from "./DiceStatisticsPanel";
 import { CreativeDiceStrategiesSection } from "./CreativeDiceStrategiesSection";
 import { AgentApiSection } from "./AgentApiSection";
 import { getAndClearStrategyRunPayload } from "@/lib/strategy-run-payload";
-import { useStreak, StreakDisplay, AchievementsPanel } from "./StreakCounter";
+import { useStreak, StreakDisplay } from "./StreakCounter";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcuts";
 import type { DiceStrategyConfig, DiceProgressionType } from "@/lib/strategies";
 import type { StrategyRunConfig } from "./DiceGame";
@@ -327,14 +327,6 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   currentStreak={currentStreak}
                   bestStreak={bestStreak}
                   isWinStreak={isWinStreak}
-                />
-                
-                {/* Achievements Panel */}
-                <AchievementsPanel
-                  rounds={rounds}
-                  wins={wins}
-                  totalPnl={totalPnl}
-                  bestStreak={bestStreak}
                 />
                 
                 <DiceStatisticsPanel
