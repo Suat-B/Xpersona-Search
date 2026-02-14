@@ -11,8 +11,8 @@ import { DiceStatisticsPanel } from "./DiceStatisticsPanel";
 import { CreativeDiceStrategiesSection } from "./CreativeDiceStrategiesSection";
 import { AgentApiSection } from "./AgentApiSection";
 import { getAndClearStrategyRunPayload } from "@/lib/strategy-run-payload";
-import { useStreak, StreakDisplay } from "./StreakCounter";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcuts";
+import { StrategyRunningBanner } from "@/components/strategies/StrategyRunningBanner";
 import type { DiceStrategyConfig, DiceProgressionType } from "@/lib/strategies";
 import type { StrategyRunConfig } from "./DiceGame";
 
@@ -47,10 +47,17 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const [balance, setBalance] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<"api" | "strategy" | "statistics">("statistics");
   const [strategyRun, setStrategyRun] = useState<StrategyRunConfig | null>(null);
+  const [strategyStats, setStrategyStats] = useState<{
+    currentRound: number;
+    sessionPnl: number;
+    initialBalance: number;
+    winRatePercent: number;
+  } | null>(null);
 
-  // Read strategy-run payload when ?run=1, then redirect
+  // Read strategy-run payload when ?run=1 or ?run=advanced, then redirect
   useEffect(() => {
-    if (game !== "dice" || searchParams.get("run") !== "1") return;
+    const runParam = searchParams.get("run");
+    if (game !== "dice" || (runParam !== "1" && runParam !== "advanced")) return;
     const payload = getAndClearStrategyRunPayload();
     if (!payload) {
       router.replace("/games/dice");
@@ -67,6 +74,29 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         strategyName: payload.strategyName,
       });
     };
+
+    // Handle advanced strategy
+    if (payload.isAdvanced && payload.strategy) {
+      const advancedConfig: DiceStrategyConfig = {
+        amount: payload.strategy.baseConfig.amount,
+        target: payload.strategy.baseConfig.target,
+        condition: payload.strategy.baseConfig.condition,
+        progressionType: "flat", // Advanced strategies don't use progression types
+      };
+      setAmount(advancedConfig.amount);
+      setTarget(advancedConfig.target);
+      setCondition(advancedConfig.condition);
+      setStrategyRun({
+        config: advancedConfig,
+        maxRounds: payload.maxRounds,
+        strategyName: payload.strategyName,
+        isAdvanced: true,
+        advancedStrategy: payload.strategy,
+      });
+      setActiveStrategyName(payload.strategyName);
+      router.replace("/games/dice");
+      return;
+    }
 
     if (payload.strategyId) {
       fetch("/api/me/strategies?gameType=dice", { credentials: "include" })
@@ -175,9 +205,6 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     setRecentResults([]);
   };
 
-  // Calculate streak data
-  const { currentStreak, bestStreak, isWinStreak } = useStreak(recentResults);
-
   return (
     <div className="h-screen w-full flex flex-col min-h-0 overflow-hidden bg-[var(--bg-deep)]">
       {/* Header - Compact 56px */}
@@ -236,6 +263,21 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       <main className="flex-1 min-h-0 flex flex-row gap-4 p-4 overflow-hidden">
         {/* Left column: Game - takes remaining space */}
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          {/* Strategy Running Banner */}
+          {strategyRun && (
+            <div className="mb-4">
+              <StrategyRunningBanner
+                strategyName={strategyRun.strategyName}
+                status="running"
+                currentRound={strategyStats?.currentRound || 0}
+                sessionPnl={strategyStats?.sessionPnl || 0}
+                currentBalance={balance}
+                initialBalance={strategyStats?.initialBalance || balance}
+                winRatePercent={strategyStats?.winRatePercent || 0}
+                onStop={() => setStrategyRun(null)}
+              />
+            </div>
+          )}
           <ClientOnly
             fallback={
               <div className="flex-1 flex items-center justify-center font-mono text-sm text-[var(--text-secondary)] animate-pulse">
@@ -262,10 +304,14 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               strategyRun={strategyRun}
               onStrategyComplete={(sessionPnl, roundsPlayed, wins) => {
                 setStrategyRun(null);
+                setStrategyStats(null);
                 addBulkSession(sessionPnl, roundsPlayed, wins);
                 window.dispatchEvent(new Event("balance-updated"));
               }}
-              onStrategyStop={() => setStrategyRun(null)}
+              onStrategyStop={() => {
+                setStrategyRun(null);
+                setStrategyStats(null);
+              }}
             />
           </ClientOnly>
         </div>
@@ -322,13 +368,6 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3">
               {activeTab === "statistics" ? (
               <div className="space-y-3">
-                {/* Streak Counter */}
-                <StreakDisplay
-                  currentStreak={currentStreak}
-                  bestStreak={bestStreak}
-                  isWinStreak={isWinStreak}
-                />
-                
                 <DiceStatisticsPanel
                   series={statsSeries}
                   rounds={rounds}

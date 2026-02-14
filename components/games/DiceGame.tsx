@@ -9,7 +9,9 @@ import { WinEffects } from "./WinEffects";
 import { BetPercentageButtons } from "./BetPercentageButtons";
 import { useKeyboardShortcuts } from "./KeyboardShortcuts";
 import { createProgressionState, getNextBet, type ProgressionState, type RoundResult } from "@/lib/dice-progression";
+import { createRuleEngineState, processRound } from "@/lib/dice-rule-engine";
 import type { DiceStrategyConfig } from "@/lib/strategies";
+import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
 
 type Result = {
   result: number;
@@ -22,6 +24,8 @@ export type StrategyRunConfig = {
   config: DiceStrategyConfig;
   maxRounds: number;
   strategyName: string;
+  isAdvanced?: boolean;
+  advancedStrategy?: AdvancedDiceStrategy;
 };
 
 const AUTO_SPEEDS = [100, 250, 500, 1000] as const;
@@ -45,6 +49,7 @@ export type DiceGameProps = {
   strategyRun?: StrategyRunConfig | null;
   onStrategyComplete?: (sessionPnl: number, roundsPlayed: number, wins: number) => void;
   onStrategyStop?: () => void;
+  onStrategyProgress?: (stats: { currentRound: number; sessionPnl: number; wins: number; totalRounds: number }) => void;
 };
 
 export function DiceGame({
@@ -63,6 +68,7 @@ export function DiceGame({
   strategyRun,
   onStrategyComplete,
   onStrategyStop,
+  onStrategyProgress,
 }: DiceGameProps) {
   const [result, setResult] = useState<Result>(null);
   const [loading, setLoading] = useState(false);
@@ -76,6 +82,7 @@ export function DiceGame({
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const betInputRef = useRef<HTMLInputElement | null>(null);
   const strategyStateRef = useRef<ProgressionState | null>(null);
+  const ruleEngineStateRef = useRef<{ currentBet: number; currentTarget: number; currentCondition: "over" | "under"; pausedRounds: number; skipNextBet: boolean } | null>(null);
   const strategyStopRef = useRef(false);
   const lastBetResultRef = useRef<{ win: boolean; payout: number; balance: number } | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -180,6 +187,8 @@ export function DiceGame({
     if (!strategyRun) return;
     const config = strategyRun.config;
     const maxRounds = strategyRun.maxRounds;
+    const isAdvanced = strategyRun.isAdvanced;
+    const advancedStrategy = strategyRun.advancedStrategy;
     strategyStopRef.current = false;
     abortControllerRef.current = new AbortController();
     setStrategyRoundsPlayed(0);
@@ -204,46 +213,148 @@ export function DiceGame({
         return;
       }
 
-      const initialState = createProgressionState(config, balance);
-      strategyStateRef.current = initialState;
-      let currentBet = initialState.currentBet;
+      let currentBet: number;
+      let currentTarget: number;
+      let currentCondition: "over" | "under";
       let sessionPnl = 0;
       let wins = 0;
       let roundsPlayed = 0;
-      onAmountChange(currentBet);
 
-      for (let i = 0; i < maxRounds; i++) {
-        if (strategyStopRef.current) break;
+      if (isAdvanced && advancedStrategy) {
+        // Use advanced rule engine
+        const ruleState = createRuleEngineState(advancedStrategy, balance);
+        currentBet = ruleState.currentBet;
+        currentTarget = ruleState.currentTarget;
+        currentCondition = ruleState.currentCondition;
+        onAmountChange(currentBet);
+        onTargetChange(currentTarget);
+        onConditionChange(currentCondition);
 
-        setLoading(true);
-        setResult(null);
-        lastBetResultRef.current = null;
-        const ok = await runBet(currentBet);
-        setLoading(false);
+        for (let i = 0; i < maxRounds; i++) {
+          if (strategyStopRef.current) break;
 
-        if (!ok) break;
-        roundsPlayed += 1;
-        setStrategyRoundsPlayed(roundsPlayed);
+          // Check for paused rounds
+          if (ruleState.pausedRounds > 0) {
+            ruleState.pausedRounds--;
+            roundsPlayed += 1;
+            setStrategyRoundsPlayed(roundsPlayed);
+            await new Promise((r) => setTimeout(r, STRATEGY_ROUND_DELAY_MS));
+            continue;
+          }
 
-        const lastResult = lastBetResultRef.current;
-        if (!lastResult) break;
-        const { win, payout, balance: newBalance } = lastResult;
-        const pnl = payout - currentBet;
-        sessionPnl += pnl;
-        if (win) wins += 1;
-        balance = newBalance;
+          // Check for skip next bet
+          if (ruleState.skipNextBet) {
+            ruleState.skipNextBet = false;
+            roundsPlayed += 1;
+            setStrategyRoundsPlayed(roundsPlayed);
+            await new Promise((r) => setTimeout(r, STRATEGY_ROUND_DELAY_MS));
+            continue;
+          }
 
-        const state = strategyStateRef.current;
-        if (state) {
-          const roundResult: RoundResult = { win, payout, betAmount: currentBet };
-          const { nextBet, nextState } = getNextBet(state, roundResult, config, newBalance);
-          strategyStateRef.current = nextState;
-          currentBet = nextBet;
+          setLoading(true);
+          setResult(null);
+          lastBetResultRef.current = null;
+          const ok = await runBet(currentBet);
+          setLoading(false);
+
+          if (!ok) break;
+          roundsPlayed += 1;
+          setStrategyRoundsPlayed(roundsPlayed);
+
+          const lastResult = lastBetResultRef.current;
+          if (!lastResult) break;
+          const { win, payout, balance: newBalance } = lastResult;
+          const pnl = payout - currentBet;
+          sessionPnl += pnl;
+          if (win) wins += 1;
+          balance = newBalance;
+
+          // Report progress
+          onStrategyProgress?.({
+            currentRound: roundsPlayed,
+            sessionPnl,
+            wins,
+            totalRounds: maxRounds,
+          });
+
+          // Process through rule engine
+          const roundResult = {
+            win,
+            payout,
+            roll: result?.result || 0,
+            betAmount: currentBet,
+          };
+          const engineResult = processRound(advancedStrategy, ruleState, roundResult);
+
+          // Update state from engine
+          Object.assign(ruleState, engineResult.newState);
+          currentBet = engineResult.nextBet;
+          currentTarget = engineResult.nextTarget;
+          currentCondition = engineResult.nextCondition;
+
           onAmountChange(currentBet);
-        }
+          onTargetChange(currentTarget);
+          onConditionChange(currentCondition);
 
-        if (i < maxRounds - 1) {
-          await new Promise((r) => setTimeout(r, STRATEGY_ROUND_DELAY_MS));
+          // Check if stopped by rules
+          if (engineResult.shouldStop) {
+            break;
+          }
+
+          if (i < maxRounds - 1) {
+            await new Promise((r) => setTimeout(r, STRATEGY_ROUND_DELAY_MS));
+          }
+        }
+      } else {
+        // Use old progression system
+        const initialState = createProgressionState(config, balance);
+        strategyStateRef.current = initialState;
+        currentBet = initialState.currentBet;
+        currentTarget = config.target;
+        currentCondition = config.condition;
+        onAmountChange(currentBet);
+
+        for (let i = 0; i < maxRounds; i++) {
+          if (strategyStopRef.current) break;
+
+          setLoading(true);
+          setResult(null);
+          lastBetResultRef.current = null;
+          const ok = await runBet(currentBet);
+          setLoading(false);
+
+          if (!ok) break;
+          roundsPlayed += 1;
+          setStrategyRoundsPlayed(roundsPlayed);
+
+          const lastResult = lastBetResultRef.current;
+          if (!lastResult) break;
+          const { win, payout, balance: newBalance } = lastResult;
+          const pnl = payout - currentBet;
+          sessionPnl += pnl;
+          if (win) wins += 1;
+          balance = newBalance;
+
+          // Report progress
+          onStrategyProgress?.({
+            currentRound: roundsPlayed,
+            sessionPnl,
+            wins,
+            totalRounds: maxRounds,
+          });
+
+          const state = strategyStateRef.current;
+          if (state) {
+            const roundResult: RoundResult = { win, payout, betAmount: currentBet };
+            const { nextBet, nextState } = getNextBet(state, roundResult, config, newBalance);
+            strategyStateRef.current = nextState;
+            currentBet = nextBet;
+            onAmountChange(currentBet);
+          }
+
+          if (i < maxRounds - 1) {
+            await new Promise((r) => setTimeout(r, STRATEGY_ROUND_DELAY_MS));
+          }
         }
       }
 

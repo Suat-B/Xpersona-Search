@@ -610,6 +610,25 @@ export function simulateStrategy(
       balance: result.newState.currentBalance,
       executedRules: result.executedRules,
     });
+    
+    // Update state for next round - need to update the reference
+    state.currentBalance = result.newState.currentBalance;
+    state.sessionProfit = result.newState.sessionProfit;
+    state.sessionLoss = result.newState.sessionLoss;
+    state.totalRounds = result.newState.totalRounds;
+    state.totalWins = result.newState.totalWins;
+    state.totalLosses = result.newState.totalLosses;
+    state.currentStreakWins = result.newState.currentStreakWins;
+    state.currentStreakLosses = result.newState.currentStreakLosses;
+    state.highestBalance = result.newState.highestBalance;
+    state.lowestBalance = result.newState.lowestBalance;
+    state.lastResults = result.newState.lastResults;
+    state.ruleCounters = result.newState.ruleCounters;
+    state.currentBet = result.newState.currentBet;
+    state.currentTarget = result.newState.currentTarget;
+    state.currentCondition = result.newState.currentCondition;
+    state.pausedRounds = result.newState.pausedRounds;
+    state.skipNextBet = result.newState.skipNextBet;
 
     if (result.shouldStop) {
       return {
