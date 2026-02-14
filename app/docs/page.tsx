@@ -1,29 +1,70 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
 
+type RedocGlobal = { Redoc: { init: (spec: string | object, opts: object, el: HTMLElement) => void } };
+
 export default function DocsPage() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [status, setStatus] = useState<"loading" | "error" | "ready">("loading");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined" || !containerRef.current) return;
-    const script = document.createElement("script");
-    script.src = "https://cdn.redoc.ly/redoc/latest/redoc.standalone.js";
-    script.async = true;
-    script.onload = () => {
-      if (containerRef.current && (window as unknown as { Redoc: unknown }).Redoc) {
-        (window as unknown as { Redoc: { init: (path: string, opts: object, el: HTMLElement) => void } }).Redoc.init(
-          "/openapi.yaml",
-          { hideDownloadButton: false },
-          containerRef.current
-        );
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const [scriptLoaded, spec] = await Promise.all([
+          new Promise<boolean>((resolve) => {
+            if ((window as unknown as RedocGlobal).Redoc) {
+              resolve(true);
+              return;
+            }
+            const script = document.createElement("script");
+            script.src = "https://cdn.jsdelivr.net/npm/redoc@2.1.3/bundles/redoc.standalone.js";
+            script.async = true;
+            script.onload = () => resolve(true);
+            script.onerror = () => resolve(false);
+            document.head.appendChild(script);
+          }),
+          fetch("/api/openapi").then((r) => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.json();
+          }),
+        ]);
+
+        if (cancelled || !containerRef.current) return;
+
+        if (!scriptLoaded) {
+          setErrorMsg("ReDoc script failed to load.");
+          setStatus("error");
+          return;
+        }
+
+        const Redoc = (window as unknown as RedocGlobal).Redoc;
+        if (!Redoc) {
+          setErrorMsg("ReDoc is not available.");
+          setStatus("error");
+          return;
+        }
+
+        Redoc.init(spec, { hideDownloadButton: false }, containerRef.current);
+        setStatus("ready");
+      } catch (err) {
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : "Failed to load API spec";
+        setErrorMsg(msg);
+        setStatus("error");
       }
     };
-    document.head.appendChild(script);
+
+    run();
     return () => {
-      script.remove();
+      cancelled = true;
     };
   }, []);
 
@@ -50,7 +91,34 @@ export default function DocsPage() {
           </Link>
         </div>
       </div>
-      <div ref={containerRef} className="redoc-wrap" />
+      <div className="relative min-h-[80vh]">
+        <div
+          ref={containerRef}
+          className="redoc-wrap min-h-[80vh] bg-white [&_.redoc-html]:bg-white"
+        />
+        {status === "loading" && (
+          <div
+            className="absolute inset-0 flex items-center justify-center bg-[var(--bg-matte)]"
+            aria-live="polite"
+          >
+            <span className="text-[var(--text-secondary)]">Loading API documentation…</span>
+          </div>
+        )}
+        {status === "error" && (
+          <div className="absolute inset-0 flex items-center justify-center p-6">
+            <div className="max-w-md rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-red-200">
+              <p className="font-medium">Failed to load API spec</p>
+              <p className="mt-1 text-sm opacity-90">{errorMsg}</p>
+              <a
+                href="/openapi.yaml"
+                className="mt-3 inline-block text-sm underline hover:no-underline"
+              >
+                Download openapi.yaml instead
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
     </main>
   );
 }
