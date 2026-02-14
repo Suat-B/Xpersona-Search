@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth-utils";
 import { simulateStrategy } from "@/lib/dice-rule-engine";
+import { DICE_HOUSE_EDGE } from "@/lib/constants";
 import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
 
 /**
@@ -44,7 +45,8 @@ export async function POST(request: NextRequest) {
         executionMode: strategy.executionMode || "sequential",
       },
       startingBalance,
-      rounds
+      rounds,
+      DICE_HOUSE_EDGE
     );
 
     return NextResponse.json({

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { advancedStrategies } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { simulateStrategy } from "@/lib/dice-rule-engine";
+import { DICE_HOUSE_EDGE } from "@/lib/constants";
 
 // POST /api/me/advanced-strategies/[id]/simulate - Simulate a strategy
 export async function POST(
@@ -65,7 +66,8 @@ export async function POST(
         })),
       } as any,
       startingBalance,
-      rounds
+      rounds,
+      DICE_HOUSE_EDGE
     );
 
     return NextResponse.json({

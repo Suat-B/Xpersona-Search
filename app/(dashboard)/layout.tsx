@@ -2,6 +2,7 @@ import { auth, type Session } from "@/lib/auth";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
+import { isAdminEmail } from "@/lib/admin";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -28,8 +29,10 @@ export default async function DashboardLayout({
   const needsGuest = !hasSession && !hasGuest;
 
   let displayName = needsGuest ? "Guest" : "User";
+  let isAdmin = false;
   if (hasSession && session?.user) {
     displayName = session.user.name ?? session.user.email ?? "User";
+    isAdmin = isAdminEmail(session.user.email);
   } else if (hasGuest && userIdFromCookie) {
     try {
       const [u] = await db
@@ -38,6 +41,7 @@ export default async function DashboardLayout({
         .where(eq(users.id, userIdFromCookie))
         .limit(1);
       displayName = u?.name ?? u?.email ?? "Guest";
+      isAdmin = isAdminEmail(u?.email);
     } catch {
       displayName = "Guest";
     }
@@ -73,7 +77,7 @@ export default async function DashboardLayout({
           </div>
           
           {/* Navigation */}
-          <DashboardSidebarNav />
+          <DashboardSidebarNav isAdmin={isAdmin} />
           
           {/* User Section */}
           <div className="p-4 border-t border-[var(--border)]">

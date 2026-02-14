@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth-utils";
+import { isAdmin } from "@/lib/admin";
 
 export async function GET(request: Request) {
   const authResult = await getAuthUser(request as any);
@@ -21,6 +22,7 @@ export async function GET(request: Request) {
       apiKeyPrefix: user.apiKeyPrefix,
       createdAt: user.createdAt,
       lastFaucetAt: user.lastFaucetAt,
+      isAdmin: isAdmin(user),
     },
   });
 }

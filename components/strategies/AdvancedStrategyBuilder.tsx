@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import { RuleCard } from "./RuleCard";
 import { STRATEGY_PRESETS, type AdvancedDiceStrategy, type StrategyRule, type ExecutionMode } from "@/lib/advanced-strategy-types";
 import { simulateStrategy } from "@/lib/dice-rule-engine";
+import { DICE_HOUSE_EDGE } from "@/lib/constants";
 
 interface AdvancedStrategyBuilderProps {
   initialStrategy?: AdvancedDiceStrategy;
@@ -88,7 +89,7 @@ export function AdvancedStrategyBuilder({
 
   // Run simulation
   const runSimulation = useCallback(() => {
-    const result = simulateStrategy(strategy, simulationBalance, simulationRounds);
+    const result = simulateStrategy(strategy, simulationBalance, simulationRounds, DICE_HOUSE_EDGE);
     setSimulationResult(result);
   }, [strategy, simulationBalance, simulationRounds]);
 

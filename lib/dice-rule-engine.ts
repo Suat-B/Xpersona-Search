@@ -3,7 +3,7 @@
  * Executes advanced strategy rules and manages game state
  */
 
-import { MIN_BET, MAX_BET } from "@/lib/constants";
+import { MIN_BET, MAX_BET, DICE_HOUSE_EDGE } from "@/lib/constants";
 import type {
   AdvancedDiceStrategy,
   StrategyRule,
@@ -541,7 +541,7 @@ export function simulateStrategy(
   strategy: AdvancedDiceStrategy,
   startingBalance: number,
   rounds: number,
-  houseEdge: number = 0.01
+  houseEdge: number = DICE_HOUSE_EDGE
 ): {
   finalBalance: number;
   profit: number;
