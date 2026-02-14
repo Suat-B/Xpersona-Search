@@ -344,6 +344,117 @@ export const CasinoToolsSchema = {
     }
   },
 
+  "casino_create_strategy": {
+    name: "casino_create_strategy",
+    description: "Create a basic strategy (saved for later). Body: gameType (dice), name, config (amount, target, condition, optional progressionType: flat|martingale|paroli|dalembert|fibonacci|labouchere|oscar|kelly).",
+    parameters: {
+      type: "object",
+      properties: {
+        game_type: { type: "string", enum: ["dice"], default: "dice" },
+        name: { type: "string" },
+        config: {
+          type: "object",
+          properties: {
+            amount: { type: "number" },
+            target: { type: "number" },
+            condition: { type: "string", enum: ["over", "under"] },
+            progression_type: { type: "string", enum: ["flat", "martingale", "paroli", "dalembert", "fibonacci", "labouchere", "oscar", "kelly"] },
+          },
+          required: ["amount", "target", "condition"],
+        },
+      },
+      required: ["name", "config"],
+    },
+    returns: {
+      type: "object",
+      properties: {
+        success: { type: "boolean" },
+        strategy: { type: "object", properties: { id: { type: "string" }, name: { type: "string" } } },
+      },
+    },
+  },
+
+  "casino_update_strategy": {
+    name: "casino_update_strategy",
+    description: "Update a basic strategy by ID. Pass partial: name and/or config.",
+    parameters: {
+      type: "object",
+      properties: {
+        strategy_id: { type: "string" },
+        name: { type: "string" },
+        config: { type: "object" },
+      },
+      required: ["strategy_id"],
+    },
+    returns: {
+      type: "object",
+      properties: {
+        success: { type: "boolean" },
+        strategy: { type: "object" },
+      },
+    },
+  },
+
+  "casino_withdraw": {
+    name: "casino_withdraw",
+    description: "Request withdrawal of credits. Min 10,000 credits ($100). Withdrawal processing (Stripe Connect) may take 2-7 business days.",
+    parameters: {
+      type: "object",
+      properties: {
+        amount: { type: "number", description: "Credits to withdraw (min 10000)" },
+      },
+      required: ["amount"],
+    },
+    returns: {
+      type: "object",
+      properties: {
+        success: { type: "boolean" },
+        message: { type: "string" },
+        error: { type: "string" },
+      },
+    },
+  },
+
+  "casino_get_transactions": {
+    name: "casino_get_transactions",
+    description: "Get unified activity feed: bets and faucet grants combined. Supports limit, offset, type filter (all|bet|faucet).",
+    parameters: {
+      type: "object",
+      properties: {
+        limit: { type: "number", default: 50 },
+        offset: { type: "number", default: 0 },
+        type: { type: "string", enum: ["all", "bet", "faucet"], default: "all" },
+      },
+    },
+    returns: {
+      type: "object",
+      properties: {
+        transactions: { type: "array" },
+        total: { type: "number" },
+      },
+    },
+  },
+
+  "casino_verify_bet": {
+    name: "casino_verify_bet",
+    description: "Get a single bet with provably fair verification data. Use reveal=true to include serverSeed for local verification.",
+    parameters: {
+      type: "object",
+      properties: {
+        bet_id: { type: "string" },
+        reveal: { type: "boolean", default: false, description: "Include serverSeed for local verification" },
+      },
+      required: ["bet_id"],
+    },
+    returns: {
+      type: "object",
+      properties: {
+        bet: { type: "object" },
+        verification: { type: "object", properties: { serverSeedHash: { type: "string" }, clientSeed: { type: "string" }, nonce: { type: "number" }, verificationFormula: { type: "string" } } },
+      },
+    },
+  },
+
   // Advanced Strategy Tools (rule-based: 38+ triggers, 25+ actions)
   "casino_list_advanced_strategies": {
     name: "casino_list_advanced_strategies",

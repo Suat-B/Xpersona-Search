@@ -28,7 +28,12 @@ const toolHandlers: Record<CasinoToolName, (params: any, agentContext: AgentCont
   "casino_run_strategy": handleRunStrategy,
   "casino_list_strategies": handleListStrategies,
   "casino_get_strategy": handleGetStrategy,
+  "casino_create_strategy": handleCreateStrategy,
+  "casino_update_strategy": handleUpdateStrategy,
   "casino_delete_strategy": handleDeleteStrategy,
+  "casino_withdraw": handleWithdraw,
+  "casino_get_transactions": handleGetTransactions,
+  "casino_verify_bet": handleVerifyBet,
   "casino_stop_session": handleStopSession,
   "casino_get_session_status": handleGetSessionStatus,
   "casino_notify": handleNotify,
@@ -694,6 +699,184 @@ async function handleRunAdvancedStrategy(
     total_wins: d.totalWins ?? 0,
     total_losses: d.totalLosses ?? 0,
     win_rate: d.winRate ?? 0,
+  };
+}
+
+async function handleCreateStrategy(
+  params: any,
+  agentContext: AgentContext | null,
+  request: NextRequest
+) {
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) throw new Error(authResult.error);
+
+  const { game_type = "dice", name, config } = params;
+  if (!name || !config) {
+    throw new Error("name and config (amount, target, condition) required");
+  }
+
+  const apiConfig: Record<string, unknown> = {
+    amount: config.amount,
+    target: config.target,
+    condition: config.condition,
+  };
+  if (config.progression_type) {
+    apiConfig.progressionType = config.progression_type;
+  }
+
+  const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const auth = request.headers.get("authorization");
+  if (auth) headers.Authorization = auth;
+
+  const res = await fetch(`${baseUrl}/api/me/strategies`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      gameType: game_type,
+      name,
+      config: apiConfig,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    throw new Error(data.error ?? data.message ?? "Create strategy failed");
+  }
+  const s = data.data ?? {};
+  return {
+    success: true,
+    strategy: { id: s.id, name: s.name ?? name },
+  };
+}
+
+async function handleUpdateStrategy(
+  params: any,
+  agentContext: AgentContext | null,
+  request: NextRequest
+) {
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) throw new Error(authResult.error);
+
+  const { strategy_id, name, config } = params;
+  const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const auth = request.headers.get("authorization");
+  if (auth) headers.Authorization = auth;
+
+  const body: Record<string, unknown> = {};
+  if (name !== undefined) body.name = name;
+  if (config !== undefined) body.config = config;
+
+  const res = await fetch(`${baseUrl}/api/me/strategies/${strategy_id}`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    throw new Error(data.error ?? data.message ?? "Update strategy failed");
+  }
+  return { success: true, strategy: data.data ?? {} };
+}
+
+async function handleWithdraw(
+  params: any,
+  agentContext: AgentContext | null,
+  request: NextRequest
+) {
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) throw new Error(authResult.error);
+
+  const { amount } = params;
+  const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const auth = request.headers.get("authorization");
+  if (auth) headers.Authorization = auth;
+
+  const res = await fetch(`${baseUrl}/api/me/withdraw`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ amount: Math.floor(Number(amount) || 0) }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return {
+      success: false,
+      error: data.error ?? "Withdrawal failed",
+      message: data.message ?? data.error,
+    };
+  }
+  return {
+    success: true,
+    message: data.message ?? "Withdrawal request submitted",
+  };
+}
+
+async function handleGetTransactions(
+  params: any,
+  agentContext: AgentContext | null,
+  request: NextRequest
+) {
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) throw new Error(authResult.error);
+
+  const { limit = 50, offset = 0, type = "all" } = params;
+  const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const headers: Record<string, string> = {};
+  const auth = request.headers.get("authorization");
+  if (auth) headers.Authorization = auth;
+
+  const url = new URL(`${baseUrl}/api/me/transactions`);
+  url.searchParams.set("limit", String(Math.min(200, Math.max(1, limit))));
+  url.searchParams.set("offset", String(Math.max(0, offset)));
+  url.searchParams.set("type", ["all", "bet", "faucet"].includes(type) ? type : "all");
+
+  const res = await fetch(url.toString(), { headers });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    throw new Error(data.error ?? "Get transactions failed");
+  }
+  const items = data.data?.transactions ?? [];
+  return {
+    transactions: items,
+    total: items.length,
+  };
+}
+
+async function handleVerifyBet(
+  params: any,
+  agentContext: AgentContext | null,
+  request: NextRequest
+) {
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) throw new Error(authResult.error);
+
+  const { bet_id, reveal = false } = params;
+  const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const headers: Record<string, string> = {};
+  const auth = request.headers.get("authorization");
+  if (auth) headers.Authorization = auth;
+
+  const url = new URL(`${baseUrl}/api/me/bets/${bet_id}`);
+  if (reveal) url.searchParams.set("reveal", "1");
+
+  const res = await fetch(url.toString(), { headers });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    throw new Error(data.error ?? "Bet not found");
+  }
+  const d = data.data ?? {};
+  return {
+    bet: {
+      id: d.id,
+      gameType: d.gameType,
+      amount: d.amount,
+      outcome: d.outcome,
+      payout: d.payout,
+      resultPayload: d.resultPayload,
+      createdAt: d.createdAt,
+    },
+    verification: d.verification ?? {},
   };
 }
 

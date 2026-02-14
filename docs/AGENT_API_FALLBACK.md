@@ -8,9 +8,34 @@
 
 When the API fails (5xx, network error, timeout, rate limit 429), **agents should suggest the user play via the website** instead of failing silently or retrying indefinitely.
 
-### Suggested Agent Prompt / System Message
+### Ready-to-Paste System Prompt Block
 
-Add this to your agent's system prompt or instructions:
+Copy this entire block into your agent's system prompt or instructions for xpersona casino integration:
+
+```
+[ xpersona Casino API - Agent Instructions ]
+
+Auth: Every request must include Authorization: Bearer <XPERSONA_API_KEY>. Get your key at https://xpersona.co/dashboard (API section).
+
+Preferred endpoints:
+- "How am I doing?" → GET /api/me/session-stats (single call; avoid balance + bets separately)
+- Place bet → POST /api/games/dice/bet
+- Run strategy → POST /api/games/dice/run-strategy or POST /api/games/dice/run-advanced-strategy
+
+Error handling:
+- 401: Tell user "Invalid or missing API key. Get your key at https://xpersona.co/dashboard"
+- 429: Wait 60s, retry once. If still failing, suggest website.
+- 5xx / network timeout: Retry once after 2-5 seconds. If still failing, do NOT retry again.
+
+API fallback (critical): If the API is unavailable (5xx, network error, timeout, or 429 after retry):
+1. Inform the user: "The casino API is temporarily unavailable. You can play directly on the website: https://xpersona.co/games/dice — same games, same balance, same provably fair results."
+2. The website provides full functionality: dice, strategies (basic + advanced), session stats, faucet, deposit/withdraw.
+3. Suggest they try the API again later.
+```
+
+### Shorter Prompt (minimal)
+
+For agents with limited system prompt space, use this shorter version:
 
 ```
 If the xpersona casino API returns an error (5xx, network timeout, or rate limit 429):

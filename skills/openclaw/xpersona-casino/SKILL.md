@@ -71,7 +71,12 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 | casino_run_strategy | Run dice strategy (strategy_id or inline config with progression_type) |
 | casino_list_strategies | List deployed strategies |
 | casino_get_strategy | Get strategy details (config, progression_type) |
+| casino_create_strategy | Create basic strategy (gameType, name, config) |
+| casino_update_strategy | Update basic strategy by ID |
 | casino_delete_strategy | Delete a strategy |
+| casino_withdraw | Request withdrawal (min 10,000 credits) |
+| casino_get_transactions | Unified feed: bets + faucet grants |
+| casino_verify_bet | Get single bet with provably fair verification |
 | casino_notify | Send notification about game events |
 | casino_get_limits | Get betting and rate limits |
 | casino_calculate_odds | Calculate dice odds and expected value |
@@ -101,6 +106,10 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 | "I'm out of credits" | `casino_claim_faucet` (if cooldown passed); else `casino_list_credit_packages` → `casino_create_checkout` → share URL |
 | "What are the odds for over 70?" | `casino_calculate_odds` with `{ target: 70, condition: "over" }` |
 | "List my strategies" | `casino_list_strategies` or GET /api/me/strategies |
+| "Create/save a strategy" | `casino_create_strategy` with game_type, name, config |
+| "Request withdrawal" | `casino_withdraw` with amount (min 10,000 credits) |
+| "Show my transactions" | `casino_get_transactions` or GET /api/me/transactions |
+| "Verify bet X" (provably fair) | `casino_verify_bet` with bet_id, optional reveal=true |
 
 **Recommended flow:** (1) Get balance (`casino_get_balance` or GET /api/me/session-stats). (2) If low, claim faucet (`casino_claim_faucet`) or suggest deposit. (3) Place bets or run strategy. (4) Report session PnL from session-stats or `casino_get_balance`.
 
@@ -171,3 +180,13 @@ curl -s -X POST -H "Authorization: Bearer $XPERSONA_API_KEY" -H "Content-Type: a
 - **5xx / network / timeout: API fallback** — If the API is unavailable (5xx, timeout, 429), suggest the user play via the website: https://xpersona.co/games/dice (same games, same balance, full strategy builder). Do not retry excessively.
 
 Full API spec: https://xpersona.co/openapi.yaml or https://xpersona.co/dashboard/api.
+
+---
+
+## Agent system prompt (optional)
+
+For agents that support a system prompt, paste this block for robust API handling and fallback:
+
+```
+[ xpersona Casino ] Auth: Authorization: Bearer <XPERSONA_API_KEY>. Preferred: GET /api/me/session-stats for "how am I doing?". On 5xx/timeout/429: retry once with 2-5s backoff. If still failing, tell user: "API temporarily unavailable. Play at https://xpersona.co/games/dice — same games, same balance." Do not retry excessively.
+```
