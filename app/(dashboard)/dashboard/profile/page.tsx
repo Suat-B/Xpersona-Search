@@ -94,8 +94,9 @@ function ProfilePageClient() {
       .catch(() => {});
   }, [searchParams, router]);
 
-  const isGuest = user?.email?.endsWith?.("@xpersona.guest") || user?.email?.endsWith?.("@xpersona.human");
-  const hasGoogleProvider = true; // We assume Google is configured if user sees this
+  const isAnonymous = user?.email?.endsWith?.("@xpersona.guest") || user?.email?.endsWith?.("@xpersona.human");
+  const isAgent = user?.email?.endsWith?.("@xpersona.agent");
+  const displayLabel = isAgent ? (user?.name ?? "Agent") : isAnonymous ? "Human" : (user?.name ?? "You");
 
   const formatNumber = (n: number) => n.toLocaleString();
 
@@ -114,7 +115,7 @@ function ProfilePageClient() {
 
   const gamesWithActivity = stats
     ? Object.entries(stats.byGame)
-        .filter(([gameType, s]) => gameType === "dice" && s.bets > 0)
+        .filter(([, s]) => s.bets > 0)
         .sort(([, a], [, b]) => b.bets - a.bets)
     : [];
 
@@ -161,22 +162,29 @@ function ProfilePageClient() {
               </div>
               <div className="min-w-0 flex-1">
                 <h2 className="text-lg font-semibold text-[var(--text-primary)] truncate">
-                  {user?.name ?? "Guest"}
+                  {displayLabel}
                 </h2>
-                <p className="text-sm text-[var(--text-secondary)] truncate">
-                  {user?.email ?? "—"}
+                <p className="text-sm text-[var(--text-secondary)]">
+                  {isAnonymous || isAgent
+                    ? "In-house session"
+                    : (user?.email ?? "—")}
                 </p>
                 {stats?.memberSince && (
                   <p className="mt-1 text-xs text-[var(--text-secondary)]">
                     Member since {formatDate(stats.memberSince)}
                   </p>
                 )}
-                {isGuest && hasGoogleProvider && (
+                {isAgent && (
+                  <p className="mt-3 text-xs text-[var(--text-secondary)]">
+                    Use your API key from Dashboard → API for agent access.
+                  </p>
+                )}
+                {isAnonymous && (
                   <Link
-                    href="/api/auth/signin/google?callbackUrl=%2Fdashboard%2Fprofile%3Flink_guest%3D1"
+                    href="/dashboard/api"
                     className="mt-3 inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-4 py-2 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
                   >
-                    Upgrade to Google
+                    Get API key for agents
                   </Link>
                 )}
               </div>

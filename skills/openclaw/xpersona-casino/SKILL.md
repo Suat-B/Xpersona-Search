@@ -1,6 +1,6 @@
 ---
 name: xpersona-casino
-description: Play xpersona.co casino (dice, blackjack, plinko, crash, slots) using the user's API key; check balance, claim faucet, place bets, get session PnL, create and run custom strategies (AI/OpenClaw). AI-first: all responses are { success, data?, error? }; use GET /api/me/session-stats for single-call stats; GET /api/me/bets for history; REST for plinko/blackjack/crash/slots (no tools).
+description: Play xpersona.co casino (dice only) using the user's API key; check balance, claim faucet, place bets, get session PnL, create and run custom strategies (AI/OpenClaw). AI-first: all responses are { success, data?, error? }; use GET /api/me/session-stats for single-call stats; GET /api/me/bets for history.
 metadata: {"openclaw":{"requires":{"env":["XPERSONA_API_KEY"]},"primaryEnv":"XPERSONA_API_KEY","homepage":"https://xpersona.co"}}
 ---
 
@@ -22,19 +22,13 @@ Base URL: `https://xpersona.co` (override with `XPERSONA_BASE_URL` if set).
 | Balance | GET | /api/me/balance | → `data.balance` |
 | Session PnL & history | GET | /api/me/bets?limit=50 | → `data.bets`, `data.sessionPnl`, `data.roundCount` |
 | List strategies | GET | /api/me/strategies?gameType=dice | → `data.strategies` |
-| Create strategy | POST | /api/me/strategies | `{ gameType, name, config }` |
+| Create strategy | POST | /api/me/strategies | `{ gameType: "dice", name, config }` |
 | Get strategy | GET | /api/me/strategies/:id | → `data` |
 | Update strategy | PATCH | /api/me/strategies/:id | `{ name?, config? }` |
 | Delete strategy | DELETE | /api/me/strategies/:id | |
 | Run dice strategy | POST | /api/games/dice/run-strategy | `{ strategyId? or config?, maxRounds? }` → `data.results`, `data.sessionPnl`, `data.finalBalance` |
 | Faucet | POST | /api/faucet | Once per hour → `data.balance`, `data.granted`, `data.nextFaucetAt` |
 | Dice bet | POST | /api/games/dice/bet | `{ amount, target, condition: "over"\|"under" }` |
-| Plinko bet | POST | /api/games/plinko/bet | `{ amount, risk: "low"\|"medium"\|"high" }` |
-| Slots spin | POST | /api/games/slots/spin | `{ amount }` |
-| Blackjack round | POST | /api/games/blackjack/round | `{ amount }` → roundId, then POST .../round/:roundId/action `{ action: "hit"\|"stand"\|"double"\|"split" }` |
-| Crash current | GET | /api/games/crash/rounds/current | → roundId, status, multiplier |
-| Crash bet | POST | /api/games/crash/rounds/current/bet | `{ amount }` |
-| Crash cashout | POST | /api/games/crash/rounds/:id/cashout | |
 
 All game responses include `data.balance` and outcome. Use GET /api/me/session-stats for single-call stats.
 
@@ -64,7 +58,7 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 
 **Tool discovery:** `GET /api/openclaw/tools` returns `{ "success": true, "tools": { ... } }` with the full schema. Full parameter details: https://xpersona.co/dashboard/api.
 
-**Implemented tools only (use REST for other games):**
+**Implemented tools:**
 
 | Tool | Purpose |
 |------|---------|
@@ -87,8 +81,6 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 
 **Note:** `casino_stop_session` and `casino_get_session_status` exist in the schema but are reserved for future async sessions. Strategy runs are synchronous; there is no active session to stop. Use `casino_run_strategy` result directly.
 
-**Plinko, Slots, Blackjack, Crash:** No tools. Use REST endpoints (see Quick reference above).
-
 ---
 
 ## Agent flow guidance (when user says X, do Y)
@@ -99,8 +91,6 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 | "How am I doing?" | GET /api/me/session-stats (single call) or `casino_get_balance` |
 | "Run my Martingale" / "Run strategy X" | `casino_run_strategy` with `strategy_id` or `config` |
 | "I'm out of credits" | `casino_claim_faucet` (if cooldown passed); else `casino_list_credit_packages` → `casino_create_checkout` → share URL |
-| "Play plinko 5 credits low risk" | POST /api/games/plinko/bet `{ amount: 5, risk: "low" }` |
-| "Spin slots 10" | POST /api/games/slots/spin `{ amount: 10 }` |
 | "What are the odds for over 70?" | `casino_calculate_odds` with `{ target: 70, condition: "over" }` |
 | "List my strategies" | `casino_list_strategies` or GET /api/me/strategies |
 
@@ -137,7 +127,6 @@ Always check `data.balance` before each bet.
 
 **Run (one call):** `POST /api/games/dice/run-strategy` with `{ strategyId }` or `{ config, maxRounds }`. Response: `data.results`, `data.sessionPnl`, `data.finalBalance`, `data.stoppedReason`.
 
-Plinko and slots strategies: same REST pattern (`POST /api/games/plinko/run-strategy`, `POST /api/games/slots/run-strategy`).
 
 ---
 
@@ -161,7 +150,5 @@ curl -s -X POST -H "Authorization: Bearer $XPERSONA_API_KEY" -H "Content-Type: a
 - **401:** Invalid or missing API key. Generate at https://xpersona.co/dashboard (API section).
 - **400 INSUFFICIENT_BALANCE:** Suggest faucet or `casino_list_credit_packages` + `casino_create_checkout`.
 - **429 / FAUCET_COOLDOWN:** Wait until `data.nextFaucetAt` before claiming again.
-- **400 ROUND_ENDED (Crash):** Round ended; GET current round and bet on new one.
-- **404 ROUND_NOT_FOUND:** Invalid round id; fetch current state.
 
 Full API spec: https://xpersona.co/openapi.yaml or https://xpersona.co/dashboard/api.

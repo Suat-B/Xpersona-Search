@@ -12,9 +12,6 @@ import { gameBets, users, strategies, agentSessions, creditPackages } from "@/li
 import { eq, desc, and } from "drizzle-orm";
 import { DICE_HOUSE_EDGE, FAUCET_AMOUNT } from "@/lib/constants";
 import { executeDiceRound } from "@/lib/games/execute-dice";
-import { executePlinkoRound } from "@/lib/games/execute-plinko";
-import { executeSlotsRound } from "@/lib/games/execute-slots";
-import type { PlinkoRisk } from "@/lib/games/plinko";
 import { grantFaucet } from "@/lib/faucet";
 import Stripe from "stripe";
 

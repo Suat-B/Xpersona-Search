@@ -191,7 +191,7 @@ export default function ApiDocsPage() {
               <li>GET /api/me/strategies/:id — Get one</li>
               <li>PATCH /api/me/strategies/:id — Update name/config</li>
               <li>DELETE /api/me/strategies/:id — Delete</li>
-              <li>POST /api/games/dice/run-strategy — strategyId or config, maxRounds (plinko, slots similarly)</li>
+              <li>POST /api/games/dice/run-strategy — strategyId or config, maxRounds</li>
             </ul>
           </div>
           <div>
@@ -199,10 +199,6 @@ export default function ApiDocsPage() {
             <ul className="space-y-1 text-[var(--text-secondary)] font-mono text-xs">
               <li>POST /api/faucet — Claim hourly faucet</li>
               <li>POST /api/games/dice/bet — {"{ amount, target, condition }"}</li>
-              <li>POST /api/games/blackjack/round — {"{ amount }"}, then .../round/:roundId/action {"{ action }"}</li>
-              <li>POST /api/games/plinko/bet — {"{ amount, risk }"}</li>
-              <li>GET /api/games/crash/rounds/current, POST .../current/bet, POST .../rounds/:id/cashout</li>
-              <li>POST /api/games/slots/spin — {"{ amount }"}</li>
             </ul>
           </div>
           <div>
@@ -281,9 +277,6 @@ export default function ApiDocsPage() {
         <p className="text-sm text-[var(--text-secondary)] mb-4">
           <strong className="text-[var(--text-primary)]">Discovery:</strong> <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">GET /api/openclaw/tools</code> returns the full tool schema (tool names, parameters, returns) for programmatic discovery.
         </p>
-        <p className="text-xs text-[var(--text-secondary)] mb-4">
-          Plinko, Slots, Blackjack, Crash have no tools — use REST (POST /api/games/plinko/bet, /api/games/slots/spin, etc.).
-        </p>
         <p className="text-xs text-[var(--text-secondary)] mb-2">Example: get balance</p>
         <pre className="rounded-lg bg-[var(--bg-deep)] border border-[var(--border)] p-3 text-xs font-mono text-[var(--text-primary)] overflow-x-auto mb-4">
 {`curl -s -X POST -H "Authorization: Bearer $XPERSONA_API_KEY" -H "Content-Type: application/json" \\
@@ -328,8 +321,6 @@ export default function ApiDocsPage() {
           <li><strong className="text-[var(--text-primary)]">401:</strong> Invalid or missing API key. Generate a key using the API Key Manager above.</li>
           <li><strong className="text-[var(--text-primary)]">400 INSUFFICIENT_BALANCE:</strong> User needs more credits (faucet or purchase).</li>
           <li><strong className="text-[var(--text-primary)]">429 / FAUCET_COOLDOWN:</strong> Wait until <code className="bg-white/10 px-1 rounded font-mono text-xs">data.nextFaucetAt</code> before claiming again.</li>
-          <li><strong className="text-[var(--text-primary)]">400 ROUND_ENDED (Crash):</strong> Round already crashed or cashed out; get current round and try again.</li>
-          <li><strong className="text-[var(--text-primary)]">404 ROUND_NOT_FOUND:</strong> Invalid round id; fetch current state and use the correct id.</li>
         </ul>
         <div className="mt-4 pt-4 border-t border-[var(--border)]">
           <Link

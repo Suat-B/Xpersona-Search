@@ -7,10 +7,6 @@ import { GlassCard } from "@/components/ui/GlassCard";
 const PAGE_SIZE = 50;
 const GAME_LABELS: Record<string, string> = {
   dice: "Dice",
-  plinko: "Plinko",
-  slots: "Slots",
-  blackjack: "Blackjack",
-  crash: "Crash",
 };
 
 type TransactionItem =

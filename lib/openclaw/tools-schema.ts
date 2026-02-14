@@ -143,7 +143,7 @@ export const CasinoToolsSchema = {
         offset: { type: "number", default: 0 },
         game_type: { 
           type: "string", 
-          enum: ["dice", "blackjack", "plinko", "crash", "slots"],
+          enum: ["dice"],
           default: "dice"
         }
       }

@@ -2,8 +2,6 @@ import { db } from "@/lib/db";
 import {
   users,
   gameBets,
-  crashBets,
-  blackjackRounds,
   strategies,
   faucetGrants,
   agentSessions,
@@ -11,9 +9,8 @@ import {
 import { eq } from "drizzle-orm";
 
 /**
- * Merge guest user data into the target (Google) user.
- * Transfers: game_bets, crash_bets, blackjack_rounds, strategies, faucet_grants,
- * agent_sessions, and credits. Runs in a transaction.
+ * Merge guest user data into the target user.
+ * Transfers: game_bets, strategies, faucet_grants, agent_sessions, and credits.
  */
 export async function mergeGuestIntoUser(
   guestUserId: string,
@@ -51,16 +48,6 @@ export async function mergeGuestIntoUser(
         .update(gameBets)
         .set({ userId: targetUserId })
         .where(eq(gameBets.userId, guestUserId));
-
-      await tx
-        .update(crashBets)
-        .set({ userId: targetUserId })
-        .where(eq(crashBets.userId, guestUserId));
-
-      await tx
-        .update(blackjackRounds)
-        .set({ userId: targetUserId })
-        .where(eq(blackjackRounds.userId, guestUserId));
 
       await tx
         .update(strategies)

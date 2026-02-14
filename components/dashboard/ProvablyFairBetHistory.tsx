@@ -25,10 +25,6 @@ interface VerificationDetail {
 const PAGE_SIZE = 50;
 const GAME_LABELS: Record<string, string> = {
   dice: "Dice",
-  plinko: "Plinko",
-  slots: "Slots",
-  blackjack: "Blackjack",
-  crash: "Crash",
 };
 
 export function ProvablyFairBetHistory() {
