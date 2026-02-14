@@ -10,11 +10,14 @@ import { DiceStrategyPanel } from "./DiceStrategyPanel";
 import { DiceStatisticsPanel } from "./DiceStatisticsPanel";
 import { CreativeDiceStrategiesSection } from "./CreativeDiceStrategiesSection";
 import { AgentApiSection } from "./AgentApiSection";
+import { CompactAdvancedStrategyBuilder } from "@/components/strategies/CompactAdvancedStrategyBuilder";
 import { getAndClearStrategyRunPayload } from "@/lib/strategy-run-payload";
+import { saveStrategyRunPayload } from "@/lib/strategy-run-payload";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcuts";
 import { StrategyRunningBanner } from "@/components/strategies/StrategyRunningBanner";
 import type { DiceStrategyConfig, DiceProgressionType } from "@/lib/strategies";
 import type { StrategyRunConfig } from "./DiceGame";
+import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
 
 const MAX_RECENT_RESULTS = 50;
 
@@ -312,6 +315,14 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 setStrategyRun(null);
                 setStrategyStats(null);
               }}
+              onStrategyProgress={(stats) => {
+                setStrategyStats({
+                  currentRound: stats.currentRound,
+                  sessionPnl: stats.sessionPnl,
+                  initialBalance: balance,
+                  winRatePercent: stats.currentRound > 0 ? (stats.wins / stats.currentRound) * 100 : 0,
+                });
+              }}
             />
           </ClientOnly>
         </div>
@@ -448,33 +459,34 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 </div>
               </div>
             ) : activeTab === "strategy" ? (
-              <div className="flex-shrink-0 space-y-5">
-                {/* Strategy intro */}
-                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-[var(--accent-heart)]/10 flex items-center justify-center">
-                      <svg className="w-4 h-4 text-[var(--accent-heart)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">Strategy mode</h3>
-                      <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                        Apply preset strategies to auto-configure your dice settings, then run auto-play with live animation, balance tracking, and bet progression.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Creative strategies */}
-                <CreativeDiceStrategiesSection
-                  activeStrategyName={activeStrategyName}
-                  onLoadConfig={loadStrategyConfig}
-                  onStartStrategyRun={(config, maxRounds, strategyName) => {
-                    setAmount(config.amount);
-                    setTarget(config.target);
-                    setCondition(config.condition);
-                    setStrategyRun({ config, maxRounds, strategyName });
+              <div className="flex-shrink-0 space-y-4">
+                {/* Advanced Strategy Builder - AI Optimized */}
+                <CompactAdvancedStrategyBuilder
+                  onRun={(strategy, maxRounds) => {
+                    // Set the strategy to run immediately
+                    setAmount(strategy.baseConfig.amount);
+                    setTarget(strategy.baseConfig.target);
+                    setCondition(strategy.baseConfig.condition);
+                    setActiveStrategyName(strategy.name);
+                    setStrategyRun({
+                      config: {
+                        amount: strategy.baseConfig.amount,
+                        target: strategy.baseConfig.target,
+                        condition: strategy.baseConfig.condition,
+                        progressionType: "flat",
+                      },
+                      maxRounds,
+                      strategyName: strategy.name,
+                      isAdvanced: true,
+                      advancedStrategy: strategy,
+                    });
+                  }}
+                  onApply={(strategy) => {
+                    // Just apply the config without running
+                    setAmount(strategy.baseConfig.amount);
+                    setTarget(strategy.baseConfig.target);
+                    setCondition(strategy.baseConfig.condition);
+                    setActiveStrategyName(strategy.name);
                   }}
                 />
 
@@ -488,23 +500,21 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   </div>
                 </div>
 
-                {/* Saved strategies panel */}
-                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4">
-                  <DiceStrategyPanel
-                    amount={amount}
-                    target={target}
-                    condition={condition}
-                    progressionType={progressionType}
+                {/* Legacy Simple Strategies */}
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 opacity-75">
+                  <h4 className="text-xs font-medium text-[var(--text-secondary)] mb-3 flex items-center gap-2">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                    Simple Preset Strategies
+                  </h4>
+                  <CreativeDiceStrategiesSection
                     activeStrategyName={activeStrategyName}
-                    disabled={autoPlayActive}
-                    onLoadConfig={(cfg, name) => loadStrategyConfig(cfg, name)}
-                    onBalanceUpdate={() => window.dispatchEvent(new Event("balance-updated"))}
-                    onStrategyComplete={addBulkSession}
+                    onLoadConfig={loadStrategyConfig}
                     onStartStrategyRun={(config, maxRounds, strategyName) => {
                       setAmount(config.amount);
                       setTarget(config.target);
                       setCondition(config.condition);
-                      if (config.progressionType) setProgressionType(config.progressionType);
                       setStrategyRun({ config, maxRounds, strategyName });
                     }}
                   />
@@ -518,7 +528,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                   </svg>
-                  Advanced strategy builder
+                  Manage Saved Strategies
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
