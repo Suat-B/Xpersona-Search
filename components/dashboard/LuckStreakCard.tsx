@@ -133,16 +133,17 @@ export function LuckStreakCard() {
           <span className="text-xs text-[var(--text-tertiary)]">Awaiting data...</span>
         )}
         
-        <div className="flex gap-0.5">
-          {[...Array(5)].map((_, i) => (
-            <div 
-              key={i}
-              className={cn(
-                "w-1 h-1 rounded-full",
-                i < (recentWins / (recentTotal || 1)) * 5 ? config.text.replace("text-", "bg-") : "bg-white/10"
-              )}
-            />
-          ))}
+        <div className="flex gap-0.5" aria-hidden>
+          {[...Array(5)].map((_, i) => {
+            const filled = i < Math.round((recentWins / (recentTotal || 1)) * 5);
+            const dotColor = state === "hot" ? "bg-[#30d158]" : state === "cold" ? "bg-[#0a84ff]" : "bg-[var(--text-tertiary)]";
+            return (
+              <div
+                key={i}
+                className={cn("w-1 h-1 rounded-full transition-colors", filled ? dotColor : "bg-white/10")}
+              />
+            );
+          })}
         </div>
       </div>
     </div>

@@ -17,9 +17,11 @@ export function MiniPnLSparkline() {
       const res = await fetch("/api/me/bets?gameType=dice&limit=200", { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (!data.success || !Array.isArray(data.data?.bets)) return;
-      const bets = data.data.bets as { amount: number; payout: number }[];
+      const bets = data.data.bets as { amount: number; payout: number; pnl?: number }[];
       const chronological = [...bets].reverse();
-      const pnls = chronological.map((b) => Number(b.payout) - Number(b.amount));
+      const pnls = chronological.map((b) =>
+        typeof b.pnl === "number" ? b.pnl : Number(b.payout ?? 0) - Number(b.amount ?? 0)
+      );
       const cumulative: number[] = [];
       let sum = 0;
       for (const p of pnls) {

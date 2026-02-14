@@ -10,6 +10,7 @@ import { FortuneCard } from "@/components/dashboard/FortuneCard";
 import { MiniPnLSparkline } from "@/components/dashboard/MiniPnLSparkline";
 import { AgentReadyBadge } from "@/components/dashboard/AgentReadyBadge";
 import { QuickLaunchCard } from "@/components/dashboard/QuickLaunchCard";
+import { StrategiesCountBadge } from "@/components/dashboard/StrategiesCountBadge";
 
 const GAMES = [
   {
@@ -31,7 +32,7 @@ export default function DashboardPage() {
           <div>
             <div className="flex items-center gap-2 mb-2">
               <div className="w-2 h-2 rounded-full bg-[#30d158] shadow-[0_0_10px_#30d158] animate-pulse" />
-              <span className="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Ready to Play</span>
+              <span className="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider">READY TO PLAY</span>
             </div>
             <h1 className="text-4xl font-semibold tracking-tight text-gradient-primary">
               Dashboard
@@ -76,8 +77,12 @@ export default function DashboardPage() {
             </div>
             
             <a
-              href="#faucet"
+              href="#free-credits"
               className="inline-flex items-center gap-2 rounded-full border border-[#30d158]/30 bg-[#30d158]/10 px-4 py-2.5 text-sm font-medium text-[#30d158] hover:bg-[#30d158]/20 hover:shadow-[0_0_20px_rgba(48,209,88,0.2)] transition-all"
+              onClick={(e) => {
+                e.preventDefault();
+                document.getElementById("free-credits")?.scrollIntoView({ behavior: "smooth" });
+              }}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
@@ -203,7 +208,7 @@ export default function DashboardPage() {
                   <div className="mt-3 flex items-center gap-4 text-xs text-[var(--text-tertiary)]">
                     <span className="flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-[#30d158]" />
-                      8 Strategies
+                      <StrategiesCountBadge />
                     </span>
                     <span className="flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-[#0a84ff]" />
@@ -233,7 +238,7 @@ export default function DashboardPage() {
             <QuickLaunchCard />
           </div>
           
-          <section id="faucet" className="scroll-mt-6">
+          <section id="free-credits" className="scroll-mt-6">
             <FaucetButton />
           </section>
           

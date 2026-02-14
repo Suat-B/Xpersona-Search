@@ -63,6 +63,10 @@
   }
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   @apply bg-bg-deep text-[var(--text-primary)] antialiased overflow-x-hidden;
   font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
@@ -192,6 +196,22 @@ body {
 
 .animate-float {
   animation: float 4s ease-in-out infinite;
+}
+
+/* Dashboard page entrance */
+@keyframes fade-in-up {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s ease-out forwards;
 }
 
 /* Shimmer Effect */

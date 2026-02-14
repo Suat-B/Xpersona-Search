@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
@@ -51,6 +51,17 @@ export function ApiKeySection() {
     if (modalKey) navigator.clipboard.writeText(modalKey);
     setModalKey(null);
   };
+
+  const closeModal = useCallback(() => {
+    setModalKey(null);
+  }, []);
+
+  useEffect(() => {
+    if (!modalKey) return;
+    const onEscape = (e: KeyboardEvent) => e.key === "Escape" && closeModal();
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  }, [modalKey, closeModal]);
 
   return (
     <div className="agent-card p-5"
@@ -172,10 +183,22 @@ export function ApiKeySection() {
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm"
           role="dialog"
+          aria-modal="true"
           aria-label="API key"
+          onClick={(e) => e.target === e.currentTarget && closeModal()}
         >
-          <div className="mx-4 max-w-md w-full rounded-2xl agent-card p-6 shadow-2xl"
+          <div className="mx-4 max-w-md w-full rounded-2xl agent-card p-6 shadow-2xl relative"
           >
+            <button
+              type="button"
+              onClick={closeModal}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-[var(--text-tertiary)] hover:text-white hover:bg-white/5 transition-colors"
+              aria-label="Close"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
             <div className="flex items-center gap-3 mb-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#ff2d55]/10 border border-[#ff2d55]/20 text-[#ff2d55]"
               >
@@ -194,13 +217,22 @@ export function ApiKeySection() {
               {modalKey}
             </pre>
             
-            <button
-              type="button"
-              onClick={copyAndClose}
-              className="w-full rounded-xl bg-[#0a84ff] px-4 py-3 text-sm font-medium text-white hover:bg-[#0a84ff]/90 transition-colors shadow-lg shadow-[#0a84ff]/20"
-            >
-              Copy to Clipboard
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={copyAndClose}
+                className="flex-1 rounded-xl bg-[#0a84ff] px-4 py-3 text-sm font-medium text-white hover:bg-[#0a84ff]/90 transition-colors shadow-lg shadow-[#0a84ff]/20"
+              >
+                Copy to Clipboard
+              </button>
+              <button
+                type="button"
+                onClick={closeModal}
+                className="rounded-xl border border-[var(--border)] px-4 py-3 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/5 transition-colors"
+              >
+                Skip
+              </button>
+            </div>
           </div>
         </div>
       )}

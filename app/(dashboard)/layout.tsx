@@ -8,6 +8,7 @@ import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { EnsureGuest } from "@/components/auth/EnsureGuest";
 import { DashboardSidebarNav } from "@/components/layout/DashboardSidebarNav";
+import { MobileDashboardNav } from "@/components/layout/MobileDashboardNav";
 import { AIFirstBanner } from "@/components/ui/AIFirstBanner";
 
 export default async function DashboardLayout({
@@ -50,8 +51,11 @@ export default async function DashboardLayout({
   return (
     <div className="flex min-h-screen bg-black">
       {needsGuest && <EnsureGuest needsGuest={true} />}
+
+      {/* Mobile top bar + drawer nav */}
+      <MobileDashboardNav displayName={displayName} isAdmin={isAdmin} />
       
-      {/* Sidebar - Apple Style */}
+      {/* Sidebar - Apple Style (hidden on mobile) */}
       <aside className="dashboard-sidebar hidden w-[280px] min-w-[280px] flex-col md:flex sticky top-0 h-screen border-r border-[var(--border)] overflow-x-hidden">
         {/* Glassmorphism background */}
         <div className="absolute inset-0 bg-[var(--bg-matte)]/80 backdrop-blur-xl" />
