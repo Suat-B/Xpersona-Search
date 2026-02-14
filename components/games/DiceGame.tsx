@@ -441,6 +441,27 @@ export function DiceGame({
         {/* Main Game Area - Clean Layout */}
         <div className="flex-1 flex flex-col items-center justify-center min-h-0 py-2 relative">
           
+          {/* Result Banner - Win/Lose Badge */}
+          {result && !loading && (
+            <div className="mb-3 text-center">
+              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${
+                result.win 
+                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" 
+                  : "bg-red-500/20 text-red-400 border border-red-500/30"
+              }`}>
+                <span className="text-lg">
+                  {result.win ? "🎉" : "😔"}
+                </span>
+                <span className="font-bold">
+                  {result.win ? "YOU WIN!" : "You Lose"}
+                </span>
+                <span className="font-mono font-bold">
+                  {result.win ? `+${result.payout}` : amount} credits
+                </span>
+              </div>
+            </div>
+          )}
+          
           {/* 3D Dice */}
           <div className="relative z-10">
             <Dice3D 
