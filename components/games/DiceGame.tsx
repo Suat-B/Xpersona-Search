@@ -520,11 +520,7 @@ export function DiceGame({
         
         {/* Header - Compact */}
         <div className="flex-shrink-0 px-6 pt-4 pb-3 text-center border-b border-[var(--border)]/50" data-agent="dice-header">
-          {strategyRun ? (
-            <div className="mb-2 text-sm font-semibold text-[var(--accent-heart)]" data-agent="strategy-running" data-value={strategyRun.strategyName}>
-              Running: {strategyRun.strategyName}
-            </div>
-          ) : activeStrategyName ? (
+          {strategyRun ? null : activeStrategyName ? (
             <div className="mb-2 text-xs font-medium text-[var(--text-secondary)]" data-agent="strategy-applied" data-value={activeStrategyName} data-progression={progressionType}>
               <span className="text-[var(--accent-heart)]/80">{activeStrategyName}</span>
               <span className="mx-1">·</span>

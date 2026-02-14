@@ -266,9 +266,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       <main className="flex-1 min-h-0 flex flex-row gap-4 p-4 overflow-hidden">
         {/* Left column: Game - takes remaining space */}
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-          {/* Strategy Running Banner */}
+          {/* Strategy Running Banner - compact when running to avoid layout squeeze */}
           {strategyRun && (
-            <div className="mb-4">
+            <div className="mb-3 flex-shrink-0">
               <StrategyRunningBanner
                 strategyName={strategyRun.strategyName}
                 status="running"
@@ -278,6 +278,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 initialBalance={strategyStats?.initialBalance || balance}
                 winRatePercent={strategyStats?.winRatePercent || 0}
                 onStop={() => setStrategyRun(null)}
+                compact
               />
             </div>
           )}

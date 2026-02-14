@@ -272,23 +272,6 @@ export const ACTION_INFO: Record<ActionType, { label: string; description: strin
 // Preset strategies
 export const STRATEGY_PRESETS: { id: string; name: string; description: string; strategy: AdvancedDiceStrategy }[] = [
   {
-    id: "screenshot-strategy",
-    name: "Screenshot Strategy",
-    description: "The exact strategy from your screenshot",
-    strategy: {
-      name: "Advanced Mix",
-      baseConfig: { amount: 10, target: 50, condition: "over" },
-      rules: [
-        { id: "1", order: 0, enabled: true, trigger: { type: "win", value: 1 }, action: { type: "increase_bet_percent", value: 5 } },
-        { id: "2", order: 1, enabled: true, trigger: { type: "loss", value: 1 }, action: { type: "increase_bet_percent", value: 5 } },
-        { id: "3", order: 2, enabled: true, trigger: { type: "every_n_wins", value: 12 }, action: { type: "reset_bet" } },
-        { id: "4", order: 3, enabled: true, trigger: { type: "loss", value: 1 }, action: { type: "switch_over_under" } },
-        { id: "5", order: 4, enabled: true, trigger: { type: "every_n_losses", value: 11 }, action: { type: "reset_bet" } },
-      ],
-      executionMode: "sequential",
-    },
-  },
-  {
     id: "adaptive-kelly",
     name: "Adaptive Kelly",
     description: "Adjusts bet size based on win rate",
