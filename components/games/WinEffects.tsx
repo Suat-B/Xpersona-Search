@@ -67,16 +67,6 @@ export function WinEffects({ active, win, payout, betAmount }: WinEffectsProps) 
         </>
       )}
 
-      {/* Payout amount */}
-      {win && (
-        <div 
-          className="absolute top-1/3 left-1/2 -translate-x-1/2 text-3xl md:text-5xl font-bold text-white drop-shadow-lg"
-          style={{ animation: "fadeInScale 0.5s ease-out forwards" }}
-        >
-          +{payout.toLocaleString()} credits
-        </div>
-      )}
-
       <style jsx>{`
         @keyframes floatUp {
           0% {

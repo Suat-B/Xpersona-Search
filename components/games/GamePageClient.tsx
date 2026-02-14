@@ -533,7 +533,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           <span className="text-[var(--border)]">|</span>
           <span className="text-[var(--accent-heart)]">RTP 97%</span>
           <span className="text-[var(--border)]">|</span>
-          <span>Agents use same API</span>
+          <span>Agents: use API or play via UI</span>
         </div>
 
         <div className="flex items-center gap-3">
