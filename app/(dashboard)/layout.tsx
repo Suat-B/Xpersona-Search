@@ -48,7 +48,7 @@ export default async function DashboardLayout({
       {needsGuest && <EnsureGuest needsGuest={true} />}
       
       {/* Sidebar - Apple Style */}
-      <aside className="dashboard-sidebar hidden w-[280px] flex-col md:flex sticky top-0 h-screen border-r border-[var(--border)]">
+      <aside className="dashboard-sidebar hidden w-[280px] min-w-[280px] flex-col md:flex sticky top-0 h-screen border-r border-[var(--border)] overflow-x-hidden">
         {/* Glassmorphism background */}
         <div className="absolute inset-0 bg-[var(--bg-matte)]/80 backdrop-blur-xl" />
         
@@ -78,17 +78,14 @@ export default async function DashboardLayout({
           {/* User Section */}
           <div className="p-4 border-t border-[var(--border)]">
             <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-white/[0.03] border border-[var(--border)]">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent-blue)] to-[var(--accent-purple)]">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent-blue)] to-[var(--accent-purple)]">
                 <span className="text-sm font-semibold text-white">
                   {displayName.charAt(0).toUpperCase()}
                 </span>
               </div>
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 overflow-hidden">
                 <p className="text-xs text-[var(--text-tertiary)] truncate">
-                  Logged in as
-                </p>
-                <p className="text-sm font-medium text-[var(--text-primary)] truncate">
-                  {displayName}
+                  Logged in as {displayName}
                 </p>
               </div>
             </div>

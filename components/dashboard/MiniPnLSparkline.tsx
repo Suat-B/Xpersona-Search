@@ -49,32 +49,21 @@ export function MiniPnLSparkline() {
       <div className="agent-card p-5 h-[140px] flex flex-col justify-between">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/[0.04] border border-white/[0.08] text-[var(--text-tertiary)]"
-            >
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/[0.04] border border-white/[0.08] text-[var(--text-tertiary)]">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
               </svg>
             </div>
-            <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider"
-            >Neural PnL</span>
+            <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">
+              Neural PnL
+            </span>
           </div>
-          
-          <Link href="/games/dice" className="text-xs text-[#ff2d55] hover:underline"
-          >
+          <Link href="/games/dice" className="text-xs text-[#ff2d55] hover:underline shrink-0">
             Start →
           </Link>
         </div>
-        
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <div className="w-12 h-12 mx-auto mb-2 rounded-full bg-white/[0.03] flex items-center justify-center"
-            >
-              <svg className="w-6 h-6 text-[var(--text-quaternary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-            </div>
-            <p className="text-xs text-[var(--text-quaternary)]">No data yet</p>
-          </div>
+        <div className="flex-1 flex items-center justify-center min-h-0">
+          <p className="text-xs text-[var(--text-quaternary)]">Play dice to see your PnL trend</p>
         </div>
       </div>
     );
