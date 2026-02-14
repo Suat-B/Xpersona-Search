@@ -52,7 +52,29 @@ export default function DocsPage() {
           return;
         }
 
-        Redoc.init(spec, { hideDownloadButton: false }, containerRef.current);
+        const theme = {
+          colors: {
+            text: { primary: "#1a1a1a", secondary: "#555" },
+            primary: { main: "#32329f" },
+          },
+          typography: {
+            fontSize: "14px",
+            fontFamily: "system-ui, sans-serif",
+            code: { color: "#c41d7f", backgroundColor: "rgba(38,50,56,0.06)" },
+            headings: { fontFamily: "system-ui, sans-serif" },
+            links: { color: "#32329f" },
+          },
+          sidebar: {
+            backgroundColor: "#fafafa",
+            textColor: "#333",
+            activeTextColor: "#32329f",
+          },
+          rightPanel: {
+            backgroundColor: "#263238",
+            textColor: "#ffffff",
+          },
+        };
+        Redoc.init(spec, { hideDownloadButton: false, theme }, containerRef.current);
         setStatus("ready");
       } catch (err) {
         if (cancelled) return;
@@ -91,10 +113,10 @@ export default function DocsPage() {
           </Link>
         </div>
       </div>
-      <div className="relative min-h-[80vh]">
+      <div className="docs-page relative min-h-[80vh]">
         <div
           ref={containerRef}
-          className="redoc-wrap min-h-[80vh] bg-white [&_.redoc-html]:bg-white"
+          className="redoc-wrap docs-redoc-container min-h-[80vh]"
         />
         {status === "loading" && (
           <div
