@@ -31,7 +31,6 @@ export type StrategyRunConfig = {
 const AUTO_SPEEDS = [100, 250, 500, 1000] as const;
 const MAX_BET = 10000;
 const MIN_BET = 1;
-const STRATEGY_ROUND_DELAY_MS = 400;
 
 export type DiceGameProps = {
   amount: number;
@@ -86,6 +85,8 @@ export function DiceGame({
   const strategyStopRef = useRef(false);
   const lastBetResultRef = useRef<{ win: boolean; payout: number; balance: number } | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const autoSpeedRef = useRef(autoSpeed);
+  autoSpeedRef.current = autoSpeed;
 
   // Ensure BET input reflects external updates (e.g. strategy Apply) when it has focus
   useEffect(() => {
@@ -238,7 +239,7 @@ export function DiceGame({
             ruleState.pausedRounds--;
             roundsPlayed += 1;
             setStrategyRoundsPlayed(roundsPlayed);
-            await new Promise((r) => setTimeout(r, STRATEGY_ROUND_DELAY_MS));
+            await new Promise((r) => setTimeout(r, autoSpeedRef.current));
             continue;
           }
 
@@ -247,7 +248,7 @@ export function DiceGame({
             ruleState.skipNextBet = false;
             roundsPlayed += 1;
             setStrategyRoundsPlayed(roundsPlayed);
-            await new Promise((r) => setTimeout(r, STRATEGY_ROUND_DELAY_MS));
+            await new Promise((r) => setTimeout(r, autoSpeedRef.current));
             continue;
           }
 
@@ -302,7 +303,7 @@ export function DiceGame({
           }
 
           if (i < maxRounds - 1) {
-            await new Promise((r) => setTimeout(r, STRATEGY_ROUND_DELAY_MS));
+            await new Promise((r) => setTimeout(r, autoSpeedRef.current));
           }
         }
       } else {
@@ -353,7 +354,7 @@ export function DiceGame({
           }
 
           if (i < maxRounds - 1) {
-            await new Promise((r) => setTimeout(r, STRATEGY_ROUND_DELAY_MS));
+            await new Promise((r) => setTimeout(r, autoSpeedRef.current));
           }
         }
       }
