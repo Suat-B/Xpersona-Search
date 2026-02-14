@@ -57,7 +57,6 @@ export function QuickLaunchCard() {
               </div>
             ))}
           </div>
-          <span className="text-xs text-white/60">24 players online</span>
         </div>
       </div>
     </Link>

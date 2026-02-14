@@ -6,9 +6,7 @@ import { Dice3D } from "./Dice3D";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { QuickBetButtons } from "@/components/ui/QuickBetButtons";
 import { WinEffects } from "./WinEffects";
-import { ProbabilityBar } from "./ProbabilityBar";
 import { BetPercentageButtons } from "./BetPercentageButtons";
-import { WinPreview } from "./WinPreview";
 import { useKeyboardShortcuts } from "./KeyboardShortcuts";
 import { createProgressionState, getNextBet, type ProgressionState, type RoundResult } from "@/lib/dice-progression";
 import type { DiceStrategyConfig } from "@/lib/strategies";
@@ -550,9 +548,6 @@ export function DiceGame({
               maxAmount={MAX_BET}
             />
           </div>
-
-          {/* Probability & Win Info */}
-          <ProbabilityBar target={target} condition={condition} className="py-1" />
 
           {/* Action Buttons */}
           <div className="flex items-center justify-center gap-2 pt-1">

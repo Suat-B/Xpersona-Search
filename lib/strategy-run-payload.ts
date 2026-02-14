@@ -4,12 +4,15 @@
  */
 
 import type { DiceStrategyConfig } from "./strategies";
+import type { AdvancedDiceStrategy } from "./advanced-strategy-types";
 
 export type StrategyRunPayload = {
   strategyId?: string;
   config?: DiceStrategyConfig;
+  strategy?: AdvancedDiceStrategy;
   strategyName: string;
   maxRounds: number;
+  isAdvanced?: boolean;
 };
 
 const STORAGE_KEY = "xpersona_strategy_run";

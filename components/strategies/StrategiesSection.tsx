@@ -12,6 +12,7 @@ import {
 } from "@/lib/dice-strategies";
 import type { CreativeStrategy } from "@/lib/dice-strategies";
 import type { DiceStrategyConfig } from "@/lib/strategies";
+import { AdvancedStrategiesSection } from "./AdvancedStrategiesSection";
 
 type StrategyRow = {
   id: string;
@@ -310,6 +311,9 @@ export function StrategiesSection() {
           </div>
         )}
       </div>
+
+      {/* Advanced Strategies Section */}
+      <AdvancedStrategiesSection />
     </section>
   );
 }
