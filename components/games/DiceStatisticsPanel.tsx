@@ -2,6 +2,7 @@
 
 import { SessionPnLChart, type PnLPoint } from "@/components/ui/SessionPnLChart";
 import { QuantStatsCharts } from "./QuantStatsCharts";
+import { QuantChartsAesthetic } from "./QuantChartsAesthetic";
 import { AgentApiSection } from "./AgentApiSection";
 
 /**
@@ -47,21 +48,30 @@ export function DiceStatisticsPanel({
       {/* Quant stats — run chart, streaks, bet distribution */}
       <QuantStatsCharts recentResults={recentResults} />
 
+      {/* Aesthetic quant charts — gauge, donut, drawdown, momentum, etc. */}
+      <QuantChartsAesthetic
+        recentResults={recentResults}
+        series={series}
+        winRate={winRate}
+        totalPnl={totalPnl}
+        rounds={rounds}
+      />
+
       {/* Session stats — machine-readable for agents */}
-      <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3" data-agent="session-stats">
-        <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">This session</h4>
+      <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-matte)]/30 p-4 space-y-3 shadow-md" data-agent="session-stats">
+        <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-widest">This session</h4>
         <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-lg bg-[var(--bg-matte)] p-3 text-center" data-agent="stat-rounds" data-value={rounds}>
+          <div className="rounded-xl bg-[var(--bg-matte)]/80 p-3 text-center ring-1 ring-white/5 hover:ring-white/10 transition-all" data-agent="stat-rounds" data-value={rounds}>
             <div className="text-lg font-bold font-mono text-[var(--text-primary)]">{rounds}</div>
             <div className="text-[10px] text-[var(--text-secondary)] uppercase">Rounds</div>
           </div>
-          <div className="rounded-lg bg-[var(--bg-matte)] p-3 text-center" data-agent="stat-pnl" data-value={totalPnl}>
-            <div className={`text-lg font-bold font-mono ${totalPnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+          <div className="rounded-xl bg-[var(--bg-matte)]/80 p-3 text-center ring-1 ring-white/5 hover:ring-white/10 transition-all" data-agent="stat-pnl" data-value={totalPnl}>
+            <div className={`text-lg font-bold font-mono ${totalPnl >= 0 ? "text-emerald-400 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]" : "text-red-400 drop-shadow-[0_0_8px_rgba(239,68,68,0.3)]"}`}>
               {totalPnl >= 0 ? "+" : ""}{totalPnl}
             </div>
             <div className="text-[10px] text-[var(--text-secondary)] uppercase">PnL</div>
           </div>
-          <div className="rounded-lg bg-[var(--bg-matte)] p-3 text-center" data-agent="stat-winrate" data-value={winRate.toFixed(1)}>
+          <div className="rounded-xl bg-[var(--bg-matte)]/80 p-3 text-center ring-1 ring-white/5 hover:ring-white/10 transition-all" data-agent="stat-winrate" data-value={winRate.toFixed(1)}>
             <div className="text-lg font-bold font-mono text-[var(--text-primary)]">{winRate.toFixed(0)}%</div>
             <div className="text-[10px] text-[var(--text-secondary)] uppercase">Win rate</div>
           </div>

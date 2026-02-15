@@ -101,17 +101,20 @@ export function QuantStatsCharts({ recentResults }: QuantStatsChartsProps) {
 
   return (
     <div className="space-y-4" data-agent="quant-stats">
-      {/* Win/Loss run chart — colored dots */}
-      <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
-        <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
+      {/* Win/Loss run chart — colored dots with subtle glow */}
+      <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 p-4 shadow-lg">
+        <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest mb-3 flex items-center gap-2">
+          <span className="w-1 h-1 rounded-full bg-[var(--accent-heart)]" />
           Run chart (last 30)
         </h4>
-        <div className="flex flex-wrap gap-1" data-agent="run-chart">
+        <div className="flex flex-wrap gap-1.5" data-agent="run-chart">
           {last30.map((r, i) => (
             <div
               key={i}
-              className={`w-2 h-2 rounded-sm transition-colors ${
-                r.win ? "bg-emerald-500" : "bg-red-500/80"
+              className={`w-2.5 h-2.5 rounded-md transition-all duration-200 hover:scale-125 ${
+                r.win
+                  ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]"
+                  : "bg-red-500/90 shadow-[0_0_6px_rgba(239,68,68,0.4)]"
               }`}
               title={`Round ${recentResults.length - last30.length + i + 1}: ${r.win ? "Win" : "Loss"}`}
             />
@@ -120,8 +123,8 @@ export function QuantStatsCharts({ recentResults }: QuantStatsChartsProps) {
       </div>
 
       {/* Streaks + rolling metrics */}
-      <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3" data-agent="streak-stats">
-        <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">
+      <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-matte)]/50 p-4 space-y-3 shadow-md" data-agent="streak-stats">
+        <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-widest">
           Streaks & rolling
         </h4>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -175,21 +178,21 @@ export function QuantStatsCharts({ recentResults }: QuantStatsChartsProps) {
       </div>
 
       {/* Bet size distribution bar chart */}
-      <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
-        <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
+      <div className="rounded-2xl border border-white/10 bg-[var(--bg-card)] p-4 shadow-md">
+        <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest mb-3">
           Bet size distribution
         </h4>
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           {betBuckets.map((b) => (
-            <div key={b.label} className="flex items-center gap-2">
-              <span className="text-[10px] text-[var(--text-secondary)] w-12 shrink-0">{b.label} cr</span>
-              <div className="flex-1 h-4 rounded bg-[var(--bg-matte)] overflow-hidden">
+            <div key={b.label} className="flex items-center gap-2 group">
+              <span className="text-[10px] text-[var(--text-secondary)] w-12 shrink-0 font-mono">{b.label} cr</span>
+              <div className="flex-1 h-5 rounded-lg bg-[var(--bg-matte)] overflow-hidden">
                 <div
-                  className="h-full rounded bg-[var(--accent-heart)]/60 transition-all duration-300"
-                  style={{ width: `${(b.count / maxBucketCount) * 100}%`, minWidth: b.count > 0 ? "4px" : 0 }}
+                  className="h-full rounded-lg bg-gradient-to-r from-[var(--accent-heart)]/70 to-[var(--accent-heart)]/40 transition-all duration-500 group-hover:from-[var(--accent-heart)]/90"
+                  style={{ width: `${(b.count / maxBucketCount) * 100}%`, minWidth: b.count > 0 ? "6px" : 0 }}
                 />
               </div>
-              <span className="text-[10px] font-mono text-[var(--text-secondary)] w-6 text-right">{b.count}</span>
+              <span className="text-[10px] font-mono text-[var(--text-secondary)] w-6 text-right tabular-nums">{b.count}</span>
             </div>
           ))}
         </div>
