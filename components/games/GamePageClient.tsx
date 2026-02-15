@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -59,6 +59,10 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   } | null>(null);
   const [depositSuccess, setDepositSuccess] = useState(false);
   const [loadedStrategyForBuilder, setLoadedStrategyForBuilder] = useState<AdvancedDiceStrategy | null | undefined>(undefined);
+  const [liveBet, setLiveBet] = useState<{ result: number; win: boolean; payout: number } | null>(null);
+  const [showAiPlayingIndicator, setShowAiPlayingIndicator] = useState(false);
+  const processedBetIdsRef = useRef<Set<string>>(new Set());
+  const liveFeedRef = useRef<EventSource | null>(null);
 
   // Handle deposit=success from Stripe redirect
   useEffect(() => {
@@ -211,11 +215,60 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     setActiveStrategyName(strategyName ?? null);
   };
 
-  const handleResult = (result: RollResult & { betAmount?: number; balance?: number }) => {
+  const handleResult = useCallback((result: RollResult & { betAmount?: number; balance?: number; betId?: string }) => {
+    if (result.betId && processedBetIdsRef.current.has(result.betId)) return; // Already processed (e.g. from SSE)
     setRecentResults(prev => [...prev, { ...result, betAmount: result.betAmount ?? amount }].slice(-MAX_RECENT_RESULTS));
     if (typeof result.balance === "number") setBalance(result.balance);
     addRound(result.betAmount ?? amount, result.payout);
-  };
+    if (result.betId) processedBetIdsRef.current.add(result.betId);
+  }, [amount, addRound]);
+
+  // Subscribe to live feed for API/AI bet activity
+  useEffect(() => {
+    if (game !== "dice") return;
+    const url = typeof window !== "undefined" ? `${window.location.origin}/api/me/live-feed` : "";
+    if (!url) return;
+    const es = new EventSource(url, { withCredentials: true });
+    liveFeedRef.current = es;
+    const timeoutsRef = { current: [] as ReturnType<typeof setTimeout>[] };
+    es.onmessage = (ev) => {
+      try {
+        const json = JSON.parse(ev.data as string);
+        if (json?.type !== "bet" || !json?.bet) return;
+        const bet = json.bet as { result: number; win: boolean; payout: number; balance: number; amount: number; target: number; condition: string; betId?: string; agentId?: string };
+        if (bet.betId && processedBetIdsRef.current.has(bet.betId)) {
+          processedBetIdsRef.current.delete(bet.betId);
+          return;
+        }
+        handleResult({
+          result: bet.result,
+          win: bet.win,
+          payout: bet.payout,
+          betAmount: bet.amount,
+          balance: bet.balance,
+        });
+        setLiveBet({ result: bet.result, win: bet.win, payout: bet.payout });
+        const t = setTimeout(() => setLiveBet(null), 4000);
+        timeoutsRef.current.push(t);
+        if (bet.agentId) {
+          setShowAiPlayingIndicator(true);
+          const t2 = setTimeout(() => setShowAiPlayingIndicator(false), 3000);
+          timeoutsRef.current.push(t2);
+        }
+      } catch {
+        // Ignore parse errors
+      }
+    };
+    es.onerror = () => {
+      es.close();
+      liveFeedRef.current = null;
+    };
+    return () => {
+      timeoutsRef.current.forEach(clearTimeout);
+      es.close();
+      liveFeedRef.current = null;
+    };
+  }, [game, handleResult]);
 
   const handleReset = () => {
     reset();
@@ -289,6 +342,13 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       <main className="flex-1 min-h-0 flex flex-row gap-4 p-4 overflow-hidden">
         {/* Left column: Game - takes remaining space */}
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          {/* AI playing indicator (when API/AI places bets) */}
+          {showAiPlayingIndicator && (
+            <div className="mb-3 flex-shrink-0 flex items-center justify-center gap-2 py-2 px-4 rounded-lg bg-violet-500/20 border border-violet-500/30 text-violet-300 text-xs font-medium">
+              <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" />
+              AI playing on your behalf
+            </div>
+          )}
           {/* Strategy Running Banner - compact when running to avoid layout squeeze */}
           {strategyRun && (
             <div className="mb-3 flex-shrink-0">
@@ -347,6 +407,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   winRatePercent: stats.currentRound > 0 ? (stats.wins / stats.currentRound) * 100 : 0,
                 });
               }}
+              liveBet={liveBet}
             />
           </ClientOnly>
         </div>
@@ -424,6 +485,13 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">AI at the casino</h3>
                   <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
                     Connect OpenClaw or any AI assistant to play dice with your balance. Same REST API and tools for humans and AI.
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-3">
+                  <h4 className="text-xs font-semibold text-violet-300 uppercase tracking-wider mb-1">Live View</h4>
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    While your AI places bets via API, this page shows the dice in real time. Stay here to watch.
                   </p>
                 </div>
 

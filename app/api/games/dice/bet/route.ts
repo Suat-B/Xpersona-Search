@@ -7,6 +7,7 @@ import { diceBetSchema } from "@/lib/validation";
 import { runDiceBet, validateDiceBet } from "@/lib/games/dice";
 import { hashSeed } from "@/lib/games/rng";
 import { randomBytes } from "crypto";
+import { emitBetEvent } from "@/lib/bet-events";
 
 export async function POST(request: NextRequest) {
   let authResult: Awaited<ReturnType<typeof getAuthUser>>;
@@ -133,6 +134,20 @@ export async function POST(request: NextRequest) {
           nonce: 0,
         },
       };
+    });
+    emitBetEvent({
+      userId: authResult.user.id,
+      bet: {
+        result: result.result,
+        win: result.win,
+        payout: result.payout,
+        balance: result.balance,
+        amount,
+        target,
+        condition,
+        betId: result.betId,
+        agentId: authResult.user.agentId ?? undefined,
+      },
     });
     return NextResponse.json({
       success: true,

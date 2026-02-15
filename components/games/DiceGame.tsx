@@ -45,7 +45,9 @@ export type DiceGameProps = {
   onConditionChange: (v: "over" | "under") => void;
   onRoundComplete: (bet: number, payout: number) => void;
   onAutoPlayChange?: (active: boolean) => void;
-  onResult?: (result: { result: number; win: boolean; payout: number; betAmount?: number }) => void;
+  onResult?: (result: { result: number; win: boolean; payout: number; betAmount?: number; betId?: string; balance?: number }) => void;
+  /** External bet to display (e.g. from API/AI live feed). Triggers dice animation. */
+  liveBet?: { result: number; win: boolean; payout: number } | null;
   strategyRun?: StrategyRunConfig | null;
   onStrategyComplete?: (sessionPnl: number, roundsPlayed: number, wins: number) => void;
   onStrategyStop?: () => void;
@@ -69,6 +71,7 @@ export function DiceGame({
   onStrategyComplete,
   onStrategyStop,
   onStrategyProgress,
+  liveBet,
 }: DiceGameProps) {
   const [result, setResult] = useState<Result>(null);
   const [loading, setLoading] = useState(false);
@@ -84,10 +87,20 @@ export function DiceGame({
   const strategyStateRef = useRef<ProgressionState | null>(null);
   const ruleEngineStateRef = useRef<{ currentBet: number; currentTarget: number; currentCondition: "over" | "under"; pausedRounds: number; skipNextBet: boolean } | null>(null);
   const strategyStopRef = useRef(false);
-  const lastBetResultRef = useRef<{ win: boolean; payout: number; balance: number } | null>(null);
+  const lastBetResultRef = useRef<{ win: boolean; payout: number; balance: number; result: number } | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const autoSpeedRef = useRef(autoSpeed);
   autoSpeedRef.current = autoSpeed;
+
+  // Display external bet from live feed (API/AI playing)
+  useEffect(() => {
+    if (!liveBet) return;
+    setResult({ ...liveBet, balance: 0 });
+    if (liveBet.win) {
+      setShowWinEffects(true);
+      setTimeout(() => setShowWinEffects(false), 3000);
+    }
+  }, [liveBet]);
 
   // Ensure BET input reflects external updates (e.g. strategy Apply) when it has focus
   useEffect(() => {
@@ -101,7 +114,7 @@ export function DiceGame({
     async (betAmountOverride?: number): Promise<boolean> => {
       const betAmount = betAmountOverride ?? amount;
       const signal = abortControllerRef.current?.signal;
-      type BetRes = { success?: boolean; data?: { result: number; win: boolean; payout: number; balance: number }; error?: string; message?: string };
+      type BetRes = { success?: boolean; data?: { result: number; win: boolean; payout: number; balance: number; betId?: string }; error?: string; message?: string };
       let httpStatus: number;
       let data: BetRes;
       try {
@@ -142,8 +155,9 @@ export function DiceGame({
         win: newResult.win,
         payout: newResult.payout,
         balance: data.data.balance,
+        result: data.data.result,
       };
-      onResult?.({ ...newResult, betAmount });
+      onResult?.({ ...newResult, betAmount, betId: data.data.betId, balance: data.data.balance });
       onRoundComplete(betAmount, data.data.payout);
 
       // Show win effects
@@ -265,7 +279,7 @@ export function DiceGame({
 
           const lastResult = lastBetResultRef.current;
           if (!lastResult) break;
-          const { win, payout, balance: newBalance } = lastResult;
+          const { win, payout, balance: newBalance, result: roll } = lastResult;
           const pnl = payout - currentBet;
           sessionPnl += pnl;
           if (win) wins += 1;
@@ -279,11 +293,11 @@ export function DiceGame({
             totalRounds: maxRounds,
           });
 
-          // Process through rule engine
+          // Process through rule engine (use roll from lastBetResultRef; React state may not have updated yet)
           const roundResult = {
             win,
             payout,
-            roll: result?.result || 0,
+            roll: roll ?? 0,
             betAmount: currentBet,
           };
           const engineResult = processRound(advancedStrategy, ruleState, roundResult);
@@ -331,7 +345,7 @@ export function DiceGame({
 
           const lastResult = lastBetResultRef.current;
           if (!lastResult) break;
-          const { win, payout, balance: newBalance } = lastResult;
+          const { win, payout, balance: newBalance, result: roll } = lastResult;
           const pnl = payout - currentBet;
           sessionPnl += pnl;
           if (win) wins += 1;

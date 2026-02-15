@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { runDiceBet, validateDiceBet } from "@/lib/games/dice";
 import { hashSeed } from "@/lib/games/rng";
 import { randomBytes } from "crypto";
+import { emitBetEvent } from "@/lib/bet-events";
 
 export type DiceRoundResult = {
   balance: number;
@@ -86,6 +87,20 @@ export async function executeDiceRound(
       betId: bet?.id,
       serverSeedHash: seedHash,
     };
+  });
+  emitBetEvent({
+    userId,
+    bet: {
+      result: result.result,
+      win: result.win,
+      payout: result.payout,
+      balance: result.balance,
+      amount,
+      target,
+      condition,
+      betId: result.betId,
+      agentId: agentId ?? undefined,
+    },
   });
   return result;
 }

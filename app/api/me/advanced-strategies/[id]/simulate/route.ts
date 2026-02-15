@@ -5,6 +5,8 @@ import { advancedStrategies } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { simulateStrategy } from "@/lib/dice-rule-engine";
 import { DICE_HOUSE_EDGE } from "@/lib/constants";
+import { coerceInt, coerceNumber, coerceCondition } from "@/lib/validation";
+import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
 
 // POST /api/me/advanced-strategies/[id]/simulate - Simulate a strategy
 export async function POST(
@@ -20,9 +22,9 @@ export async function POST(
   if (!id) return NextResponse.json({ error: "Invalid route" }, { status: 400 });
 
   try {
-    const body = await request.json();
-    const rounds = Math.min(parseInt(body.rounds) || 100, 10000); // Max 10k rounds
-    const startingBalance = parseInt(body.startingBalance) || 1000;
+    const body = (await request.json().catch(() => ({}))) as { rounds?: unknown; startingBalance?: unknown };
+    const rounds = Math.min(Math.max(1, coerceInt(body.rounds, 100)), 10000);
+    const startingBalance = Math.max(1, coerceInt(body.startingBalance, 1000));
 
     // Get strategy
     const [strategy] = await db
@@ -50,24 +52,40 @@ export async function POST(
       );
     }
 
+    // Normalize rules with coercion (DB/LLM may send numbers as strings)
+    const rules = strategy.rules
+      .filter((r: { trigger?: { type?: string }; action?: { type?: string } }) => r?.trigger?.type && r?.action?.type)
+      .map((r: Record<string, unknown>, i: number) => ({
+        ...r,
+        id: r.id ?? `rule-${i}`,
+        order: coerceInt((r as { order?: unknown }).order, i),
+        enabled: (r as { enabled?: boolean }).enabled !== false,
+        trigger: {
+          type: (r.trigger as { type: string }).type,
+          value: coerceNumber((r.trigger as { value?: unknown })?.value),
+          value2: coerceNumber((r.trigger as { value2?: unknown })?.value2),
+          pattern: (r.trigger as { pattern?: string })?.pattern,
+        },
+        action: {
+          type: (r.action as { type: string }).type,
+          value: coerceNumber((r.action as { value?: unknown })?.value),
+          targetRuleId: (r.action as { targetRuleId?: string })?.targetRuleId,
+        },
+      }));
+
     // Run simulation
     const result = simulateStrategy(
       {
         ...strategy,
         name: strategy.name || "Unnamed",
-        // Cast rules to proper type since DB returns string for trigger.type
-        rules: strategy.rules.map(r => ({
-          ...r,
-          trigger: {
-            ...r.trigger,
-            type: r.trigger.type as any,
-          },
-          action: {
-            ...r.action,
-            type: r.action.type as any,
-          },
-        })),
-      } as any,
+        baseConfig: {
+          amount: coerceInt((strategy.baseConfig as { amount?: unknown })?.amount, 10),
+          target: coerceNumber((strategy.baseConfig as { target?: unknown })?.target, 50),
+          condition: coerceCondition((strategy.baseConfig as { condition?: unknown })?.condition),
+        },
+        rules,
+        executionMode: strategy.executionMode === "all_matching" ? "all_matching" : "sequential",
+      } as AdvancedDiceStrategy,
       startingBalance,
       rounds,
       DICE_HOUSE_EDGE

@@ -574,6 +574,31 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/me/live-feed:
+    get:
+      summary: Live bet feed (SSE)
+      description: |
+        Server-Sent Events stream of bet activity for the authenticated user.
+        When AI or API plays on your behalf (POST /api/games/dice/bet, run-strategy, run-advanced-strategy),
+        bets appear in real-time. Use EventSource with credentials (cookies or Bearer token).
+        **Watch API play:** Open /games/dice in the browser while your AI places bets via API.
+      responses:
+        "200":
+          description: SSE stream of bet events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Each event: data: {"type":"bet","bet":{"result":67.42,"win":true,"payout":19,"balance":469,"amount":10,"target":50,"condition":"over","betId":"uuid","agentId":"aid_xxx"}}
+                  Heartbeat: : heartbeat
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/me/transactions:
     get:
       summary: Get unified transaction history
