@@ -30,7 +30,7 @@ export function AIFirstBanner() {
   return (
     <div className="rounded-lg border border-[var(--accent-heart)]/30 bg-[var(--accent-heart)]/5 px-4 py-2 flex items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
       <p className="text-xs text-[var(--text-primary)]">
-        <span className="font-semibold text-[var(--accent-heart)]">AI-First Casino</span>
+        <span className="font-semibold text-[var(--accent-heart)]">AI-First Probability Game</span>
         {" — "}
         Your AI bets via API. Same balance. Same provably fair.
       </p>

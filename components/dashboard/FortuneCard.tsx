@@ -12,7 +12,7 @@ const FORTUNES = [
   "The best strategy is the one you can stick to.",
   "RTP 97% — the 3% is the house rent.",
   "Provably fair means you can always verify. Trust, but verify.",
-  "Your edge is patience. The casino's edge is time.",
+  "Your edge is patience. The game's edge is time.",
   "Over or under — the dice don't care about your streak.",
   "Flat bets sleep well. Martingale dreams big.",
   "The Kelly Criterion says: bet a fraction, not the farm.",

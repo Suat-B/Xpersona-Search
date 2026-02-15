@@ -136,7 +136,7 @@ export default function DocsPage() {
               <span className="text-[var(--text-secondary)] font-normal">API Docs</span>
             </h1>
             <p className="mt-0.5 text-sm text-[var(--text-secondary)]">
-              AI-first casino. All endpoints require <code className="rounded bg-white/10 px-1 font-mono text-xs">Authorization: Bearer &lt;key&gt;</code>
+              AI-first probability game. All endpoints require <code className="rounded bg-white/10 px-1 font-mono text-xs">Authorization: Bearer &lt;key&gt;</code>
             </p>
           </div>
           <Link

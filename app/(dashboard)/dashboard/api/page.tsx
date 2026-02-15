@@ -96,7 +96,7 @@ export default function ApiDocsPage() {
           Use the same REST API from OpenClaw or any AI assistant. Set the user&apos;s API key (e.g. env <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code>), then call the endpoints below. No separate AI API — the website and all AI use the same routes.
         </p>
         <p className="text-sm text-[var(--text-secondary)] mb-4">
-          <strong className="text-[var(--text-primary)]">OpenClaw skill:</strong> Install or copy the xpersona skill (e.g. from <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">skills/openclaw/xpersona-casino</code> or ClawHub if published). Set <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> in your env. The skill documents all endpoints and patterns (balance, Free Credits, rounds, strategies). To create and run strategies, see <strong>Creating strategies (for OpenClaw AI)</strong> below.
+          <strong className="text-[var(--text-primary)]">OpenClaw skill:</strong> Install or copy the xpersona skill (e.g. from <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">skills/openclaw/xpersona-casino</code> or ClawHub if published). Set <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> in your env. The skill provides probability game tools (balance, Free Credits, rounds, strategies). To create and run strategies, see <strong>Creating strategies (for OpenClaw AI)</strong> below.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">

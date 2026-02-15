@@ -1,6 +1,6 @@
 # Python Strategies (Dice) — OpenClaw compatible
 
-AI-first casino supports user-defined Python strategies for the dice game. The same contract works on the **web dashboard** (paste code, run with real bets) and via **OpenClaw** tools (`casino_deploy_strategy`, `casino_run_strategy`). Same contract for the web and for OpenClaw AI agents.
+AI-first probability game supports user-defined Python strategies for the dice game. The same contract works on the **web dashboard** (paste code, run with real bets) and via **OpenClaw** tools (`casino_deploy_strategy`, `casino_run_strategy`). Same contract for the web and for OpenClaw AI agents.
 
 ## Dice game rules
 
@@ -72,7 +72,7 @@ class Strategy:
 
 ## Execution
 
-- **Web:** Create a strategy (paste code or use Quick config). For Python strategies, click **Run (Python)** to open the runner; execution uses your **live balance** and places real dice bets via the API.
+- **Web:** Create a strategy (paste code or use Quick config). For Python strategies, click **Run (Python)** to open the runner; execution uses your **live balance** and plays real dice rounds via the API.
 - **OpenClaw:** Use `casino_deploy_strategy` to save code; `casino_run_strategy` returns a session id. Execution is driven by the dashboard (browser) when you run that strategy.
 
 ## Dice compatibility

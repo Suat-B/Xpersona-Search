@@ -50,7 +50,7 @@ export function DashboardChrome({
                   Xpersona
                 </span>
                 <span className="text-[10px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">
-                  AI-First Casino
+                  AI-First Probability Game
                 </span>
               </div>
             </Link>
