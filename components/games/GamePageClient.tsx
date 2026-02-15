@@ -11,6 +11,7 @@ import { DiceStatisticsPanel } from "./DiceStatisticsPanel";
 import { CreativeDiceStrategiesSection } from "./CreativeDiceStrategiesSection";
 import { AgentApiSection } from "./AgentApiSection";
 import { CompactAdvancedStrategyBuilder } from "@/components/strategies/CompactAdvancedStrategyBuilder";
+import { SavedAdvancedStrategiesList } from "@/components/strategies/SavedAdvancedStrategiesList";
 import { getAndClearStrategyRunPayload } from "@/lib/strategy-run-payload";
 import { saveStrategyRunPayload } from "@/lib/strategy-run-payload";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcuts";
@@ -57,6 +58,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     winRatePercent: number;
   } | null>(null);
   const [depositSuccess, setDepositSuccess] = useState(false);
+  const [loadedStrategyForBuilder, setLoadedStrategyForBuilder] = useState<AdvancedDiceStrategy | null | undefined>(undefined);
 
   // Handle deposit=success from Stripe redirect
   useEffect(() => {
@@ -482,8 +484,54 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               </div>
             ) : activeTab === "strategy" ? (
               <div className="flex-shrink-0 space-y-4">
+                {/* Saved strategies - load and run */}
+                <SavedAdvancedStrategiesList
+                  onRun={(strategy, maxRounds) => {
+                    setAmount(strategy.baseConfig.amount);
+                    setTarget(strategy.baseConfig.target);
+                    setCondition(strategy.baseConfig.condition);
+                    setActiveStrategyName(strategy.name);
+                    setStrategyRun({
+                      config: {
+                        amount: strategy.baseConfig.amount,
+                        target: strategy.baseConfig.target,
+                        condition: strategy.baseConfig.condition,
+                        progressionType: "flat",
+                      },
+                      maxRounds,
+                      strategyName: strategy.name,
+                      isAdvanced: true,
+                      advancedStrategy: strategy,
+                    });
+                  }}
+                  onLoad={(strategy) => setLoadedStrategyForBuilder(strategy)}
+                  defaultMaxRounds={50}
+                />
+
                 {/* Advanced Strategy Builder - AI Optimized */}
                 <CompactAdvancedStrategyBuilder
+                  key={loadedStrategyForBuilder?.id ?? "builder"}
+                  initialStrategy={loadedStrategyForBuilder}
+                  onSave={async (strategy) => {
+                    try {
+                      const url = strategy.id
+                        ? `/api/me/advanced-strategies/${strategy.id}`
+                        : "/api/me/advanced-strategies";
+                      const method = strategy.id ? "PATCH" : "POST";
+                      const res = await fetch(url, {
+                        method,
+                        headers: { "Content-Type": "application/json" },
+                        credentials: "include",
+                        body: JSON.stringify(strategy),
+                      });
+                      const data = await res.json();
+                      const savedId = data.data?.strategy?.id ?? data.data?.id;
+                      if (data.success && savedId) return { id: savedId };
+                      return !!data.success;
+                    } catch {
+                      return false;
+                    }
+                  }}
                   onRun={(strategy, maxRounds) => {
                     // Set the strategy to run immediately
                     setAmount(strategy.baseConfig.amount);

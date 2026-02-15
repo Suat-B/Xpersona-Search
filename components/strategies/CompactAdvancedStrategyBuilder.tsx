@@ -1,30 +1,50 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { RuleCard } from "./RuleCard";
 import { STRATEGY_PRESETS, type AdvancedDiceStrategy, type StrategyRule, type ExecutionMode } from "@/lib/advanced-strategy-types";
 import { simulateStrategy } from "@/lib/dice-rule-engine";
 import { DICE_HOUSE_EDGE } from "@/lib/constants";
 
+const DEFAULT_STRATEGY: AdvancedDiceStrategy = {
+  name: "Quick Strategy",
+  baseConfig: { amount: 10, target: 50, condition: "over" },
+  rules: [],
+  executionMode: "sequential",
+};
+
 interface CompactAdvancedStrategyBuilderProps {
   onRun: (strategy: AdvancedDiceStrategy, maxRounds: number) => void;
   onApply?: (strategy: AdvancedDiceStrategy) => void;
+  /** Load a saved strategy into the builder (e.g. from SavedAdvancedStrategiesList) */
+  initialStrategy?: AdvancedDiceStrategy | null;
+  /** When provided, enables Save button. Called with strategy; returns true + optional saved strategy with id for updates. */
+  onSave?: (strategy: AdvancedDiceStrategy) => Promise<boolean | { id: string }>;
 }
 
 export function CompactAdvancedStrategyBuilder({
   onRun,
   onApply,
+  initialStrategy,
+  onSave,
 }: CompactAdvancedStrategyBuilderProps) {
-  const [strategy, setStrategy] = useState<AdvancedDiceStrategy>({
-    name: "Quick Strategy",
-    baseConfig: { amount: 10, target: 50, condition: "over" },
-    rules: [],
-    executionMode: "sequential",
-  });
+  const [strategy, setStrategy] = useState<AdvancedDiceStrategy>(initialStrategy ?? DEFAULT_STRATEGY);
+
+  useEffect(() => {
+    if (initialStrategy) {
+      setStrategy({
+        ...initialStrategy,
+        rules: (initialStrategy.rules ?? []).map((r, i) => ({ ...r, order: i })),
+      });
+    } else if (initialStrategy === null) {
+      setStrategy(DEFAULT_STRATEGY);
+    }
+  }, [initialStrategy]);
 
   const [showJson, setShowJson] = useState(false);
   const [simulationResult, setSimulationResult] = useState<ReturnType<typeof simulateStrategy> | null>(null);
   const [maxRounds, setMaxRounds] = useState(50);
+  const [saving, setSaving] = useState(false);
 
   // Rule management
   const addRule = useCallback(() => {
@@ -83,6 +103,22 @@ export function CompactAdvancedStrategyBuilder({
     const result = simulateStrategy(strategy, 1000, 100, DICE_HOUSE_EDGE);
     setSimulationResult(result);
   }, [strategy]);
+
+  const handleSave = useCallback(async () => {
+    if (!onSave || !strategy.name?.trim()) return;
+    setSaving(true);
+    try {
+      const result = await onSave(strategy);
+      if (result) {
+        window.dispatchEvent(new Event("advanced-strategies-updated"));
+        if (typeof result === "object" && result.id) {
+          setStrategy((s) => ({ ...s, id: result.id }));
+        }
+      }
+    } finally {
+      setSaving(false);
+    }
+  }, [onSave, strategy]);
 
   return (
     <div className="space-y-4">
@@ -314,6 +350,15 @@ export function CompactAdvancedStrategyBuilder({
             className="px-3 py-1.5 rounded border border-[var(--border)] text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
           >
             Apply
+          </button>
+        )}
+        {onSave && (
+          <button
+            onClick={handleSave}
+            disabled={saving || !strategy.name?.trim()}
+            className="px-3 py-1.5 rounded border border-emerald-500/40 text-xs text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save"}
           </button>
         )}
         <button
