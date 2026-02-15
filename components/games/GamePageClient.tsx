@@ -16,6 +16,7 @@ import { getAndClearStrategyRunPayload } from "@/lib/strategy-run-payload";
 import { saveStrategyRunPayload } from "@/lib/strategy-run-payload";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcuts";
 import { StrategyRunningBanner } from "@/components/strategies/StrategyRunningBanner";
+import { LiveActivityFeed, type LiveActivityItem } from "./LiveActivityFeed";
 import type { DiceStrategyConfig, DiceProgressionType } from "@/lib/strategies";
 import type { StrategyRunConfig } from "./DiceGame";
 import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
@@ -61,8 +62,14 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const [loadedStrategyForBuilder, setLoadedStrategyForBuilder] = useState<AdvancedDiceStrategy | null | undefined>(undefined);
   const [liveBet, setLiveBet] = useState<{ result: number; win: boolean; payout: number } | null>(null);
   const [showAiPlayingIndicator, setShowAiPlayingIndicator] = useState(false);
+  const [liveActivityItems, setLiveActivityItems] = useState<LiveActivityItem[]>([]);
+  const [liveQueueLength, setLiveQueueLength] = useState(0);
   const processedBetIdsRef = useRef<Set<string>>(new Set());
   const liveFeedRef = useRef<EventSource | null>(null);
+  const liveBetQueueRef = useRef<Array<{ result: number; win: boolean; payout: number; amount: number; target: number; condition: string; betId?: string; agentId?: string }>>([]);
+  const liveQueueProcessingRef = useRef(false);
+
+  const MIN_LIVE_BET_DISPLAY_MS = 700;
 
   // Handle deposit=success from Stripe redirect
   useEffect(() => {
@@ -223,6 +230,29 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     if (result.betId) processedBetIdsRef.current.add(result.betId);
   }, [amount, addRound]);
 
+  // Process live bet queue sequentially so user sees each dice animation
+  const processLiveBetQueue = useCallback(() => {
+    if (liveQueueProcessingRef.current || liveBetQueueRef.current.length === 0) return;
+    liveQueueProcessingRef.current = true;
+    setLiveQueueLength(liveBetQueueRef.current.length);
+
+    const playNext = () => {
+      const next = liveBetQueueRef.current.shift();
+      setLiveQueueLength(liveBetQueueRef.current.length);
+      if (!next) {
+        liveQueueProcessingRef.current = false;
+        setLiveBet(null);
+        setShowAiPlayingIndicator(false);
+        if (liveBetQueueRef.current.length > 0) processLiveBetQueue();
+        return;
+      }
+      setLiveBet({ result: next.result, win: next.win, payout: next.payout });
+      if (next.agentId) setShowAiPlayingIndicator(true);
+      setTimeout(playNext, MIN_LIVE_BET_DISPLAY_MS);
+    };
+    playNext();
+  }, []);
+
   // Subscribe to live feed for API/AI bet activity
   useEffect(() => {
     if (game !== "dice") return;
@@ -230,16 +260,12 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     if (!url) return;
     const es = new EventSource(url, { withCredentials: true });
     liveFeedRef.current = es;
-    const timeoutsRef = { current: [] as ReturnType<typeof setTimeout>[] };
     es.onmessage = (ev) => {
       try {
         const json = JSON.parse(ev.data as string);
         if (json?.type !== "bet" || !json?.bet) return;
         const bet = json.bet as { result: number; win: boolean; payout: number; balance: number; amount: number; target: number; condition: string; betId?: string; agentId?: string };
-        if (bet.betId && processedBetIdsRef.current.has(bet.betId)) {
-          processedBetIdsRef.current.delete(bet.betId);
-          return;
-        }
+        if (bet.betId && processedBetIdsRef.current.has(bet.betId)) return;
         handleResult({
           result: bet.result,
           win: bet.win,
@@ -247,13 +273,33 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           betAmount: bet.amount,
           balance: bet.balance,
         });
-        setLiveBet({ result: bet.result, win: bet.win, payout: bet.payout });
-        const t = setTimeout(() => setLiveBet(null), 4000);
-        timeoutsRef.current.push(t);
-        if (bet.agentId) {
-          setShowAiPlayingIndicator(true);
-          const t2 = setTimeout(() => setShowAiPlayingIndicator(false), 3000);
-          timeoutsRef.current.push(t2);
+        if (bet.betId) processedBetIdsRef.current.add(bet.betId);
+
+        const fromApi = !!bet.agentId;
+        const item: LiveActivityItem = {
+          id: bet.betId ?? `live-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          result: bet.result,
+          win: bet.win,
+          payout: bet.payout,
+          amount: bet.amount,
+          target: bet.target,
+          condition: bet.condition,
+          fromApi,
+        };
+        setLiveActivityItems((prev) => [...prev, item].slice(-50));
+
+        if (fromApi) {
+          liveBetQueueRef.current.push({
+            result: bet.result,
+            win: bet.win,
+            payout: bet.payout,
+            amount: bet.amount,
+            target: bet.target,
+            condition: bet.condition,
+            betId: bet.betId,
+            agentId: bet.agentId,
+          });
+          if (!liveQueueProcessingRef.current) processLiveBetQueue();
         }
       } catch {
         // Ignore parse errors
@@ -264,11 +310,10 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       liveFeedRef.current = null;
     };
     return () => {
-      timeoutsRef.current.forEach(clearTimeout);
       es.close();
       liveFeedRef.current = null;
     };
-  }, [game, handleResult]);
+  }, [game, handleResult, processLiveBetQueue]);
 
   const handleReset = () => {
     reset();
@@ -343,10 +388,14 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         {/* Left column: Game - takes remaining space */}
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
           {/* AI playing indicator (when API/AI places bets) */}
-          {showAiPlayingIndicator && (
+          {(showAiPlayingIndicator || liveQueueLength > 0) && (
             <div className="mb-3 flex-shrink-0 flex items-center justify-center gap-2 py-2 px-4 rounded-lg bg-violet-500/20 border border-violet-500/30 text-violet-300 text-xs font-medium">
               <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" />
-              AI playing on your behalf
+              {liveQueueLength > 0 ? (
+                <>AI playing — {liveQueueLength} roll{liveQueueLength !== 1 ? "s" : ""} queued</>
+              ) : (
+                "AI playing on your behalf"
+              )}
             </div>
           )}
           {/* Strategy Running Banner - compact when running to avoid layout squeeze */}
@@ -464,6 +513,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3">
               {activeTab === "statistics" ? (
               <div className="space-y-3">
+                {(liveActivityItems.length > 0 || liveQueueLength > 0) && (
+                  <LiveActivityFeed items={liveActivityItems} maxItems={20} className="flex-shrink-0" />
+                )}
                 <DiceStatisticsPanel
                   series={statsSeries}
                   rounds={rounds}
@@ -491,9 +543,11 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 <div className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-3">
                   <h4 className="text-xs font-semibold text-violet-300 uppercase tracking-wider mb-1">Live View</h4>
                   <p className="text-xs text-[var(--text-secondary)]">
-                    While your AI places bets via API, this page shows the dice in real time. Stay here to watch.
+                    While your AI places bets via API, this page shows each dice roll in real time. Every bet is queued and animated so you can watch the full run — even when the AI plays 500 rounds.
                   </p>
                 </div>
+
+                <LiveActivityFeed items={liveActivityItems} maxItems={30} className="flex-shrink-0" />
 
                 <AgentApiSection />
 
