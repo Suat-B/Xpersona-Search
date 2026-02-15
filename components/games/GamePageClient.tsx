@@ -80,7 +80,17 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const [liveActivityItems, setLiveActivityItems] = useState<LiveActivityItem[]>([]);
   const [liveQueueLength, setLiveQueueLength] = useState(0);
   const [depositAlertFromAI, setDepositAlertFromAI] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const processedPlayIdsRef = useRef<Set<string>>(new Set());
+
+  // Auto-collapse sidebar on narrow viewports so trading hub stays reachable
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 900px)");
+    if (mq.matches) setSidebarCollapsed(true);
+    const handle = (e: MediaQueryListEvent) => { if (e.matches) setSidebarCollapsed(true); };
+    mq.addEventListener("change", handle);
+    return () => mq.removeEventListener("change", handle);
+  }, []);
   const liveFeedRef = useRef<EventSource | null>(null);
   const livePlayQueueRef = useRef<Array<{ result: number; win: boolean; payout: number; amount: number; target: number; condition: string; betId?: string; agentId?: string; receivedAt: number }>>([]);
   const liveQueueProcessingRef = useRef(false);
@@ -445,6 +455,25 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           <Link href="/dashboard/withdraw" className="text-[10px] text-amber-400/80 hover:text-amber-400 hover:drop-shadow-[0_0_6px_rgba(251,191,36,0.3)] transition-all uppercase tracking-wider">
             Withdraw
           </Link>
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed((c) => !c)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-mono uppercase tracking-wider transition-all ${
+              sidebarCollapsed
+                ? "border-[#0ea5e9]/40 bg-[#0ea5e9]/10 text-[#0ea5e9] hover:bg-[#0ea5e9]/20"
+                : "border-white/[0.08] bg-white/[0.04] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.06]"
+            }`}
+            title={sidebarCollapsed ? "Show Stats / API / Strategy" : "Hide sidebar"}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {sidebarCollapsed ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
+              )}
+            </svg>
+            {sidebarCollapsed ? "Stats" : "Hide"}
+          </button>
         </div>
       </header>
 
@@ -487,10 +516,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       {/* ═══════════════ MAIN CONTENT ═══════════════ */}
       <main className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {/* ─── Top Row: Trading Hub (hero) + Sidebar ─── */}
-        <div className="flex-1 min-h-0 flex flex-row overflow-hidden">
-
-          {/* ████ TRADING HUB — THE HERO ████ */}
-          <div className="flex-1 min-w-[320px] min-h-0 flex flex-col overflow-hidden border-r border-white/[0.06]">
+        <div className="flex-1 min-h-0 flex flex-row overflow-hidden min-w-0 relative">
+          {/* ████ TRADING HUB — always accessible, takes remaining space ████ */}
+          <div className="flex-1 min-w-[380px] min-h-0 flex flex-col overflow-hidden border-r border-white/[0.06] shrink">
             {/* AI Banner */}
             {aiBannerVisible && (
               <div className="flex-shrink-0 flex items-center justify-center gap-2 py-1 px-3 bg-violet-500/10 border-b border-violet-500/20 text-violet-300 text-[10px] font-mono">
@@ -576,15 +604,34 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             </div>
           </div>
 
-          {/* ████ RIGHT SIDEBAR — 300px ████ */}
-          <aside className="w-[300px] flex-shrink-0 flex flex-col min-h-0 overflow-hidden bg-gradient-to-b from-[#0a0a0f]/80 to-[#080810]/50">
-            {/* Tab Switcher — terminal style */}
-            <div className="flex-shrink-0 flex border-b border-white/[0.06] bg-[#0a0a0f]/60">
+          {/* Expand button when sidebar collapsed — float on right edge */}
+          {sidebarCollapsed && (
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed(false)}
+              className="absolute right-0 top-1/2 -translate-y-1/2 z-20 w-8 h-16 flex items-center justify-center rounded-l-lg bg-[#0a0a0f]/95 border border-l-0 border-white/[0.08] text-[var(--text-tertiary)] hover:text-[#0ea5e9] hover:bg-[#0ea5e9]/10 transition-all shadow-lg"
+              title="Expand Stats / API / Strategy"
+              aria-label="Expand sidebar"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          )}
+
+          {/* ████ RIGHT SIDEBAR — collapsible to keep trading hub reachable ████ */}
+          <aside
+            className={`flex flex-col min-h-0 bg-gradient-to-b from-[#0a0a0f]/80 to-[#080810]/50 border-l border-white/[0.06] transition-all duration-300 ease-out overflow-hidden ${
+              sidebarCollapsed ? "w-0 min-w-0 shrink opacity-0 pointer-events-none" : "w-[280px] min-w-[280px] shrink-0"
+            }`}
+          >
+            {/* Tab Switcher + Collapse Toggle */}
+            <div className="flex-shrink-0 flex border-b border-white/[0.06] bg-[#0a0a0f]/60 min-w-[280px]">
               {(["statistics", "api", "strategy"] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`flex-1 py-2.5 text-[10px] font-mono font-bold uppercase tracking-wider transition-all duration-200 border-b-[3px] ${
+                  className={`flex-1 min-w-0 py-2.5 text-[10px] font-mono font-bold uppercase tracking-wider transition-all duration-200 border-b-[3px] ${
                     activeTab === tab
                       ? "text-[#0ea5e9] border-[#0ea5e9] bg-[#0ea5e9]/[0.08] shadow-[0_2px_12px_rgba(14,165,233,0.15)]"
                       : "text-[var(--text-tertiary)] border-transparent hover:text-[var(--text-secondary)] hover:bg-white/[0.02]"
@@ -593,10 +640,21 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   {tab === "api" ? "AI API" : tab === "statistics" ? "Stats" : "Strategy"}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed(true)}
+                className="px-2 py-2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.04] border-l border-white/[0.06] transition-colors"
+                title="Collapse sidebar"
+                aria-label="Collapse sidebar"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
             </div>
 
-            {/* Tab Content — scrollable, no spill */}
-            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 space-y-2 scrollbar-sidebar">
+            {/* Tab Content — scrollable, strict containment so no spill onto trading hub */}
+            <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-3 space-y-2 scrollbar-sidebar">
               {activeTab === "statistics" ? (
                 <div className="space-y-2">
                   <QuantMetricsGrid metrics={quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null }} recentResults={recentResults} />
@@ -781,9 +839,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         </div>
 
         {/* ─── Bottom Strip: Equity Curve + Trade Log (fixed height, no spill) ─── */}
-        <div className="flex-shrink-0 h-[232px] min-h-[200px] flex flex-row overflow-hidden border-t border-white/[0.08] bg-gradient-to-t from-[#080810] via-[#060608] to-transparent">
-          {/* Equity Curve — contained, responsive */}
-          <div className="w-[480px] max-w-[calc(100%-200px)] flex-shrink-0 flex flex-col overflow-hidden border-r border-white/[0.08] p-3 bg-[#0a0a10]/40 backdrop-blur-sm">
+        <div className="flex-shrink-0 h-[200px] min-h-[160px] flex flex-row overflow-hidden min-w-0 border-t border-white/[0.08] bg-gradient-to-t from-[#080810] via-[#060608] to-transparent">
+          {/* Equity Curve — contained, responsive, shrinks on narrow viewports */}
+          <div className="w-[420px] min-w-[240px] max-w-[50%] flex-shrink flex flex-col overflow-hidden border-r border-white/[0.08] p-3 bg-[#0a0a10]/40 backdrop-blur-sm">
             <SessionPnLChart
               series={statsSeries}
               totalPnl={totalPnl}
@@ -793,7 +851,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             />
           </div>
           {/* Trade Log — flex-1 min-w-0 ensures it never spills */}
-          <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col p-3 bg-[#0a0a10]/30">
+          <div className="flex-1 min-w-[180px] min-h-0 overflow-hidden flex flex-col p-3 bg-[#0a0a10]/30">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] font-mono font-bold text-[var(--text-tertiary)] uppercase tracking-widest flex items-center gap-2">
                 <svg className="w-3.5 h-3.5 text-[#0ea5e9]/60" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
