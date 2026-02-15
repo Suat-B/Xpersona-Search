@@ -834,7 +834,10 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         </div>
 
         {/* Trade Log - Bottom strip */}
-        <div className="flex-shrink-0 px-3 pb-3">
+        <div className="flex-shrink-0 px-3 pb-3 space-y-2">
+          <h3 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest px-1">
+            Trade Log
+          </h3>
           <TradeLog
             entries={recentResults.map((r, i) => ({
               roundNumber: r.roundNumber ?? Math.max(1, rounds - recentResults.length + 1 + i),
