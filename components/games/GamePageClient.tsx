@@ -6,8 +6,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { ClientOnly } from "@/components/ClientOnly";
 import { useDiceSessionPnL } from "./useSessionPnL";
-import { DiceStrategyPanel } from "./DiceStrategyPanel";
-import { DiceStatisticsPanel } from "./DiceStatisticsPanel";
+import { SessionPnLChart } from "@/components/ui/SessionPnLChart";
 import { QuantMetricsGrid } from "./QuantMetricsGrid";
 import { TradeLog } from "./TradeLog";
 import { QuantTopMetricsBar } from "./QuantTopMetricsBar";
@@ -421,28 +420,10 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         />
       </header>
 
-      {/* Main Content - 3-panel research terminal */}
+      {/* Main Content - Trading Hub + Right Sidebar + Bottom Strip */}
       <main className="flex-1 min-h-0 flex flex-col overflow-hidden">
         <div className="flex-1 min-h-0 flex flex-row gap-3 p-3 overflow-hidden">
-        {/* Left: Analytics Deck — Equity curve, distribution charts */}
-        <div className="w-[280px] flex-shrink-0 flex flex-col min-h-0 overflow-hidden min-w-0 border-r border-white/[0.08] pr-3">
-          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden space-y-3 pr-2">
-            <DiceStatisticsPanel
-              series={statsSeries}
-              rounds={rounds}
-              totalPnl={totalPnl}
-              wins={wins}
-              recentResults={recentResults}
-              amount={amount}
-              target={target}
-              condition={condition}
-              onReset={handleReset}
-              layout="analytics"
-            />
-          </div>
-        </div>
-
-        {/* Center: Instrument Panel — Dice + Order Entry (BIGGEST) */}
+        {/* Trading Hub - fills the page */}
         <div className="flex-1 min-w-[360px] min-h-0 flex flex-col overflow-hidden border-r border-white/[0.08] pr-3">
           {aiBannerVisible && (
             <div className="mb-2 flex-shrink-0 flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg bg-violet-500/20 border border-violet-500/30 text-violet-300 text-[10px] font-medium">
@@ -541,8 +522,8 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </ClientOnly>
         </div>
 
-        {/* Right: Research Panel (~30%) - Quant metrics, Strategy, API */}
-        <aside className="w-[320px] flex-shrink-0 flex flex-col gap-3 min-h-0 overflow-hidden">
+        {/* Right Sidebar - Statistics / AI API / Strategy */}
+        <aside className="w-[340px] flex-shrink-0 flex flex-col gap-3 min-h-0 overflow-hidden">
           {/* Tab Switcher */}
           <div className="flex-shrink-0 flex gap-1 p-1 rounded-lg bg-[var(--bg-matte)] border border-[var(--border)]">
             <button
@@ -830,26 +811,37 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         </aside>
         </div>
 
-        {/* Trade Log - Bottom strip */}
-        <div className="flex-shrink-0 px-3 pb-3 space-y-2">
-          <h3 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest px-1">
-            Trade Log
-          </h3>
-          <TradeLog
-            entries={recentResults.map((r, i) => ({
-              roundNumber: r.roundNumber ?? Math.max(1, rounds - recentResults.length + 1 + i),
-              result: r.result,
-              win: r.win,
-              payout: r.payout,
-              amount: r.playAmount ?? amount,
-              target: r.target ?? target,
-              condition: (r.condition ?? condition) as "over" | "under",
-              balance: r.balance,
-              source: r.source,
-              timestamp: r.timestamp,
-            }))}
-            maxRows={15}
-          />
+        {/* Bottom Strip: Mini Analytics + Trade Log */}
+        <div className="flex-shrink-0 h-[180px] flex flex-row gap-3 px-3 pb-3 overflow-hidden">
+          <div className="w-[320px] flex-shrink-0 flex flex-col gap-2 overflow-hidden">
+            <SessionPnLChart
+              series={statsSeries}
+              totalPnl={totalPnl}
+              rounds={rounds}
+              onReset={handleReset}
+              layout="default"
+            />
+          </div>
+          <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
+            <h3 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest px-1 mb-2 flex-shrink-0">
+              Trade Log
+            </h3>
+            <TradeLog
+              entries={recentResults.map((r, i) => ({
+                roundNumber: r.roundNumber ?? Math.max(1, rounds - recentResults.length + 1 + i),
+                result: r.result,
+                win: r.win,
+                payout: r.payout,
+                amount: r.playAmount ?? amount,
+                target: r.target ?? target,
+                condition: (r.condition ?? condition) as "over" | "under",
+                balance: r.balance,
+                source: r.source,
+                timestamp: r.timestamp,
+              }))}
+              maxRows={8}
+            />
+          </div>
         </div>
       </main>
 
