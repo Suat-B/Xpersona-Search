@@ -541,74 +541,15 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         </div>
       </header>
 
-      <section className="relative">
-        <div className="absolute -inset-8 bg-gradient-to-r from-[#0ea5e9]/5 via-[#0ea5e9]/3 to-transparent rounded-[40px] blur-3xl opacity-60 pointer-events-none" />
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="agent-card p-5 h-[140px] flex flex-col justify-between transition-all duration-300 hover:border-[var(--border-strong)]" data-agent="balance-display" data-value={balance}>
-            <div className="flex items-start justify-between">
-              <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Balance</span>
-              <div className={`flex items-center justify-center w-10 h-10 rounded-xl border ${trendBg.neutral}`}>{metricIcons.balance}</div>
-            </div>
-            <div className="mt-auto">
-              <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-semibold tracking-tight text-[var(--text-primary)]">
-                  {balanceLoading ? "…" : balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-[var(--text-tertiary)]">credits</span>
-                <Link href="/dashboard/deposit" className="text-xs font-medium text-[#0ea5e9] hover:underline">Deposit →</Link>
-              </div>
-            </div>
-          </div>
-          <div className="agent-card p-5 h-[140px] flex flex-col justify-between transition-all duration-300 hover:border-[var(--border-strong)]">
-            <div className="flex items-start justify-between">
-              <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Session P&L</span>
-              <div className={`flex items-center justify-center w-10 h-10 rounded-xl border ${trendBg[pnlTrend]}`}>{metricIcons.pnl}</div>
-            </div>
-            <div className="mt-auto">
-              <div className="flex items-baseline gap-2">
-                <span className={`text-3xl font-semibold tracking-tight ${trendText[pnlTrend]}`}>
-                  {totalPnl >= 0 ? "+" : ""}{totalPnl.toFixed(2)}
-                </span>
-              </div>
-              <span className={`text-xs font-medium ${pnlTrend === "up" ? "text-[#30d158]/70" : pnlTrend === "down" ? "text-[#ff453a]/70" : "text-[var(--text-tertiary)]"}`}>
-                {rounds} plays
-              </span>
-            </div>
-          </div>
-          <div className="agent-card p-5 h-[140px] flex flex-col justify-between transition-all duration-300 hover:border-[var(--border-strong)]">
-            <div className="flex items-start justify-between">
-              <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Win Rate</span>
-              <div className={`flex items-center justify-center w-10 h-10 rounded-xl border ${winRatePct >= 50 ? trendBg.up : winRatePct < 50 ? trendBg.down : trendBg.neutral}`}>{metricIcons.winrate}</div>
-            </div>
-            <div className="mt-auto">
-              <div className="flex items-baseline gap-2">
-                <span className={`text-3xl font-semibold tracking-tight ${winRatePct >= 50 ? trendText.up : winRatePct < 50 ? trendText.down : trendText.neutral}`}>
-                  {winRatePct.toFixed(1)}%
-                </span>
-              </div>
-              <span className="text-xs font-medium text-[var(--text-tertiary)]">{rounds} Plays</span>
-            </div>
-          </div>
-          <div className="agent-card p-5 h-[140px] flex flex-col justify-between transition-all duration-300 hover:border-[var(--border-strong)]">
-            <div className="flex items-start justify-between">
-              <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Rounds</span>
-              <div className={`flex items-center justify-center w-10 h-10 rounded-xl border ${trendBg.neutral}`}>{metricIcons.rounds}</div>
-            </div>
-            <div className="mt-auto">
-              <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-semibold tracking-tight text-[var(--text-primary)]">{rounds}</span>
-              </div>
-              <span className="text-xs font-medium text-[var(--text-tertiary)]">completed</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
+      {/* Main game panel — focal point; placed first so it's the center of attention on load */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         <div className="lg:col-span-8 space-y-5">
-          <div className="agent-card p-6 transition-all duration-300">
+          <div
+            id="main-game-panel"
+            className="agent-card p-6 transition-all duration-300 border-[#0ea5e9]/25 shadow-[0_0_40px_rgba(14,165,233,0.08)] animate-game-panel-focus scroll-mt-6"
+            role="main"
+            aria-label="Main playing panel"
+          >
             <ClientOnly
               fallback={
                 <div className="flex min-h-[200px] items-center justify-center text-sm text-[var(--text-secondary)]">
@@ -807,6 +748,72 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </div>
         </aside>
       </div>
+
+      {/* Session metrics — below main panel so the game panel is the focal point */}
+      <section className="relative">
+        <div className="absolute -inset-8 bg-gradient-to-r from-[#0ea5e9]/5 via-[#0ea5e9]/3 to-transparent rounded-[40px] blur-3xl opacity-60 pointer-events-none" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="agent-card p-5 h-[140px] flex flex-col justify-between transition-all duration-300 hover:border-[var(--border-strong)]" data-agent="balance-display" data-value={balance}>
+            <div className="flex items-start justify-between">
+              <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Balance</span>
+              <div className={`flex items-center justify-center w-10 h-10 rounded-xl border ${trendBg.neutral}`}>{metricIcons.balance}</div>
+            </div>
+            <div className="mt-auto">
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-semibold tracking-tight text-[var(--text-primary)]">
+                  {balanceLoading ? "…" : balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-[var(--text-tertiary)]">credits</span>
+                <Link href="/dashboard/deposit" className="text-xs font-medium text-[#0ea5e9] hover:underline">Deposit →</Link>
+              </div>
+            </div>
+          </div>
+          <div className="agent-card p-5 h-[140px] flex flex-col justify-between transition-all duration-300 hover:border-[var(--border-strong)]">
+            <div className="flex items-start justify-between">
+              <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Session P&L</span>
+              <div className={`flex items-center justify-center w-10 h-10 rounded-xl border ${trendBg[pnlTrend]}`}>{metricIcons.pnl}</div>
+            </div>
+            <div className="mt-auto">
+              <div className="flex items-baseline gap-2">
+                <span className={`text-3xl font-semibold tracking-tight ${trendText[pnlTrend]}`}>
+                  {totalPnl >= 0 ? "+" : ""}{totalPnl.toFixed(2)}
+                </span>
+              </div>
+              <span className={`text-xs font-medium ${pnlTrend === "up" ? "text-[#30d158]/70" : pnlTrend === "down" ? "text-[#ff453a]/70" : "text-[var(--text-tertiary)]"}`}>
+                {rounds} plays
+              </span>
+            </div>
+          </div>
+          <div className="agent-card p-5 h-[140px] flex flex-col justify-between transition-all duration-300 hover:border-[var(--border-strong)]">
+            <div className="flex items-start justify-between">
+              <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Win Rate</span>
+              <div className={`flex items-center justify-center w-10 h-10 rounded-xl border ${winRatePct >= 50 ? trendBg.up : winRatePct < 50 ? trendBg.down : trendBg.neutral}`}>{metricIcons.winrate}</div>
+            </div>
+            <div className="mt-auto">
+              <div className="flex items-baseline gap-2">
+                <span className={`text-3xl font-semibold tracking-tight ${winRatePct >= 50 ? trendText.up : winRatePct < 50 ? trendText.down : trendText.neutral}`}>
+                  {winRatePct.toFixed(1)}%
+                </span>
+              </div>
+              <span className="text-xs font-medium text-[var(--text-tertiary)]">{rounds} Plays</span>
+            </div>
+          </div>
+          <div className="agent-card p-5 h-[140px] flex flex-col justify-between transition-all duration-300 hover:border-[var(--border-strong)]">
+            <div className="flex items-start justify-between">
+              <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Rounds</span>
+              <div className={`flex items-center justify-center w-10 h-10 rounded-xl border ${trendBg.neutral}`}>{metricIcons.rounds}</div>
+            </div>
+            <div className="mt-auto">
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-semibold tracking-tight text-[var(--text-primary)]">{rounds}</span>
+              </div>
+              <span className="text-xs font-medium text-[var(--text-tertiary)]">completed</span>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <footer className="mt-12 pt-6 border-t border-white/[0.06]">
         <div className="flex flex-col gap-6">

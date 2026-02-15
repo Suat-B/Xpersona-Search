@@ -256,6 +256,24 @@ body::before {
   animation: fade-in-up 0.5s ease-out forwards;
 }
 
+/* Game panel focal entrance — subtle scale + glow so the main playing panel draws the eye */
+@keyframes game-panel-focus {
+  0% {
+    opacity: 0.92;
+    transform: scale(0.992);
+    box-shadow: 0 0 0 rgba(14, 165, 233, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 50px rgba(14, 165, 233, 0.12), 0 0 80px rgba(14, 165, 233, 0.06);
+  }
+}
+
+.animate-game-panel-focus {
+  animation: game-panel-focus 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
 /* Shimmer Effect */
 @keyframes shimmer {
   0% { transform: translateX(-100%); }
