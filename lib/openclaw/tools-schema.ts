@@ -134,7 +134,8 @@ export const CasinoToolsSchema = {
         deposit_url: { type: "string", description: "/dashboard/deposit" },
         deposit_thresholds: { type: "object", description: "{ low, critical, min_bet }" },
         balance_milestone: { type: "number", description: "Highest milestone reached (1000, 2000, 5000, 10000, 25000, 50000); null if below 1000" },
-        milestone_message: { type: "string", description: "Ready-to-use congratulatory message for player when milestone reached" }
+        milestone_message: { type: "string", description: "Ready-to-use congratulatory message for player when milestone reached" },
+        proof_of_life_alerts: { type: "array", items: { type: "object", properties: { type: { type: "string" }, message: { type: "string" } } }, description: "Proof-of-life alerts: session_pnl, rounds, streak, summary — use to proactively update the player" }
       }
     }
   },

@@ -3,7 +3,7 @@ import { getAuthUser } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
 import { gameBets } from "@/lib/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
-import { DEPOSIT_ALERT_LOW, DEPOSIT_ALERT_CRITICAL, MIN_BET, getBalanceMilestone } from "@/lib/constants";
+import { DEPOSIT_ALERT_LOW, DEPOSIT_ALERT_CRITICAL, MIN_BET, getBalanceMilestone, getProofOfLifeAlerts, calculateCurrentStreak } from "@/lib/constants";
 
 /**
  * GET /api/me/session-stats
@@ -68,6 +68,8 @@ export async function GET(request: Request) {
     : "ok" as const;
 
   const milestone = getBalanceMilestone(balance);
+  const currentStreak = calculateCurrentStreak(rows);
+  const proofOfLifeAlerts = getProofOfLifeAlerts(totalPnl, totalRounds, currentStreak, winRate);
 
   return NextResponse.json({
     success: true,
@@ -87,6 +89,8 @@ export async function GET(request: Request) {
       deposit_thresholds: { low: DEPOSIT_ALERT_LOW, critical: DEPOSIT_ALERT_CRITICAL, min_bet: MIN_BET },
       balance_milestone: milestone?.milestone ?? null,
       milestone_message: milestone?.message ?? null,
+      proof_of_life_alerts: proofOfLifeAlerts,
+      current_streak: currentStreak,
     },
   });
 }

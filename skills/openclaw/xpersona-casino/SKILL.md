@@ -18,7 +18,7 @@ Base URL: `https://xpersona.co` (override with `XPERSONA_BASE_URL` if set).
 
 | Action | Method | Path | Body / Notes |
 |--------|--------|------|--------------|
-| **Session stats (AI-first)** | GET | /api/me/session-stats?gameType=dice&limit=50 | → `data.balance`, `data.deposit_alert`, `data.deposit_alert_message`, `data.deposit_url`, `data.balance_milestone`, `data.milestone_message`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentBets` — prefer this for "how am I doing?" |
+| **Session stats (AI-first)** | GET | /api/me/session-stats?gameType=dice&limit=50 | → `data.balance`, `data.deposit_alert`, `data.deposit_url`, `data.balance_milestone`, `data.milestone_message`, `data.proof_of_life_alerts`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentBets` — prefer this for "how am I doing?" |
 | Balance | GET | /api/me/balance | → `data.balance`, `data.deposit_alert`, `data.deposit_alert_message`, `data.deposit_url`, `data.balance_milestone`, `data.milestone_message` |
 | Session PnL & history | GET | /api/me/bets?limit=50 | → `data.bets`, `data.sessionPnl`, `data.roundCount` |
 | List strategies | GET | /api/me/strategies?gameType=dice | → `data.strategies` |
@@ -107,6 +107,7 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 | Bet fails: insufficient balance | Tell your player immediately: "You're out of credits. Please deposit at /dashboard/deposit or claim Free Credits to continue playing." Link them to deposit. Do not retry placing bets until they deposit. |
 | Proactive deposit alert | When `deposit_alert` is `low` or `critical`, tell the player `deposit_alert_message` and link to `/dashboard/deposit` — they deposit so you can keep playing dice for them |
 | Balance milestone reached | When `balance_milestone` is set (1000, 2000, 5000, etc.), congratulate your player with `milestone_message` when it fits — e.g., after a big win or when they ask "how am I doing?" |
+| Proof-of-life update | Use `proof_of_life_alerts` to proactively tell your player how it's going — e.g., "You're up 250 this session!", "On a 5-win streak!", "Played 50 rounds so far." Pick 1–2 when appropriate; don't spam. |
 | "What are the odds for over 70?" | `casino_calculate_odds` with `{ target: 70, condition: "over" }` |
 | "List my strategies" | `casino_list_strategies` or GET /api/me/strategies |
 | "Create/save a strategy" | `casino_create_strategy` with game_type, name, config |
@@ -145,11 +146,26 @@ When the player's balance reaches 1,000, 2,000, 5,000, 10,000, 25,000, or 50,000
 
 ---
 
+## Proof-of-life alerts (keep your player updated)
+
+When you play dice for a player, proactively send status updates so they know how things are going. Session-stats and `casino_get_balance` return **`proof_of_life_alerts`**: an array of `{ type, message }` ready-to-use updates.
+
+| Type | When | Example message |
+|------|------|-----------------|
+| `session_pnl` | Session PnL ≥ +100, +250, +500, etc. | "You're up 250 credits this session!" |
+| `rounds` | 10, 25, 50, 100+ rounds played | "Played 50 rounds so far." |
+| `streak` | 3+ win streak | "On a 5-win streak!" |
+| `summary` | Always present | "Session: 45 rounds, +320 credits, 58% win rate." |
+
+**Rule:** Proactively share 1–2 proof-of-life alerts when appropriate — e.g., every few rounds, after a milestone, or when the player might be wondering how it's going. Pick from `proof_of_life_alerts`; the `summary` type is always available as a catch-all. Don't spam; vary your updates.
+
+---
+
 ## Session PnL (AI-first)
 
 **GET /api/me/session-stats?gameType=dice&limit=50** — unified stats, preferred for "how am I doing?":
 
-- `data.balance`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentBets`
+- `data.balance`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentBets`, `data.proof_of_life_alerts`, `data.current_streak`
 
 **GET /api/me/bets?limit=50** — detailed history:
 

@@ -10,7 +10,7 @@ import { getAuthUser } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
 import { gameBets, users, strategies, advancedStrategies, agentSessions, creditPackages } from "@/lib/db/schema";
 import { eq, desc, and } from "drizzle-orm";
-import { DICE_HOUSE_EDGE, FAUCET_AMOUNT, DEPOSIT_ALERT_LOW, DEPOSIT_ALERT_CRITICAL, MIN_BET, getBalanceMilestone } from "@/lib/constants";
+import { DICE_HOUSE_EDGE, FAUCET_AMOUNT, DEPOSIT_ALERT_LOW, DEPOSIT_ALERT_CRITICAL, MIN_BET, getBalanceMilestone, getProofOfLifeAlerts } from "@/lib/constants";
 import { executeDiceRound } from "@/lib/games/execute-dice";
 import { grantFaucet } from "@/lib/faucet";
 import Stripe from "stripe";
@@ -213,6 +213,8 @@ async function handleGetBalance(params: any, agentContext: AgentContext | null, 
     : balance < DEPOSIT_ALERT_LOW ? "low" as const
     : "ok" as const;
   const milestone = getBalanceMilestone(balance);
+  const currentStreak = calculateStreak(recentBets);
+  const proofOfLifeAlerts = getProofOfLifeAlerts(sessionPnl, totalRounds, currentStreak, winRate);
 
   return {
     balance,
@@ -220,7 +222,7 @@ async function handleGetBalance(params: any, agentContext: AgentContext | null, 
     session_pnl: sessionPnl,
     total_rounds: totalRounds,
     win_rate: winRate,
-    current_streak: calculateStreak(recentBets),
+    current_streak: currentStreak,
     best_streak: calculateBestStreak(recentBets),
     deposit_alert: depositAlert,
     deposit_alert_message: depositAlert === "critical"
@@ -232,6 +234,7 @@ async function handleGetBalance(params: any, agentContext: AgentContext | null, 
     deposit_thresholds: { low: DEPOSIT_ALERT_LOW, critical: DEPOSIT_ALERT_CRITICAL, min_bet: MIN_BET },
     balance_milestone: milestone?.milestone ?? null,
     milestone_message: milestone?.message ?? null,
+    proof_of_life_alerts: proofOfLifeAlerts,
   };
 }
 
