@@ -128,7 +128,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       <HomeApiKeySection />
 
       {/* How it works — matches Capabilities style */}
-      <section className="relative mx-auto max-w-5xl px-4 py-16 sm:py-24 sm:px-6 overflow-hidden">
+      <section className="scroll-content-visibility relative mx-auto max-w-5xl px-4 py-16 sm:py-24 sm:px-6 overflow-hidden">
         <div className="absolute inset-0 dot-grid -z-10 opacity-50" aria-hidden="true" />
         <div className="mb-12">
           <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest text-cyan-400/80 bg-cyan-500/10 border border-cyan-500/20 mb-4">
@@ -144,7 +144,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5">
           {/* Step 1 — Setup */}
-          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md p-5 sm:p-6 hover:border-[var(--accent-heart)]/25 hover:bg-[var(--accent-heart)]/5 transition-all duration-400 group">
+          <div className="rounded-2xl border border-white/[0.06] bg-black/30 p-5 sm:p-6 hover:border-[var(--accent-heart)]/25 hover:bg-[var(--accent-heart)]/10 transition-all duration-400 group">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-500/30 border-2 border-rose-500 text-rose-300 font-bold text-lg mb-4 group-hover:scale-105 transition-transform">
               1
             </div>
@@ -159,7 +159,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
 
           {/* Step 2 — Core */}
-          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md p-5 sm:p-6 hover:border-emerald-500/25 hover:bg-emerald-500/5 transition-all duration-400 group">
+          <div className="rounded-2xl border border-white/[0.06] bg-black/30 p-5 sm:p-6 hover:border-emerald-500/25 hover:bg-emerald-500/10 transition-all duration-400 group">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-bold text-lg mb-4 group-hover:scale-105 transition-transform">
               2
             </div>
@@ -174,7 +174,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
 
           {/* Step 3 — Trust */}
-          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md p-5 sm:p-6 hover:border-cyan-500/25 hover:bg-cyan-500/5 transition-all duration-400 group">
+          <div className="rounded-2xl border border-white/[0.06] bg-black/30 p-5 sm:p-6 hover:border-cyan-500/25 hover:bg-cyan-500/10 transition-all duration-400 group">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 font-bold text-lg mb-4 group-hover:scale-105 transition-transform">
               3
             </div>
@@ -193,7 +193,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       </section>
 
       {/* Features — asymmetric bento, rich detail */}
-      <section className="relative mx-auto max-w-5xl px-4 py-16 sm:py-24 sm:px-6 overflow-hidden">
+      <section className="scroll-content-visibility relative mx-auto max-w-5xl px-4 py-16 sm:py-24 sm:px-6 overflow-hidden">
         <div className="absolute inset-0 dot-grid -z-10 opacity-50" aria-hidden="true" />
         <div className="mb-12">
           <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest text-cyan-400/80 bg-cyan-500/10 border border-cyan-500/20 mb-4">
@@ -209,7 +209,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 sm:gap-5">
           {/* AI Agents — hero card, full width */}
-          <div className="sm:col-span-12 rounded-2xl sm:rounded-3xl border border-white/[0.06] bg-gradient-to-r from-[var(--accent-heart)]/15 via-[var(--accent-heart)]/5 to-transparent backdrop-blur-md p-6 sm:p-8 overflow-hidden group hover:border-[var(--accent-heart)]/25 transition-all duration-400">
+          <div className="sm:col-span-12 rounded-2xl sm:rounded-3xl border border-white/[0.06] bg-gradient-to-r from-[var(--accent-heart)]/20 via-[var(--accent-heart)]/10 to-black/40 p-6 sm:p-8 overflow-hidden group hover:border-[var(--accent-heart)]/25 transition-all duration-400">
             <div className="flex flex-col sm:flex-row sm:items-center gap-6">
               <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent-heart)]/20 ring-2 ring-[var(--accent-heart)]/25 group-hover:scale-105 transition-transform">
                 <svg className="w-8 h-8 text-[var(--accent-heart)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -231,7 +231,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
 
           {/* Provably Fair — detailed */}
-          <div className="sm:col-span-4 rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md p-5 sm:p-6 hover:border-emerald-500/25 hover:bg-emerald-500/5 transition-all duration-400 group">
+          <div className="sm:col-span-4 rounded-2xl border border-white/[0.06] bg-black/30 p-5 sm:p-6 hover:border-emerald-500/25 hover:bg-emerald-500/10 transition-all duration-400 group">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 mb-4 group-hover:scale-105 transition-transform">
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
@@ -244,7 +244,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
 
           {/* Python Strategies — detailed */}
-          <div className="sm:col-span-4 rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md p-5 sm:p-6 hover:border-amber-500/25 hover:bg-amber-500/5 transition-all duration-400 group">
+          <div className="sm:col-span-4 rounded-2xl border border-white/[0.06] bg-black/30 p-5 sm:p-6 hover:border-amber-500/25 hover:bg-amber-500/10 transition-all duration-400 group">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400 mb-4 group-hover:scale-105 transition-transform">
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
@@ -257,7 +257,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
 
           {/* OpenClaw + integrations — detailed */}
-          <div className="sm:col-span-4 rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md p-5 sm:p-6 hover:border-cyan-500/25 hover:bg-cyan-500/5 transition-all duration-400 group">
+          <div className="sm:col-span-4 rounded-2xl border border-white/[0.06] bg-black/30 p-5 sm:p-6 hover:border-cyan-500/25 hover:bg-cyan-500/10 transition-all duration-400 group">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 mb-4 group-hover:scale-105 transition-transform">
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
@@ -270,7 +270,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
 
           {/* Shared Balance — wide card */}
-          <div className="sm:col-span-6 rounded-2xl border border-white/[0.06] bg-gradient-to-br from-violet-500/10 to-transparent backdrop-blur-md p-5 sm:p-6 hover:border-violet-500/25 transition-all duration-400 group">
+          <div className="sm:col-span-6 rounded-2xl border border-white/[0.06] bg-gradient-to-br from-violet-500/15 to-black/40 p-5 sm:p-6 hover:border-violet-500/25 transition-all duration-400 group">
             <div className="flex items-start gap-4">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-500/20 text-violet-400 group-hover:scale-105 transition-transform">
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -287,7 +287,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
 
           {/* Watch & Play — wide card */}
-          <div className="sm:col-span-6 rounded-2xl border border-white/[0.06] bg-gradient-to-bl from-white/[0.04] to-transparent backdrop-blur-md p-5 sm:p-6 hover:border-white/15 transition-all duration-400 group">
+          <div className="sm:col-span-6 rounded-2xl border border-white/[0.06] bg-gradient-to-bl from-white/[0.06] to-black/40 p-5 sm:p-6 hover:border-white/15 transition-all duration-400 group">
             <div className="flex items-start gap-4">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white/90 group-hover:scale-105 transition-transform">
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -307,7 +307,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       </section>
 
       {/* Integrations — matches Capabilities style */}
-      <section className="relative mx-auto max-w-5xl px-4 py-16 sm:py-24 sm:px-6 overflow-hidden">
+      <section className="scroll-content-visibility relative mx-auto max-w-5xl px-4 py-16 sm:py-24 sm:px-6 overflow-hidden">
         <div className="absolute inset-0 dot-grid -z-10 opacity-50" aria-hidden="true" />
         <div className="mb-12">
           <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest text-cyan-400/80 bg-cyan-500/10 border border-cyan-500/20 mb-4">
@@ -321,7 +321,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </p>
         </div>
 
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md p-6 sm:p-8 hover:border-[var(--accent-heart)]/25 transition-all duration-400">
+        <div className="rounded-2xl border border-white/[0.06] bg-black/30 p-6 sm:p-8 hover:border-[var(--accent-heart)]/25 transition-all duration-400">
           <div className="flex flex-wrap gap-2 sm:gap-3">
             {AGENT_INTEGRATIONS.map(({ name, href, badge }) => (
               <a
@@ -343,7 +343,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       </section>
 
       {/* Pure Dice — matches Capabilities style */}
-      <section className="relative mx-auto max-w-5xl px-4 py-16 sm:py-24 sm:px-6 overflow-hidden">
+      <section className="scroll-content-visibility relative mx-auto max-w-5xl px-4 py-16 sm:py-24 sm:px-6 overflow-hidden">
         <div className="absolute inset-0 dot-grid -z-10 opacity-50" aria-hidden="true" />
         <div className="mb-12">
           <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest text-cyan-400/80 bg-cyan-500/10 border border-cyan-500/20 mb-4">
@@ -361,7 +361,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           <div key={game.name}>
             {isLoggedIn ? (
               <Link href={game.href} className="block group">
-                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md p-5 sm:p-6 hover:border-[var(--accent-heart)]/25 hover:bg-[var(--accent-heart)]/5 transition-all duration-400">
+                <div className="rounded-2xl border border-white/[0.06] bg-black/30 p-5 sm:p-6 hover:border-[var(--accent-heart)]/25 hover:bg-[var(--accent-heart)]/10 transition-all duration-400">
                   <div className="flex items-start gap-4">
                     <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-heart)]/20 text-[var(--accent-heart)] group-hover:scale-105 transition-transform">
                       <span className="text-2xl">🎲</span>
@@ -381,7 +381,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                 </div>
               </Link>
             ) : (
-              <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md p-5 sm:p-6 opacity-70">
+              <div className="rounded-2xl border border-white/[0.06] bg-black/30 p-5 sm:p-6 opacity-70">
                 <div className="flex items-start gap-4">
                   <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white/90">
                     <span className="text-2xl">🎲</span>

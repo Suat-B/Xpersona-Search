@@ -94,6 +94,12 @@ body::before {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Defer rendering of off-screen sections — improves scroll performance */
+.scroll-content-visibility {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 400px;
+}
+
 /* Promote sticky + backdrop-blur elements to GPU layer — reduces scroll jank */
 .scroll-stable-layer {
   transform: translateZ(0);
