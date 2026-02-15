@@ -556,12 +556,8 @@ export function DiceGame({
         betAmount={amount}
       />
       
-      {/* Game Container — terminal style */}
+      {/* Game Container — terminal style, seamless with page */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
-        {/* Subtle ambient glow behind the hub */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] rounded-full bg-[#0ea5e9]/[0.03] blur-[120px]" />
-        </div>
         
         {/* Status Bar — result or ready */}
         <div className="flex-shrink-0 px-4 py-2.5 border-b border-white/[0.06] bg-gradient-to-r from-[#0a0a0f]/80 via-transparent to-[#0a0a0f]/80 relative z-10" data-agent="dice-header">
@@ -653,9 +649,9 @@ export function DiceGame({
             </div>
           )}
 
-          {/* Order Entry — glass panel with accent */}
+          {/* Order Entry — borderless, blends into terminal (no island background) */}
           <div className="w-full flex justify-center relative z-10">
-          <div className="w-full max-w-sm shrink-0 space-y-3 rounded-xl glass-panel-accent p-5">
+          <div className="w-full max-w-sm shrink-0 space-y-3 p-5 border-t border-[#0ea5e9]/20">
           {/* Probability Engine — larger numbers, EV conditional tint */}
           {(() => {
             const winProb = condition === "over" ? (100 - target) / 100 : target / 100;

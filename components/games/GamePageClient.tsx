@@ -80,12 +80,12 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const [liveActivityItems, setLiveActivityItems] = useState<LiveActivityItem[]>([]);
   const [liveQueueLength, setLiveQueueLength] = useState(0);
   const [depositAlertFromAI, setDepositAlertFromAI] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const processedPlayIdsRef = useRef<Set<string>>(new Set());
 
-  // Auto-collapse sidebar on narrow viewports so trading hub stays reachable
+  // Keep sidebar collapsed on narrow viewports so trading hub stays reachable
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 900px)");
+    const mq = window.matchMedia("(max-width: 1000px)");
     if (mq.matches) setSidebarCollapsed(true);
     const handle = (e: MediaQueryListEvent) => { if (e.matches) setSidebarCollapsed(true); };
     mq.addEventListener("change", handle);
