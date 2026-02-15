@@ -6,6 +6,18 @@ import { CREATIVE_DICE_STRATEGIES } from "@/lib/dice-strategies";
 import type { CreativeStrategy, DiceConfig } from "@/lib/dice-strategies";
 import type { DiceStrategyConfig } from "@/lib/strategies";
 
+/** Human-readable labels for progression types; avoids truncation/typos like "martingal" */
+const PROGRESSION_LABELS: Record<string, string> = {
+  flat: "Flat",
+  martingale: "Martingale",
+  paroli: "Paroli",
+  dalembert: "D'Alembert",
+  fibonacci: "Fibonacci",
+  labouchere: "Labouchere",
+  oscar: "Oscar's Grind",
+  kelly: "Kelly",
+};
+
 function riskColor(risk: string): string {
   switch (risk) {
     case "LOW": return "text-emerald-400 bg-emerald-500/10";
@@ -84,12 +96,12 @@ export function CreativeDiceStrategiesSection({
         </div>
       )}
 
-      {/* Strategy grid */}
-      <div className="grid grid-cols-1 gap-2 max-h-[320px] overflow-y-auto pr-1">
+      {/* Strategy grid — scrollable; min-h ensures cards always have space */}
+      <div className="grid grid-cols-1 gap-2 max-h-[340px] overflow-y-auto overflow-x-hidden pr-1 scroll-smooth">
         {CREATIVE_DICE_STRATEGIES.map((s) => (
           <div
             key={s.id}
-            className={`group rounded-xl border p-3 transition-all duration-200 ${
+            className={`group rounded-xl border p-3 min-h-[88px] transition-all duration-200 ${
               activeStrategyName === s.name
                 ? "border-[var(--accent-heart)]/60 bg-[var(--accent-heart)]/10 shadow-lg shadow-[var(--accent-heart)]/10"
                 : "border-[var(--border)] bg-[var(--bg-card)] hover:border-[var(--accent-heart)]/40 hover:bg-[var(--bg-matte)]"
@@ -108,26 +120,31 @@ export function CreativeDiceStrategiesSection({
                 {s.icon}
               </div>
 
-              {/* Content */}
-              <div className="flex-1 min-w-0">
+              {/* Content — min-w-0 with min-w-[90px] ensures text never collapses; flex-[1_1_min-content] gives room */}
+              <div className="flex-1 min-w-[90px] max-w-full overflow-hidden">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-sm font-semibold text-[var(--text-primary)]">{s.name}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${riskColor(s.risk)}`}>
+                  <span className="text-sm font-semibold text-[var(--text-primary)] truncate">{s.name}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium flex-shrink-0 ${riskColor(s.risk)}`}>
                     {s.risk}
                   </span>
                 </div>
-                <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed line-clamp-2">{s.desc}</p>
+                <p
+                  className="text-[11px] text-[var(--text-secondary)] leading-relaxed line-clamp-3"
+                  title={s.desc}
+                >
+                  {s.desc}
+                </p>
                 
-                {/* Config summary */}
-                <div className="flex items-center gap-2 mt-2 text-[10px] text-[var(--text-secondary)]">
-                  <span className="px-1.5 py-0.5 rounded bg-[var(--bg-matte)] border border-[var(--border)]">
+                {/* Config summary — use human-readable labels to avoid truncation like "martingal" */}
+                <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[10px] text-[var(--text-secondary)]">
+                  <span className="px-1.5 py-0.5 rounded bg-[var(--bg-matte)] border border-[var(--border)] shrink-0">
                     {s.config.amount} credits
                   </span>
-                  <span className="px-1.5 py-0.5 rounded bg-[var(--bg-matte)] border border-[var(--border)]">
+                  <span className="px-1.5 py-0.5 rounded bg-[var(--bg-matte)] border border-[var(--border)] shrink-0">
                     {s.config.target}% {s.config.condition}
                   </span>
-                  <span className="px-1.5 py-0.5 rounded bg-[var(--bg-matte)] border border-[var(--border)]">
-                    {s.config.progressionType || "flat"}
+                  <span className="px-1.5 py-0.5 rounded bg-[var(--bg-matte)] border border-[var(--border)] shrink-0">
+                    {PROGRESSION_LABELS[s.config.progressionType ?? "flat"] ?? (s.config.progressionType ?? "flat")}
                   </span>
                 </div>
               </div>

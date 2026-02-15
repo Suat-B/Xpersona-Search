@@ -671,8 +671,8 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   </div>
 
                   {/* Simple Strategies */}
-                  <div className="rounded-lg border border-white/[0.06] bg-[var(--bg-card)] p-2.5 opacity-75">
-                    <h4 className="text-[10px] font-bold text-[var(--text-secondary)] mb-2 uppercase tracking-wider">
+                  <div className="rounded-lg border border-white/[0.06] bg-[var(--bg-card)] p-2.5">
+                    <h4 className="text-[10px] font-bold text-[var(--text-primary)] mb-2 uppercase tracking-wider">
                       Preset Strategies
                     </h4>
                     <CreativeDiceStrategiesSection
