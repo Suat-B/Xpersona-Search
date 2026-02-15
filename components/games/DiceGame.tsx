@@ -569,6 +569,7 @@ export function DiceGame({
               value={result?.result ?? null} 
               isRolling={loading}
               win={result?.win ?? null}
+              fastMode={!!liveBet}
             />
           </div>
         </div>

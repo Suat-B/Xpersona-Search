@@ -11,7 +11,7 @@ import {
 import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
 import { coerceInt, coerceNumber, coerceCondition } from "@/lib/validation";
 
-const MAX_ROUNDS = 100;
+const MAX_ROUNDS = 100_000;
 
 /** POST /api/games/dice/run-advanced-strategy — Run advanced dice strategy for up to maxRounds. Body: { strategyId?, strategy?, maxRounds? } */
 export async function POST(request: Request) {
@@ -138,6 +138,9 @@ export async function POST(request: Request) {
   let finalBalance = balance;
   let stoppedReason = "max_rounds";
 
+  const fromApiRequest = !!request.headers.get("Authorization")?.startsWith("Bearer ");
+  const agentIdForFeed = fromApiRequest ? (authResult.user.agentId ?? "api") : authResult.user.agentId;
+
   for (let r = 0; r < limit; r++) {
     // Check if we should skip this bet
     if (state.skipNextBet) {
@@ -179,7 +182,7 @@ export async function POST(request: Request) {
         target,
         condition,
         undefined,
-        authResult.user.agentId
+        agentIdForFeed ?? undefined
       );
 
       finalBalance = roundResult.balance;

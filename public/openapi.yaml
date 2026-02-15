@@ -1161,7 +1161,7 @@ paths:
     post:
       summary: Run dice strategy (auto-play)
       description: |
-        Execute a dice strategy for multiple rounds (max 100). Can use saved strategy or inline config.
+        Execute a dice strategy for multiple rounds (max 100,000). Can use saved strategy or inline config.
         Supports progression types: flat, martingale, paroli, dalembert, fibonacci, labouchere, oscar, kelly.
       requestBody:
         required: true
@@ -1422,7 +1422,7 @@ paths:
   /api/games/dice/run-advanced-strategy:
     post:
       summary: Run advanced strategy (real bets)
-      description: Execute rule-based strategy for up to 100 rounds. Use strategyId or inline strategy.
+      description: Execute rule-based strategy for up to 100,000 rounds. Use strategyId or inline strategy.
       requestBody:
         required: true
         content:

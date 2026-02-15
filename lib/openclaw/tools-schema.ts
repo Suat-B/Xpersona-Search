@@ -246,7 +246,7 @@ export const XpersonaToolsSchema = {
             max_consecutive_wins: { type: "number" },
           },
         },
-        max_rounds: { type: "number", default: 20, description: "Max rounds to play (1–100)" },
+        max_rounds: { type: "number", default: 20, description: "Max rounds to play (1–100000)" },
       },
     },
     returns: {
@@ -643,7 +643,7 @@ export const XpersonaToolsSchema = {
 
   "xpersona_run_advanced_strategy": {
     name: "xpersona_run_advanced_strategy",
-    description: "Run an advanced strategy for real (places actual bets). Use strategy_id (saved) or strategy (inline object). Max 100 rounds per run.",
+    description: "Run an advanced strategy for real (places actual bets). Use strategy_id (saved) or strategy (inline object). Max 100,000 rounds per run.",
     parameters: {
       type: "object",
       properties: {
@@ -652,7 +652,7 @@ export const XpersonaToolsSchema = {
           type: "object",
           description: "Inline strategy when strategy_id omitted: name, baseConfig, rules, executionMode, globalLimits"
         },
-        max_rounds: { type: "number", default: 20, description: "Max rounds to play (1–100)" }
+        max_rounds: { type: "number", default: 20, description: "Max rounds to play (1–100000)" }
       }
     },
     returns: {

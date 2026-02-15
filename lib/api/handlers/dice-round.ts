@@ -151,7 +151,7 @@ export async function postDiceRoundHandler(request: NextRequest): Promise<NextRe
         target,
         condition,
         betId: result.betId,
-        agentId: fromApiRequest ? (authResult.user.agentId ?? undefined) : undefined,
+        agentId: fromApiRequest ? (authResult.user.agentId ?? "api") : undefined,
       },
     });
     return NextResponse.json({

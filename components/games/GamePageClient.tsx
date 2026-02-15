@@ -70,7 +70,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const liveBetQueueRef = useRef<Array<{ result: number; win: boolean; payout: number; amount: number; target: number; condition: string; betId?: string; agentId?: string }>>([]);
   const liveQueueProcessingRef = useRef(false);
 
-  const MIN_LIVE_BET_DISPLAY_MS = 700;
+  const MIN_LIVE_BET_DISPLAY_MS = 450;
 
   // Handle deposit=success from Stripe redirect
   useEffect(() => {

@@ -12,7 +12,7 @@ import {
   type RoundResult,
 } from "@/lib/dice-progression";
 
-const MAX_ROUNDS = 100;
+const MAX_ROUNDS = 100_000;
 
 /** POST /api/games/dice/run-strategy — Run dice strategy for up to maxRounds. Body: { strategyId?, config?, maxRounds? } */
 export async function POST(request: Request) {
@@ -83,6 +83,9 @@ export async function POST(request: Request) {
   let finalBalance = balance;
   let stoppedReason = "max_rounds";
 
+  const fromApiRequest = !!request.headers.get("Authorization")?.startsWith("Bearer ");
+  const agentIdForFeed = fromApiRequest ? (authResult.user.agentId ?? "api") : authResult.user.agentId;
+
   for (let r = 0; r < limit; r++) {
     try {
       const roundResult = await executeDiceRound(
@@ -91,7 +94,7 @@ export async function POST(request: Request) {
         target,
         condition,
         undefined,
-        authResult.user.agentId
+        agentIdForFeed ?? undefined
       );
       finalBalance = roundResult.balance;
       balance = roundResult.balance;

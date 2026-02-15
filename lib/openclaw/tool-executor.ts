@@ -367,7 +367,7 @@ async function handleRunStrategy(params: any, agentContext: AgentContext | null,
     headers,
     body: JSON.stringify({
       ...(strategy_id ? { strategyId: strategy_id } : { config: configForApi }),
-      maxRounds: Math.min(100, Math.max(1, max_rounds ?? 20)),
+      maxRounds: Math.min(100_000, Math.max(1, max_rounds ?? 20)),
     }),
   });
   const data = await res.json().catch(() => ({}));
@@ -747,7 +747,7 @@ async function handleRunAdvancedStrategy(
   if (auth) headers.Authorization = auth;
 
   const body: Record<string, unknown> = {
-    maxRounds: Math.min(100, Math.max(1, coerceInt(max_rounds, 20))),
+    maxRounds: Math.min(100_000, Math.max(1, coerceInt(max_rounds, 20))),
   };
   if (strategy_id) body.strategyId = strategy_id;
   else {

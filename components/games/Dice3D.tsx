@@ -6,9 +6,11 @@ interface Dice3DProps {
   value: number | null;
   isRolling: boolean;
   win: boolean | null;
+  /** When true, use shorter animation for AI/live feed rounds to stay in sync with round speed */
+  fastMode?: boolean;
 }
 
-export function Dice3D({ value, isRolling, win }: Dice3DProps) {
+export function Dice3D({ value, isRolling, win, fastMode = false }: Dice3DProps) {
   const [rotation, setRotation] = useState({ x: -20, y: 45 });
   const [displayValue, setDisplayValue] = useState<number | null>(null);
 
@@ -65,7 +67,7 @@ export function Dice3D({ value, isRolling, win }: Dice3DProps) {
       
       {/* 3D Dice */}
       <div 
-        className="relative w-full h-full transform-style-3d transition-transform duration-1000 ease-out"
+        className={`relative w-full h-full transform-style-3d transition-transform ease-out ${fastMode ? "duration-[450ms]" : "duration-1000"}`}
         style={{
           transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)`,
         }}

@@ -195,7 +195,7 @@ When you play dice for a player, proactively send status updates so they know ho
 
 **Simulate (dry run):** `POST /api/me/advanced-strategies/simulate` with `{ strategy, rounds?, startingBalance? }` or `POST /api/me/advanced-strategies/:id/simulate` with `{ rounds?, startingBalance? }`.
 
-**Run (real bets):** `POST /api/games/dice/run-advanced-strategy` with `{ strategyId }` or `{ strategy, maxRounds }`. Max 100 rounds per run.
+**Run (real bets):** `POST /api/games/dice/run-advanced-strategy` with `{ strategyId }` or `{ strategy, maxRounds }`. Max 100,000 rounds per run.
 
 
 ---
