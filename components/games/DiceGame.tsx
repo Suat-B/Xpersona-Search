@@ -3,7 +3,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { DICE_HOUSE_EDGE } from "@/lib/constants";
-import { Dice3D } from "./Dice3D";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { QuickBetButtons } from "@/components/ui/QuickBetButtons";
 import { WinEffects } from "./WinEffects";
@@ -577,51 +576,41 @@ export function DiceGame({
             </div>
           ) : (
             <div className="text-center text-[10px] text-[var(--text-tertiary)]" data-agent="dice-config" data-amount={amount} data-target={target} data-condition={condition}>
-              Dice · Uniform(0, 99.99)
+              Stochastic Instrument · Uniform(0, 99.99)
             </div>
           )}
         </div>
 
-        {/* Main Game Area - Clean Layout */}
-        <div className="flex-1 flex flex-col items-center justify-center min-h-0 pt-2 pb-4 relative">
-          
-          {/* Result Banner - Win/Lose Badge */}
-          {result && !loading && (
-            <div className="mb-3 text-center">
-              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${
-                result.win 
-                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" 
-                  : "bg-red-500/20 text-red-400 border border-red-500/30"
-              }`}>
-                <span className="text-lg">
-                  {result.win ? "🎉" : "😔"}
-                </span>
-                <span className="font-bold">
-                  {result.win ? "+P&L" : "-P&L"}
-                </span>
-                <span className="font-mono font-bold">
-                  {result.win ? `+${result.payout}` : amount} credits
-                </span>
-              </div>
+        {/* Trading Hub Status — compact, no dice */}
+        <div className="flex-shrink-0 px-4 py-3 border-b border-[var(--border)]/30">
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-2 text-[#0ea5e9] font-medium">
+              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              Executing...
+            </div>
+          ) : result ? (
+            <div className="flex items-center justify-center gap-3">
+              <span className="text-[10px] text-[var(--text-tertiary)] uppercase tracking-wider">Last Result</span>
+              <span className={`font-mono font-bold text-lg ${result.win ? "text-emerald-400" : "text-amber-400"}`}>
+                {result.result.toFixed(2)}%
+              </span>
+              <span className={`text-xs font-medium px-2 py-0.5 rounded ${result.win ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"}`}>
+                {result.win ? `+${result.payout}` : `-${amount}`} cr
+              </span>
+            </div>
+          ) : (
+            <div className="text-center text-[10px] text-[var(--text-tertiary)] uppercase tracking-wider py-1">
+              Stochastic Instrument · Uniform(0, 99.99)
             </div>
           )}
-          
-          {/* 3D Dice */}
-          <div className="relative z-10">
-            <Dice3D 
-              value={result?.result ?? null} 
-              isRolling={loading}
-              win={result?.win ?? null}
-              animationDurationMs={livePlay ? livePlayAnimationMs : undefined}
-              winProbability={condition === "over" ? 100 - target : target}
-              compact
-            />
-          </div>
         </div>
 
-        {/* Controls Section - Clean */}
+        {/* Controls Section - Trading Hub */}
         <div
-          className={`flex-shrink-0 px-6 pb-4 space-y-2 rounded-b-2xl transition-all duration-300 ${
+          className={`flex-1 min-h-0 flex flex-col justify-center px-6 py-4 space-y-3 rounded-b-2xl transition-all duration-300 overflow-y-auto ${
             aiDriving
               ? "border-t border-violet-500/30 bg-violet-500/5"
               : ""
@@ -653,7 +642,7 @@ export function DiceGame({
                 </div>
                 <div className="flex justify-between text-[10px] text-[var(--text-tertiary)]">
                   <span>Expected Value</span>
-                  <span className={`font-mono ${evPerTrade >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  <span className={`font-mono ${evPerTrade >= 0 ? "text-emerald-400" : "text-amber-400"}`}>
                     {evPerTrade >= 0 ? "+" : ""}{evPerTrade.toFixed(2)} cr
                   </span>
                 </div>
@@ -725,16 +714,16 @@ export function DiceGame({
                   type="number"
                   min={MIN_BET}
                   max={MAX_BET}
-                  value={amount || ""}
+                  value={amount}
                   onChange={(e) => {
                     const v = e.target.value;
                     if (v === "") {
-                      onAmountChange(0);
+                      onAmountChange(MIN_BET);
                       return;
                     }
                     const num = Number(v);
                     if (!Number.isNaN(num) && num >= 0) {
-                      onAmountChange(Math.min(MAX_BET, Math.max(MIN_BET, num)));
+                      onAmountChange(Math.min(MAX_BET, Math.max(MIN_BET, Math.floor(num))));
                     }
                   }}
                   placeholder="1–10,000"
