@@ -9,9 +9,13 @@ import {
   doublePrecision,
   bigint,
   jsonb,
+  index,
   uniqueIndex,
   check,
 } from "drizzle-orm/pg-core";
+
+/** Account type: agent (AI), human (decoy), google (OAuth). */
+export type AccountType = "agent" | "human" | "google";
 
 export const users = pgTable(
   "users",
@@ -22,6 +26,10 @@ export const users = pgTable(
     image: text("image"),
     emailVerified: timestamp("email_verified", { withTimezone: true }),
     googleId: varchar("google_id", { length: 255 }).unique(),
+    /** 'agent' | 'human' | 'google'. Enables indexed queries without email parsing. */
+    accountType: varchar("account_type", { length: 12 }).notNull().default("human"),
+    /** Stable audit identifier for agents: aid_ + 8 alphanumeric. Null for humans. */
+    agentId: varchar("agent_id", { length: 20 }).unique(),
     credits: integer("credits").notNull().default(0),
     /** Portion of credits from faucet; ABSOLUTELY non-withdrawable (0% chance). Only burnable via bets. */
     faucetCredits: integer("faucet_credits").notNull().default(0),
@@ -35,6 +43,7 @@ export const users = pgTable(
     uniqueIndex("users_google_id_idx").on(table.googleId),
     uniqueIndex("users_api_key_hash_idx").on(table.apiKeyHash),
     uniqueIndex("users_email_idx").on(table.email),
+    uniqueIndex("users_agent_id_idx").on(table.agentId),
   ]
 );
 
@@ -55,6 +64,8 @@ export const gameBets = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
+    /** Agent audit ID when bet placed via agent API key. Null for human/cookie auth. */
+    agentId: varchar("agent_id", { length: 20 }),
     gameType: varchar("game_type", { length: 20 }).notNull(),
     amount: integer("amount").notNull(),
     outcome: varchar("outcome", { length: 10 }).notNull(),
@@ -68,6 +79,7 @@ export const gameBets = pgTable(
   (table) => [
     uniqueIndex("game_bets_user_created_idx").on(table.userId, table.createdAt),
     uniqueIndex("game_bets_game_created_idx").on(table.gameType, table.createdAt),
+    index("game_bets_agent_id_idx").on(table.agentId),
   ]
 );
 
@@ -79,22 +91,28 @@ export const serverSeeds = pgTable("server_seeds", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
-export const blackjackRounds = pgTable("blackjack_rounds", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id),
-  betAmount: integer("bet_amount").notNull(),
-  playerHands: jsonb("player_hands").notNull(),
-  dealerHand: jsonb("dealer_hand").notNull(),
-  deck: jsonb("deck").notNull(),
-  status: varchar("status", { length: 20 }).notNull(),
-  serverSeedId: uuid("server_seed_id").references(() => serverSeeds.id),
-  clientSeed: text("client_seed"),
-  nonce: bigint("nonce", { mode: "number" }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
-});
+export const blackjackRounds = pgTable(
+  "blackjack_rounds",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    /** Agent audit ID when placed via agent API key. Null for human auth. */
+    agentId: varchar("agent_id", { length: 20 }),
+    betAmount: integer("bet_amount").notNull(),
+    playerHands: jsonb("player_hands").notNull(),
+    dealerHand: jsonb("dealer_hand").notNull(),
+    deck: jsonb("deck").notNull(),
+    status: varchar("status", { length: 20 }).notNull(),
+    serverSeedId: uuid("server_seed_id").references(() => serverSeeds.id),
+    clientSeed: text("client_seed"),
+    nonce: bigint("nonce", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [index("blackjack_rounds_agent_id_idx").on(table.agentId)]
+);
 
 export const crashRounds = pgTable(
   "crash_rounds",
@@ -127,6 +145,8 @@ export const crashBets = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id),
+    /** Agent audit ID when bet placed via agent API key. Null for human auth. */
+    agentId: varchar("agent_id", { length: 20 }),
     amount: integer("amount").notNull(),
     cashedOutAt: doublePrecision("cashed_out_at"),
     payout: integer("payout").notNull().default(0),
@@ -135,6 +155,7 @@ export const crashBets = pgTable(
   (table) => [
     uniqueIndex("crash_bets_round_user_idx").on(table.crashRoundId, table.userId),
     uniqueIndex("crash_bets_round_idx").on(table.crashRoundId),
+    index("crash_bets_agent_id_idx").on(table.agentId),
   ]
 );
 
@@ -166,6 +187,8 @@ export const faucetGrants = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id),
+    /** Agent audit ID when claimed via agent API key. Null for human auth. */
+    agentId: varchar("agent_id", { length: 20 }),
     amount: integer("amount").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   },
@@ -174,6 +197,7 @@ export const faucetGrants = pgTable(
       table.userId,
       table.createdAt
     ),
+    index("faucet_grants_agent_id_idx").on(table.agentId),
   ]
 );
 

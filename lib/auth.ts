@@ -37,13 +37,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   callbacks: {
     async signIn({ user, account }) {
-      if (account?.provider === "google" && account.providerAccountId) {
+      if (account?.provider === "google" && user.id) {
         await db
           .update(users)
-          .set({ googleId: account.providerAccountId })
-          // Use non-null assertion because DrizzleAdapter ensures user is created before signIn callback?
-          // Actually, we should check user.id.
-          .where(eq(users.id, user.id!));
+          .set({
+            googleId: account.providerAccountId ?? undefined,
+            accountType: "google",
+          })
+          .where(eq(users.id, user.id));
       }
       return true;
     },

@@ -13,7 +13,8 @@ export function canClaimFaucet(lastFaucetAt: Date | null): boolean {
 }
 
 export async function grantFaucet(
-  userId: string
+  userId: string,
+  agentId?: string | null
 ): Promise<FaucetResult> {
   const [user] = await db
     .select({
@@ -42,7 +43,11 @@ export async function grantFaucet(
         lastFaucetAt: now,
       })
       .where(eq(users.id, userId));
-    await tx.insert(faucetGrants).values({ userId, amount: FAUCET_AMOUNT });
+    await tx.insert(faucetGrants).values({
+      userId,
+      agentId: agentId ?? undefined,
+      amount: FAUCET_AMOUNT,
+    });
   });
   const nextFaucetAt = new Date(now.getTime() + FAUCET_COOLDOWN_SECONDS * 1000);
   return {

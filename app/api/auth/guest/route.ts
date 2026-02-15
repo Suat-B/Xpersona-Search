@@ -36,6 +36,7 @@ async function createGuestSession(request: Request): Promise<
       .values({
         email,
         name: "Guest",
+        accountType: "human",
         credits: SIGNUP_BONUS,
         lastFaucetAt: null,
       })

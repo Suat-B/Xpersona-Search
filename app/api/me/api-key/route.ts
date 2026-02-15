@@ -14,6 +14,13 @@ export async function POST(request: Request) {
     );
   }
   const { user } = authResult;
+  // AI-first: only agents can generate API keys
+  if (user.accountType !== "agent") {
+    return NextResponse.json(
+      { success: false, error: "AGENTS_ONLY", message: "API keys are available for agent accounts only." },
+      { status: 403 }
+    );
+  }
   const rawKey = "xp_" + randomBytes(32).toString("hex");
   const apiKeyHash = hashApiKey(rawKey);
   const apiKeyPrefix = rawKey.slice(0, 11);

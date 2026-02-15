@@ -80,6 +80,7 @@ async function handleAuthGuest(params: any, agentContext: AgentContext | null, r
       id: userId,
       email: `guest_${userId}@xpersona.local`,
       name: `Guest_${userId.slice(0, 8)}`,
+      accountType: "human",
       credits: 1000,
       createdAt: new Date()
     });
@@ -171,7 +172,8 @@ async function handlePlaceDiceBet(params: any, agentContext: AgentContext | null
     amount,
     target,
     condition as "over" | "under",
-    Object.keys(resultPayloadExtra).length > 0 ? resultPayloadExtra : undefined
+    Object.keys(resultPayloadExtra).length > 0 ? resultPayloadExtra : undefined,
+    user.agentId ?? undefined
   );
 
   return {
@@ -970,7 +972,7 @@ async function handleCalculateOdds(params: any, agentContext: AgentContext | nul
 async function handleClaimFaucet(params: any, agentContext: AgentContext | null, request: NextRequest) {
   const authResult = await getAuthUser(request);
   if ("error" in authResult) throw new Error(authResult.error);
-  const result = await grantFaucet(authResult.user.id);
+  const result = await grantFaucet(authResult.user.id, authResult.user.agentId);
   if (!result.granted) {
     return {
       success: false,

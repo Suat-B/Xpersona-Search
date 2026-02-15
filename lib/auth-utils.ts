@@ -108,6 +108,9 @@ export type AuthUser = {
   /** Credits from faucet; cannot be withdrawn. withdrawable = credits - faucetCredits */
   faucetCredits: number;
   apiKeyPrefix: string | null;
+  /** Stable audit ID for agents (aid_xxx). Null for human/google. */
+  agentId: string | null;
+  accountType: string;
   createdAt: Date | null;
   lastFaucetAt: Date | null;
 };
@@ -130,6 +133,8 @@ export async function getAuthUser(
         credits: users.credits,
         faucetCredits: users.faucetCredits,
         apiKeyPrefix: users.apiKeyPrefix,
+        agentId: users.agentId,
+        accountType: users.accountType,
         createdAt: users.createdAt,
         lastFaucetAt: users.lastFaucetAt,
       })
@@ -153,6 +158,8 @@ export async function getAuthUser(
           credits: users.credits,
           faucetCredits: users.faucetCredits,
           apiKeyPrefix: users.apiKeyPrefix,
+          agentId: users.agentId,
+          accountType: users.accountType,
           createdAt: users.createdAt,
           lastFaucetAt: users.lastFaucetAt,
         })
@@ -176,6 +183,8 @@ export async function getAuthUser(
           credits: users.credits,
           faucetCredits: users.faucetCredits,
           apiKeyPrefix: users.apiKeyPrefix,
+          agentId: users.agentId,
+          accountType: users.accountType,
           createdAt: users.createdAt,
           lastFaucetAt: users.lastFaucetAt,
         })
@@ -199,6 +208,8 @@ export async function getAuthUser(
           credits: users.credits,
           faucetCredits: users.faucetCredits,
           apiKeyPrefix: users.apiKeyPrefix,
+          agentId: users.agentId,
+          accountType: users.accountType,
           createdAt: users.createdAt,
           lastFaucetAt: users.lastFaucetAt,
         })

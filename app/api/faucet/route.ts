@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     );
   }
   try {
-    const result = await grantFaucet(authResult.user.id);
+    const result = await grantFaucet(authResult.user.id, authResult.user.agentId);
     if (!result.granted) {
       return NextResponse.json(
         {

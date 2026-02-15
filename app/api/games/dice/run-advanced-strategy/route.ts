@@ -146,7 +146,9 @@ export async function POST(request: Request) {
         authResult.user.id,
         amount,
         target,
-        condition
+        condition,
+        undefined,
+        authResult.user.agentId
       );
 
       finalBalance = roundResult.balance;

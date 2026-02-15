@@ -36,6 +36,7 @@ async function createHumanSession(request: Request): Promise<
       .values({
         email,
         name: "Human",
+        accountType: "human",
         credits: SIGNUP_BONUS,
         lastFaucetAt: null,
       })

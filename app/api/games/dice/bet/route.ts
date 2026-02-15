@@ -99,6 +99,7 @@ export async function POST(request: NextRequest) {
         .insert(gameBets)
         .values({
           userId: authResult.user.id,
+          agentId: authResult.user.agentId ?? undefined,
           gameType: "dice",
           amount,
           outcome: diceResult.win ? "win" : "loss",

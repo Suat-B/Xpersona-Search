@@ -20,7 +20,8 @@ export async function executeDiceRound(
   amount: number,
   target: number,
   condition: "over" | "under",
-  resultPayloadExtra?: Record<string, unknown>
+  resultPayloadExtra?: Record<string, unknown>,
+  agentId?: string | null
 ): Promise<DiceRoundResult> {
   const [userRow] = await db
     .select({ credits: users.credits, faucetCredits: users.faucetCredits })
@@ -66,6 +67,7 @@ export async function executeDiceRound(
       .insert(gameBets)
       .values({
         userId,
+        agentId: agentId ?? undefined,
         gameType: "dice",
         amount,
         outcome: diceResult.win ? "win" : "loss",
