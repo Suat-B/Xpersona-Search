@@ -4,20 +4,20 @@ import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
 
 export function HomeApiKeySection() {
   return (
-    <section className="scroll-content-visibility relative mx-auto max-w-5xl px-4 py-16 sm:py-24 sm:px-6 overflow-hidden">
-      <div className="absolute inset-0 dot-grid -z-10 opacity-50" aria-hidden="true" />
-      <div className="mb-12">
-        <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest text-[var(--accent-heart)]/80 bg-[var(--accent-heart)]/10 border border-[var(--accent-heart)]/20 mb-4">
-          API Access
-        </span>
-        <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
+    <section className="relative">
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-1 h-5 rounded-full bg-[#0ea5e9]" />
+          <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">API Access</span>
+        </div>
+        <h2 className="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
           Your API Key
         </h2>
         <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-lg">
           Generate and manage your API key to let your AI start betting immediately.
         </p>
       </div>
-      <div className="max-w-md">
+      <div className="agent-card p-5 max-w-md">
         <ApiKeySection />
       </div>
     </section>

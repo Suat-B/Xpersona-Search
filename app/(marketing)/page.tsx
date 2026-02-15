@@ -44,42 +44,14 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const authMessage = params?.message;
 
   return (
-    <main className="min-h-screen bg-black text-[var(--text-primary)]">
-      {/* Top bar */}
-      <header className="scroll-stable-layer sticky top-0 z-20 border-b border-white/5 bg-black/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3 sm:px-6">
-          <Link
-            href="/"
-            className="text-lg font-bold font-[family-name:var(--font-outfit)] tracking-tight"
-          >
-            Xpersona<span className="text-[var(--accent-heart)]">.</span>
-          </Link>
-          <div className="flex items-center gap-2 sm:gap-3">
-            {isLoggedIn ? (
-              <Link
-                href="/dashboard"
-                className="group inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-white/90 hover:bg-white/10 hover:border-white/20 transition-all duration-300"
-              >
-                Dashboard
-                <svg className="w-4 h-4 text-[var(--accent-heart)] group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                </svg>
-              </Link>
-            ) : (
-              <ContinueAsAIButton />
-            )}
-          </div>
-        </div>
-      </header>
-
+    <div className="space-y-8 animate-fade-in-up">
       {/* Auth / recovery error */}
       {authError && (
-        <div className="mx-auto max-w-4xl px-4 py-2">
-          <div className={`rounded-lg border px-4 py-3 text-sm ${
-            authError.startsWith("recovery_")
-              ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
-              : "border-red-500/30 bg-red-500/10 text-red-200"
-          }`}>
+        <div className={`agent-card px-4 py-3 text-sm ${
+          authError.startsWith("recovery_")
+            ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+            : "border-red-500/30 bg-red-500/10 text-red-200"
+        }`}>
             <p className="font-medium">
               {authError === "recovery_expired" && "Recovery link expired"}
               {authError === "recovery_missing" && "Recovery token missing"}
@@ -92,71 +64,97 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                 Start fresh — continue as guest
               </Link>
             )}
-          </div>
         </div>
       )}
 
-      {/* Hero */}
-      <section className="mx-auto max-w-4xl px-4 py-12 sm:py-16 sm:px-6 text-center">
-        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl font-[family-name:var(--font-outfit)]">
-          <span className="bg-gradient-to-b from-white to-white/70 bg-clip-text text-transparent">Xpersona</span>
-          <span className="text-[var(--accent-heart)]">.</span>
-        </h1>
-        <p className="mt-4 text-lg sm:text-xl text-[var(--accent-heart)] font-semibold">
-          The first probability game platform designed for AI
-        </p>
-        <p className="mt-1 text-sm text-[var(--text-secondary)]">
-          AI plays here.
-        </p>
-        <p className="mt-3 max-w-xl mx-auto text-sm sm:text-base text-[var(--text-secondary)] leading-relaxed">
-          Pure over/under dice. Your AI plays via API. Same balance for humans and AI — OpenClaw, LangChain, CrewAI.
-        </p>
-        <p className="mt-2 max-w-xl mx-auto text-xs sm:text-sm text-amber-400/90 leading-relaxed">
-          <strong className="text-amber-300">Advanced Strategy Builder:</strong> 38+ triggers, 25+ actions — rule-based customization no other platform offers.
-        </p>
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-          {!isLoggedIn && <ClaimFreeCreditsButton />}
-          <Link
-            href={isLoggedIn ? "/dashboard" : "/api/auth/play"}
-            className="inline-flex items-center gap-2 rounded-xl bg-[var(--accent-heart)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-[var(--accent-heart)]/25 hover:opacity-95 transition-opacity"
-          >
-            {isLoggedIn ? "Play now →" : AI_FIRST_MESSAGING.cta.both}
-          </Link>
-          <Link
-            href="/docs"
-            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-medium hover:bg-white/10 transition-colors"
-          >
-            API docs
-          </Link>
+      {/* Hero — matches dashboard theme */}
+      <header className="relative">
+        <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-2 h-2 rounded-full bg-[#30d158] shadow-[0_0_10px_#30d158] animate-pulse shrink-0" />
+              <span className="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider">
+                AI-FIRST PROBABILITY GAME
+              </span>
+            </div>
+            <h1 className="text-4xl font-semibold tracking-tight text-gradient-primary">
+              Xpersona<span className="text-[var(--accent-heart)]">.</span>
+            </h1>
+            <p className="mt-2 text-[var(--accent-heart)] font-semibold">
+              The first probability game platform designed for AI
+            </p>
+            <p className="mt-1 text-[var(--text-secondary)] text-sm">
+              AI plays here.
+            </p>
+            <p className="mt-3 text-[var(--text-secondary)] max-w-lg leading-relaxed">
+              Pure over/under dice. Your AI plays via API. Same balance for humans and AI — OpenClaw, LangChain, CrewAI.
+            </p>
+            <p className="mt-2 text-amber-400/90 text-sm leading-relaxed">
+              <strong className="text-amber-300">Advanced Strategy Builder:</strong> 38+ triggers, 25+ actions — rule-based customization no other platform offers.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
+            {!isLoggedIn && <ClaimFreeCreditsButton />}
+            {isLoggedIn && (
+              <div className="flex items-center gap-2 rounded-full border border-[var(--border)] bg-white/[0.03] p-1 backdrop-blur-sm">
+                <Link href="/dashboard/connect-ai" className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/[0.06] transition-all">
+                  <svg className="w-4 h-4 text-[#0ea5e9]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                  Connect AI
+                </Link>
+                <div className="w-px h-4 bg-[var(--border)]" />
+                <Link href="/dashboard/deposit" className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/[0.06] transition-all">
+                  <svg className="w-4 h-4 text-[#30d158]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                  Deposit
+                </Link>
+                <div className="w-px h-4 bg-[var(--border)]" />
+                <Link href="/dashboard/withdraw" className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/[0.06] transition-all">
+                  <svg className="w-4 h-4 text-[#0ea5e9]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                  Withdraw
+                </Link>
+              </div>
+            )}
+            <Link
+              href={isLoggedIn ? "/dashboard" : "/api/auth/play"}
+              className="inline-flex items-center gap-2 rounded-full bg-[var(--accent-heart)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-[var(--accent-heart)]/25 hover:opacity-95 transition-opacity"
+            >
+              {isLoggedIn ? "Play now →" : AI_FIRST_MESSAGING.cta.both}
+            </Link>
+            <Link
+              href="/docs"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-white/[0.03] px-5 py-3 text-sm font-medium hover:bg-white/[0.06] transition-all"
+            >
+              API docs
+            </Link>
+          </div>
         </div>
-      </section>
+      </header>
 
       {/* Marquee — full width */}
-      <div className="w-full border-y border-white/5">
+      <div className="w-full border-y border-[var(--border)] -mx-6 md:-mx-8">
         <MarqueeStrip />
       </div>
 
       {/* API Key Management */}
       <HomeApiKeySection />
 
-      {/* How it works — matches Capabilities style */}
-      <section className="scroll-content-visibility relative mx-auto max-w-5xl px-4 py-16 sm:py-24 sm:px-6 overflow-hidden">
-        <div className="absolute inset-0 dot-grid -z-10 opacity-50" aria-hidden="true" />
-        <div className="mb-12">
-          <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest text-cyan-400/80 bg-cyan-500/10 border border-cyan-500/20 mb-4">
-            AI flow
-          </span>
-          <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
+      {/* How it works — agent-card style */}
+      <section className="relative">
+        <div className="absolute -inset-8 bg-gradient-to-r from-[#0ea5e9]/5 via-[#0ea5e9]/3 to-transparent rounded-[40px] blur-3xl opacity-60 pointer-events-none" aria-hidden />
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-1 h-5 rounded-full bg-[#0ea5e9]" />
+            <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">AI flow</span>
+          </div>
+          <h2 className="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
             Three steps to AI-powered dice
           </h2>
           <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-lg">
             From dashboard to verified roll — your AI plays in under a minute.
           </p>
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
           {/* Step 1 — Setup */}
-          <div className="rounded-2xl border border-white/[0.06] bg-black/30 p-5 sm:p-6 hover:border-[var(--accent-heart)]/25 hover:bg-[var(--accent-heart)]/10 transition-all duration-400 group">
+          <div className="agent-card p-5 sm:p-6 hover:border-[var(--accent-heart)]/25 transition-all duration-300 group">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-500/30 border-2 border-rose-500 text-rose-300 font-bold text-lg mb-4 group-hover:scale-105 transition-transform">
               1
             </div>
@@ -171,7 +169,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
 
           {/* Step 2 — Core */}
-          <div className="rounded-2xl border border-white/[0.06] bg-black/30 p-5 sm:p-6 hover:border-emerald-500/25 hover:bg-emerald-500/10 transition-all duration-400 group">
+          <div className="agent-card p-5 sm:p-6 hover:border-[#30d158]/30 transition-all duration-300 group">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-bold text-lg mb-4 group-hover:scale-105 transition-transform">
               2
             </div>
@@ -186,7 +184,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
 
           {/* Step 3 — Trust */}
-          <div className="rounded-2xl border border-white/[0.06] bg-black/30 p-5 sm:p-6 hover:border-cyan-500/25 hover:bg-cyan-500/10 transition-all duration-400 group">
+          <div className="agent-card p-5 sm:p-6 hover:border-[#0ea5e9]/30 transition-all duration-300 group">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 font-bold text-lg mb-4 group-hover:scale-105 transition-transform">
               3
             </div>
@@ -204,14 +202,15 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         </div>
       </section>
 
-      {/* Features — asymmetric bento, rich detail */}
-      <section className="scroll-content-visibility relative mx-auto max-w-5xl px-4 py-16 sm:py-24 sm:px-6 overflow-hidden">
-        <div className="absolute inset-0 dot-grid -z-10 opacity-50" aria-hidden="true" />
-        <div className="mb-12">
-          <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest text-cyan-400/80 bg-cyan-500/10 border border-cyan-500/20 mb-4">
-            Capabilities
-          </span>
-          <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
+      {/* Features — agent-card style */}
+      <section className="relative">
+        <div className="absolute -inset-8 bg-gradient-to-r from-[#0ea5e9]/5 via-transparent to-amber-500/5 rounded-[40px] blur-3xl opacity-50 pointer-events-none" aria-hidden />
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-1 h-5 rounded-full bg-[#0ea5e9]" />
+            <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Capabilities</span>
+          </div>
+          <h2 className="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
             Built for AI and players
           </h2>
           <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-lg">
@@ -219,9 +218,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 sm:gap-5">
-          {/* Advanced Strategy Builder — differentiated, no other platform has this */}
-          <div className="sm:col-span-12 rounded-2xl sm:rounded-3xl border-2 border-amber-500/30 bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-black/40 p-6 sm:p-8 overflow-hidden group hover:border-amber-500/50 transition-all duration-400">
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-5">
+          {/* Advanced Strategy Builder — differentiated */}
+          <div className="sm:col-span-12 agent-card p-6 sm:p-8 border-amber-500/30 hover:border-amber-500/50 transition-all duration-300 group">
             <div className="flex flex-col sm:flex-row sm:items-center gap-6">
               <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-amber-500/25 ring-2 ring-amber-500/30 group-hover:scale-105 transition-transform">
                 <svg className="w-8 h-8 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -257,7 +256,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
 
           {/* AI — hero card, full width */}
-          <div className="sm:col-span-12 rounded-2xl sm:rounded-3xl border border-white/[0.06] bg-gradient-to-r from-[var(--accent-heart)]/20 via-[var(--accent-heart)]/10 to-black/40 p-6 sm:p-8 overflow-hidden group hover:border-[var(--accent-heart)]/25 transition-all duration-400">
+          <div className="sm:col-span-12 agent-card p-6 sm:p-8 border-[var(--accent-heart)]/20 hover:border-[var(--accent-heart)]/30 transition-all duration-300 group">
             <div className="flex flex-col sm:flex-row sm:items-center gap-6">
               <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent-heart)]/20 ring-2 ring-[var(--accent-heart)]/25 group-hover:scale-105 transition-transform">
                 <svg className="w-8 h-8 text-[var(--accent-heart)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -279,7 +278,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
 
           {/* Provably Fair — detailed */}
-          <div className="sm:col-span-4 rounded-2xl border border-white/[0.06] bg-black/30 p-5 sm:p-6 hover:border-emerald-500/25 hover:bg-emerald-500/10 transition-all duration-400 group">
+          <div className="sm:col-span-4 agent-card p-5 sm:p-6 hover:border-[#30d158]/30 transition-all duration-300 group">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 mb-4 group-hover:scale-105 transition-transform">
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
@@ -292,7 +291,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
 
           {/* Python Strategies — detailed */}
-          <div className="sm:col-span-4 rounded-2xl border border-white/[0.06] bg-black/30 p-5 sm:p-6 hover:border-amber-500/25 hover:bg-amber-500/10 transition-all duration-400 group">
+          <div className="sm:col-span-4 agent-card p-5 sm:p-6 hover:border-amber-500/30 transition-all duration-300 group">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400 mb-4 group-hover:scale-105 transition-transform">
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
@@ -305,7 +304,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
 
           {/* OpenClaw + integrations — detailed */}
-          <div className="sm:col-span-4 rounded-2xl border border-white/[0.06] bg-black/30 p-5 sm:p-6 hover:border-cyan-500/25 hover:bg-cyan-500/10 transition-all duration-400 group">
+          <div className="sm:col-span-4 agent-card p-5 sm:p-6 hover:border-[#0ea5e9]/30 transition-all duration-300 group">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 mb-4 group-hover:scale-105 transition-transform">
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
@@ -318,7 +317,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
 
           {/* Shared Balance — wide card */}
-          <div className="sm:col-span-6 rounded-2xl border border-white/[0.06] bg-gradient-to-br from-violet-500/15 to-black/40 p-5 sm:p-6 hover:border-violet-500/25 transition-all duration-400 group">
+          <div className="sm:col-span-6 agent-card p-5 sm:p-6 hover:border-violet-500/30 transition-all duration-300 group">
             <div className="flex items-start gap-4">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-500/20 text-violet-400 group-hover:scale-105 transition-transform">
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -335,7 +334,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
 
           {/* Watch & Play — wide card */}
-          <div className="sm:col-span-6 rounded-2xl border border-white/[0.06] bg-gradient-to-bl from-white/[0.06] to-black/40 p-5 sm:p-6 hover:border-white/15 transition-all duration-400 group">
+          <div className="sm:col-span-6 agent-card p-5 sm:p-6 hover:border-[var(--border-strong)] transition-all duration-300 group">
             <div className="flex items-start gap-4">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white/90 group-hover:scale-105 transition-transform">
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -354,14 +353,14 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         </div>
       </section>
 
-      {/* Integrations — matches Capabilities style */}
-      <section className="scroll-content-visibility relative mx-auto max-w-5xl px-4 py-16 sm:py-24 sm:px-6 overflow-hidden">
-        <div className="absolute inset-0 dot-grid -z-10 opacity-50" aria-hidden="true" />
-        <div className="mb-12">
-          <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest text-cyan-400/80 bg-cyan-500/10 border border-cyan-500/20 mb-4">
-            Integrations
-          </span>
-          <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
+      {/* Integrations */}
+      <section className="relative">
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-1 h-5 rounded-full bg-[#0ea5e9]" />
+            <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Integrations</span>
+          </div>
+          <h2 className="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
             Works with your stack
           </h2>
           <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-lg">
@@ -369,7 +368,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </p>
         </div>
 
-        <div className="rounded-2xl border border-white/[0.06] bg-black/30 p-6 sm:p-8 hover:border-[var(--accent-heart)]/25 transition-all duration-400">
+        <div className="agent-card p-6 sm:p-8 hover:border-[var(--accent-heart)]/25 transition-all duration-300">
           <div className="flex flex-wrap gap-2 sm:gap-3">
             {AGENT_INTEGRATIONS.map(({ name, href, badge }) => (
               <a
@@ -390,14 +389,14 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         </div>
       </section>
 
-      {/* Pure Dice — matches Capabilities style */}
-      <section className="scroll-content-visibility relative mx-auto max-w-5xl px-4 py-16 sm:py-24 sm:px-6 overflow-hidden">
-        <div className="absolute inset-0 dot-grid -z-10 opacity-50" aria-hidden="true" />
-        <div className="mb-12">
-          <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest text-cyan-400/80 bg-cyan-500/10 border border-cyan-500/20 mb-4">
-            Games
-          </span>
-          <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
+      {/* Pure Dice */}
+      <section className="relative">
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-1 h-5 rounded-full bg-[#0ea5e9]" />
+            <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Games</span>
+          </div>
+          <h2 className="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
             Pure Dice
           </h2>
           <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-lg">
@@ -409,7 +408,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           <div key={game.name}>
             {isLoggedIn ? (
               <Link href={game.href} className="block group">
-                <div className="rounded-2xl border border-white/[0.06] bg-black/30 p-5 sm:p-6 hover:border-[var(--accent-heart)]/25 hover:bg-[var(--accent-heart)]/10 transition-all duration-400">
+                <div className="agent-card p-5 sm:p-6 hover:border-[var(--accent-heart)]/30 transition-all duration-300">
                   <div className="flex items-start gap-4">
                     <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-heart)]/20 text-[var(--accent-heart)] group-hover:scale-105 transition-transform">
                       <span className="text-2xl">🎲</span>
@@ -429,7 +428,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                 </div>
               </Link>
             ) : (
-              <div className="rounded-2xl border border-white/[0.06] bg-black/30 p-5 sm:p-6 opacity-70">
+              <div className="agent-card p-5 sm:p-6 opacity-70">
                 <div className="flex items-start gap-4">
                   <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white/90">
                     <span className="text-2xl">🎲</span>
@@ -448,21 +447,23 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         ))}
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-white/5 py-8">
-        <div className="mx-auto max-w-4xl px-4 sm:px-6 text-center space-y-3">
-          <p className="text-sm font-semibold">{AI_FIRST_MESSAGING.builtFor}</p>
-          <p className="text-xs text-[var(--text-secondary)]">
-            OpenClaw skill on ClawHub · REST for LangChain, CrewAI, AutoGen · Same API for humans & AI
-          </p>
-          <div className="flex flex-wrap justify-center gap-4 text-xs">
-            <Link href="/docs" className="text-[var(--accent-heart)] hover:underline">API docs</Link>
-            <Link href="/dashboard/api" className="text-[var(--accent-heart)] hover:underline">Dashboard API</Link>
-            <Link href="/games/dice" className="text-[var(--accent-heart)] hover:underline">Advanced Strategy Builder</Link>
-            <a href="https://docs.openclaw.ai/" target="_blank" rel="noopener noreferrer" className="text-[var(--accent-heart)] hover:underline">OpenClaw</a>
+      {/* Footer — matches dashboard theme */}
+      <footer className="pt-12 border-t border-white/[0.06]">
+        <div className="flex flex-col gap-6">
+          <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+            <Link href="/docs" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">API docs</Link>
+            <Link href="/dashboard/api" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">Dashboard API</Link>
+            <Link href="/games/dice" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">Advanced Strategy Builder</Link>
+            <a href="https://docs.openclaw.ai/" target="_blank" rel="noopener noreferrer" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">OpenClaw</a>
+          </nav>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-white/[0.04]">
+            <p className="text-xs text-[var(--text-tertiary)]">
+              {AI_FIRST_MESSAGING.builtFor} · OpenClaw skill on ClawHub · REST for LangChain, CrewAI, AutoGen
+            </p>
+            <span className="text-[11px] text-[var(--text-tertiary)]">Same API for humans & AI</span>
           </div>
         </div>
       </footer>
-    </main>
+    </div>
   );
 }
