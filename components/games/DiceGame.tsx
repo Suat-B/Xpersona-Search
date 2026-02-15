@@ -626,7 +626,8 @@ export function DiceGame({
             </div>
           )}
           {/* Order Entry — Centered trading hub */}
-          <div className="max-w-md shrink-0 mx-auto space-y-4 rounded-xl border border-white/10 bg-[var(--bg-card)]/80 p-4 shadow-lg">
+          <div className="w-full flex justify-center">
+          <div className="w-full max-w-md shrink-0 space-y-4 rounded-xl border border-white/10 bg-[var(--bg-card)]/80 p-4 shadow-lg">
           {(() => {
             const winProb = condition === "over" ? (100 - target) / 100 : target / 100;
             const multiplier = winProb > 0 ? Math.min((1 - DICE_HOUSE_EDGE) / winProb, 10) : 0;
@@ -828,6 +829,7 @@ export function DiceGame({
                 </div>
               )}
             </div>
+          </div>
           </div>
           </div>
 
