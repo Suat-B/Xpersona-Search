@@ -63,17 +63,17 @@ export function LuckStreakCard() {
       glow: "shadow-[0_0_30px_rgba(48,209,88,0.15)]",
     },
     cold: {
-      gradient: "from-[#0a84ff]/20 via-[#0a84ff]/10 to-transparent",
-      border: "border-[#0a84ff]/30",
-      iconBg: "bg-[#0a84ff]/10 border-[#0a84ff]/20 text-[#0a84ff]",
-      text: "text-[#0a84ff]",
+      gradient: "from-[#0ea5e9]/20 via-[#0ea5e9]/10 to-transparent",
+      border: "border-[#0ea5e9]/30",
+      iconBg: "bg-[#0ea5e9]/10 border-[#0ea5e9]/20 text-[#0ea5e9]",
+      text: "text-[#0ea5e9]",
       label: "Running Cold",
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       ),
-      glow: "shadow-[0_0_30px_rgba(10,132,255,0.15)]",
+      glow: "shadow-[0_0_30px_rgba(14,165,233,0.15)]",
     },
     neutral: {
       gradient: "from-white/10 via-white/5 to-transparent",
@@ -136,7 +136,7 @@ export function LuckStreakCard() {
         <div className="flex gap-0.5" aria-hidden>
           {[...Array(5)].map((_, i) => {
             const filled = i < Math.round((recentWins / (recentTotal || 1)) * 5);
-            const dotColor = state === "hot" ? "bg-[#30d158]" : state === "cold" ? "bg-[#0a84ff]" : "bg-[var(--text-tertiary)]";
+            const dotColor = state === "hot" ? "bg-[#30d158]" : state === "cold" ? "bg-[#0ea5e9]" : "bg-[var(--text-tertiary)]";
             return (
               <div
                 key={i}

@@ -8,7 +8,7 @@ interface GlassCardProps {
     glow?: boolean;
     variant?: "default" | "elevated" | "subtle" | "gradient" | "agent";
     interactive?: boolean;
-    glowColor?: "pink" | "purple" | "blue" | "green" | "none";
+    glowColor?: "pink" | "purple" | "blue" | "green" | "quant" | "none";
 }
 
 export function GlassCard({
@@ -25,6 +25,7 @@ export function GlassCard({
         purple: "shadow-[0_0_40px_rgba(94,92,230,0.15)]",
         blue: "shadow-[0_0_40px_rgba(10,132,255,0.15)]",
         green: "shadow-[0_0_40px_rgba(48,209,88,0.15)]",
+        quant: "shadow-[0_0_40px_rgba(14,165,233,0.15)]",
         none: "",
     };
 

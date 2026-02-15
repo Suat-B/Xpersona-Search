@@ -39,14 +39,14 @@ export function FortuneCard() {
   return (
     <div className={cn(
       "agent-card p-5 h-[140px] flex flex-col justify-between",
-      "border-[#bf5af2]/20",
-      "hover:border-[#bf5af2]/40 transition-all duration-300"
+      "border-[#0ea5e9]/20",
+      "hover:border-[#0ea5e9]/40 transition-all duration-300"
     )}
     >
       <div className="flex items-start gap-3">
         <div className={cn(
           "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
-          "bg-[#bf5af2]/10 border border-[#bf5af2]/20 text-[#bf5af2]"
+          "bg-[#0ea5e9]/10 border border-[#0ea5e9]/20 text-[#0ea5e9]"
         )}
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -55,7 +55,7 @@ export function FortuneCard() {
         </div>
         
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] font-semibold text-[#bf5af2]/80 uppercase tracking-wider mb-1">
+          <div className="text-[10px] font-semibold text-[#0ea5e9]/80 uppercase tracking-wider mb-1">
             Fortune of the Day
           </div>
           <p className="text-sm text-[var(--text-secondary)] leading-relaxed line-clamp-2">
@@ -70,8 +70,8 @@ export function FortuneCard() {
         </span>
         
         <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#bf5af2] animate-pulse" />
-          <span className="text-[10px] text-[#bf5af2]/70">Active</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-[#0ea5e9] animate-pulse" />
+          <span className="text-[10px] text-[#0ea5e9]/70">Active</span>
         </div>
       </div>
     </div>

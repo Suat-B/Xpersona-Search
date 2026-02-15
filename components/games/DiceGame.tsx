@@ -784,16 +784,16 @@ export function DiceGame({
 
           {/* Speed selector when auto-playing */}
           {autoPlay && (
-            <div className="flex items-center justify-center gap-px rounded overflow-hidden border border-white/[0.06]">
+            <div className="flex items-center justify-center gap-1.5">
               {AUTO_SPEEDS.map((ms) => (
                 <button
                   key={ms}
                   type="button"
                   onClick={() => setAutoSpeed(ms)}
-                  className={`px-3 py-1 text-[10px] font-bold transition-colors ${
+                  className={`min-w-[56px] px-4 py-2.5 rounded-lg text-sm font-bold transition-all duration-200 ${
                     autoSpeed === ms
-                      ? "bg-[#0ea5e9]/15 text-[#0ea5e9]"
-                      : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.03]"
+                      ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/50 shadow-[0_0_14px_rgba(14,165,233,0.25)]"
+                      : "border border-white/[0.08] bg-white/[0.03] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.06] hover:border-[#0ea5e9]/30"
                   }`}
                 >
                   {ms === 100 ? "0.1s" : ms === 250 ? "0.25s" : ms === 500 ? "0.5s" : "1s"}

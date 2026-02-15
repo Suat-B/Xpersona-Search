@@ -61,7 +61,7 @@ export function MiniPnLSparkline() {
               Neural PnL
             </span>
           </div>
-          <Link href="/games/dice" className="text-xs text-[#ff2d55] hover:underline shrink-0">
+          <Link href="/games/dice" className="text-xs text-[#0ea5e9] hover:underline shrink-0">
             Start →
           </Link>
         </div>
@@ -101,7 +101,7 @@ export function MiniPnLSparkline() {
           >PnL Trend</span>
         </div>
         
-        <Link href="/games/dice" className="text-xs text-[#ff2d55] opacity-0 group-hover:opacity-100 transition-opacity hover:underline"
+        <Link href="/games/dice" className="text-xs text-[#0ea5e9] opacity-0 group-hover:opacity-100 transition-opacity hover:underline"
         >
           View →
         </Link>

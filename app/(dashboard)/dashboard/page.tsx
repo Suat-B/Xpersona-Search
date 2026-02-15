@@ -22,8 +22,8 @@ const GAMES = [
     name: "Dice",
     icon: "🎲",
     desc: "Roll over or under. Pure probability.",
-    color: "from-[#ff2d55] to-[#5e5ce6]",
-    glow: "shadow-[#ff2d55]/20",
+    color: "from-[#0ea5e9] to-[#0077b6]",
+    glow: "shadow-[#0ea5e9]/20",
   },
 ];
 
@@ -55,7 +55,7 @@ export default function DashboardPage() {
               className={
                 aiConnected
                   ? "inline-flex items-center gap-2 rounded-full border border-[#30d158]/40 bg-[#30d158]/10 px-5 py-3 text-sm font-medium text-[#30d158] hover:bg-[#30d158]/20 hover:border-[#30d158]/60 transition-all"
-                  : "inline-flex items-center gap-2 rounded-full border border-[var(--accent-heart)]/40 bg-[var(--accent-heart)]/10 px-5 py-3 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 hover:border-[var(--accent-heart)]/60 transition-all"
+                  : "inline-flex items-center gap-2 rounded-full border border-[#0ea5e9]/40 bg-[#0ea5e9]/10 px-5 py-3 text-sm font-medium text-[#0ea5e9] hover:bg-[#0ea5e9]/20 hover:border-[#0ea5e9]/60 transition-all"
               }
             >
               {aiConnected ? (
@@ -88,7 +88,7 @@ export default function DashboardPage() {
                 href="/dashboard/withdraw"
                 className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/[0.06] transition-all"
               >
-                <svg className="w-4 h-4 text-[#0a84ff]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-[#0ea5e9]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
                 Withdraw
@@ -100,7 +100,7 @@ export default function DashboardPage() {
 
       {/* Metrics Grid */}
       <section className="relative">
-        <div className="absolute -inset-8 bg-gradient-to-r from-[#ff2d55]/5 via-[#5e5ce6]/5 to-[#0a84ff]/5 rounded-[40px] blur-3xl opacity-60 pointer-events-none" />
+        <div className="absolute -inset-8 bg-gradient-to-r from-[#0ea5e9]/5 via-[#0ea5e9]/3 to-transparent rounded-[40px] blur-3xl opacity-60 pointer-events-none" />
         <QuantMetrics />
       </section>
 
@@ -122,14 +122,14 @@ export default function DashboardPage() {
           <section className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-1 h-6 rounded-full bg-gradient-to-b from-[#ff2d55] to-[#5e5ce6]" />
+                <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
                 <h2 className="text-lg font-semibold text-[var(--text-primary)]">
                   Games
                 </h2>
               </div>
               <Link 
                 href="/games" 
-                className="group flex items-center gap-1 text-sm text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-colors"
+                className="group flex items-center gap-1 text-sm text-[var(--text-tertiary)] hover:text-[#0ea5e9] transition-colors"
               >
                 View all
                 <svg className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -147,7 +147,7 @@ export default function DashboardPage() {
                 >
                   <div className="agent-card h-full min-h-[160px] p-6 transition-all duration-500 group-hover:scale-[1.02]">
                     <div className="absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500" 
-                      style={{ background: `linear-gradient(135deg, rgba(255,45,85,0.08) 0%, rgba(94,92,230,0.04) 100%)` }} 
+                      style={{ background: `linear-gradient(135deg, rgba(14,165,233,0.08) 0%, rgba(14,165,233,0.04) 100%)` }} 
                     />
                     
                     <div className="relative flex items-start gap-5">
@@ -165,7 +165,7 @@ export default function DashboardPage() {
                       
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-[var(--text-primary)] text-lg group-hover:text-gradient-accent transition-all">
+                          <h3 className="font-semibold text-[var(--text-primary)] text-lg group-hover:text-[#0ea5e9] transition-all">
                             {game.name}
                           </h3>
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#30d158]/20 text-[#30d158] border border-[#30d158]/30">
@@ -176,7 +176,7 @@ export default function DashboardPage() {
                           {game.desc}
                         </p>
                         
-                        <div className="mt-4 flex items-center gap-1 text-sm font-medium text-[var(--accent-heart)] opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-[-8px] group-hover:translate-x-0">
+                        <div className="mt-4 flex items-center gap-1 text-sm font-medium text-[#0ea5e9] opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-[-8px] group-hover:translate-x-0">
                           Play Now
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
@@ -194,7 +194,7 @@ export default function DashboardPage() {
           <div className="agent-card p-6">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#5e5ce6]/20 to-[#bf5af2]/10 text-[#bf5af2] border border-[#bf5af2]/20">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#0ea5e9]/20 to-[#0ea5e9]/10 text-[#0ea5e9] border border-[#0ea5e9]/20">
                   <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                   </svg>
@@ -204,7 +204,7 @@ export default function DashboardPage() {
                     <h3 className="font-semibold text-[var(--text-primary)] text-lg">
                       Dice Strategies
                     </h3>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#5e5ce6]/20 text-[#5e5ce6] border border-[#5e5ce6]/30">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/30">
                       Automated
                     </span>
                   </div>
@@ -218,7 +218,7 @@ export default function DashboardPage() {
                       <StrategiesCountBadge />
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#0a84ff]" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#0ea5e9]" />
                       Real-time
                     </span>
                   </div>
@@ -227,7 +227,7 @@ export default function DashboardPage() {
               
               <Link
                 href="/dashboard/strategies"
-                className="shrink-0 inline-flex items-center gap-2 rounded-full border border-[#bf5af2]/30 bg-[#bf5af2]/10 px-5 py-2.5 text-sm font-medium text-[#bf5af2] hover:bg-[#bf5af2]/20 hover:shadow-[0_0_20px_rgba(191,90,242,0.2)] transition-all duration-200"
+                className="shrink-0 inline-flex items-center gap-2 rounded-full border border-[#0ea5e9]/30 bg-[#0ea5e9]/10 px-5 py-2.5 text-sm font-medium text-[#0ea5e9] hover:bg-[#0ea5e9]/20 hover:shadow-[0_0_20px_rgba(14,165,233,0.2)] transition-all duration-200"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
@@ -241,7 +241,7 @@ export default function DashboardPage() {
         {/* Right Sidebar */}
         <aside className="lg:col-span-4 space-y-5">
           <div className="relative">
-            <div className="absolute -top-10 -right-10 w-48 h-48 bg-[#5e5ce6]/10 rounded-full blur-[80px] pointer-events-none" />
+            <div className="absolute -top-10 -right-10 w-48 h-48 bg-[#0ea5e9]/10 rounded-full blur-[80px] pointer-events-none" />
             <QuickLaunchCard />
           </div>
           
@@ -261,7 +261,7 @@ export default function DashboardPage() {
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-[#0a84ff]/20 to-[#64d2ff]/10 text-[#0a84ff] border border-[#0a84ff]/20 group-hover:shadow-[0_0_20px_rgba(10,132,255,0.3)] transition-shadow"
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-[#0ea5e9]/20 to-[#0ea5e9]/10 text-[#0ea5e9] border border-[#0ea5e9]/20 group-hover:shadow-[0_0_20px_rgba(14,165,233,0.3)] transition-shadow"
                   >
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
@@ -273,9 +273,9 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.04] group-hover:bg-[#0a84ff]/10 transition-colors"
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.04] group-hover:bg-[#0ea5e9]/10 transition-colors"
                 >
-                  <svg className="w-5 h-5 text-[var(--text-tertiary)] group-hover:text-[#0a84ff] group-hover:translate-x-0.5 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 text-[var(--text-tertiary)] group-hover:text-[#0ea5e9] group-hover:translate-x-0.5 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </div>
@@ -290,16 +290,16 @@ export default function DashboardPage() {
         <div className="flex flex-col gap-6">
           {/* Nav links — single row, consistent spacing */}
           <nav className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-            <Link href="/games/dice" className="text-[var(--text-secondary)] hover:text-[var(--accent-heart)] transition-colors">
+            <Link href="/games/dice" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">
               Play Dice
             </Link>
-            <Link href="/dashboard/strategies" className="text-[var(--text-secondary)] hover:text-[var(--accent-heart)] transition-colors">
+            <Link href="/dashboard/strategies" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">
               Strategies
             </Link>
-            <Link href="/dashboard/provably-fair" className="text-[var(--text-secondary)] hover:text-[var(--accent-heart)] transition-colors">
+            <Link href="/dashboard/provably-fair" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">
               Provably Fair
             </Link>
-            <Link href="/dashboard/api" className="text-[var(--text-secondary)] hover:text-[var(--accent-heart)] transition-colors">
+            <Link href="/dashboard/api" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">
               API Docs
             </Link>
           </nav>

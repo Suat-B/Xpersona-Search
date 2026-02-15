@@ -169,7 +169,7 @@ export default function QuantMetrics() {
                             {i === 0 && (
                                 <Link
                                     href="/dashboard/deposit"
-                                    className="text-xs font-medium text-[#ff2d55] hover:underline"
+                                    className="text-xs font-medium text-[#0ea5e9] hover:underline"
                                 >
                                     Deposit →
                                 </Link>

@@ -121,7 +121,7 @@ export function DashboardSidebarNav({ isAdmin = false }: DashboardSidebarNavProp
                 className={cn(
                   "flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200",
                   active 
-                    ? aiConnected ? "bg-[#30d158]/20 text-[#30d158]" : "bg-[var(--accent-heart)]/20 text-[var(--accent-heart)]" 
+                    ? aiConnected ? "bg-[#30d158]/20 text-[#30d158]" : "bg-[#0ea5e9]/20 text-[#0ea5e9]" 
                     : "bg-white/[0.04] text-[var(--text-tertiary)] group-hover:bg-white/[0.08] group-hover:text-[var(--text-secondary)]",
                   aiConnected && !active && "group-hover:bg-[#30d158]/10 group-hover:text-[#30d158]"
                 )}
@@ -130,7 +130,7 @@ export function DashboardSidebarNav({ isAdmin = false }: DashboardSidebarNavProp
               </span>
               <span className="flex-1">{displayLabel}</span>
               {active && !aiConnected && (
-                <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent-heart)]" />
+                <div className="w-1.5 h-1.5 rounded-full bg-[#0ea5e9]" />
               )}
               {aiConnected && (
                 <HeartbeatIndicator />

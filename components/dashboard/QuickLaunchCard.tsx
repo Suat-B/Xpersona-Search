@@ -8,18 +8,18 @@ export function QuickLaunchCard() {
     <Link href="/games/dice" className="block group">
       <div className={cn(
         "relative overflow-hidden rounded-[18px] p-5 h-[140px] flex flex-col justify-between",
-        "bg-gradient-to-br from-[#ff2d55]/20 via-[#ff2d55]/10 to-transparent",
-        "border border-[#ff2d55]/30",
-        "shadow-[0_0_40px_rgba(255,45,85,0.15)]",
+        "bg-gradient-to-br from-[#0ea5e9]/25 via-[#0ea5e9]/10 to-transparent",
+        "border border-[#0ea5e9]/30",
+        "shadow-[0_0_40px_rgba(14,165,233,0.15)]",
         "transition-all duration-500",
-        "group-hover:shadow-[0_0_60px_rgba(255,45,85,0.25)] group-hover:scale-[1.02]"
+        "group-hover:shadow-[0_0_60px_rgba(14,165,233,0.25)] group-hover:scale-[1.02]"
       )}
       >
-        <div className="absolute inset-0 bg-gradient-to-br from-[#ff2d55]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+        <div className="absolute inset-0 bg-gradient-to-br from-[#0ea5e9]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
         
         <div className="relative flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#ff2d55] to-[#ff5e7d] shadow-lg shadow-[#ff2d55]/30 group-hover:shadow-xl group-hover:scale-110 transition-all duration-500"
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#0ea5e9] to-[#0077b6] shadow-lg shadow-[#0ea5e9]/30 group-hover:shadow-xl group-hover:scale-110 transition-all duration-500"
             >
               <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
