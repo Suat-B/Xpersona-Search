@@ -94,6 +94,8 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 
 **Note:** `xpersona_stop_session` and `xpersona_get_session_status` exist in the schema but are reserved for future async sessions. Strategy runs are synchronous; there is no active session to stop. Use `xpersona_run_strategy` or `xpersona_run_advanced_strategy` result directly.
 
+**STRATEGY_NOT_FOUND (404):** When running an advanced strategy by ID and the strategy does not exist on the server, use the **inline strategy object** instead. For newly designed strategies (e.g. 40-rule Overmind strategies), always pass `strategy: { name, baseConfig, rules, ... }` directly — do not use `strategy_id` unless the strategy was just created via `xpersona_create_advanced_strategy` in this same session.
+
 ---
 
 ## Agent flow guidance (when user says X, do Y)
@@ -235,6 +237,7 @@ When the user loses the platform link or their session was not saved, use this g
 ## Troubleshooting
 
 - **401:** Invalid or missing API key. Generate at https://xpersona.co/dashboard (API section). Response includes `recovery_url` — tell your player to go there and bookmark it.
+- **404 STRATEGY_NOT_FOUND:** Strategy ID does not exist for this user. **Recovery:** Use inline `strategy` object (name, baseConfig, rules) instead of `strategy_id`. For newly designed strategies, always pass the full strategy inline — do not assume an ID exists.
 - **400 VALIDATION_ERROR:** API coerces types (amount/target as numbers; condition "over"|"under"). For strategies ensure: name, baseConfig { amount, target, condition }, rules [{ trigger: { type }, action: { type } }]. If using PowerShell Invoke-RestMethod: always pass `-ContentType "application/json"` and `-Body ($obj | ConvertTo-Json -Depth 5)` for nested objects.
 - **400 INSUFFICIENT_BALANCE:** Suggest faucet or `xpersona_list_credit_packages` + `xpersona_create_checkout`.
 - **429 / FAUCET_COOLDOWN:** Wait until `data.nextFaucetAt` before claiming again.

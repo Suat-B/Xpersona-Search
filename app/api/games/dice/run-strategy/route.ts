@@ -49,7 +49,11 @@ export async function POST(request: Request) {
       .limit(1);
     if (!row) {
       return NextResponse.json(
-        { success: false, error: "STRATEGY_NOT_FOUND" },
+        {
+          success: false,
+          error: "STRATEGY_NOT_FOUND",
+          message: "Strategy not found for this user. Use inline config (amount, target, condition) or create the strategy first via POST /api/me/strategies.",
+        },
         { status: 404 }
       );
     }

@@ -598,7 +598,7 @@ export function DiceGame({
         </div>
 
         {/* Main Game Area - Clean Layout */}
-        <div className="flex-1 flex flex-col items-center justify-center min-h-0 py-2 relative">
+        <div className="flex-1 flex flex-col items-center justify-center min-h-0 pt-2 pb-4 relative">
           
           {/* Result Banner - Win/Lose Badge */}
           {result && !loading && (
@@ -642,8 +642,8 @@ export function DiceGame({
         >
           {/* AI driving badge */}
           {aiDriving && (
-            <div className="flex justify-center -mb-1">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-violet-500/20 text-violet-400 border border-violet-500/30">
+            <div className="flex justify-center mt-4 mb-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-violet-500/20 text-violet-400 border border-violet-500/30">
                 <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
                 LIVE
               </span>

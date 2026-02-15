@@ -372,7 +372,11 @@ async function handleRunStrategy(params: any, agentContext: AgentContext | null,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.success) {
-    throw new Error(data.error ?? data.message ?? "Run strategy failed");
+    const msg =
+      data.error === "STRATEGY_NOT_FOUND" && data.message
+        ? `${data.error}: ${data.message}`
+        : data.error ?? data.message ?? "Run strategy failed";
+    throw new Error(msg);
   }
   const d = data.data ?? {};
   const stoppedReason = d.stoppedReason ?? "max_rounds";
@@ -771,7 +775,11 @@ async function handleRunAdvancedStrategy(
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.success) {
-    throw new Error(data.error ?? "Run advanced strategy failed");
+    const msg =
+      data.error === "STRATEGY_NOT_FOUND" && data.message
+        ? `${data.error}: ${data.message}`
+        : data.error ?? data.message ?? "Run advanced strategy failed";
+    throw new Error(msg);
   }
   const d = data.data ?? {};
   const stoppedReason = d.stoppedReason ?? "max_rounds";

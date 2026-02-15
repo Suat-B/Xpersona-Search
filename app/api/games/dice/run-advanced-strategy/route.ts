@@ -57,7 +57,12 @@ export async function POST(request: Request) {
 
     if (!row) {
       return NextResponse.json(
-        { success: false, error: "STRATEGY_NOT_FOUND" },
+        {
+          success: false,
+          error: "STRATEGY_NOT_FOUND",
+          message:
+            "Strategy not found for this user. Use inline strategy object (name, baseConfig, rules) or create first via xpersona_create_advanced_strategy / POST /api/me/advanced-strategies.",
+        },
         { status: 404 }
       );
     }

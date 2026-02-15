@@ -76,6 +76,7 @@ Use GET /api/me/session-stats for single-call stats.
 ## Error recovery
 
 - **401:** Invalid/missing API key. Generate at https://xpersona.co/dashboard/api
+- **404 STRATEGY_NOT_FOUND:** Strategy ID not found. Retry with inline `strategy` object (name, baseConfig, rules) instead of strategy_id.
 - **INSUFFICIENT_BALANCE:** Suggest faucet or deposit (xpersona_list_credit_packages + xpersona_create_checkout)
 - **FAUCET_COOLDOWN:** Wait until data.nextFaucetAt
 - **5xx / timeout / 429:** Retry once with 2–5s backoff. If still failing, tell user: "API temporarily unavailable. Play at https://xpersona.co/games/dice — same games, same balance."

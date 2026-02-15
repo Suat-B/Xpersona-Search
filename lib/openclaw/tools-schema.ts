@@ -643,7 +643,8 @@ export const XpersonaToolsSchema = {
 
   "xpersona_run_advanced_strategy": {
     name: "xpersona_run_advanced_strategy",
-    description: "Run an advanced strategy for real (places actual bets). Use strategy_id (saved) or strategy (inline object). Max 100,000 rounds per run.",
+    description:
+      "Run an advanced strategy for real (places actual bets). Use strategy_id (saved) or strategy (inline object). For newly designed strategies, prefer inline strategy — strategy_id requires the strategy to exist on the server. Max 100,000 rounds per run.",
     parameters: {
       type: "object",
       properties: {
