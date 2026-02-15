@@ -70,7 +70,7 @@ export function DiceStatisticsPanel({
                 <div className="text-[10px] text-[var(--text-secondary)] uppercase">Rounds</div>
               </div>
               <div className="rounded-xl bg-[var(--bg-matte)]/80 p-3 text-center ring-1 ring-white/5 hover:ring-white/10 transition-all" data-agent="stat-pnl" data-value={totalPnl}>
-                <div className={`text-lg font-bold font-mono ${totalPnl >= 0 ? "text-emerald-400 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]" : "text-amber-400 drop-shadow-[0_0_8px_rgba(245,158,11,0.3)]"}`}>
+                <div className={`text-lg font-bold font-mono ${totalPnl >= 0 ? "text-emerald-400 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]" : "text-red-400 drop-shadow-[0_0_8px_rgba(239,68,68,0.3)]"}`}>
                   {totalPnl >= 0 ? "+" : ""}{totalPnl}
                 </div>
                 <div className="text-[10px] text-[var(--text-secondary)] uppercase">P&L</div>

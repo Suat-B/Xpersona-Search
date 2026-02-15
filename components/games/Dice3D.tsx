@@ -68,11 +68,11 @@ export function Dice3D({ value, isRolling, win, animationDurationMs, winProbabil
           <ProbabilityRing winProbability={winProbability} />
         </div>
       )}
-      {/* Glow effect — quant colors: blue for win, amber for loss */}
+      {/* Glow effect — quant colors: blue for win, red for loss */}
       <div 
         className={`absolute inset-0 rounded-full blur-3xl transition-all duration-500 ${
           win === true ? "bg-[#0ea5e9]/40 scale-150" : 
-          win === false ? "bg-amber-500/40 scale-150" : 
+          win === false ? "bg-red-500/40 scale-150" : 
           "bg-[#0ea5e9]/20 scale-100"
         }`}
       />
@@ -152,7 +152,7 @@ export function Dice3D({ value, isRolling, win, animationDurationMs, winProbabil
         <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 whitespace-nowrap">
           <span className={`text-4xl font-bold font-mono tabular-nums ${
             win === true ? "text-emerald-400 drop-shadow-[0_0_15px_rgba(16,185,129,0.5)]" : 
-            win === false ? "text-amber-400 drop-shadow-[0_0_15px_rgba(245,158,11,0.5)]" : 
+            win === false ? "text-red-400 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]" : 
             "text-[var(--text-primary)]"
           }`}>
             {displayValue.toFixed(2)}

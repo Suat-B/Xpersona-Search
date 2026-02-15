@@ -15,7 +15,7 @@ const Metric = ({ label, value, positive }: { label: string; value: React.ReactN
     <span className="text-[10px] text-[var(--text-tertiary)] uppercase tracking-wider">{label}</span>
     <span
       className={`text-xs font-mono font-semibold tabular-nums ${
-        positive === true ? "text-emerald-400" : positive === false ? "text-amber-400" : "text-[var(--text-primary)]"
+        positive === true ? "text-emerald-400" : positive === false ? "text-red-400" : "text-[var(--text-primary)]"
       }`}
     >
       {value}
@@ -39,7 +39,7 @@ export function QuantTopMetricsBar({
       <Metric
         label="Session P&L"
         value={
-          <span className={sessionPnl >= 0 ? "text-emerald-400" : "text-amber-400"}>
+          <span className={sessionPnl >= 0 ? "text-emerald-400" : "text-red-400"}>
             {sessionPnl >= 0 ? "+" : ""}
             {sessionPnl.toFixed(2)}
           </span>

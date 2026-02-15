@@ -272,7 +272,7 @@ export function QuantChartsAesthetic({
               <span className="text-xs font-mono">{wins} wins</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
+              <div className="w-3 h-3 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]" />
               <span className="text-xs font-mono">{losses} losses</span>
             </div>
           </div>
@@ -345,7 +345,7 @@ export function QuantChartsAesthetic({
                     }}
                   />
                   <div
-                    className="h-full bg-amber-500/70 transition-all duration-300 rounded-r"
+                    className="h-full bg-red-500/70 transition-all duration-300 rounded-r"
                     style={{
                       width: total > 0 ? `${(b.losses / total) * 100}%` : "0%",
                       minWidth: b.losses > 0 ? "2px" : 0,
@@ -360,7 +360,7 @@ export function QuantChartsAesthetic({
           })}
         </div>
         <p className="text-[10px] text-[var(--text-tertiary)] mt-2">
-          Stacked: wins (green) vs losses (amber) per result range
+          Stacked: wins (green) vs losses (red) per result range
         </p>
       </div>
 

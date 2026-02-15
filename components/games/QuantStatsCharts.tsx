@@ -155,14 +155,14 @@ export function QuantStatsCharts({ recentResults, layout = "default" }: QuantSta
                 <div key={i} className="flex-1 flex flex-col items-stretch justify-end min-w-0" title={`${b.low.toFixed(0)}–${b.high.toFixed(0)}: ${total} (${b.wins}W / ${b.losses}L)`}>
                   <div className="w-full flex flex-col-reverse rounded-t overflow-hidden" style={{ height: barHeight }}>
                     {b.wins > 0 && <div className="w-full bg-[#0ea5e9]/90" style={{ flex: b.wins / total }} />}
-                    {b.losses > 0 && <div className="w-full bg-amber-500/90" style={{ flex: b.losses / total }} />}
+                    {b.losses > 0 && <div className="w-full bg-red-500/90" style={{ flex: b.losses / total }} />}
                   </div>
                   <span className="text-[8px] text-[var(--text-tertiary)] font-mono truncate text-center block">{b.low.toFixed(0)}</span>
                 </div>
               );
             })}
           </div>
-          <p className="text-[10px] text-[var(--text-tertiary)] mt-2">Theoretical: Uniform. Blue=win range, Amber=loss range.</p>
+          <p className="text-[10px] text-[var(--text-tertiary)] mt-2">Theoretical: Uniform. Blue=win range, Red=loss range.</p>
         </div>
       ) : null}
 
@@ -179,14 +179,14 @@ export function QuantStatsCharts({ recentResults, layout = "default" }: QuantSta
               return (
                 <div key={i} className="flex-1 flex flex-col items-stretch justify-end min-w-0" title={`${b.low.toFixed(0)} to ${b.high.toFixed(0)}: ${b.count} trades`}>
                   <div className="w-full rounded-t overflow-hidden" style={{ height: barHeight }}>
-                    <div className={`w-full h-full ${isWin ? "bg-[#0ea5e9]/90" : "bg-amber-500/90"}`} />
+                    <div className={`w-full h-full ${isWin ? "bg-[#0ea5e9]/90" : "bg-red-500/90"}`} />
                   </div>
                   <span className="text-[8px] text-[var(--text-tertiary)] font-mono truncate text-center block">{Math.round(b.low)}</span>
                 </div>
               );
             })}
           </div>
-          <p className="text-[10px] text-[var(--text-tertiary)] mt-2">Per-trade P&L histogram. Blue=profit, Amber=loss.</p>
+          <p className="text-[10px] text-[var(--text-tertiary)] mt-2">Per-trade P&L histogram. Blue=profit, Red=loss.</p>
         </div>
       )}
 
@@ -204,7 +204,7 @@ export function QuantStatsCharts({ recentResults, layout = "default" }: QuantSta
                     className={`w-2.5 h-2.5 rounded-md transition-all duration-200 hover:scale-125 ${
                       r.win
                         ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]"
-                        : "bg-amber-500/90 shadow-[0_0_6px_rgba(245,158,11,0.4)]"
+                        : "bg-red-500/90 shadow-[0_0_6px_rgba(239,68,68,0.4)]"
                     }`}
                     title={`Round ${recentResults.length - last30.length + i + 1}: ${r.win ? "Win" : "Loss"}`}
                   />
@@ -224,7 +224,7 @@ export function QuantStatsCharts({ recentResults, layout = "default" }: QuantSta
         </h4>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="rounded-lg bg-[var(--bg-matte)] p-2.5 text-center" data-agent="stat-current-streak" data-value={currentStreak}>
-            <div className={`text-sm font-bold font-mono ${currentIsWin ? "text-emerald-400" : "text-amber-400"}`}>
+            <div className={`text-sm font-bold font-mono ${currentIsWin ? "text-emerald-400" : "text-red-400"}`}>
               {currentStreak}
             </div>
             <div className="text-[10px] text-[var(--text-secondary)]">Current streak</div>
@@ -234,7 +234,7 @@ export function QuantStatsCharts({ recentResults, layout = "default" }: QuantSta
             <div className="text-[10px] text-[var(--text-secondary)]">Max win streak</div>
           </div>
           <div className="rounded-lg bg-[var(--bg-matte)] p-2.5 text-center" data-agent="stat-max-loss-streak" data-value={maxLossStreak}>
-            <div className="text-sm font-bold font-mono text-amber-400">{maxLossStreak}</div>
+            <div className="text-sm font-bold font-mono text-red-400">{maxLossStreak}</div>
             <div className="text-[10px] text-[var(--text-secondary)]">Max loss streak</div>
           </div>
           <div className="rounded-lg bg-[var(--bg-matte)] p-2.5 text-center" data-agent="stat-profit-factor" data-value={profitFactor ?? 0}>
@@ -249,7 +249,7 @@ export function QuantStatsCharts({ recentResults, layout = "default" }: QuantSta
             <span className="text-[10px] text-[var(--text-secondary)]">Last 10:</span>
             <span
               className={`text-xs font-mono font-semibold ${
-                rolling10 >= 50 ? "text-emerald-400" : rolling10 <= 40 ? "text-amber-400" : "text-[var(--text-primary)]"
+                rolling10 >= 50 ? "text-emerald-400" : rolling10 <= 40 ? "text-red-400" : "text-[var(--text-primary)]"
               }`}
               data-agent="stat-rolling-10"
               data-value={rolling10.toFixed(1)}
@@ -261,7 +261,7 @@ export function QuantStatsCharts({ recentResults, layout = "default" }: QuantSta
             <span className="text-[10px] text-[var(--text-secondary)]">Last 20:</span>
             <span
               className={`text-xs font-mono font-semibold ${
-                rolling20 >= 50 ? "text-emerald-400" : rolling20 <= 40 ? "text-amber-400" : "text-[var(--text-primary)]"
+                rolling20 >= 50 ? "text-emerald-400" : rolling20 <= 40 ? "text-red-400" : "text-[var(--text-primary)]"
               }`}
               data-agent="stat-rolling-20"
               data-value={rolling20.toFixed(1)}

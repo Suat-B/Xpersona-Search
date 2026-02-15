@@ -69,7 +69,7 @@ export function TradeLog({ entries, maxRows = 20 }: TradeLogProps) {
                     <td className="py-1.5 px-2 text-right tabular-nums">{e.result.toFixed(2)}</td>
                     <td
                       className={`py-1.5 px-2 text-right tabular-nums font-medium ${
-                        p >= 0 ? "text-emerald-400" : "text-amber-400"
+                        p >= 0 ? "text-emerald-400" : "text-red-400"
                       }`}
                     >
                       {p >= 0 ? "+" : ""}

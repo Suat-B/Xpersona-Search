@@ -79,7 +79,7 @@ export function SessionPnLChart({
         </div>
         <div className="flex items-center gap-2">
           <span
-            className={`text-sm font-bold font-mono ${totalPnl >= 0 ? "text-emerald-400" : "text-amber-400"}`}
+            className={`text-sm font-bold font-mono ${totalPnl >= 0 ? "text-emerald-400" : "text-red-400"}`}
           >
             {totalPnl >= 0 ? "+" : ""}
             {totalPnl}
