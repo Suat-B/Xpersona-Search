@@ -23,7 +23,7 @@ export default async function GamesLayout({
   const needsGuest = !hasSession && !hasGuest;
 
   return (
-    <div className="fixed inset-0 z-40 h-screen w-screen bg-[var(--bg-deep)] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-[100] h-screen w-screen bg-[var(--bg-deep)] overflow-hidden flex flex-col">
       {needsGuest && <EnsureGuest needsGuest={true} />}
       {children}
     </div>
