@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { db } from "@/lib/db";
-import { stripeEvents, users } from "@/lib/db/schema";
+import { stripeEvents, users, deposits } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
 function getStripe() {
@@ -61,7 +61,18 @@ export async function POST(request: Request) {
     }
     const [user] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userId)).limit(1);
     if (user) {
-      await db.update(users).set({ credits: user.credits + credits }).where(eq(users.id, userId));
+      await db.transaction(async (tx) => {
+        await tx.insert(deposits).values({
+          userId,
+          credits,
+          stripeEventId: event.id,
+          stripeSessionId: session.id ?? undefined,
+        });
+        await tx
+          .update(users)
+          .set({ credits: user.credits + credits })
+          .where(eq(users.id, userId));
+      });
     }
   }
   return NextResponse.json({ received: true });

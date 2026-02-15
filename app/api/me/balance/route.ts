@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthUser, unauthorizedJsonBody } from "@/lib/auth-utils";
-import { getWithdrawableBalance } from "@/lib/withdrawable";
+import { getWithdrawableBalanceWithGate } from "@/lib/withdrawable";
 import { DEPOSIT_ALERT_LOW, DEPOSIT_ALERT_CRITICAL, MIN_BET, getBalanceMilestone } from "@/lib/constants";
 
 export async function GET(request: Request) {
@@ -11,8 +11,8 @@ export async function GET(request: Request) {
       { status: 401 }
     );
   }
-  const { credits, faucetCredits } = authResult.user;
-  const withdrawable = getWithdrawableBalance(credits, faucetCredits ?? 0);
+  const { id: userId, credits, faucetCredits } = authResult.user;
+  const { withdrawable } = await getWithdrawableBalanceWithGate(userId, credits, faucetCredits ?? 0);
   const balance = credits;
 
   const depositAlert = balance < DEPOSIT_ALERT_CRITICAL ? "critical" as const

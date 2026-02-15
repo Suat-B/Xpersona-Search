@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { getAuthUser } from "@/lib/auth-utils";
-import { getWithdrawableBalance, assertFaucetExcludedFromWithdrawal } from "@/lib/withdrawable";
+import { getWithdrawableBalanceWithGate, assertFaucetExcludedFromWithdrawal } from "@/lib/withdrawable";
 import { WITHDRAW_MIN_CREDITS } from "@/lib/constants";
 import { withdrawSchema } from "@/lib/validation";
 import { db } from "@/lib/db";
@@ -61,20 +61,23 @@ export async function POST(request: Request) {
     );
   }
 
+  const userId = authResult.user.id;
   const credits = authResult.user.credits;
   const faucetCredits = authResult.user.faucetCredits ?? 0;
-  const withdrawable = getWithdrawableBalance(credits, faucetCredits);
+  const { withdrawable, blockedByFaucetGate } = await getWithdrawableBalanceWithGate(
+    userId,
+    credits,
+    faucetCredits
+  );
 
   if (amount > withdrawable) {
-    return NextResponse.json(
-      { success: false, error: `Maximum withdrawable: ${withdrawable} credits` },
-      { status: 400 }
-    );
+    const errorMsg = blockedByFaucetGate
+      ? "Withdrawal unavailable: you have used free credits but have not deposited. Add funds to unlock withdrawals."
+      : `Maximum withdrawable: ${withdrawable} credits`;
+    return NextResponse.json({ success: false, error: errorMsg }, { status: 400 });
   }
 
   assertFaucetExcludedFromWithdrawal(amount, credits, faucetCredits);
-
-  const userId = authResult.user.id;
 
   // Rate limit: one pending withdrawal at a time
   const [existing] = await db
