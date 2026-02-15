@@ -378,32 +378,31 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         </div>
       )}
 
-      {/* ═══════════════ TERMINAL HEADER — 32px ═══════════════ */}
-      <header className="flex-shrink-0 h-8 flex items-center justify-between px-3 border-b border-white/[0.06] bg-[#0a0a0f]/90 select-none">
+      {/* ═══════════════ TERMINAL HEADER — 36px ═══════════════ */}
+      <header className="flex-shrink-0 h-9 flex items-center justify-between px-4 border-b border-white/[0.06] bg-gradient-to-r from-[#0a0a0f] via-[#0d0d14] to-[#0a0a0f] select-none">
         <div className="flex items-center gap-3">
           <Link
             href="/dashboard"
-            className="flex items-center gap-1.5 text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+            className="flex items-center gap-1.5 text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors group"
           >
-            <span className="text-[var(--accent-heart)]">←</span>
+            <span className="text-[var(--accent-heart)] group-hover:drop-shadow-[0_0_4px_rgba(255,45,85,0.5)] transition-all">←</span>
             <span className="hidden sm:inline uppercase tracking-wider">Dashboard</span>
           </Link>
-          <span className="text-[10px] text-white/20">│</span>
-          <span className="text-[10px] font-bold tracking-widest text-[var(--text-secondary)] uppercase">
-            Xpersona Terminal
+          <span className="text-[10px] text-white/10">│</span>
+          <span className="text-[10px] font-bold tracking-[0.2em] text-[var(--text-secondary)] uppercase">
+            Xpersona <span className="text-[#0ea5e9]/70">Terminal</span>
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5" data-agent="balance-display" data-value={balance}>
-            <span className="text-[10px] text-[var(--text-tertiary)] uppercase">NAV:</span>
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-white/[0.03] border border-white/[0.04]" data-agent="balance-display" data-value={balance}>
+            <span className="text-[9px] text-[var(--text-tertiary)] uppercase tracking-wider">NAV</span>
             <span className="text-[11px] font-bold text-[var(--text-primary)] tabular-nums">{balance.toLocaleString()}</span>
           </div>
-          <span className="text-[10px] text-white/20">│</span>
-          <Link href="/dashboard/deposit" className="text-[10px] text-[#0ea5e9] hover:text-[#0ea5e9]/80 transition-colors uppercase tracking-wider">
+          <Link href="/dashboard/deposit" className="text-[10px] text-[#0ea5e9] hover:text-[#0ea5e9] hover:drop-shadow-[0_0_6px_rgba(14,165,233,0.4)] transition-all uppercase tracking-wider font-bold">
             +Deposit
           </Link>
-          <Link href="/dashboard/withdraw" className="text-[10px] text-amber-400 hover:text-amber-400/80 transition-colors uppercase tracking-wider">
-            -Withdraw
+          <Link href="/dashboard/withdraw" className="text-[10px] text-amber-400/80 hover:text-amber-400 hover:drop-shadow-[0_0_6px_rgba(251,191,36,0.3)] transition-all uppercase tracking-wider">
+            Withdraw
           </Link>
         </div>
       </header>
@@ -512,16 +511,16 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </div>
 
           {/* ████ RIGHT SIDEBAR — 280px ████ */}
-          <aside className="w-[280px] flex-shrink-0 flex flex-col min-h-0 overflow-hidden bg-[#0a0a0f]/50">
+          <aside className="w-[280px] flex-shrink-0 flex flex-col min-h-0 overflow-hidden bg-gradient-to-b from-[#0a0a0f]/80 to-[#080810]/50">
             {/* Tab Switcher — terminal style */}
-            <div className="flex-shrink-0 flex border-b border-white/[0.06]">
+            <div className="flex-shrink-0 flex border-b border-white/[0.06] bg-[#0a0a0f]/60">
               {(["statistics", "api", "strategy"] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`flex-1 py-2 text-[10px] font-mono font-bold uppercase tracking-wider transition-all border-b-2 ${
+                  className={`flex-1 py-2.5 text-[10px] font-mono font-bold uppercase tracking-wider transition-all border-b-2 ${
                     activeTab === tab
-                      ? "text-[#0ea5e9] border-[#0ea5e9] bg-[#0ea5e9]/5"
+                      ? "text-[#0ea5e9] border-[#0ea5e9] bg-[#0ea5e9]/[0.06] shadow-[0_2px_8px_rgba(14,165,233,0.1)]"
                       : "text-[var(--text-tertiary)] border-transparent hover:text-[var(--text-secondary)] hover:bg-white/[0.02]"
                   }`}
                 >
@@ -716,7 +715,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         </div>
 
         {/* ─── Bottom Strip: Equity Curve + Trade Log ─── */}
-        <div className="flex-shrink-0 h-[160px] flex flex-row overflow-hidden border-t border-white/[0.06]">
+        <div className="flex-shrink-0 h-[160px] flex flex-row overflow-hidden border-t border-white/[0.08] bg-gradient-to-t from-[#050507] to-transparent">
           {/* Mini Equity Curve */}
           <div className="w-[300px] flex-shrink-0 flex flex-col overflow-hidden border-r border-white/[0.06] p-2">
             <SessionPnLChart
@@ -729,9 +728,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </div>
           {/* Trade Log */}
           <div className="flex-1 min-w-0 overflow-hidden flex flex-col p-2">
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center justify-between mb-1.5">
               <span className="text-[10px] font-mono font-bold text-[var(--text-tertiary)] uppercase tracking-widest">Trade Log</span>
-              <span className="text-[9px] font-mono text-[var(--text-tertiary)] tabular-nums">{recentResults.length} fills</span>
+              <span className="text-[9px] font-mono text-[var(--text-tertiary)]/60 tabular-nums px-1.5 py-0.5 rounded bg-white/[0.03]">{recentResults.length} fills</span>
             </div>
             <TradeLog
               entries={recentResults.map((r, i) => ({
@@ -753,33 +752,34 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       </main>
 
       {/* ═══════════════ FOOTER — 28px ═══════════════ */}
-      <footer className="flex-shrink-0 h-7 flex items-center justify-between px-3 border-t border-white/[0.06] bg-[#0a0a0f]/90 text-[9px] font-mono text-[var(--text-tertiary)] select-none">
+      <footer className="flex-shrink-0 h-7 flex items-center justify-between px-4 border-t border-white/[0.06] bg-gradient-to-r from-[#0a0a0f] via-[#0d0d14] to-[#0a0a0f] text-[9px] font-mono text-[var(--text-tertiary)]/70 select-none">
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1">
-            <span className="text-emerald-500">✓</span> Verifiable RNG
+            <span className="text-emerald-500 drop-shadow-[0_0_3px_rgba(52,211,153,0.5)]">●</span>
+            <span className="text-emerald-500/80">Verifiable RNG</span>
           </span>
-          <span className="text-white/10">│</span>
+          <span className="text-white/[0.06]">│</span>
           <span>3% Cost</span>
-          <span className="text-white/10">│</span>
-          <span className="text-[#0ea5e9]">97% Return</span>
-          <span className="text-white/10">│</span>
-          <span>Uniform(0, 99.99)</span>
-          <span className="text-white/10">│</span>
+          <span className="text-white/[0.06]">│</span>
+          <span className="text-[#0ea5e9]/70">97% Return</span>
+          <span className="text-white/[0.06]">│</span>
+          <span className="text-[var(--text-tertiary)]/50">Uniform(0, 99.99)</span>
+          <span className="text-white/[0.06]">│</span>
           <span>
-            <Link href="/dashboard/api" className="text-[var(--accent-heart)] hover:underline">API</Link>
+            <Link href="/dashboard/api" className="text-[var(--accent-heart)]/80 hover:text-[var(--accent-heart)] hover:drop-shadow-[0_0_4px_rgba(255,45,85,0.4)] transition-all">API</Link>
             {" · "}
             <span
               role="button"
               tabIndex={0}
               onClick={() => setActiveTab("strategy")}
               onKeyDown={(e) => e.key === "Enter" && setActiveTab("strategy")}
-              className="text-amber-400 hover:underline cursor-pointer"
+              className="text-amber-400/70 hover:text-amber-400 hover:drop-shadow-[0_0_4px_rgba(251,191,36,0.3)] cursor-pointer transition-all"
             >
               Strategy Builder
             </span>
           </span>
         </div>
-        <span className="tabular-nums">Min: 1 │ Max: 10,000</span>
+        <span className="tabular-nums text-[var(--text-tertiary)]/40">Min: 1 │ Max: 10,000</span>
       </footer>
     </div>
   );
