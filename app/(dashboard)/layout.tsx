@@ -38,7 +38,8 @@ export default async function DashboardLayout({
         .from(users)
         .where(eq(users.id, userIdFromCookie))
         .limit(1);
-      displayName = u?.name ?? u?.email ?? "Guest";
+      const isAgent = u?.email?.endsWith?.("@xpersona.agent") ?? false;
+      displayName = isAgent ? "AI" : (u?.name ?? u?.email ?? "Guest");
       isAdmin = isAdminEmail(u?.email);
     } catch {
       displayName = "Guest";
