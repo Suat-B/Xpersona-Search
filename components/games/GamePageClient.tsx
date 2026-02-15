@@ -392,9 +392,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             <div className="mb-3 flex-shrink-0 flex items-center justify-center gap-2 py-2 px-4 rounded-lg bg-violet-500/20 border border-violet-500/30 text-violet-300 text-xs font-medium">
               <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" />
               {liveQueueLength > 0 ? (
-                <>AI playing — {liveQueueLength} roll{liveQueueLength !== 1 ? "s" : ""} queued</>
+                <>AI is currently playing — {liveQueueLength} roll{liveQueueLength !== 1 ? "s" : ""} queued</>
               ) : (
-                "AI playing on your behalf"
+                "AI is currently playing"
               )}
             </div>
           )}

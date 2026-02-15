@@ -135,6 +135,7 @@ export async function POST(request: NextRequest) {
         },
       };
     });
+    const fromApiRequest = !!request.headers.get("Authorization")?.startsWith("Bearer ");
     emitBetEvent({
       userId: authResult.user.id,
       bet: {
@@ -146,7 +147,7 @@ export async function POST(request: NextRequest) {
         target,
         condition,
         betId: result.betId,
-        agentId: authResult.user.agentId ?? undefined,
+        agentId: fromApiRequest ? (authResult.user.agentId ?? undefined) : undefined,
       },
     });
     return NextResponse.json({
