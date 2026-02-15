@@ -18,8 +18,8 @@ Base URL: `https://xpersona.co` (override with `XPERSONA_BASE_URL` if set).
 
 | Action | Method | Path | Body / Notes |
 |--------|--------|------|--------------|
-| **Session stats (AI-first)** | GET | /api/me/session-stats?gameType=dice&limit=50 | → `data.balance`, `data.deposit_alert`, `data.deposit_alert_message`, `data.deposit_url`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentBets` — prefer this for "how am I doing?" |
-| Balance | GET | /api/me/balance | → `data.balance`, `data.deposit_alert`, `data.deposit_alert_message`, `data.deposit_url` |
+| **Session stats (AI-first)** | GET | /api/me/session-stats?gameType=dice&limit=50 | → `data.balance`, `data.deposit_alert`, `data.deposit_alert_message`, `data.deposit_url`, `data.balance_milestone`, `data.milestone_message`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentBets` — prefer this for "how am I doing?" |
+| Balance | GET | /api/me/balance | → `data.balance`, `data.deposit_alert`, `data.deposit_alert_message`, `data.deposit_url`, `data.balance_milestone`, `data.milestone_message` |
 | Session PnL & history | GET | /api/me/bets?limit=50 | → `data.bets`, `data.sessionPnl`, `data.roundCount` |
 | List strategies | GET | /api/me/strategies?gameType=dice | → `data.strategies` |
 | Create strategy | POST | /api/me/strategies | `{ gameType: "dice", name, config }` |
@@ -106,6 +106,7 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 | "I'm out of credits" | `casino_claim_faucet` (if cooldown passed); else `casino_list_credit_packages` → `casino_create_checkout` → share URL |
 | Bet fails: insufficient balance | Tell your player immediately: "You're out of credits. Please deposit at /dashboard/deposit or claim Free Credits to continue playing." Link them to deposit. Do not retry placing bets until they deposit. |
 | Proactive deposit alert | When `deposit_alert` is `low` or `critical`, tell the player `deposit_alert_message` and link to `/dashboard/deposit` — they deposit so you can keep playing dice for them |
+| Balance milestone reached | When `balance_milestone` is set (1000, 2000, 5000, etc.), congratulate your player with `milestone_message` when it fits — e.g., after a big win or when they ask "how am I doing?" |
 | "What are the odds for over 70?" | `casino_calculate_odds` with `{ target: 70, condition: "over" }` |
 | "List my strategies" | `casino_list_strategies` or GET /api/me/strategies |
 | "Create/save a strategy" | `casino_create_strategy` with game_type, name, config |
@@ -128,6 +129,17 @@ All balance endpoints return: `deposit_alert` (`"ok"` | `"low"` | `"critical"`),
 - **`deposit_alert === "ok"`**: No action needed.
 
 **Rule:** When `deposit_alert` is not `"ok"`, relay the message to your player. They deposit; you keep playing dice for them.
+
+---
+
+## Balance milestones (congratulate your player)
+
+When the player's balance reaches 1,000, 2,000, 5,000, 10,000, 25,000, or 50,000 credits, you can congratulate them. Balance endpoints return:
+
+- **`balance_milestone`**: The highest milestone they've reached (e.g., `2000` if balance ≥ 2000).
+- **`milestone_message`**: Ready-to-use text (e.g., "You're doing great! 2,000 credits and climbing.").
+
+**Rule:** When `balance_milestone` is present and it feels natural (e.g., after a win or when they ask how they're doing), tell your player `milestone_message` or your own encouraging phrasing. Don't spam — use it when the moment fits (e.g., they just crossed the threshold or asked for a status update).
 
 **When bet fails (insufficient balance):** If `casino_place_dice_bet` or POST /api/games/dice/bet returns an error indicating insufficient balance, tell your player immediately: "You're out of credits. Please deposit at /dashboard/deposit or claim Free Credits to continue playing." Direct them to deposit — do not retry bets until they add funds.
 

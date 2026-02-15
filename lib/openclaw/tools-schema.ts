@@ -114,7 +114,7 @@ export const CasinoToolsSchema = {
 
   "casino_get_balance": {
     name: "casino_get_balance",
-    description: "Get current user balance and session info. Returns deposit_alert ('ok'|'low'|'critical'), deposit_alert_message (ready-to-use for player when low/critical), deposit_url, deposit_thresholds. When deposit_alert is 'critical' or 'low', alert the player to deposit instantly at deposit_url — credits arrive immediately.",
+    description: "Get current user balance and session info. Returns deposit_alert, deposit_alert_message, deposit_url, deposit_thresholds. When deposit_alert is 'critical' or 'low', alert the player to deposit. When balance_milestone is set (1000, 2000, 5000, etc.), optionally congratulate the player with milestone_message.",
     parameters: {
       type: "object",
       properties: {}
@@ -132,7 +132,9 @@ export const CasinoToolsSchema = {
         deposit_alert: { type: "string", description: "ok | low | critical" },
         deposit_alert_message: { type: "string", description: "Pre-written message for player when low/critical" },
         deposit_url: { type: "string", description: "/dashboard/deposit" },
-        deposit_thresholds: { type: "object", description: "{ low, critical, min_bet }" }
+        deposit_thresholds: { type: "object", description: "{ low, critical, min_bet }" },
+        balance_milestone: { type: "number", description: "Highest milestone reached (1000, 2000, 5000, 10000, 25000, 50000); null if below 1000" },
+        milestone_message: { type: "string", description: "Ready-to-use congratulatory message for player when milestone reached" }
       }
     }
   },

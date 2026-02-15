@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth-utils";
 import { getWithdrawableBalance } from "@/lib/withdrawable";
-import { DEPOSIT_ALERT_LOW, DEPOSIT_ALERT_CRITICAL, MIN_BET } from "@/lib/constants";
+import { DEPOSIT_ALERT_LOW, DEPOSIT_ALERT_CRITICAL, MIN_BET, getBalanceMilestone } from "@/lib/constants";
 
 export async function GET(request: Request) {
   const authResult = await getAuthUser(request as any);
@@ -19,6 +19,8 @@ export async function GET(request: Request) {
     : balance < DEPOSIT_ALERT_LOW ? "low" as const
     : "ok" as const;
 
+  const milestone = getBalanceMilestone(balance);
+
   return NextResponse.json({
     success: true,
     data: {
@@ -33,6 +35,8 @@ export async function GET(request: Request) {
           : null,
       deposit_url: "/dashboard/deposit",
       deposit_thresholds: { low: DEPOSIT_ALERT_LOW, critical: DEPOSIT_ALERT_CRITICAL, min_bet: MIN_BET },
+      balance_milestone: milestone?.milestone ?? null,
+      milestone_message: milestone?.message ?? null,
     },
   });
 }

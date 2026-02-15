@@ -10,7 +10,7 @@ import { getAuthUser } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
 import { gameBets, users, strategies, advancedStrategies, agentSessions, creditPackages } from "@/lib/db/schema";
 import { eq, desc, and } from "drizzle-orm";
-import { DICE_HOUSE_EDGE, FAUCET_AMOUNT, DEPOSIT_ALERT_LOW, DEPOSIT_ALERT_CRITICAL, MIN_BET } from "@/lib/constants";
+import { DICE_HOUSE_EDGE, FAUCET_AMOUNT, DEPOSIT_ALERT_LOW, DEPOSIT_ALERT_CRITICAL, MIN_BET, getBalanceMilestone } from "@/lib/constants";
 import { executeDiceRound } from "@/lib/games/execute-dice";
 import { grantFaucet } from "@/lib/faucet";
 import Stripe from "stripe";
@@ -212,6 +212,7 @@ async function handleGetBalance(params: any, agentContext: AgentContext | null, 
   const depositAlert = balance < DEPOSIT_ALERT_CRITICAL ? "critical" as const
     : balance < DEPOSIT_ALERT_LOW ? "low" as const
     : "ok" as const;
+  const milestone = getBalanceMilestone(balance);
 
   return {
     balance,
@@ -229,6 +230,8 @@ async function handleGetBalance(params: any, agentContext: AgentContext | null, 
         : null,
     deposit_url: "/dashboard/deposit",
     deposit_thresholds: { low: DEPOSIT_ALERT_LOW, critical: DEPOSIT_ALERT_CRITICAL, min_bet: MIN_BET },
+    balance_milestone: milestone?.milestone ?? null,
+    milestone_message: milestone?.message ?? null,
   };
 }
 
