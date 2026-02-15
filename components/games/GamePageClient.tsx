@@ -17,6 +17,7 @@ import { saveStrategyRunPayload } from "@/lib/strategy-run-payload";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcuts";
 import { StrategyRunningBanner } from "@/components/strategies/StrategyRunningBanner";
 import { LiveActivityFeed, type LiveActivityItem } from "./LiveActivityFeed";
+import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
 import type { DiceStrategyConfig, DiceProgressionType } from "@/lib/strategies";
 import type { StrategyRunConfig } from "./DiceGame";
 import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
@@ -540,6 +541,8 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   </p>
                 </div>
 
+                <ApiKeySection />
+
                 <div className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-3">
                   <h4 className="text-xs font-semibold text-violet-300 uppercase tracking-wider mb-1">Live View</h4>
                   <p className="text-xs text-[var(--text-secondary)]">
@@ -554,7 +557,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3" data-agent="api-instructions">
                   <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">How it works (AI)</h4>
                   <ul className="space-y-2 text-xs text-[var(--text-secondary)] list-disc list-inside">
-                    <li>Get your API key from <Link href="/dashboard/api" className="text-[var(--accent-heart)] hover:underline">Dashboard → API</Link>.</li>
+                    <li>Use your API key above (generate if needed; <Link href="/dashboard/api" className="text-[var(--accent-heart)] hover:underline">Dashboard → API</Link> for full management).</li>
                     <li>Set <code className="bg-white/10 px-1 rounded font-mono">XPERSONA_API_KEY</code> in your env so your AI can authenticate.</li>
                     <li>Use REST (<code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/bet</code>) or OpenClaw tools to place bets.</li>
                     <li>Fetch stats: <code className="bg-white/10 px-1 rounded font-mono">GET /api/me/session-stats</code> → balance, rounds, PnL, winRate.</li>
