@@ -1,5 +1,7 @@
 "use client";
 
+import { useId } from "react";
+
 export type PnLPoint = { round: number; pnl: number };
 
 const PAD = 4;
@@ -17,6 +19,7 @@ export function SessionPnLChart({
   onReset: () => void;
   layout?: "default" | "large" | "mini";
 }) {
+  const uid = useId().replace(/[^a-z0-9-]/gi, "") || "pnl";
   const isLarge = layout === "large";
   const isMini = layout === "mini";
   const CHART_W = isLarge ? 600 : isMini ? 300 : 400;
@@ -26,7 +29,7 @@ export function SessionPnLChart({
       <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-md ${isMini ? "p-2" : "p-4"}`}>
         <div className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <svg className="w-3.5 h-3.5 text-[var(--accent-heart)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-3.5 h-3.5 text-[var(--accent-heart)] animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
             </svg>
             <span className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider">Equity Curve</span>
@@ -40,7 +43,7 @@ export function SessionPnLChart({
           </button>
         </div>
         <div className={`flex flex-col items-center justify-center text-xs text-[var(--text-secondary)] gap-2 ${isMini ? "h-[60px]" : "h-[100px]"}`}>
-          <svg className="w-8 h-8 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-8 h-8 opacity-30 animate-pulse" style={{ animationDuration: "2s" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
           </svg>
           <span>No rounds yet</span>
@@ -69,23 +72,44 @@ export function SessionPnLChart({
     pathD +
     ` L ${PAD + ((points.length - 1) / Math.max(1, points.length - 1)) * (CHART_W - PAD * 2)} ${zeroY} L ${PAD} ${zeroY} Z`;
 
+  const lastX = PAD + ((points.length - 1) / Math.max(1, points.length - 1)) * (CHART_W - PAD * 2);
+  const lastY = maxPnl <= 0 ? CHART_H - PAD : PAD + (maxPnl - (points[points.length - 1]?.pnl ?? 0)) * scaleY;
+  const isUp = (points[points.length - 1]?.pnl ?? 0) >= 0;
+  const strokeColor = totalPnl >= 0 ? "#10b981" : "#f59e0b";
+
   return (
-    <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-md ${isMini ? "p-2" : "p-4"}`}>
+    <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-md overflow-hidden transition-all duration-300 hover:border-white/15 ${isMini ? "p-2" : "p-4"}`}>
+      <style>{`
+        @keyframes pnl-dot-pulse-${uid} {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.35); opacity: 0.9; }
+        }
+        .pnl-dot-${uid} {
+          transform-origin: center;
+          animation: pnl-dot-pulse-${uid} 1.8s ease-in-out infinite;
+        }
+      `}</style>
       <div className="mb-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <svg className="w-3.5 h-3.5 text-[var(--accent-heart)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
           </svg>
           <span className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider">Equity Curve</span>
+          {!isMini && (
+            <span className="inline-flex items-center gap-1 rounded bg-white/5 px-1.5 py-0.5">
+              <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" style={{ animationDuration: "1.2s" }} />
+              <span className="text-[9px] text-[var(--text-tertiary)] font-mono">LIVE</span>
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span
-            className={`text-sm font-bold font-mono ${totalPnl >= 0 ? "text-emerald-400" : "text-red-400"}`}
+            className={`text-sm font-bold font-mono transition-colors duration-300 ${totalPnl >= 0 ? "text-emerald-400 drop-shadow-[0_0_8px_rgba(16,185,129,0.35)]" : "text-red-400 drop-shadow-[0_0_8px_rgba(239,68,68,0.35)]"}`}
           >
             {totalPnl >= 0 ? "+" : ""}
             {totalPnl}
           </span>
-          <span className="text-[10px] text-[var(--text-secondary)] bg-[var(--bg-matte)] px-2 py-0.5 rounded">
+          <span className="text-[10px] text-[var(--text-secondary)] bg-[var(--bg-matte)] px-2 py-0.5 rounded tabular-nums">
             {rounds}
           </span>
           <button
@@ -105,20 +129,27 @@ export function SessionPnLChart({
         aria-hidden
       >
         <defs>
-          <linearGradient id="pnl-fill-up" x1="0" y1="1" x2="0" y2="0">
+          <linearGradient id={`pnl-fill-up-${uid}`} x1="0" y1="1" x2="0" y2="0">
             <stop offset="0%" stopColor="#10b981" stopOpacity={0} />
-            <stop offset="50%" stopColor="#10b981" stopOpacity={0.2} />
-            <stop offset="100%" stopColor="#10b981" stopOpacity={0.4} />
+            <stop offset="50%" stopColor="#10b981" stopOpacity={0.25} />
+            <stop offset="100%" stopColor="#10b981" stopOpacity={0.5} />
           </linearGradient>
-          <linearGradient id="pnl-fill-down" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.4} />
-            <stop offset="50%" stopColor="#f59e0b" stopOpacity={0.2} />
+          <linearGradient id={`pnl-fill-down-${uid}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.5} />
+            <stop offset="50%" stopColor="#f59e0b" stopOpacity={0.25} />
             <stop offset="100%" stopColor="#f59e0b" stopOpacity={0} />
           </linearGradient>
-          <linearGradient id="pnl-fill-neutral" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={`pnl-fill-neutral-${uid}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--accent-heart)" stopOpacity={0.3} />
             <stop offset="100%" stopColor="var(--accent-heart)" stopOpacity={0} />
           </linearGradient>
+          <filter id={`pnl-glow-${uid}`} x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
         </defs>
         {zeroY > PAD && zeroY < CHART_H - PAD && (
           <line
@@ -129,36 +160,54 @@ export function SessionPnLChart({
             stroke="var(--text-secondary)"
             strokeOpacity={0.3}
             strokeDasharray="4 2"
+            className="animate-pulse"
+            style={{ animationDuration: "3s" }}
           />
         )}
         <path
           d={fillD}
           fill={
             totalPnl > 0
-              ? "url(#pnl-fill-up)"
+              ? `url(#pnl-fill-up-${uid})`
               : totalPnl < 0
-                ? "url(#pnl-fill-down)"
-                : "url(#pnl-fill-neutral)"
+                ? `url(#pnl-fill-down-${uid})`
+                : `url(#pnl-fill-neutral-${uid})`
           }
+          className="transition-opacity duration-500"
         />
-        <path
-          d={pathD}
-          fill="none"
-          stroke={totalPnl >= 0 ? "#10b981" : "#f59e0b"}
-          strokeWidth={2.5}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {/* Last point dot */}
-        {points.length > 0 && (
-          <circle
-            cx={PAD + ((points.length - 1) / Math.max(1, points.length - 1)) * (CHART_W - PAD * 2)}
-            cy={maxPnl <= 0 ? CHART_H - PAD : PAD + (maxPnl - points[points.length - 1].pnl) * scaleY}
-            r={3}
-            fill={points[points.length - 1].pnl >= 0 ? "#10b981" : "#f59e0b"}
-            stroke="var(--bg-card)"
-            strokeWidth={2}
+        <g filter={`url(#pnl-glow-${uid})`}>
+          <path
+            d={pathD}
+            fill="none"
+            stroke={strokeColor}
+            strokeWidth={2.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
           />
+        </g>
+        {points.length > 0 && (
+          <g filter={`url(#pnl-glow-${uid})`}>
+            <circle
+              cx={lastX}
+              cy={lastY}
+              r={3}
+              fill={isUp ? "#10b981" : "#f59e0b"}
+              stroke="rgba(10,10,15,0.9)"
+              strokeWidth={2}
+              className={`pnl-dot-${uid}`}
+            />
+            <circle
+              cx={lastX}
+              cy={lastY}
+              r={6}
+              fill="none"
+              stroke={isUp ? "#10b981" : "#f59e0b"}
+              strokeWidth={1.5}
+              strokeOpacity={0.35}
+              className="animate-ping"
+              style={{ animationDuration: "2s", animationIterationCount: "infinite" }}
+            />
+          </g>
         )}
       </svg>
     </div>
