@@ -392,9 +392,6 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             <span className="hidden sm:inline">Dashboard</span>
           </Link>
           <div className="flex items-center gap-2">
-            <span className="text-base font-bold font-mono text-[var(--text-primary)]">Dice</span>
-          </div>
-          <div className="flex items-center gap-2">
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--bg-matte)] border border-[var(--border)]" data-agent="balance-display" data-value={balance}>
               <span className="text-xs text-[var(--text-secondary)] hidden sm:inline">NAV:</span>
               <span className="text-sm font-mono font-bold text-[var(--text-primary)]">{balance.toLocaleString()}</span>
