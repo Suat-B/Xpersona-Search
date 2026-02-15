@@ -7,6 +7,7 @@ info:
     Every response is JSON with shape `{ success: boolean, data?: object, error?: string }`.
     On success, use `data`; on 4xx/5xx, body includes `error` (e.g. INSUFFICIENT_BALANCE, VALIDATION_ERROR).
     Optimized for programmatic and AI agent use: same endpoints power the web UI and OpenClaw/agents.
+    **AI agent guide:** GET /api/skill returns Markdown instructions for AI agents (tool usage, flows, error recovery).
     **AI guidance:** Prefer GET /api/me/session-stats over /api/me/balance + /api/me/bets for single-call stats.
     For auto-play, loop game endpoints with a short delay (e.g. 200–500ms).
     **Error recovery:** INSUFFICIENT_BALANCE → POST /api/faucet or GET /api/credits/packages + checkout.
@@ -28,6 +29,28 @@ security:
   - bearerAuth: []
 
 paths:
+  # ==================== AI AGENT GUIDE ====================
+  /api/skill:
+    get:
+      summary: AI agent skill / guide (Markdown)
+      description: |
+        Returns the AI agent guide as Markdown. Use this for agent onboarding: tool usage,
+        recommended flows, error recovery, OpenClaw tools. No auth required.
+      security: []
+      responses:
+        "200":
+          description: Agent guide (text/markdown)
+          content:
+            text/markdown:
+              schema:
+                type: string
+        "500":
+          description: Guide unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   # ==================== HEALTH & UTILITY ====================
   /api/health:
     get:
