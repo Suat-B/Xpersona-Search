@@ -21,6 +21,7 @@ import { StrategyRunningBanner } from "@/components/strategies/StrategyRunningBa
 import { LiveActivityFeed, type LiveActivityItem } from "./LiveActivityFeed";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
 import { fetchBalanceWithRetry } from "@/lib/safeFetch";
+import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
 import type { DiceStrategyConfig, DiceProgressionType } from "@/lib/strategies";
 import type { StrategyRunConfig } from "./DiceGame";
 import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
@@ -48,6 +49,7 @@ interface RollResult {
 export default function GamePageClient({ game }: { game: GameSlug }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { hasApiKey } = useAiConnectionStatus();
   const sessionPnL = useDiceSessionPnL();
   const { totalPnl = 0, rounds = 0, wins = 0, addRound, addBulkSession, reset, quantMetrics } = sessionPnL;
   const statsSeries = Array.isArray(sessionPnL?.series) ? sessionPnL.series : [];
@@ -406,6 +408,27 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </Link>
         </div>
       </header>
+
+      {/* ═══════════════ CONNECT AI BANNER — shown when no API key ═══════════════ */}
+      {hasApiKey === false && (
+        <Link
+          href="/dashboard/connect-ai"
+          className="flex-shrink-0 flex items-center justify-center gap-3 px-4 py-3.5 bg-gradient-to-r from-violet-600/35 via-[var(--accent-heart)]/30 to-violet-600/35 border-y-2 border-violet-500/50 relative overflow-hidden group animate-in fade-in slide-in-from-top-2 duration-300"
+          style={{
+            boxShadow: "0 0 40px rgba(139, 92, 246, 0.25), 0 0 80px rgba(255, 45, 85, 0.1), inset 0 1px 0 rgba(255,255,255,0.05)",
+          }}
+        >
+          {/* Animated gradient shimmer on hover */}
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+          <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0 ring-2 ring-amber-400/50" style={{ animationDuration: "0.9s", boxShadow: "0 0 16px rgba(251, 191, 36, 0.9)" }} />
+          <span className="text-sm font-bold text-white uppercase tracking-widest drop-shadow-[0_0_12px_rgba(255,255,255,0.35)]">
+            Connect your AI — Your agent needs an API key to play dice
+          </span>
+          <span className="text-xs font-mono text-violet-100 font-bold px-4 py-1.5 rounded-lg bg-white/15 border border-violet-400/40 group-hover:bg-white/25 group-hover:border-violet-300/60 group-hover:scale-105 transition-all uppercase tracking-wider shadow-[0_0_20px_rgba(139,92,246,0.2)]">
+            Connect now →
+          </span>
+        </Link>
+      )}
 
       {/* ═══════════════ METRICS TICKER — 28px ═══════════════ */}
       <div className="flex-shrink-0">
