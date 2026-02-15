@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
@@ -187,71 +188,75 @@ export function ApiKeySection() {
         </div>
       )}
       
-      {modalKey && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="secure-key-title"
-          aria-label="Secure your API key"
-          onClick={(e) => e.target === e.currentTarget && closeModal()}
-        >
+      {modalKey &&
+        typeof document !== "undefined" &&
+        createPortal(
           <div
-            className="w-full max-w-md rounded-2xl border border-white/10 bg-[var(--bg-card)] p-6 shadow-2xl shadow-black/50 relative"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm min-h-screen min-w-full"
+            style={{ top: 0, left: 0, right: 0, bottom: 0 }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="secure-key-title"
+            aria-label="Secure your API key"
+            onClick={(e) => e.target === e.currentTarget && closeModal()}
           >
-            <button
-              type="button"
-              onClick={closeModal}
-              className="absolute top-4 right-4 p-2 rounded-lg text-[var(--text-tertiary)] hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-              aria-label="Close"
+            <div
+              className="w-full max-w-md rounded-2xl border border-white/10 bg-[var(--bg-card)] p-6 shadow-2xl shadow-black/50 relative"
+              onClick={(e) => e.stopPropagation()}
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-            <div className="flex items-center gap-3 mb-4 pr-10">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#ff2d55]/10 border border-[#ff2d55]/20 text-[#ff2d55]">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-              </div>
-              <div>
-                <p id="secure-key-title" className="text-sm font-semibold text-[var(--text-primary)]">Secure your key</p>
-                <p className="text-xs text-[var(--text-tertiary)]">Copy now — won&apos;t be shown again</p>
-              </div>
-            </div>
-            
-            <pre
-              className="mb-4 overflow-x-auto rounded-xl bg-black/40 p-4 text-xs text-[var(--text-primary)] font-mono break-all border border-white/10 cursor-text select-text"
-              tabIndex={0}
-            >
-              {modalKey}
-            </pre>
-            
-            <div className="flex gap-3">
-              <button
-                ref={copyButtonRef}
-                type="button"
-                onClick={copyAndClose}
-                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#0a84ff] px-4 py-3 text-sm font-medium text-white hover:bg-[#0a84ff]/90 active:scale-[0.98] transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#0a84ff] focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] shadow-lg shadow-[#0a84ff]/25"
-              >
-                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-                Copy to Clipboard
-              </button>
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-xl border border-[var(--border)] px-4 py-3 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/5 hover:text-[var(--text-primary)] transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+                className="absolute top-4 right-4 p-2 rounded-lg text-[var(--text-tertiary)] hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                aria-label="Close"
               >
-                Skip
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
+              <div className="flex items-center gap-3 mb-4 pr-10">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#ff2d55]/10 border border-[#ff2d55]/20 text-[#ff2d55]">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <div>
+                  <p id="secure-key-title" className="text-sm font-semibold text-[var(--text-primary)]">Secure your key</p>
+                  <p className="text-xs text-[var(--text-tertiary)]">Copy now — won&apos;t be shown again</p>
+                </div>
+              </div>
+              
+              <pre
+                className="mb-4 overflow-x-auto rounded-xl bg-black/40 p-4 text-xs text-[var(--text-primary)] font-mono break-all border border-white/10 cursor-text select-text"
+                tabIndex={0}
+              >
+                {modalKey}
+              </pre>
+              
+              <div className="flex gap-3">
+                <button
+                  ref={copyButtonRef}
+                  type="button"
+                  onClick={copyAndClose}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#0a84ff] px-4 py-3 text-sm font-medium text-white hover:bg-[#0a84ff]/90 active:scale-[0.98] transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#0a84ff] focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] shadow-lg shadow-[#0a84ff]/25"
+                >
+                  <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  Copy to Clipboard
+                </button>
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="rounded-xl border border-[var(--border)] px-4 py-3 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/5 hover:text-[var(--text-primary)] transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+                >
+                  Skip
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
