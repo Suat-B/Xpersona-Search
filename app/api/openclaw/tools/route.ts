@@ -91,14 +91,22 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error("OpenClaw tool execution error:", error);
+    const err = error instanceof Error ? error : new Error("Internal server error");
+    console.error("OpenClaw tool execution error:", err.message);
+    const isValidation = ["VALIDATION_ERROR", "Invalid", "required", "must be"].some(
+      (s) => err.message.includes(s)
+    );
+    const status = isValidation ? 400 : 500;
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error instanceof Error ? error.message : "Internal server error",
-        timestamp: new Date().toISOString()
+      {
+        success: false,
+        error: err.message,
+        hint: isValidation
+          ? "Check parameters: amount/target as numbers, condition as 'over'|'under'. For strategies use name, baseConfig { amount, target, condition }, rules [{ trigger: { type }, action: { type } }]."
+          : undefined,
+        timestamp: new Date().toISOString(),
       },
-      { status: 500 }
+      { status }
     );
   }
 }

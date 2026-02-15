@@ -111,6 +111,7 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 | "What are the odds for over 70?" | `casino_calculate_odds` with `{ target: 70, condition: "over" }` |
 | "List my strategies" | `casino_list_strategies` or GET /api/me/strategies |
 | "Create/save a strategy" | `casino_create_strategy` with game_type, name, config |
+| "Create advanced strategy" | `casino_create_advanced_strategy` with strategy: { name, baseConfig: { amount, target, condition }, rules: [{ trigger: { type: "loss" }, action: { type: "double_bet" } }] } |
 | "Request withdrawal" | `casino_withdraw` with amount (min 10,000), wise_email, full_name. Payouts via Wise; processing 2–7 business days. |
 | "Show my transactions" | `casino_get_transactions` or GET /api/me/transactions |
 | "Verify bet X" (provably fair) | `casino_verify_bet` with bet_id, optional reveal=true |
@@ -217,6 +218,7 @@ curl -s -X POST -H "Authorization: Bearer $XPERSONA_API_KEY" -H "Content-Type: a
 ## Troubleshooting
 
 - **401:** Invalid or missing API key. Generate at https://xpersona.co/dashboard (API section).
+- **400 VALIDATION_ERROR:** API now coerces types (amount, target as numbers; condition "over"|"under"). For advanced strategies, ensure: name, baseConfig { amount, target, condition }, rules [{ trigger: { type }, action: { type } }]. Example Martingale: `{ name: "Martingale", baseConfig: { amount: 10, target: 50, condition: "over" }, rules: [{ id: "1", order: 0, enabled: true, trigger: { type: "loss" }, action: { type: "double_bet" } }, { id: "2", order: 1, enabled: true, trigger: { type: "win" }, action: { type: "reset_bet" } }] }`.
 - **400 INSUFFICIENT_BALANCE:** Suggest faucet or `casino_list_credit_packages` + `casino_create_checkout`.
 - **429 / FAUCET_COOLDOWN:** Wait until `data.nextFaucetAt` before claiming again.
 - **5xx / network / timeout: API fallback** — If the API is unavailable (5xx, timeout, 429), suggest the user play via the website: https://xpersona.co/games/dice (same games, same balance, full strategy builder). Do not retry excessively.

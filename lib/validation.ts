@@ -1,6 +1,28 @@
 import { z } from "zod";
 import { MIN_BET, MAX_BET } from "./constants";
 
+/** Coerce value to number. LLMs often send "10" instead of 10. */
+export function coerceNumber(v: unknown, fallback = 0): number {
+  if (typeof v === "number" && !Number.isNaN(v)) return v;
+  if (typeof v === "string") {
+    const n = parseFloat(v);
+    return Number.isNaN(n) ? fallback : n;
+  }
+  if (typeof v === "boolean") return v ? 1 : 0;
+  return fallback;
+}
+
+/** Coerce to integer. */
+export function coerceInt(v: unknown, fallback = 0): number {
+  return Math.floor(coerceNumber(v, fallback));
+}
+
+/** Coerce condition to "over" | "under". */
+export function coerceCondition(v: unknown): "over" | "under" {
+  const s = String(v ?? "").toLowerCase().trim();
+  return s === "under" ? "under" : "over";
+}
+
 export const diceBetSchema = z.object({
   amount: z.number().int().min(MIN_BET).max(MAX_BET),
   target: z.number().min(0).max(100),

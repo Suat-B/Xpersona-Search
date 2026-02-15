@@ -5,6 +5,7 @@ import { strategies } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { executeDiceRound } from "@/lib/games/execute-dice";
 import type { DiceStrategyConfig } from "@/lib/strategies";
+import { coerceInt, coerceNumber, coerceCondition } from "@/lib/validation";
 import {
   createProgressionState,
   getNextBet,
@@ -50,8 +51,17 @@ export async function POST(request: Request) {
       );
     }
     cfg = row.config as DiceStrategyConfig;
-  } else if (config && typeof config.amount === "number" && typeof config.target === "number" && (config.condition === "over" || config.condition === "under")) {
-    cfg = config;
+  } else if (config && (config.amount != null || config.target != null)) {
+    const amount = coerceInt(config.amount, 10);
+    const target = coerceNumber(config.target, 50);
+    const condition = coerceCondition(config.condition);
+    if (amount < 1 || amount > 10000 || target < 0 || target >= 100) {
+      return NextResponse.json(
+        { success: false, error: "VALIDATION_ERROR", message: "Invalid config: amount 1-10000, target 0-99.99, condition over|under" },
+        { status: 400 }
+      );
+    }
+    cfg = { ...config, amount, target, condition } as DiceStrategyConfig;
   } else {
     return NextResponse.json(
       { success: false, error: "VALIDATION_ERROR", message: "strategyId or config (amount, target, condition) required" },

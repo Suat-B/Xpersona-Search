@@ -9,6 +9,7 @@ import {
   processRound,
 } from "@/lib/dice-rule-engine";
 import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
+import { coerceInt, coerceNumber, coerceCondition } from "@/lib/validation";
 
 const MAX_ROUNDS = 100;
 
@@ -68,9 +69,39 @@ export async function POST(request: Request) {
         action: { ...r.action, type: r.action.type as any },
       })),
     } as AdvancedDiceStrategy;
-  } else if (inlineStrategy?.baseConfig && inlineStrategy?.rules) {
-    // Use inline strategy
-    strategy = inlineStrategy;
+  } else if (inlineStrategy?.baseConfig && Array.isArray(inlineStrategy?.rules)) {
+    // Normalize inline strategy (coerce types from LLM)
+    const bc = inlineStrategy.baseConfig;
+    const amount = coerceInt(bc?.amount, 10);
+    const target = coerceNumber(bc?.target, 50);
+    const condition = coerceCondition(bc?.condition);
+    if (amount < 1 || amount > 10000 || target < 0 || target >= 100) {
+      return NextResponse.json(
+        { success: false, error: "VALIDATION_ERROR", message: "Invalid baseConfig: amount 1-10000, target 0-99.99" },
+        { status: 400 }
+      );
+    }
+    const rules = inlineStrategy.rules
+      .filter((r: any) => r?.trigger?.type && r?.action?.type)
+      .map((r: any, i: number) => ({
+        id: r.id ?? `rule-${i}`,
+        order: coerceInt(r.order, i),
+        enabled: r.enabled !== false,
+        trigger: { type: r.trigger.type, value: coerceNumber(r.trigger.value), value2: coerceNumber(r.trigger.value2), pattern: r.trigger.pattern },
+        action: { type: r.action.type, value: coerceNumber(r.action.value), targetRuleId: r.action.targetRuleId },
+      }));
+    if (rules.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "VALIDATION_ERROR", message: "At least one valid rule (trigger.type, action.type) required" },
+        { status: 400 }
+      );
+    }
+    strategy = {
+      ...inlineStrategy,
+      name: inlineStrategy.name || "Inline",
+      baseConfig: { amount, target, condition },
+      rules,
+    } as AdvancedDiceStrategy;
   } else {
     return NextResponse.json(
       { success: false, error: "VALIDATION_ERROR", message: "strategyId or strategy object required" },

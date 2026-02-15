@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { advancedStrategies } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
+import { coerceInt, coerceNumber, coerceCondition } from "@/lib/validation";
 
 // GET /api/me/advanced-strategies - List all advanced strategies for the current user
 export async function GET(request: NextRequest) {
@@ -52,24 +53,54 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = await request.json() as AdvancedDiceStrategy;
+    const body = (await request.json()) as AdvancedDiceStrategy;
 
     // Validate required fields
     if (!body.name || !body.baseConfig || !body.rules) {
       return NextResponse.json(
-        { error: "Missing required fields" },
+        { success: false, error: "VALIDATION_ERROR", message: "Missing required fields: name, baseConfig, rules" },
         { status: 400 }
       );
     }
 
-    // Validate base config
-    if (
-      typeof body.baseConfig.amount !== "number" ||
-      typeof body.baseConfig.target !== "number" ||
-      !["over", "under"].includes(body.baseConfig.condition)
-    ) {
+    // Coerce base config (LLMs often send strings)
+    const bc = body.baseConfig;
+    const amount = coerceInt(bc?.amount, 10);
+    const target = coerceNumber(bc?.target, 50);
+    const condition = coerceCondition(bc?.condition);
+    if (amount < 1 || amount > 10000 || target < 0 || target >= 100) {
       return NextResponse.json(
-        { error: "Invalid base configuration" },
+        { success: false, error: "VALIDATION_ERROR", message: "Invalid baseConfig: amount 1-10000, target 0-99.99" },
+        { status: 400 }
+      );
+    }
+
+    const normalizedBaseConfig = { amount, target, condition };
+
+    // Normalize rules array
+    const rules = Array.isArray(body.rules)
+      ? body.rules
+        .filter((r: any) => r?.trigger?.type && r?.action?.type)
+        .map((r: any, i: number) => ({
+          id: r.id ?? `rule-${i}`,
+          order: coerceInt(r.order, i),
+          enabled: r.enabled !== false,
+          trigger: {
+            type: r.trigger.type,
+            value: coerceNumber(r.trigger.value),
+            value2: coerceNumber(r.trigger.value2),
+            pattern: r.trigger.pattern,
+          },
+          action: {
+            type: r.action.type,
+            value: coerceNumber(r.action.value),
+            targetRuleId: r.action.targetRuleId,
+          },
+        }))
+      : [];
+    if (rules.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "VALIDATION_ERROR", message: "At least one rule with trigger.type and action.type required" },
         { status: 400 }
       );
     }
@@ -98,12 +129,12 @@ export async function POST(request: NextRequest) {
       .insert(advancedStrategies)
       .values({
         userId: authResult.user.id,
-        name: body.name,
+        name: String(body.name),
         description: body.description,
-        baseConfig: body.baseConfig,
-        rules: body.rules,
+        baseConfig: normalizedBaseConfig,
+        rules,
         globalLimits: body.globalLimits,
-        executionMode: body.executionMode || "sequential",
+        executionMode: body.executionMode === "all_matching" ? "all_matching" : "sequential",
         isPublic: body.isPublic || false,
         tags: body.tags,
       })

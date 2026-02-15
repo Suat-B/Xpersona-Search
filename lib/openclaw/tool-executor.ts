@@ -11,6 +11,7 @@ import { db } from "@/lib/db";
 import { gameBets, users, strategies, advancedStrategies, agentSessions, creditPackages } from "@/lib/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { DICE_HOUSE_EDGE, FAUCET_AMOUNT, DEPOSIT_ALERT_LOW, DEPOSIT_ALERT_CRITICAL, MIN_BET, getBalanceMilestone, getProofOfLifeAlerts } from "@/lib/constants";
+import { coerceInt, coerceNumber, coerceCondition } from "@/lib/validation";
 import { executeDiceRound } from "@/lib/games/execute-dice";
 import { grantFaucet } from "@/lib/faucet";
 import Stripe from "stripe";
@@ -134,7 +135,10 @@ async function handleAuthAgent(params: any, agentContext: AgentContext | null, r
 }
 
 async function handlePlaceDiceBet(params: any, agentContext: AgentContext | null, request: NextRequest) {
-  const { amount, target, condition, strategy_id } = params;
+  const { strategy_id } = params;
+  const amount = coerceInt(params.amount, 10);
+  const target = coerceNumber(params.target, 50);
+  const condition = coerceCondition(params.condition);
 
   const authResult = await getAuthUser(request);
   if ("error" in authResult) {
@@ -144,15 +148,11 @@ async function handlePlaceDiceBet(params: any, agentContext: AgentContext | null
   const user = authResult.user;
 
   if (amount < 1 || amount > 10000) {
-    throw new Error("Invalid bet amount");
+    throw new Error("Invalid bet amount: must be 1–10000");
   }
 
-  if (target < 0 || target > 99.99) {
-    throw new Error("Invalid target");
-  }
-
-  if (!["over", "under"].includes(condition)) {
-    throw new Error("Invalid condition");
+  if (target < 0 || target >= 100) {
+    throw new Error("Invalid target: must be 0–99.99");
   }
 
   if (user.credits < amount) {
@@ -346,13 +346,13 @@ async function handleRunStrategy(params: any, agentContext: AgentContext | null,
   const configForApi =
     inlineConfig && typeof inlineConfig === "object"
       ? {
-          amount: inlineConfig.amount,
-          target: inlineConfig.target,
-          condition: inlineConfig.condition,
-          progressionType: inlineConfig.progression_type ?? inlineConfig.progressionType,
-          maxBet: inlineConfig.max_bet ?? inlineConfig.maxBet,
-          maxConsecutiveLosses: inlineConfig.max_consecutive_losses ?? inlineConfig.maxConsecutiveLosses,
-          maxConsecutiveWins: inlineConfig.max_consecutive_wins ?? inlineConfig.maxConsecutiveWins,
+          amount: coerceInt(inlineConfig.amount, 10),
+          target: coerceNumber(inlineConfig.target, 50),
+          condition: coerceCondition(inlineConfig.condition),
+          progressionType: inlineConfig.progression_type ?? inlineConfig.progressionType ?? "flat",
+          maxBet: coerceInt(inlineConfig.max_bet ?? inlineConfig.maxBet, 10000),
+          maxConsecutiveLosses: coerceInt(inlineConfig.max_consecutive_losses ?? inlineConfig.maxConsecutiveLosses, 10),
+          maxConsecutiveWins: coerceInt(inlineConfig.max_consecutive_wins ?? inlineConfig.maxConsecutiveWins, 10),
         }
       : undefined;
 
@@ -487,6 +487,53 @@ async function handleListAdvancedStrategies(
   };
 }
 
+function normalizeAdvancedStrategy(s: any): AdvancedDiceStrategy | null {
+  if (!s?.name || !s?.baseConfig || !Array.isArray(s?.rules)) return null;
+  const bc = s.baseConfig;
+  const baseConfig = {
+    amount: coerceInt(bc?.amount, 10),
+    target: coerceNumber(bc?.target, 50),
+    condition: coerceCondition(bc?.condition),
+  };
+  const rules = s.rules
+    .filter((r: any) => r?.trigger?.type && r?.action?.type)
+    .map((r: any, i: number) => ({
+      id: r.id ?? `rule-${i}`,
+      order: coerceInt(r.order, i),
+      enabled: r.enabled !== false,
+      trigger: {
+        type: r.trigger.type,
+        value: coerceNumber(r.trigger.value),
+        value2: coerceNumber(r.trigger.value2),
+        pattern: r.trigger.pattern,
+      },
+      action: {
+        type: r.action.type,
+        value: coerceNumber(r.action.value),
+        targetRuleId: r.action.targetRuleId,
+      },
+    }));
+  if (rules.length === 0) return null;
+  return {
+    name: String(s.name),
+    description: s.description,
+    baseConfig,
+    rules,
+    globalLimits: s.globalLimits ? {
+      maxBet: coerceInt(s.globalLimits.maxBet),
+      minBet: coerceInt(s.globalLimits.minBet),
+      maxRounds: coerceInt(s.globalLimits.maxRounds),
+      stopIfBalanceBelow: coerceNumber(s.globalLimits.stopIfBalanceBelow),
+      stopIfBalanceAbove: coerceNumber(s.globalLimits.stopIfBalanceAbove),
+      stopOnConsecutiveLosses: coerceInt(s.globalLimits.stopOnConsecutiveLosses),
+      stopOnConsecutiveWins: coerceInt(s.globalLimits.stopOnConsecutiveWins),
+      stopOnProfitAbove: coerceNumber(s.globalLimits.stopOnProfitAbove),
+      stopOnLossAbove: coerceNumber(s.globalLimits.stopOnLossAbove),
+    } : undefined,
+    executionMode: (s.executionMode === "all_matching" ? "all_matching" : "sequential") as AdvancedDiceStrategy["executionMode"],
+  };
+}
+
 async function handleCreateAdvancedStrategy(
   params: any,
   agentContext: AgentContext | null,
@@ -495,9 +542,11 @@ async function handleCreateAdvancedStrategy(
   const authResult = await getAuthUser(request);
   if ("error" in authResult) throw new Error(authResult.error);
 
-  const strategy = params.strategy as AdvancedDiceStrategy;
-  if (!strategy?.name || !strategy?.baseConfig || !strategy?.rules) {
-    throw new Error("strategy requires name, baseConfig (amount, target, condition), and rules array");
+  const strategy = normalizeAdvancedStrategy(params.strategy);
+  if (!strategy) {
+    throw new Error(
+      "strategy requires: name (string), baseConfig { amount, target, condition }, rules array with trigger.type and action.type. Example: { name: \"Martingale\", baseConfig: { amount: 10, target: 50, condition: \"over\" }, rules: [{ id: \"1\", order: 0, enabled: true, trigger: { type: \"loss\" }, action: { type: \"double_bet\" } }, { trigger: { type: \"win\" }, action: { type: \"reset_bet\" } }] }"
+    );
   }
 
   const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
@@ -644,12 +693,13 @@ async function handleSimulateAdvancedStrategy(
     };
   }
 
-  if (inlineStrategy?.baseConfig && Array.isArray(inlineStrategy.rules)) {
+  const normalizedInline = normalizeAdvancedStrategy(inlineStrategy);
+  if (normalizedInline) {
     const res = await fetch(`${baseUrl}/api/me/advanced-strategies/simulate`, {
       method: "POST",
       headers,
       body: JSON.stringify({
-        strategy: inlineStrategy,
+        strategy: normalizedInline,
         rounds,
         startingBalance: starting_balance,
       }),
@@ -697,10 +747,14 @@ async function handleRunAdvancedStrategy(
   if (auth) headers.Authorization = auth;
 
   const body: Record<string, unknown> = {
-    maxRounds: Math.min(100, Math.max(1, max_rounds ?? 20)),
+    maxRounds: Math.min(100, Math.max(1, coerceInt(max_rounds, 20))),
   };
   if (strategy_id) body.strategyId = strategy_id;
-  else if (inlineStrategy?.baseConfig && Array.isArray(inlineStrategy.rules)) body.strategy = inlineStrategy;
+  else {
+    const normalized = normalizeAdvancedStrategy(inlineStrategy);
+    if (!normalized) throw new Error("strategy_id or valid strategy object (name, baseConfig, rules) required");
+    body.strategy = normalized;
+  }
 
   const res = await fetch(`${baseUrl}/api/games/dice/run-advanced-strategy`, {
     method: "POST",
@@ -739,9 +793,9 @@ async function handleCreateStrategy(
   }
 
   const apiConfig: Record<string, unknown> = {
-    amount: config.amount,
-    target: config.target,
-    condition: config.condition,
+    amount: coerceInt(config.amount, 10),
+    target: coerceNumber(config.target, 50),
+    condition: coerceCondition(config.condition),
   };
   if (config.progression_type) {
     apiConfig.progressionType = config.progression_type;
@@ -987,7 +1041,9 @@ async function handleGetLimits(params: any, agentContext: AgentContext | null, r
 }
 
 async function handleCalculateOdds(params: any, agentContext: AgentContext | null, request: NextRequest) {
-  const { target, condition, bet_amount = 10 } = params;
+  const target = coerceNumber(params.target, 50);
+  const condition = coerceCondition(params.condition);
+  const bet_amount = coerceInt(params.bet_amount, 10);
   
   const probability = condition === "over" 
     ? (100 - target) / 100 
