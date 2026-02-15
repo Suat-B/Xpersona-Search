@@ -64,15 +64,16 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const [liveBet, setLiveBet] = useState<{ result: number; win: boolean; payout: number } | null>(null);
   const [liveBetDisplayMs, setLiveBetDisplayMs] = useState(450);
   const [showAiPlayingIndicator, setShowAiPlayingIndicator] = useState(false);
+  const [aiBannerVisible, setAiBannerVisible] = useState(false);
   const [liveActivityItems, setLiveActivityItems] = useState<LiveActivityItem[]>([]);
   const [liveQueueLength, setLiveQueueLength] = useState(0);
   const processedBetIdsRef = useRef<Set<string>>(new Set());
   const liveFeedRef = useRef<EventSource | null>(null);
   const liveBetQueueRef = useRef<Array<{ result: number; win: boolean; payout: number; amount: number; target: number; condition: string; betId?: string; agentId?: string; receivedAt: number }>>([]);
   const liveQueueProcessingRef = useRef(false);
+  const aiBannerCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const MIN_LIVE_BET_DISPLAY_MS = 120;
-  const MAX_LIVE_BET_DISPLAY_MS = 1500;
+  const MIN_LIVE_BET_DISPLAY_MS = 50;
 
   // Handle deposit=success from Stripe redirect
   useEffect(() => {
@@ -247,19 +248,29 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         liveQueueProcessingRef.current = false;
         setLiveBet(null);
         setShowAiPlayingIndicator(false);
+        if (aiBannerCooldownRef.current) clearTimeout(aiBannerCooldownRef.current);
+        aiBannerCooldownRef.current = setTimeout(() => setAiBannerVisible(false), 800);
         if (queue.length > 0) processLiveBetQueue();
         return;
       }
       const peek = queue[0];
       const displayMs = peek
-        ? Math.min(MAX_LIVE_BET_DISPLAY_MS, Math.max(MIN_LIVE_BET_DISPLAY_MS, peek.receivedAt - next.receivedAt))
+        ? Math.max(MIN_LIVE_BET_DISPLAY_MS, peek.receivedAt - next.receivedAt)
         : MIN_LIVE_BET_DISPLAY_MS;
       setLiveBetDisplayMs(displayMs);
       setLiveBet({ result: next.result, win: next.win, payout: next.payout });
+      setAmount(next.amount);
+      setTarget(next.target);
+      setCondition((next.condition === "under" ? "under" : "over") as "over" | "under");
       if (next.agentId) setShowAiPlayingIndicator(true);
       setTimeout(playNext, displayMs);
     };
     playNext();
+  }, []);
+
+  // Cleanup banner cooldown on unmount
+  useEffect(() => () => {
+    if (aiBannerCooldownRef.current) clearTimeout(aiBannerCooldownRef.current);
   }, []);
 
   // Subscribe to live feed for API/AI bet activity
@@ -298,6 +309,11 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         setLiveActivityItems((prev) => [...prev, item].slice(-50));
 
         if (fromApi) {
+          if (aiBannerCooldownRef.current) {
+            clearTimeout(aiBannerCooldownRef.current);
+            aiBannerCooldownRef.current = null;
+          }
+          setAiBannerVisible(true);
           liveBetQueueRef.current.push({
             result: bet.result,
             win: bet.win,
@@ -398,7 +414,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         {/* Left column: Game - takes remaining space */}
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
           {/* AI playing indicator (when API/AI plays rounds) */}
-          {(showAiPlayingIndicator || liveQueueLength > 0) && (
+          {aiBannerVisible && (
             <div className="mb-3 flex-shrink-0 flex items-center justify-center gap-2 py-2 px-4 rounded-lg bg-violet-500/20 border border-violet-500/30 text-violet-300 text-xs font-medium">
               <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" />
               {liveQueueLength > 0 ? (
@@ -468,6 +484,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               }}
               liveBet={liveBet}
               liveBetAnimationMs={liveBetDisplayMs}
+              aiDriving={aiBannerVisible || !!liveBet}
             />
           </ClientOnly>
         </div>

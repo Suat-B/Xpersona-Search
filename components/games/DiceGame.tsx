@@ -50,6 +50,8 @@ export type DiceGameProps = {
   liveBet?: { result: number; win: boolean; payout: number } | null;
   /** Dice animation duration in ms when showing live bet (matches round speed) */
   liveBetAnimationMs?: number;
+  /** When true, AI/live feed is driving control values; show violet accent and LIVE badge */
+  aiDriving?: boolean;
   strategyRun?: StrategyRunConfig | null;
   onStrategyComplete?: (sessionPnl: number, roundsPlayed: number, wins: number) => void;
   onStrategyStop?: () => void;
@@ -75,6 +77,7 @@ export function DiceGame({
   onStrategyProgress,
   liveBet,
   liveBetAnimationMs = 450,
+  aiDriving = false,
 }: DiceGameProps) {
   const [result, setResult] = useState<Result>(null);
   const [loading, setLoading] = useState(false);
@@ -95,6 +98,13 @@ export function DiceGame({
   const autoSpeedRef = useRef(autoSpeed);
   autoSpeedRef.current = autoSpeed;
 
+  // Track previous values for change-detection flash
+  const prevAmountRef = useRef(amount);
+  const prevTargetRef = useRef(target);
+  const prevConditionRef = useRef(condition);
+  const [changedControl, setChangedControl] = useState<"amount" | "target" | "condition" | null>(null);
+  const changeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Display external bet from live feed (API/AI playing)
   useEffect(() => {
     if (!liveBet) return;
@@ -112,6 +122,39 @@ export function DiceGame({
       el.value = String(amount);
     }
   }, [amount]);
+
+  // Detect control value changes and trigger brief "just changed" flash
+  useEffect(() => {
+    if (changeTimeoutRef.current) {
+      clearTimeout(changeTimeoutRef.current);
+      changeTimeoutRef.current = null;
+    }
+    let control: "amount" | "target" | "condition" | null = null;
+    if (amount !== prevAmountRef.current) {
+      prevAmountRef.current = amount;
+      control = "amount";
+    }
+    if (target !== prevTargetRef.current) {
+      prevTargetRef.current = target;
+      control = "target";
+    }
+    if (condition !== prevConditionRef.current) {
+      prevConditionRef.current = condition;
+      control = "condition";
+    }
+    if (control !== null) {
+      setChangedControl(control);
+      changeTimeoutRef.current = setTimeout(() => {
+        setChangedControl(null);
+        changeTimeoutRef.current = null;
+      }, 500);
+    }
+    return () => {
+      if (changeTimeoutRef.current) {
+        clearTimeout(changeTimeoutRef.current);
+      }
+    };
+  }, [amount, target, condition]);
 
   const runBet = useCallback(
     async (betAmountOverride?: number): Promise<boolean> => {
@@ -404,6 +447,10 @@ export function DiceGame({
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
       }
+      if (changeTimeoutRef.current != null) {
+        clearTimeout(changeTimeoutRef.current);
+        changeTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -519,7 +566,15 @@ export function DiceGame({
         
         {/* Header - Compact */}
         <div className="flex-shrink-0 px-6 pt-4 pb-3 text-center border-b border-[var(--border)]/50" data-agent="dice-header">
-          {strategyRun ? null : activeStrategyName ? (
+          {strategyRun ? null : aiDriving ? (
+            <div className="mb-2 text-xs font-medium text-violet-400/90" data-agent="ai-driving">
+              <span className="font-semibold">AI</span>
+              <span className="mx-1">·</span>
+              <span className="font-mono">{amount}</span> cr
+              <span className="mx-1">·</span>
+              <span className="font-mono">{target}%</span> {condition}
+            </div>
+          ) : activeStrategyName ? (
             <div className="mb-2 text-xs font-medium text-[var(--text-secondary)]" data-agent="strategy-applied" data-value={activeStrategyName} data-progression={progressionType}>
               <span className="text-[var(--accent-heart)]/80">{activeStrategyName}</span>
               <span className="mx-1">·</span>
@@ -578,14 +633,34 @@ export function DiceGame({
         </div>
 
         {/* Controls Section - Clean */}
-        <div className="flex-shrink-0 px-6 pb-4 space-y-2">
+        <div
+          className={`flex-shrink-0 px-6 pb-4 space-y-2 rounded-b-2xl transition-all duration-300 ${
+            aiDriving
+              ? "border-t border-violet-500/30 bg-violet-500/5"
+              : ""
+          }`}
+        >
+          {/* AI driving badge */}
+          {aiDriving && (
+            <div className="flex justify-center -mb-1">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-violet-500/20 text-violet-400 border border-violet-500/30">
+                <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+                LIVE
+              </span>
+            </div>
+          )}
           {/* Target, Condition, Bet Row */}
           <div className="flex items-end justify-center gap-3">
             <div className="space-y-1">
               <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
                 Target
               </label>
-              <div className="relative">
+              <div
+                className={`relative transition-all duration-300 ${
+                  changedControl === "target" ? "scale-105" : "scale-100"
+                }`}
+                data-just-changed={changedControl === "target"}
+              >
                 <input
                   type="number"
                   min={0.01}
@@ -599,7 +674,11 @@ export function DiceGame({
                     }
                   }}
                   disabled={autoPlay}
-                  className="w-20 h-10 rounded-lg border-2 border-[var(--border)] bg-[var(--bg-matte)] px-2 text-center text-lg font-mono font-bold text-[var(--text-primary)] disabled:opacity-60 focus:border-[var(--accent-heart)] focus:outline-none transition-colors"
+                  className={`w-20 h-10 rounded-lg border-2 px-2 text-center text-lg font-mono font-bold text-[var(--text-primary)] disabled:opacity-60 focus:outline-none transition-all ${
+                    changedControl === "target"
+                      ? "border-violet-500 bg-violet-500/10"
+                      : "border-[var(--border)] bg-[var(--bg-matte)] focus:border-[var(--accent-heart)]"
+                  }`}
                 />
                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--text-secondary)]">
                   %
@@ -611,18 +690,30 @@ export function DiceGame({
               <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
                 Condition
               </label>
-              <SegmentedControl
-                value={condition}
-                onChange={onConditionChange}
-                disabled={autoPlay}
-              />
+              <div
+                className={`transition-all duration-300 ${
+                  changedControl === "condition" ? "scale-105" : "scale-100"
+                }`}
+                data-just-changed={changedControl === "condition"}
+              >
+                <SegmentedControl
+                  value={condition}
+                  onChange={onConditionChange}
+                  disabled={autoPlay}
+                />
+              </div>
             </div>
 
             <div className="space-y-1">
               <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
                 Amount
               </label>
-              <div className="relative">
+              <div
+                className={`relative transition-all duration-300 ${
+                  changedControl === "amount" ? "scale-105" : "scale-100"
+                }`}
+                data-just-changed={changedControl === "amount"}
+              >
                 <input
                   ref={betInputRef}
                   type="number"
@@ -631,7 +722,11 @@ export function DiceGame({
                   value={amount}
                   onChange={(e) => onAmountChange(Number(e.target.value))}
                   disabled={autoPlay}
-                  className="w-24 h-10 rounded-lg border-2 border-[var(--border)] bg-[var(--bg-matte)] px-2 text-center text-base font-mono font-bold text-[var(--text-primary)] disabled:opacity-60 focus:border-[var(--accent-heart)] focus:outline-none transition-colors"
+                  className={`w-24 h-10 rounded-lg border-2 px-2 text-center text-base font-mono font-bold text-[var(--text-primary)] disabled:opacity-60 focus:outline-none transition-all ${
+                    changedControl === "amount"
+                      ? "border-violet-500 bg-violet-500/10"
+                      : "border-[var(--border)] bg-[var(--bg-matte)] focus:border-[var(--accent-heart)]"
+                  }`}
                 />
               </div>
             </div>
