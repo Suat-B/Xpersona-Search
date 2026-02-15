@@ -4,7 +4,12 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
-export function ContinueAsAIButton() {
+interface ContinueAsAIButtonProps {
+  /** Optional path to navigate after success (e.g. /dashboard/connect-ai) */
+  successRedirect?: string;
+}
+
+export function ContinueAsAIButton({ successRedirect }: ContinueAsAIButtonProps = {}) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [modalKey, setModalKey] = useState<string | null>(null);
@@ -39,7 +44,7 @@ export function ContinueAsAIButton() {
   const viewDashboard = () => {
     if (modalKey) navigator.clipboard.writeText(modalKey);
     setModalKey(null);
-    router.push("/dashboard");
+    router.push(successRedirect ?? "/dashboard");
   };
 
   return (
@@ -127,7 +132,7 @@ export function ContinueAsAIButton() {
                 onClick={viewDashboard}
                 className="w-full rounded-xl border border-white/20 px-4 py-3 text-sm font-medium text-[var(--text-primary)] hover:bg-white/5 transition-colors"
               >
-                View dashboard as agent
+                {successRedirect ? "Continue to Connect AI" : "View dashboard as agent"}
               </button>
             </div>
           </div>

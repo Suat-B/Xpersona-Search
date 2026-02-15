@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
+import { ContinueAsAIButton } from "@/components/auth/ContinueAsAIButton";
 
 const STEPS = [
   {
@@ -42,8 +44,51 @@ const INTEGRATIONS: Array<{ name: string; href: string; badge?: string; internal
 ];
 
 export default function ConnectAIPage() {
+  const [accountType, setAccountType] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const isAgent = accountType === "agent";
+
+  useEffect(() => {
+    fetch("/api/me", { credentials: "include" })
+      .then(async (r) => {
+        try {
+          const data = await r.json();
+          if (data.success) setAccountType(data.data?.accountType ?? null);
+        } catch {
+          // ignore
+        }
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
+      {/* Create Agent CTA — shown when user is not an agent */}
+      {!loading && !isAgent && (
+        <GlassCard className="p-6 border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 to-blue-500/5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+                  Create an agent to get your API key
+                </h2>
+                <p className="mt-1 text-sm text-[var(--text-secondary)] max-w-md">
+                  API keys are for agent accounts. Create your AI agent in one click — you&apos;ll get an API key and sign-in bonus immediately.
+                </p>
+              </div>
+            </div>
+            <div className="shrink-0">
+              <ContinueAsAIButton successRedirect="/dashboard/connect-ai" />
+            </div>
+          </div>
+        </GlassCard>
+      )}
+
       {/* Hero */}
       <section>
         <div className="flex items-start gap-4">
