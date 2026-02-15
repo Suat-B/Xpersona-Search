@@ -204,10 +204,10 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       })
       .then((data) => {
         if (cancelled || !data.success || !Array.isArray(data.data?.plays)) return;
-        const plays = data.data.plays as { outcome: string; payout: number; amount: number }[];
+        const plays = data.data.plays as { outcome: string; payout: number; amount: number; resultPayload?: { value?: number } | null }[];
         const chronological = [...plays].reverse();
         const hydrated: RollResult[] = chronological.map((p) => ({
-          result: 0,
+          result: (p.resultPayload as { value?: number } | null | undefined)?.value ?? 0,
           win: p.outcome === "win",
           payout: Number(p.payout),
           playAmount: Number(p.amount),
@@ -427,8 +427,26 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       {/* Main Content - 3-panel research terminal */}
       <main className="flex-1 min-h-0 flex flex-col overflow-hidden">
         <div className="flex-1 min-h-0 flex flex-row gap-3 p-3 overflow-hidden">
-        {/* Left: Instrument Panel — Dice + Order Entry */}
-        <div className="w-[300px] flex-shrink-0 flex flex-col min-h-0 overflow-hidden border-r border-white/[0.08] pr-3">
+        {/* Left: Analytics Deck — Equity curve, distribution charts */}
+        <div className="w-[280px] flex-shrink-0 flex flex-col min-h-0 overflow-hidden min-w-0 border-r border-white/[0.08] pr-3">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden space-y-3 pr-2">
+            <DiceStatisticsPanel
+              series={statsSeries}
+              rounds={rounds}
+              totalPnl={totalPnl}
+              wins={wins}
+              recentResults={recentResults}
+              amount={amount}
+              target={target}
+              condition={condition}
+              onReset={handleReset}
+              layout="analytics"
+            />
+          </div>
+        </div>
+
+        {/* Center: Instrument Panel — Dice + Order Entry (BIGGEST) */}
+        <div className="flex-1 min-w-[360px] min-h-0 flex flex-col overflow-hidden border-r border-white/[0.08] pr-3">
           {aiBannerVisible && (
             <div className="mb-2 flex-shrink-0 flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg bg-violet-500/20 border border-violet-500/30 text-violet-300 text-[10px] font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
@@ -524,24 +542,6 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               aiDriving={aiBannerVisible || !!livePlay}
             />
           </ClientOnly>
-        </div>
-
-        {/* Center: Analytics Deck (~45%) - Equity curve, distribution charts */}
-        <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden min-w-0">
-          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden space-y-3 pr-2">
-            <DiceStatisticsPanel
-              series={statsSeries}
-              rounds={rounds}
-              totalPnl={totalPnl}
-              wins={wins}
-              recentResults={recentResults}
-              amount={amount}
-              target={target}
-              condition={condition}
-              onReset={handleReset}
-              layout="analytics"
-            />
-          </div>
         </div>
 
         {/* Right: Research Panel (~30%) - Quant metrics, Strategy, API */}
