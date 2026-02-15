@@ -64,14 +64,10 @@ export function Dice3D({ value, isRolling, win, animationDurationMs, winProbabil
     <div className="relative perspective-1000" style={{ width: size, height: size }}>
       {/* Probability ring */}
       {winProbability != null && (
-        <div className="absolute inset-0">
+        <div className="absolute inset-0 overflow-visible">
           <ProbabilityRing winProbability={winProbability} />
         </div>
       )}
-      {/* Label */}
-      <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-[9px] text-[var(--text-tertiary)] uppercase tracking-wider whitespace-nowrap">
-        Stochastic Instrument
-      </div>
       {/* Glow effect — quant colors: blue for win, amber for loss */}
       <div 
         className={`absolute inset-0 rounded-full blur-3xl transition-all duration-500 ${

@@ -42,13 +42,14 @@ export function TradeLog({ entries, maxRows = 20 }: TradeLogProps) {
               <th className="text-right py-2 px-2 font-medium">Size</th>
               <th className="text-right py-2 px-2 font-medium">Result</th>
               <th className="text-right py-2 px-2 font-medium">P&L</th>
+              <th className="text-left py-2 px-2 font-medium">Source</th>
               <th className="text-right py-2 px-2 font-medium">Balance</th>
             </tr>
           </thead>
           <tbody>
             {displayEntries.length === 0 ? (
               <tr>
-                <td colSpan={8} className="py-8 text-center text-[var(--text-tertiary)]">
+                <td colSpan={9} className="py-8 text-center text-[var(--text-tertiary)]">
                   No executions yet — execute to see trade log
                 </td>
               </tr>
@@ -73,6 +74,9 @@ export function TradeLog({ entries, maxRows = 20 }: TradeLogProps) {
                     >
                       {p >= 0 ? "+" : ""}
                       {p.toFixed(2)}
+                    </td>
+                    <td className="py-1.5 px-2 text-[10px] text-[var(--text-tertiary)] capitalize">
+                      {e.source ?? "Manual"}
                     </td>
                     <td className="py-1.5 px-2 text-right tabular-nums text-[var(--text-secondary)]">
                       {e.balance != null ? e.balance.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}

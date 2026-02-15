@@ -542,13 +542,6 @@ export function DiceGame({
     disabled: autoPlay || loading,
   });
 
-  // Calculate multiplier based on target and condition (global DICE_HOUSE_EDGE)
-  const getMultiplier = () => {
-    const probability = condition === "over" ? (100 - target) / 100 : target / 100;
-    const multiplier = (1 - DICE_HOUSE_EDGE) / probability;
-    return multiplier.toFixed(2);
-  };
-
   const aiState = { amount, target, condition, progressionType, activeStrategyName: activeStrategyName ?? undefined };
 
   return (
@@ -564,37 +557,29 @@ export function DiceGame({
       {/* Game Container */}
       <div className="flex-1 flex flex-col min-h-0 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] overflow-hidden">
         
-        {/* Header - Compact */}
-        <div className="flex-shrink-0 px-6 pt-4 pb-3 text-center border-b border-[var(--border)]/50" data-agent="dice-header">
+        {/* Header - Compact (AI/Strategy badges only; Fair/Edge/Multiplier moved to footer) */}
+        <div className="flex-shrink-0 px-4 pt-3 pb-2 border-b border-[var(--border)]/50" data-agent="dice-header">
           {strategyRun ? null : aiDriving ? (
-            <div className="mb-2 text-xs font-medium text-violet-400/90" data-agent="ai-driving">
+            <div className="text-center text-[10px] font-medium text-violet-400/90" data-agent="ai-driving">
               <span className="font-semibold">AI</span>
               <span className="mx-1">·</span>
-              <span className="font-mono">{amount}</span> cr
+              <span className="font-mono">{amount}</span>
               <span className="mx-1">·</span>
-              <span className="font-mono">{target}%</span> {condition}
+              <span className="font-mono">{target}%</span> {condition === "over" ? "Long" : "Short"}
             </div>
           ) : activeStrategyName ? (
-            <div className="mb-2 text-xs font-medium text-[var(--text-secondary)]" data-agent="strategy-applied" data-value={activeStrategyName} data-progression={progressionType}>
-              <span className="text-[var(--accent-heart)]/80">{activeStrategyName}</span>
+            <div className="text-center text-[10px] font-medium text-[var(--text-secondary)]" data-agent="strategy-applied" data-value={activeStrategyName} data-progression={progressionType}>
+              <span className="text-[#0ea5e9]/90">{activeStrategyName}</span>
               <span className="mx-1">·</span>
-              <span className="font-mono">{amount}</span> credits
+              <span className="font-mono">{amount}</span>
               <span className="mx-1">·</span>
-              <span className="font-mono">{target}%</span> {condition}
+              <span className="font-mono">{target}%</span> {condition === "over" ? "Long" : "Short"}
             </div>
-          ) : null}
-          <div className="flex items-center justify-center gap-4 text-xs text-[var(--text-secondary)]" data-agent="dice-config" data-amount={amount} data-target={target} data-condition={condition} data-progression={progressionType}>
-            <span className="flex items-center gap-1">
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              Provably Fair
-            </span>
-            <span className="text-[var(--border)]">|</span>
-            <span>3% House Edge</span>
-            <span className="text-[var(--border)]">|</span>
-            <span className="text-[var(--accent-heart)] font-semibold">{getMultiplier()}× Multiplier</span>
-          </div>
+          ) : (
+            <div className="text-center text-[10px] text-[var(--text-tertiary)]" data-agent="dice-config" data-amount={amount} data-target={target} data-condition={condition}>
+              Stochastic Instrument · Uniform(0, 99.99)
+            </div>
+          )}
         </div>
 
         {/* Main Game Area - Clean Layout */}

@@ -3,7 +3,7 @@
 /** SVG probability ring around the dice — win chance arc (0–100%) */
 export function ProbabilityRing({ winProbability }: { winProbability: number }) {
   const pct = Math.max(0, Math.min(100, winProbability));
-  const circumference = 2 * Math.PI * 54;
+  const circumference = 2 * Math.PI * 52;
   const strokeDash = (pct / 100) * circumference;
 
   return (
@@ -22,19 +22,19 @@ export function ProbabilityRing({ winProbability }: { winProbability: number }) 
       <circle
         cx="60"
         cy="60"
-        r="54"
+        r="52"
         fill="none"
-        stroke="rgba(255,255,255,0.08)"
-        strokeWidth="3"
+        stroke="rgba(255,255,255,0.12)"
+        strokeWidth="4"
       />
       {/* Filled probability arc */}
       <circle
         cx="60"
         cy="60"
-        r="54"
+        r="52"
         fill="none"
         stroke="url(#prob-ring-grad)"
-        strokeWidth="3"
+        strokeWidth="4"
         strokeDasharray={`${strokeDash} ${circumference}`}
         strokeLinecap="round"
         transform="rotate(-90 60 60)"
