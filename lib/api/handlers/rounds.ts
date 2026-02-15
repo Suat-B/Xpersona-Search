@@ -64,7 +64,7 @@ export async function getRoundsHandler(request: Request): Promise<NextResponse> 
     .limit(limit)
     .offset(offset);
 
-  const bets = rows.map((r) => {
+  const plays = rows.map((r) => {
     const amount = Number(r.amount);
     const payout = Number(r.payout);
     const pnl = payout - amount;
@@ -89,9 +89,9 @@ export async function getRoundsHandler(request: Request): Promise<NextResponse> 
   return NextResponse.json({
     success: true,
     data: {
-      bets,
+      plays,
       sessionPnl: totalSessionPnl,
-      roundCount: bets.length,
+      roundCount: plays.length,
       totalCount,
       offset,
       limit,

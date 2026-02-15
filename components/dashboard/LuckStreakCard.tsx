@@ -15,16 +15,16 @@ export function LuckStreakCard() {
     try {
       const res = await fetch("/api/me/rounds?gameType=dice&limit=20", { credentials: "include" });
       const data = await res.json().catch(() => ({}));
-      if (!data.success || !Array.isArray(data.data?.bets)) return;
-      const bets = data.data.bets as { outcome: string }[];
-      const wins = bets.filter((b) => b.outcome === "win").length;
-      setRecentTotal(bets.length);
+      if (!data.success || !Array.isArray(data.data?.plays)) return;
+      const plays = data.data.plays as { outcome: string }[];
+      const wins = plays.filter((p) => p.outcome === "win").length;
+      setRecentTotal(plays.length);
       setRecentWins(wins);
 
       let currentStreak = 0;
       const isWin = (b: { outcome: string }) => b.outcome === "win";
-      for (let i = 0; i < bets.length; i++) {
-        if (isWin(bets[i])) {
+      for (let i = 0; i < plays.length; i++) {
+        if (isWin(plays[i])) {
           currentStreak = currentStreak >= 0 ? currentStreak + 1 : 1;
         } else {
           currentStreak = currentStreak <= 0 ? currentStreak - 1 : -1;
@@ -32,7 +32,7 @@ export function LuckStreakCard() {
       }
       setStreak(currentStreak);
 
-      const rate = bets.length > 0 ? wins / bets.length : 0.5;
+      const rate = plays.length > 0 ? wins / plays.length : 0.5;
       if (rate >= 0.55) setState("hot");
       else if (rate <= 0.45) setState("cold");
       else setState("neutral");

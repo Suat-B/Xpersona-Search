@@ -34,7 +34,7 @@ interface RollResult {
   result: number;
   win: boolean;
   payout: number;
-  betAmount?: number;
+  playAmount?: number;
 }
 
 export default function GamePageClient({ game }: { game: GameSlug }) {
@@ -62,20 +62,20 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   } | null>(null);
   const [depositSuccess, setDepositSuccess] = useState(false);
   const [loadedStrategyForBuilder, setLoadedStrategyForBuilder] = useState<AdvancedDiceStrategy | null | undefined>(undefined);
-  const [liveBet, setLiveBet] = useState<{ result: number; win: boolean; payout: number } | null>(null);
-  const [liveBetDisplayMs, setLiveBetDisplayMs] = useState(450);
+  const [livePlay, setLivePlay] = useState<{ result: number; win: boolean; payout: number } | null>(null);
+  const [livePlayDisplayMs, setLivePlayDisplayMs] = useState(450);
   const [showAiPlayingIndicator, setShowAiPlayingIndicator] = useState(false);
   const [aiBannerVisible, setAiBannerVisible] = useState(false);
   const [liveActivityItems, setLiveActivityItems] = useState<LiveActivityItem[]>([]);
   const [liveQueueLength, setLiveQueueLength] = useState(0);
   const [depositAlertFromAI, setDepositAlertFromAI] = useState(false);
-  const processedBetIdsRef = useRef<Set<string>>(new Set());
+  const processedPlayIdsRef = useRef<Set<string>>(new Set());
   const liveFeedRef = useRef<EventSource | null>(null);
-  const liveBetQueueRef = useRef<Array<{ result: number; win: boolean; payout: number; amount: number; target: number; condition: string; betId?: string; agentId?: string; receivedAt: number }>>([]);
+  const livePlayQueueRef = useRef<Array<{ result: number; win: boolean; payout: number; amount: number; target: number; condition: string; betId?: string; agentId?: string; receivedAt: number }>>([]);
   const liveQueueProcessingRef = useRef(false);
   const aiBannerCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const MIN_LIVE_BET_DISPLAY_MS = 50;
+  const MIN_LIVE_PLAY_DISPLAY_MS = 50;
 
   // Handle deposit=success from Stripe redirect
   useEffect(() => {
@@ -194,14 +194,14 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         }
       })
       .then((data) => {
-        if (cancelled || !data.success || !Array.isArray(data.data?.bets)) return;
-        const bets = data.data.bets as { outcome: string; payout: number; amount: number }[];
-        const chronological = [...bets].reverse();
-        const hydrated: RollResult[] = chronological.map((b) => ({
+        if (cancelled || !data.success || !Array.isArray(data.data?.plays)) return;
+        const plays = data.data.plays as { outcome: string; payout: number; amount: number }[];
+        const chronological = [...plays].reverse();
+        const hydrated: RollResult[] = chronological.map((p) => ({
           result: 0,
-          win: b.outcome === "win",
-          payout: Number(b.payout),
-          betAmount: Number(b.amount),
+          win: p.outcome === "win",
+          payout: Number(p.payout),
+          playAmount: Number(p.amount),
         }));
         setRecentResults(hydrated.slice(-MAX_RECENT_RESULTS));
         setRecentResultsHydrated(true);
@@ -220,39 +220,39 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     setActiveStrategyName(strategyName ?? null);
   };
 
-  const handleResult = useCallback((result: RollResult & { betAmount?: number; balance?: number; betId?: string }) => {
-    if (result.betId && processedBetIdsRef.current.has(result.betId)) return; // Already processed (e.g. from SSE)
-    setRecentResults(prev => [...prev, { ...result, betAmount: result.betAmount ?? amount }].slice(-MAX_RECENT_RESULTS));
+  const handleResult = useCallback((result: RollResult & { playAmount?: number; balance?: number; betId?: string }) => {
+    if (result.betId && processedPlayIdsRef.current.has(result.betId)) return; // Already processed (e.g. from SSE)
+    setRecentResults(prev => [...prev, { ...result, playAmount: result.playAmount ?? amount }].slice(-MAX_RECENT_RESULTS));
     if (typeof result.balance === "number") setBalance(result.balance);
-    addRound(result.betAmount ?? amount, result.payout);
-    if (result.betId) processedBetIdsRef.current.add(result.betId);
+    addRound(result.playAmount ?? amount, result.payout);
+    if (result.betId) processedPlayIdsRef.current.add(result.betId);
   }, [amount, addRound]);
 
-  // Process live bet queue sequentially; display duration matches actual round arrival speed
-  const processLiveBetQueue = useCallback(() => {
-    if (liveQueueProcessingRef.current || liveBetQueueRef.current.length === 0) return;
+  // Process live play queue sequentially; display duration matches actual round arrival speed
+  const processLivePlayQueue = useCallback(() => {
+    if (liveQueueProcessingRef.current || livePlayQueueRef.current.length === 0) return;
     liveQueueProcessingRef.current = true;
-    setLiveQueueLength(liveBetQueueRef.current.length);
+    setLiveQueueLength(livePlayQueueRef.current.length);
 
     const playNext = () => {
-      const queue = liveBetQueueRef.current;
+      const queue = livePlayQueueRef.current;
       const next = queue.shift();
       setLiveQueueLength(queue.length);
       if (!next) {
         liveQueueProcessingRef.current = false;
-        setLiveBet(null);
+        setLivePlay(null);
         setShowAiPlayingIndicator(false);
         if (aiBannerCooldownRef.current) clearTimeout(aiBannerCooldownRef.current);
         aiBannerCooldownRef.current = setTimeout(() => setAiBannerVisible(false), 800);
-        if (queue.length > 0) processLiveBetQueue();
+        if (queue.length > 0) processLivePlayQueue();
         return;
       }
       const peek = queue[0];
       const displayMs = peek
-        ? Math.max(MIN_LIVE_BET_DISPLAY_MS, peek.receivedAt - next.receivedAt)
-        : MIN_LIVE_BET_DISPLAY_MS;
-      setLiveBetDisplayMs(displayMs);
-      setLiveBet({ result: next.result, win: next.win, payout: next.payout });
+        ? Math.max(MIN_LIVE_PLAY_DISPLAY_MS, peek.receivedAt - next.receivedAt)
+        : MIN_LIVE_PLAY_DISPLAY_MS;
+      setLivePlayDisplayMs(displayMs);
+      setLivePlay({ result: next.result, win: next.win, payout: next.payout });
       setAmount(next.amount);
       setTarget(next.target);
       setCondition((next.condition === "under" ? "under" : "over") as "over" | "under");
@@ -267,7 +267,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     if (aiBannerCooldownRef.current) clearTimeout(aiBannerCooldownRef.current);
   }, []);
 
-  // Subscribe to live feed for API/AI bet activity
+  // Subscribe to live feed for API/AI play activity
   useEffect(() => {
     if (game !== "dice") return;
     const url = typeof window !== "undefined" ? `${window.location.origin}/api/me/live-feed` : "";
@@ -283,15 +283,15 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         }
         if (json?.type !== "bet" || !json?.bet) return;
         const bet = json.bet as { result: number; win: boolean; payout: number; balance: number; amount: number; target: number; condition: string; betId?: string; agentId?: string };
-        if (bet.betId && processedBetIdsRef.current.has(bet.betId)) return;
+        if (bet.betId && processedPlayIdsRef.current.has(bet.betId)) return;
         handleResult({
           result: bet.result,
           win: bet.win,
           payout: bet.payout,
-          betAmount: bet.amount,
+          playAmount: bet.amount,
           balance: bet.balance,
         });
-        if (bet.betId) processedBetIdsRef.current.add(bet.betId);
+        if (bet.betId) processedPlayIdsRef.current.add(bet.betId);
 
         const fromApi = !!bet.agentId;
         const item: LiveActivityItem = {
@@ -312,7 +312,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             aiBannerCooldownRef.current = null;
           }
           setAiBannerVisible(true);
-          liveBetQueueRef.current.push({
+          livePlayQueueRef.current.push({
             result: bet.result,
             win: bet.win,
             payout: bet.payout,
@@ -323,7 +323,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             agentId: bet.agentId,
             receivedAt: Date.now(),
           });
-          if (!liveQueueProcessingRef.current) processLiveBetQueue();
+          if (!liveQueueProcessingRef.current) processLivePlayQueue();
         }
       } catch {
         // Ignore parse errors
@@ -337,7 +337,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       es.close();
       liveFeedRef.current = null;
     };
-  }, [game, handleResult, processLiveBetQueue]);
+  }, [game, handleResult, processLivePlayQueue]);
 
   const handleReset = () => {
     reset();
@@ -480,7 +480,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               onAmountChange={setAmount}
               onTargetChange={setTarget}
               onConditionChange={setCondition}
-              onRoundComplete={(bet, payout) => addRound(bet, payout)}
+              onRoundComplete={(amount, payout) => addRound(amount, payout)}
               onAutoPlayChange={setAutoPlayActive}
               onResult={handleResult}
               strategyRun={strategyRun}
@@ -502,9 +502,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   winRatePercent: stats.currentRound > 0 ? (stats.wins / stats.currentRound) * 100 : 0,
                 });
               }}
-              liveBet={liveBet}
-              liveBetAnimationMs={liveBetDisplayMs}
-              aiDriving={aiBannerVisible || !!liveBet}
+              livePlay={livePlay}
+              livePlayAnimationMs={livePlayDisplayMs}
+              aiDriving={aiBannerVisible || !!livePlay}
             />
           </ClientOnly>
         </div>

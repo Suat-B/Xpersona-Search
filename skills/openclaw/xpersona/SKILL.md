@@ -18,9 +18,9 @@ Base URL: `https://xpersona.co` (override with `XPERSONA_BASE_URL` if set).
 
 | Action | Method | Path | Body / Notes |
 |--------|--------|------|--------------|
-| **Session stats (AI-first)** | GET | /api/me/session-stats?gameType=dice&limit=50 | → `data.balance`, `data.deposit_alert`, `data.deposit_url`, `data.balance_milestone`, `data.milestone_message`, `data.proof_of_life_alerts`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentBets` — prefer this for "how am I doing?" |
+| **Session stats (AI-first)** | GET | /api/me/session-stats?gameType=dice&limit=50 | → `data.balance`, `data.deposit_alert`, `data.deposit_url`, `data.balance_milestone`, `data.milestone_message`, `data.proof_of_life_alerts`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentPlays` — prefer this for "how am I doing?" |
 | Balance | GET | /api/me/balance | → `data.balance`, `data.deposit_alert`, `data.deposit_alert_message`, `data.deposit_url`, `data.balance_milestone`, `data.milestone_message` |
-| Session PnL & history | GET | /api/me/rounds?limit=50 | → `data.bets`, `data.sessionPnl`, `data.roundCount` |
+| Session PnL & history | GET | /api/me/rounds?limit=50 | → `data.plays`, `data.sessionPnl`, `data.roundCount` |
 | List strategies | GET | /api/me/strategies?gameType=dice | → `data.strategies` |
 | Create strategy | POST | /api/me/strategies | `{ gameType: "dice", name, config }` |
 | Get strategy | GET | /api/me/strategies/:id | → `data` |
@@ -37,7 +37,7 @@ All game responses include `data.balance` and outcome. Use GET /api/me/session-s
 ## Dice rules and odds (for explaining to users)
 
 - **House edge:** 3%
-- **Min bet:** 1, **max bet:** 10000 credits
+- **Min play:** 1, **max play:** 10000 credits
 - **Win probability:** over X → (100-X)/100; under X → X/100. Example: over 50 = 49% win chance.
 - **Multiplier:** (1 - 0.03) / winProbability = 0.97 / winProbability (rounded). Over 50 ≈ 1.98x payout.
 - **Faucet:** 100 credits per claim, 1 hour cooldown.
@@ -168,11 +168,11 @@ When you play dice for a player, proactively send status updates so they know ho
 
 **GET /api/me/session-stats?gameType=dice&limit=50** — unified stats, preferred for "how am I doing?":
 
-- `data.balance`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentBets`, `data.proof_of_life_alerts`, `data.current_streak`
+- `data.balance`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentPlays`, `data.proof_of_life_alerts`, `data.current_streak`
 
 **GET /api/me/rounds?limit=50** — detailed history:
 
-- `data.bets`: array of `{ id, gameType, amount, outcome, payout, pnl, createdAt }`
+- `data.plays`: array of `{ id, gameType, amount, outcome, payout, pnl, createdAt }`
 - `data.sessionPnl`, `data.roundCount`
 
 ---

@@ -8,7 +8,7 @@ interface SessionStatsData {
   rounds: number;
   sessionPnl: number;
   winRate: number;
-  recentBets: Array<{ amount: number; outcome: string; payout: number; pnl: number }>;
+  recentPlays: Array<{ amount: number; outcome: string; payout: number; pnl: number }>;
 }
 
 const GAME_TYPES = ["dice"] as const;
@@ -240,13 +240,13 @@ export function AgentApiSection() {
             </div>
             <div
               className="rounded bg-black/20 p-2 text-center col-span-2 sm:col-span-1"
-              data-agent="res-recentbets"
-              data-value={data.recentBets.length}
+              data-agent="res-recentplays"
+              data-value={data.recentPlays.length}
             >
               <div className="text-sm font-bold font-mono text-[var(--text-primary)]">
-                {data.recentBets.length}
+                {data.recentPlays.length}
               </div>
-              <div className="text-[10px] text-[var(--text-secondary)]">recentBets</div>
+              <div className="text-[10px] text-[var(--text-secondary)]">recentPlays</div>
             </div>
           </div>
         </div>

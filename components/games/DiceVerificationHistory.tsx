@@ -34,15 +34,15 @@ export function DiceVerificationHistory() {
     try {
       const res = await fetch("/api/me/rounds?gameType=dice&limit=15", { credentials: "include" });
       const text = await res.text();
-      let data: { success?: boolean; data?: { bets?: DiceBet[] } };
+      let data: { success?: boolean; data?: { plays?: DiceBet[]; bets?: DiceBet[] } };
       try {
         data = text ? JSON.parse(text) : {};
       } catch {
         setBets([]);
         return;
       }
-      if (data.success && Array.isArray(data.data?.bets)) {
-        setBets(data.data.bets);
+      if (data.success && (Array.isArray(data.data?.plays) || Array.isArray(data.data?.bets))) {
+        setBets((data.data?.plays ?? data.data?.bets) ?? []);
       } else {
         setBets([]);
       }

@@ -22,19 +22,19 @@ export default function LiveFeed() {
         try {
             const res = await fetch("/api/me/rounds?limit=15&gameType=dice", { credentials: "include" });
             const data = await res.json();
-            if (!data.success || !Array.isArray(data.data?.bets)) {
+            if (!data.success || !Array.isArray(data.data?.plays)) {
                 setFeed([]);
                 return;
             }
-            const bets = data.data.bets as { id: string; amount: number; outcome: string; payout: number; createdAt?: string }[];
-            const items: FeedItem[] = bets.map((b) => ({
-                id: b.id,
+            const plays = data.data.plays as { id: string; amount: number; outcome: string; payout: number; createdAt?: string }[];
+            const items: FeedItem[] = plays.map((p) => ({
+                id: p.id,
                 user: "You",
-                action: b.outcome === "win" ? "won" : "bet",
-                amount: b.outcome === "win" ? `+${b.payout}` : `-${b.amount}`,
+                action: p.outcome === "win" ? "won" : "play",
+                amount: p.outcome === "win" ? `+${p.payout}` : `-${p.amount}`,
                 game: "Dice",
-                timestamp: b.createdAt ? new Date(b.createdAt).getTime() : Date.now(),
-                type: b.outcome === "win" ? "win" : "bet",
+                timestamp: p.createdAt ? new Date(p.createdAt).getTime() : Date.now(),
+                type: p.outcome === "win" ? "win" : "bet",
             }));
             setFeed(items);
         } catch (e) {

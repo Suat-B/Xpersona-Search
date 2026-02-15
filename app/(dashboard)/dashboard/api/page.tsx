@@ -171,7 +171,7 @@ export default function ApiDocsPage() {
             <h3 className="font-medium text-[var(--text-primary)] mb-2">REST — Create strategy</h3>
             <ul className="space-y-1 text-[var(--text-secondary)] text-xs list-disc list-inside">
               <li>Body: <code className="bg-white/10 px-1 rounded font-mono">gameType</code> (required), <code className="bg-white/10 px-1 rounded font-mono">name</code> (required), <code className="bg-white/10 px-1 rounded font-mono">config</code> (required: amount, target, condition; optional: progressionType).</li>
-              <li>Config: <code className="bg-white/10 px-1 rounded font-mono">{"{ amount, target, condition, progressionType?: \"flat\"|\"martingale\"|\"paroli\"|\"dalembert\"|\"fibonacci\"|\"labouchere\"|\"oscar\"|\"kelly\", maxBet?, maxConsecutiveLosses?, maxConsecutiveWins? }"}</code></li>
+              <li>Config: <code className="bg-white/10 px-1 rounded font-mono">{"{ amount, target, condition, progressionType?: \"flat\"|\"martingale\"|\"paroli\"|\"dalembert\"|\"fibonacci\"|\"labouchere\"|\"oscar\"|\"kelly\", maxPlay?, maxConsecutiveLosses?, maxConsecutiveWins? }"}</code></li>
               <li>Response: <code className="bg-white/10 px-1 rounded font-mono">{"{ success, data: { id, gameType, name, config, createdAt } }"}</code></li>
             </ul>
           </div>

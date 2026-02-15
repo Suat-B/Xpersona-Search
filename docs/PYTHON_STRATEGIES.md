@@ -4,7 +4,7 @@ AI-first probability game supports user-defined Python strategies for the dice g
 
 ## Dice game rules
 
-- **Min bet:** 1 credit. **Max bet:** 10,000 credits.
+- **Min play:** 1 credit. **Max play:** 10,000 credits.
 - **Target:** 0–99.99. **Condition:** `"over"` (win when result &gt; target) or `"under"` (win when result &lt; target).
 - **House edge:** 3%. Payout multiplier is adjusted accordingly.
 

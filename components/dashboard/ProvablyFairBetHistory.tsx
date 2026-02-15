@@ -48,10 +48,10 @@ export function ProvablyFairBetHistory() {
       if (gameFilter) params.set("gameType", gameFilter);
       const res = await fetch(`/api/me/rounds?${params}`, { credentials: "include" });
       const data = await res.json().catch(() => ({}));
-      if (data.success && Array.isArray(data.data?.bets)) {
-        const newBets = data.data.bets as Bet[];
-        setBets(append ? (prev) => [...prev, ...newBets] : newBets);
-        setTotalCount(data.data.totalCount ?? newBets.length);
+      if (data.success && Array.isArray(data.data?.plays)) {
+        const newPlays = data.data.plays as Bet[];
+        setBets(append ? (prev) => [...prev, ...newPlays] : newPlays);
+        setTotalCount(data.data.totalCount ?? newPlays.length);
       } else if (!append) {
         setBets([]);
         setTotalCount(0);

@@ -71,12 +71,12 @@ type SessionStatsResponse = {
     rounds?: number;
     sessionPnl?: number;
     winRate?: number;
-    recentBets?: Array<{ amount: number; outcome: string; payout: number; pnl: number }>;
+    recentPlays?: Array<{ amount: number; outcome: string; payout: number; pnl: number }>;
   };
 };
 
 /**
- * Fetch session stats (balance, rounds, PnL, winRate, recentBets) with retry on 401.
+ * Fetch session stats (balance, rounds, PnL, winRate, recentPlays) with retry on 401.
  * Single-call alternative to balance + rounds. Use for dashboard metrics.
  */
 export async function fetchSessionStatsWithRetry(params?: {

@@ -51,8 +51,8 @@ const trendText = {
 export default function QuantMetrics() {
     const [metrics, setMetrics] = useState<Metric[]>([
         { label: "Balance", value: "...", subtext: "credits", trend: "neutral", icon: icons.balance },
-        { label: "Session P&L", value: "+0", subtext: "0 bets", trend: "neutral", icon: icons.pnl },
-        { label: "Win Rate", value: "0%", subtext: "0 Bets", trend: "neutral", icon: icons.winrate },
+        { label: "Session P&L", value: "+0", subtext: "0 plays", trend: "neutral", icon: icons.pnl },
+        { label: "Win Rate", value: "0%", subtext: "0 Plays", trend: "neutral", icon: icons.winrate },
         { label: "Volume", value: "0", subtext: "Wagered", trend: "neutral", icon: icons.volume },
     ]);
 
@@ -62,10 +62,10 @@ export default function QuantMetrics() {
 
             const balanceVal = stats?.balance ?? 0;
             const sessionPnl = stats?.sessionPnl ?? 0;
-            const recentBets = stats?.recentBets ?? [];
-            const roundCount = recentBets.length;
-            const wins = recentBets.filter((b) => b.outcome === "win").length;
-            const volume = recentBets.reduce((s, b) => s + (b.amount ?? 0), 0);
+            const recentPlays = stats?.recentPlays ?? [];
+            const roundCount = recentPlays.length;
+            const wins = recentPlays.filter((b) => b.outcome === "win").length;
+            const volume = recentPlays.reduce((s, b) => s + (b.amount ?? 0), 0);
             const winRatePct = roundCount > 0 ? (wins / roundCount) * 100 : (stats?.winRate ?? 0);
             const pnlTrend: "up" | "down" | "neutral" = sessionPnl > 0 ? "up" : sessionPnl < 0 ? "down" : "neutral";
 
@@ -74,14 +74,14 @@ export default function QuantMetrics() {
                 {
                     label: "Session P&L",
                     value: (sessionPnl >= 0 ? "+" : "") + String(sessionPnl),
-                    subtext: `${roundCount} bets`,
+                    subtext: `${roundCount} plays`,
                     trend: pnlTrend,
                     icon: icons.pnl,
                 },
                 {
                     label: "Win Rate",
                     value: `${winRatePct.toFixed(1)}%`,
-                    subtext: `${roundCount} Bets`,
+                    subtext: `${roundCount} Plays`,
                     trend: winRatePct >= 50 ? "up" : winRatePct < 50 ? "down" : "neutral",
                     icon: icons.winrate,
                 },

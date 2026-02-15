@@ -7,7 +7,7 @@ import { DEPOSIT_ALERT_LOW, DEPOSIT_ALERT_CRITICAL, MIN_BET, getBalanceMilestone
 
 /**
  * GET /api/me/session-stats
- * Unified session stats for AI agents: balance, rounds, PnL, win rate, recent bets.
+ * Unified session stats for AI agents: balance, rounds, PnL, win rate, recent plays.
  * Use Authorization: Bearer <API_KEY> or session cookie.
  * Response is machine-readable for agentic consumption.
  */
@@ -53,7 +53,7 @@ export async function GET(request: Request) {
     .orderBy(desc(gameBets.createdAt))
     .limit(limit);
 
-  const recentBets = rows.map((r) => ({
+  const recentPlays = rows.map((r) => ({
     amount: Number(r.amount),
     outcome: r.outcome,
     payout: Number(r.payout),
@@ -63,14 +63,14 @@ export async function GET(request: Request) {
   const winRate = totalRounds > 0 ? (totalWins / totalRounds) * 100 : 0;
   const balance = authResult.user.credits;
 
-  const chronologicalBets = [...recentBets].reverse();
+  const chronologicalPlays = [...recentPlays].reverse();
   let maxWinStreak = 0;
   let maxLossStreak = 0;
   let grossProfit = 0;
   let grossLoss = 0;
   let runWin = 0;
   let runLoss = 0;
-  for (const r of chronologicalBets) {
+  for (const r of chronologicalPlays) {
     const pnl = r.pnl;
     if (pnl > 0) {
       grossProfit += pnl;
@@ -101,7 +101,7 @@ export async function GET(request: Request) {
       rounds: totalRounds,
       sessionPnl: totalPnl,
       winRate: Math.round(winRate * 100) / 100,
-      recentBets,
+      recentPlays,
       deposit_alert: depositAlert,
       deposit_alert_message: depositAlert === "critical"
         ? `Balance ${balance} credits. Deposit now to keep playing — credits arrive instantly.`
@@ -109,7 +109,7 @@ export async function GET(request: Request) {
           ? `Balance running low (${balance} credits). Consider depositing at /dashboard/deposit.`
           : null,
       deposit_url: "/dashboard/deposit",
-      deposit_thresholds: { low: DEPOSIT_ALERT_LOW, critical: DEPOSIT_ALERT_CRITICAL, min_bet: MIN_BET },
+      deposit_thresholds: { low: DEPOSIT_ALERT_LOW, critical: DEPOSIT_ALERT_CRITICAL, min_play: MIN_BET },
       balance_milestone: milestone?.milestone ?? null,
       milestone_message: milestone?.message ?? null,
       proof_of_life_alerts: proofOfLifeAlerts,
@@ -117,14 +117,14 @@ export async function GET(request: Request) {
       max_win_streak: maxWinStreak,
       max_loss_streak: maxLossStreak,
       profit_factor: profitFactor,
-      rolling_win_rate_10: chronologicalBets.length >= 10
+      rolling_win_rate_10: chronologicalPlays.length >= 10
         ? Math.round(
-            (chronologicalBets.slice(-10).filter((r) => r.pnl > 0).length / 10) * 1000
+            (chronologicalPlays.slice(-10).filter((r) => r.pnl > 0).length / 10) * 1000
           ) / 100
         : null,
-      rolling_win_rate_20: chronologicalBets.length >= 20
+      rolling_win_rate_20: chronologicalPlays.length >= 20
         ? Math.round(
-            (chronologicalBets.slice(-20).filter((r) => r.pnl > 0).length / 20) * 1000
+            (chronologicalPlays.slice(-20).filter((r) => r.pnl > 0).length / 20) * 1000
           ) / 100
         : null,
     },

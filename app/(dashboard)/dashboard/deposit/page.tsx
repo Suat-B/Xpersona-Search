@@ -200,7 +200,7 @@ Response includes:
   deposit_alert: "ok" | "low" | "critical"
   deposit_alert_message: string | null  — ready-to-use for player
   deposit_url: "/dashboard/deposit"
-  deposit_thresholds: { low, critical, min_bet }`}
+  deposit_thresholds: { low, critical, min_play }`}
             </pre>
           </div>
           <div>
@@ -208,7 +208,7 @@ Response includes:
             <ul className="text-xs text-[var(--text-secondary)] space-y-1 font-mono">
               <li>• balance &lt; {DEPOSIT_ALERT_CRITICAL} → <span className="text-amber-400">critical</span>: Alert immediately, deposit required to continue</li>
               <li>• balance &lt; {DEPOSIT_ALERT_LOW} → <span className="text-amber-400">low</span>: Suggest deposit soon</li>
-              <li>• min_bet = {MIN_BET} credit(s) — cannot bet below this</li>
+              <li>• min_play = {MIN_BET} credit(s) — cannot play below this</li>
             </ul>
           </div>
           <div>

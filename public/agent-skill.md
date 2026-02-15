@@ -19,9 +19,9 @@ Base URL: `https://xpersona.co` (override with `XPERSONA_BASE_URL` if set).
 
 | Action | Method | Path | Body / Notes |
 |--------|--------|------|--------------|
-| **Session stats (AI-first)** | GET | /api/me/session-stats?gameType=dice&limit=50 | → `data.balance`, `data.deposit_alert`, `data.deposit_url`, `data.balance_milestone`, `data.milestone_message`, `data.proof_of_life_alerts`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentBets` — prefer this for "how am I doing?" |
+| **Session stats (AI-first)** | GET | /api/me/session-stats?gameType=dice&limit=50 | → `data.balance`, `data.deposit_alert`, `data.deposit_url`, `data.balance_milestone`, `data.milestone_message`, `data.proof_of_life_alerts`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentPlays` — prefer this for "how am I doing?" |
 | Balance | GET | /api/me/balance | → `data.balance`, `data.deposit_alert`, `data.deposit_alert_message`, `data.deposit_url` |
-| Session PnL & history | GET | /api/me/rounds?limit=50 | → `data.bets`, `data.sessionPnl`, `data.roundCount` |
+| Session PnL & history | GET | /api/me/rounds?limit=50 | → `data.plays`, `data.sessionPnl`, `data.roundCount` |
 | List strategies | GET | /api/me/strategies?gameType=dice | → `data.strategies` |
 | Create strategy | POST | /api/me/strategies | `{ gameType: "dice", name, config }` |
 | Run dice strategy | POST | /api/games/dice/run-strategy | `{ strategyId? or config?, maxRounds? }` → `data.results`, `data.sessionPnl`, `data.finalBalance` |
@@ -38,7 +38,7 @@ Use GET /api/me/session-stats for single-call stats.
 ## Dice rules and odds
 
 - **House edge:** 3%
-- **Min bet:** 1, **max bet:** 10000 credits
+- **Min play:** 1, **max play:** 10000 credits
 - **Win probability:** over X → (100-X)/100; under X → X/100. Example: over 50 = 49% win chance.
 - **Multiplier:** (1 - 0.03) / winProbability. Over 50 ≈ 1.98x payout.
 - **Faucet:** 100 credits per claim, 1 hour cooldown.
@@ -51,7 +51,7 @@ Use GET /api/me/session-stats for single-call stats.
 
 - **triggers** — 36 trigger types (win, loss, streak_loss_at_least, profit_above, balance_below, pattern_win_loss, etc.) with label, description, needsValue, valueLabel, valueType
 - **actions** — 28 action types (double_bet, reset_bet, set_bet_percent_of_balance, stop, etc.) with metadata and defaultValue
-- **globalLimits** — maxBet, minBet, maxRounds, stopOnConsecutiveLosses, etc.
+- **globalLimits** — maxPlay, minPlay, maxRounds, stopOnConsecutiveLosses, etc.
 - **presets** — 5 example strategies (Adaptive Kelly, Martingale++, Oscar's Grind, Trend Follower, Risk Manager) ready to clone or adapt
 - **gameMechanics** — house edge, multiplier formula, provably fair verification
 - **platform** — faucet amount/cooldown, deposit alerts, balance milestones, withdrawal minimums

@@ -43,13 +43,13 @@ export type DiceGameProps = {
   onAmountChange: (v: number) => void;
   onTargetChange: (v: number) => void;
   onConditionChange: (v: "over" | "under") => void;
-  onRoundComplete: (bet: number, payout: number) => void;
+  onRoundComplete: (amount: number, payout: number) => void;
   onAutoPlayChange?: (active: boolean) => void;
-  onResult?: (result: { result: number; win: boolean; payout: number; betAmount?: number; betId?: string; balance?: number }) => void;
-  /** External bet to display (e.g. from API/AI live feed). Triggers dice animation. */
-  liveBet?: { result: number; win: boolean; payout: number } | null;
-  /** Dice animation duration in ms when showing live bet (matches round speed) */
-  liveBetAnimationMs?: number;
+  onResult?: (result: { result: number; win: boolean; payout: number; playAmount?: number; betId?: string; balance?: number }) => void;
+  /** External play to display (e.g. from API/AI live feed). Triggers dice animation. */
+  livePlay?: { result: number; win: boolean; payout: number } | null;
+  /** Dice animation duration in ms when showing live play (matches round speed) */
+  livePlayAnimationMs?: number;
   /** When true, AI/live feed is driving control values; show violet accent and LIVE badge */
   aiDriving?: boolean;
   strategyRun?: StrategyRunConfig | null;
@@ -75,8 +75,8 @@ export function DiceGame({
   onStrategyComplete,
   onStrategyStop,
   onStrategyProgress,
-  liveBet,
-  liveBetAnimationMs = 450,
+  livePlay,
+  livePlayAnimationMs = 450,
   aiDriving = false,
 }: DiceGameProps) {
   const [result, setResult] = useState<Result>(null);
@@ -105,17 +105,17 @@ export function DiceGame({
   const [changedControl, setChangedControl] = useState<"amount" | "target" | "condition" | null>(null);
   const changeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Display external bet from live feed (API/AI playing)
+  // Display external play from live feed (API/AI playing)
   useEffect(() => {
-    if (!liveBet) return;
-    setResult({ ...liveBet, balance: 0 });
-    if (liveBet.win) {
+    if (!livePlay) return;
+    setResult({ ...livePlay, balance: 0 });
+    if (livePlay.win) {
       setShowWinEffects(true);
       setTimeout(() => setShowWinEffects(false), 3000);
     }
-  }, [liveBet]);
+  }, [livePlay]);
 
-  // Ensure BET input reflects external updates (e.g. strategy Apply) when it has focus
+  // Ensure play amount input reflects external updates (e.g. strategy Apply) when it has focus
   useEffect(() => {
     const el = betInputRef.current;
     if (el && document.activeElement === el && el.value !== String(amount)) {
@@ -176,7 +176,7 @@ export function DiceGame({
         try {
           data = (raw.length > 0 ? JSON.parse(raw) : {}) as BetRes;
         } catch {
-          setError(response.ok ? "Invalid response" : `Bet failed (${httpStatus})`);
+          setError(response.ok ? "Invalid response" : `Play failed (${httpStatus})`);
           return false;
         }
       } catch (e) {
@@ -187,7 +187,7 @@ export function DiceGame({
         return false;
       }
     if (process.env.NODE_ENV === "development" && !data.success) {
-      console.warn("[DiceGame] Bet failed:", { status: httpStatus, data });
+      console.warn("[DiceGame] Play failed:", { status: httpStatus, data });
     }
     if (data.success && data.data) {
       const newResult = {
@@ -203,7 +203,7 @@ export function DiceGame({
         balance: data.data.balance,
         result: data.data.result,
       };
-      onResult?.({ ...newResult, betAmount, betId: data.data.betId, balance: data.data.balance });
+      onResult?.({ ...newResult, playAmount: betAmount, betId: data.data.betId, balance: data.data.balance });
       onRoundComplete(betAmount, data.data.payout);
 
       // Show win effects
@@ -223,9 +223,9 @@ export function DiceGame({
         : errCode === "INSUFFICIENT_BALANCE"
           ? "Not enough credits — claim Free Credits or deposit"
           : errCode === "BET_TOO_LOW"
-            ? "Bet too low"
+            ? "Play too low"
             : errCode === "BET_TOO_HIGH"
-              ? "Bet too high"
+              ? "Play too high"
               : errCode === "VALIDATION_ERROR"
                 ? "Invalid bet — check amount and target"
                 : errCode === "INTERNAL_ERROR"
@@ -627,7 +627,7 @@ export function DiceGame({
               value={result?.result ?? null} 
               isRolling={loading}
               win={result?.win ?? null}
-              animationDurationMs={liveBet ? liveBetAnimationMs : undefined}
+              animationDurationMs={livePlay ? livePlayAnimationMs : undefined}
             />
           </div>
         </div>
@@ -649,7 +649,7 @@ export function DiceGame({
               </span>
             </div>
           )}
-          {/* Target, Condition, Bet Row */}
+          {/* Target, Condition, Play Row */}
           <div className="flex items-end justify-center gap-3">
             <div className="space-y-1">
               <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
@@ -732,7 +732,7 @@ export function DiceGame({
             </div>
           </div>
 
-          {/* Bet Controls Row - Combined */}
+          {/* Play Controls Row - Combined */}
           <div className="flex items-center justify-center gap-2">
             <BetPercentageButtons
               balance={balance}

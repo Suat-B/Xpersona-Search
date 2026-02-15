@@ -449,7 +449,7 @@ paths:
             minimum: 1
             maximum: 10000
             default: 50
-          description: Number of bets to return
+          description: Number of plays to return
         - name: offset
           in: query
           schema:
@@ -465,7 +465,7 @@ paths:
           description: Filter by game type
       responses:
         "200":
-          description: Bets retrieved successfully
+          description: Plays retrieved successfully
           content:
             application/json:
               schema:
@@ -476,19 +476,19 @@ paths:
                   data:
                     type: object
                     properties:
-                      bets:
+                      plays:
                         type: array
                         items:
                           $ref: '#/components/schemas/Bet'
                       sessionPnl:
                         type: integer
-                        description: Total profit/loss across all returned bets
+                        description: Total profit/loss across all returned plays
                       roundCount:
                         type: integer
-                        description: Number of bets in this response
+                        description: Number of plays in this response
                       totalCount:
                         type: integer
-                        description: Total number of bets matching the filter
+                        description: Total number of plays matching the filter
                       offset:
                         type: integer
                       limit:
@@ -511,7 +511,7 @@ paths:
           schema:
             type: string
             format: uuid
-          description: Bet ID
+          description: Play ID
         - name: reveal
           in: query
           schema:
@@ -521,7 +521,7 @@ paths:
           description: Set to 1 to include serverSeed in verification data
       responses:
         "200":
-          description: Bet details retrieved successfully
+          description: Play details retrieved successfully
           content:
             application/json:
               schema:
@@ -532,7 +532,7 @@ paths:
                   data:
                     $ref: '#/components/schemas/BetDetail'
         "400":
-          description: Invalid bet ID
+          description: Invalid play ID
           content:
             application/json:
               schema:
@@ -544,7 +544,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
-          description: Bet not found or not owned by user
+          description: Play not found or not owned by user
           content:
             application/json:
               schema:
@@ -614,7 +614,7 @@ paths:
                   rounds: 42
                   sessionPnl: -31
                   winRate: 47.62
-                  recentBets:
+                  recentPlays:
                     - amount: 10
                       outcome: win
                       payout: 19
@@ -632,15 +632,15 @@ paths:
 
   /api/me/live-feed:
     get:
-      summary: Live bet feed (SSE)
+      summary: Live play feed (SSE)
       description: |
-        Server-Sent Events stream of bet activity for the authenticated user.
+        Server-Sent Events stream of play activity for the authenticated user.
         When AI or API plays on your behalf (POST /api/games/dice/round, run-strategy, run-advanced-strategy),
-        bets appear in real-time. Use EventSource with credentials (cookies or Bearer token).
-        **Watch API play:** Open /games/dice in the browser while your AI places bets via API.
+        plays appear in real-time. Use EventSource with credentials (cookies or Bearer token).
+        **Watch API play:** Open /games/dice in the browser while your AI places plays via API.
       responses:
         "200":
-          description: SSE stream of bet events
+          description: SSE stream of play events
           content:
             text/event-stream:
               schema:
@@ -658,7 +658,7 @@ paths:
   /api/me/transactions:
     get:
       summary: Get unified transaction history
-      description: Returns a unified activity feed combining bets and faucet grants, sorted by date.
+      description: Returns a unified activity feed combining plays and faucet grants, sorted by date.
       parameters:
         - name: limit
           in: query
@@ -1104,7 +1104,7 @@ paths:
                   type: integer
                   minimum: 1
                   maximum: 10000
-                  description: Bet amount in credits
+                  description: Play amount in credits
                 target:
                   type: number
                   minimum: 0
@@ -1113,14 +1113,14 @@ paths:
                 condition:
                   type: string
                   enum: [over, under]
-                  description: Bet on roll being over or under target
+                  description: Play on roll being over or under target
             example:
               amount: 10
               target: 50
               condition: over
       responses:
         "200":
-          description: Bet placed successfully
+          description: Play placed successfully
           content:
             application/json:
               schema:
@@ -1165,7 +1165,7 @@ paths:
                     clientSeed: ""
                     nonce: 0
         "400":
-          description: Bet error
+          description: Play error
           content:
             application/json:
               schema:
@@ -2158,20 +2158,20 @@ components:
         winRate:
           type: number
           format: float
-        recentBets:
+        recentPlays:
           type: array
-          description: Simplified bet objects (amount, outcome, payout, pnl) — no id/verification
+          description: Simplified play objects (amount, outcome, payout, pnl) — no id/verification
           items:
-            $ref: '#/components/schemas/SessionRecentBet'
+            $ref: '#/components/schemas/SessionRecentPlay'
         current_streak:
           type: integer
           description: Current win streak (positive) or loss streak (negative)
         max_win_streak:
           type: integer
-          description: Longest consecutive wins in recent bets
+          description: Longest consecutive wins in recent plays
         max_loss_streak:
           type: integer
-          description: Longest consecutive losses in recent bets
+          description: Longest consecutive losses in recent plays
         profit_factor:
           type: number
           nullable: true
@@ -2179,13 +2179,13 @@ components:
         rolling_win_rate_10:
           type: number
           nullable: true
-          description: Win rate (%) over last 10 bets
+          description: Win rate (%) over last 10 plays
         rolling_win_rate_20:
           type: number
           nullable: true
-          description: Win rate (%) over last 20 bets
+          description: Win rate (%) over last 20 plays
 
-    SessionRecentBet:
+    SessionRecentPlay:
       type: object
       properties:
         amount:
