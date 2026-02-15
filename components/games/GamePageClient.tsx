@@ -819,7 +819,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               totalPnl={totalPnl}
               rounds={rounds}
               onReset={handleReset}
-              layout="default"
+              layout="mini"
             />
           </div>
           <div className="flex-1 min-w-0 overflow-hidden flex flex-col">

@@ -15,14 +15,15 @@ export function SessionPnLChart({
   totalPnl: number;
   rounds: number;
   onReset: () => void;
-  layout?: "default" | "large";
+  layout?: "default" | "large" | "mini";
 }) {
   const isLarge = layout === "large";
-  const CHART_W = isLarge ? 600 : 400;
-  const CHART_H = isLarge ? 180 : 100;
+  const isMini = layout === "mini";
+  const CHART_W = isLarge ? 600 : isMini ? 300 : 400;
+  const CHART_H = isLarge ? 180 : isMini ? 70 : 100;
   if (rounds === 0) {
     return (
-      <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 p-4 shadow-md">
+      <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-md ${isMini ? "p-2" : "p-4"}`}>
         <div className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <svg className="w-3.5 h-3.5 text-[var(--accent-heart)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -38,7 +39,7 @@ export function SessionPnLChart({
             Reset
           </button>
         </div>
-        <div className="flex h-[100px] flex-col items-center justify-center text-xs text-[var(--text-secondary)] gap-2">
+        <div className={`flex flex-col items-center justify-center text-xs text-[var(--text-secondary)] gap-2 ${isMini ? "h-[60px]" : "h-[100px]"}`}>
           <svg className="w-8 h-8 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
           </svg>
@@ -69,7 +70,7 @@ export function SessionPnLChart({
     ` L ${PAD + ((points.length - 1) / Math.max(1, points.length - 1)) * (CHART_W - PAD * 2)} ${zeroY} L ${PAD} ${zeroY} Z`;
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 p-4 shadow-md">
+    <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-md ${isMini ? "p-2" : "p-4"}`}>
       <div className="mb-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <svg className="w-3.5 h-3.5 text-[var(--accent-heart)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">

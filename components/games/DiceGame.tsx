@@ -576,7 +576,7 @@ export function DiceGame({
             </div>
           ) : (
             <div className="text-center text-[10px] text-[var(--text-tertiary)]" data-agent="dice-config" data-amount={amount} data-target={target} data-condition={condition}>
-              Stochastic Instrument · Uniform(0, 99.99)
+              Order Entry
             </div>
           )}
         </div>
@@ -603,7 +603,7 @@ export function DiceGame({
             </div>
           ) : (
             <div className="text-center text-[10px] text-[var(--text-tertiary)] uppercase tracking-wider py-1">
-              Stochastic Instrument · Uniform(0, 99.99)
+              Ready
             </div>
           )}
         </div>
