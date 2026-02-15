@@ -83,7 +83,7 @@ export function SessionPnLChart({
   const glowStdDev = isLarge ? 2.5 : 1.5;
 
   return (
-    <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-lg overflow-hidden transition-all duration-300 hover:border-white/20 hover:shadow-xl ${isMini ? "p-2" : "p-4"}`}>
+    <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-lg overflow-hidden min-w-0 min-h-0 transition-all duration-300 hover:border-white/20 hover:shadow-xl ${isMini ? "p-2" : "p-4"}`}>
       <style>{`
         @keyframes pnl-dot-pulse-${uid} {
           0%, 100% { transform: scale(1); opacity: 1; }

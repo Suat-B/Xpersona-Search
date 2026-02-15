@@ -20,7 +20,7 @@ import { KeyboardShortcutsHelp } from "./KeyboardShortcuts";
 import { StrategyRunningBanner } from "@/components/strategies/StrategyRunningBanner";
 import { LiveActivityFeed, type LiveActivityItem } from "./LiveActivityFeed";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
-import { fetchBalanceWithRetry } from "@/lib/safeFetch";
+import { fetchBalanceWithRetry, fetchSessionStatsWithRetry } from "@/lib/safeFetch";
 import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
 import type { DiceStrategyConfig, DiceProgressionType } from "@/lib/strategies";
 import type { StrategyRunConfig } from "./DiceGame";
@@ -62,6 +62,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const [recentResults, setRecentResults] = useState<RollResult[]>([]);
   const [recentResultsHydrated, setRecentResultsHydrated] = useState(false);
   const [balance, setBalance] = useState<number>(0);
+  const [balanceLoading, setBalanceLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"api" | "strategy" | "statistics">("statistics");
   const [strategyRun, setStrategyRun] = useState<StrategyRunConfig | null>(null);
   const [strategyStats, setStrategyStats] = useState<{
@@ -171,30 +172,45 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   }, [game, searchParams, router]);
 
   // Load balance on mount (retries on 401 to handle auth race with EnsureGuest)
+  // Use both balance and session-stats APIs in parallel — whichever returns first wins
   useEffect(() => {
     let fallbackId: ReturnType<typeof setTimeout> | null = null;
+    let mounted = true;
 
-    const loadBalance = async () => {
+    const loadBalance = async (isInitial = true) => {
+      if (isInitial) setBalanceLoading(true);
       try {
-        const bal = await fetchBalanceWithRetry();
-        if (bal !== null) setBalance(bal);
-        return bal !== null;
+        const [bal, stats] = await Promise.all([
+          fetchBalanceWithRetry(),
+          fetchSessionStatsWithRetry({ gameType: "dice", limit: 1 }),
+        ]);
+        if (!mounted) return;
+        const resolved = bal ?? stats?.balance ?? null;
+        if (resolved !== null) {
+          setBalance(resolved);
+          if (isInitial) setBalanceLoading(false);
+          return true;
+        }
+        if (isInitial) setBalanceLoading(false);
+        return false;
       } catch {
+        if (mounted && isInitial) setBalanceLoading(false);
         return false;
       }
     };
 
-    loadBalance().then((ok) => {
-      if (!ok) fallbackId = setTimeout(() => loadBalance(), 5500);
+    loadBalance(true).then((ok) => {
+      if (!ok) fallbackId = setTimeout(() => loadBalance(true), 2500);
     });
 
     const handleBalanceUpdate = () => {
-      loadBalance();
+      loadBalance(false);
       setDepositAlertFromAI(false);
     };
     window.addEventListener("balance-updated", handleBalanceUpdate);
 
     return () => {
+      mounted = false;
       window.removeEventListener("balance-updated", handleBalanceUpdate);
       if (fallbackId) clearTimeout(fallbackId);
     };
@@ -255,7 +271,10 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         source: result.source ?? "manual",
       }].slice(-MAX_RECENT_RESULTS);
     });
-    if (typeof result.balance === "number") setBalance(result.balance);
+    if (typeof result.balance === "number") {
+      setBalance(result.balance);
+      setBalanceLoading(false);
+    }
     addRound(result.playAmount ?? amount, result.payout);
     if (result.betId) processedPlayIdsRef.current.add(result.betId);
   }, [amount, target, condition, addRound]);
@@ -408,7 +427,13 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-white/[0.03] border border-white/[0.04]" data-agent="balance-display" data-value={balance}>
             <span className="text-[9px] text-[var(--text-tertiary)] uppercase tracking-wider">NAV</span>
-            <span className="text-[11px] font-bold text-[var(--text-primary)] tabular-nums">{balance.toLocaleString()}</span>
+            <span className="text-[11px] font-bold text-[var(--text-primary)] tabular-nums">
+              {balanceLoading ? (
+                <span className="inline-block w-10 h-3.5 bg-white/10 rounded animate-pulse" aria-label="Loading balance" />
+              ) : (
+                balance.toLocaleString()
+              )}
+            </span>
           </div>
           <Link href="/dashboard/deposit" className="text-[10px] text-[#0ea5e9] hover:text-[#0ea5e9] hover:drop-shadow-[0_0_6px_rgba(14,165,233,0.4)] transition-all uppercase tracking-wider font-bold">
             +Deposit
@@ -444,6 +469,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       <div className="flex-shrink-0">
         <QuantTopMetricsBar
           nav={balance}
+          navLoading={balanceLoading}
           sessionPnl={totalPnl}
           sharpeRatio={quantMetrics?.sharpeRatio ?? null}
           winRate={quantMetrics?.winRate ?? 0}
@@ -564,8 +590,8 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               ))}
             </div>
 
-            {/* Tab Content — scrollable */}
-            <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-2">
+            {/* Tab Content — scrollable, no spill */}
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2 space-y-2">
               {activeTab === "statistics" ? (
                 <div className="space-y-2">
                   <QuantMetricsGrid metrics={quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null }} recentResults={recentResults} />
@@ -749,10 +775,10 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </aside>
         </div>
 
-        {/* ─── Bottom Strip: Equity Curve + Trade Log ─── */}
-        <div className="flex-shrink-0 h-[220px] flex flex-row overflow-hidden border-t border-white/[0.08] bg-gradient-to-t from-[#050507] to-transparent">
-          {/* Equity Curve — larger, prominent */}
-          <div className="w-[480px] flex-shrink-0 flex flex-col overflow-hidden border-r border-white/[0.06] p-3">
+        {/* ─── Bottom Strip: Equity Curve + Trade Log (fixed height, no spill) ─── */}
+        <div className="flex-shrink-0 h-[220px] min-h-[180px] flex flex-row overflow-hidden border-t border-white/[0.08] bg-gradient-to-t from-[#050507] to-transparent">
+          {/* Equity Curve — contained, responsive */}
+          <div className="w-[480px] max-w-[calc(100%-200px)] flex-shrink-0 flex flex-col overflow-hidden border-r border-white/[0.06] p-3">
             <SessionPnLChart
               series={statsSeries}
               totalPnl={totalPnl}
@@ -761,8 +787,8 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               layout="large"
             />
           </div>
-          {/* Trade Log */}
-          <div className="flex-1 min-w-0 overflow-hidden flex flex-col p-2">
+          {/* Trade Log — flex-1 min-w-0 ensures it never spills */}
+          <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col p-2">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[10px] font-mono font-bold text-[var(--text-tertiary)] uppercase tracking-widest">Trade Log</span>
               <span className="text-[9px] font-mono text-[var(--text-tertiary)]/60 tabular-nums px-1.5 py-0.5 rounded bg-white/[0.03]">{recentResults.length} fills</span>

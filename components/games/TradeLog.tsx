@@ -30,8 +30,8 @@ export function TradeLog({ entries, maxRows = 20 }: TradeLogProps) {
   const pnl = (e: TradeLogEntry) => e.payout - e.amount;
 
   return (
-    <div className="rounded-xl border border-white/[0.08] bg-[var(--bg-card)] overflow-hidden" data-agent="trade-log">
-      <div className="overflow-x-auto overflow-y-auto max-h-[160px]">
+    <div className="rounded-xl border border-white/[0.08] bg-[var(--bg-card)] overflow-hidden min-h-0 flex-1 flex flex-col min-w-0" data-agent="trade-log">
+      <div className="overflow-x-auto overflow-y-auto max-h-[140px] min-h-0 flex-1">
         <table className="w-full text-xs font-mono border-collapse">
           <thead className="sticky top-0 bg-[var(--bg-matte)]/95 border-b border-white/10 z-10">
             <tr className="text-[var(--text-secondary)]">

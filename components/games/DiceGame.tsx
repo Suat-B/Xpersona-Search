@@ -602,11 +602,11 @@ export function DiceGame({
           )}
         </div>
 
-        {/* Controls — the hero trading hub */}
+        {/* Controls — the hero trading hub; justify-start when algo run so extra UI scrolls, not spill */}
         <div
-          className={`flex-1 min-h-0 flex flex-col items-center justify-center px-4 py-3 space-y-3 overflow-y-auto transition-all duration-300 ${
-            aiDriving ? "bg-violet-500/[0.03]" : ""
-          }`}
+          className={`flex-1 min-h-0 flex flex-col items-center px-4 py-3 space-y-3 overflow-y-auto overflow-x-hidden transition-all duration-300 ${
+            autoPlay ? "justify-start" : "justify-center"
+          } ${aiDriving ? "bg-violet-500/[0.03]" : ""}`}
         >
           {/* AI LIVE badge */}
           {aiDriving && (
@@ -782,15 +782,15 @@ export function DiceGame({
             </button>
           </div>
 
-          {/* Speed selector when auto-playing */}
+          {/* Speed selector when auto-playing — compact, no layout spill */}
           {autoPlay && (
-            <div className="flex items-center justify-center gap-1.5">
+            <div className="flex items-center justify-center gap-1 flex-shrink-0">
               {AUTO_SPEEDS.map((ms) => (
                 <button
                   key={ms}
                   type="button"
                   onClick={() => setAutoSpeed(ms)}
-                  className={`min-w-[56px] px-4 py-2.5 rounded-lg text-sm font-bold transition-all duration-200 ${
+                  className={`min-w-[48px] px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ${
                     autoSpeed === ms
                       ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/50 shadow-[0_0_14px_rgba(14,165,233,0.25)]"
                       : "border border-white/[0.08] bg-white/[0.03] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.06] hover:border-[#0ea5e9]/30"
