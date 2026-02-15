@@ -211,6 +211,24 @@ export const stripeEvents = pgTable("stripe_events", {
     .defaultNow(),
 });
 
+export const deposits = pgTable(
+  "deposits",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    credits: integer("credits").notNull(),
+    stripeEventId: varchar("stripe_event_id", { length: 255 }),
+    stripeSessionId: varchar("stripe_session_id", { length: 255 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("deposits_user_id_idx").on(table.userId),
+    index("deposits_created_at_idx").on(table.createdAt),
+  ]
+);
+
 export const withdrawalRequests = pgTable(
   "withdrawal_requests",
   {
@@ -347,5 +365,35 @@ export const advancedStrategies = pgTable(
       table.userId,
       table.name
     ),
+  ]
+);
+
+// AI strategy harvest — captures every strategy AI agents create or run, for data/training
+export const aiStrategyHarvest = pgTable(
+  "ai_strategy_harvest",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    agentId: varchar("agent_id", { length: 20 }).notNull(),
+    source: varchar("source", { length: 10 }).notNull(), // "create" | "run"
+    strategyType: varchar("strategy_type", { length: 12 }).notNull(), // "advanced" | "basic"
+    strategySnapshot: jsonb("strategy_snapshot").notNull(),
+    strategyId: uuid("strategy_id"), // advanced_strategies.id or strategies.id when saved
+    executionOutcome: jsonb("execution_outcome").$type<{
+      sessionPnl?: number;
+      roundsPlayed?: number;
+      totalWins?: number;
+      totalLosses?: number;
+      winRate?: number;
+      stoppedReason?: string;
+    }>(),
+    harvestedAt: timestamp("harvested_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("ai_strategy_harvest_agent_id_idx").on(table.agentId),
+    index("ai_strategy_harvest_harvested_at_idx").on(table.harvestedAt),
+    index("ai_strategy_harvest_strategy_type_idx").on(table.strategyType),
   ]
 );

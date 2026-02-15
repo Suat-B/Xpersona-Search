@@ -8,6 +8,7 @@ import {
   GAME_TYPES,
   coerceDiceConfigFromBody,
 } from "@/lib/strategies";
+import { harvestStrategyForTraining } from "@/lib/ai-strategy-harvest";
 
 /** GET /api/me/strategies — List current user's strategies. Query: ?gameType=dice */
 export async function GET(request: Request) {
@@ -113,6 +114,21 @@ export async function POST(request: Request) {
         { success: false, error: "INTERNAL_ERROR", message: "Strategy insert failed" },
         { status: 500 }
       );
+    }
+
+    if (authResult.user.accountType === "agent" && authResult.user.agentId) {
+      harvestStrategyForTraining({
+        userId: authResult.user.id,
+        agentId: authResult.user.agentId,
+        source: "create",
+        strategyType: "basic",
+        strategySnapshot: {
+          gameType: inserted.gameType,
+          name: inserted.name,
+          config: inserted.config,
+        },
+        strategyId: inserted.id,
+      });
     }
 
     return NextResponse.json({

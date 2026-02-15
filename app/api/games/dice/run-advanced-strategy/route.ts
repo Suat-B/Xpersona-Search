@@ -11,6 +11,7 @@ import {
 } from "@/lib/dice-rule-engine";
 import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
 import { coerceInt, coerceNumber, coerceCondition } from "@/lib/validation";
+import { harvestStrategyForTraining } from "@/lib/ai-strategy-harvest";
 
 const MAX_ROUNDS = 100_000;
 
@@ -273,6 +274,32 @@ export async function POST(request: Request) {
     totalLosses: state.totalLosses,
     winRate: results.length > 0 ? (state.totalWins / results.filter(r => r.betAmount > 0).length) * 100 : 0,
   };
+
+  if (authResult.user.accountType === "agent" && authResult.user.agentId) {
+    harvestStrategyForTraining({
+      userId: authResult.user.id,
+      agentId: authResult.user.agentId,
+      source: "run",
+      strategyType: "advanced",
+      strategySnapshot: {
+        name: strategy.name,
+        baseConfig: strategy.baseConfig,
+        rules: strategy.rules,
+        globalLimits: strategy.globalLimits,
+        executionMode: strategy.executionMode ?? "sequential",
+      },
+      strategyId: strategyId ?? null,
+      executionOutcome: {
+        sessionPnl,
+        roundsPlayed: results.length,
+        totalWins: state.totalWins,
+        totalLosses: state.totalLosses,
+        winRate: responseData.winRate as number,
+        stoppedReason,
+      },
+    });
+  }
+
   if (stoppedReason === "insufficient_balance") {
     const depositUrl = "/dashboard/deposit";
     const depositAlertMessage =

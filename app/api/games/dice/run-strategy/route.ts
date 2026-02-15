@@ -12,6 +12,7 @@ import {
   getNextBet,
   type RoundResult,
 } from "@/lib/dice-progression";
+import { harvestStrategyForTraining } from "@/lib/ai-strategy-harvest";
 
 const MAX_ROUNDS = 100_000;
 
@@ -33,6 +34,7 @@ export async function POST(request: Request) {
   );
 
   let cfg: DiceStrategyConfig;
+  let strategyRow: { id: string; name: string; gameType: string; config: unknown } | null = null;
   if (strategyId) {
     const [row] = await db
       .select()
@@ -51,6 +53,7 @@ export async function POST(request: Request) {
         { status: 404 }
       );
     }
+    strategyRow = { id: row.id, name: row.name, gameType: row.gameType, config: row.config };
     cfg = row.config as DiceStrategyConfig;
   } else if (config && (config.amount != null || config.target != null)) {
     const amount = coerceInt(config.amount, 10);
@@ -143,6 +146,30 @@ export async function POST(request: Request) {
     roundsPlayed: results.length,
     stoppedReason,
   };
+
+  if (authResult.user.accountType === "agent" && authResult.user.agentId) {
+    const totalWins = results.filter((r) => r.win).length;
+    const totalLosses = results.length - totalWins;
+    harvestStrategyForTraining({
+      userId: authResult.user.id,
+      agentId: authResult.user.agentId,
+      source: "run",
+      strategyType: "basic",
+      strategySnapshot: strategyRow
+        ? { gameType: strategyRow.gameType, name: strategyRow.name, config: strategyRow.config }
+        : { config: cfg },
+      strategyId: strategyRow?.id ?? null,
+      executionOutcome: {
+        sessionPnl,
+        roundsPlayed: results.length,
+        totalWins,
+        totalLosses,
+        winRate: results.length > 0 ? (totalWins / results.length) * 100 : 0,
+        stoppedReason,
+      },
+    });
+  }
+
   if (stoppedReason === "insufficient_balance") {
     const depositUrl = "/dashboard/deposit";
     const depositAlertMessage =

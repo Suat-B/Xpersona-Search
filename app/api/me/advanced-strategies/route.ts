@@ -5,6 +5,7 @@ import { advancedStrategies } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
 import { coerceInt, coerceNumber, coerceCondition } from "@/lib/validation";
+import { harvestStrategyForTraining } from "@/lib/ai-strategy-harvest";
 
 // GET /api/me/advanced-strategies - List all advanced strategies for the current user
 export async function GET(request: NextRequest) {
@@ -159,6 +160,25 @@ export async function POST(request: NextRequest) {
         createdAt: advancedStrategies.createdAt,
         updatedAt: advancedStrategies.updatedAt,
       });
+
+    if (authResult.user.accountType === "agent" && authResult.user.agentId) {
+      harvestStrategyForTraining({
+        userId: authResult.user.id,
+        agentId: authResult.user.agentId,
+        source: "create",
+        strategyType: "advanced",
+        strategySnapshot: {
+          name: newStrategy.name,
+          description: newStrategy.description,
+          baseConfig: newStrategy.baseConfig,
+          rules: newStrategy.rules,
+          globalLimits: newStrategy.globalLimits,
+          executionMode: newStrategy.executionMode,
+          tags: newStrategy.tags,
+        },
+        strategyId: newStrategy.id,
+      });
+    }
 
     return NextResponse.json({
       success: true,
