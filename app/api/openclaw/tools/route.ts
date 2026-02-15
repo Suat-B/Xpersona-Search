@@ -1,10 +1,10 @@
 /**
  * OpenClaw Tools API Router
- * Main entry point for all casino tool calls from AI agents
+ * Main entry point for all xpersona tool calls from AI agents
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { CasinoToolsSchema, CasinoToolName } from "@/lib/openclaw/tools-schema";
+import { XpersonaToolsSchema, XpersonaToolName } from "@/lib/openclaw/tools-schema";
 import { validateAgentToken, checkRateLimits, logToolCall, AgentContext } from "@/lib/openclaw/agent-auth";
 import { executeTool } from "@/lib/openclaw/tool-executor";
 
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
           success: false, 
           error: "Invalid request: 'tool' and 'parameters' required",
           schema: { tool: "string", parameters: "object", agent_token: "string (optional)" },
-          hint: "Example: {\"tool\":\"casino_get_balance\",\"parameters\":{}}"
+          hint: "Example: {\"tool\":\"xpersona_get_balance\",\"parameters\":{}}"
         },
         { status: 400 }
       );
@@ -37,12 +37,12 @@ export async function POST(request: NextRequest) {
     const { tool, parameters, agent_token } = body;
 
     // Validate tool exists
-    if (!CasinoToolsSchema[tool as CasinoToolName]) {
+    if (!XpersonaToolsSchema[tool as XpersonaToolName]) {
       return NextResponse.json(
         { 
           success: false, 
           error: `Unknown tool: ${tool}`,
-          available_tools: Object.keys(CasinoToolsSchema)
+          available_tools: Object.keys(XpersonaToolsSchema)
         },
         { status: 400 }
       );
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check rate limits
-    const rateLimitResult = await checkRateLimits(tool as CasinoToolName, agentContext);
+    const rateLimitResult = await checkRateLimits(tool as XpersonaToolName, agentContext);
     if (!rateLimitResult.allowed) {
       return NextResponse.json(
         { 
@@ -75,11 +75,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Log tool call
-    await logToolCall(tool as CasinoToolName, parameters, agentContext);
+    await logToolCall(tool as XpersonaToolName, parameters, agentContext);
 
     // Execute tool
     const result = await executeTool(
-      tool as CasinoToolName, 
+      tool as XpersonaToolName, 
       parameters, 
       agentContext,
       request
@@ -121,10 +121,10 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     success: true,
-    tools: CasinoToolsSchema,
+    tools: XpersonaToolsSchema,
     meta: {
       version: "1.0.0",
-      casino: "xpersona",
+      platform: "xpersona",
       ai_first: true,
       description: "AI-first probability game with OpenClaw-native tools"
     }

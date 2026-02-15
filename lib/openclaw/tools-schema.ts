@@ -1,13 +1,13 @@
 /**
- * OpenClaw Tool Schema for Xpersona Casino
+ * OpenClaw Tool Schema for Xpersona
  * AI-first, autonomous agent tools
  */
 
-export const CasinoToolsSchema = {
+export const XpersonaToolsSchema = {
   // Authentication Tools
-  "casino_auth_guest": {
-    name: "casino_auth_guest",
-    description: "Create or authenticate as a guest user in Xpersona casino",
+  "xpersona_auth_guest": {
+    name: "xpersona_auth_guest",
+    description: "Create or authenticate as a guest user in Xpersona",
     parameters: {
       type: "object",
       properties: {
@@ -34,8 +34,8 @@ export const CasinoToolsSchema = {
     }
   },
 
-  "casino_auth_agent": {
-    name: "casino_auth_agent",
+  "xpersona_auth_agent": {
+    name: "xpersona_auth_agent",
     description: "Authenticate as an AI agent with special permissions",
     parameters: {
       type: "object",
@@ -68,8 +68,8 @@ export const CasinoToolsSchema = {
   },
 
   // Gameplay Tools
-  "casino_place_dice_bet": {
-    name: "casino_place_dice_bet",
+  "xpersona_place_dice_round": {
+    name: "xpersona_place_dice_round",
     description: "Play a dice round (amount, target, condition). If insufficient balance: tell your player to deposit at /dashboard/deposit or claim Free Credits. Do not retry until they add funds.",
     parameters: {
       type: "object",
@@ -112,8 +112,8 @@ export const CasinoToolsSchema = {
     }
   },
 
-  "casino_get_balance": {
-    name: "casino_get_balance",
+  "xpersona_get_balance": {
+    name: "xpersona_get_balance",
     description: "Get current user balance and session info. Returns deposit_alert, deposit_alert_message, deposit_url, deposit_thresholds. When deposit_alert is 'critical' or 'low', alert the player to deposit. When balance_milestone is set (1000, 2000, 5000, etc.), optionally congratulate the player with milestone_message.",
     parameters: {
       type: "object",
@@ -140,8 +140,8 @@ export const CasinoToolsSchema = {
     }
   },
 
-  "casino_get_history": {
-    name: "casino_get_history",
+  "xpersona_get_history": {
+    name: "xpersona_get_history",
     description: "Get game history and statistics",
     parameters: {
       type: "object",
@@ -189,8 +189,8 @@ export const CasinoToolsSchema = {
     }
   },
 
-  "casino_analyze_patterns": {
-    name: "casino_analyze_patterns",
+  "xpersona_analyze_patterns": {
+    name: "xpersona_analyze_patterns",
     description: "Analyze game patterns and detect trends",
     parameters: {
       type: "object",
@@ -223,8 +223,8 @@ export const CasinoToolsSchema = {
   },
 
   // Strategy Management Tools
-  "casino_run_strategy": {
-    name: "casino_run_strategy",
+  "xpersona_run_strategy": {
+    name: "xpersona_run_strategy",
     description: "Execute a dice strategy for multiple rounds. Use strategy_id (saved strategy) or config (inline amount, target, condition, progression_type).",
     parameters: {
       type: "object",
@@ -264,8 +264,8 @@ export const CasinoToolsSchema = {
     },
   },
 
-  "casino_list_strategies": {
-    name: "casino_list_strategies",
+  "xpersona_list_strategies": {
+    name: "xpersona_list_strategies",
     description: "List all deployed strategies",
     parameters: {
       type: "object",
@@ -299,8 +299,8 @@ export const CasinoToolsSchema = {
     }
   },
 
-  "casino_get_strategy": {
-    name: "casino_get_strategy",
+  "xpersona_get_strategy": {
+    name: "xpersona_get_strategy",
     description: "Get strategy details",
     parameters: {
       type: "object",
@@ -332,8 +332,8 @@ export const CasinoToolsSchema = {
     },
   },
 
-  "casino_delete_strategy": {
-    name: "casino_delete_strategy",
+  "xpersona_delete_strategy": {
+    name: "xpersona_delete_strategy",
     description: "Delete a deployed strategy",
     parameters: {
       type: "object",
@@ -351,8 +351,8 @@ export const CasinoToolsSchema = {
     }
   },
 
-  "casino_create_strategy": {
-    name: "casino_create_strategy",
+  "xpersona_create_strategy": {
+    name: "xpersona_create_strategy",
     description: "Create a basic strategy (saved for later). Body: gameType (dice), name, config (amount, target, condition, optional progressionType: flat|martingale|paroli|dalembert|fibonacci|labouchere|oscar|kelly).",
     parameters: {
       type: "object",
@@ -381,8 +381,8 @@ export const CasinoToolsSchema = {
     },
   },
 
-  "casino_update_strategy": {
-    name: "casino_update_strategy",
+  "xpersona_update_strategy": {
+    name: "xpersona_update_strategy",
     description: "Update a basic strategy by ID. Pass partial: name and/or config.",
     parameters: {
       type: "object",
@@ -402,8 +402,8 @@ export const CasinoToolsSchema = {
     },
   },
 
-  "casino_withdraw": {
-    name: "casino_withdraw",
+  "xpersona_withdraw": {
+    name: "xpersona_withdraw",
     description: "Request withdrawal of credits via Wise. Min 10,000 credits ($100). Requires wise_email and full_name for Wise payout. Faucet credits are 0% withdrawable — only deposit credits. Processing: 2-7 business days.",
     parameters: {
       type: "object",
@@ -425,8 +425,8 @@ export const CasinoToolsSchema = {
     },
   },
 
-  "casino_get_transactions": {
-    name: "casino_get_transactions",
+  "xpersona_get_transactions": {
+    name: "xpersona_get_transactions",
     description: "Get unified activity feed: bets and faucet grants combined. Supports limit, offset, type filter (all|bet|faucet).",
     parameters: {
       type: "object",
@@ -445,8 +445,8 @@ export const CasinoToolsSchema = {
     },
   },
 
-  "casino_verify_bet": {
-    name: "casino_verify_bet",
+  "xpersona_verify_round": {
+    name: "xpersona_verify_round",
     description: "Get a single bet with provably fair verification data. Use reveal=true to include serverSeed for local verification.",
     parameters: {
       type: "object",
@@ -466,8 +466,8 @@ export const CasinoToolsSchema = {
   },
 
   // Advanced Strategy Tools (rule-based: 38+ triggers, 25+ actions)
-  "casino_list_advanced_strategies": {
-    name: "casino_list_advanced_strategies",
+  "xpersona_list_advanced_strategies": {
+    name: "xpersona_list_advanced_strategies",
     description: "List all advanced (rule-based) strategies. Advanced strategies use triggers and actions — e.g. on loss → double bet.",
     parameters: {
       type: "object",
@@ -495,8 +495,8 @@ export const CasinoToolsSchema = {
     }
   },
 
-  "casino_create_advanced_strategy": {
-    name: "casino_create_advanced_strategy",
+  "xpersona_create_advanced_strategy": {
+    name: "xpersona_create_advanced_strategy",
     description: "Create an advanced strategy. Structure: { name, baseConfig: { amount, target, condition }, rules: [{ id, order, enabled, trigger: { type, value? }, action: { type, value? } }], executionMode?: 'sequential'|'all_matching', globalLimits?: {} }. Triggers: win, loss, streak_loss_at_least, profit_above, balance_below, etc. Actions: double_bet, reset_bet, switch_over_under, stop, etc.",
     parameters: {
       type: "object",
@@ -547,8 +547,8 @@ export const CasinoToolsSchema = {
     }
   },
 
-  "casino_get_advanced_strategy": {
-    name: "casino_get_advanced_strategy",
+  "xpersona_get_advanced_strategy": {
+    name: "xpersona_get_advanced_strategy",
     description: "Get a single advanced strategy by ID",
     parameters: {
       type: "object",
@@ -565,8 +565,8 @@ export const CasinoToolsSchema = {
     }
   },
 
-  "casino_update_advanced_strategy": {
-    name: "casino_update_advanced_strategy",
+  "xpersona_update_advanced_strategy": {
+    name: "xpersona_update_advanced_strategy",
     description: "Update an advanced strategy. Pass partial strategy object (name, baseConfig, rules, globalLimits, executionMode).",
     parameters: {
       type: "object",
@@ -585,8 +585,8 @@ export const CasinoToolsSchema = {
     }
   },
 
-  "casino_delete_advanced_strategy": {
-    name: "casino_delete_advanced_strategy",
+  "xpersona_delete_advanced_strategy": {
+    name: "xpersona_delete_advanced_strategy",
     description: "Delete an advanced strategy",
     parameters: {
       type: "object",
@@ -604,8 +604,8 @@ export const CasinoToolsSchema = {
     }
   },
 
-  "casino_simulate_advanced_strategy": {
-    name: "casino_simulate_advanced_strategy",
+  "xpersona_simulate_advanced_strategy": {
+    name: "xpersona_simulate_advanced_strategy",
     description: "Simulate an advanced strategy (dry run, no real bets). Use strategy_id (saved) or strategy (inline object). Returns finalBalance, profit, winRate, shouldStop, stopReason.",
     parameters: {
       type: "object",
@@ -641,8 +641,8 @@ export const CasinoToolsSchema = {
     }
   },
 
-  "casino_run_advanced_strategy": {
-    name: "casino_run_advanced_strategy",
+  "xpersona_run_advanced_strategy": {
+    name: "xpersona_run_advanced_strategy",
     description: "Run an advanced strategy for real (places actual bets). Use strategy_id (saved) or strategy (inline object). Max 100 rounds per run.",
     parameters: {
       type: "object",
@@ -672,9 +672,9 @@ export const CasinoToolsSchema = {
   },
 
   // Session Management Tools (reserved for future async sessions; strategy runs are synchronous)
-  "casino_stop_session": {
-    name: "casino_stop_session",
-    description: "Reserved for future async strategy sessions. Current strategy runs (casino_run_strategy) are synchronous; no active session to stop. Returns placeholder.",
+  "xpersona_stop_session": {
+    name: "xpersona_stop_session",
+    description: "Reserved for future async strategy sessions. Current strategy runs (xpersona_run_strategy) are synchronous; no active session to stop. Returns placeholder.",
     parameters: {
       type: "object",
       properties: {
@@ -699,9 +699,9 @@ export const CasinoToolsSchema = {
     }
   },
 
-  "casino_get_session_status": {
-    name: "casino_get_session_status",
-    description: "Reserved for future async sessions. Strategy runs are synchronous; use casino_run_strategy result or GET /api/me/session-stats for current stats.",
+  "xpersona_get_session_status": {
+    name: "xpersona_get_session_status",
+    description: "Reserved for future async sessions. Strategy runs are synchronous; use xpersona_run_strategy result or GET /api/me/session-stats for current stats.",
     parameters: {
       type: "object",
       properties: {
@@ -723,8 +723,8 @@ export const CasinoToolsSchema = {
   },
 
   // Communication Tools
-  "casino_notify": {
-    name: "casino_notify",
+  "xpersona_notify": {
+    name: "xpersona_notify",
     description: "Send notification about game events",
     parameters: {
       type: "object",
@@ -753,8 +753,8 @@ export const CasinoToolsSchema = {
   },
 
   // Utility Tools
-  "casino_get_limits": {
-    name: "casino_get_limits",
+  "xpersona_get_limits": {
+    name: "xpersona_get_limits",
     description: "Get current betting limits and rate limits",
     parameters: {
       type: "object",
@@ -773,8 +773,8 @@ export const CasinoToolsSchema = {
     }
   },
 
-  "casino_calculate_odds": {
-    name: "casino_calculate_odds",
+  "xpersona_calculate_odds": {
+    name: "xpersona_calculate_odds",
     description: "Calculate theoretical odds and expected value",
     parameters: {
       type: "object",
@@ -797,8 +797,8 @@ export const CasinoToolsSchema = {
     }
   },
 
-  "casino_claim_faucet": {
-    name: "casino_claim_faucet",
+  "xpersona_claim_faucet": {
+    name: "xpersona_claim_faucet",
     description: "Claim the hourly faucet for the authenticated user",
     parameters: {
       type: "object",
@@ -817,8 +817,8 @@ export const CasinoToolsSchema = {
     }
   },
 
-  "casino_list_credit_packages": {
-    name: "casino_list_credit_packages",
+  "xpersona_list_credit_packages": {
+    name: "xpersona_list_credit_packages",
     description: "List available credit packages for purchase (deposit)",
     parameters: {
       type: "object",
@@ -844,13 +844,13 @@ export const CasinoToolsSchema = {
     }
   },
 
-  "casino_create_checkout": {
-    name: "casino_create_checkout",
+  "xpersona_create_checkout": {
+    name: "xpersona_create_checkout",
     description: "Create a Stripe Checkout session for a credit package; returns URL for user to complete deposit",
     parameters: {
       type: "object",
       properties: {
-        package_id: { type: "string", description: "ID of the credit package from casino_list_credit_packages" }
+        package_id: { type: "string", description: "ID of the credit package from xpersona_list_credit_packages" }
       },
       required: ["package_id"]
     },
@@ -866,4 +866,4 @@ export const CasinoToolsSchema = {
   }
 };
 
-export type CasinoToolName = keyof typeof CasinoToolsSchema;
+export type XpersonaToolName = keyof typeof XpersonaToolsSchema;

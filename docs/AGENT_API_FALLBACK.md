@@ -1,6 +1,6 @@
 # Agent API Fallback & Resilience
 
-**Purpose:** Ensure AI agents playing on xpersona casino have clear fallbacks when the API is unavailable or fails. Same API powers the website — agents and humans share one backend.
+**Purpose:** Ensure AI agents playing on xpersona have clear fallbacks when the API is unavailable or fails. Same API powers the website — agents and humans share one backend.
 
 ---
 
@@ -10,10 +10,10 @@ When the API fails (5xx, network error, timeout, rate limit 429), **agents shoul
 
 ### Ready-to-Paste System Prompt Block
 
-Copy this entire block into your agent's system prompt or instructions for xpersona casino integration:
+Copy this entire block into your agent's system prompt or instructions for xpersona integration:
 
 ```
-[ xpersona Casino API - Agent Instructions ]
+[ xpersona API - Agent Instructions ]
 
 Auth: Every request must include Authorization: Bearer <XPERSONA_API_KEY>. Get your key at https://xpersona.co/dashboard (API section).
 
@@ -28,7 +28,7 @@ Error handling:
 - 5xx / network timeout: Retry once after 2-5 seconds. If still failing, do NOT retry again.
 
 API fallback (critical): If the API is unavailable (5xx, network error, timeout, or 429 after retry):
-1. Inform the user: "The casino API is temporarily unavailable. You can play directly on the website: https://xpersona.co/games/dice — same games, same balance, same provably fair results."
+1. Inform the user: "The API is temporarily unavailable. You can play directly on the website: https://xpersona.co/games/dice — same games, same balance, same provably fair results."
 2. The website provides full functionality: dice, strategies (basic + advanced), session stats, faucet, deposit/withdraw.
 3. Suggest they try the API again later.
 ```
@@ -38,9 +38,9 @@ API fallback (critical): If the API is unavailable (5xx, network error, timeout,
 For agents with limited system prompt space, use this shorter version:
 
 ```
-If the xpersona casino API returns an error (5xx, network timeout, or rate limit 429):
+If the xpersona API returns an error (5xx, network timeout, or rate limit 429):
 1. Do NOT retry excessively (max 1–2 retries with backoff).
-2. Inform the user: "The casino API is temporarily unavailable. You can play directly on the website: https://xpersona.co/games/dice — same games, same balance, same provably fair results."
+2. Inform the user: "The API is temporarily unavailable. You can play directly on the website: https://xpersona.co/games/dice — same games, same balance, same provably fair results."
 3. The website provides full functionality: dice, strategies (basic + advanced), session stats, faucet, deposit/withdraw.
 4. Suggest they try the API again later.
 ```
@@ -53,7 +53,7 @@ If the xpersona casino API returns an error (5xx, network timeout, or rate limit
 | **429 Rate limit** | "Rate limited. Please wait a moment. Or play on the website: https://xpersona.co/games/dice" |
 | **500 / 502 / 503** | "API temporarily unavailable. Play on the website: https://xpersona.co/games/dice" |
 | **Network timeout** | "Connection failed. Try the website: https://xpersona.co/games/dice" |
-| **INSUFFICIENT_BALANCE** | Suggest `casino_claim_faucet` or `casino_list_credit_packages` + checkout |
+| **INSUFFICIENT_BALANCE** | Suggest `xpersona_claim_faucet` or `xpersona_list_credit_packages` + checkout |
 | **FAUCET_COOLDOWN** | "Faucet on cooldown. Next claim at {data.nextFaucetAt}. Or deposit at https://xpersona.co/dashboard/deposit" |
 
 ---

@@ -30,7 +30,7 @@ export const AI_FIRST_MESSAGING = {
   apiWhereAgentsPlay: "API — Where AI plays.",
   agentIn5Minutes: "AI in 5 minutes",
   strategiesHero: "Strategies — AI runs them too.",
-  strategiesSubtitle: "Create, run, and manage. OpenClaw skill includes casino_run_strategy.",
+  strategiesSubtitle: "Create, run, and manage. OpenClaw skill includes xpersona_run_strategy.",
   strategiesCallout: "AI can run strategies via OpenClaw tools. Same balance, same provably fair dice.",
   provablyFairHero: "Provably Fair — Same for humans and AI.",
   provablyFairSubtitle: "Every round played by AI is verifiable too.",

@@ -1,6 +1,6 @@
 # Python Strategies (Dice) — OpenClaw compatible
 
-AI-first probability game supports user-defined Python strategies for the dice game. The same contract works on the **web dashboard** (paste code, run with real bets) and via **OpenClaw** tools (`casino_deploy_strategy`, `casino_run_strategy`). Same contract for the web and for OpenClaw AI agents.
+AI-first probability game supports user-defined Python strategies for the dice game. The same contract works on the **web dashboard** (paste code, run with real bets) and via **OpenClaw** tools (`xpersona_create_strategy`, `xpersona_run_strategy`). Same contract for the web and for OpenClaw AI agents.
 
 ## Dice game rules
 
@@ -68,12 +68,12 @@ class Strategy:
 - **Forbidden:** `os`, `sys`, `subprocess`, `socket`, `requests`, `urllib`, `eval`, `exec`, `open`, `__import__` (security blocklist only).
 - **Allowed stdlib:** `math` and `statistics` are safe and not blocked; use them for odds and analysis.
 - **Max code length:** 30,000 characters.
-- Same rules apply for strategies created via the **web** and via **OpenClaw** `casino_deploy_strategy`.
+- Same rules apply for strategies created via the **web** and via **OpenClaw** `xpersona_create_strategy`.
 
 ## Execution
 
 - **Web:** Create a strategy (paste code or use Quick config). For Python strategies, click **Run (Python)** to open the runner; execution uses your **live balance** and plays real dice rounds via the API.
-- **OpenClaw:** Use `casino_deploy_strategy` to save code; `casino_run_strategy` returns a session id. Execution is driven by the dashboard (browser) when you run that strategy.
+- **OpenClaw:** Use `xpersona_create_strategy` to save code; `xpersona_run_strategy` returns a session id. Execution is driven by the dashboard (browser) when you run that strategy.
 
 ## Dice compatibility
 

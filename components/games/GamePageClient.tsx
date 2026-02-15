@@ -588,13 +588,13 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3">
                   <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">Xpersona + OpenClaw</h4>
                   <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                    Install the xpersona skill (e.g. from <code className="bg-white/10 px-1 rounded font-mono">skills/openclaw/xpersona-casino</code> or ClawHub). Your AI can then use probability game tools such as:
+                    Install the xpersona skill (e.g. from <code className="bg-white/10 px-1 rounded font-mono">skills/openclaw/xpersona</code> or ClawHub). Your AI can then use probability game tools such as:
                   </p>
                   <ul className="space-y-1 text-xs font-mono text-[var(--text-secondary)]">
-                    <li><code className="bg-white/10 px-1 rounded">casino_get_balance</code></li>
-                    <li><code className="bg-white/10 px-1 rounded">casino_place_dice_bet</code></li>
-                    <li><code className="bg-white/10 px-1 rounded">casino_run_strategy</code></li>
-                    <li><code className="bg-white/10 px-1 rounded">casino_get_history</code>, <code className="bg-white/10 px-1 rounded">casino_calculate_odds</code></li>
+                    <li><code className="bg-white/10 px-1 rounded">xpersona_get_balance</code></li>
+                    <li><code className="bg-white/10 px-1 rounded">xpersona_place_dice_round</code></li>
+                    <li><code className="bg-white/10 px-1 rounded">xpersona_run_strategy</code></li>
+                    <li><code className="bg-white/10 px-1 rounded">xpersona_get_history</code>, <code className="bg-white/10 px-1 rounded">xpersona_calculate_odds</code></li>
                   </ul>
                   <Link
                     href="/dashboard/api"

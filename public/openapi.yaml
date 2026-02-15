@@ -1650,8 +1650,8 @@ paths:
     post:
       summary: Execute OpenClaw tool
       description: |
-        Execute a casino tool via OpenClaw interface. Single POST per action.
-        Requires Authorization Bearer API key (except for casino_auth_guest).
+        Execute an xpersona tool via OpenClaw interface. Single POST per action.
+        Requires Authorization Bearer API key (except for xpersona_auth_guest).
       requestBody:
         required: true
         content:
@@ -1664,8 +1664,8 @@ paths:
               properties:
                 tool:
                   type: string
-                  description: Tool name (e.g., casino_get_balance, casino_place_dice_bet)
-                  example: "casino_place_dice_bet"
+                  description: Tool name (e.g., xpersona_get_balance, xpersona_place_dice_round)
+                  example: "xpersona_place_dice_round"
                 parameters:
                   type: object
                   description: Tool-specific parameters

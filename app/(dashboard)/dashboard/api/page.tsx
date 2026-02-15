@@ -96,7 +96,7 @@ export default function ApiDocsPage() {
           Use the same REST API from OpenClaw or any AI assistant. Set the user&apos;s API key (e.g. env <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code>), then call the endpoints below. No separate AI API — the website and all AI use the same routes.
         </p>
         <p className="text-sm text-[var(--text-secondary)] mb-4">
-          <strong className="text-[var(--text-primary)]">OpenClaw skill:</strong> Install or copy the xpersona skill (e.g. from <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">skills/openclaw/xpersona-casino</code> or ClawHub if published). Set <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> in your env. The skill provides probability game tools (balance, Free Credits, rounds, strategies). To create and run strategies, see <strong>Creating strategies (for OpenClaw AI)</strong> below.
+          <strong className="text-[var(--text-primary)]">OpenClaw skill:</strong> Install or copy the xpersona skill (e.g. from <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">skills/openclaw/xpersona</code> or ClawHub if published). Set <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> in your env. The skill provides probability game tools (balance, Free Credits, rounds, strategies). To create and run strategies, see <strong>Creating strategies (for OpenClaw AI)</strong> below.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
@@ -162,7 +162,7 @@ export default function ApiDocsPage() {
           Creating strategies (for OpenClaw AI)
         </h2>
         <p className="text-sm text-[var(--text-primary)] mb-4">
-          Create strategies via <strong>REST</strong> (<code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">POST /api/me/strategies</code>) or run inline via <strong>OpenClaw</strong> (<code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">casino_run_strategy</code> with <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">config</code>).
+          Create strategies via <strong>REST</strong> (<code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">POST /api/me/strategies</code>) or run inline via <strong>OpenClaw</strong> (<code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">xpersona_run_strategy</code> with <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">config</code>).
         </p>
         <div className="space-y-4 text-sm">
           <div>
@@ -177,7 +177,7 @@ export default function ApiDocsPage() {
             <h3 className="font-medium text-[var(--text-primary)] mb-2">Running a strategy</h3>
             <ul className="space-y-1 text-[var(--text-secondary)] text-xs list-disc list-inside">
               <li>REST: <code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/run-strategy</code> with <code className="bg-white/10 px-1 rounded font-mono">{"{ strategyId?, config?, maxRounds? }"}</code>. Use <code className="bg-white/10 px-1 rounded font-mono">strategyId</code> for saved strategies or <code className="bg-white/10 px-1 rounded font-mono">config</code> for inline (same shape as create).</li>
-              <li>OpenClaw: <code className="bg-white/10 px-1 rounded font-mono">casino_run_strategy</code> with <code className="bg-white/10 px-1 rounded font-mono">strategy_id</code> or <code className="bg-white/10 px-1 rounded font-mono">config</code>, optional <code className="bg-white/10 px-1 rounded font-mono">max_rounds</code>. Executes synchronously; returns session_pnl, final_balance, results.</li>
+              <li>OpenClaw: <code className="bg-white/10 px-1 rounded font-mono">xpersona_run_strategy</code> with <code className="bg-white/10 px-1 rounded font-mono">strategy_id</code> or <code className="bg-white/10 px-1 rounded font-mono">config</code>, optional <code className="bg-white/10 px-1 rounded font-mono">max_rounds</code>. Executes synchronously; returns session_pnl, final_balance, results.</li>
             </ul>
           </div>
         </div>
@@ -293,7 +293,7 @@ export default function ApiDocsPage() {
           For agents that call the tool endpoint: <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">POST /api/openclaw/tools</code> with body <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">{"{ tool: string, parameters: object, agent_token?: string }"}</code>. Response: <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">{"{ success, tool, result, meta? }"}</code> or <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">{"{ success: false, error }"}</code>. Most users can use the REST endpoints above with their API key; tools are for OpenClaw-compatible agents.
         </p>
         <p className="text-sm text-[var(--text-secondary)] mb-2">
-          <strong className="text-[var(--text-primary)]">Auth:</strong> Send <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">Authorization: Bearer &lt;API_KEY&gt;</code> (same as REST). Required for tool execution (except <code className="bg-white/10 px-1 rounded font-mono text-xs">casino_auth_guest</code>).
+          <strong className="text-[var(--text-primary)]">Auth:</strong> Send <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">Authorization: Bearer &lt;API_KEY&gt;</code> (same as REST). Required for tool execution (except <code className="bg-white/10 px-1 rounded font-mono text-xs">xpersona_auth_guest</code>).
         </p>
         <p className="text-sm text-[var(--text-secondary)] mb-4">
           <strong className="text-[var(--text-primary)]">Discovery:</strong> <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">GET /api/openclaw/tools</code> returns the full tool schema (tool names, parameters, returns) for programmatic discovery.
@@ -301,7 +301,7 @@ export default function ApiDocsPage() {
         <p className="text-xs text-[var(--text-secondary)] mb-2">Example: get balance</p>
         <pre className="rounded-lg bg-[var(--bg-deep)] border border-[var(--border)] p-3 text-xs font-mono text-[var(--text-primary)] overflow-x-auto mb-4">
 {`curl -s -X POST -H "Authorization: Bearer $XPERSONA_API_KEY" -H "Content-Type: application/json" \\
-  -d '{"tool":"casino_get_balance","parameters":{}}' https://xpersona.co/api/openclaw/tools`}
+  -d '{"tool":"xpersona_get_balance","parameters":{}}' https://xpersona.co/api/openclaw/tools`}
         </pre>
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
@@ -312,22 +312,22 @@ export default function ApiDocsPage() {
               </tr>
             </thead>
             <tbody className="text-[var(--text-primary)]">
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_auth_guest</td><td className="py-2">Create or authenticate as guest</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_auth_agent</td><td className="py-2">Authenticate as AI</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_place_dice_bet</td><td className="py-2">Play a dice round</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_get_balance</td><td className="py-2">Get balance and session info</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_get_history</td><td className="py-2">Get game history and stats</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_analyze_patterns</td><td className="py-2">Analyze patterns and trends</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_run_strategy</td><td className="py-2">Run dice strategy (strategy_id or inline config)</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_list_strategies</td><td className="py-2">List deployed strategies</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_get_strategy</td><td className="py-2">Get strategy details (config, progression_type)</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_delete_strategy</td><td className="py-2">Delete a strategy</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_notify</td><td className="py-2">Send notification</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_get_limits</td><td className="py-2">Get betting and rate limits</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_calculate_odds</td><td className="py-2">Calculate dice odds and expected value</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_claim_faucet</td><td className="py-2">Claim hourly Free Credits</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_list_credit_packages</td><td className="py-2">List credit packages for purchase</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_create_checkout</td><td className="py-2">Create Stripe checkout URL for deposit</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_auth_guest</td><td className="py-2">Create or authenticate as guest</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_auth_agent</td><td className="py-2">Authenticate as AI</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_place_dice_round</td><td className="py-2">Play a dice round</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_get_balance</td><td className="py-2">Get balance and session info</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_get_history</td><td className="py-2">Get game history and stats</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_analyze_patterns</td><td className="py-2">Analyze patterns and trends</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_run_strategy</td><td className="py-2">Run dice strategy (strategy_id or inline config)</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_list_strategies</td><td className="py-2">List deployed strategies</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_get_strategy</td><td className="py-2">Get strategy details (config, progression_type)</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_delete_strategy</td><td className="py-2">Delete a strategy</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_notify</td><td className="py-2">Send notification</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_get_limits</td><td className="py-2">Get betting and rate limits</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_calculate_odds</td><td className="py-2">Calculate dice odds and expected value</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_claim_faucet</td><td className="py-2">Claim hourly Free Credits</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_list_credit_packages</td><td className="py-2">List credit packages for purchase</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_create_checkout</td><td className="py-2">Create Stripe checkout URL for deposit</td></tr>
             </tbody>
           </table>
         </div>

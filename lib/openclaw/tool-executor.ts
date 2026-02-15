@@ -1,10 +1,10 @@
 /**
  * Tool Executor
- * Executes OpenClaw casino tools
+ * Executes OpenClaw xpersona tools
  */
 
 import { NextRequest } from "next/server";
-import { CasinoToolName } from "./tools-schema";
+import { XpersonaToolName } from "./tools-schema";
 import { AgentContext } from "./agent-auth";
 import { getAuthUser } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
@@ -19,41 +19,41 @@ import { simulateStrategy } from "@/lib/dice-rule-engine";
 import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
 
 // Tool handler registry
-const toolHandlers: Record<CasinoToolName, (params: any, agentContext: AgentContext | null, request: NextRequest) => Promise<any>> = {
-  "casino_auth_guest": handleAuthGuest,
-  "casino_auth_agent": handleAuthAgent,
-  "casino_place_dice_bet": handlePlaceDiceBet,
-  "casino_get_balance": handleGetBalance,
-  "casino_get_history": handleGetHistory,
-  "casino_analyze_patterns": handleAnalyzePatterns,
-  "casino_run_strategy": handleRunStrategy,
-  "casino_list_strategies": handleListStrategies,
-  "casino_get_strategy": handleGetStrategy,
-  "casino_create_strategy": handleCreateStrategy,
-  "casino_update_strategy": handleUpdateStrategy,
-  "casino_delete_strategy": handleDeleteStrategy,
-  "casino_withdraw": handleWithdraw,
-  "casino_get_transactions": handleGetTransactions,
-  "casino_verify_bet": handleVerifyBet,
-  "casino_stop_session": handleStopSession,
-  "casino_get_session_status": handleGetSessionStatus,
-  "casino_notify": handleNotify,
-  "casino_get_limits": handleGetLimits,
-  "casino_calculate_odds": handleCalculateOdds,
-  "casino_claim_faucet": handleClaimFaucet,
-  "casino_list_credit_packages": handleListCreditPackages,
-  "casino_create_checkout": handleCreateCheckout,
-  "casino_list_advanced_strategies": handleListAdvancedStrategies,
-  "casino_create_advanced_strategy": handleCreateAdvancedStrategy,
-  "casino_get_advanced_strategy": handleGetAdvancedStrategy,
-  "casino_update_advanced_strategy": handleUpdateAdvancedStrategy,
-  "casino_delete_advanced_strategy": handleDeleteAdvancedStrategy,
-  "casino_simulate_advanced_strategy": handleSimulateAdvancedStrategy,
-  "casino_run_advanced_strategy": handleRunAdvancedStrategy,
+const toolHandlers: Record<XpersonaToolName, (params: any, agentContext: AgentContext | null, request: NextRequest) => Promise<any>> = {
+  "xpersona_auth_guest": handleAuthGuest,
+  "xpersona_auth_agent": handleAuthAgent,
+  "xpersona_place_dice_round": handlePlaceDiceBet,
+  "xpersona_get_balance": handleGetBalance,
+  "xpersona_get_history": handleGetHistory,
+  "xpersona_analyze_patterns": handleAnalyzePatterns,
+  "xpersona_run_strategy": handleRunStrategy,
+  "xpersona_list_strategies": handleListStrategies,
+  "xpersona_get_strategy": handleGetStrategy,
+  "xpersona_create_strategy": handleCreateStrategy,
+  "xpersona_update_strategy": handleUpdateStrategy,
+  "xpersona_delete_strategy": handleDeleteStrategy,
+  "xpersona_withdraw": handleWithdraw,
+  "xpersona_get_transactions": handleGetTransactions,
+  "xpersona_verify_round": handleVerifyBet,
+  "xpersona_stop_session": handleStopSession,
+  "xpersona_get_session_status": handleGetSessionStatus,
+  "xpersona_notify": handleNotify,
+  "xpersona_get_limits": handleGetLimits,
+  "xpersona_calculate_odds": handleCalculateOdds,
+  "xpersona_claim_faucet": handleClaimFaucet,
+  "xpersona_list_credit_packages": handleListCreditPackages,
+  "xpersona_create_checkout": handleCreateCheckout,
+  "xpersona_list_advanced_strategies": handleListAdvancedStrategies,
+  "xpersona_create_advanced_strategy": handleCreateAdvancedStrategy,
+  "xpersona_get_advanced_strategy": handleGetAdvancedStrategy,
+  "xpersona_update_advanced_strategy": handleUpdateAdvancedStrategy,
+  "xpersona_delete_advanced_strategy": handleDeleteAdvancedStrategy,
+  "xpersona_simulate_advanced_strategy": handleSimulateAdvancedStrategy,
+  "xpersona_run_advanced_strategy": handleRunAdvancedStrategy,
 };
 
 export async function executeTool(
-  tool: CasinoToolName,
+  tool: XpersonaToolName,
   parameters: any,
   agentContext: AgentContext | null,
   request: NextRequest
