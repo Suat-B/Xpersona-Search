@@ -660,11 +660,12 @@ export function DiceGame({
               </div>
             );
           })()}
-          <div className="flex items-end justify-center gap-3">
-            <div className="space-y-1">
-              <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
-                Threshold
-              </label>
+          <div className="grid grid-cols-1 gap-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
+                  Threshold
+                </label>
               <div
                 className={`relative transition-all duration-300 ${
                   changedControl === "target" ? "scale-105" : "scale-100"
@@ -686,20 +687,15 @@ export function DiceGame({
                   disabled={autoPlay}
                   className={`w-20 h-10 rounded-lg border-2 px-2 text-center text-lg font-mono font-bold text-[var(--text-primary)] disabled:opacity-60 focus:outline-none transition-all ${
                     changedControl === "target"
-                      ? "border-violet-500 bg-violet-500/10"
-                      : "border-[var(--border)] bg-[var(--bg-matte)] focus:border-[var(--accent-heart)]"
+                      ? "border-[#0ea5e9] bg-[#0ea5e9]/10"
+                      : "border-[var(--border)] bg-[var(--bg-matte)] focus:border-[#0ea5e9]"
                   }`}
                 />
-                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--text-secondary)]">
-                  %
-                </span>
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--text-secondary)]">%</span>
               </div>
             </div>
-
             <div className="space-y-1">
-              <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
-                Direction
-              </label>
+              <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">Direction</label>
               <div
                 className={`transition-all duration-300 ${
                   changedControl === "condition" ? "scale-105" : "scale-100"
@@ -714,11 +710,9 @@ export function DiceGame({
                 />
               </div>
             </div>
-
+            </div>
             <div className="space-y-1">
-              <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
-                Position Size
-              </label>
+              <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">Position Size</label>
               <div
                 className={`relative transition-all duration-300 ${
                   changedControl === "amount" ? "scale-105" : "scale-100"
@@ -733,17 +727,17 @@ export function DiceGame({
                   value={amount}
                   onChange={(e) => onAmountChange(Number(e.target.value))}
                   disabled={autoPlay}
-                  className={`w-24 h-10 rounded-lg border-2 px-2 text-center text-base font-mono font-bold text-[var(--text-primary)] disabled:opacity-60 focus:outline-none transition-all ${
+                  className={`w-full h-10 rounded-lg border-2 px-2 text-center text-base font-mono font-bold text-[var(--text-primary)] disabled:opacity-60 focus:outline-none transition-all ${
                     changedControl === "amount"
-                      ? "border-violet-500 bg-violet-500/10"
-                      : "border-[var(--border)] bg-[var(--bg-matte)] focus:border-[var(--accent-heart)]"
+                      ? "border-[#0ea5e9] bg-[#0ea5e9]/10"
+                      : "border-[var(--border)] bg-[var(--bg-matte)] focus:border-[#0ea5e9]"
                   }`}
                 />
               </div>
             </div>
           </div>
 
-          {/* Play Controls Row - Combined */}
+          {/* Quick size buttons */}
           <div className="flex items-center justify-center gap-2">
             <BetPercentageButtons
               balance={balance}
@@ -768,7 +762,7 @@ export function DiceGame({
               type="button"
               onClick={handleRoll}
               disabled={loading || autoPlay}
-              className="relative group rounded-2xl bg-gradient-to-b from-[var(--accent-heart)] to-[#e11d48] px-10 py-3.5 text-lg font-bold text-white shadow-xl shadow-[var(--accent-heart)]/30 hover:shadow-[var(--accent-heart)]/50 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all duration-200 overflow-hidden"
+              className="relative group rounded-2xl bg-gradient-to-b from-[#0ea5e9] to-[#0284c7] px-10 py-3.5 text-lg font-bold text-white shadow-xl shadow-[#0ea5e9]/30 hover:shadow-[#0ea5e9]/50 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all duration-200 overflow-hidden"
             >
               {/* Shine effect */}
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
@@ -820,7 +814,7 @@ export function DiceGame({
                       onClick={() => setAutoSpeed(ms)}
                       className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
                         autoSpeed === ms
-                          ? "bg-[var(--accent-heart)]/20 text-[var(--accent-heart)]"
+                          ? "bg-[#0ea5e9]/20 text-[#0ea5e9]"
                           : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5"
                       }`}
                       title={`${ms}ms between rolls`}

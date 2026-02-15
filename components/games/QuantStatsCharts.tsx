@@ -119,6 +119,23 @@ export function QuantStatsCharts({ recentResults, layout = "default" }: QuantSta
 
   const showHistogram = layout === "analytics";
 
+  // P&L distribution — histogram of individual trade P&L values
+  const pnlValues = recentResults.map((r) => r.payout - (r.betAmount ?? 0));
+  const pnlMin = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
+  const pnlMax = pnlValues.length > 0 ? Math.max(...pnlValues) : 0;
+  const pnlRange = pnlMax - pnlMin || 1;
+  const PNL_BINS = 8;
+  const pnlBuckets = Array.from({ length: PNL_BINS }, (_, i) => {
+    const low = pnlMin + (i * pnlRange) / PNL_BINS;
+    const high = pnlMin + ((i + 1) * pnlRange) / PNL_BINS;
+    return { low, high, count: 0 };
+  });
+  for (const p of pnlValues) {
+    const idx = Math.min(Math.floor(((p - pnlMin) / pnlRange) * PNL_BINS), PNL_BINS - 1);
+    if (idx >= 0) pnlBuckets[idx].count++;
+  }
+  const maxPnlCount = Math.max(1, ...pnlBuckets.map((b) => b.count));
+
   return (
     <div className="space-y-4" data-agent="quant-stats">
       {showHistogram ? (
@@ -133,7 +150,7 @@ export function QuantStatsCharts({ recentResults, layout = "default" }: QuantSta
               return (
                 <div key={i} className="flex-1 flex flex-col items-stretch justify-end min-w-0" title={`${b.low.toFixed(0)}–${b.high.toFixed(0)}: ${total} (${b.wins}W / ${b.losses}L)`}>
                   <div className="w-full flex flex-col-reverse rounded-t overflow-hidden" style={{ height: barHeight }}>
-                    {b.wins > 0 && <div className="w-full bg-emerald-500/90" style={{ flex: b.wins / total }} />}
+                    {b.wins > 0 && <div className="w-full bg-[#0ea5e9]/90" style={{ flex: b.wins / total }} />}
                     {b.losses > 0 && <div className="w-full bg-amber-500/90" style={{ flex: b.losses / total }} />}
                   </div>
                   <span className="text-[8px] text-[var(--text-tertiary)] font-mono truncate text-center block">{b.low.toFixed(0)}</span>
@@ -143,7 +160,33 @@ export function QuantStatsCharts({ recentResults, layout = "default" }: QuantSta
           </div>
           <p className="text-[10px] text-[var(--text-tertiary)] mt-2">Theoretical: Uniform. Blue=win range, Amber=loss range.</p>
         </div>
-      ) : (
+      ) : null}
+
+      {/* P&L Distribution — only in analytics layout */}
+      {showHistogram && hasData && (
+        <div className="rounded-2xl border border-white/10 bg-[var(--bg-card)] p-4 shadow-lg">
+          <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest mb-3">
+            P&L Distribution
+          </h4>
+          <div className="flex items-end gap-1 h-20">
+            {pnlBuckets.map((b, i) => {
+              const barHeight = b.count > 0 ? Math.max(4, (b.count / maxPnlCount) * 72) : 0;
+              const isWin = (b.low + b.high) / 2 >= 0;
+              return (
+                <div key={i} className="flex-1 flex flex-col items-stretch justify-end min-w-0" title={`${b.low.toFixed(0)} to ${b.high.toFixed(0)}: ${b.count} trades`}>
+                  <div className="w-full rounded-t overflow-hidden" style={{ height: barHeight }}>
+                    <div className={`w-full h-full ${isWin ? "bg-[#0ea5e9]/90" : "bg-amber-500/90"}`} />
+                  </div>
+                  <span className="text-[8px] text-[var(--text-tertiary)] font-mono truncate text-center block">{Math.round(b.low)}</span>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[10px] text-[var(--text-tertiary)] mt-2">Per-trade P&L histogram. Blue=profit, Amber=loss.</p>
+        </div>
+      )}
+
+      {!showHistogram && (
         <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 p-4 shadow-lg">
           <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest mb-3 flex items-center gap-2">
             <span className="w-1 h-1 rounded-full bg-[#0ea5e9]" />
@@ -169,14 +212,15 @@ export function QuantStatsCharts({ recentResults, layout = "default" }: QuantSta
         </div>
       )}
 
-      {/* Streaks + rolling metrics */}
+      {/* Streaks + rolling — hidden in analytics (replaced by P&L Distribution) */}
+      {!showHistogram && (
       <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-matte)]/50 p-4 space-y-3 shadow-md" data-agent="streak-stats">
         <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-widest">
           Streaks & rolling
         </h4>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="rounded-lg bg-[var(--bg-matte)] p-2.5 text-center" data-agent="stat-current-streak" data-value={currentStreak}>
-            <div className={`text-sm font-bold font-mono ${currentIsWin ? "text-emerald-400" : "text-red-400"}`}>
+            <div className={`text-sm font-bold font-mono ${currentIsWin ? "text-emerald-400" : "text-amber-400"}`}>
               {currentStreak}
             </div>
             <div className="text-[10px] text-[var(--text-secondary)]">Current streak</div>
@@ -186,7 +230,7 @@ export function QuantStatsCharts({ recentResults, layout = "default" }: QuantSta
             <div className="text-[10px] text-[var(--text-secondary)]">Max win streak</div>
           </div>
           <div className="rounded-lg bg-[var(--bg-matte)] p-2.5 text-center" data-agent="stat-max-loss-streak" data-value={maxLossStreak}>
-            <div className="text-sm font-bold font-mono text-red-400">{maxLossStreak}</div>
+            <div className="text-sm font-bold font-mono text-amber-400">{maxLossStreak}</div>
             <div className="text-[10px] text-[var(--text-secondary)]">Max loss streak</div>
           </div>
           <div className="rounded-lg bg-[var(--bg-matte)] p-2.5 text-center" data-agent="stat-profit-factor" data-value={profitFactor ?? 0}>
@@ -201,7 +245,7 @@ export function QuantStatsCharts({ recentResults, layout = "default" }: QuantSta
             <span className="text-[10px] text-[var(--text-secondary)]">Last 10:</span>
             <span
               className={`text-xs font-mono font-semibold ${
-                rolling10 >= 50 ? "text-emerald-400" : rolling10 <= 40 ? "text-red-400" : "text-[var(--text-primary)]"
+                rolling10 >= 50 ? "text-emerald-400" : rolling10 <= 40 ? "text-amber-400" : "text-[var(--text-primary)]"
               }`}
               data-agent="stat-rolling-10"
               data-value={rolling10.toFixed(1)}
@@ -213,7 +257,7 @@ export function QuantStatsCharts({ recentResults, layout = "default" }: QuantSta
             <span className="text-[10px] text-[var(--text-secondary)]">Last 20:</span>
             <span
               className={`text-xs font-mono font-semibold ${
-                rolling20 >= 50 ? "text-emerald-400" : rolling20 <= 40 ? "text-red-400" : "text-[var(--text-primary)]"
+                rolling20 >= 50 ? "text-emerald-400" : rolling20 <= 40 ? "text-amber-400" : "text-[var(--text-primary)]"
               }`}
               data-agent="stat-rolling-20"
               data-value={rolling20.toFixed(1)}
@@ -223,8 +267,10 @@ export function QuantStatsCharts({ recentResults, layout = "default" }: QuantSta
           </div>
         </div>
       </div>
+      )}
 
-      {/* Bet size distribution bar chart */}
+      {/* Bet size distribution — hidden in analytics */}
+      {!showHistogram && (
       <div className="rounded-2xl border border-white/10 bg-[var(--bg-card)] p-4 shadow-md">
         <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest mb-3">
           Round size distribution
@@ -244,6 +290,7 @@ export function QuantStatsCharts({ recentResults, layout = "default" }: QuantSta
           ))}
         </div>
       </div>
+      )}
     </div>
   );
 }

@@ -67,9 +67,12 @@ export function QuantChartsAesthetic({
   const isHot = hasData && (winRate >= 55 || recentResults.slice(-5).filter((r) => r.win).length >= 4);
   const isCold = hasData && (winRate <= 40 || recentResults.slice(-5).filter((r) => r.win).length <= 1);
 
+  const isAnalytics = layout === "analytics";
+
   return (
     <div className="space-y-4" data-agent="quant-charts-aesthetic">
-      {/* Win rate gauge — semi-circular with gradient glow */}
+      {/* Win rate gauge — hidden in analytics layout */}
+      {!isAnalytics && (
       <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 p-4 shadow-lg shadow-black/20 backdrop-blur-sm">
         <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-red-500/5 pointer-events-none" />
         <h4 className="relative text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest mb-3 flex items-center gap-2">
@@ -141,8 +144,10 @@ export function QuantChartsAesthetic({
           </div>
         </div>
       </div>
+      )}
 
-      {/* Session momentum — Hot / Cold */}
+      {/* Session momentum — hidden in analytics */}
+      {!isAnalytics && (
       <div
         className={`relative overflow-hidden rounded-2xl border p-4 transition-all duration-500 ${
           isHot
@@ -194,8 +199,10 @@ export function QuantChartsAesthetic({
           </div>
         </div>
       </div>
+      )}
 
-      {/* Win / Loss donut */}
+      {/* Win / Loss donut — hidden in analytics */}
+      {!isAnalytics && (
       <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[var(--bg-card)] p-4 shadow-lg">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,var(--accent-heart)/5_0%,transparent_70%)] pointer-events-none" />
         <h4 className="relative text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest mb-3">
@@ -271,6 +278,7 @@ export function QuantChartsAesthetic({
           </div>
         </div>
       </div>
+      )}
 
       {/* Drawdown chart */}
       {drawdowns.length > 1 && (
@@ -315,7 +323,7 @@ export function QuantChartsAesthetic({
         </div>
       )}
 
-      {/* Dice result distribution — where your rolls landed */}
+      {/* Dice result distribution — simplified in analytics */}
       <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[var(--bg-card)] p-4">
         <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest mb-3">
           Roll distribution (0–100)
