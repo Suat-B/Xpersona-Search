@@ -35,7 +35,7 @@ export function DashboardChrome({
   return (
     <div className="flex min-h-screen w-full bg-black">
       <MobileDashboardNav displayName={displayName} isAdmin={isAdmin} />
-      <aside className="dashboard-sidebar hidden w-[280px] min-w-[280px] flex-col md:flex sticky top-0 h-screen border-r border-[var(--border)] overflow-x-hidden">
+      <aside className="scroll-stable-layer dashboard-sidebar hidden w-[280px] min-w-[280px] flex-col md:flex sticky top-0 h-screen border-r border-[var(--border)] overflow-x-hidden">
         <div className="absolute inset-0 bg-[var(--bg-matte)]/80 backdrop-blur-xl" />
         <div className="relative flex h-full flex-col">
           <div className="h-20 flex items-center px-6 border-b border-[var(--border)]">
@@ -72,7 +72,7 @@ export function DashboardChrome({
           </div>
         </div>
       </aside>
-      <main className="flex-1 overflow-y-auto">
+      <main className="scroll-contain-paint flex-1 overflow-y-auto">
         <div className="container mx-auto max-w-7xl p-6 md:p-8 space-y-6">
           <AIFirstBanner />
           {children}

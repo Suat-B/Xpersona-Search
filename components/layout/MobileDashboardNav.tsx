@@ -103,7 +103,7 @@ export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashb
   }, [open]);
 
   return (
-    <div className="md:hidden sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--bg-matte)]/95 backdrop-blur-xl">
+    <div className="scroll-stable-layer md:hidden sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--bg-matte)]/95 backdrop-blur-xl">
       <div className="flex h-14 items-center justify-between px-4">
         <Link href="/dashboard" className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[var(--accent-heart)] to-[var(--accent-purple)]">

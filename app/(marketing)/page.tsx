@@ -45,7 +45,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   return (
     <main className="min-h-screen bg-black text-[var(--text-primary)]">
       {/* Top bar */}
-      <header className="sticky top-0 z-20 border-b border-white/5 bg-black/80 backdrop-blur-md">
+      <header className="scroll-stable-layer sticky top-0 z-20 border-b border-white/5 bg-black/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3 sm:px-6">
           <Link
             href="/"

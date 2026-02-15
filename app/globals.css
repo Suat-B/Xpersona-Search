@@ -67,16 +67,38 @@ html {
   scroll-behavior: smooth;
 }
 
+/* Fixed gradient background via pseudo-element — avoids background-attachment:fixed
+   which triggers full-page repaints on scroll in Chrome (known performance bug) */
 body {
-  @apply bg-bg-deep text-[var(--text-primary)] antialiased overflow-x-hidden;
+  @apply bg-bg-deep text-[var(--text-primary)] antialiased overflow-x-hidden relative;
   font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   background-image: 
     var(--bg-gradient-1),
     var(--bg-gradient-2),
     var(--bg-gradient-3);
-  background-attachment: fixed;
+}
+
+/* Limit repaint scope for main scroll area — reduces scroll jank */
+.scroll-contain-paint {
+  contain: paint;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Promote sticky + backdrop-blur elements to GPU layer — reduces scroll jank */
+.scroll-stable-layer {
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 /* Ultra Premium Scrollbar */
