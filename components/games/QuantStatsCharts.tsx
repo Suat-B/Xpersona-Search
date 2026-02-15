@@ -10,6 +10,7 @@ interface RollResult {
   win: boolean;
   payout: number;
   betAmount?: number;
+  playAmount?: number;
 }
 
 function computeStreaks(results: RollResult[]) {
@@ -58,7 +59,7 @@ function computeProfitFactor(results: RollResult[]): number | null {
   let grossProfit = 0;
   let grossLoss = 0;
   for (const r of results) {
-    const pnl = r.payout - (r.betAmount ?? 0);
+    const pnl = r.payout - (r.betAmount ?? r.playAmount ?? 0);
     if (pnl > 0) grossProfit += pnl;
     else grossLoss += Math.abs(pnl);
   }
@@ -76,7 +77,10 @@ function getBetSizeBuckets(results: RollResult[]): { label: string; count: numbe
   ];
   return buckets.map((b) => {
     const count = results.filter(
-      (r) => (r.betAmount ?? 0) >= b.range[0] && (r.betAmount ?? 0) <= b.range[1]
+      (r) => {
+        const amt = r.betAmount ?? r.playAmount ?? 0;
+        return amt >= b.range[0] && amt <= b.range[1];
+      }
     ).length;
     return { ...b, count };
   });
@@ -120,7 +124,7 @@ export function QuantStatsCharts({ recentResults, layout = "default" }: QuantSta
   const showHistogram = layout === "analytics";
 
   // P&L distribution — histogram of individual trade P&L values
-  const pnlValues = recentResults.map((r) => r.payout - (r.betAmount ?? 0));
+  const pnlValues = recentResults.map((r) => r.payout - (r.betAmount ?? r.playAmount ?? 0));
   const pnlMin = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
   const pnlMax = pnlValues.length > 0 ? Math.max(...pnlValues) : 0;
   const pnlRange = pnlMax - pnlMin || 1;

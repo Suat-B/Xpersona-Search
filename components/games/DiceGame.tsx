@@ -591,7 +591,7 @@ export function DiceGame({
               <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${
                 result.win 
                   ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" 
-                  : "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                  : "bg-red-500/20 text-red-400 border border-red-500/30"
               }`}>
                 <span className="text-lg">
                   {result.win ? "🎉" : "😔"}
@@ -653,7 +653,7 @@ export function DiceGame({
                 </div>
                 <div className="flex justify-between text-[10px] text-[var(--text-tertiary)]">
                   <span>Expected Value</span>
-                  <span className={`font-mono ${evPerTrade >= 0 ? "text-emerald-400" : "text-amber-400"}`}>
+                  <span className={`font-mono ${evPerTrade >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                     {evPerTrade >= 0 ? "+" : ""}{evPerTrade.toFixed(2)} cr
                   </span>
                 </div>
@@ -666,50 +666,51 @@ export function DiceGame({
                 <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
                   Threshold
                 </label>
-              <div
-                className={`relative transition-all duration-300 ${
-                  changedControl === "target" ? "scale-105" : "scale-100"
-                }`}
-                data-just-changed={changedControl === "target"}
-              >
-                <input
-                  type="number"
-                  min={0.01}
-                  max={99.99}
-                  step={0.01}
-                  value={target}
-                  onChange={(e) => {
-                    const value = Number(e.target.value);
-                    if (value > 0 && value < 100) {
-                      onTargetChange(value);
-                    }
-                  }}
-                  disabled={autoPlay}
-                  className={`w-20 h-10 rounded-lg border-2 px-2 text-center text-lg font-mono font-bold text-[var(--text-primary)] disabled:opacity-60 focus:outline-none transition-all ${
-                    changedControl === "target"
-                      ? "border-[#0ea5e9] bg-[#0ea5e9]/10"
-                      : "border-[var(--border)] bg-[var(--bg-matte)] focus:border-[#0ea5e9]"
+                <div
+                  className={`relative transition-all duration-300 ${
+                    changedControl === "target" ? "scale-105" : "scale-100"
                   }`}
-                />
-                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--text-secondary)]">%</span>
+                  data-just-changed={changedControl === "target"}
+                >
+                  <input
+                    type="number"
+                    min={0.01}
+                    max={99.99}
+                    step={0.01}
+                    value={target}
+                    onChange={(e) => {
+                      const value = Number(e.target.value);
+                      if (value > 0 && value < 100) {
+                        onTargetChange(value);
+                      }
+                    }}
+                    disabled={autoPlay}
+                    aria-label="Threshold percentage"
+                    className={`w-20 h-10 rounded-lg border-2 px-2 text-center text-lg font-mono font-bold text-[var(--text-primary)] disabled:opacity-60 focus:outline-none transition-all ${
+                      changedControl === "target"
+                        ? "border-[#0ea5e9] bg-[#0ea5e9]/10"
+                        : "border-[var(--border)] bg-[var(--bg-matte)] focus:border-[#0ea5e9]"
+                    }`}
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--text-secondary)] pointer-events-none">%</span>
+                </div>
               </div>
-            </div>
-            <div className="space-y-1">
-              <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">Direction</label>
-              <div
-                className={`transition-all duration-300 ${
-                  changedControl === "condition" ? "scale-105" : "scale-100"
-                }`}
-                data-just-changed={changedControl === "condition"}
-              >
-                <SegmentedControl
-                  value={condition}
-                  onChange={onConditionChange}
-                  disabled={autoPlay}
-                  quantLabels
-                />
+              <div className="space-y-1">
+                <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">Direction</label>
+                <div
+                  className={`transition-all duration-300 ${
+                    changedControl === "condition" ? "scale-105" : "scale-100"
+                  }`}
+                  data-just-changed={changedControl === "condition"}
+                >
+                  <SegmentedControl
+                    value={condition}
+                    onChange={onConditionChange}
+                    disabled={autoPlay}
+                    quantLabels
+                  />
+                </div>
               </div>
-            </div>
             </div>
             <div className="space-y-1">
               <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">Position Size</label>
@@ -724,9 +725,21 @@ export function DiceGame({
                   type="number"
                   min={MIN_BET}
                   max={MAX_BET}
-                  value={amount}
-                  onChange={(e) => onAmountChange(Number(e.target.value))}
+                  value={amount || ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "") {
+                      onAmountChange(0);
+                      return;
+                    }
+                    const num = Number(v);
+                    if (!Number.isNaN(num) && num >= 0) {
+                      onAmountChange(Math.min(MAX_BET, Math.max(MIN_BET, num)));
+                    }
+                  }}
+                  placeholder="1–10,000"
                   disabled={autoPlay}
+                  aria-label="Position size in credits"
                   className={`w-full h-10 rounded-lg border-2 px-2 text-center text-base font-mono font-bold text-[var(--text-primary)] disabled:opacity-60 focus:outline-none transition-all ${
                     changedControl === "amount"
                       ? "border-[#0ea5e9] bg-[#0ea5e9]/10"
@@ -761,7 +774,7 @@ export function DiceGame({
             <button
               type="button"
               onClick={handleRoll}
-              disabled={loading || autoPlay}
+              disabled={loading || autoPlay || !amount || amount < MIN_BET}
               className="relative group rounded-2xl bg-gradient-to-b from-[#0ea5e9] to-[#0284c7] px-10 py-3.5 text-lg font-bold text-white shadow-xl shadow-[#0ea5e9]/30 hover:shadow-[#0ea5e9]/50 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all duration-200 overflow-hidden"
             >
               {/* Shine effect */}

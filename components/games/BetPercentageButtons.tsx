@@ -40,7 +40,7 @@ export function BetPercentageButtons({
             className={`
               px-2 py-1 text-[10px] font-bold rounded-md transition-all
               ${isActive 
-                ? "bg-[var(--accent-heart)] text-white" 
+                ? "bg-[#0ea5e9] text-white shadow-[0_0_8px_rgba(14,165,233,0.4)]" 
                 : "bg-[var(--bg-matte)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5"
               }
               disabled:opacity-30 disabled:cursor-not-allowed
