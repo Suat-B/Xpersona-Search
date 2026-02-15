@@ -625,13 +625,14 @@ export function DiceGame({
               </span>
             </div>
           )}
-          {/* Order Entry — Quant style */}
+          {/* Order Entry — Centered trading hub */}
+          <div className="w-full max-w-md mx-auto space-y-4 rounded-xl border border-white/10 bg-[var(--bg-card)]/80 p-4 shadow-lg">
           {(() => {
             const winProb = condition === "over" ? (100 - target) / 100 : target / 100;
             const multiplier = winProb > 0 ? Math.min((1 - DICE_HOUSE_EDGE) / winProb, 10) : 0;
             const evPerTrade = amount * (winProb * multiplier - 1);
             return (
-              <div className="mb-2 rounded-lg border border-white/10 bg-[var(--bg-matte)]/50 px-3 py-2 space-y-2">
+              <div className="rounded-lg border border-white/10 bg-[var(--bg-matte)]/50 px-3 py-2 space-y-2">
                 <div className="flex justify-between text-[10px] text-[var(--text-tertiary)]">
                   <span>Win Probability</span>
                   <span className="font-mono text-[var(--text-primary)]">{(winProb * 100).toFixed(2)}%</span>
@@ -827,6 +828,7 @@ export function DiceGame({
                 </div>
               )}
             </div>
+          </div>
           </div>
 
           {error && (
