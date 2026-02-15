@@ -2055,6 +2055,27 @@ components:
           description: Simplified bet objects (amount, outcome, payout, pnl) — no id/verification
           items:
             $ref: '#/components/schemas/SessionRecentBet'
+        current_streak:
+          type: integer
+          description: Current win streak (positive) or loss streak (negative)
+        max_win_streak:
+          type: integer
+          description: Longest consecutive wins in recent bets
+        max_loss_streak:
+          type: integer
+          description: Longest consecutive losses in recent bets
+        profit_factor:
+          type: number
+          nullable: true
+          description: grossProfit / grossLoss (null if no losses)
+        rolling_win_rate_10:
+          type: number
+          nullable: true
+          description: Win rate (%) over last 10 bets
+        rolling_win_rate_20:
+          type: number
+          nullable: true
+          description: Win rate (%) over last 20 bets
 
     SessionRecentBet:
       type: object

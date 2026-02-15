@@ -63,6 +63,29 @@ export async function GET(request: Request) {
   const winRate = totalRounds > 0 ? (totalWins / totalRounds) * 100 : 0;
   const balance = authResult.user.credits;
 
+  const chronologicalBets = [...recentBets].reverse();
+  let maxWinStreak = 0;
+  let maxLossStreak = 0;
+  let grossProfit = 0;
+  let grossLoss = 0;
+  let runWin = 0;
+  let runLoss = 0;
+  for (const r of chronologicalBets) {
+    const pnl = r.pnl;
+    if (pnl > 0) {
+      grossProfit += pnl;
+      runWin++;
+      runLoss = 0;
+      maxWinStreak = Math.max(maxWinStreak, runWin);
+    } else {
+      grossLoss += Math.abs(pnl);
+      runLoss++;
+      runWin = 0;
+      maxLossStreak = Math.max(maxLossStreak, runLoss);
+    }
+  }
+  const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? null : 0);
+
   const depositAlert = balance < DEPOSIT_ALERT_CRITICAL ? "critical" as const
     : balance < DEPOSIT_ALERT_LOW ? "low" as const
     : "ok" as const;
@@ -91,6 +114,19 @@ export async function GET(request: Request) {
       milestone_message: milestone?.message ?? null,
       proof_of_life_alerts: proofOfLifeAlerts,
       current_streak: currentStreak,
+      max_win_streak: maxWinStreak,
+      max_loss_streak: maxLossStreak,
+      profit_factor: profitFactor,
+      rolling_win_rate_10: chronologicalBets.length >= 10
+        ? Math.round(
+            (chronologicalBets.slice(-10).filter((r) => r.pnl > 0).length / 10) * 1000
+          ) / 100
+        : null,
+      rolling_win_rate_20: chronologicalBets.length >= 20
+        ? Math.round(
+            (chronologicalBets.slice(-20).filter((r) => r.pnl > 0).length / 20) * 1000
+          ) / 100
+        : null,
     },
   });
 }

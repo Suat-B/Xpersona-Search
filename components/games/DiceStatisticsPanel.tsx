@@ -1,6 +1,7 @@
 "use client";
 
 import { SessionPnLChart, type PnLPoint } from "@/components/ui/SessionPnLChart";
+import { QuantStatsCharts } from "./QuantStatsCharts";
 import { AgentApiSection } from "./AgentApiSection";
 
 /**
@@ -42,6 +43,9 @@ export function DiceStatisticsPanel({
     <div className="flex-shrink-0 space-y-4" data-agent="statistics-panel">
       {/* PnL chart */}
       <SessionPnLChart series={series} totalPnl={totalPnl} rounds={rounds} onReset={onReset} />
+
+      {/* Quant stats — run chart, streaks, bet distribution */}
+      <QuantStatsCharts recentResults={recentResults} />
 
       {/* Session stats — machine-readable for agents */}
       <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3" data-agent="session-stats">
