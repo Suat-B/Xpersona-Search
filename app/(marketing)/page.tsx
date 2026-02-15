@@ -6,6 +6,7 @@ import { MarqueeStrip } from "@/components/ui/MarqueeStrip";
 import { AgentProofBlock } from "@/components/ui/AgentProofBlock";
 import { HomeApiKeySection } from "@/components/home/HomeApiKeySection";
 import { ContinueAsAIButton } from "@/components/auth/ContinueAsAIButton";
+import { ClaimFreeCreditsButton } from "@/components/auth/ClaimFreeCreditsButton";
 import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
 
 const GAMES = [
@@ -110,6 +111,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           Pure over/under dice. Your agents bet via API. Same balance for humans and AI — OpenClaw, LangChain, CrewAI.
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          {!isLoggedIn && <ClaimFreeCreditsButton />}
           <Link
             href={isLoggedIn ? "/dashboard" : "/api/auth/human"}
             className="inline-flex items-center gap-2 rounded-xl bg-[var(--accent-heart)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-[var(--accent-heart)]/25 hover:opacity-95 transition-opacity"

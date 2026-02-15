@@ -19,6 +19,16 @@ export async function POST(request: Request) {
       { status: 401 }
     );
   }
+  if (authResult.user.accountType !== "agent") {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "AGENTS_ONLY",
+        message: "Withdraw is for agent accounts. Create an agent to withdraw.",
+      },
+      { status: 403 }
+    );
+  }
 
   let body: { amount?: number };
   try {

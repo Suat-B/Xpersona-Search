@@ -4,6 +4,8 @@ import { Suspense, useEffect, useState, useCallback } from "react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import Link from "next/link";
 import { WITHDRAW_MIN_USD, WITHDRAW_MIN_CREDITS, CREDITS_TO_USD } from "@/lib/constants";
+import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
+import { ContinueAsAIButton } from "@/components/auth/ContinueAsAIButton";
 
 type BalanceData = {
   balance: number;
@@ -12,8 +14,10 @@ type BalanceData = {
 };
 
 function WithdrawPageClient() {
+  const [accountType, setAccountType] = useState<string | null>(null);
   const [balanceData, setBalanceData] = useState<BalanceData | null>(null);
   const [loading, setLoading] = useState(true);
+  const isAgent = accountType === "agent";
   const [amount, setAmount] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
@@ -40,6 +44,14 @@ function WithdrawPageClient() {
   useEffect(() => {
     loadBalance();
   }, [loadBalance]);
+
+  useEffect(() => {
+    fetch("/api/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success) setAccountType(data.data?.accountType ?? null);
+      });
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,11 +111,31 @@ function WithdrawPageClient() {
           Withdraw funds
         </h1>
         <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-xl">
-          Convert your deposited credits back to real funds. Free Credits cannot be withdrawn — only credits purchased via deposit are eligible.
+          {AI_FIRST_MESSAGING.withdrawSubtitle}
         </p>
       </section>
 
-      {/* Withdraw process — full explanation */}
+      {/* Agent-only: Create agent CTA */}
+      {accountType !== null && !isAgent && (
+        <GlassCard className="p-6 border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 to-blue-500/5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+                Withdraw is for agents
+              </h2>
+              <p className="mt-1 text-sm text-[var(--text-secondary)] max-w-md">
+                {AI_FIRST_MESSAGING.withdrawAgentOnly}
+              </p>
+            </div>
+            <div className="shrink-0">
+              <ContinueAsAIButton successRedirect="/dashboard/withdraw" />
+            </div>
+          </div>
+        </GlassCard>
+      )}
+
+      {/* Withdraw process — full explanation (agent only) */}
+      {isAgent && (
       <GlassCard className="p-6 border-[var(--accent-heart)]/20">
         <h2 className="text-base font-semibold text-[var(--text-primary)] mb-4">
           How withdrawal works
@@ -153,8 +185,10 @@ function WithdrawPageClient() {
           </p>
         </div>
       </GlassCard>
+      )}
 
-      {/* Balance */}
+      {/* Balance (agent only) */}
+      {isAgent && (
       <GlassCard className="p-5">
         <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
           Your balance
@@ -180,9 +214,10 @@ function WithdrawPageClient() {
           <p className="text-sm text-[var(--text-secondary)]">Unable to load balance.</p>
         )}
       </GlassCard>
+      )}
 
-      {/* Request form */}
-      {balanceData && balanceData.withdrawable >= WITHDRAW_MIN_CREDITS && (
+      {/* Request form (agent only) */}
+      {isAgent && balanceData && balanceData.withdrawable >= WITHDRAW_MIN_CREDITS && (
         <GlassCard className="p-5">
           <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
             Request withdrawal
@@ -221,7 +256,7 @@ function WithdrawPageClient() {
         </GlassCard>
       )}
 
-      {balanceData && balanceData.withdrawable > 0 && balanceData.withdrawable < WITHDRAW_MIN_CREDITS && (
+      {isAgent && balanceData && balanceData.withdrawable > 0 && balanceData.withdrawable < WITHDRAW_MIN_CREDITS && (
         <GlassCard className="p-5 border-amber-500/30 bg-amber-500/10">
           <p className="text-sm text-amber-400">
             You have {balanceData.withdrawable.toLocaleString()} withdrawable credits (≈ ${(balanceData.withdrawable * CREDITS_TO_USD).toFixed(2)} USD). 
@@ -236,7 +271,7 @@ function WithdrawPageClient() {
         </GlassCard>
       )}
 
-      {balanceData && balanceData.withdrawable === 0 && (
+      {isAgent && balanceData && balanceData.withdrawable === 0 && (
         <GlassCard className="p-5 border-amber-500/30 bg-amber-500/10">
           <p className="text-sm text-amber-400">
             No withdrawable credits. Free Credits are 0% withdrawable — only deposit credits can be withdrawn.

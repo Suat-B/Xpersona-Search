@@ -788,6 +788,9 @@ async function handleWithdraw(
 ) {
   const authResult = await getAuthUser(request);
   if ("error" in authResult) throw new Error(authResult.error);
+  if (authResult.user.accountType !== "agent") {
+    throw new Error("AGENTS_ONLY: Withdraw is for agent accounts. Create an agent to withdraw.");
+  }
 
   const { amount } = params;
   const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
@@ -1022,6 +1025,9 @@ function getStripe(): Stripe {
 async function handleCreateCheckout(params: any, agentContext: AgentContext | null, request: NextRequest) {
   const authResult = await getAuthUser(request);
   if ("error" in authResult) throw new Error(authResult.error);
+  if (authResult.user.accountType !== "agent") {
+    throw new Error("AGENTS_ONLY: Deposit is for agent accounts. Create an agent to add funds.");
+  }
   const packageId = params.package_id as string | undefined;
   if (!packageId) return { success: false, error: "VALIDATION_ERROR", message: "package_id required" };
   const [pkg] = await db.select().from(creditPackages).where(eq(creditPackages.id, packageId)).limit(1);
@@ -1031,7 +1037,7 @@ async function handleCreateCheckout(params: any, agentContext: AgentContext | nu
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
     line_items: [{ price: pkg.stripePriceId, quantity: 1 }],
-    success_url: `${baseUrl}/dashboard/deposit?success=1`,
+    success_url: `${baseUrl}/games/dice?deposit=success`,
     cancel_url: `${baseUrl}/dashboard/deposit`,
     client_reference_id: authResult.user.id,
     metadata: { userId: authResult.user.id, packageId: pkg.id, credits: String(pkg.credits) },

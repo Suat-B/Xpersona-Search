@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState, useCallback } from "react";
 import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
 import { useSearchParams } from "next/navigation";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { ContinueAsAIButton } from "@/components/auth/ContinueAsAIButton";
 
 type Package = { id: string; name: string; credits: number; amountCents: number };
 
@@ -11,11 +12,14 @@ function DepositPageClient() {
   const searchParams = useSearchParams();
   const success = searchParams.get("success") === "1";
 
+  const [accountType, setAccountType] = useState<string | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(true);
   const [packages, setPackages] = useState<Package[]>([]);
   const [packagesLoading, setPackagesLoading] = useState(true);
   const [buyingId, setBuyingId] = useState<string | null>(null);
+  const [buyError, setBuyError] = useState<string | null>(null);
+  const isAgent = accountType === "agent";
 
   const loadBalance = useCallback(async () => {
     setBalanceLoading(true);
@@ -37,6 +41,14 @@ function DepositPageClient() {
   }, [loadBalance]);
 
   useEffect(() => {
+    fetch("/api/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success) setAccountType(data.data?.accountType ?? null);
+      });
+  }, []);
+
+  useEffect(() => {
     fetch("/api/credits/packages")
       .then((r) => r.json())
       .then((data) => {
@@ -48,11 +60,14 @@ function DepositPageClient() {
   }, []);
 
   const buy = async (packageId: string) => {
+    if (!isAgent) return;
+    setBuyError(null);
     setBuyingId(packageId);
     try {
       const res = await fetch("/api/credits/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ packageId }),
       });
       const data = await res.json();
@@ -60,6 +75,7 @@ function DepositPageClient() {
         window.location.href = data.data.url;
         return;
       }
+      if (res.status === 403) setBuyError(data.message ?? "Deposit is for agent accounts.");
     } finally {
       setBuyingId(null);
     }
@@ -78,6 +94,25 @@ function DepositPageClient() {
           {AI_FIRST_MESSAGING.depositSubtitle} Secure payment via Stripe.
         </p>
       </section>
+
+      {/* Agent-only: Create agent CTA */}
+      {accountType !== null && !isAgent && (
+        <GlassCard className="p-6 border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 to-blue-500/5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+                Deposit is for agents
+              </h2>
+              <p className="mt-1 text-sm text-[var(--text-secondary)] max-w-md">
+                {AI_FIRST_MESSAGING.depositAgentOnly}
+              </p>
+            </div>
+            <div className="shrink-0">
+              <ContinueAsAIButton successRedirect="/dashboard/deposit" />
+            </div>
+          </div>
+        </GlassCard>
+      )}
 
       {/* Success message */}
       {success && (
@@ -107,8 +142,12 @@ function DepositPageClient() {
         )}
       </GlassCard>
 
-      {/* Starter Bundle card — $5 / 500 credits */}
+      {/* Starter Bundle card — $5 / 500 credits (agent only) */}
+      {isAgent && (
       <section className="max-w-md">
+        <p className="mb-4 text-sm text-[var(--text-secondary)]">
+          {AI_FIRST_MESSAGING.depositStripeCopy}
+        </p>
         {packagesLoading ? (
           <GlassCard className="p-8">
             <div className="animate-pulse space-y-4">
@@ -142,6 +181,9 @@ function DepositPageClient() {
                 <p className="mt-4 text-center text-xs text-[var(--text-secondary)]">
                   ≈ {Math.round(starterBundle.credits / (starterBundle.amountCents / 100))} credits per dollar — instant delivery
                 </p>
+                {buyError && (
+                  <p className="mt-2 text-sm text-amber-400">{buyError}</p>
+                )}
                 <button
                   type="button"
                   onClick={() => buy(starterBundle.id)}
@@ -168,6 +210,7 @@ function DepositPageClient() {
           </GlassCard>
         )}
       </section>
+      )}
 
       {/* Disclaimer */}
       <GlassCard className="p-4 border-[var(--border)]">

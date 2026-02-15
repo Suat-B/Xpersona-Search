@@ -56,6 +56,18 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     initialBalance: number;
     winRatePercent: number;
   } | null>(null);
+  const [depositSuccess, setDepositSuccess] = useState(false);
+
+  // Handle deposit=success from Stripe redirect
+  useEffect(() => {
+    if (searchParams.get("deposit") === "success") {
+      setDepositSuccess(true);
+      router.replace("/games/dice");
+      window.dispatchEvent(new Event("balance-updated"));
+      const t = setTimeout(() => setDepositSuccess(false), 5000);
+      return () => clearTimeout(t);
+    }
+  }, [searchParams, router]);
 
   // Read strategy-run payload when ?run=1 or ?run=advanced, then redirect
   useEffect(() => {
@@ -210,6 +222,15 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
 
   return (
     <div className="h-screen w-full flex flex-col min-h-0 overflow-hidden bg-[var(--bg-deep)]">
+      {/* Deposit success toast */}
+      {depositSuccess && (
+        <div className="flex-shrink-0 flex items-center justify-center gap-2 py-3 px-4 bg-emerald-500/20 border-b border-emerald-500/30 text-emerald-400 text-sm font-medium">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          Payment successful. Credits added.
+        </div>
+      )}
       {/* Header - Compact 56px */}
       <header className="flex-shrink-0 h-14 flex items-center justify-between px-6 border-b border-white/5 bg-[var(--bg-card)]/50 backdrop-blur-sm">
         <Link
