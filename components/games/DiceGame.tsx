@@ -610,7 +610,7 @@ export function DiceGame({
 
         {/* Controls Section - Trading Hub */}
         <div
-          className={`flex-1 min-h-0 flex flex-col justify-center px-6 py-4 space-y-3 rounded-b-2xl transition-all duration-300 overflow-y-auto ${
+          className={`flex-1 min-h-0 flex flex-col items-center justify-center px-6 py-4 space-y-3 rounded-b-2xl transition-all duration-300 overflow-y-auto ${
             aiDriving
               ? "border-t border-violet-500/30 bg-violet-500/5"
               : ""
@@ -626,7 +626,7 @@ export function DiceGame({
             </div>
           )}
           {/* Order Entry — Centered trading hub */}
-          <div className="w-full max-w-md mx-auto space-y-4 rounded-xl border border-white/10 bg-[var(--bg-card)]/80 p-4 shadow-lg">
+          <div className="max-w-md shrink-0 mx-auto space-y-4 rounded-xl border border-white/10 bg-[var(--bg-card)]/80 p-4 shadow-lg">
           {(() => {
             const winProb = condition === "over" ? (100 - target) / 100 : target / 100;
             const multiplier = winProb > 0 ? Math.min((1 - DICE_HOUSE_EDGE) / winProb, 10) : 0;
