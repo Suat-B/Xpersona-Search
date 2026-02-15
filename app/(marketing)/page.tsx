@@ -72,14 +72,26 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         </div>
       </header>
 
-      {/* Auth error */}
+      {/* Auth / recovery error */}
       {authError && (
         <div className="mx-auto max-w-4xl px-4 py-2">
-          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-200">
+          <div className={`rounded-lg border px-4 py-3 text-sm ${
+            authError.startsWith("recovery_")
+              ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+              : "border-red-500/30 bg-red-500/10 text-red-200"
+          }`}>
             <p className="font-medium">
-              {authError === "guest_failed" || authError === "human_failed" ? "Session creation failed" : "Auth error"}
+              {authError === "recovery_expired" && "Recovery link expired"}
+              {authError === "recovery_missing" && "Recovery token missing"}
+              {authError === "recovery_invalid" && "Recovery failed"}
+              {!authError.startsWith("recovery_") && (authError === "guest_failed" || authError === "human_failed" ? "Session creation failed" : "Auth error")}
             </p>
             {authMessage && <p className="mt-1 text-xs opacity-90">{authMessage}</p>}
+            {authError.startsWith("recovery_") && (
+              <Link href="/api/auth/play" className="mt-2 inline-block text-xs font-medium text-amber-300 hover:text-amber-200 underline">
+                Start fresh — continue as guest
+              </Link>
+            )}
           </div>
         </div>
       )}

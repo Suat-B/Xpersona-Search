@@ -82,6 +82,35 @@ export function getGuestCookieName(): string {
   return GUEST_COOKIE_NAME;
 }
 
+/** Recovery link expiry: 7 days. */
+const RECOVERY_LINK_DAYS = 7;
+
+/** Create a signed recovery token (userId + expiry). Use for "save this link" flow. */
+export function createRecoveryToken(userId: string): string {
+  const secret = getSecret();
+  const exp = String(Date.now() + RECOVERY_LINK_DAYS * 24 * 60 * 60 * 1000);
+  const payload = userId + "." + exp;
+  const sig = createHmac("sha256", secret).update(payload).digest("hex");
+  return Buffer.from(payload + "." + sig).toString("base64url");
+}
+
+/** Verify recovery token; return userId or null. */
+export function verifyRecoveryToken(token: string): string | null {
+  try {
+    const secret = getSecret();
+    const raw = Buffer.from(token, "base64url").toString("utf8");
+    const [userId, exp, sig] = raw.split(".");
+    if (!userId || !exp || !sig) return null;
+    if (Date.now() > parseInt(exp, 10)) return null;
+    const payload = userId + "." + exp;
+    const expected = createHmac("sha256", secret).update(payload).digest("hex");
+    if (expected.length !== sig.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) return null;
+    return userId;
+  } catch {
+    return null;
+  }
+}
+
 /** For server components (e.g. dashboard layout): read agent or guest cookie and return userId or null. */
 export function getAuthUserFromCookie(
   cookieStore: { get: (name: string) => { value: string } | undefined }
@@ -221,6 +250,23 @@ export async function getAuthUser(
   }
 
   return { error: "UNAUTHORIZED" };
+}
+
+/** Base URL for recovery links and LLM guidance. */
+export function getAppBaseUrl(): string {
+  return process.env.NEXTAUTH_URL ?? "https://xpersona.co";
+}
+
+/** Standard 401 body with recovery guidance for AI agents and users. */
+export function unauthorizedJsonBody() {
+  const url = getAppBaseUrl();
+  return {
+    success: false,
+    error: "UNAUTHORIZED",
+    recovery_url: url,
+    message: "Session expired or invalid. Go to the casino to sign in again.",
+    llm_guidance: `Tell your player: "Your session expired. Go to ${url} to sign back in. Bookmark it so you never lose it. If you had a recovery link, open it to restore your account."`,
+  };
 }
 
 export function hashApiKey(key: string): string {

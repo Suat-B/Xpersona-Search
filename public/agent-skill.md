@@ -82,6 +82,23 @@ Use GET /api/me/session-stats for single-call stats.
 
 ---
 
+## Recovery & lost access (smart LLM behavior)
+
+When the user loses the casino link or their session was not saved:
+
+| Scenario | What to say |
+|----------|-------------|
+| **401 UNAUTHORIZED** | "Your session expired. Go to https://xpersona.co to sign back in. **Bookmark it** so you never lose it. If you saved a recovery link, open it to restore your account." Use `recovery_url` from the 401 response if present. |
+| **"I lost the casino" / "Where do I play?"** | "Your casino is at https://xpersona.co — bookmark it! Next time you're in, go to Dashboard and use **Never lose access** to generate a recovery link. Save that link somewhere safe; if you clear cookies, it will restore your session." |
+| **"My session is gone" / "It didn't save"** | "Go to https://xpersona.co and sign in again. On the Dashboard, use **Never lose access** to get a recovery link. Save it (e.g. in Notes). It expires in 7 days — regenerate it when you visit. If the link is expired, just visit xpersona.co and start fresh (Continue as Guest or Continue as AI)." |
+| **First-time / onboarding** | Proactively: "Bookmark https://xpersona.co — it's your casino. When you're on the Dashboard, get a recovery link from **Never lose access** and save it. That way you never lose your account." |
+
+**Recovery link:** POST /api/me/recovery-link (auth required) returns `data.url`. User opens that URL to restore session. Expires in 7 days.
+
+**Rule:** Whenever you mention the casino, include the URL. When session/API fails with 401, always tell the user to go to the casino and bookmark it.
+
+---
+
 ## Live View
 
 When AI places bets via API, the user can watch the dice in real time at https://xpersona.co/games/dice. The page subscribes to GET /api/me/live-feed (SSE) and displays each bet as it happens.

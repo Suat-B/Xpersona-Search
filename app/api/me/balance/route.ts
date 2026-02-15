@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAuthUser } from "@/lib/auth-utils";
+import { getAuthUser, unauthorizedJsonBody } from "@/lib/auth-utils";
 import { getWithdrawableBalance } from "@/lib/withdrawable";
 import { DEPOSIT_ALERT_LOW, DEPOSIT_ALERT_CRITICAL, MIN_BET, getBalanceMilestone } from "@/lib/constants";
 
@@ -7,7 +7,7 @@ export async function GET(request: Request) {
   const authResult = await getAuthUser(request as any);
   if ("error" in authResult) {
     return NextResponse.json(
-      { success: false, error: authResult.error },
+      { ...unauthorizedJsonBody(), error: authResult.error },
       { status: 401 }
     );
   }

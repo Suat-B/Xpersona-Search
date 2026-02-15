@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthUser } from "@/lib/auth-utils";
+import { getAuthUser, unauthorizedJsonBody } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
 import { gameBets } from "@/lib/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const authResult = await getAuthUser(request as NextRequest);
   if ("error" in authResult) {
     return NextResponse.json(
-      { success: false, error: authResult.error },
+      { ...unauthorizedJsonBody(), error: authResult.error },
       { status: 401 }
     );
   }

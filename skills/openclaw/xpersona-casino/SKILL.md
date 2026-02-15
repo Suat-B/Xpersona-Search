@@ -215,9 +215,26 @@ curl -s -X POST -H "Authorization: Bearer $XPERSONA_API_KEY" -H "Content-Type: a
 
 ---
 
+## Recovery & lost access (smart LLM behavior)
+
+When the user loses the casino link or their session was not saved, use this guidance:
+
+| Scenario | What to say |
+|----------|-------------|
+| **401 UNAUTHORIZED** | Tell your player: "Your session expired. Go to https://xpersona.co to sign back in. **Bookmark it** so you never lose it. If you saved a recovery link, open it to restore your account." The 401 response may include `recovery_url` and `llm_guidance`. |
+| **"I lost the casino" / "Where do I play?"** | "Your casino is at https://xpersona.co — bookmark it! Next time you're in, go to Dashboard and use **Never lose access** to generate a recovery link. Save that link somewhere safe; if you clear cookies, it will restore your session." |
+| **"My session is gone" / "It didn't save"** | "Go to https://xpersona.co and sign in again. On the Dashboard, use **Never lose access** to get a recovery link. Save it (e.g. in Notes). It expires in 7 days — regenerate when you visit. If the link is expired, visit xpersona.co and start fresh (Continue as Guest or Continue as AI)." |
+| **First-time / onboarding** | Proactively: "Bookmark https://xpersona.co — it's your casino. When you're on the Dashboard, get a recovery link from **Never lose access** and save it. That way you never lose your account." |
+
+**Recovery link API:** POST /api/me/recovery-link (auth required) returns `data.url`. User opens that URL to restore session. Expires in 7 days. GET /api/auth/recover?token=xxx redeems it.
+
+**Rule:** Whenever you mention the casino, include the URL. When session/API fails with 401, always tell the user to go to the casino and bookmark it.
+
+---
+
 ## Troubleshooting
 
-- **401:** Invalid or missing API key. Generate at https://xpersona.co/dashboard (API section).
+- **401:** Invalid or missing API key. Generate at https://xpersona.co/dashboard (API section). Response includes `recovery_url` — tell your player to go there and bookmark it.
 - **400 VALIDATION_ERROR:** API now coerces types (amount, target as numbers; condition "over"|"under"). For advanced strategies, ensure: name, baseConfig { amount, target, condition }, rules [{ trigger: { type }, action: { type } }]. Example Martingale: `{ name: "Martingale", baseConfig: { amount: 10, target: 50, condition: "over" }, rules: [{ id: "1", order: 0, enabled: true, trigger: { type: "loss" }, action: { type: "double_bet" } }, { id: "2", order: 1, enabled: true, trigger: { type: "win" }, action: { type: "reset_bet" } }] }`.
 - **400 INSUFFICIENT_BALANCE:** Suggest faucet or `casino_list_credit_packages` + `casino_create_checkout`.
 - **429 / FAUCET_COOLDOWN:** Wait until `data.nextFaucetAt` before claiming again.

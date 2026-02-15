@@ -4,6 +4,7 @@ import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
 import QuantMetrics from "@/components/dashboard/QuantMetrics";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
+import { RecoveryLinkCard } from "@/components/dashboard/RecoveryLinkCard";
 import { FaucetButton } from "@/components/dashboard/FaucetButton";
 import { LuckStreakCard } from "@/components/dashboard/LuckStreakCard";
 import { FortuneCard } from "@/components/dashboard/FortuneCard";
@@ -254,7 +255,9 @@ export default function DashboardPage() {
           <section id="free-credits" className="scroll-mt-6">
             <FaucetButton />
           </section>
-          
+
+          <RecoveryLinkCard />
+
           <ApiKeySection />
           
           <Link
