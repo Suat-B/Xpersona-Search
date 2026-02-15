@@ -18,6 +18,7 @@ import { KeyboardShortcutsHelp } from "./KeyboardShortcuts";
 import { StrategyRunningBanner } from "@/components/strategies/StrategyRunningBanner";
 import { LiveActivityFeed, type LiveActivityItem } from "./LiveActivityFeed";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
+import { fetchBalanceWithRetry } from "@/lib/safeFetch";
 import type { DiceStrategyConfig, DiceProgressionType } from "@/lib/strategies";
 import type { StrategyRunConfig } from "./DiceGame";
 import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
@@ -159,21 +160,12 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     }
   }, [game, searchParams, router]);
 
-  // Load balance on mount
+  // Load balance on mount (retries on 401 to handle auth race with EnsureGuest)
   useEffect(() => {
     const loadBalance = async () => {
       try {
-        const res = await fetch("/api/me/balance", { credentials: "include" });
-        const text = await res.text();
-        let data: { success?: boolean; data?: { balance?: number } };
-        try {
-          data = text ? JSON.parse(text) : {};
-        } catch {
-          return;
-        }
-        if (data.success && typeof data.data?.balance === "number") {
-          setBalance(data.data.balance);
-        }
+        const bal = await fetchBalanceWithRetry();
+        if (bal !== null) setBalance(bal);
       } catch {
         // Silently fail
       }

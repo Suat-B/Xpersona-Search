@@ -5,6 +5,7 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import Link from "next/link";
 import { WITHDRAW_MIN_USD, WITHDRAW_MIN_CREDITS, CREDITS_TO_USD } from "@/lib/constants";
 import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
+import { fetchBalanceDataWithRetry } from "@/lib/safeFetch";
 
 type BalanceData = {
   balance: number;
@@ -24,15 +25,17 @@ function WithdrawPageClient() {
 
   const loadBalance = useCallback(async () => {
     setLoading(true);
+    setMessage(null);
     try {
-      const res = await fetch("/api/me/balance", { credentials: "include" });
-      const data = await res.json();
-      if (data.success && data.data) {
+      const data = await fetchBalanceDataWithRetry();
+      if (data) {
         setBalanceData({
-          balance: data.data.balance ?? 0,
-          faucetCredits: data.data.faucetCredits ?? 0,
-          withdrawable: data.data.withdrawable ?? 0,
+          balance: data.balance,
+          faucetCredits: data.faucetCredits,
+          withdrawable: data.withdrawable,
         });
+      } else {
+        setMessage({ type: "error", text: "Failed to load balance." });
       }
     } catch {
       setMessage({ type: "error", text: "Failed to load balance." });
@@ -43,6 +46,9 @@ function WithdrawPageClient() {
 
   useEffect(() => {
     loadBalance();
+    const handler = () => loadBalance();
+    window.addEventListener("balance-updated", handler);
+    return () => window.removeEventListener("balance-updated", handler);
   }, [loadBalance]);
 
   const handleSubmit = async (e: React.FormEvent) => {

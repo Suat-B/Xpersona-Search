@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { safeFetchJson } from "@/lib/safeFetch";
+import { fetchBalanceWithRetry } from "@/lib/safeFetch";
 
 export function BalanceCard() {
   const [balance, setBalance] = useState<number | null>(null);
@@ -9,8 +9,8 @@ export function BalanceCard() {
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const { data } = await safeFetchJson<{ success?: boolean; data?: { balance?: number } }>("/api/me/balance");
-    if (data?.success && typeof data?.data?.balance === "number") setBalance(data.data.balance);
+    const bal = await fetchBalanceWithRetry();
+    if (bal !== null) setBalance(bal);
     setLoading(false);
   }, []);
 

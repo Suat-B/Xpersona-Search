@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { GlassCard } from "@/components/ui/GlassCard";
 import Link from "next/link";
 import { MIN_BET, DEPOSIT_ALERT_LOW, DEPOSIT_ALERT_CRITICAL } from "@/lib/constants";
+import { fetchBalanceWithRetry } from "@/lib/safeFetch";
 
 type Package = { id: string; name: string; credits: number; amountCents: number };
 
@@ -23,11 +24,8 @@ function DepositPageClient() {
   const loadBalance = useCallback(async () => {
     setBalanceLoading(true);
     try {
-      const res = await fetch("/api/me/balance");
-      const data = await res.json();
-      if (data.success && typeof data.data?.balance === "number") {
-        setBalance(data.data.balance);
-      }
+      const bal = await fetchBalanceWithRetry();
+      if (bal !== null) setBalance(bal);
     } catch {
       // ignore
     } finally {

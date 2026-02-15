@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { fetchBalanceWithRetry } from "@/lib/safeFetch";
 
 type Metric = {
     label: string;
@@ -57,8 +58,8 @@ export default function QuantMetrics() {
 
     const refresh = useCallback(async () => {
         try {
-            const [balanceRes, betsRes] = await Promise.all([
-                fetch("/api/me/balance", { credentials: "include" }),
+            const [balance, betsRes] = await Promise.all([
+                fetchBalanceWithRetry(),
                 fetch("/api/me/rounds?limit=100&gameType=dice", { credentials: "include" }),
             ]);
             
@@ -67,12 +68,9 @@ export default function QuantMetrics() {
                 try { return text ? JSON.parse(text) : {}; } catch { return {}; }
             };
             
-            const balanceData = await parseJson(balanceRes);
             const betsData = await parseJson(betsRes);
 
-            const balance = balanceData.success && typeof balanceData.data?.balance === "number"
-                ? balanceData.data.balance
-                : 0;
+            const balanceVal = balance !== null ? balance : 0;
 
             let sessionPnl = 0;
             let roundCount = 0;
@@ -91,7 +89,7 @@ export default function QuantMetrics() {
             const pnlTrend: "up" | "down" | "neutral" = sessionPnl > 0 ? "up" : sessionPnl < 0 ? "down" : "neutral";
 
             setMetrics([
-                { label: "Balance", value: String(balance), subtext: "credits", trend: "neutral", icon: icons.balance },
+                { label: "Balance", value: String(balanceVal), subtext: "credits", trend: "neutral", icon: icons.balance },
                 {
                     label: "Session P&L",
                     value: (sessionPnl >= 0 ? "+" : "") + String(sessionPnl),
