@@ -45,6 +45,7 @@ interface QuantChartsAestheticProps {
   winRate: number;
   totalPnl: number;
   rounds: number;
+  layout?: "default" | "analytics";
 }
 
 export function QuantChartsAesthetic({
@@ -53,6 +54,7 @@ export function QuantChartsAesthetic({
   winRate,
   totalPnl,
   rounds,
+  layout = "default",
 }: QuantChartsAestheticProps) {
   const n = recentResults.length;
   const hasData = n > 0;
@@ -208,8 +210,8 @@ export function QuantChartsAesthetic({
                   <stop offset="100%" stopColor="#10b981" />
                 </linearGradient>
                 <linearGradient id="donut-loss" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0%" stopColor="#f87171" />
-                  <stop offset="100%" stopColor="#ef4444" />
+                  <stop offset="0%" stopColor="#fbbf24" />
+                  <stop offset="100%" stopColor="#f59e0b" />
                 </linearGradient>
                 <filter id="donut-glow">
                   <feGaussianBlur stdDeviation="1" result="blur" />
@@ -257,13 +259,13 @@ export function QuantChartsAesthetic({
               </span>
             </div>
           </div>
-          <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
               <span className="text-xs font-mono">{wins} wins</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]" />
+              <div className="w-3 h-3 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
               <span className="text-xs font-mono">{losses} losses</span>
             </div>
           </div>
@@ -321,7 +323,6 @@ export function QuantChartsAesthetic({
         <div className="space-y-1.5" data-agent="roll-distribution">
           {resultBuckets.map((b, i) => {
             const total = b.wins + b.losses;
-            const winPct = total > 0 ? (b.wins / total) * 100 : 0;
             return (
               <div key={i} className="flex items-center gap-2">
                 <span className="text-[10px] text-[var(--text-tertiary)] w-14 shrink-0 font-mono">
@@ -336,7 +337,7 @@ export function QuantChartsAesthetic({
                     }}
                   />
                   <div
-                    className="h-full bg-red-500/70 transition-all duration-300 rounded-r"
+                    className="h-full bg-amber-500/70 transition-all duration-300 rounded-r"
                     style={{
                       width: total > 0 ? `${(b.losses / total) * 100}%` : "0%",
                       minWidth: b.losses > 0 ? "2px" : 0,
@@ -351,7 +352,7 @@ export function QuantChartsAesthetic({
           })}
         </div>
         <p className="text-[10px] text-[var(--text-tertiary)] mt-2">
-          Stacked: wins (green) vs losses (red) per result range
+          Stacked: wins (green) vs losses (amber) per result range
         </p>
       </div>
 

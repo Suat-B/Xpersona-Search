@@ -84,9 +84,10 @@ function getBetSizeBuckets(results: RollResult[]): { label: string; count: numbe
 
 interface QuantStatsChartsProps {
   recentResults: RollResult[];
+  layout?: "default" | "analytics";
 }
 
-export function QuantStatsCharts({ recentResults }: QuantStatsChartsProps) {
+export function QuantStatsCharts({ recentResults, layout = "default" }: QuantStatsChartsProps) {
   const n = recentResults.length;
   const hasData = n > 0;
 
@@ -101,32 +102,72 @@ export function QuantStatsCharts({ recentResults }: QuantStatsChartsProps) {
 
   const last30 = hasData ? recentResults.slice(-30) : [];
 
+  // Result distribution histogram (0–100 in bins)
+  const BINS = 10;
+  const resultBuckets = Array.from({ length: BINS }, (_, i) => ({
+    low: (i * 100) / BINS,
+    high: ((i + 1) * 100) / BINS,
+    wins: 0,
+    losses: 0,
+  }));
+  for (const r of recentResults) {
+    const idx = Math.min(Math.floor((r.result / 100) * BINS), BINS - 1);
+    if (r.win) resultBuckets[idx].wins++;
+    else resultBuckets[idx].losses++;
+  }
+  const maxCount = Math.max(1, ...resultBuckets.map((b) => b.wins + b.losses));
+
+  const showHistogram = layout === "analytics";
+
   return (
     <div className="space-y-4" data-agent="quant-stats">
-      {/* Win/Loss run chart — colored dots with subtle glow */}
-      <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 p-4 shadow-lg">
-        <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest mb-3 flex items-center gap-2">
-          <span className="w-1 h-1 rounded-full bg-[var(--accent-heart)]" />
-          Run chart (last 30)
-        </h4>
-        <div className="flex flex-wrap gap-1.5" data-agent="run-chart">
-          {last30.length > 0
-            ? last30.map((r, i) => (
-                <div
-                  key={i}
-                  className={`w-2.5 h-2.5 rounded-md transition-all duration-200 hover:scale-125 ${
-                    r.win
-                      ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]"
-                      : "bg-red-500/90 shadow-[0_0_6px_rgba(239,68,68,0.4)]"
-                  }`}
-                  title={`Round ${recentResults.length - last30.length + i + 1}: ${r.win ? "Win" : "Loss"}`}
-                />
-              ))
-            : (
-                <span className="text-[10px] text-[var(--text-tertiary)] italic py-2">No rounds yet — roll to see run chart</span>
-              )}
+      {showHistogram ? (
+        <div className="rounded-2xl border border-white/10 bg-[var(--bg-card)] p-4 shadow-lg">
+          <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest mb-3">
+            Result distribution (0–100)
+          </h4>
+          <div className="flex items-end gap-0.5 h-20">
+            {resultBuckets.map((b, i) => {
+              const total = b.wins + b.losses;
+              const barHeight = maxCount > 0 && total > 0 ? Math.max(4, (total / maxCount) * 72) : 0;
+              return (
+                <div key={i} className="flex-1 flex flex-col items-stretch justify-end min-w-0" title={`${b.low.toFixed(0)}–${b.high.toFixed(0)}: ${total} (${b.wins}W / ${b.losses}L)`}>
+                  <div className="w-full flex flex-col-reverse rounded-t overflow-hidden" style={{ height: barHeight }}>
+                    {b.wins > 0 && <div className="w-full bg-emerald-500/90" style={{ flex: b.wins / total }} />}
+                    {b.losses > 0 && <div className="w-full bg-amber-500/90" style={{ flex: b.losses / total }} />}
+                  </div>
+                  <span className="text-[8px] text-[var(--text-tertiary)] font-mono truncate text-center block">{b.low.toFixed(0)}</span>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[10px] text-[var(--text-tertiary)] mt-2">Theoretical: Uniform. Blue=win range, Amber=loss range.</p>
         </div>
-      </div>
+      ) : (
+        <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 p-4 shadow-lg">
+          <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest mb-3 flex items-center gap-2">
+            <span className="w-1 h-1 rounded-full bg-[#0ea5e9]" />
+            Run chart (last 30)
+          </h4>
+          <div className="flex flex-wrap gap-1.5" data-agent="run-chart">
+            {last30.length > 0
+              ? last30.map((r, i) => (
+                  <div
+                    key={i}
+                    className={`w-2.5 h-2.5 rounded-md transition-all duration-200 hover:scale-125 ${
+                      r.win
+                        ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]"
+                        : "bg-amber-500/90 shadow-[0_0_6px_rgba(245,158,11,0.4)]"
+                    }`}
+                    title={`Round ${recentResults.length - last30.length + i + 1}: ${r.win ? "Win" : "Loss"}`}
+                  />
+                ))
+              : (
+                <span className="text-[10px] text-[var(--text-tertiary)] italic py-2">No rounds yet — execute to see run chart</span>
+              )}
+          </div>
+        </div>
+      )}
 
       {/* Streaks + rolling metrics */}
       <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-matte)]/50 p-4 space-y-3 shadow-md" data-agent="streak-stats">

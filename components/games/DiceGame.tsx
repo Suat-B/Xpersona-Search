@@ -45,7 +45,7 @@ export type DiceGameProps = {
   onConditionChange: (v: "over" | "under") => void;
   onRoundComplete: (amount: number, payout: number) => void;
   onAutoPlayChange?: (active: boolean) => void;
-  onResult?: (result: { result: number; win: boolean; payout: number; playAmount?: number; betId?: string; balance?: number }) => void;
+  onResult?: (result: { result: number; win: boolean; payout: number; playAmount?: number; betId?: string; balance?: number; target?: number; condition?: "over" | "under" }) => void;
   /** External play to display (e.g. from API/AI live feed). Triggers dice animation. */
   livePlay?: { result: number; win: boolean; payout: number } | null;
   /** Dice animation duration in ms when showing live play (matches round speed) */
@@ -203,7 +203,7 @@ export function DiceGame({
         balance: data.data.balance,
         result: data.data.result,
       };
-      onResult?.({ ...newResult, playAmount: betAmount, betId: data.data.betId, balance: data.data.balance });
+      onResult?.({ ...newResult, playAmount: betAmount, betId: data.data.betId, balance: data.data.balance, target, condition });
       onRoundComplete(betAmount, data.data.payout);
 
       // Show win effects
@@ -606,13 +606,13 @@ export function DiceGame({
               <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${
                 result.win 
                   ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" 
-                  : "bg-red-500/20 text-red-400 border border-red-500/30"
+                  : "bg-amber-500/20 text-amber-400 border border-amber-500/30"
               }`}>
                 <span className="text-lg">
                   {result.win ? "🎉" : "😔"}
                 </span>
                 <span className="font-bold">
-                  {result.win ? "YOU WIN!" : "You Lose"}
+                  {result.win ? "+P&L" : "-P&L"}
                 </span>
                 <span className="font-mono font-bold">
                   {result.win ? `+${result.payout}` : amount} credits
@@ -621,13 +621,15 @@ export function DiceGame({
             </div>
           )}
           
-          {/* 3D Dice */}
+          {/* 3D Dice — Stochastic Instrument */}
           <div className="relative z-10">
             <Dice3D 
               value={result?.result ?? null} 
               isRolling={loading}
               win={result?.win ?? null}
               animationDurationMs={livePlay ? livePlayAnimationMs : undefined}
+              winProbability={condition === "over" ? 100 - target : target}
+              compact
             />
           </div>
         </div>
@@ -649,11 +651,34 @@ export function DiceGame({
               </span>
             </div>
           )}
-          {/* Target, Condition, Play Row */}
+          {/* Order Entry — Quant style */}
+          {(() => {
+            const winProb = condition === "over" ? (100 - target) / 100 : target / 100;
+            const multiplier = winProb > 0 ? Math.min((1 - DICE_HOUSE_EDGE) / winProb, 10) : 0;
+            const evPerTrade = amount * (winProb * multiplier - 1);
+            return (
+              <div className="mb-2 rounded-lg border border-white/10 bg-[var(--bg-matte)]/50 px-3 py-2 space-y-2">
+                <div className="flex justify-between text-[10px] text-[var(--text-tertiary)]">
+                  <span>Win Probability</span>
+                  <span className="font-mono text-[var(--text-primary)]">{(winProb * 100).toFixed(2)}%</span>
+                </div>
+                <div className="flex justify-between text-[10px] text-[var(--text-tertiary)]">
+                  <span>Payout Ratio</span>
+                  <span className="font-mono text-[var(--text-primary)]">{multiplier.toFixed(2)}x</span>
+                </div>
+                <div className="flex justify-between text-[10px] text-[var(--text-tertiary)]">
+                  <span>Expected Value</span>
+                  <span className={`font-mono ${evPerTrade >= 0 ? "text-emerald-400" : "text-amber-400"}`}>
+                    {evPerTrade >= 0 ? "+" : ""}{evPerTrade.toFixed(2)} cr
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
           <div className="flex items-end justify-center gap-3">
             <div className="space-y-1">
               <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
-                Target
+                Threshold
               </label>
               <div
                 className={`relative transition-all duration-300 ${
@@ -688,7 +713,7 @@ export function DiceGame({
 
             <div className="space-y-1">
               <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
-                Condition
+                Direction
               </label>
               <div
                 className={`transition-all duration-300 ${
@@ -700,13 +725,14 @@ export function DiceGame({
                   value={condition}
                   onChange={onConditionChange}
                   disabled={autoPlay}
+                  quantLabels
                 />
               </div>
             </div>
 
             <div className="space-y-1">
               <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
-                Amount
+                Position Size
               </label>
               <div
                 className={`relative transition-all duration-300 ${
@@ -765,7 +791,7 @@ export function DiceGame({
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                {loading && !autoPlay ? "Rolling..." : "ROLL"}
+                {loading && !autoPlay ? "Executing..." : "EXECUTE"}
               </span>
             </button>
 
@@ -795,7 +821,7 @@ export function DiceGame({
                     <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
                     </svg>
-                    <span>AUTO</span>
+                    <span>ALGO RUN</span>
                   </>
                 )}
               </button>

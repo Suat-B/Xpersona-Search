@@ -2,8 +2,6 @@
 
 export type PnLPoint = { round: number; pnl: number };
 
-const CHART_W = 400;
-const CHART_H = 100;
 const PAD = 4;
 
 export function SessionPnLChart({
@@ -11,12 +9,17 @@ export function SessionPnLChart({
   totalPnl,
   rounds,
   onReset,
+  layout = "default",
 }: {
   series: PnLPoint[];
   totalPnl: number;
   rounds: number;
   onReset: () => void;
+  layout?: "default" | "large";
 }) {
+  const isLarge = layout === "large";
+  const CHART_W = isLarge ? 600 : 400;
+  const CHART_H = isLarge ? 180 : 100;
   if (rounds === 0) {
     return (
       <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 p-4 shadow-md">
@@ -25,7 +28,7 @@ export function SessionPnLChart({
             <svg className="w-3.5 h-3.5 text-[var(--accent-heart)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
             </svg>
-            <span className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider">Session PnL</span>
+            <span className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider">Equity Curve</span>
           </div>
           <button
             type="button"
@@ -72,11 +75,11 @@ export function SessionPnLChart({
           <svg className="w-3.5 h-3.5 text-[var(--accent-heart)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
           </svg>
-          <span className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider">Session PnL</span>
+          <span className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider">Equity Curve</span>
         </div>
         <div className="flex items-center gap-2">
           <span
-            className={`text-sm font-bold font-mono ${totalPnl >= 0 ? "text-emerald-400" : "text-red-400"}`}
+            className={`text-sm font-bold font-mono ${totalPnl >= 0 ? "text-emerald-400" : "text-amber-400"}`}
           >
             {totalPnl >= 0 ? "+" : ""}
             {totalPnl}
@@ -107,9 +110,9 @@ export function SessionPnLChart({
             <stop offset="100%" stopColor="#10b981" stopOpacity={0.4} />
           </linearGradient>
           <linearGradient id="pnl-fill-down" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#ef4444" stopOpacity={0.4} />
-            <stop offset="50%" stopColor="#ef4444" stopOpacity={0.2} />
-            <stop offset="100%" stopColor="#ef4444" stopOpacity={0} />
+            <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.4} />
+            <stop offset="50%" stopColor="#f59e0b" stopOpacity={0.2} />
+            <stop offset="100%" stopColor="#f59e0b" stopOpacity={0} />
           </linearGradient>
           <linearGradient id="pnl-fill-neutral" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--accent-heart)" stopOpacity={0.3} />
@@ -140,7 +143,7 @@ export function SessionPnLChart({
         <path
           d={pathD}
           fill="none"
-          stroke={totalPnl >= 0 ? "#10b981" : "#ef4444"}
+          stroke={totalPnl >= 0 ? "#10b981" : "#f59e0b"}
           strokeWidth={2.5}
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -151,7 +154,7 @@ export function SessionPnLChart({
             cx={PAD + ((points.length - 1) / Math.max(1, points.length - 1)) * (CHART_W - PAD * 2)}
             cy={maxPnl <= 0 ? CHART_H - PAD : PAD + (maxPnl - points[points.length - 1].pnl) * scaleY}
             r={3}
-            fill={points[points.length - 1].pnl >= 0 ? "#10b981" : "#ef4444"}
+            fill={points[points.length - 1].pnl >= 0 ? "#10b981" : "#f59e0b"}
             stroke="var(--bg-card)"
             strokeWidth={2}
           />

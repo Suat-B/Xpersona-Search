@@ -8,6 +8,9 @@ import { ClientOnly } from "@/components/ClientOnly";
 import { useDiceSessionPnL } from "./useSessionPnL";
 import { DiceStrategyPanel } from "./DiceStrategyPanel";
 import { DiceStatisticsPanel } from "./DiceStatisticsPanel";
+import { QuantMetricsGrid } from "./QuantMetricsGrid";
+import { TradeLog } from "./TradeLog";
+import { QuantTopMetricsBar } from "./QuantTopMetricsBar";
 import { CreativeDiceStrategiesSection } from "./CreativeDiceStrategiesSection";
 import { AgentApiSection } from "./AgentApiSection";
 import { CompactAdvancedStrategyBuilder } from "@/components/strategies/CompactAdvancedStrategyBuilder";
@@ -35,13 +38,19 @@ interface RollResult {
   win: boolean;
   payout: number;
   playAmount?: number;
+  balance?: number;
+  target?: number;
+  condition?: "over" | "under";
+  roundNumber?: number;
+  timestamp?: Date;
+  source?: "manual" | "algo" | "api";
 }
 
 export default function GamePageClient({ game }: { game: GameSlug }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionPnL = useDiceSessionPnL();
-  const { totalPnl = 0, rounds = 0, wins = 0, addRound, addBulkSession, reset } = sessionPnL;
+  const { totalPnl = 0, rounds = 0, wins = 0, addRound, addBulkSession, reset, quantMetrics } = sessionPnL;
   const statsSeries = Array.isArray(sessionPnL?.series) ? sessionPnL.series : [];
   const [amount, setAmount] = useState(10);
   const [target, setTarget] = useState(50);
@@ -220,13 +229,25 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     setActiveStrategyName(strategyName ?? null);
   };
 
-  const handleResult = useCallback((result: RollResult & { playAmount?: number; balance?: number; betId?: string }) => {
+  const handleResult = useCallback((result: RollResult & { playAmount?: number; balance?: number; betId?: string; source?: "manual" | "algo" | "api" }) => {
     if (result.betId && processedPlayIdsRef.current.has(result.betId)) return; // Already processed (e.g. from SSE)
-    setRecentResults(prev => [...prev, { ...result, playAmount: result.playAmount ?? amount }].slice(-MAX_RECENT_RESULTS));
+    setRecentResults((prev) => {
+      const roundNum = prev.length + 1;
+      return [...prev, {
+        ...result,
+        playAmount: result.playAmount ?? amount,
+        balance: result.balance,
+        target: result.target ?? target,
+        condition: result.condition ?? condition,
+        roundNumber: roundNum,
+        timestamp: new Date(),
+        source: result.source ?? "manual",
+      }].slice(-MAX_RECENT_RESULTS);
+    });
     if (typeof result.balance === "number") setBalance(result.balance);
     addRound(result.playAmount ?? amount, result.payout);
     if (result.betId) processedPlayIdsRef.current.add(result.betId);
-  }, [amount, addRound]);
+  }, [amount, target, condition, addRound]);
 
   // Process live play queue sequentially; display duration matches actual round arrival speed
   const processLivePlayQueue = useCallback(() => {
@@ -290,6 +311,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           payout: bet.payout,
           playAmount: bet.amount,
           balance: bet.balance,
+          target: bet.target,
+          condition: (bet.condition === "under" ? "under" : "over") as "over" | "under",
+          source: "api",
         });
         if (bet.betId) processedPlayIdsRef.current.add(bet.betId);
 
@@ -355,70 +379,63 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           Payment successful. Credits added.
         </div>
       )}
-      {/* Header - Compact 56px */}
-      <header className="flex-shrink-0 h-14 flex items-center justify-between px-6 border-b border-white/5 bg-[var(--bg-card)]/50 backdrop-blur-sm">
-        <Link
-          href="/dashboard"
-          className="flex items-center gap-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors group"
-        >
-          <svg className="w-4 h-4 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-          </svg>
-          <span className="hidden sm:inline">Dashboard</span>
-        </Link>
-
-        <div className="flex flex-col items-center">
+      {/* Header - Compact */}
+      <header className="flex-shrink-0 flex flex-col border-b border-white/5 bg-[var(--bg-card)]/50 backdrop-blur-sm">
+        <div className="h-12 flex items-center justify-between px-6">
+          <Link
+            href="/dashboard"
+            className="flex items-center gap-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors group"
+          >
+            <svg className="w-4 h-4 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            <span className="hidden sm:inline">Dashboard</span>
+          </Link>
           <div className="flex items-center gap-2">
-            <span className="text-xl">🎲</span>
-            <h1 className="text-lg font-bold font-[family-name:var(--font-outfit)] text-[var(--text-primary)]">
-              Pure Dice
-            </h1>
+            <span className="text-base font-bold font-mono text-[var(--text-primary)]">Stochastic Dice</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--bg-matte)] border border-[var(--border)]" data-agent="balance-display" data-value={balance}>
+              <span className="text-xs text-[var(--text-secondary)] hidden sm:inline">NAV:</span>
+              <span className="text-sm font-mono font-bold text-[var(--text-primary)]">{balance.toLocaleString()}</span>
+            </div>
+            <Link href="/dashboard/deposit" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#0ea5e9]/30 bg-[#0ea5e9]/10 text-xs font-medium text-[#0ea5e9] hover:bg-[#0ea5e9]/20 transition-colors">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              Deposit
+            </Link>
+            <Link href="/dashboard/withdraw" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs font-medium text-amber-400 hover:bg-amber-500/20 transition-colors">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              Withdraw
+            </Link>
           </div>
         </div>
-
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--bg-matte)] border border-[var(--border)]" data-agent="balance-display" data-value={balance}>
-            <svg className="w-4 h-4 text-[var(--accent-heart)]" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
-            </svg>
-            <span className="text-xs text-[var(--text-secondary)] hidden sm:inline">Balance:</span>
-            <span className="text-sm font-mono font-bold text-[var(--text-primary)]">
-              {balance.toLocaleString()}
-            </span>
-          </div>
-          <Link
-            href="/dashboard/deposit"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--accent-heart)]/30 bg-[var(--accent-heart)]/10 text-xs font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-            Deposit
-          </Link>
-          <Link
-            href="/dashboard/withdraw"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-500/30 bg-orange-500/10 text-xs font-medium text-orange-400 hover:bg-orange-500/20 transition-colors"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-            </svg>
-            Withdraw
-          </Link>
-        </div>
+        <QuantTopMetricsBar
+          nav={balance}
+          sessionPnl={totalPnl}
+          sharpeRatio={quantMetrics?.sharpeRatio ?? null}
+          winRate={quantMetrics?.winRate ?? 0}
+          maxDrawdownPct={quantMetrics?.maxDrawdownPct ?? null}
+          rounds={rounds}
+          kellyFraction={quantMetrics?.kellyFraction ?? null}
+        />
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 min-h-0 flex flex-row gap-4 p-4 overflow-hidden">
-        {/* Left column: Game - takes remaining space */}
-        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-          {/* AI playing indicator (when API/AI plays rounds) */}
+      {/* Main Content - 3-panel research terminal */}
+      <main className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-row gap-3 p-3 overflow-hidden">
+        {/* Left: Instrument Panel — Dice + Order Entry */}
+        <div className="w-[300px] flex-shrink-0 flex flex-col min-h-0 overflow-hidden border-r border-white/[0.08] pr-3">
           {aiBannerVisible && (
-            <div className="mb-3 flex-shrink-0 flex items-center justify-center gap-2 py-2 px-4 rounded-lg bg-violet-500/20 border border-violet-500/30 text-violet-300 text-xs font-medium">
-              <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" />
+            <div className="mb-2 flex-shrink-0 flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg bg-violet-500/20 border border-violet-500/30 text-violet-300 text-[10px] font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
               {liveQueueLength > 0 ? (
-                <>AI is currently playing — {liveQueueLength} roll{liveQueueLength !== 1 ? "s" : ""} queued</>
+                <>AI playing — {liveQueueLength} queued</>
               ) : (
-                "AI is currently playing"
+                "AI playing"
               )}
             </div>
           )}
@@ -509,14 +526,32 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </ClientOnly>
         </div>
 
-        {/* Right column: API & Strategy - 360px fixed */}
-        <aside className="w-[360px] flex-shrink-0 flex flex-col gap-3 min-h-0 overflow-hidden">
+        {/* Center: Analytics Deck (~45%) - Equity curve, distribution charts */}
+        <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden min-w-0">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden space-y-3 pr-2">
+            <DiceStatisticsPanel
+              series={statsSeries}
+              rounds={rounds}
+              totalPnl={totalPnl}
+              wins={wins}
+              recentResults={recentResults}
+              amount={amount}
+              target={target}
+              condition={condition}
+              onReset={handleReset}
+              layout="analytics"
+            />
+          </div>
+        </div>
+
+        {/* Right: Research Panel (~30%) - Quant metrics, Strategy, API */}
+        <aside className="w-[320px] flex-shrink-0 flex flex-col gap-3 min-h-0 overflow-hidden">
           {/* Tab Switcher */}
           <div className="flex-shrink-0 flex gap-1 p-1 rounded-lg bg-[var(--bg-matte)] border border-[var(--border)]">
             <button
               onClick={() => setActiveTab("statistics")}
               className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-all ${activeTab === "statistics"
-                  ? "bg-[var(--accent-heart)] text-white shadow-lg shadow-[var(--accent-heart)]/30"
+                  ? "bg-[#0ea5e9] text-white shadow-lg shadow-[#0ea5e9]/30"
                   : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                 }`}
             >
@@ -530,7 +565,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             <button
               onClick={() => setActiveTab("api")}
               className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-all ${activeTab === "api"
-                  ? "bg-[var(--accent-heart)] text-white shadow-lg shadow-[var(--accent-heart)]/30"
+                  ? "bg-[#0ea5e9] text-white shadow-lg shadow-[#0ea5e9]/30"
                   : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                 }`}
             >
@@ -544,7 +579,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             <button
               onClick={() => setActiveTab("strategy")}
               className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-all ${activeTab === "strategy"
-                  ? "bg-[var(--accent-heart)] text-white shadow-lg shadow-[var(--accent-heart)]/30"
+                  ? "bg-[#0ea5e9] text-white shadow-lg shadow-[#0ea5e9]/30"
                   : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                 }`}
             >
@@ -561,22 +596,10 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3">
               {activeTab === "statistics" ? (
               <div className="space-y-3">
+                <QuantMetricsGrid metrics={quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null }} recentResults={recentResults} />
                 {(liveActivityItems.length > 0 || liveQueueLength > 0) && (
                   <LiveActivityFeed items={liveActivityItems} maxItems={20} className="flex-shrink-0" />
                 )}
-                <DiceStatisticsPanel
-                  series={statsSeries}
-                  rounds={rounds}
-                  totalPnl={totalPnl}
-                  wins={wins}
-                  recentResults={recentResults}
-                  amount={amount}
-                  target={target}
-                  condition={condition}
-                  onReset={handleReset}
-                />
-                
-                {/* Keyboard Shortcuts Help */}
                 <KeyboardShortcutsHelp />
               </div>
             ) : activeTab === "api" ? (
@@ -808,21 +831,43 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             </button>
           </div>
         </aside>
+        </div>
+
+        {/* Trade Log - Bottom strip */}
+        <div className="flex-shrink-0 px-3 pb-3">
+          <TradeLog
+            entries={recentResults.map((r, i) => ({
+              roundNumber: r.roundNumber ?? Math.max(1, rounds - recentResults.length + 1 + i),
+              result: r.result,
+              win: r.win,
+              payout: r.payout,
+              amount: r.playAmount ?? amount,
+              target: r.target ?? target,
+              condition: (r.condition ?? condition) as "over" | "under",
+              balance: r.balance,
+              source: r.source,
+              timestamp: r.timestamp,
+            }))}
+            maxRows={15}
+          />
+        </div>
       </main>
 
       {/* Footer - Compact 48px */}
       <footer className="flex-shrink-0 h-12 flex items-center justify-between px-6 border-t border-white/5 bg-[var(--bg-card)]/50 backdrop-blur-sm">
         <div className="flex items-center gap-4 text-xs text-[var(--text-secondary)]">
-          <span className="flex items-center gap-1.5" title="Every roll is verifiable — use Verifiable history above to view verification data">
+          <span className="flex items-center gap-1.5" title="Every execution is verifiable — use Verifiable history to view verification data">
             <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
             </svg>
-            Provably Fair
+            Verifiable RNG
           </span>
           <span className="text-[var(--border)]">|</span>
-          <span>3% House Edge</span>
+          <span>3% Transaction Cost</span>
           <span className="text-[var(--border)]">|</span>
-          <span className="text-[var(--accent-heart)]">RTP 97%</span>
+          <span className="text-[#0ea5e9]">97% Expected Return</span>
+          <span className="text-[var(--border)]">|</span>
+          <span className="text-[var(--text-tertiary)]">Instrument: Uniform(0, 99.99)</span>
           <span className="text-[var(--border)]">|</span>
           <span>
             AI: <Link href="/dashboard/api" className="text-[var(--accent-heart)] hover:underline">API</Link>

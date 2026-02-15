@@ -28,6 +28,8 @@ interface DiceStatisticsPanelProps {
   target: number;
   condition: "over" | "under";
   onReset: () => void;
+  /** "analytics" = chart-focused for center panel; default = full panel */
+  layout?: "analytics" | "default";
 }
 
 export function DiceStatisticsPanel({
@@ -37,49 +39,51 @@ export function DiceStatisticsPanel({
   wins,
   recentResults,
   onReset,
+  layout = "default",
 }: DiceStatisticsPanelProps) {
   const winRate = rounds > 0 ? (wins / rounds) * 100 : 0;
 
+  const isAnalytics = layout === "analytics";
+
   return (
     <div className="flex-shrink-0 space-y-4" data-agent="statistics-panel">
-      {/* PnL chart */}
-      <SessionPnLChart series={series} totalPnl={totalPnl} rounds={rounds} onReset={onReset} />
+      <SessionPnLChart series={series} totalPnl={totalPnl} rounds={rounds} onReset={onReset} layout={isAnalytics ? "large" : "default"} />
 
-      {/* Quant stats — run chart, streaks, bet distribution */}
-      <QuantStatsCharts recentResults={recentResults} />
+      <QuantStatsCharts recentResults={recentResults} layout={isAnalytics ? "analytics" : "default"} />
 
-      {/* Aesthetic quant charts — gauge, donut, drawdown, momentum, etc. */}
       <QuantChartsAesthetic
         recentResults={recentResults}
         series={series}
         winRate={winRate}
         totalPnl={totalPnl}
         rounds={rounds}
+        layout={isAnalytics ? "analytics" : "default"}
       />
 
-      {/* Session stats — machine-readable for agents */}
-      <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-matte)]/30 p-4 space-y-3 shadow-md" data-agent="session-stats">
-        <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-widest">This session</h4>
-        <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-xl bg-[var(--bg-matte)]/80 p-3 text-center ring-1 ring-white/5 hover:ring-white/10 transition-all" data-agent="stat-rounds" data-value={rounds}>
-            <div className="text-lg font-bold font-mono text-[var(--text-primary)]">{rounds}</div>
-            <div className="text-[10px] text-[var(--text-secondary)] uppercase">Rounds</div>
-          </div>
-          <div className="rounded-xl bg-[var(--bg-matte)]/80 p-3 text-center ring-1 ring-white/5 hover:ring-white/10 transition-all" data-agent="stat-pnl" data-value={totalPnl}>
-            <div className={`text-lg font-bold font-mono ${totalPnl >= 0 ? "text-emerald-400 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]" : "text-red-400 drop-shadow-[0_0_8px_rgba(239,68,68,0.3)]"}`}>
-              {totalPnl >= 0 ? "+" : ""}{totalPnl}
+      {!isAnalytics && (
+        <>
+          <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-matte)]/30 p-4 space-y-3 shadow-md" data-agent="session-stats">
+            <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-widest">This session</h4>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-xl bg-[var(--bg-matte)]/80 p-3 text-center ring-1 ring-white/5 hover:ring-white/10 transition-all" data-agent="stat-rounds" data-value={rounds}>
+                <div className="text-lg font-bold font-mono text-[var(--text-primary)]">{rounds}</div>
+                <div className="text-[10px] text-[var(--text-secondary)] uppercase">Rounds</div>
+              </div>
+              <div className="rounded-xl bg-[var(--bg-matte)]/80 p-3 text-center ring-1 ring-white/5 hover:ring-white/10 transition-all" data-agent="stat-pnl" data-value={totalPnl}>
+                <div className={`text-lg font-bold font-mono ${totalPnl >= 0 ? "text-emerald-400 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]" : "text-amber-400 drop-shadow-[0_0_8px_rgba(245,158,11,0.3)]"}`}>
+                  {totalPnl >= 0 ? "+" : ""}{totalPnl}
+                </div>
+                <div className="text-[10px] text-[var(--text-secondary)] uppercase">P&L</div>
+              </div>
+              <div className="rounded-xl bg-[var(--bg-matte)]/80 p-3 text-center ring-1 ring-white/5 hover:ring-white/10 transition-all" data-agent="stat-winrate" data-value={winRate.toFixed(1)}>
+                <div className="text-lg font-bold font-mono text-[var(--text-primary)]">{winRate.toFixed(0)}%</div>
+                <div className="text-[10px] text-[var(--text-secondary)] uppercase">Win rate</div>
+              </div>
             </div>
-            <div className="text-[10px] text-[var(--text-secondary)] uppercase">PnL</div>
           </div>
-          <div className="rounded-xl bg-[var(--bg-matte)]/80 p-3 text-center ring-1 ring-white/5 hover:ring-white/10 transition-all" data-agent="stat-winrate" data-value={winRate.toFixed(1)}>
-            <div className="text-lg font-bold font-mono text-[var(--text-primary)]">{winRate.toFixed(0)}%</div>
-            <div className="text-[10px] text-[var(--text-secondary)] uppercase">Win rate</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Agent API — interactive UI for AI agents to explore and test */}
-      <AgentApiSection />
+          <AgentApiSection />
+        </>
+      )}
     </div>
   );
 }
