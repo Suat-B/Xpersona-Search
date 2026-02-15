@@ -40,6 +40,11 @@ const ICONS = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
     </svg>
   ),
+  connectAi: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    </svg>
+  ),
   transactions: (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
@@ -67,6 +72,7 @@ const ICONS = {
 const SIDEBAR_LINKS = [
   { href: "/games/dice", label: "Play Dice", icon: "dice" as const, exact: true },
   { href: "/dashboard", label: "Dashboard", icon: "dashboard" as const, exact: true },
+  { href: "/dashboard/connect-ai", label: "Connect AI", icon: "connectAi" as const, exact: false },
   { href: "/dashboard/profile", label: "Profile", icon: "profile" as const, exact: true },
   { href: "/dashboard/deposit", label: "Deposit", icon: "deposit" as const, exact: true },
   { href: "/dashboard/withdraw", label: "Withdraw", icon: "withdraw" as const, exact: true },
