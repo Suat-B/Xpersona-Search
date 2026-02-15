@@ -577,7 +577,7 @@ export function DiceGame({
             </div>
           ) : (
             <div className="text-center text-[10px] text-[var(--text-tertiary)]" data-agent="dice-config" data-amount={amount} data-target={target} data-condition={condition}>
-              Stochastic Instrument · Uniform(0, 99.99)
+              Dice · Uniform(0, 99.99)
             </div>
           )}
         </div>
@@ -606,7 +606,7 @@ export function DiceGame({
             </div>
           )}
           
-          {/* 3D Dice — Stochastic Instrument */}
+          {/* 3D Dice */}
           <div className="relative z-10">
             <Dice3D 
               value={result?.result ?? null} 
