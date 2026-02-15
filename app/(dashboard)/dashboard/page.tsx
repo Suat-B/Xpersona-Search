@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
 import QuantMetrics from "@/components/dashboard/QuantMetrics";
+import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
+import { HeartbeatIndicator } from "@/components/ui/HeartbeatIndicator";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
 import { RecoveryLinkCard } from "@/components/dashboard/RecoveryLinkCard";
 import { FaucetButton } from "@/components/dashboard/FaucetButton";
@@ -26,6 +28,9 @@ const GAMES = [
 ];
 
 export default function DashboardPage() {
+  const { hasApiKey } = useAiConnectionStatus();
+  const aiConnected = hasApiKey === true;
+
   return (
     <div className="space-y-8 animate-fade-in-up">
       {/* Hero Header */}
@@ -46,24 +51,26 @@ export default function DashboardPage() {
           
           <div className="flex flex-wrap items-center gap-3">
             <Link
-              href="/games/dice"
-              className="group relative inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#ff2d55] to-[#ff5e7d] px-6 py-3 text-sm font-medium text-white shadow-lg shadow-[#ff2d55]/30 hover:shadow-[#ff2d55]/50 hover:scale-105 transition-all duration-300 overflow-hidden"
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
-              <svg className="relative w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-              </svg>
-              <span className="relative">Play Dice</span>
-            </Link>
-            
-            <Link
               href="/dashboard/connect-ai"
-              className="inline-flex items-center gap-2 rounded-full border border-[var(--accent-heart)]/40 bg-[var(--accent-heart)]/10 px-5 py-3 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 hover:border-[var(--accent-heart)]/60 transition-all"
+              className={
+                aiConnected
+                  ? "inline-flex items-center gap-2 rounded-full border border-[#30d158]/40 bg-[#30d158]/10 px-5 py-3 text-sm font-medium text-[#30d158] hover:bg-[#30d158]/20 hover:border-[#30d158]/60 transition-all"
+                  : "inline-flex items-center gap-2 rounded-full border border-[var(--accent-heart)]/40 bg-[var(--accent-heart)]/10 px-5 py-3 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 hover:border-[var(--accent-heart)]/60 transition-all"
+              }
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-              Connect AI
+              {aiConnected ? (
+                <>
+                  <HeartbeatIndicator size="md" />
+                  <span>AI connected</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                  <span>Connect AI</span>
+                </>
+              )}
             </Link>
             
             <div className="flex items-center gap-2 rounded-full border border-[var(--border)] bg-white/[0.03] p-1 backdrop-blur-sm">
@@ -87,20 +94,6 @@ export default function DashboardPage() {
                 Withdraw
               </Link>
             </div>
-            
-            <a
-              href="#free-credits"
-              className="inline-flex items-center gap-2 rounded-full border border-[#30d158]/30 bg-[#30d158]/10 px-4 py-2.5 text-sm font-medium text-[#30d158] hover:bg-[#30d158]/20 hover:shadow-[0_0_20px_rgba(48,209,88,0.2)] transition-all"
-              onClick={(e) => {
-                e.preventDefault();
-                document.getElementById("free-credits")?.scrollIntoView({ behavior: "smooth" });
-              }}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-              </svg>
-              Free Credits
-            </a>
           </div>
         </div>
       </header>
