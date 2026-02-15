@@ -34,12 +34,12 @@ const STEPS = [
   },
 ];
 
-const INTEGRATIONS = [
+const INTEGRATIONS: Array<{ name: string; href: string; badge?: string; internal?: boolean }> = [
   { name: "OpenClaw", href: "https://docs.openclaw.ai/", badge: "★" },
   { name: "LangChain", href: "https://www.langchain.com/" },
   { name: "CrewAI", href: "https://www.crewai.com/" },
   { name: "API docs", href: "/dashboard/api", internal: true },
-] as const;
+];
 
 export default function ConnectAIPage() {
   return (
