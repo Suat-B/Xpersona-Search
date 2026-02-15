@@ -13,6 +13,13 @@ if (!url) {
   console.error("DATABASE_URL not set");
   process.exit(1);
 }
+// Log which DB we're targeting (host only, no credentials)
+try {
+  const u = new URL(url);
+  console.log(`Target: ${u.hostname}:${u.port || "5432"}/${u.pathname.slice(1) || "postgres"}`);
+} catch {
+  console.log("Target: (invalid URL)");
+}
 
 async function addColumnIfMissing(
   client: import("pg").PoolClient,
@@ -60,6 +67,14 @@ async function main() {
       if (await addIndexIfMissing(client, idxName, `CREATE INDEX "${idxName}" ON "${t}" USING btree ("agent_id")`)) {
         console.log(`Added ${idxName}`);
       }
+    }
+    const check = await client.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='users' AND column_name='account_type'`
+    );
+    if (check.rows.length > 0) {
+      console.log("✓ users.account_type exists");
+    } else {
+      console.log("⚠ users.account_type still missing after migration - check DB connection");
     }
     console.log("Migration complete.");
   } catch (e) {

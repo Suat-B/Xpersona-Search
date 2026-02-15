@@ -16,6 +16,7 @@
     "seed": "tsx scripts/seed-packages.ts",
     "db:backfill-agent-ids": "tsx scripts/backfill-agent-ids.ts",
     "db:add-account-type": "tsx scripts/add-account-type-column.ts",
+    "db:migrate-production": "node scripts/migrate-production.mjs",
     "deploy": "node scripts/deploy.mjs",
     "setup:prod": "node scripts/setup-production.mjs"
   },

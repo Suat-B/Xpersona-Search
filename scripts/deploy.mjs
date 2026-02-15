@@ -41,6 +41,13 @@ async function main() {
   }
 
   const env = readFileSync(envPath, "utf8");
+
+  // Run migration first (only needs DATABASE_URL) so production DB has account_type
+  if (env.includes("DATABASE_URL=")) {
+    console.log("1️⃣  Running DB migration (account_type, agent_id)...");
+    run("npm run db:add-account-type", { ignoreError: true });
+  }
+
   const required = ["NEXTAUTH_SECRET", "NEXTAUTH_URL", "DATABASE_URL", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"];
   const missing = required.filter((k) => {
     const m = env.match(new RegExp(`${k}=(.+)`, "m"));
@@ -56,10 +63,10 @@ async function main() {
     console.log("⚠️  Set NEXTAUTH_URL=https://xpersona.co in .env.local for production.\n");
   }
 
-  console.log("1️⃣  Linking Vercel project (one-time; follow prompts if any)...");
+  console.log("\n2️⃣  Linking Vercel project (one-time; follow prompts if any)...");
   run("npx vercel link --yes", { ignoreError: true });
 
-  console.log("\n2️⃣  Deploying to production...");
+  console.log("\n3️⃣  Deploying to production...");
   run("npx vercel --prod --yes");
 
   console.log("\n✅ Deploy done.");
