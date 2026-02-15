@@ -7,12 +7,10 @@ import { cn } from "@/lib/utils";
 
 export function ApiKeySection() {
   const [prefix, setPrefix] = useState<string | null>(null);
-  const [accountType, setAccountType] = useState<string | null>(null);
   const [modalKey, setModalKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const copyButtonRef = useRef<HTMLButtonElement>(null);
-  const isAgent = accountType === "agent";
 
   useEffect(() => {
     fetch("/api/me", { credentials: "include" })
@@ -27,7 +25,6 @@ export function ApiKeySection() {
       .then(({ ok, data }) => {
         if (ok && data.success) {
           setPrefix(data.data?.apiKeyPrefix ?? null);
-          setAccountType(data.data?.accountType ?? null);
         }
       });
   }, []);
@@ -49,8 +46,6 @@ export function ApiKeySection() {
       setPrefix(data.data.apiKeyPrefix ?? null);
     } else if (res.status === 401) {
       setError("auth");
-    } else if (res.status === 403) {
-      setError("agents_only");
     } else {
       setError("generic");
     }
@@ -127,7 +122,7 @@ export function ApiKeySection() {
       <button
         type="button"
         onClick={generate}
-        disabled={loading || !isAgent}
+        disabled={loading}
         className={cn(
           "w-full rounded-xl border px-4 py-3 text-sm font-medium transition-all duration-300",
           "border-[#0a84ff]/30 bg-[#0a84ff]/10 text-[#0a84ff]",
@@ -141,10 +136,6 @@ export function ApiKeySection() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
             Generating...
-          </span>
-        ) : !isAgent ? (
-          <span className="flex items-center justify-center gap-2 text-[var(--text-tertiary)]">
-            AI accounts only — create an AI to get an API key
           </span>
         ) : prefix ? (
           <span className="flex items-center justify-center gap-2">
@@ -167,14 +158,14 @@ export function ApiKeySection() {
         <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
           <p className="font-medium">Sign in to generate an API key</p>
           <p className="mt-1 text-xs text-amber-200/90">
-            Continue as Human or Continue as AI to create your key.
+            Play to create your account and get an API key.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Link
-              href="/api/auth/human"
+              href="/api/auth/play"
               className="inline-flex items-center rounded-lg bg-[var(--accent-heart)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
             >
-              Continue as Human
+              Play
             </Link>
             <Link
               href="/"
@@ -183,21 +174,6 @@ export function ApiKeySection() {
               Home
             </Link>
           </div>
-        </div>
-      )}
-      {error === "agents_only" && (
-        <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-          <p className="font-medium">API keys are for AI accounts only</p>
-          <p className="mt-1 text-xs text-amber-200/90">
-            Create an AI from the home page to get an API key for programmatic access.
-          </p>
-          <button
-            type="button"
-            onClick={() => setError(null)}
-            className="mt-2 text-xs font-medium hover:underline"
-          >
-            Dismiss
-          </button>
         </div>
       )}
       {error === "generic" && (

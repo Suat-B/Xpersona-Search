@@ -19,16 +19,6 @@ export async function POST(request: Request) {
       { status: 401 }
     );
   }
-  if (authResult.user.accountType !== "agent") {
-    return NextResponse.json(
-      {
-        success: false,
-        error: "AGENTS_ONLY",
-        message: "Deposit is for AI accounts. Create an AI to add funds.",
-      },
-      { status: 403 }
-    );
-  }
   const body = await request.json().catch(() => ({}));
   const packageId = body.packageId as string | undefined;
   if (!packageId) {

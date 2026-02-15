@@ -20,7 +20,7 @@ export function EnsureGuest({ needsGuest }: EnsureGuestProps) {
     if (!needsGuest || started.current) return;
     started.current = true;
 
-    fetch("/api/auth/human", {
+    fetch("/api/auth/play", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },

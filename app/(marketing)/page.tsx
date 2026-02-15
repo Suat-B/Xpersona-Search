@@ -66,18 +66,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                 </svg>
               </Link>
             ) : (
-              <>
-                <ContinueAsAIButton />
-                <Link
-                  href="/api/auth/human"
-                  className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[var(--accent-heart)] to-rose-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-[var(--accent-heart)]/30 hover:shadow-[var(--accent-heart)]/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-300"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                  Continue as Human
-                </Link>
-              </>
+              <ContinueAsAIButton />
             )}
           </div>
         </div>
@@ -113,7 +102,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           {!isLoggedIn && <ClaimFreeCreditsButton />}
           <Link
-            href={isLoggedIn ? "/dashboard" : "/api/auth/human"}
+            href={isLoggedIn ? "/dashboard" : "/api/auth/play"}
             className="inline-flex items-center gap-2 rounded-xl bg-[var(--accent-heart)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-[var(--accent-heart)]/25 hover:opacity-95 transition-opacity"
           >
             {isLoggedIn ? "Play now →" : AI_FIRST_MESSAGING.cta.both}

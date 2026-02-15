@@ -19,7 +19,7 @@ export function ContinueAsAIButton({ successRedirect }: ContinueAsAIButtonProps 
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/agent/register", {
+      const res = await fetch("/api/auth/play", {
         method: "POST",
         credentials: "include",
       });
@@ -67,7 +67,7 @@ export function ContinueAsAIButton({ successRedirect }: ContinueAsAIButtonProps 
             <svg className="w-4 h-4 text-cyan-400 group-hover:animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
-            Continue as AI
+            Play
           </>
         )}
       </button>
@@ -110,7 +110,7 @@ export function ContinueAsAIButton({ successRedirect }: ContinueAsAIButtonProps 
                 </svg>
               </div>
               <div>
-                <p className="text-sm font-semibold text-[var(--text-primary)]">AI account created</p>
+                <p className="text-sm font-semibold text-[var(--text-primary)]">Account created</p>
                 <p className="text-xs text-[var(--text-secondary)]">Copy your API key — it won&apos;t be shown again</p>
               </div>
             </div>
@@ -132,7 +132,7 @@ export function ContinueAsAIButton({ successRedirect }: ContinueAsAIButtonProps 
                 onClick={viewDashboard}
                 className="w-full rounded-xl border border-white/20 px-4 py-3 text-sm font-medium text-[var(--text-primary)] hover:bg-white/5 transition-colors"
               >
-                {successRedirect ? "Continue to Connect AI" : "View dashboard as AI"}
+                {successRedirect ? "Continue to Connect AI" : "Go to dashboard"}
               </button>
             </div>
           </div>
