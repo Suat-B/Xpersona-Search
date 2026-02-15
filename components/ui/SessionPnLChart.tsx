@@ -25,11 +25,17 @@ export function SessionPnLChart({
   const CHART_W = isLarge ? 640 : isMini ? 280 : 400;
   const CHART_H = isLarge ? 180 : isMini ? 65 : 100;
   if (rounds === 0) {
-    const emptyW = isLarge ? 200 : isMini ? 120 : 160;
-    const emptyH = isLarge ? 80 : isMini ? 40 : 60;
-    const flatLineY = emptyH / 2;
+    const emptyW = isLarge ? 420 : isMini ? 120 : 160;
+    const emptyH = isLarge ? 120 : isMini ? 40 : 60;
+    // Gentle sine-wave placeholder hint (subtle, quant-aesthetic)
+    const samplePoints = 24;
+    const pathD = Array.from({ length: samplePoints }, (_, i) => {
+      const x = (i / (samplePoints - 1)) * emptyW;
+      const y = emptyH / 2 + Math.sin((i / samplePoints) * Math.PI * 2) * (emptyH * 0.15);
+      return `${i === 0 ? "M" : "L"} ${x} ${y}`;
+    }).join(" ");
     return (
-      <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-md ${isMini ? "p-2" : "p-4"}`}>
+      <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-md overflow-hidden ${isMini ? "p-2" : "p-4"}`}>
         <div className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <svg className="w-3.5 h-3.5 text-[var(--accent-heart)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -45,13 +51,29 @@ export function SessionPnLChart({
             Reset
           </button>
         </div>
-        <div className={`flex flex-col items-center justify-center text-[var(--text-secondary)] gap-3 ${isMini ? "h-[60px]" : isLarge ? "h-[140px]" : "h-[100px]"}`}>
-          <svg className="opacity-40" width={emptyW} height={emptyH} viewBox={`0 0 ${emptyW} ${emptyH}`} fill="none" aria-hidden>
-            <line x1={0} y1={flatLineY} x2={emptyW} y2={flatLineY} stroke="currentColor" strokeWidth={2} strokeDasharray="4 4" strokeLinecap="round" />
+        <div className={`relative flex flex-col items-center justify-center text-[var(--text-secondary)] gap-3 ${isMini ? "h-[60px]" : isLarge ? "h-[140px]" : "h-[100px]"}`}>
+          {/* Subtle animated placeholder curve — quant-style hint */}
+          <svg className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[85%] h-[60%] opacity-[0.15]" viewBox={`0 0 ${emptyW} ${emptyH}`} preserveAspectRatio="xMidYMid slice" aria-hidden>
+            <defs>
+              <linearGradient id="empty-curve-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#0ea5e9" stopOpacity={0.4} />
+                <stop offset="50%" stopColor="#0ea5e9" stopOpacity={0.7} />
+                <stop offset="100%" stopColor="#0ea5e9" stopOpacity={0.4} />
+              </linearGradient>
+            </defs>
+            <path d={pathD} fill="none" stroke="url(#empty-curve-grad)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="animate-pulse" style={{ animationDuration: "3.5s" }} />
           </svg>
-          <span className="text-xs text-center text-[var(--text-tertiary)]">
-            Start trading to see your equity curve
-          </span>
+          <svg className="opacity-25 w-full max-w-[240px]" viewBox={`0 0 ${emptyW} ${emptyH}`} fill="none" aria-hidden>
+            <line x1={0} y1={emptyH / 2} x2={emptyW} y2={emptyH / 2} stroke="currentColor" strokeWidth={1.5} strokeDasharray="6 4" strokeLinecap="round" />
+          </svg>
+          <div className="relative z-10 text-center space-y-1">
+            <span className="block text-xs text-[var(--text-tertiary)]">
+              Execute trades to see your equity curve
+            </span>
+            <span className="block text-[10px] text-[var(--text-quaternary)]">
+              P&L over time · Sharpe · Drawdown
+            </span>
+          </div>
         </div>
       </div>
     );

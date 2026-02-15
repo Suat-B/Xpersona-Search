@@ -1,5 +1,7 @@
 "use client";
 
+import { DICE_HOUSE_EDGE } from "@/lib/constants";
+
 interface QuantTopMetricsBarProps {
   nav: number;
   navLoading?: boolean;
@@ -9,6 +11,8 @@ interface QuantTopMetricsBarProps {
   maxDrawdownPct: number | null;
   rounds: number;
   kellyFraction: number | null;
+  /** When true, shows a subtle "ready" status dot */
+  ready?: boolean;
 }
 
 function formatSharpeColor(sharpe: number | null): "emerald" | "amber" | "neutral" {
@@ -25,6 +29,8 @@ function formatKellyColor(kelly: number | null): "emerald" | "amber" | "neutral"
   return "neutral";
 }
 
+const HOUSE_EDGE_PCT = (DICE_HOUSE_EDGE * 100).toFixed(1);
+
 export function QuantTopMetricsBar({
   nav,
   navLoading = false,
@@ -34,12 +40,13 @@ export function QuantTopMetricsBar({
   maxDrawdownPct,
   rounds,
   kellyFraction,
+  ready = true,
 }: QuantTopMetricsBarProps) {
   const sharpeColor = formatSharpeColor(sharpeRatio);
   const kellyColor = formatKellyColor(kellyFraction);
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 border-b border-white/[0.08] bg-gradient-to-r from-[var(--bg-card)]/80 to-[var(--bg-card)]/50 overflow-x-auto scrollbar-sidebar">
+    <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.08] bg-gradient-to-r from-[var(--bg-card)]/90 via-[var(--bg-card)]/70 to-[var(--bg-card)]/50 overflow-x-auto scrollbar-sidebar">
       {/* NAV */}
       <div className="metric-badge shrink-0">
         <span className="text-[9px] text-[var(--text-tertiary)] uppercase tracking-wider">NAV</span>
@@ -87,10 +94,13 @@ export function QuantTopMetricsBar({
         </span>
       </div>
 
-      {/* Win Rate */}
-      <div className="metric-badge shrink-0">
+      {/* Win Rate — with status dot when low */}
+      <div className="metric-badge shrink-0 flex items-center gap-1.5">
+        {winRate < 45 && rounds > 0 && <span className="w-1.5 h-1.5 rounded-full bg-amber-400/80 shrink-0" aria-hidden title="Win rate below 45%" />}
         <span className="text-[9px] text-[var(--text-tertiary)] uppercase tracking-wider">WR</span>
-        <span className="text-xs font-bold text-[var(--text-primary)] tabular-nums">{winRate.toFixed(1)}%</span>
+        <span className={`text-xs font-bold tabular-nums ${winRate >= 50 ? "text-emerald-400/90" : winRate < 45 && rounds > 0 ? "text-amber-400" : "text-[var(--text-primary)]"}`}>
+          {winRate.toFixed(1)}%
+        </span>
       </div>
 
       {/* Max DD */}
@@ -110,8 +120,8 @@ export function QuantTopMetricsBar({
 
       <span className="w-px h-4 bg-white/10 shrink-0" aria-hidden />
 
-      {/* Edge — highlighted in red with warning feel */}
-      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/20 shrink-0">
+      {/* Edge — house edge, quant-critical for position sizing */}
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/20 shrink-0" title="House edge (3%) — RTP 97%">
         <svg className="w-3 h-3 text-red-400 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
           <path
             fillRule="evenodd"
@@ -120,7 +130,7 @@ export function QuantTopMetricsBar({
           />
         </svg>
         <span className="text-[9px] text-[var(--text-tertiary)] uppercase tracking-wider">Edge</span>
-        <span className="text-xs font-bold text-red-400 tabular-nums">-3.0%</span>
+        <span className="text-xs font-bold text-red-400 tabular-nums">-{HOUSE_EDGE_PCT}%</span>
       </div>
 
       {/* Kelly — conditional coloring */}
@@ -138,6 +148,17 @@ export function QuantTopMetricsBar({
           {kellyFraction != null ? `${kellyFraction.toFixed(1)}%` : "—"}
         </span>
       </div>
+
+      {/* Ready status — subtle indicator */}
+      {ready && (
+        <>
+          <span className="w-px h-4 bg-white/10 shrink-0" aria-hidden />
+          <div className="metric-badge shrink-0 flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500/80 shrink-0 animate-breathing ring-2 ring-emerald-500/30" aria-hidden />
+            <span className="text-[9px] text-emerald-400/90 font-semibold uppercase tracking-wider">Ready</span>
+          </div>
+        </>
+      )}
     </div>
   );
 }

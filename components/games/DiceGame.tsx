@@ -783,6 +783,8 @@ export function DiceGame({
               type="button"
               onClick={handleRoll}
               disabled={loading || autoPlay || !amount || amount < MIN_BET}
+              title="Execute trade (Space / Enter)"
+              aria-label="Execute trade"
               className="relative group rounded-xl bg-gradient-to-b from-[#0ea5e9] to-[#0077b6] px-10 py-3.5 text-sm font-bold text-white shadow-[0_0_20px_rgba(14,165,233,0.25),0_4px_12px_rgba(0,0,0,0.3)] hover:shadow-[0_0_30px_rgba(14,165,233,0.4),0_4px_16px_rgba(0,0,0,0.3)] hover:scale-[1.03] active:scale-95 disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all duration-200 overflow-hidden"
             >
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/25 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />

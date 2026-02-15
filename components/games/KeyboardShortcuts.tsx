@@ -70,12 +70,12 @@ export function useKeyboardShortcuts({
 
 export function KeyboardShortcutsHelp() {
   const shortcuts = [
-    { key: "Space / Enter", action: "Roll dice" },
+    { key: "Space / Enter", action: "Execute trade" },
     { key: "↑", action: "Increase bet" },
     { key: "↓", action: "Decrease bet" },
     { key: "1", action: "Half bet" },
     { key: "2", action: "Double bet" },
-    { key: "M", action: "Max bet" },
+    { key: "M", action: "Max bet (10k)" },
   ];
 
   return (

@@ -231,13 +231,14 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       })
       .then((data) => {
         if (cancelled || !data.success || !Array.isArray(data.data?.plays)) return;
-        const plays = data.data.plays as { outcome: string; payout: number; amount: number; resultPayload?: { value?: number } | null }[];
+        const plays = data.data.plays as { outcome: string; payout: number; amount: number; createdAt?: string | Date | null; resultPayload?: { value?: number } | null }[];
         const chronological = [...plays].reverse();
         const hydrated: RollResult[] = chronological.map((p) => ({
           result: (p.resultPayload as { value?: number } | null | undefined)?.value ?? 0,
           win: p.outcome === "win",
           payout: Number(p.payout),
           playAmount: Number(p.amount),
+          timestamp: p.createdAt ? new Date(p.createdAt) : undefined,
         }));
         setRecentResults(hydrated.slice(-MAX_RECENT_RESULTS));
         setRecentResultsHydrated(true);
@@ -479,6 +480,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           maxDrawdownPct={quantMetrics?.maxDrawdownPct ?? null}
           rounds={rounds}
           kellyFraction={quantMetrics?.kellyFraction ?? null}
+          ready={!strategyRun && !autoPlayActive}
         />
       </div>
 
@@ -582,7 +584,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`flex-1 py-2.5 text-[10px] font-mono font-bold uppercase tracking-wider transition-all border-b-[3px] ${
+                  className={`flex-1 py-2.5 text-[10px] font-mono font-bold uppercase tracking-wider transition-all duration-200 border-b-[3px] ${
                     activeTab === tab
                       ? "text-[#0ea5e9] border-[#0ea5e9] bg-[#0ea5e9]/[0.08] shadow-[0_2px_12px_rgba(14,165,233,0.15)]"
                       : "text-[var(--text-tertiary)] border-transparent hover:text-[var(--text-secondary)] hover:bg-white/[0.02]"
@@ -779,9 +781,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         </div>
 
         {/* ─── Bottom Strip: Equity Curve + Trade Log (fixed height, no spill) ─── */}
-        <div className="flex-shrink-0 h-[220px] min-h-[180px] flex flex-row overflow-hidden border-t border-white/[0.08] bg-gradient-to-t from-[#050507] to-transparent">
+        <div className="flex-shrink-0 h-[232px] min-h-[200px] flex flex-row overflow-hidden border-t border-white/[0.08] bg-gradient-to-t from-[#080810] via-[#060608] to-transparent">
           {/* Equity Curve — contained, responsive */}
-          <div className="w-[480px] max-w-[calc(100%-200px)] flex-shrink-0 flex flex-col overflow-hidden border-r border-white/[0.08] p-3 bg-[#080810]/30">
+          <div className="w-[480px] max-w-[calc(100%-200px)] flex-shrink-0 flex flex-col overflow-hidden border-r border-white/[0.08] p-3 bg-[#0a0a10]/40 backdrop-blur-sm">
             <SessionPnLChart
               series={statsSeries}
               totalPnl={totalPnl}
@@ -791,10 +793,15 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             />
           </div>
           {/* Trade Log — flex-1 min-w-0 ensures it never spills */}
-          <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col p-2">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] font-mono font-bold text-[var(--text-tertiary)] uppercase tracking-widest">Trade Log</span>
-              <span className="text-[9px] font-mono text-[var(--text-tertiary)]/60 tabular-nums px-1.5 py-0.5 rounded bg-white/[0.03]">{recentResults.length} fills</span>
+          <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col p-3 bg-[#0a0a10]/30">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-mono font-bold text-[var(--text-tertiary)] uppercase tracking-widest flex items-center gap-2">
+                <svg className="w-3.5 h-3.5 text-[#0ea5e9]/60" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+                Trade Log
+              </span>
+              <span className="text-[9px] font-mono text-[var(--text-tertiary)]/70 tabular-nums px-2 py-1 rounded-lg bg-white/[0.04] border border-white/[0.04]">{recentResults.length} fills</span>
             </div>
             <TradeLog
               entries={recentResults.map((r, i) => ({
@@ -816,16 +823,14 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       </main>
 
       {/* ═══════════════ FOOTER ═══════════════ */}
-      <footer className="flex-shrink-0 h-11 flex items-center justify-between px-4 border-t border-white/[0.06] bg-gradient-to-r from-[#0a0a0f] via-[#0d0d14] to-[#0a0a0f] text-xs font-mono text-[var(--text-tertiary)]/70 select-none">
-        <div className="flex items-center gap-4">
+      <footer className="flex-shrink-0 h-12 flex items-center justify-between px-4 border-t border-white/[0.06] bg-gradient-to-r from-[#0a0a0f] via-[#0c0c12] to-[#0a0a0f] text-xs font-mono text-[var(--text-tertiary)]/70 select-none">
+        <div className="flex items-center gap-4 flex-wrap">
           <span className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 ring-2 ring-emerald-500/40 drop-shadow-[0_0_6px_rgba(52,211,153,0.6)]" aria-hidden />
             <span className="text-emerald-500/90">Verifiable RNG</span>
           </span>
           <span className="text-white/[0.2]">·</span>
-          <span>3% Transaction Cost</span>
-          <span className="text-white/[0.2]">·</span>
-          <span className="text-[#0ea5e9]/70">97% Return</span>
+          <span className="text-[var(--text-tertiary)]/80">3% House Edge · 97% RTP</span>
           <span className="text-white/[0.2]">·</span>
           <span className="text-[var(--text-tertiary)]/50">Uniform(0, 99.99)</span>
           <span className="text-white/[0.2]">·</span>

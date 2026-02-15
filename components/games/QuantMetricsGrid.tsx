@@ -1,5 +1,6 @@
 "use client";
 
+import { DICE_HOUSE_EDGE } from "@/lib/constants";
 import type { QuantMetrics } from "./useSessionPnL";
 
 interface RollResult {
@@ -93,14 +94,34 @@ export function QuantMetricsGrid({ metrics, recentResults }: QuantMetricsGridPro
     </div>
   );
 
+  const edgePct = (DICE_HOUSE_EDGE * 100).toFixed(1);
+  const hasNegativeEdge = true; // House edge is always -3% for dice
+
   return (
     <div
       className="rounded-xl border border-white/[0.08] bg-[var(--bg-card)] p-4 space-y-4"
       data-agent="quant-metrics-grid"
     >
-      <h4 className="text-[10px] font-semibold text-[var(--text-secondary)] uppercase tracking-widest">
-        Performance metrics
-      </h4>
+      <div className="flex items-center justify-between">
+        <h4 className="text-[10px] font-semibold text-[var(--text-secondary)] uppercase tracking-widest">
+          Performance metrics
+        </h4>
+        {recentResults.length > 0 && (
+          <span className="text-[9px] text-emerald-400/80 font-mono tabular-nums">
+            {recentResults.length} fills
+          </span>
+        )}
+      </div>
+
+      {/* Quant insight — contextual tip when edge is negative */}
+      {hasNegativeEdge && recentResults.length < 5 && (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2.5 py-2">
+          <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
+            <span className="font-semibold text-amber-400/90">House edge −{edgePct}%.</span>{" "}
+            Use Kelly criterion for position sizing. Strategy builder for backtests.
+          </p>
+        </div>
+      )}
 
       {/* Core metrics — key ones larger */}
       <div className="space-y-0 border-b border-white/10 pb-2">

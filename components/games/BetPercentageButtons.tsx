@@ -12,7 +12,7 @@ const PERCENTAGES = [
   { label: "10%", value: 0.1 },
   { label: "25%", value: 0.25 },
   { label: "50%", value: 0.5 },
-  { label: "MAX", value: 1 },
+  { label: "100%", value: 1 },
 ];
 
 export function BetPercentageButtons({

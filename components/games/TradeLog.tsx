@@ -66,8 +66,14 @@ export function TradeLog({ entries, maxRows = 20 }: TradeLogProps) {
           <tbody>
             {displayEntries.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-8 text-center text-[var(--text-tertiary)] text-[11px]">
-                  No executions yet — execute to see trade log
+                <td colSpan={7} className="py-10 text-center">
+                  <div className="flex flex-col items-center gap-2 text-[var(--text-tertiary)]">
+                    <svg className="w-8 h-8 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                    <span className="text-[11px]">Execute a trade to see your log</span>
+                    <span className="text-[10px] text-[var(--text-quaternary)]">Time · Size · P&L · Source</span>
+                  </div>
                 </td>
               </tr>
             ) : (
