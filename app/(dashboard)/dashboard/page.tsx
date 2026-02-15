@@ -9,6 +9,7 @@ import { LuckStreakCard } from "@/components/dashboard/LuckStreakCard";
 import { FortuneCard } from "@/components/dashboard/FortuneCard";
 import { MiniPnLSparkline } from "@/components/dashboard/MiniPnLSparkline";
 import { AgentReadyBadge } from "@/components/dashboard/AgentReadyBadge";
+import { ConnectAIPanel } from "@/components/dashboard/ConnectAIPanel";
 import { QuickLaunchCard } from "@/components/dashboard/QuickLaunchCard";
 import { StrategiesCountBadge } from "@/components/dashboard/StrategiesCountBadge";
 
@@ -120,6 +121,8 @@ export default function DashboardPage() {
             <MiniPnLSparkline />
             <AgentReadyBadge />
           </div>
+
+          <ConnectAIPanel />
 
           {/* Games Section */}
           <section className="space-y-4">
