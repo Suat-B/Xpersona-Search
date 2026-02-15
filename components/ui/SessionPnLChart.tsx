@@ -22,8 +22,8 @@ export function SessionPnLChart({
   const uid = useId().replace(/[^a-z0-9-]/gi, "") || "pnl";
   const isLarge = layout === "large";
   const isMini = layout === "mini";
-  const CHART_W = isLarge ? 600 : isMini ? 300 : 400;
-  const CHART_H = isLarge ? 180 : isMini ? 70 : 100;
+  const CHART_W = isLarge ? 640 : isMini ? 280 : 400;
+  const CHART_H = isLarge ? 180 : isMini ? 65 : 100;
   if (rounds === 0) {
     return (
       <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-md ${isMini ? "p-2" : "p-4"}`}>
@@ -42,7 +42,7 @@ export function SessionPnLChart({
             Reset
           </button>
         </div>
-        <div className={`flex flex-col items-center justify-center text-xs text-[var(--text-secondary)] gap-2 ${isMini ? "h-[60px]" : "h-[100px]"}`}>
+        <div className={`flex flex-col items-center justify-center text-xs text-[var(--text-secondary)] gap-2 ${isMini ? "h-[60px]" : isLarge ? "h-[140px]" : "h-[100px]"}`}>
           <svg className="w-8 h-8 opacity-30 animate-pulse" style={{ animationDuration: "2s" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
           </svg>
@@ -77,16 +77,21 @@ export function SessionPnLChart({
   const isUp = (points[points.length - 1]?.pnl ?? 0) >= 0;
   const strokeColor = totalPnl >= 0 ? "#10b981" : "#f59e0b";
 
+  const strokeW = isLarge ? 3.5 : isMini ? 2 : 2.5;
+  const dotR = isLarge ? 5 : isMini ? 2.5 : 3;
+  const pingR = isLarge ? 10 : isMini ? 5 : 6;
+  const glowStdDev = isLarge ? 2.5 : 1.5;
+
   return (
-    <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-md overflow-hidden transition-all duration-300 hover:border-white/15 ${isMini ? "p-2" : "p-4"}`}>
+    <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-lg overflow-hidden transition-all duration-300 hover:border-white/20 hover:shadow-xl ${isMini ? "p-2" : "p-4"}`}>
       <style>{`
         @keyframes pnl-dot-pulse-${uid} {
           0%, 100% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.35); opacity: 0.9; }
+          50% { transform: scale(1.4); opacity: 0.92; }
         }
         .pnl-dot-${uid} {
           transform-origin: center;
-          animation: pnl-dot-pulse-${uid} 1.8s ease-in-out infinite;
+          animation: pnl-dot-pulse-${uid} 1.6s ease-in-out infinite;
         }
       `}</style>
       <div className="mb-2 flex items-center justify-between">
@@ -131,20 +136,20 @@ export function SessionPnLChart({
         <defs>
           <linearGradient id={`pnl-fill-up-${uid}`} x1="0" y1="1" x2="0" y2="0">
             <stop offset="0%" stopColor="#10b981" stopOpacity={0} />
-            <stop offset="50%" stopColor="#10b981" stopOpacity={0.25} />
-            <stop offset="100%" stopColor="#10b981" stopOpacity={0.5} />
+            <stop offset="40%" stopColor="#10b981" stopOpacity={0.2} />
+            <stop offset="100%" stopColor="#10b981" stopOpacity={0.55} />
           </linearGradient>
           <linearGradient id={`pnl-fill-down-${uid}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.5} />
-            <stop offset="50%" stopColor="#f59e0b" stopOpacity={0.25} />
+            <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.55} />
+            <stop offset="60%" stopColor="#f59e0b" stopOpacity={0.25} />
             <stop offset="100%" stopColor="#f59e0b" stopOpacity={0} />
           </linearGradient>
           <linearGradient id={`pnl-fill-neutral-${uid}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--accent-heart)" stopOpacity={0.3} />
             <stop offset="100%" stopColor="var(--accent-heart)" stopOpacity={0} />
           </linearGradient>
-          <filter id={`pnl-glow-${uid}`} x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="blur" />
+          <filter id={`pnl-glow-${uid}`} x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation={glowStdDev} result="blur" />
             <feMerge>
               <feMergeNode in="blur" />
               <feMergeNode in="SourceGraphic" />
@@ -180,7 +185,7 @@ export function SessionPnLChart({
             d={pathD}
             fill="none"
             stroke={strokeColor}
-            strokeWidth={2.5}
+            strokeWidth={strokeW}
             strokeLinecap="round"
             strokeLinejoin="round"
           />
@@ -190,19 +195,19 @@ export function SessionPnLChart({
             <circle
               cx={lastX}
               cy={lastY}
-              r={3}
+              r={dotR}
               fill={isUp ? "#10b981" : "#f59e0b"}
               stroke="rgba(10,10,15,0.9)"
-              strokeWidth={2}
+              strokeWidth={isLarge ? 2.5 : 1.5}
               className={`pnl-dot-${uid}`}
             />
             <circle
               cx={lastX}
               cy={lastY}
-              r={6}
+              r={pingR}
               fill="none"
               stroke={isUp ? "#10b981" : "#f59e0b"}
-              strokeWidth={1.5}
+              strokeWidth={isLarge ? 2 : 1.5}
               strokeOpacity={0.35}
               className="animate-ping"
               style={{ animationDuration: "2s", animationIterationCount: "infinite" }}

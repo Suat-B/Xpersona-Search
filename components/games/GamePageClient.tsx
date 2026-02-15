@@ -748,15 +748,15 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         </div>
 
         {/* ─── Bottom Strip: Equity Curve + Trade Log ─── */}
-        <div className="flex-shrink-0 h-[160px] flex flex-row overflow-hidden border-t border-white/[0.08] bg-gradient-to-t from-[#050507] to-transparent">
-          {/* Mini Equity Curve */}
-          <div className="w-[300px] flex-shrink-0 flex flex-col overflow-hidden border-r border-white/[0.06] p-2">
+        <div className="flex-shrink-0 h-[220px] flex flex-row overflow-hidden border-t border-white/[0.08] bg-gradient-to-t from-[#050507] to-transparent">
+          {/* Equity Curve — larger, prominent */}
+          <div className="w-[480px] flex-shrink-0 flex flex-col overflow-hidden border-r border-white/[0.06] p-3">
             <SessionPnLChart
               series={statsSeries}
               totalPnl={totalPnl}
               rounds={rounds}
               onReset={handleReset}
-              layout="mini"
+              layout="large"
             />
           </div>
           {/* Trade Log */}
