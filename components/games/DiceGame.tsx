@@ -103,11 +103,13 @@ export function DiceGame({
   const prevConditionRef = useRef(condition);
   const [changedControl, setChangedControl] = useState<"amount" | "target" | "condition" | null>(null);
   const changeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [resultKey, setResultKey] = useState(0); // for re-triggering countup animation
 
   // Display external play from live feed (API/AI playing)
   useEffect(() => {
     if (!livePlay) return;
     setResult({ ...livePlay, balance: 0 });
+    setResultKey((k) => k + 1);
     if (livePlay.win) {
       setShowWinEffects(true);
       setTimeout(() => setShowWinEffects(false), 3000);
@@ -196,6 +198,7 @@ export function DiceGame({
         balance: data.data.balance,
       };
       setResult(newResult);
+      setResultKey((k) => k + 1);
       lastBetResultRef.current = {
         win: newResult.win,
         payout: newResult.payout,
@@ -569,10 +572,32 @@ export function DiceGame({
             </div>
           ) : result ? (
             <div className="flex items-center justify-center gap-4">
-              <span className={`font-mono font-bold text-2xl tabular-nums ${result.win ? "text-emerald-400 drop-shadow-[0_0_12px_rgba(52,211,153,0.4)]" : "text-red-400 drop-shadow-[0_0_12px_rgba(248,113,113,0.4)]"}`}>
+              <span
+                key={resultKey}
+                className={`font-mono font-bold text-3xl tabular-nums animate-count-up ${
+                  result.win
+                    ? "text-emerald-400 drop-shadow-[0_0_16px_rgba(52,211,153,0.5)]"
+                    : "text-red-400 drop-shadow-[0_0_16px_rgba(248,113,113,0.5)]"
+                }`}
+              >
                 {result.result.toFixed(2)}
               </span>
-              <span className={`text-xs font-mono font-bold px-2.5 py-1 rounded-md ${result.win ? "bg-emerald-500/15 text-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.15)]" : "bg-red-500/15 text-red-400 shadow-[0_0_12px_rgba(248,113,113,0.15)]"}`}>
+              <span
+                className={`inline-flex items-center gap-2 text-sm font-mono font-bold px-3 py-1.5 rounded-lg ${
+                  result.win
+                    ? "bg-emerald-500/20 text-emerald-400 shadow-[0_0_16px_rgba(52,211,153,0.2)] border border-emerald-500/30"
+                    : "bg-red-500/20 text-red-400 shadow-[0_0_16px_rgba(248,113,113,0.2)] border border-red-500/30"
+                }`}
+              >
+                {result.win ? (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                )}
                 {result.win ? `+${result.payout}` : `-${amount}`} cr
               </span>
               {strategyRun ? null : aiDriving ? (
@@ -594,8 +619,18 @@ export function DiceGame({
                   <span className="tabular-nums">{amount} · {target}% {condition === "over" ? "L" : "S"}</span>
                 </span>
               ) : (
-                <span className="uppercase tracking-[0.25em] text-[var(--text-tertiary)]/60" data-agent="dice-config" data-amount={amount} data-target={target} data-condition={condition}>
-                  ── Ready ──
+                <span
+                  className="flex items-center gap-2 uppercase tracking-[0.25em] text-[var(--text-tertiary)]/60"
+                  data-agent="dice-config"
+                  data-amount={amount}
+                  data-target={target}
+                  data-condition={condition}
+                >
+                  <span
+                    className="w-2 h-2 rounded-full bg-[#0ea5e9]/60 animate-breathing"
+                    aria-hidden
+                  />
+                  Ready
                 </span>
               )}
             </div>
@@ -618,27 +653,27 @@ export function DiceGame({
             </div>
           )}
 
-          {/* Order Entry */}
+          {/* Order Entry — glass panel with accent */}
           <div className="w-full flex justify-center relative z-10">
-          <div className="w-full max-w-sm shrink-0 space-y-3 rounded-xl border border-white/[0.08] bg-gradient-to-b from-white/[0.04] to-transparent p-4 shadow-[0_0_40px_rgba(0,0,0,0.3)] backdrop-blur-sm">
-          {/* Probability Engine — compact stats */}
+          <div className="w-full max-w-sm shrink-0 space-y-3 rounded-xl glass-panel-accent p-5">
+          {/* Probability Engine — larger numbers, EV conditional tint */}
           {(() => {
             const winProb = condition === "over" ? (100 - target) / 100 : target / 100;
             const multiplier = winProb > 0 ? Math.min((1 - DICE_HOUSE_EDGE) / winProb, 10) : 0;
             const evPerTrade = amount * (winProb * multiplier - 1);
             return (
-              <div className="grid grid-cols-3 gap-[1px] rounded-lg overflow-hidden bg-white/[0.04]">
-                <div className="bg-[#0a0a0f] px-3 py-2.5 text-center">
-                  <div className="text-[8px] text-[var(--text-tertiary)] uppercase tracking-widest mb-0.5">Win%</div>
-                  <div className="text-sm font-bold text-[var(--text-primary)] tabular-nums">{(winProb * 100).toFixed(1)}<span className="text-[10px] text-[var(--text-tertiary)]">%</span></div>
+              <div className="grid grid-cols-3 gap-[1px] rounded-xl overflow-hidden bg-white/[0.04]">
+                <div className="bg-[#0a0a0f]/90 px-3 py-3 text-center border-r border-white/[0.04]">
+                  <div className="text-[8px] text-[var(--text-tertiary)] uppercase tracking-widest mb-1">Win%</div>
+                  <div className="text-base font-bold text-[var(--text-primary)] tabular-nums">{(winProb * 100).toFixed(1)}<span className="text-[10px] text-[var(--text-tertiary)]">%</span></div>
                 </div>
-                <div className="bg-[#0a0a0f] px-3 py-2.5 text-center">
-                  <div className="text-[8px] text-[var(--text-tertiary)] uppercase tracking-widest mb-0.5">Payout</div>
-                  <div className="text-sm font-bold text-[#0ea5e9] tabular-nums">{multiplier.toFixed(2)}<span className="text-[10px] text-[#0ea5e9]/60">x</span></div>
+                <div className="bg-[#0a0a0f]/90 px-3 py-3 text-center border-r border-white/[0.04]">
+                  <div className="text-[8px] text-[var(--text-tertiary)] uppercase tracking-widest mb-1">Payout</div>
+                  <div className="text-base font-bold text-[#0ea5e9] tabular-nums">{multiplier.toFixed(2)}<span className="text-[10px] text-[#0ea5e9]/60">x</span></div>
                 </div>
-                <div className="bg-[#0a0a0f] px-3 py-2.5 text-center">
-                  <div className="text-[8px] text-[var(--text-tertiary)] uppercase tracking-widest mb-0.5">EV</div>
-                  <div className={`text-sm font-bold tabular-nums ${evPerTrade >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                <div className={`px-3 py-3 text-center ${evPerTrade >= 0 ? "bg-emerald-500/10" : "bg-red-500/10"}`}>
+                  <div className="text-[8px] text-[var(--text-tertiary)] uppercase tracking-widest mb-1">EV</div>
+                  <div className={`text-base font-bold tabular-nums ${evPerTrade >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                     {evPerTrade >= 0 ? "+" : ""}{evPerTrade.toFixed(2)}
                   </div>
                 </div>
@@ -670,6 +705,13 @@ export function DiceGame({
                   }`}
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--text-tertiary)] pointer-events-none">%</span>
+              </div>
+              {/* Probability bar — thin visual indicator */}
+              <div className="h-1 w-full rounded-full bg-white/[0.06] overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-[#0ea5e9]/60 transition-all duration-300"
+                  style={{ width: `${(condition === "over" ? 100 - target : target)}%` }}
+                />
               </div>
             </div>
             <div className="space-y-1.5">
@@ -706,12 +748,13 @@ export function DiceGame({
                 placeholder="1–10,000"
                 disabled={autoPlay}
                 aria-label="Position size in credits"
-                className={`w-full h-10 rounded-lg border px-3 text-center text-base font-bold tabular-nums text-[var(--text-primary)] disabled:opacity-60 focus:outline-none focus:shadow-[0_0_0_1px_rgba(14,165,233,0.3),0_0_12px_rgba(14,165,233,0.15)] transition-all ${
+                className={`w-full h-10 rounded-lg border px-3 pr-10 text-center text-base font-bold tabular-nums text-[var(--text-primary)] disabled:opacity-60 focus:outline-none focus:shadow-[0_0_0_1px_rgba(14,165,233,0.3),0_0_12px_rgba(14,165,233,0.15)] transition-all ${
                   changedControl === "amount"
                     ? "border-[#0ea5e9] bg-[#0ea5e9]/10 shadow-[0_0_12px_rgba(14,165,233,0.2)]"
                     : "border-white/[0.1] bg-white/[0.04] focus:border-[#0ea5e9]/60"
                 }`}
               />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--text-tertiary)] pointer-events-none font-mono">cr</span>
             </div>
           </div>
 
@@ -743,9 +786,9 @@ export function DiceGame({
               className="relative group rounded-xl bg-gradient-to-b from-[#0ea5e9] to-[#0077b6] px-10 py-3.5 text-sm font-bold text-white shadow-[0_0_20px_rgba(14,165,233,0.25),0_4px_12px_rgba(0,0,0,0.3)] hover:shadow-[0_0_30px_rgba(14,165,233,0.4),0_4px_16px_rgba(0,0,0,0.3)] hover:scale-[1.03] active:scale-95 disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all duration-200 overflow-hidden"
             >
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/25 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
-              <span className="relative flex items-center gap-2 uppercase tracking-wider">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              <span className="relative flex items-center gap-2.5 uppercase tracking-wider">
+                <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
                 {loading && !autoPlay ? "Executing..." : "Execute"}
               </span>
@@ -755,10 +798,10 @@ export function DiceGame({
               type="button"
               onClick={autoPlay ? stopAuto : startAuto}
               disabled={loading && !autoPlay}
-              className={`rounded-xl border px-5 py-3.5 text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2 shrink-0 ${
+              className={`relative rounded-xl border px-5 py-3.5 text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2 shrink-0 ${
                 autoPlay
                   ? "border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.15)]"
-                  : "border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 shadow-[0_0_15px_rgba(52,211,153,0.1)]"
+                  : "border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 shadow-[0_0_15px_rgba(52,211,153,0.1)] hover:shadow-[0_0_20px_rgba(52,211,153,0.25)]"
               }`}
             >
               {autoPlay ? (
@@ -776,29 +819,31 @@ export function DiceGame({
                   <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
                   </svg>
-                  <span className="uppercase tracking-wider">Algo Run</span>
+                  <span className="uppercase tracking-wider">Run Strategy</span>
                 </>
               )}
             </button>
           </div>
 
-          {/* Speed selector when auto-playing — compact, no layout spill */}
+          {/* Speed selector when auto-playing — mini segmented control */}
           {autoPlay && (
-            <div className="flex items-center justify-center gap-1 flex-shrink-0">
-              {AUTO_SPEEDS.map((ms) => (
-                <button
-                  key={ms}
-                  type="button"
-                  onClick={() => setAutoSpeed(ms)}
-                  className={`min-w-[48px] px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ${
-                    autoSpeed === ms
-                      ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/50 shadow-[0_0_14px_rgba(14,165,233,0.25)]"
-                      : "border border-white/[0.08] bg-white/[0.03] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.06] hover:border-[#0ea5e9]/30"
-                  }`}
-                >
-                  {ms === 100 ? "0.1s" : ms === 250 ? "0.25s" : ms === 500 ? "0.5s" : "1s"}
-                </button>
-              ))}
+            <div className="flex items-center justify-center flex-shrink-0">
+              <div className="inline-flex rounded-lg bg-white/[0.03] border border-white/[0.08] p-0.5 gap-0.5">
+                {AUTO_SPEEDS.map((ms) => (
+                  <button
+                    key={ms}
+                    type="button"
+                    onClick={() => setAutoSpeed(ms)}
+                    className={`min-w-[44px] px-2.5 py-1.5 rounded-md text-[11px] font-bold font-mono transition-all duration-200 ${
+                      autoSpeed === ms
+                        ? "bg-[#0ea5e9]/25 text-[#0ea5e9] shadow-[0_0_10px_rgba(14,165,233,0.2)]"
+                        : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.05]"
+                    }`}
+                  >
+                    {ms === 100 ? "0.1s" : ms === 250 ? "0.25s" : ms === 500 ? "0.5s" : "1s"}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
           </div>

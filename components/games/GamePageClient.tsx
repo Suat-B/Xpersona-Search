@@ -401,7 +401,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const gameMode = autoPlayActive ? "algo" : "manual";
 
   return (
-    <div className="h-screen w-full flex flex-col min-h-0 overflow-hidden bg-[#050507] font-mono">
+    <div className="h-screen w-full flex flex-col min-h-0 overflow-hidden bg-[#050507] font-mono relative">
+      {/* Gradient accent line at top */}
+      <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[var(--accent-heart)] via-violet-500 to-[var(--accent-heart)] z-50" aria-hidden />
       {/* ═══════════════ DEPOSIT SUCCESS TOAST ═══════════════ */}
       {depositSuccess && (
         <div className="flex-shrink-0 flex items-center justify-center gap-2 py-2 px-4 bg-emerald-500/15 border-b border-emerald-500/30 text-emerald-400 text-xs font-mono">
@@ -425,17 +427,18 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-white/[0.03] border border-white/[0.04]" data-agent="balance-display" data-value={balance}>
+          <div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-white/[0.04] border border-white/[0.06] shadow-[0_0_12px_rgba(14,165,233,0.08)]" data-agent="balance-display" data-value={balance}>
             <span className="text-[9px] text-[var(--text-tertiary)] uppercase tracking-wider">NAV</span>
-            <span className="text-[11px] font-bold text-[var(--text-primary)] tabular-nums">
+            <span className="text-sm font-bold text-[var(--text-primary)] tabular-nums">
               {balanceLoading ? (
-                <span className="inline-block w-10 h-3.5 bg-white/10 rounded animate-pulse" aria-label="Loading balance" />
+                <span className="inline-block w-12 h-4 bg-white/10 rounded animate-pulse" aria-label="Loading balance" />
               ) : (
                 balance.toLocaleString()
               )}
             </span>
           </div>
-          <Link href="/dashboard/deposit" className="text-[10px] text-[#0ea5e9] hover:text-[#0ea5e9] hover:drop-shadow-[0_0_6px_rgba(14,165,233,0.4)] transition-all uppercase tracking-wider font-bold">
+          <Link href="/dashboard/deposit" className="flex items-center gap-2 text-[10px] text-[#0ea5e9] hover:text-[#0ea5e9] hover:drop-shadow-[0_0_6px_rgba(14,165,233,0.4)] transition-all uppercase tracking-wider font-bold">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#0ea5e9] animate-pulse shrink-0" aria-hidden />
             +Deposit
           </Link>
           <Link href="/dashboard/withdraw" className="text-[10px] text-amber-400/80 hover:text-amber-400 hover:drop-shadow-[0_0_6px_rgba(251,191,36,0.3)] transition-all uppercase tracking-wider">
@@ -571,17 +574,17 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             </div>
           </div>
 
-          {/* ████ RIGHT SIDEBAR — 280px ████ */}
-          <aside className="w-[280px] flex-shrink-0 flex flex-col min-h-0 overflow-hidden bg-gradient-to-b from-[#0a0a0f]/80 to-[#080810]/50">
+          {/* ████ RIGHT SIDEBAR — 300px ████ */}
+          <aside className="w-[300px] flex-shrink-0 flex flex-col min-h-0 overflow-hidden bg-gradient-to-b from-[#0a0a0f]/80 to-[#080810]/50">
             {/* Tab Switcher — terminal style */}
             <div className="flex-shrink-0 flex border-b border-white/[0.06] bg-[#0a0a0f]/60">
               {(["statistics", "api", "strategy"] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`flex-1 py-2.5 text-[10px] font-mono font-bold uppercase tracking-wider transition-all border-b-2 ${
+                  className={`flex-1 py-2.5 text-[10px] font-mono font-bold uppercase tracking-wider transition-all border-b-[3px] ${
                     activeTab === tab
-                      ? "text-[#0ea5e9] border-[#0ea5e9] bg-[#0ea5e9]/[0.06] shadow-[0_2px_8px_rgba(14,165,233,0.1)]"
+                      ? "text-[#0ea5e9] border-[#0ea5e9] bg-[#0ea5e9]/[0.08] shadow-[0_2px_12px_rgba(14,165,233,0.15)]"
                       : "text-[var(--text-tertiary)] border-transparent hover:text-[var(--text-secondary)] hover:bg-white/[0.02]"
                   }`}
                 >
@@ -591,7 +594,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             </div>
 
             {/* Tab Content — scrollable, no spill */}
-            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2 space-y-2">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 space-y-2 scrollbar-sidebar">
               {activeTab === "statistics" ? (
                 <div className="space-y-2">
                   <QuantMetricsGrid metrics={quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null }} recentResults={recentResults} />
@@ -778,7 +781,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         {/* ─── Bottom Strip: Equity Curve + Trade Log (fixed height, no spill) ─── */}
         <div className="flex-shrink-0 h-[220px] min-h-[180px] flex flex-row overflow-hidden border-t border-white/[0.08] bg-gradient-to-t from-[#050507] to-transparent">
           {/* Equity Curve — contained, responsive */}
-          <div className="w-[480px] max-w-[calc(100%-200px)] flex-shrink-0 flex flex-col overflow-hidden border-r border-white/[0.06] p-3">
+          <div className="w-[480px] max-w-[calc(100%-200px)] flex-shrink-0 flex flex-col overflow-hidden border-r border-white/[0.08] p-3 bg-[#080810]/30">
             <SessionPnLChart
               series={statsSeries}
               totalPnl={totalPnl}
@@ -812,35 +815,39 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         </div>
       </main>
 
-      {/* ═══════════════ FOOTER — 28px ═══════════════ */}
-      <footer className="flex-shrink-0 h-7 flex items-center justify-between px-4 border-t border-white/[0.06] bg-gradient-to-r from-[#0a0a0f] via-[#0d0d14] to-[#0a0a0f] text-[9px] font-mono text-[var(--text-tertiary)]/70 select-none">
-        <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1">
-            <span className="text-emerald-500 drop-shadow-[0_0_3px_rgba(52,211,153,0.5)]">●</span>
-            <span className="text-emerald-500/80">Verifiable RNG</span>
+      {/* ═══════════════ FOOTER ═══════════════ */}
+      <footer className="flex-shrink-0 h-11 flex items-center justify-between px-4 border-t border-white/[0.06] bg-gradient-to-r from-[#0a0a0f] via-[#0d0d14] to-[#0a0a0f] text-xs font-mono text-[var(--text-tertiary)]/70 select-none">
+        <div className="flex items-center gap-4">
+          <span className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 ring-2 ring-emerald-500/40 drop-shadow-[0_0_6px_rgba(52,211,153,0.6)]" aria-hidden />
+            <span className="text-emerald-500/90">Verifiable RNG</span>
           </span>
-          <span className="text-white/[0.06]">│</span>
-          <span>3% Cost</span>
-          <span className="text-white/[0.06]">│</span>
+          <span className="text-white/[0.2]">·</span>
+          <span>3% Transaction Cost</span>
+          <span className="text-white/[0.2]">·</span>
           <span className="text-[#0ea5e9]/70">97% Return</span>
-          <span className="text-white/[0.06]">│</span>
+          <span className="text-white/[0.2]">·</span>
           <span className="text-[var(--text-tertiary)]/50">Uniform(0, 99.99)</span>
-          <span className="text-white/[0.06]">│</span>
-          <span>
-            <Link href="/dashboard/api" className="text-[var(--accent-heart)]/80 hover:text-[var(--accent-heart)] hover:drop-shadow-[0_0_4px_rgba(255,45,85,0.4)] transition-all">API</Link>
-            {" · "}
+          <span className="text-white/[0.2]">·</span>
+          <span className="flex items-center gap-2">
+            <Link
+              href="/dashboard/api"
+              className="px-2.5 py-1 rounded-full border border-[var(--accent-heart)]/30 bg-[var(--accent-heart)]/5 text-[var(--accent-heart)]/90 hover:text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/10 hover:border-[var(--accent-heart)]/50 transition-all text-[10px] font-bold uppercase tracking-wider"
+            >
+              API
+            </Link>
             <span
               role="button"
               tabIndex={0}
               onClick={() => setActiveTab("strategy")}
               onKeyDown={(e) => e.key === "Enter" && setActiveTab("strategy")}
-              className="text-amber-400/70 hover:text-amber-400 hover:drop-shadow-[0_0_4px_rgba(251,191,36,0.3)] cursor-pointer transition-all"
+              className="px-2.5 py-1 rounded-full border border-amber-400/30 bg-amber-400/5 text-amber-400/80 hover:text-amber-400 hover:bg-amber-400/10 hover:border-amber-400/50 transition-all text-[10px] font-bold uppercase tracking-wider cursor-pointer"
             >
               Strategy Builder
             </span>
           </span>
         </div>
-        <span className="tabular-nums text-[var(--text-tertiary)]/40">Min: 1 │ Max: 10,000</span>
+        <span className="tabular-nums text-[var(--text-tertiary)]/40">Min: 1 · Max: 10,000</span>
       </footer>
     </div>
   );

@@ -25,11 +25,14 @@ export function SessionPnLChart({
   const CHART_W = isLarge ? 640 : isMini ? 280 : 400;
   const CHART_H = isLarge ? 180 : isMini ? 65 : 100;
   if (rounds === 0) {
+    const emptyW = isLarge ? 200 : isMini ? 120 : 160;
+    const emptyH = isLarge ? 80 : isMini ? 40 : 60;
+    const flatLineY = emptyH / 2;
     return (
       <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-md ${isMini ? "p-2" : "p-4"}`}>
         <div className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <svg className="w-3.5 h-3.5 text-[var(--accent-heart)] animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-3.5 h-3.5 text-[var(--accent-heart)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
             </svg>
             <span className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider">Equity Curve</span>
@@ -42,11 +45,13 @@ export function SessionPnLChart({
             Reset
           </button>
         </div>
-        <div className={`flex flex-col items-center justify-center text-xs text-[var(--text-secondary)] gap-2 ${isMini ? "h-[60px]" : isLarge ? "h-[140px]" : "h-[100px]"}`}>
-          <svg className="w-8 h-8 opacity-30 animate-pulse" style={{ animationDuration: "2s" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        <div className={`flex flex-col items-center justify-center text-[var(--text-secondary)] gap-3 ${isMini ? "h-[60px]" : isLarge ? "h-[140px]" : "h-[100px]"}`}>
+          <svg className="opacity-40" width={emptyW} height={emptyH} viewBox={`0 0 ${emptyW} ${emptyH}`} fill="none" aria-hidden>
+            <line x1={0} y1={flatLineY} x2={emptyW} y2={flatLineY} stroke="currentColor" strokeWidth={2} strokeDasharray="4 4" strokeLinecap="round" />
           </svg>
-          <span>No rounds yet</span>
+          <span className="text-xs text-center text-[var(--text-tertiary)]">
+            Start trading to see your equity curve
+          </span>
         </div>
       </div>
     );
@@ -77,7 +82,7 @@ export function SessionPnLChart({
   const isUp = (points[points.length - 1]?.pnl ?? 0) >= 0;
   const strokeColor = totalPnl >= 0 ? "#10b981" : "#f59e0b";
 
-  const strokeW = isLarge ? 3.5 : isMini ? 2 : 2.5;
+  const strokeW = isLarge ? 4 : isMini ? 2.5 : 3;
   const dotR = isLarge ? 5 : isMini ? 2.5 : 3;
   const pingR = isLarge ? 10 : isMini ? 5 : 6;
   const glowStdDev = isLarge ? 2.5 : 1.5;
@@ -109,7 +114,11 @@ export function SessionPnLChart({
         </div>
         <div className="flex items-center gap-2">
           <span
-            className={`text-sm font-bold font-mono transition-colors duration-300 ${totalPnl >= 0 ? "text-emerald-400 drop-shadow-[0_0_8px_rgba(16,185,129,0.35)]" : "text-red-400 drop-shadow-[0_0_8px_rgba(239,68,68,0.35)]"}`}
+            className={`text-base font-bold font-mono transition-colors duration-300 ${
+              totalPnl >= 0
+                ? "text-emerald-400 drop-shadow-[0_0_12px_rgba(16,185,129,0.5)]"
+                : "text-red-400 drop-shadow-[0_0_12px_rgba(239,68,68,0.5)]"
+            }`}
           >
             {totalPnl >= 0 ? "+" : ""}
             {totalPnl}
@@ -134,6 +143,9 @@ export function SessionPnLChart({
         aria-hidden
       >
         <defs>
+          <pattern id={`pnl-grid-${uid}`} width="32" height="32" patternUnits="userSpaceOnUse">
+            <path d="M 32 0 L 0 0 0 32" fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="0.5" />
+          </pattern>
           <linearGradient id={`pnl-fill-up-${uid}`} x1="0" y1="1" x2="0" y2="0">
             <stop offset="0%" stopColor="#10b981" stopOpacity={0} />
             <stop offset="40%" stopColor="#10b981" stopOpacity={0.2} />
@@ -156,6 +168,7 @@ export function SessionPnLChart({
             </feMerge>
           </filter>
         </defs>
+        <rect width={CHART_W} height={CHART_H} fill={`url(#pnl-grid-${uid})`} />
         {zeroY > PAD && zeroY < CHART_H - PAD && (
           <line
             x1={PAD}

@@ -33,9 +33,23 @@ function momentumScore(last10: number, last20: number): { score: number; label: 
   return { score: 0, label: "Neutral" };
 }
 
+function statusColor(val: number | null, good: number, bad: number): "emerald" | "amber" | "red" | "neutral" {
+  if (val == null) return "neutral";
+  if (val >= good) return "emerald";
+  if (val <= bad) return "red";
+  return "amber";
+}
+
 interface QuantMetricsGridProps {
   metrics: QuantMetrics;
   recentResults: RollResult[];
+}
+
+function StatusDot({ status }: { status: "emerald" | "amber" | "red" | "neutral" }) {
+  if (status === "neutral") return <span className="w-1.5 h-1.5 rounded-full bg-white/20 shrink-0" />;
+  const color =
+    status === "emerald" ? "bg-emerald-400" : status === "amber" ? "bg-amber-400" : "bg-red-400";
+  return <span className={`w-1.5 h-1.5 rounded-full ${color} shrink-0`} aria-hidden />;
 }
 
 export function QuantMetricsGrid({ metrics, recentResults }: QuantMetricsGridProps) {
@@ -48,27 +62,56 @@ export function QuantMetricsGrid({ metrics, recentResults }: QuantMetricsGridPro
       ? `${currentIsWin ? "W" : "L"}${Math.abs(currentStreak)}`
       : "—";
 
-  const row = (label: string, value: React.ReactNode, dataValue?: string | number | null) => (
+  const sharpeStatus = statusColor(metrics.sharpeRatio, 0.5, 0);
+  const winRateStatus = statusColor(metrics.winRate, 55, 45);
+  const kellyStatus = statusColor(metrics.kellyFraction, 5, 1);
+
+  const row = (
+    label: string,
+    value: React.ReactNode,
+    dataValue?: string | number | null,
+    status?: "emerald" | "amber" | "red" | "neutral",
+    large?: boolean
+  ) => (
     <div
-      className="flex justify-between items-center py-1.5 border-b border-white/5 last:border-0"
-      {...(dataValue != null ? { "data-agent": `stat-${label.toLowerCase().replace(/\s/g, "-")}`, "data-value": String(dataValue) } : {})}
+      className="flex justify-between items-center py-2 border-b border-white/5 last:border-0"
+      {...(dataValue != null
+        ? { "data-agent": `stat-${label.toLowerCase().replace(/\s/g, "-")}`, "data-value": String(dataValue) }
+        : {})}
     >
       <span className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider">{label}</span>
-      <span className="text-xs font-mono font-semibold text-[var(--text-primary)] tabular-nums">{value}</span>
+      <span className="flex items-center gap-1.5">
+        {status != null && <StatusDot status={status} />}
+        <span
+          className={`font-mono font-semibold tabular-nums ${
+            large ? "text-sm text-[var(--text-primary)]" : "text-xs text-[var(--text-primary)]"
+          }`}
+        >
+          {value}
+        </span>
+      </span>
     </div>
   );
 
   return (
-    <div className="rounded-xl border border-white/[0.08] bg-[var(--bg-card)] p-4 space-y-4" data-agent="quant-metrics-grid">
+    <div
+      className="rounded-xl border border-white/[0.08] bg-[var(--bg-card)] p-4 space-y-4"
+      data-agent="quant-metrics-grid"
+    >
       <h4 className="text-[10px] font-semibold text-[var(--text-secondary)] uppercase tracking-widest">
         Performance metrics
       </h4>
-      <div className="space-y-1">
+
+      {/* Core metrics — key ones larger */}
+      <div className="space-y-0 border-b border-white/10 pb-2">
         {row(
           "Sharpe Ratio",
           metrics.sharpeRatio != null ? metrics.sharpeRatio.toFixed(2) : "—",
-          metrics.sharpeRatio
+          metrics.sharpeRatio,
+          sharpeStatus,
+          true
         )}
+        {row("Win Rate", `${metrics.winRate.toFixed(1)}%`, metrics.winRate.toFixed(1), winRateStatus, true)}
         {row(
           "Sortino Ratio",
           metrics.sortinoRatio != null ? metrics.sortinoRatio.toFixed(2) : "—",
@@ -79,7 +122,10 @@ export function QuantMetricsGrid({ metrics, recentResults }: QuantMetricsGridPro
           metrics.profitFactor == null ? "—" : metrics.profitFactor === Infinity ? "∞" : metrics.profitFactor.toFixed(2),
           metrics.profitFactor
         )}
-        {row("Win Rate", `${metrics.winRate.toFixed(1)}%`, metrics.winRate.toFixed(1))}
+      </div>
+
+      {/* P&L metrics */}
+      <div className="space-y-0 border-b border-white/10 pb-2">
         {row(
           "Avg Win",
           metrics.avgWin != null ? `+${metrics.avgWin.toFixed(2)}` : "—",
@@ -100,23 +146,53 @@ export function QuantMetricsGrid({ metrics, recentResults }: QuantMetricsGridPro
           metrics.recoveryFactor != null ? metrics.recoveryFactor.toFixed(2) : "—",
           metrics.recoveryFactor
         )}
+      </div>
+
+      {/* Kelly & EV */}
+      <div className="space-y-0 border-b border-white/10 pb-2">
         {row(
           "Kelly Criterion",
           metrics.kellyFraction != null ? `${metrics.kellyFraction.toFixed(1)}%` : "—",
-          metrics.kellyFraction
+          metrics.kellyFraction,
+          kellyStatus
         )}
         {row(
           "Expected Value",
-          metrics.expectedValuePerTrade != null ? `${metrics.expectedValuePerTrade >= 0 ? "+" : ""}${metrics.expectedValuePerTrade.toFixed(2)}/trade` : "—",
+          metrics.expectedValuePerTrade != null
+            ? `${metrics.expectedValuePerTrade >= 0 ? "+" : ""}${metrics.expectedValuePerTrade.toFixed(2)}/tr`
+            : "—",
           metrics.expectedValuePerTrade
         )}
       </div>
 
-      <h4 className="text-[10px] font-semibold text-[var(--text-secondary)] uppercase tracking-widest pt-2 border-t border-white/5">
+      {/* Momentum — with streak bar */}
+      <h4 className="text-[10px] font-semibold text-[var(--text-secondary)] uppercase tracking-widest pt-1">
         Momentum
       </h4>
-      <div className="space-y-1">
-        {row("Current Streak", streakLabel, currentStreak)}
+      <div className="space-y-0">
+        <div
+          className="flex justify-between items-center py-2 border-b border-white/5"
+          data-agent="stat-current-streak"
+          data-value={String(currentStreak)}
+        >
+          <span className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider">Current Streak</span>
+          <span className="flex items-center gap-2">
+            {/* Mini streak bar */}
+            <div className="flex h-2 w-16 rounded-full overflow-hidden bg-white/[0.06]">
+              <div
+                className={`h-full transition-all duration-300 ${
+                  currentStreak > 0 ? "bg-emerald-500" : currentStreak < 0 ? "bg-red-500" : "bg-white/20"
+                }`}
+                style={{
+                  width: currentStreak !== 0 ? `${Math.min(100, Math.abs(currentStreak) * 10)}%` : "0%",
+                }}
+              />
+            </div>
+            <span className="text-xs font-mono font-semibold tabular-nums text-[var(--text-primary)]">
+              {streakLabel}
+            </span>
+          </span>
+        </div>
         {row("Last 10 WR", `${last10WinRate.toFixed(0)}%`, last10WinRate.toFixed(1))}
         {row("Last 20 WR", `${last20WinRate.toFixed(0)}%`, last20WinRate.toFixed(1))}
         {row(
