@@ -8,6 +8,7 @@ info:
     On success, use `data`; on 4xx/5xx, body includes `error` (e.g. INSUFFICIENT_BALANCE, VALIDATION_ERROR).
     Optimized for programmatic and AI agent use: same endpoints power the web UI and OpenClaw/agents.
     **AI agent guide:** GET /api/skill returns Markdown instructions for AI agents (tool usage, flows, error recovery).
+    **Schema discovery:** GET /api/discovery returns full strategy builder schema (triggers, actions, presets, game mechanics) for AI to build custom systems — no auth required.
     **AI guidance:** Prefer GET /api/me/session-stats over /api/me/balance + /api/me/rounds for single-call stats.
     For auto-play, loop game endpoints with a short delay (e.g. 200–500ms).
     **Error recovery:** INSUFFICIENT_BALANCE → POST /api/faucet or GET /api/credits/packages + checkout.
@@ -83,6 +84,38 @@ paths:
               schema:
                 type: string
               example: "/docs"
+
+  # ==================== AI DISCOVERY (no auth) ====================
+  /api/discovery:
+    get:
+      summary: Schema discovery for AI strategy builder
+      description: |
+        **No auth required.** Returns full schema, triggers, actions, presets, game mechanics, and platform constants.
+        AI agents use this to discover all valid trigger/action types, global limits, presets, and formulas before creating advanced strategies.
+        Optional ?section=strategy_builder | game_mechanics | platform to return only that subsection.
+      security: []
+      parameters:
+        - name: section
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [strategy_builder, game_mechanics, platform, all]
+            default: all
+          description: Filter response to a subsection (all by default)
+      responses:
+        "200":
+          description: Discovery data retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/DiscoveryData'
 
   # ==================== AUTHENTICATION ====================
   /api/auth/guest:
@@ -1769,6 +1802,81 @@ components:
             timestamp:
               type: string
               format: date-time
+
+    DiscoveryData:
+      type: object
+      description: Schema discovery for AI strategy builder (GET /api/discovery)
+      properties:
+        strategyBuilder:
+          type: object
+          description: Present when section is strategy_builder or all
+          properties:
+            triggers:
+              type: array
+              items:
+                type: object
+                properties:
+                  type: { type: string }
+                  label: { type: string }
+                  description: { type: string }
+                  needsValue: { type: boolean }
+                  valueLabel: { type: string }
+                  valueType: { type: string, enum: [number, pattern] }
+            actions:
+              type: array
+              items:
+                type: object
+                properties:
+                  type: { type: string }
+                  label: { type: string }
+                  description: { type: string }
+                  needsValue: { type: boolean }
+                  valueLabel: { type: string }
+                  defaultValue: { type: number }
+            globalLimits:
+              type: object
+              additionalProperties: true
+            ruleSchema:
+              type: object
+              additionalProperties: true
+            executionModes:
+              type: array
+              items: { type: string }
+              example: [sequential, all_matching]
+            presets:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+                  description: { type: string }
+                  strategy: { type: object }
+        gameMechanics:
+          type: object
+          description: Present when section is game_mechanics or all
+          properties:
+            dice:
+              type: object
+              properties:
+                houseEdge: { type: number }
+                minBet: { type: integer }
+                maxBet: { type: integer }
+                maxMultiplier: { type: number }
+                targetRange: { type: array, items: { type: number } }
+                conditions: { type: array, items: { type: string } }
+                winProbabilityFormula: { type: string }
+                multiplierFormula: { type: string }
+                provablyFair: { type: object }
+        platform:
+          type: object
+          description: Present when section is platform or all
+          properties:
+            faucet: { type: object }
+            depositAlerts: { type: object }
+            balanceMilestones: { type: array }
+            withdrawal: { type: object }
+            limits: { type: object }
 
     # User & Account
     User:

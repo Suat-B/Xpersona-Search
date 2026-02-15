@@ -774,6 +774,35 @@ export const XpersonaToolsSchema = {
     }
   },
 
+  "xpersona_get_discovery": {
+    name: "xpersona_get_discovery",
+    description:
+      "Get full schema and metadata for building strategies. Returns triggers, actions, presets, game mechanics, platform constants. Use before creating advanced strategies to know all valid trigger/action types. No auth required for discovery; tool may require Bearer for consistency.",
+    parameters: {
+      type: "object",
+      properties: {
+        section: {
+          type: "string",
+          enum: ["strategy_builder", "game_mechanics", "platform", "all"],
+          default: "all",
+          description:
+            "Filter: strategy_builder (triggers, actions, presets), game_mechanics (dice rules), platform (faucet, limits), or all",
+        },
+      },
+    },
+    returns: {
+      type: "object",
+      properties: {
+        success: { type: "boolean" },
+        data: {
+          type: "object",
+          description:
+            "strategyBuilder (triggers, actions, globalLimits, ruleSchema, executionModes, presets), gameMechanics (dice), platform (faucet, depositAlerts, balanceMilestones, withdrawal, limits)",
+        },
+      },
+    },
+  },
+
   "xpersona_calculate_odds": {
     name: "xpersona_calculate_odds",
     description: "Calculate theoretical odds and expected value",

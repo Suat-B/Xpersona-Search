@@ -108,6 +108,7 @@ export default function ApiDocsPage() {
               </tr>
             </thead>
             <tbody className="text-[var(--text-primary)]">
+              <tr className="border-b border-white/5"><td className="py-2 pr-4">Schema discovery <span className="text-[var(--accent-heart)] text-[10px]">AI-first</span></td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/discovery — no auth, triggers/actions/presets</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Session stats <span className="text-[var(--accent-heart)] text-[10px]">AI-first</span></td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/session-stats?gameType=dice&limit=50</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Balance</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/balance</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Session PnL and history</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/rounds?limit=50</td></tr>
@@ -136,6 +137,7 @@ export default function ApiDocsPage() {
         </h2>
         <ul className="space-y-2 text-sm text-[var(--text-primary)]">
           <li><strong>Session stats:</strong> Prefer <code className="bg-white/10 px-1 rounded font-mono text-xs">GET /api/me/session-stats</code> over balance + rounds for &quot;how am I doing?&quot; — single call returns balance, rounds, PnL, win rate, recent rounds.</li>
+          <li><strong>Schema discovery:</strong> <code className="bg-white/10 px-1 rounded font-mono text-xs">GET /api/discovery</code> (no auth) returns triggers, actions, presets, game mechanics — use before building advanced strategies.</li>
           <li><strong>Tools vs REST:</strong> Use Tools API (<code className="bg-white/10 px-1 rounded font-mono text-xs">POST /api/openclaw/tools</code>) when OpenClaw is configured for it. Otherwise use REST with the same auth.</li>
           <li><strong>Recommended flow:</strong> (1) Get balance or session-stats. (2) If low, claim Free Credits or suggest deposit. (3) Play rounds or run strategy. (4) Report PnL.</li>
           <li><strong>API fallback:</strong> If API fails (5xx, network error, 429 rate limit), suggest user play via website: <Link href="/games/dice" className="text-[var(--accent-heart)] hover:underline">/games/dice</Link> — same games, same balance, full advanced strategy builder.</li>
@@ -190,6 +192,13 @@ export default function ApiDocsPage() {
         </h2>
         <div className="space-y-4 text-sm">
           <div>
+            <h3 className="font-medium text-[var(--text-primary)] mb-2">Discovery (no auth)</h3>
+            <ul className="space-y-1 text-[var(--text-secondary)] font-mono text-xs">
+              <li>GET /api/discovery — Strategy builder schema (triggers, actions, presets, game mechanics)</li>
+              <li>GET /api/discovery?section=strategy_builder — Triggers, actions, presets only</li>
+            </ul>
+          </div>
+          <div>
             <h3 className="font-medium text-[var(--text-primary)] mb-2">Auth / Me</h3>
             <ul className="space-y-1 text-[var(--text-secondary)] font-mono text-xs">
               <li>GET /api/me — Current user (id, email, credits, apiKeyPrefix)</li>
@@ -238,6 +247,12 @@ export default function ApiDocsPage() {
           Examples (curl)
         </h2>
         <div className="space-y-4">
+          <div>
+            <p className="text-xs text-[var(--text-secondary)] mb-1">Schema discovery (no auth)</p>
+            <pre className="rounded-lg bg-[var(--bg-deep)] border border-[var(--border)] p-4 text-xs font-mono text-[var(--text-primary)] overflow-x-auto">
+{`curl -s "https://xpersona.co/api/discovery"`}
+            </pre>
+          </div>
           <div>
             <p className="text-xs text-[var(--text-secondary)] mb-1">Session stats (AI-first)</p>
             <pre className="rounded-lg bg-[var(--bg-deep)] border border-[var(--border)] p-4 text-xs font-mono text-[var(--text-primary)] overflow-x-auto">
@@ -295,8 +310,11 @@ export default function ApiDocsPage() {
         <p className="text-sm text-[var(--text-secondary)] mb-2">
           <strong className="text-[var(--text-primary)]">Auth:</strong> Send <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">Authorization: Bearer &lt;API_KEY&gt;</code> (same as REST). Required for tool execution (except <code className="bg-white/10 px-1 rounded font-mono text-xs">xpersona_auth_guest</code>).
         </p>
+        <p className="text-sm text-[var(--text-secondary)] mb-2">
+          <strong className="text-[var(--text-primary)]">Tool discovery:</strong> <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">GET /api/openclaw/tools</code> returns the full tool schema (tool names, parameters, returns) for programmatic discovery.
+        </p>
         <p className="text-sm text-[var(--text-secondary)] mb-4">
-          <strong className="text-[var(--text-primary)]">Discovery:</strong> <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">GET /api/openclaw/tools</code> returns the full tool schema (tool names, parameters, returns) for programmatic discovery.
+          <strong className="text-[var(--text-primary)]">Strategy schema:</strong> <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">GET /api/discovery</code> (no auth) returns triggers, actions, presets, game mechanics for building advanced strategies.
         </p>
         <p className="text-xs text-[var(--text-secondary)] mb-2">Example: get balance</p>
         <pre className="rounded-lg bg-[var(--bg-deep)] border border-[var(--border)] p-3 text-xs font-mono text-[var(--text-primary)] overflow-x-auto mb-4">
@@ -324,6 +342,7 @@ export default function ApiDocsPage() {
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_delete_strategy</td><td className="py-2">Delete a strategy</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_notify</td><td className="py-2">Send notification</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_get_limits</td><td className="py-2">Get limits (min/max per round, rate limits)</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_get_discovery</td><td className="py-2">Get strategy builder schema (triggers, actions, presets, mechanics) — no auth for REST</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_calculate_odds</td><td className="py-2">Calculate dice odds and expected value</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_claim_faucet</td><td className="py-2">Claim hourly Free Credits</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_list_credit_packages</td><td className="py-2">List credit packages for purchase</td></tr>

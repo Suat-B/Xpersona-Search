@@ -17,6 +17,7 @@ import { grantFaucet } from "@/lib/faucet";
 import Stripe from "stripe";
 import { simulateStrategy } from "@/lib/dice-rule-engine";
 import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
+import { buildDiscoveryData } from "@/lib/discovery-builder";
 
 // Tool handler registry
 const toolHandlers: Record<XpersonaToolName, (params: any, agentContext: AgentContext | null, request: NextRequest) => Promise<any>> = {
@@ -39,6 +40,7 @@ const toolHandlers: Record<XpersonaToolName, (params: any, agentContext: AgentCo
   "xpersona_get_session_status": handleGetSessionStatus,
   "xpersona_notify": handleNotify,
   "xpersona_get_limits": handleGetLimits,
+  "xpersona_get_discovery": handleGetDiscovery,
   "xpersona_calculate_odds": handleCalculateOdds,
   "xpersona_claim_faucet": handleClaimFaucet,
   "xpersona_list_credit_packages": handleListCreditPackages,
@@ -1062,6 +1064,17 @@ async function handleGetLimits(params: any, agentContext: AgentContext | null, r
     daily_loss_limit: 10000,
     agent_max_bet: agentContext ? 100 : 10000
   };
+}
+
+async function handleGetDiscovery(params: any, _agentContext: AgentContext | null, _request: NextRequest) {
+  const section =
+    params.section === "strategy_builder" ||
+    params.section === "game_mechanics" ||
+    params.section === "platform"
+      ? params.section
+      : "all";
+  const data = buildDiscoveryData(section);
+  return { success: true, data };
 }
 
 async function handleCalculateOdds(params: any, agentContext: AgentContext | null, request: NextRequest) {

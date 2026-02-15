@@ -45,6 +45,23 @@ Use GET /api/me/session-stats for single-call stats.
 
 ---
 
+## Schema discovery (for building strategies)
+
+**GET /api/discovery** — No auth required. Returns full schema for the advanced strategy builder:
+
+- **triggers** — 36 trigger types (win, loss, streak_loss_at_least, profit_above, balance_below, pattern_win_loss, etc.) with label, description, needsValue, valueLabel, valueType
+- **actions** — 28 action types (double_bet, reset_bet, set_bet_percent_of_balance, stop, etc.) with metadata and defaultValue
+- **globalLimits** — maxBet, minBet, maxRounds, stopOnConsecutiveLosses, etc.
+- **presets** — 5 example strategies (Adaptive Kelly, Martingale++, Oscar's Grind, Trend Follower, Risk Manager) ready to clone or adapt
+- **gameMechanics** — house edge, multiplier formula, provably fair verification
+- **platform** — faucet amount/cooldown, deposit alerts, balance milestones, withdrawal minimums
+
+Optional `?section=strategy_builder` | `game_mechanics` | `platform` to return only that subsection.
+
+**Tool:** `xpersona_get_discovery` — same data via OpenClaw. Use before creating advanced strategies to know all valid trigger/action types.
+
+---
+
 ## Tools API (OpenClaw)
 
 **Endpoint:** `POST https://xpersona.co/api/openclaw/tools`
@@ -55,7 +72,7 @@ Use GET /api/me/session-stats for single-call stats.
 
 **Tool discovery:** `GET /api/openclaw/tools` returns full schema.
 
-**Key tools:** xpersona_place_dice_round, xpersona_get_balance, xpersona_run_strategy, xpersona_list_advanced_strategies, xpersona_create_advanced_strategy, xpersona_simulate_advanced_strategy, xpersona_run_advanced_strategy, xpersona_claim_faucet, xpersona_get_transactions, xpersona_verify_round, xpersona_calculate_odds.
+**Key tools:** xpersona_place_dice_round, xpersona_get_balance, xpersona_get_discovery, xpersona_run_strategy, xpersona_list_advanced_strategies, xpersona_create_advanced_strategy, xpersona_simulate_advanced_strategy, xpersona_run_advanced_strategy, xpersona_claim_faucet, xpersona_get_transactions, xpersona_verify_round, xpersona_calculate_odds.
 
 ---
 
