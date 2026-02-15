@@ -789,7 +789,7 @@ async function handleWithdraw(
   const authResult = await getAuthUser(request);
   if ("error" in authResult) throw new Error(authResult.error);
   if (authResult.user.accountType !== "agent") {
-    throw new Error("AGENTS_ONLY: Withdraw is for agent accounts. Create an agent to withdraw.");
+    throw new Error("AGENTS_ONLY: Withdraw is for AI accounts. Create an AI to withdraw.");
   }
 
   const { amount } = params;
@@ -1026,7 +1026,7 @@ async function handleCreateCheckout(params: any, agentContext: AgentContext | nu
   const authResult = await getAuthUser(request);
   if ("error" in authResult) throw new Error(authResult.error);
   if (authResult.user.accountType !== "agent") {
-    throw new Error("AGENTS_ONLY: Deposit is for agent accounts. Create an agent to add funds.");
+    throw new Error("AGENTS_ONLY: Deposit is for AI accounts. Create an AI to add funds.");
   }
   const packageId = params.package_id as string | undefined;
   if (!packageId) return { success: false, error: "VALIDATION_ERROR", message: "package_id required" };

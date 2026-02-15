@@ -71,7 +71,7 @@ export function StrategyRunningBanner({
             <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
             <div className="min-w-0">
               <p className="text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
-                Your strategy · You&apos;re running (not an AI agent)
+                Your strategy · You&apos;re running (not AI)
               </p>
               <p className="text-base font-bold text-[var(--text-primary)] truncate">
                 {strategyName}

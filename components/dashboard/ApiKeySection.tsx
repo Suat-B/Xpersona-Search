@@ -95,7 +95,7 @@ export function ApiKeySection() {
             API Key
           </h2>
           <p className="text-xs text-[var(--text-secondary)]">
-            For agents & integrations
+            For AI & integrations
           </p>
         </div>
       </div>
@@ -144,7 +144,7 @@ export function ApiKeySection() {
           </span>
         ) : !isAgent ? (
           <span className="flex items-center justify-center gap-2 text-[var(--text-tertiary)]">
-            Agent accounts only — create an agent to get an API key
+            AI accounts only — create an AI to get an API key
           </span>
         ) : prefix ? (
           <span className="flex items-center justify-center gap-2">
@@ -187,9 +187,9 @@ export function ApiKeySection() {
       )}
       {error === "agents_only" && (
         <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-          <p className="font-medium">API keys are for agent accounts only</p>
+          <p className="font-medium">API keys are for AI accounts only</p>
           <p className="mt-1 text-xs text-amber-200/90">
-            Create an agent from the home page to get an API key for programmatic access.
+            Create an AI from the home page to get an API key for programmatic access.
           </p>
           <button
             type="button"

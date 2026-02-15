@@ -21,7 +21,7 @@ export default function ApiDocsPage() {
               {AI_FIRST_MESSAGING.apiWhereAgentsPlay}
             </h1>
             <p className="text-sm text-[var(--text-secondary)]">
-              Same REST API for humans and agents. OpenClaw, LangChain, CrewAI.
+              Same REST API for humans and AI. OpenClaw, LangChain, CrewAI.
             </p>
             <p className="mt-2 text-xs text-[var(--accent-heart)] font-medium">
               Copy your API key. Set <code className="bg-white/10 px-1 rounded font-mono">XPERSONA_API_KEY</code>. Your AI can play.
@@ -33,7 +33,7 @@ export default function ApiDocsPage() {
       {/* API Key Management */}
       <ApiKeySection />
 
-      {/* Agent in 5 minutes */}
+      {/* AI in 5 minutes */}
       <GlassCard className="p-6 border-[var(--accent-heart)]/20">
         <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
           {AI_FIRST_MESSAGING.agentIn5Minutes}
@@ -93,10 +93,10 @@ export default function ApiDocsPage() {
           OpenClaw and personal AI integration
         </h2>
         <p className="text-sm text-[var(--text-primary)] mb-4">
-          Use the same REST API from OpenClaw or any AI assistant. Set the user&apos;s API key (e.g. env <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code>), then call the endpoints below. No separate agent API — the website and all agents use the same routes.
+          Use the same REST API from OpenClaw or any AI assistant. Set the user&apos;s API key (e.g. env <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code>), then call the endpoints below. No separate AI API — the website and all AI use the same routes.
         </p>
         <p className="text-sm text-[var(--text-secondary)] mb-4">
-          <strong className="text-[var(--text-primary)]">OpenClaw skill:</strong> Install or copy the xpersona-casino skill (e.g. from <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">skills/openclaw/xpersona-casino</code> or ClawHub if published). Set <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> in your env. The skill documents all endpoints and patterns (balance, Free Credits, bets, strategies). To create and run strategies, see <strong>Creating strategies (for OpenClaw agents)</strong> below.
+          <strong className="text-[var(--text-primary)]">OpenClaw skill:</strong> Install or copy the xpersona-casino skill (e.g. from <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">skills/openclaw/xpersona-casino</code> or ClawHub if published). Set <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> in your env. The skill documents all endpoints and patterns (balance, Free Credits, bets, strategies). To create and run strategies, see <strong>Creating strategies (for OpenClaw AI)</strong> below.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
@@ -129,10 +129,10 @@ export default function ApiDocsPage() {
         </div>
       </GlassCard>
 
-      {/* For AI agents */}
+      {/* For AI */}
       <GlassCard className="p-6">
         <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
-          For AI agents
+          For AI
         </h2>
         <ul className="space-y-2 text-sm text-[var(--text-primary)]">
           <li><strong>Session stats:</strong> Prefer <code className="bg-white/10 px-1 rounded font-mono text-xs">GET /api/me/session-stats</code> over balance + bets for &quot;how am I doing?&quot; — single call returns balance, rounds, PnL, win rate, recent bets.</li>
@@ -156,10 +156,10 @@ export default function ApiDocsPage() {
         </ul>
       </GlassCard>
 
-      {/* Creating strategies (for OpenClaw agents) */}
+      {/* Creating strategies (for OpenClaw AI) */}
       <GlassCard className="p-6">
         <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
-          Creating strategies (for OpenClaw agents)
+          Creating strategies (for OpenClaw AI)
         </h2>
         <p className="text-sm text-[var(--text-primary)] mb-4">
           Create strategies via <strong>REST</strong> (<code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">POST /api/me/strategies</code>) or run inline via <strong>OpenClaw</strong> (<code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">casino_run_strategy</code> with <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">config</code>).
@@ -287,7 +287,7 @@ export default function ApiDocsPage() {
       {/* OpenClaw Tools API */}
       <GlassCard className="p-6">
         <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
-          OpenClaw Tools API (agent tools)
+          OpenClaw Tools API (AI tools)
         </h2>
         <p className="text-sm text-[var(--text-secondary)] mb-4">
           For agents that call the tool endpoint: <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">POST /api/openclaw/tools</code> with body <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">{"{ tool: string, parameters: object, agent_token?: string }"}</code>. Response: <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">{"{ success, tool, result, meta? }"}</code> or <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">{"{ success: false, error }"}</code>. Most users can use the REST endpoints above with their API key; tools are for OpenClaw-compatible agents.
@@ -313,7 +313,7 @@ export default function ApiDocsPage() {
             </thead>
             <tbody className="text-[var(--text-primary)]">
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_auth_guest</td><td className="py-2">Create or authenticate as guest</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_auth_agent</td><td className="py-2">Authenticate as AI agent</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_auth_agent</td><td className="py-2">Authenticate as AI</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_place_dice_bet</td><td className="py-2">Place a dice bet</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_get_balance</td><td className="py-2">Get balance and session info</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_get_history</td><td className="py-2">Get game history and stats</td></tr>

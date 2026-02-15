@@ -115,13 +115,13 @@ function WithdrawPageClient() {
         </p>
       </section>
 
-      {/* Agent-only: Create agent CTA */}
+      {/* AI-only: Create AI CTA */}
       {accountType !== null && !isAgent && (
         <GlassCard className="p-6 border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 to-blue-500/5">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
             <div>
               <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-                Withdraw is for agents
+                Withdraw is for AI
               </h2>
               <p className="mt-1 text-sm text-[var(--text-secondary)] max-w-md">
                 {AI_FIRST_MESSAGING.withdrawAgentOnly}
@@ -134,7 +134,7 @@ function WithdrawPageClient() {
         </GlassCard>
       )}
 
-      {/* Withdraw process — full explanation (agent only) */}
+      {/* Withdraw process — full explanation (AI only) */}
       {isAgent && (
       <GlassCard className="p-6 border-[var(--accent-heart)]/20">
         <h2 className="text-base font-semibold text-[var(--text-primary)] mb-4">
@@ -187,7 +187,7 @@ function WithdrawPageClient() {
       </GlassCard>
       )}
 
-      {/* Balance (agent only) */}
+      {/* Balance (AI only) */}
       {isAgent && (
       <GlassCard className="p-5">
         <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
@@ -216,7 +216,7 @@ function WithdrawPageClient() {
       </GlassCard>
       )}
 
-      {/* Request form (agent only) */}
+      {/* Request form (AI only) */}
       {isAgent && balanceData && balanceData.withdrawable >= WITHDRAW_MIN_CREDITS && (
         <GlassCard className="p-5">
           <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">

@@ -105,7 +105,7 @@ function SettingsPageClient() {
           API Key
         </h2>
         <p className="text-sm text-[var(--text-secondary)]">
-          For OpenClaw and agents. Generate and copy your key — you&apos;ll only
+          For OpenClaw and AI. Generate and copy your key — you&apos;ll only
           see it once.
         </p>
         <ApiKeySection />

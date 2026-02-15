@@ -32,7 +32,7 @@ export function AIFirstBanner() {
       <p className="text-xs text-[var(--text-primary)]">
         <span className="font-semibold text-[var(--accent-heart)]">AI-First Casino</span>
         {" — "}
-        Your agents bet via API. Same balance. Same provably fair.
+        Your AI bets via API. Same balance. Same provably fair.
       </p>
       <button
         type="button"

@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   // AI-first: only agents can generate API keys
   if (user.accountType !== "agent") {
     return NextResponse.json(
-      { success: false, error: "AGENTS_ONLY", message: "API keys are available for agent accounts only." },
+      { success: false, error: "AGENTS_ONLY", message: "API keys are available for AI accounts only." },
       { status: 403 }
     );
   }

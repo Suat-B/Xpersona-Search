@@ -407,7 +407,7 @@ function JsonTab({ strategy, onStrategyChange }: JsonTabProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-[var(--text-secondary)]">
-          Edit the strategy as JSON. Perfect for AI agents and advanced users.
+          Edit the strategy as JSON. Perfect for AI and advanced users.
         </p>
         <button
           onClick={copyToClipboard}
@@ -428,7 +428,7 @@ function JsonTab({ strategy, onStrategyChange }: JsonTabProps) {
 
       <div className="p-3 rounded bg-[var(--bg-matte)] border border-[var(--border)]">
         <p className="text-xs text-[var(--text-secondary)] mb-2">
-          <strong className="text-[var(--text-primary)]">Tip:</strong> AI agents can create strategies by generating
+          <strong className="text-[var(--text-primary)]">Tip:</strong> AI can create strategies by generating
           this JSON format programmatically.
         </p>
         <p className="text-xs text-[var(--text-secondary)]">

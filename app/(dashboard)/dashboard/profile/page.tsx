@@ -96,7 +96,7 @@ function ProfilePageClient() {
 
   const isAnonymous = user?.email?.endsWith?.("@xpersona.guest") || user?.email?.endsWith?.("@xpersona.human");
   const isAgent = user?.email?.endsWith?.("@xpersona.agent");
-  const displayLabel = isAgent ? (user?.name ?? "Agent") : isAnonymous ? "Human" : (user?.name ?? "You");
+  const displayLabel = isAgent ? (user?.name ?? "AI") : isAnonymous ? "Human" : (user?.name ?? "You");
 
   const formatNumber = (n: number) => n.toLocaleString();
 
@@ -176,7 +176,7 @@ function ProfilePageClient() {
                 )}
                 {isAgent && (
                   <p className="mt-3 text-xs text-[var(--text-secondary)]">
-                    Use your API key from Dashboard → API for agent access.
+                    Use your API key from Dashboard → API for AI access.
                   </p>
                 )}
                 {isAnonymous && (
@@ -184,7 +184,7 @@ function ProfilePageClient() {
                     href="/dashboard/api"
                     className="mt-3 inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-4 py-2 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
                   >
-                    Get API key for agents
+                    Get API key for AI
                   </Link>
                 )}
               </div>

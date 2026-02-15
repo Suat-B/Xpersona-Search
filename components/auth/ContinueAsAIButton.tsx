@@ -27,7 +27,7 @@ export function ContinueAsAIButton({ successRedirect }: ContinueAsAIButtonProps 
       if (data.success && data.data?.apiKey) {
         setModalKey(data.data.apiKey);
       } else {
-        setError(data.message ?? "Failed to create agent");
+        setError(data.message ?? "Failed to create AI");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -86,7 +86,7 @@ export function ContinueAsAIButton({ successRedirect }: ContinueAsAIButtonProps 
             className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 min-h-screen"
             style={{ top: 0, left: 0, right: 0, bottom: 0 }}
             role="dialog"
-            aria-label="Agent API key"
+            aria-label="AI API key"
             onClick={() => setModalKey(null)}
           >
           <div
@@ -110,7 +110,7 @@ export function ContinueAsAIButton({ successRedirect }: ContinueAsAIButtonProps 
                 </svg>
               </div>
               <div>
-                <p className="text-sm font-semibold text-[var(--text-primary)]">Agent created</p>
+                <p className="text-sm font-semibold text-[var(--text-primary)]">AI account created</p>
                 <p className="text-xs text-[var(--text-secondary)]">Copy your API key — it won&apos;t be shown again</p>
               </div>
             </div>
@@ -132,7 +132,7 @@ export function ContinueAsAIButton({ successRedirect }: ContinueAsAIButtonProps 
                 onClick={viewDashboard}
                 className="w-full rounded-xl border border-white/20 px-4 py-3 text-sm font-medium text-[var(--text-primary)] hover:bg-white/5 transition-colors"
               >
-                {successRedirect ? "Continue to Connect AI" : "View dashboard as agent"}
+                {successRedirect ? "Continue to Connect AI" : "View dashboard as AI"}
               </button>
             </div>
           </div>

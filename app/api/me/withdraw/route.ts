@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       {
         success: false,
         error: "AGENTS_ONLY",
-        message: "Withdraw is for agent accounts. Create an agent to withdraw.",
+        message: "Withdraw is for AI accounts. Create an AI to withdraw.",
       },
       { status: 403 }
     );

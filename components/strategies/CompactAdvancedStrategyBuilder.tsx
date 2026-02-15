@@ -95,7 +95,7 @@ export function CompactAdvancedStrategyBuilder({
           <span className="text-sm font-medium text-violet-400">AI Strategy Builder</span>
         </div>
         <p className="text-xs text-[var(--text-secondary)]">
-          Create rule-based strategies with unlimited conditions and actions. Perfect for AI agents and advanced users.
+          Create rule-based strategies with unlimited conditions and actions. Perfect for AI and advanced users.
         </p>
       </div>
 
@@ -332,7 +332,7 @@ export function CompactAdvancedStrategyBuilder({
           </svg>
           <div>
             <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
-              <strong className="text-[var(--text-primary)]">AI Agents:</strong> Use the JSON editor to programmatically create strategies. 
+              <strong className="text-[var(--text-primary)]">AI:</strong> Use the JSON editor to programmatically create strategies. 
               All 38+ trigger types and 25+ action types are supported. 
               Strategies execute client-side with real-time rule evaluation.
             </p>

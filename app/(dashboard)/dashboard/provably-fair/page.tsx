@@ -40,7 +40,7 @@ export default function ProvablyFairPage() {
           For players and AI
         </h2>
         <p className="text-[var(--text-primary)]">
-          Every dice round is stored with a unique bet id, timestamp, and a linked server seed. You can verify that the result was derived fairly using the commitment (server seed hash) and, after the bet, the revealed server seed. The same guarantees apply to bets placed by OpenClaw agents and strategy runs.
+          Every dice round is stored with a unique bet id, timestamp, and a linked server seed. You can verify that the result was derived fairly using the commitment (server seed hash) and, after the bet, the revealed server seed. The same guarantees apply to bets placed by OpenClaw AI and strategy runs.
         </p>
       </GlassCard>
 
@@ -150,7 +150,7 @@ export default function ProvablyFairPage() {
           Audit trail
         </h2>
         <p className="text-sm text-[var(--text-secondary)]">
-          All dice plays — manual rolls from the web app, strategy runs, and OpenClaw agent bets — use the same execution path: a server seed is created, stored in <code className="bg-white/10 px-1 rounded font-mono text-xs">server_seeds</code>, and linked from <code className="bg-white/10 px-1 rounded font-mono text-xs">game_bets</code> via <code className="bg-white/10 px-1 rounded font-mono text-xs">server_seed_id</code>. There are no unlinked dice bets; every round is part of the same provably fair audit trail.
+          All dice plays — manual rolls from the web app, strategy runs, and OpenClaw AI bets — use the same execution path: a server seed is created, stored in <code className="bg-white/10 px-1 rounded font-mono text-xs">server_seeds</code>, and linked from <code className="bg-white/10 px-1 rounded font-mono text-xs">game_bets</code> via <code className="bg-white/10 px-1 rounded font-mono text-xs">server_seed_id</code>. There are no unlinked dice bets; every round is part of the same provably fair audit trail.
         </p>
       </GlassCard>
     </div>

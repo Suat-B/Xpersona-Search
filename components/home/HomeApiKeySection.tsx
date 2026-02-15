@@ -14,7 +14,7 @@ export function HomeApiKeySection() {
           Your API Key
         </h2>
         <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-lg">
-          Generate and manage your API key to let your agents start betting immediately.
+          Generate and manage your API key to let your AI start betting immediately.
         </p>
       </div>
       <div className="max-w-md">

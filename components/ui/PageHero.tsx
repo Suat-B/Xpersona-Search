@@ -23,7 +23,7 @@ export function PageHero({ title, subtitle, icon, showAgentBadge = true }: PageH
             </h1>
             {showAgentBadge && (
               <span className="text-[10px] px-2 py-0.5 rounded-full border border-[var(--accent-heart)]/30 bg-[var(--accent-heart)]/10 text-[var(--accent-heart)] font-medium uppercase tracking-wider">
-                Agent-friendly
+                AI-friendly
               </span>
             )}
           </div>

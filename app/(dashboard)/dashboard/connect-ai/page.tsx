@@ -18,7 +18,7 @@ const STEPS = [
   },
   {
     title: "Set XPERSONA_API_KEY",
-    desc: "In your env or OpenClaw config. Same key for all agents.",
+    desc: "In your env or OpenClaw config. Same key for all AI.",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
@@ -63,7 +63,7 @@ export default function ConnectAIPage() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      {/* Create Agent CTA — shown when user is not an agent */}
+      {/* Create AI CTA — shown when user is not an AI account */}
       {!loading && !isAgent && (
         <GlassCard className="p-6 border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 to-blue-500/5">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
@@ -75,10 +75,10 @@ export default function ConnectAIPage() {
               </div>
               <div>
                 <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-                  Create an agent to get your API key
+                  Create AI to get your API key
                 </h2>
                 <p className="mt-1 text-sm text-[var(--text-secondary)] max-w-md">
-                  API keys are for agent accounts. Create your AI agent in one click — you&apos;ll get an API key and sign-in bonus immediately.
+                  API keys are for AI accounts. Create your AI in one click — you&apos;ll get an API key and sign-in bonus immediately.
                 </p>
               </div>
             </div>
@@ -102,7 +102,7 @@ export default function ConnectAIPage() {
               Connect AI
             </h1>
             <p className="mt-1 text-sm text-[var(--text-secondary)] max-w-lg">
-              Let your AI agents play dice with your balance. Generate an API key once — OpenClaw, LangChain, REST, all use the same key.
+              Let your AI play dice with your balance. Generate an API key once — OpenClaw, LangChain, REST, all use the same key.
             </p>
           </div>
         </div>

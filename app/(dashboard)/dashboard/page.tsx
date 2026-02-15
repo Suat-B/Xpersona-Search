@@ -39,7 +39,7 @@ export default function DashboardPage() {
               Dashboard
             </h1>
             <p className="mt-2 text-[var(--text-secondary)] max-w-md">
-              Your home for provably fair dice. Play yourself or deploy an agent to play for you.
+              Your home for provably fair dice. Play yourself or deploy AI to play for you.
             </p>
           </div>
           
@@ -215,7 +215,7 @@ export default function DashboardPage() {
                     </span>
                   </div>
                   <p className="mt-1.5 text-sm text-[var(--text-secondary)] max-w-md leading-relaxed">
-                    Run Martingale, Paroli, Kelly, and more. Same strategies work for you and your agents.
+                    Run Martingale, Paroli, Kelly, and more. Same strategies work for you and your AI.
                   </p>
                   
                   <div className="mt-3 flex items-center gap-4 text-xs text-[var(--text-tertiary)]">

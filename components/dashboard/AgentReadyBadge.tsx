@@ -35,7 +35,7 @@ export function AgentReadyBadge() {
         iconBg: "bg-[#ff9f0a]/10 border-[#ff9f0a]/20 text-[#ff9f0a]",
         border: "border-[#ff9f0a]/30",
         title: "Setup API Key",
-        subtitle: "Generate key for agent access",
+        subtitle: "Generate key for AI access",
         text: "text-[#ff9f0a]",
         ping: false,
         glow: "",
@@ -70,7 +70,7 @@ export function AgentReadyBadge() {
           
           <div>
             <div className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">
-              Agent Status
+              AI Status
             </div>
             <div className={cn("text-sm font-semibold", config.text)}>
               {config.title}

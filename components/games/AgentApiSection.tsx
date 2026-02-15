@@ -72,10 +72,10 @@ export function AgentApiSection() {
       data-agent="agent-api"
     >
       <h4 className="text-xs font-semibold text-violet-300 uppercase tracking-wider flex items-center gap-1.5">
-        <span aria-hidden>🤖</span> Agent API
+        <span aria-hidden>🤖</span> AI API
       </h4>
       <p className="text-xs text-[var(--text-secondary)]">
-        Fetch session stats for your AI agent. Use Bearer token or session cookie.
+        Fetch session stats for your AI. Use Bearer token or session cookie.
       </p>
 
       {/* Parameter controls */}

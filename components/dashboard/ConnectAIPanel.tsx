@@ -31,7 +31,7 @@ export function ConnectAIPanel() {
                 </span>
               </div>
               <p className="mt-1.5 text-sm text-[var(--text-secondary)] max-w-md leading-relaxed">
-                Generate an API key and let OpenClaw, LangChain, or any agent play dice with your balance — same account, same credits.
+                Generate an API key and let OpenClaw, LangChain, or any AI play dice with your balance — same account, same credits.
               </p>
               
               <div className="mt-3 flex items-center gap-4 text-xs text-[var(--text-tertiary)]">

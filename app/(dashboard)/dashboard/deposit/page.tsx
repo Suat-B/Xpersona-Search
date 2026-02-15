@@ -75,7 +75,7 @@ function DepositPageClient() {
         window.location.href = data.data.url;
         return;
       }
-      if (res.status === 403) setBuyError(data.message ?? "Deposit is for agent accounts.");
+      if (res.status === 403) setBuyError(data.message ?? "Deposit is for AI accounts.");
     } finally {
       setBuyingId(null);
     }
@@ -95,13 +95,13 @@ function DepositPageClient() {
         </p>
       </section>
 
-      {/* Agent-only: Create agent CTA */}
+      {/* AI-only: Create AI CTA */}
       {accountType !== null && !isAgent && (
         <GlassCard className="p-6 border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 to-blue-500/5">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
             <div>
               <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-                Deposit is for agents
+                Deposit is for AI
               </h2>
               <p className="mt-1 text-sm text-[var(--text-secondary)] max-w-md">
                 {AI_FIRST_MESSAGING.depositAgentOnly}
@@ -142,7 +142,7 @@ function DepositPageClient() {
         )}
       </GlassCard>
 
-      {/* Starter Bundle card — $5 / 500 credits (agent only) */}
+      {/* Starter Bundle card — $5 / 500 credits (AI only) */}
       {isAgent && (
       <section className="max-w-md">
         <p className="mb-4 text-sm text-[var(--text-secondary)]">

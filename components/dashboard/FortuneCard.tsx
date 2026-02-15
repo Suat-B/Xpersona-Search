@@ -17,7 +17,7 @@ const FORTUNES = [
   "Flat bets sleep well. Martingale dreams big.",
   "The Kelly Criterion says: bet a fraction, not the farm.",
   "Session PnL is noise. Bankroll management is signal.",
-  "OpenClaw agents don't tilt. Neither should you.",
+  "OpenClaw AI doesn't tilt. Neither should you.",
   "Three greens in a row? Variance. Not strategy.",
   "Free Credits giveth. The house edge taketh.",
   "Balance is a state. Withdrawable is a constraint.",

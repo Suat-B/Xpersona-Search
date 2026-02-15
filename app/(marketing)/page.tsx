@@ -102,13 +102,13 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           <span className="text-[var(--accent-heart)]">.</span>
         </h1>
         <p className="mt-4 text-lg sm:text-xl text-[var(--accent-heart)] font-semibold">
-          The first casino designed for AI agents
+          The first casino designed for AI
         </p>
         <p className="mt-1 text-sm text-[var(--text-secondary)]">
           AI play here.
         </p>
         <p className="mt-3 max-w-xl mx-auto text-sm sm:text-base text-[var(--text-secondary)] leading-relaxed">
-          Pure over/under dice. Your agents bet via API. Same balance for humans and AI — OpenClaw, LangChain, CrewAI.
+          Pure over/under dice. Your AI bets via API. Same balance for humans and AI — OpenClaw, LangChain, CrewAI.
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           {!isLoggedIn && <ClaimFreeCreditsButton />}
@@ -140,13 +140,13 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         <div className="absolute inset-0 dot-grid -z-10 opacity-50" aria-hidden="true" />
         <div className="mb-12">
           <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest text-cyan-400/80 bg-cyan-500/10 border border-cyan-500/20 mb-4">
-            Agent flow
+            AI flow
           </span>
           <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
             Three steps to AI-powered dice
           </h2>
           <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-lg">
-            From dashboard to verified roll — your agents bet in under a minute.
+            From dashboard to verified roll — your AI bets in under a minute.
           </p>
         </div>
 
@@ -156,7 +156,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-500/30 border-2 border-rose-500 text-rose-300 font-bold text-lg mb-4 group-hover:scale-105 transition-transform">
               1
             </div>
-            <h3 className="font-semibold text-white">Generate your agent key</h3>
+            <h3 className="font-semibold text-white">Generate your AI key</h3>
             <p className="mt-1.5 text-xs text-[var(--text-secondary)] leading-relaxed">
               One-click in Dashboard → API. Copy the bearer token — no OAuth, no sessions.
             </p>
@@ -188,7 +188,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             </div>
             <h3 className="font-semibold text-white">Verify & share balance</h3>
             <p className="mt-1.5 text-xs text-[var(--text-secondary)] leading-relaxed">
-              Every roll is verifiable. One balance for humans and AI — watch your agents play live.
+              Every roll is verifiable. One balance for humans and AI — watch your AI play live.
             </p>
             <div className="mt-3 flex items-center gap-2 text-xs text-[var(--text-secondary)]">
                   <svg className="w-4 h-4 text-cyan-400/80 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -208,7 +208,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             Capabilities
           </span>
           <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-            Built for agents and players
+            Built for AI and players
           </h2>
           <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-lg">
             Same API, same balance. Deploy Python strategies, OpenClaw skills, or watch your LLM play.
@@ -216,7 +216,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 sm:gap-5">
-          {/* AI Agents — hero card, full width */}
+          {/* AI — hero card, full width */}
           <div className="sm:col-span-12 rounded-2xl sm:rounded-3xl border border-white/[0.06] bg-gradient-to-r from-[var(--accent-heart)]/20 via-[var(--accent-heart)]/10 to-black/40 p-6 sm:p-8 overflow-hidden group hover:border-[var(--accent-heart)]/25 transition-all duration-400">
             <div className="flex flex-col sm:flex-row sm:items-center gap-6">
               <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent-heart)]/20 ring-2 ring-[var(--accent-heart)]/25 group-hover:scale-105 transition-transform">
@@ -225,9 +225,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                 </svg>
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="text-lg font-semibold text-white">AI Agents Bet</h3>
+                <h3 className="text-lg font-semibold text-white">AI Bets</h3>
                 <p className="mt-1 text-sm text-[var(--text-secondary)] leading-relaxed">
-                  Your agents play dice via REST — same API as humans. OpenClaw skill, LangChain tool, raw HTTP. One balance, one game.
+                  Your AI plays dice via REST — same API as humans. OpenClaw skill, LangChain tool, raw HTTP. One balance, one game.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 text-[var(--text-secondary)]">REST</span>
@@ -247,7 +247,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             </div>
             <h3 className="font-semibold text-white">Provably Fair</h3>
             <p className="mt-1.5 text-xs text-[var(--text-secondary)] leading-relaxed">
-              Every roll verifiable. Server seed, client seed, nonce — audit trail for agents and humans.
+              Every roll verifiable. Server seed, client seed, nonce — audit trail for AI and humans.
             </p>
           </div>
 
@@ -273,7 +273,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             </div>
             <h3 className="font-semibold text-white">OpenClaw + LangChain + CrewAI</h3>
             <p className="mt-1.5 text-xs text-[var(--text-secondary)] leading-relaxed">
-              Native skill on ClawHub. REST works with any agent framework — AutoGen, LangGraph, Claude.
+              Native skill on ClawHub. REST works with any AI framework — AutoGen, LangGraph, Claude.
             </p>
           </div>
 
@@ -288,7 +288,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               <div>
                 <h3 className="font-semibold text-white">Shared Balance</h3>
                 <p className="mt-1.5 text-xs text-[var(--text-secondary)] leading-relaxed">
-                  One account, one balance. Humans and agents bet from the same pool — no separate wallets.
+                  One account, one balance. Humans and AI bet from the same pool — no separate wallets.
                 </p>
               </div>
             </div>
@@ -413,7 +413,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         <div className="mx-auto max-w-4xl px-4 sm:px-6 text-center space-y-3">
           <p className="text-sm font-semibold">{AI_FIRST_MESSAGING.builtFor}</p>
           <p className="text-xs text-[var(--text-secondary)]">
-            OpenClaw skill on ClawHub · REST for LangChain, CrewAI, AutoGen · Same API for humans & agents
+            OpenClaw skill on ClawHub · REST for LangChain, CrewAI, AutoGen · Same API for humans & AI
           </p>
           <div className="flex flex-wrap justify-center gap-4 text-xs">
             <Link href="/docs" className="text-[var(--accent-heart)] hover:underline">API docs</Link>

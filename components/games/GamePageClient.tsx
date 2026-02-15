@@ -378,7 +378,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                 </svg>
-                Agent API
+                AI API
               </span>
             </button>
             <button
@@ -419,19 +419,19 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             ) : activeTab === "api" ? (
               <div className="flex-shrink-0 space-y-4">
                 <div>
-                  <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">AI agents at the casino</h3>
+                  <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">AI at the casino</h3>
                   <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                    Connect OpenClaw or any AI assistant to play dice with your balance. Same REST API and tools for humans and agents.
+                    Connect OpenClaw or any AI assistant to play dice with your balance. Same REST API and tools for humans and AI.
                   </p>
                 </div>
 
                 <AgentApiSection />
 
                 <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3" data-agent="api-instructions">
-                  <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">How it works (AI agents)</h4>
+                  <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">How it works (AI)</h4>
                   <ul className="space-y-2 text-xs text-[var(--text-secondary)] list-disc list-inside">
                     <li>Get your API key from <Link href="/dashboard/api" className="text-[var(--accent-heart)] hover:underline">Dashboard → API</Link>.</li>
-                    <li>Set <code className="bg-white/10 px-1 rounded font-mono">XPERSONA_API_KEY</code> in your env so your agent can authenticate.</li>
+                    <li>Set <code className="bg-white/10 px-1 rounded font-mono">XPERSONA_API_KEY</code> in your env so your AI can authenticate.</li>
                     <li>Use REST (<code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/bet</code>) or OpenClaw tools to place bets.</li>
                     <li>Fetch stats: <code className="bg-white/10 px-1 rounded font-mono">GET /api/me/session-stats</code> → balance, rounds, PnL, winRate.</li>
                   </ul>
@@ -440,7 +440,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3">
                   <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">OpenClaw</h4>
                   <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                    OpenClaw uses a Gateway (WebSocket) and first-class <strong className="text-[var(--text-primary)]">tools</strong> so agents can act without shelling. Your agent gets typed tools and a system prompt; the Gateway handles messaging and nodes.
+                    OpenClaw uses a Gateway (WebSocket) and first-class <strong className="text-[var(--text-primary)]">tools</strong> so AI can act without shelling. Your AI gets typed tools and a system prompt; the Gateway handles messaging and nodes.
                   </p>
                   <ul className="space-y-1.5 text-xs text-[var(--text-secondary)]">
                     <li>
@@ -461,7 +461,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3">
                   <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">Xpersona + OpenClaw</h4>
                   <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                    Install the Xpersona-casino skill (e.g. from <code className="bg-white/10 px-1 rounded font-mono">skills/openclaw/xpersona-casino</code> or ClawHub). Your agent can then use tools such as:
+                    Install the Xpersona-casino skill (e.g. from <code className="bg-white/10 px-1 rounded font-mono">skills/openclaw/xpersona-casino</code> or ClawHub). Your AI can then use tools such as:
                   </p>
                   <ul className="space-y-1 text-xs font-mono text-[var(--text-secondary)]">
                     <li><code className="bg-white/10 px-1 rounded">casino_get_balance</code></li>
@@ -604,7 +604,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           <span className="text-[var(--border)]">|</span>
           <span className="text-[var(--accent-heart)]">RTP 97%</span>
           <span className="text-[var(--border)]">|</span>
-          <span>Agents: use API or play via UI</span>
+          <span>AI: use API or play via UI</span>
         </div>
 
         <div className="flex items-center gap-3">

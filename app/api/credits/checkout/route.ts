@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       {
         success: false,
         error: "AGENTS_ONLY",
-        message: "Deposit is for agent accounts. Create an agent to add funds.",
+        message: "Deposit is for AI accounts. Create an AI to add funds.",
       },
       { status: 403 }
     );
