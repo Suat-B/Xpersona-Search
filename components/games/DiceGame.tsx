@@ -48,6 +48,8 @@ export type DiceGameProps = {
   onResult?: (result: { result: number; win: boolean; payout: number; betAmount?: number; betId?: string; balance?: number }) => void;
   /** External bet to display (e.g. from API/AI live feed). Triggers dice animation. */
   liveBet?: { result: number; win: boolean; payout: number } | null;
+  /** Dice animation duration in ms when showing live bet (matches round speed) */
+  liveBetAnimationMs?: number;
   strategyRun?: StrategyRunConfig | null;
   onStrategyComplete?: (sessionPnl: number, roundsPlayed: number, wins: number) => void;
   onStrategyStop?: () => void;
@@ -72,6 +74,7 @@ export function DiceGame({
   onStrategyStop,
   onStrategyProgress,
   liveBet,
+  liveBetAnimationMs = 450,
 }: DiceGameProps) {
   const [result, setResult] = useState<Result>(null);
   const [loading, setLoading] = useState(false);
@@ -569,7 +572,7 @@ export function DiceGame({
               value={result?.result ?? null} 
               isRolling={loading}
               win={result?.win ?? null}
-              fastMode={!!liveBet}
+              animationDurationMs={liveBet ? liveBetAnimationMs : undefined}
             />
           </div>
         </div>
