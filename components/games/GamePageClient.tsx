@@ -172,22 +172,32 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
 
   // Load balance on mount (retries on 401 to handle auth race with EnsureGuest)
   useEffect(() => {
+    let fallbackId: ReturnType<typeof setTimeout> | null = null;
+
     const loadBalance = async () => {
       try {
         const bal = await fetchBalanceWithRetry();
         if (bal !== null) setBalance(bal);
+        return bal !== null;
       } catch {
-        // Silently fail
+        return false;
       }
     };
-    loadBalance();
+
+    loadBalance().then((ok) => {
+      if (!ok) fallbackId = setTimeout(() => loadBalance(), 5500);
+    });
 
     const handleBalanceUpdate = () => {
       loadBalance();
       setDepositAlertFromAI(false);
     };
     window.addEventListener("balance-updated", handleBalanceUpdate);
-    return () => window.removeEventListener("balance-updated", handleBalanceUpdate);
+
+    return () => {
+      window.removeEventListener("balance-updated", handleBalanceUpdate);
+      if (fallbackId) clearTimeout(fallbackId);
+    };
   }, []);
 
   // Hydrate recent results from server so streak reflects full history (uncapped)

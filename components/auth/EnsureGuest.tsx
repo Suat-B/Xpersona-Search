@@ -39,6 +39,7 @@ export function EnsureGuest({ needsGuest }: EnsureGuestProps) {
       })
       .then((result) => {
         if ((result as { ok?: boolean }).ok) {
+          window.dispatchEvent(new Event("balance-updated"));
           router.refresh();
         }
       })
