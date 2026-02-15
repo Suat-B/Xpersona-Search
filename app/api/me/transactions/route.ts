@@ -27,7 +27,7 @@ type TransactionItem =
 
 /**
  * GET /api/me/transactions — Unified activity feed (bets + faucet grants).
- * Query: limit (default 50, max 200), offset, type (all|bet|faucet).
+ * Query: limit (default 50, max 200), offset, type (all|round|faucet). "round" is alias for bet.
  */
 export async function GET(request: Request) {
   const authResult = await getAuthUser(request as any);
@@ -44,7 +44,8 @@ export async function GET(request: Request) {
     Math.max(1, parseInt(url.searchParams.get("limit") ?? String(DEFAULT_LIMIT), 10) || DEFAULT_LIMIT)
   );
   const offset = Math.max(0, parseInt(url.searchParams.get("offset") ?? "0", 10) || 0);
-  const typeFilter = url.searchParams.get("type")?.toLowerCase() || "all";
+  const rawType = url.searchParams.get("type")?.toLowerCase() || "all";
+  const typeFilter = rawType === "round" ? "bet" : rawType;
 
   const userId = authResult.user.id;
 

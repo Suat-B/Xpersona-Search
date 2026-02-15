@@ -70,7 +70,7 @@ const ICONS = {
 } as const;
 
 const SIDEBAR_LINKS = [
-  { href: "/games/dice", label: "Play Dice", icon: "dice" as const, exact: true },
+  { href: "/games/dice", label: "Play Game", icon: "dice" as const, exact: true },
   { href: "/dashboard", label: "Dashboard", icon: "dashboard" as const, exact: true },
   { href: "/dashboard/connect-ai", label: "Connect AI", icon: "connectAi" as const, exact: false },
   { href: "/dashboard/profile", label: "Profile", icon: "profile" as const, exact: true },

@@ -119,7 +119,7 @@ export default function ApiDocsPage() {
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Create advanced strategy</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/me/advanced-strategies — name, baseConfig, rules</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Simulate advanced strategy</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/me/advanced-strategies/simulate or /:id/simulate</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Run advanced strategy</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/games/dice/run-advanced-strategy — strategyId or strategy, maxRounds</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4">Transactions</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/transactions?limit=50&offset=0&type=all|bet|faucet</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4">Transactions</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/transactions?limit=50&offset=0&type=all|round|faucet</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Verify round (provably fair)</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/rounds/:id?reveal=1</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Withdraw</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/me/withdraw — {"{ amount }"} (min 10,000 credits)</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Free Credits <span className="text-[var(--accent-heart)] text-[10px]">AI-first</span></td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/faucet</td></tr>
@@ -135,7 +135,7 @@ export default function ApiDocsPage() {
           For AI
         </h2>
         <ul className="space-y-2 text-sm text-[var(--text-primary)]">
-          <li><strong>Session stats:</strong> Prefer <code className="bg-white/10 px-1 rounded font-mono text-xs">GET /api/me/session-stats</code> over balance + bets for &quot;how am I doing?&quot; — single call returns balance, rounds, PnL, win rate, recent bets.</li>
+          <li><strong>Session stats:</strong> Prefer <code className="bg-white/10 px-1 rounded font-mono text-xs">GET /api/me/session-stats</code> over balance + rounds for &quot;how am I doing?&quot; — single call returns balance, rounds, PnL, win rate, recent rounds.</li>
           <li><strong>Tools vs REST:</strong> Use Tools API (<code className="bg-white/10 px-1 rounded font-mono text-xs">POST /api/openclaw/tools</code>) when OpenClaw is configured for it. Otherwise use REST with the same auth.</li>
           <li><strong>Recommended flow:</strong> (1) Get balance or session-stats. (2) If low, claim Free Credits or suggest deposit. (3) Play rounds or run strategy. (4) Report PnL.</li>
           <li><strong>API fallback:</strong> If API fails (5xx, network error, 429 rate limit), suggest user play via website: <Link href="/games/dice" className="text-[var(--accent-heart)] hover:underline">/games/dice</Link> — same games, same balance, full advanced strategy builder.</li>
@@ -149,7 +149,7 @@ export default function ApiDocsPage() {
         </h2>
         <ul className="space-y-2 text-sm text-[var(--text-secondary)]">
           <li><strong className="text-[var(--text-primary)]">House edge:</strong> 3%</li>
-          <li><strong className="text-[var(--text-primary)]">Min/max bet:</strong> 1 – 10000 credits</li>
+          <li><strong className="text-[var(--text-primary)]">Min/max amount per round:</strong> 1 – 10000 credits</li>
           <li><strong className="text-[var(--text-primary)]">Win probability:</strong> over X → (100-X)/100; under X → X/100 (e.g. over 50 = 49% win)</li>
           <li><strong className="text-[var(--text-primary)]">Multiplier:</strong> 0.97 / winProbability (e.g. over 50 ≈ 1.98x payout)</li>
           <li><strong className="text-[var(--text-primary)]">Free Credits:</strong> 100 credits, 1h cooldown</li>
@@ -198,9 +198,9 @@ export default function ApiDocsPage() {
             </ul>
           </div>
           <div>
-            <h3 className="font-medium text-[var(--text-primary)] mb-2">Bets and session PnL</h3>
+            <h3 className="font-medium text-[var(--text-primary)] mb-2">Rounds and session PnL</h3>
             <ul className="space-y-1 text-[var(--text-secondary)] font-mono text-xs">
-              <li>GET /api/me/session-stats?gameType=dice&limit=50 — Balance, rounds, PnL, win rate, recent bets (AI-first)</li>
+              <li>GET /api/me/session-stats?gameType=dice&limit=50 — Balance, rounds, PnL, win rate, recent rounds (AI-first)</li>
               <li>GET /api/me/rounds?limit=50 — Recent rounds, data.sessionPnl, data.roundCount (max limit 200)</li>
             </ul>
           </div>
@@ -323,7 +323,7 @@ export default function ApiDocsPage() {
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_get_strategy</td><td className="py-2">Get strategy details (config, progression_type)</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_delete_strategy</td><td className="py-2">Delete a strategy</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_notify</td><td className="py-2">Send notification</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_get_limits</td><td className="py-2">Get betting and rate limits</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_get_limits</td><td className="py-2">Get limits (min/max per round, rate limits)</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_calculate_odds</td><td className="py-2">Calculate dice odds and expected value</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_claim_faucet</td><td className="py-2">Claim hourly Free Credits</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">xpersona_list_credit_packages</td><td className="py-2">List credit packages for purchase</td></tr>
