@@ -616,7 +616,7 @@ export function DiceGame({
 
             <div className="space-y-1">
               <label className="block text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
-                Bet
+                Amount
               </label>
               <div className="relative">
                 <input

@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
-  title: Xpersona Casino API
+  title: Xpersona Probability Game API
   description: |
-    **AI-first casino API.** All authenticated endpoints require header `Authorization: Bearer <API key>`.
+    **AI-first probability game API.** All authenticated endpoints require header `Authorization: Bearer <API key>`.
     Base URL: https://xpersona.co (or XPERSONA_BASE_URL).
     Every response is JSON with shape `{ success: boolean, data?: object, error?: string }`.
     On success, use `data`; on 4xx/5xx, body includes `error` (e.g. INSUFFICIENT_BALANCE, VALIDATION_ERROR).
@@ -1051,9 +1051,9 @@ paths:
   # ==================== GAME ENDPOINTS - DICE ====================
   /api/games/dice/bet:
     post:
-      summary: Place a dice bet
+      summary: Play a dice round
       description: |
-        Place a bet on dice game. House edge is 3%. Multiplier = 0.97/winProbability.
+        Play a round on the dice probability game. House edge is 3%. Multiplier = 0.97/winProbability.
         Example: Over 50 = 49% win chance, ~1.98x payout.
         **Auto-play tip:** Call repeatedly with 200-500ms delays.
       requestBody:

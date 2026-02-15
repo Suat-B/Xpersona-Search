@@ -44,7 +44,7 @@ export default function ApiDocsPage() {
             <>Set <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> in your env.</>,
             <><code className="bg-white/10 px-1 rounded font-mono">GET /api/me/balance</code> — verify auth.</>,
             <><code className="bg-white/10 px-1 rounded font-mono">POST /api/faucet</code> — claim Free Credits.</>,
-            <><code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/bet</code> — place a bet.</>,
+            <><code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/bet</code> — play a dice round.</>,
           ].map((content, i) => (
             <li key={i} className="flex items-start gap-3">
               <span
@@ -96,7 +96,7 @@ export default function ApiDocsPage() {
           Use the same REST API from OpenClaw or any AI assistant. Set the user&apos;s API key (e.g. env <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code>), then call the endpoints below. No separate AI API — the website and all AI use the same routes.
         </p>
         <p className="text-sm text-[var(--text-secondary)] mb-4">
-          <strong className="text-[var(--text-primary)]">OpenClaw skill:</strong> Install or copy the xpersona-casino skill (e.g. from <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">skills/openclaw/xpersona-casino</code> or ClawHub if published). Set <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> in your env. The skill documents all endpoints and patterns (balance, Free Credits, bets, strategies). To create and run strategies, see <strong>Creating strategies (for OpenClaw AI)</strong> below.
+          <strong className="text-[var(--text-primary)]">OpenClaw skill:</strong> Install or copy the xpersona skill (e.g. from <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">skills/openclaw/xpersona-casino</code> or ClawHub if published). Set <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> in your env. The skill documents all endpoints and patterns (balance, Free Credits, rounds, strategies). To create and run strategies, see <strong>Creating strategies (for OpenClaw AI)</strong> below.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
@@ -123,7 +123,7 @@ export default function ApiDocsPage() {
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Verify bet (provably fair)</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/bets/:id?reveal=1</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Withdraw</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/me/withdraw — {"{ amount }"} (min 10,000 credits)</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Free Credits <span className="text-[var(--accent-heart)] text-[10px]">AI-first</span></td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/faucet</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4">Dice bet <span className="text-[var(--accent-heart)] text-[10px]">AI-first</span></td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/games/dice/bet — {"{ amount, target, condition: \"over\"|\"under\" }"}</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4">Play dice round <span className="text-[var(--accent-heart)] text-[10px]">AI-first</span></td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/games/dice/bet — {"{ amount, target, condition: \"over\"|\"under\" }"}</td></tr>
             </tbody>
           </table>
         </div>
@@ -137,7 +137,7 @@ export default function ApiDocsPage() {
         <ul className="space-y-2 text-sm text-[var(--text-primary)]">
           <li><strong>Session stats:</strong> Prefer <code className="bg-white/10 px-1 rounded font-mono text-xs">GET /api/me/session-stats</code> over balance + bets for &quot;how am I doing?&quot; — single call returns balance, rounds, PnL, win rate, recent bets.</li>
           <li><strong>Tools vs REST:</strong> Use Tools API (<code className="bg-white/10 px-1 rounded font-mono text-xs">POST /api/openclaw/tools</code>) when OpenClaw is configured for it. Otherwise use REST with the same auth.</li>
-          <li><strong>Recommended flow:</strong> (1) Get balance or session-stats. (2) If low, claim Free Credits or suggest deposit. (3) Place bets or run strategy. (4) Report PnL.</li>
+          <li><strong>Recommended flow:</strong> (1) Get balance or session-stats. (2) If low, claim Free Credits or suggest deposit. (3) Play rounds or run strategy. (4) Report PnL.</li>
           <li><strong>API fallback:</strong> If API fails (5xx, network error, 429 rate limit), suggest user play via website: <Link href="/games/dice" className="text-[var(--accent-heart)] hover:underline">/games/dice</Link> — same games, same balance, full advanced strategy builder.</li>
         </ul>
       </GlassCard>
@@ -251,7 +251,7 @@ export default function ApiDocsPage() {
             </pre>
           </div>
           <div>
-            <p className="text-xs text-[var(--text-secondary)] mb-1">Place dice bet (10 credits, over 50)</p>
+            <p className="text-xs text-[var(--text-secondary)] mb-1">Play dice round (10 credits, over 50)</p>
             <pre className="rounded-lg bg-[var(--bg-deep)] border border-[var(--border)] p-4 text-xs font-mono text-[var(--text-primary)] overflow-x-auto">
 {`curl -s -X POST -H "Authorization: Bearer $XPERSONA_API_KEY" -H "Content-Type: application/json" \\
   -d '{"amount":10,"target":50,"condition":"over"}' https://xpersona.co/api/games/dice/bet`}
@@ -314,7 +314,7 @@ export default function ApiDocsPage() {
             <tbody className="text-[var(--text-primary)]">
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_auth_guest</td><td className="py-2">Create or authenticate as guest</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_auth_agent</td><td className="py-2">Authenticate as AI</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_place_dice_bet</td><td className="py-2">Place a dice bet</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_place_dice_bet</td><td className="py-2">Play a dice round</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_get_balance</td><td className="py-2">Get balance and session info</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_get_history</td><td className="py-2">Get game history and stats</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4 font-mono">casino_analyze_patterns</td><td className="py-2">Analyze patterns and trends</td></tr>

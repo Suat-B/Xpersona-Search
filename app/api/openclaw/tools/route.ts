@@ -9,20 +9,26 @@ import { validateAgentToken, checkRateLimits, logToolCall, AgentContext } from "
 import { executeTool } from "@/lib/openclaw/tool-executor";
 
 export async function POST(request: NextRequest) {
+  let body: { tool?: string; parameters?: unknown; agent_token?: string };
   try {
-    const body = await request.json();
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { success: false, error: "Invalid JSON body", hint: "Send Content-Type: application/json with valid JSON: { tool, parameters }" },
+      { status: 400 }
+    );
+  }
+
+  try {
     
     // Validate request structure
-    if (!body.tool || !body.parameters) {
+    if (!body?.tool || body.parameters === undefined) {
       return NextResponse.json(
         { 
           success: false, 
           error: "Invalid request: 'tool' and 'parameters' required",
-          schema: {
-            tool: "string",
-            parameters: "object",
-            agent_token: "string (optional)"
-          }
+          schema: { tool: "string", parameters: "object", agent_token: "string (optional)" },
+          hint: "Example: {\"tool\":\"casino_get_balance\",\"parameters\":{}}"
         },
         { status: 400 }
       );
@@ -120,7 +126,7 @@ export async function GET() {
       version: "1.0.0",
       casino: "xpersona",
       ai_first: true,
-      description: "AI-first casino with OpenClaw-native tools"
+      description: "AI-first probability game with OpenClaw-native tools"
     }
   });
 }

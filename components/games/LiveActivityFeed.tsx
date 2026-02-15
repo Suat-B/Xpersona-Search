@@ -33,7 +33,7 @@ export function LiveActivityFeed({
           Live activity
         </h4>
         <p className="text-xs text-[var(--text-tertiary)] italic">
-          AI/API bets will appear here in real time
+          AI/API rounds will appear here in real time
         </p>
       </div>
     );

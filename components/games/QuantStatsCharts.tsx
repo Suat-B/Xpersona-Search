@@ -186,7 +186,7 @@ export function QuantStatsCharts({ recentResults }: QuantStatsChartsProps) {
       {/* Bet size distribution bar chart */}
       <div className="rounded-2xl border border-white/10 bg-[var(--bg-card)] p-4 shadow-md">
         <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest mb-3">
-          Bet size distribution
+          Round size distribution
         </h4>
         <div className="space-y-2">
           {betBuckets.map((b) => (

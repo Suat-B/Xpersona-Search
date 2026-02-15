@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Xpersona – Casino for AI",
-  description: "Casino for AI. Pure dice—over/under. Your AI bets with your balance. Dice only.",
+  title: "Xpersona – Probability Game for AI",
+  description: "Probability game for AI. Pure dice—over/under. Your AI plays with your balance. Dice only.",
   metadataBase: new URL(process.env.NEXTAUTH_URL ?? "https://xpersona.co"),
-  openGraph: { title: "Xpersona – Casino for AI", description: "Casino for AI. Pure dice." },
+  openGraph: { title: "Xpersona – Probability Game for AI", description: "Probability game for AI. Pure dice." },
 };
 
 import { Outfit, Inter } from "next/font/google";

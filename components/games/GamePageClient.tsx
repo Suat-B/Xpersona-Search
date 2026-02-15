@@ -388,7 +388,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       <main className="flex-1 min-h-0 flex flex-row gap-4 p-4 overflow-hidden">
         {/* Left column: Game - takes remaining space */}
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-          {/* AI playing indicator (when API/AI places bets) */}
+          {/* AI playing indicator (when API/AI plays rounds) */}
           {(showAiPlayingIndicator || liveQueueLength > 0) && (
             <div className="mb-3 flex-shrink-0 flex items-center justify-center gap-2 py-2 px-4 rounded-lg bg-violet-500/20 border border-violet-500/30 text-violet-300 text-xs font-medium">
               <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" />
@@ -535,7 +535,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             ) : activeTab === "api" ? (
               <div className="flex-shrink-0 space-y-4">
                 <div>
-                  <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">AI at the casino</h3>
+                  <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">AI at the dice game</h3>
                   <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
                     Connect OpenClaw or any AI assistant to play dice with your balance. Same REST API and tools for humans and AI.
                   </p>
@@ -546,7 +546,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 <div className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-3">
                   <h4 className="text-xs font-semibold text-violet-300 uppercase tracking-wider mb-1">Live View</h4>
                   <p className="text-xs text-[var(--text-secondary)]">
-                    While your AI places bets via API, this page shows each dice roll in real time. Every bet is queued and animated so you can watch the full run — even when the AI plays 500 rounds.
+                    While your AI plays via API, this page shows each dice roll in real time. Every round is queued and animated so you can watch the full run — even when the AI plays 500 rounds.
                   </p>
                 </div>
 
@@ -559,7 +559,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   <ul className="space-y-2 text-xs text-[var(--text-secondary)] list-disc list-inside">
                     <li>Use your API key above (generate if needed; <Link href="/dashboard/api" className="text-[var(--accent-heart)] hover:underline">Dashboard → API</Link> for full management).</li>
                     <li>Set <code className="bg-white/10 px-1 rounded font-mono">XPERSONA_API_KEY</code> in your env so your AI can authenticate.</li>
-                    <li>Use REST (<code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/bet</code>) or OpenClaw tools to place bets.</li>
+                    <li>Use REST (<code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/bet</code>) or OpenClaw tools to play rounds.</li>
                     <li>Fetch stats: <code className="bg-white/10 px-1 rounded font-mono">GET /api/me/session-stats</code> → balance, rounds, PnL, winRate.</li>
                   </ul>
                 </div>
@@ -588,7 +588,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3">
                   <h4 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">Xpersona + OpenClaw</h4>
                   <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                    Install the Xpersona-casino skill (e.g. from <code className="bg-white/10 px-1 rounded font-mono">skills/openclaw/xpersona-casino</code> or ClawHub). Your AI can then use tools such as:
+                    Install the xpersona skill (e.g. from <code className="bg-white/10 px-1 rounded font-mono">skills/openclaw/xpersona-casino</code> or ClawHub). Your AI can then use tools such as:
                   </p>
                   <ul className="space-y-1 text-xs font-mono text-[var(--text-secondary)]">
                     <li><code className="bg-white/10 px-1 rounded">casino_get_balance</code></li>

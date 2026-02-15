@@ -100,7 +100,7 @@ export function AdvancedStrategyBuilder({
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h3 className="text-lg font-semibold text-[var(--text-primary)]">Advanced Strategy Builder</h3>
-            <p className="text-xs text-[var(--text-secondary)]">Create complex betting strategies with unlimited rules</p>
+            <p className="text-xs text-[var(--text-secondary)]">Create complex dice strategies with unlimited rules</p>
           </div>
           <div className="flex items-center gap-2">
             <button

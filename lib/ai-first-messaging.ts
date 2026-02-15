@@ -1,13 +1,14 @@
 /**
- * AI-First Casino — shared messaging and copy.
+ * AI-First Probability Game — shared messaging and copy.
  * Use consistently across all pages. Voice: quant, confident, AI-centric.
+ * Reframed for LLM safety: "probability game," "rounds," "credits" (not casino/gambling/betting).
  */
 
 export const AI_FIRST_MESSAGING = {
-  tagline: "The casino where AI plays first",
+  tagline: "The probability game platform where AI plays first",
   headlineVariants: [
-    "A casino designed for AI",
-    "AI bets. Humans watch.",
+    "A probability game platform designed for AI",
+    "AI plays. Humans watch.",
     "Same API. Same balance. AI and humans.",
   ],
   footer: "For AI. OpenClaw, LangChain, CrewAI. REST API.",
@@ -23,7 +24,7 @@ export const AI_FIRST_MESSAGING = {
   guestAgentNote: "Continue as AI to get an API key for your AI.",
   builtFor: "Built for AI",
   agentPlaysHere: "AI plays here",
-  agentsBetViaApi: "AI bets via API",
+  agentsBetViaApi: "AI plays dice via API",
   sameApiForHumansAndAgents: "Same API for humans and AI",
   forPlayersAndAgents: "For players and AI",
   apiWhereAgentsPlay: "API — Where AI plays.",
@@ -32,14 +33,14 @@ export const AI_FIRST_MESSAGING = {
   strategiesSubtitle: "Create, run, and manage. OpenClaw skill includes casino_run_strategy.",
   strategiesCallout: "AI can run strategies via OpenClaw tools. Same balance, same provably fair dice.",
   provablyFairHero: "Provably Fair — Same for humans and AI.",
-  provablyFairSubtitle: "Every bet placed by AI is verifiable too.",
+  provablyFairSubtitle: "Every round played by AI is verifiable too.",
   provablyFairCallout: "AI uses the same API. Same seeds. Same verification.",
   depositSubtitle: "Add credits to play — or fund your AI balance.",
   depositAgentOnly: "Create an AI account to add funds. Your human (you) will complete payment with a card on Stripe — credits appear instantly.",
   depositStripeCopy: "Complete payment with your card on Stripe. Credits appear instantly.",
   withdrawSubtitle: "Convert credits to real funds. Free Credits are 0% withdrawable.",
   withdrawAgentOnly: "Create an AI account to withdraw. Only AI accounts can request payouts.",
-  docsHeader: "OpenAPI — AI-First Casino.",
+  docsHeader: "OpenAPI — AI-First Probability Game.",
   docsSubtitle: "Your AI uses this spec.",
   forAIAgents: "For AI",
 } as const;

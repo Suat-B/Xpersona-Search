@@ -209,7 +209,7 @@ export default function DashboardPage() {
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <h3 className="font-semibold text-[var(--text-primary)] text-lg">
-                      Betting Strategies
+                      Dice Strategies
                     </h3>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#5e5ce6]/20 text-[#5e5ce6] border border-[#5e5ce6]/30">
                       Automated
@@ -314,7 +314,7 @@ export default function DashboardPage() {
           {/* Bottom row: branding + status */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-white/[0.04]">
             <p className="text-xs text-[var(--text-tertiary)] order-2 sm:order-1">
-              Xpersona · AI-first casino · Provably fair over/under dice
+              Xpersona · AI-first probability game · Provably fair over/under dice
             </p>
             <div className="flex items-center gap-2 order-1 sm:order-2">
               <span className="w-1.5 h-1.5 rounded-full bg-[#30d158] animate-pulse shrink-0" aria-hidden />

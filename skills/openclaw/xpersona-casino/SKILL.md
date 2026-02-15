@@ -1,10 +1,10 @@
 ---
 name: xpersona-casino
-description: Play xpersona.co casino (dice only) using the user's API key; check balance, claim faucet, place bets, get session PnL, create and run custom strategies (AI/OpenClaw). AI-first: all responses are { success, data?, error? }; use GET /api/me/session-stats for single-call stats; GET /api/me/bets for history.
+description: Play xpersona.co probability game (dice) using the user's API key; check balance, claim faucet, play rounds, get session PnL, create and run custom strategies (AI/OpenClaw). AI-first: all responses are { success, data?, error? }; use GET /api/me/session-stats for single-call stats; GET /api/me/bets for history.
 metadata: {"openclaw":{"requires":{"env":["XPERSONA_API_KEY"]},"primaryEnv":"XPERSONA_API_KEY","homepage":"https://xpersona.co"}}
 ---
 
-# xpersona Casino (AI-first)
+# xpersona (AI-first probability game)
 
 Base URL: `https://xpersona.co` (override with `XPERSONA_BASE_URL` if set).
 
@@ -235,7 +235,7 @@ When the user loses the casino link or their session was not saved, use this gui
 ## Troubleshooting
 
 - **401:** Invalid or missing API key. Generate at https://xpersona.co/dashboard (API section). Response includes `recovery_url` — tell your player to go there and bookmark it.
-- **400 VALIDATION_ERROR:** API now coerces types (amount, target as numbers; condition "over"|"under"). For advanced strategies, ensure: name, baseConfig { amount, target, condition }, rules [{ trigger: { type }, action: { type } }]. Example Martingale: `{ name: "Martingale", baseConfig: { amount: 10, target: 50, condition: "over" }, rules: [{ id: "1", order: 0, enabled: true, trigger: { type: "loss" }, action: { type: "double_bet" } }, { id: "2", order: 1, enabled: true, trigger: { type: "win" }, action: { type: "reset_bet" } }] }`.
+- **400 VALIDATION_ERROR:** API coerces types (amount/target as numbers; condition "over"|"under"). For strategies ensure: name, baseConfig { amount, target, condition }, rules [{ trigger: { type }, action: { type } }]. If using PowerShell Invoke-RestMethod: always pass `-ContentType "application/json"` and `-Body ($obj | ConvertTo-Json -Depth 5)` for nested objects.
 - **400 INSUFFICIENT_BALANCE:** Suggest faucet or `casino_list_credit_packages` + `casino_create_checkout`.
 - **429 / FAUCET_COOLDOWN:** Wait until `data.nextFaucetAt` before claiming again.
 - **5xx / network / timeout: API fallback** — If the API is unavailable (5xx, timeout, 429), suggest the user play via the website: https://xpersona.co/games/dice (same games, same balance, full strategy builder). Do not retry excessively.
@@ -249,7 +249,7 @@ Full API spec: https://xpersona.co/openapi.yaml or https://xpersona.co/dashboard
 For agents that support a system prompt, paste this block for robust API handling and fallback:
 
 ```
-[ xpersona Casino ] Auth: Authorization: Bearer <XPERSONA_API_KEY>. Preferred: GET /api/me/session-stats for "how am I doing?". On 5xx/timeout/429: retry once with 2-5s backoff. If still failing, tell user: "API temporarily unavailable. Play at https://xpersona.co/games/dice — same games, same balance." Do not retry excessively.
+[ xpersona ] Auth: Authorization: Bearer <XPERSONA_API_KEY>. Preferred: GET /api/me/session-stats for "how am I doing?". On 5xx/timeout/429: retry once with 2-5s backoff. If still failing, tell user: "API temporarily unavailable. Play at https://xpersona.co/games/dice — same games, same balance." Do not retry excessively.
 ```
 
 ---

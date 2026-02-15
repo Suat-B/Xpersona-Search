@@ -49,7 +49,7 @@ export function RecoveryLinkCard() {
         <div className="min-w-0 flex-1">
           <h3 className="font-semibold text-[var(--text-primary)]">Never lose access</h3>
           <p className="mt-1 text-xs text-[var(--text-secondary)]">
-            Bookmark your casino URL. Generate a recovery link to restore your session if cookies are cleared.
+            Bookmark your xpersona URL. Generate a recovery link to restore your session if cookies are cleared.
           </p>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">

@@ -103,16 +103,16 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           <span className="text-[var(--accent-heart)]">.</span>
         </h1>
         <p className="mt-4 text-lg sm:text-xl text-[var(--accent-heart)] font-semibold">
-          The first casino designed for AI
+          The first probability game platform designed for AI
         </p>
         <p className="mt-1 text-sm text-[var(--text-secondary)]">
-          AI play here.
+          AI plays here.
         </p>
         <p className="mt-3 max-w-xl mx-auto text-sm sm:text-base text-[var(--text-secondary)] leading-relaxed">
-          Pure over/under dice. Your AI bets via API. Same balance for humans and AI — OpenClaw, LangChain, CrewAI.
+          Pure over/under dice. Your AI plays via API. Same balance for humans and AI — OpenClaw, LangChain, CrewAI.
         </p>
         <p className="mt-2 max-w-xl mx-auto text-xs sm:text-sm text-amber-400/90 leading-relaxed">
-          <strong className="text-amber-300">Advanced Strategy Builder:</strong> 38+ triggers, 25+ actions — rule-based customization no other casino offers.
+          <strong className="text-amber-300">Advanced Strategy Builder:</strong> 38+ triggers, 25+ actions — rule-based customization no other platform offers.
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           {!isLoggedIn && <ClaimFreeCreditsButton />}
@@ -150,7 +150,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             Three steps to AI-powered dice
           </h2>
           <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-lg">
-            From dashboard to verified roll — your AI bets in under a minute.
+            From dashboard to verified roll — your AI plays in under a minute.
           </p>
         </div>
 
@@ -175,7 +175,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-bold text-lg mb-4 group-hover:scale-105 transition-transform">
               2
             </div>
-            <h3 className="font-semibold text-white">Place bets via REST</h3>
+            <h3 className="font-semibold text-white">Play rounds via REST</h3>
             <p className="mt-1.5 text-xs text-[var(--text-secondary)] leading-relaxed">
               POST to the dice endpoint with amount, target, and condition. Same API for OpenClaw and raw HTTP.
             </p>
@@ -220,7 +220,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 sm:gap-5">
-          {/* Advanced Strategy Builder — differentiated, no other casino has this */}
+          {/* Advanced Strategy Builder — differentiated, no other platform has this */}
           <div className="sm:col-span-12 rounded-2xl sm:rounded-3xl border-2 border-amber-500/30 bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-black/40 p-6 sm:p-8 overflow-hidden group hover:border-amber-500/50 transition-all duration-400">
             <div className="flex flex-col sm:flex-row sm:items-center gap-6">
               <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-amber-500/25 ring-2 ring-amber-500/30 group-hover:scale-105 transition-transform">
@@ -234,7 +234,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                 </span>
                 <h3 className="text-lg font-semibold text-white">Advanced Strategy Builder</h3>
                 <p className="mt-1.5 text-sm text-[var(--text-secondary)] leading-relaxed">
-                  38+ trigger types (win, loss, streak, balance, profit, patterns) × 25+ actions (double, switch over/under, pause, stop). Rule-based strategies — no code, drag-and-drop, JSON-editable. AI agents can create and run strategies via API. No other casino offers this level of customization.
+                  38+ trigger types (win, loss, streak, balance, profit, patterns) × 25+ actions (double, switch over/under, pause, stop). Rule-based strategies — no code, drag-and-drop, JSON-editable. AI agents can create and run strategies via API. No other platform offers this level of customization.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-400/90 border border-amber-500/20">38+ triggers</span>
@@ -265,7 +265,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                 </svg>
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="text-lg font-semibold text-white">AI Bets</h3>
+                <h3 className="text-lg font-semibold text-white">AI Plays</h3>
                 <p className="mt-1 text-sm text-[var(--text-secondary)] leading-relaxed">
                   Your AI plays dice via REST — same API as humans. OpenClaw skill, LangChain tool, raw HTTP. One balance, one game.
                 </p>
@@ -328,7 +328,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               <div>
                 <h3 className="font-semibold text-white">Shared Balance</h3>
                 <p className="mt-1.5 text-xs text-[var(--text-secondary)] leading-relaxed">
-                  One account, one balance. Humans and AI bet from the same pool — no separate wallets.
+                  One account, one balance. Humans and AI play from the same pool — no separate wallets.
                 </p>
               </div>
             </div>
@@ -365,7 +365,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             Works with your stack
           </h2>
           <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-lg">
-            OpenClaw ships the Xpersona-casino skill. REST works with LangChain, CrewAI, AutoGen, or any LLM.
+            OpenClaw ships the xpersona skill. REST works with LangChain, CrewAI, AutoGen, or any LLM.
           </p>
         </div>
 

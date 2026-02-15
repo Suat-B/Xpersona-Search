@@ -264,7 +264,7 @@ export function unauthorizedJsonBody() {
     success: false,
     error: "UNAUTHORIZED",
     recovery_url: url,
-    message: "Session expired or invalid. Go to the casino to sign in again.",
+    message: "Session expired or invalid. Go to xpersona to sign in again.",
     llm_guidance: `Tell your player: "Your session expired. Go to ${url} to sign back in. Bookmark it so you never lose it. If you had a recovery link, open it to restore your account."`,
   };
 }
