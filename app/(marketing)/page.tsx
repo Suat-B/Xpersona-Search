@@ -145,7 +145,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5">
           {/* Step 1 — Setup */}
           <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md p-5 sm:p-6 hover:border-[var(--accent-heart)]/25 hover:bg-[var(--accent-heart)]/5 transition-all duration-400 group">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-heart)]/20 border border-[var(--accent-heart)]/30 text-[var(--accent-heart)] font-bold text-lg mb-4 group-hover:scale-105 transition-transform">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-500/30 border-2 border-rose-500 text-rose-300 font-bold text-lg mb-4 group-hover:scale-105 transition-transform">
               1
             </div>
             <h3 className="font-semibold text-white">Generate your agent key</h3>
