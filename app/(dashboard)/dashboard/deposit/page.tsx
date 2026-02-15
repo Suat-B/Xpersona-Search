@@ -172,7 +172,7 @@ function DepositPageClient() {
       {/* Disclaimer */}
       <GlassCard className="p-4 border-[var(--border)]">
         <p className="text-xs text-[var(--text-secondary)]">
-          Credits are used only for gameplay on xpersona. Non-refundable. Payments are processed securely by Stripe.
+          Credits are used only for gameplay on Xpersona. Non-refundable. Payments are processed securely by Stripe.
         </p>
       </GlassCard>
     </div>

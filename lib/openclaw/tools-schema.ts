@@ -1,5 +1,5 @@
 /**
- * OpenClaw Tool Schema for xpersona Casino
+ * OpenClaw Tool Schema for Xpersona Casino
  * AI-first, autonomous agent tools
  */
 
@@ -7,7 +7,7 @@ export const CasinoToolsSchema = {
   // Authentication Tools
   "casino_auth_guest": {
     name: "casino_auth_guest",
-    description: "Create or authenticate as a guest user in xpersona casino",
+    description: "Create or authenticate as a guest user in Xpersona casino",
     parameters: {
       type: "object",
       properties: {

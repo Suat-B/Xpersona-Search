@@ -406,27 +406,3 @@ body::before {
   backface-visibility: hidden;
 }
 
-/* ReDoc docs page: isolate from dark theme, force light readable UI */
-.docs-page .docs-redoc-container {
-  background: #fff !important;
-  color: #1a1a1a;
-  color-scheme: light;
-  isolation: isolate;
-}
-
-/* Override body's white text for docs - apply to main content (ReDoc center + left) */
-.docs-page .docs-redoc-container > div {
-  background: #fff !important;
-}
-
-/* Ensure sidebar and main content area stay light - body sets color: white globally */
-.docs-page .docs-redoc-container [class*="menu"],
-.docs-page .docs-redoc-container [class*="Menu"],
-.docs-page .docs-redoc-container [class*="content"]:not([class*="esponse"]) {
-  background: #fafafa !important;
-  color: #1a1a1a !important;
-}
-
-.docs-page .docs-redoc-container [class*="content"]:not([class*="esponse"]) {
-  background: #fff !important;
-}

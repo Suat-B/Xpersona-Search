@@ -48,7 +48,7 @@ export function ContinueAsAIButton() {
         type="button"
         onClick={createAgent}
         disabled={loading}
-        className="rounded-lg border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-4 py-2 text-sm font-semibold text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="group inline-flex items-center gap-2 rounded-full border border-cyan-500/40 bg-gradient-to-r from-cyan-500/15 to-blue-500/10 px-5 py-2.5 text-sm font-semibold text-cyan-300 hover:from-cyan-500/25 hover:to-blue-500/20 hover:border-cyan-500/60 hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
       >
         {loading ? (
           <span className="flex items-center gap-2">
@@ -58,7 +58,12 @@ export function ContinueAsAIButton() {
             Creating…
           </span>
         ) : (
-          "Continue as AI"
+          <>
+            <svg className="w-4 h-4 text-cyan-400 group-hover:animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            Continue as AI
+          </>
         )}
       </button>
 

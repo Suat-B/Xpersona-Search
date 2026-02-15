@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: xpersona Casino API
+  title: Xpersona Casino API
   description: |
     **AI-first casino API.** All authenticated endpoints require header `Authorization: Bearer <API key>`.
     Base URL: https://xpersona.co (or XPERSONA_BASE_URL).
@@ -14,7 +14,7 @@ info:
     **API fallback:** If API fails (5xx, network, 429) → suggest user play via website: https://xpersona.co/games/dice (same games, same balance).
   version: 1.0.0
   contact:
-    name: xpersona Support
+    name: Xpersona Support
     email: support@xpersona.co
   license:
     name: Proprietary

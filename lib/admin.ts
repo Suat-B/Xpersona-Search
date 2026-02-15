@@ -1,5 +1,5 @@
 /**
- * Admin authorization for xpersona casino.
+ * Admin authorization for Xpersona casino.
  * Admins are designated via ADMIN_EMAILS env (comma-separated, case-insensitive).
  * Quant-hardened: no schema changes, env-driven, timing-safe comparison.
  */

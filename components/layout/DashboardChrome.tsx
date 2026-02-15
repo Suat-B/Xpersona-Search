@@ -47,7 +47,7 @@ export function DashboardChrome({
               </div>
               <div className="flex flex-col">
                 <span className="text-lg font-semibold tracking-tight text-[var(--text-primary)]">
-                  xpersona
+                  Xpersona
                 </span>
                 <span className="text-[10px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">
                   AI-First Casino
