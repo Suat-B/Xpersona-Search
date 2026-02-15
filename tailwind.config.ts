@@ -8,6 +8,10 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["var(--font-outfit)", "ui-sans-serif", "system-ui", "sans-serif"],
+        body: ["var(--font-outfit)", "ui-sans-serif", "system-ui", "sans-serif"],
+      },
       colors: {
         "bg-deep": "#030303",
         "bg-matte": "#0a0a0a",

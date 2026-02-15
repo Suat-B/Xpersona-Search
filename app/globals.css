@@ -71,6 +71,7 @@ html {
    which triggers full-page repaints on scroll in Chrome (known performance bug) */
 body {
   @apply bg-bg-deep text-[var(--text-primary)] antialiased overflow-x-hidden relative;
+  font-family: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
   font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
