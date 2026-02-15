@@ -810,16 +810,30 @@ async function handleWithdraw(
   const authResult = await getAuthUser(request);
   if ("error" in authResult) throw new Error(authResult.error);
 
-  const { amount } = params;
+  const { amount, wise_email, full_name, currency = "USD" } = params;
+  const amt = Math.floor(Number(amount) || 0);
+  if (amt < 1) throw new Error("Amount must be a positive integer");
+  const wiseEmail = String(wise_email ?? "").trim();
+  const fullName = String(full_name ?? "").trim();
+  if (!wiseEmail) throw new Error("wise_email is required for Wise payout");
+  if (fullName.length < 2) throw new Error("full_name is required (min 2 characters)");
+
   const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const auth = request.headers.get("authorization");
   if (auth) headers.Authorization = auth;
+  const cookie = request.headers.get("cookie");
+  if (cookie) headers.Cookie = cookie;
 
   const res = await fetch(`${baseUrl}/api/me/withdraw`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ amount: Math.floor(Number(amount) || 0) }),
+    body: JSON.stringify({
+      amount: amt,
+      wiseEmail,
+      fullName,
+      currency: ["USD", "EUR", "GBP"].includes(currency) ? currency : "USD",
+    }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {

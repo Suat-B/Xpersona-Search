@@ -1,15 +1,19 @@
 import { NextResponse } from "next/server";
+import { eq, and } from "drizzle-orm";
 import { getAuthUser } from "@/lib/auth-utils";
 import { getWithdrawableBalance, assertFaucetExcludedFromWithdrawal } from "@/lib/withdrawable";
 import { WITHDRAW_MIN_CREDITS } from "@/lib/constants";
+import { withdrawSchema } from "@/lib/validation";
+import { db } from "@/lib/db";
+import { users, withdrawalRequests } from "@/lib/db/schema";
 
 /**
- * POST /api/me/withdraw — Request withdrawal of credits.
- * Body: { amount: number }.
+ * POST /api/me/withdraw — Request withdrawal of credits via Wise.
+ * Body: { amount: number, wiseEmail: string, fullName: string, currency?: "USD"|"EUR"|"GBP" }.
  * Min: $100 (10,000 credits). Processing: 2–7 business days.
  *
  * CRITICAL: Faucet credits are 0% withdrawable. Only credits from deposits can be withdrawn.
- * When implementing payout: deduct `amount` from `credits` only; NEVER reduce faucetCredits for withdrawal.
+ * Deducts amount from credits on creation so balance reflects pending withdrawal.
  */
 export async function POST(request: Request) {
   const authResult = await getAuthUser(request as any);
@@ -20,7 +24,7 @@ export async function POST(request: Request) {
     );
   }
 
-  let body: { amount?: number };
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
@@ -30,13 +34,22 @@ export async function POST(request: Request) {
     );
   }
 
-  const amount = typeof body?.amount === "number" ? Math.floor(body.amount) : undefined;
-  if (amount == null || amount < 1) {
+  const parsed = withdrawSchema.safeParse(body);
+  if (!parsed.success) {
+    const first = parsed.error.flatten().fieldErrors;
+    const msg =
+      first.amount?.[0] ??
+      first.wiseEmail?.[0] ??
+      first.fullName?.[0] ??
+      first.currency?.[0] ??
+      "Invalid request";
     return NextResponse.json(
-      { success: false, error: "Amount must be a positive integer" },
+      { success: false, error: msg },
       { status: 400 }
     );
   }
+
+  const { amount, wiseEmail, fullName, currency } = parsed.data;
 
   if (amount < WITHDRAW_MIN_CREDITS) {
     return NextResponse.json(
@@ -59,15 +72,51 @@ export async function POST(request: Request) {
     );
   }
 
-  // Defense-in-depth: explicit assertion that faucet credits are never withdrawn
   assertFaucetExcludedFromWithdrawal(amount, credits, faucetCredits);
 
-  // TODO: Integrate Stripe Connect payout or bank transfer when ready
-  return NextResponse.json(
-    {
-      success: false,
-      error: "Withdrawal processing is coming soon. Stay tuned.",
-    },
-    { status: 503 }
-  );
+  const userId = authResult.user.id;
+
+  // Rate limit: one pending withdrawal at a time
+  const [existing] = await db
+    .select()
+    .from(withdrawalRequests)
+    .where(
+      and(
+        eq(withdrawalRequests.userId, userId),
+        eq(withdrawalRequests.status, "pending")
+      )
+    )
+    .limit(1);
+
+  if (existing) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          "You already have a pending withdrawal. Please wait for it to process before requesting another.",
+      },
+      { status: 429 }
+    );
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.insert(withdrawalRequests).values({
+      userId,
+      amount,
+      wiseEmail,
+      fullName,
+      currency,
+      status: "pending",
+    });
+    await tx
+      .update(users)
+      .set({ credits: credits - amount })
+      .where(eq(users.id, userId));
+  });
+
+  return NextResponse.json({
+    success: true,
+    message:
+      "Withdrawal requested. Payout will be sent via Wise to your email. Processing: 2–7 business days.",
+  });
 }

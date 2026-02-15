@@ -42,7 +42,7 @@ type OverviewData = {
   };
 };
 
-type Tab = "overview" | "games" | "users";
+type Tab = "overview" | "games" | "users" | "withdrawals";
 
 export default function AdminPage() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
@@ -80,6 +80,21 @@ export default function AdminPage() {
     totalCount: number;
     offset: number;
     limit: number;
+  } | null>(null);
+  const [withdrawalsData, setWithdrawalsData] = useState<{
+    withdrawals: Array<{
+      id: string;
+      userId: string;
+      userEmail: string;
+      userName: string | null;
+      amount: number;
+      wiseEmail: string;
+      fullName: string;
+      currency: string;
+      status: string;
+      createdAt: string;
+    }>;
+    totalCount: number;
   } | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
@@ -147,6 +162,20 @@ export default function AdminPage() {
     fetchUsers();
   }, [isAdmin, tab]);
 
+  useEffect(() => {
+    if (!isAdmin || tab !== "withdrawals") return;
+    async function fetchWithdrawals() {
+      try {
+        const res = await fetch("/api/admin/withdrawals?limit=100");
+        const json = await res.json();
+        if (json.success) setWithdrawalsData(json.data);
+      } catch {
+        setError("Failed to load withdrawals");
+      }
+    }
+    fetchWithdrawals();
+  }, [isAdmin, tab]);
+
   if (loading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
@@ -176,6 +205,7 @@ export default function AdminPage() {
     { id: "overview", label: "Overview" },
     { id: "games", label: "All Games" },
     { id: "users", label: "Users" },
+    { id: "withdrawals", label: "Withdrawals" },
   ];
 
   return (
@@ -397,6 +427,70 @@ export default function AdminPage() {
                     </td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </GlassCard>
+      )}
+
+      {tab === "withdrawals" && withdrawalsData && (
+        <GlassCard className="overflow-hidden p-0">
+          <div className="px-6 py-4 border-b border-[var(--border)] flex items-center justify-between">
+            <h3 className="font-semibold text-[var(--text-primary)]">Withdrawal Requests ({withdrawalsData.totalCount})</h3>
+          </div>
+          <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="text-xs text-[var(--text-secondary)] uppercase bg-white/[0.03] sticky top-0">
+                <tr>
+                  <th className="px-6 py-3">Created</th>
+                  <th className="px-6 py-3">User</th>
+                  <th className="px-6 py-3">Amount</th>
+                  <th className="px-6 py-3">Currency</th>
+                  <th className="px-6 py-3">Wise Email</th>
+                  <th className="px-6 py-3">Full Name</th>
+                  <th className="px-6 py-3">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {withdrawalsData.withdrawals.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-8 text-center text-[var(--text-secondary)]">
+                      No withdrawal requests yet.
+                    </td>
+                  </tr>
+                ) : (
+                  withdrawalsData.withdrawals.map((w) => (
+                    <tr key={w.id} className="border-b border-[var(--border)] hover:bg-white/[0.02]">
+                      <td className="px-6 py-3 font-mono text-xs text-[var(--text-tertiary)]">
+                        {new Date(w.createdAt).toLocaleString()}
+                      </td>
+                      <td className="px-6 py-3 truncate max-w-[180px]" title={w.userEmail}>
+                        {w.userEmail}
+                      </td>
+                      <td className="px-6 py-3 font-mono">{w.amount.toLocaleString()}</td>
+                      <td className="px-6 py-3">{w.currency}</td>
+                      <td className="px-6 py-3 truncate max-w-[160px]" title={w.wiseEmail}>
+                        {w.wiseEmail}
+                      </td>
+                      <td className="px-6 py-3 truncate max-w-[140px]" title={w.fullName}>
+                        {w.fullName}
+                      </td>
+                      <td className="px-6 py-3">
+                        <span
+                          className={cn(
+                            "font-medium px-2 py-0.5 rounded",
+                            w.status === "pending" && "bg-amber-500/20 text-amber-400",
+                            w.status === "processing" && "bg-blue-500/20 text-blue-400",
+                            w.status === "completed" && "bg-[#30d158]/20 text-[#30d158]",
+                            w.status === "failed" && "bg-red-500/20 text-red-400"
+                          )}
+                        >
+                          {w.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

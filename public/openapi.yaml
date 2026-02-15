@@ -717,10 +717,10 @@ paths:
     post:
       summary: Request withdrawal
       description: |
-        Request withdrawal of credits. Minimum withdrawal is $100 (10,000 credits).
+        Request withdrawal of credits via Wise. Minimum withdrawal is $100 (10,000 credits).
         **Faucet credits are 0% withdrawable** — only credits from deposits can be withdrawn.
         Withdrawable balance = credits - faucetCredits. Server rejects if amount exceeds withdrawable.
-        **Note:** Withdrawal processing is coming soon (Stripe Connect, bank transfer).
+        Requires wise_email and full_name for Wise payout. Processing: 2–7 business days.
       requestBody:
         required: true
         content:
@@ -729,14 +729,30 @@ paths:
               type: object
               required:
                 - amount
+                - wiseEmail
+                - fullName
               properties:
                 amount:
                   type: integer
                   minimum: 1
                   description: Amount of credits to withdraw (min 10,000)
+                wiseEmail:
+                  type: string
+                  format: email
+                  description: Email linked to the user's Wise account
+                fullName:
+                  type: string
+                  minLength: 2
+                  maxLength: 255
+                  description: Name as it appears on the Wise account
+                currency:
+                  type: string
+                  enum: [USD, EUR, GBP]
+                  default: USD
+                  description: Payout currency
       responses:
         "200":
-          description: Withdrawal request submitted (when implemented)
+          description: Withdrawal request submitted successfully
         "400":
           description: Validation error or insufficient withdrawable balance
           content:
@@ -760,15 +776,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "503":
-          description: Withdrawal processing not yet implemented
+        "429":
+          description: One pending withdrawal already exists (wait for processing)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 success: false
-                error: "Withdrawal processing is coming soon. Stay tuned."
+                error: "You already have a pending withdrawal. Please wait for it to process before requesting another."
 
   # ==================== STRATEGY ENDPOINTS ====================
   /api/me/strategies:

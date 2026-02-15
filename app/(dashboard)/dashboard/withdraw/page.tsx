@@ -16,6 +16,9 @@ function WithdrawPageClient() {
   const [balanceData, setBalanceData] = useState<BalanceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [amount, setAmount] = useState("");
+  const [wiseEmail, setWiseEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [currency, setCurrency] = useState<"USD" | "EUR" | "GBP">("USD");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
 
@@ -61,6 +64,20 @@ function WithdrawPageClient() {
       setMessage({ type: "error", text: `Maximum withdrawable: ${withdrawable.toLocaleString()} credits.` });
       return;
     }
+    const emailTrim = wiseEmail.trim();
+    const nameTrim = fullName.trim();
+    if (!emailTrim) {
+      setMessage({ type: "error", text: "Wise email is required." });
+      return;
+    }
+    if (!/^[^\s]+@[^\s]+\.[^\s]{2,}$/.test(emailTrim)) {
+      setMessage({ type: "error", text: "Enter a valid email address." });
+      return;
+    }
+    if (nameTrim.length < 2) {
+      setMessage({ type: "error", text: "Full name is required (min 2 characters)." });
+      return;
+    }
     setSubmitting(true);
     setMessage(null);
     try {
@@ -68,15 +85,22 @@ function WithdrawPageClient() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ amount: num }),
+        body: JSON.stringify({
+          amount: num,
+          wiseEmail: emailTrim,
+          fullName: nameTrim,
+          currency,
+        }),
       });
       const data = await res.json();
       if (data.success) {
         setMessage({
           type: "success",
-          text: "Withdrawal requested. Processing typically takes 2–7 business days.",
+          text: "Withdrawal requested. Payout will be sent via Wise to your email. Processing: 2–7 business days.",
         });
         setAmount("");
+        setWiseEmail("");
+        setFullName("");
         loadBalance();
         window.dispatchEvent(new Event("balance-updated"));
       } else {
@@ -134,7 +158,7 @@ function WithdrawPageClient() {
             </span>
             <div>
               <span className="font-medium text-[var(--text-primary)]">Processing</span>
-              {" "}— Withdrawals are processed to your original payment method. Processing typically takes <strong className="text-[var(--text-primary)]">2–7 business days</strong>.
+              {" "}— Payouts are sent via Wise. Processing typically takes <strong className="text-[var(--text-primary)]">2–7 business days</strong>.
             </div>
           </li>
           <li className="flex gap-4">
@@ -211,9 +235,57 @@ function WithdrawPageClient() {
                 </p>
               )}
             </div>
+            <div>
+              <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">
+                Wise email <span className="text-amber-400">*</span>
+              </label>
+              <input
+                type="email"
+                value={wiseEmail}
+                onChange={(e) => setWiseEmail(e.target.value)}
+                placeholder="you@example.com"
+                required
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-matte)] px-4 py-2.5 text-[var(--text-primary)] focus:border-[var(--accent-heart)] focus:outline-none"
+              />
+              <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                Email linked to your Wise account
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">
+                Full name <span className="text-amber-400">*</span>
+              </label>
+              <input
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="John Doe"
+                required
+                minLength={2}
+                maxLength={255}
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-matte)] px-4 py-2.5 text-[var(--text-primary)] focus:border-[var(--accent-heart)] focus:outline-none"
+              />
+              <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                Name as it appears on your Wise account
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">
+                Currency
+              </label>
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value as "USD" | "EUR" | "GBP")}
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-matte)] px-4 py-2.5 text-[var(--text-primary)] focus:border-[var(--accent-heart)] focus:outline-none"
+              >
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+              </select>
+            </div>
             <button
               type="submit"
-              disabled={submitting || !amount}
+              disabled={submitting || !amount || !wiseEmail.trim() || fullName.trim().length < 2}
               className="rounded-lg bg-[var(--accent-heart)] px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
             >
               {submitting ? "Processing…" : "Request withdrawal"}

@@ -211,6 +211,23 @@ export const stripeEvents = pgTable("stripe_events", {
     .defaultNow(),
 });
 
+export const withdrawalRequests = pgTable(
+  "withdrawal_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    amount: integer("amount").notNull(),
+    wiseEmail: varchar("wise_email", { length: 255 }).notNull(),
+    fullName: varchar("full_name", { length: 255 }).notNull(),
+    currency: varchar("currency", { length: 3 }).notNull().default("USD"),
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [index("withdrawal_requests_user_id_idx").on(table.userId)]
+);
+
 export const accounts = pgTable("accounts", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id")

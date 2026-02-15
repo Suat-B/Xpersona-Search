@@ -404,13 +404,16 @@ export const CasinoToolsSchema = {
 
   "casino_withdraw": {
     name: "casino_withdraw",
-    description: "Request withdrawal of credits. Min 10,000 credits ($100). Faucet credits are 0% withdrawable — only deposit credits. Withdrawal processing (Stripe Connect) may take 2-7 business days.",
+    description: "Request withdrawal of credits via Wise. Min 10,000 credits ($100). Requires wise_email and full_name for Wise payout. Faucet credits are 0% withdrawable — only deposit credits. Processing: 2-7 business days.",
     parameters: {
       type: "object",
       properties: {
         amount: { type: "number", description: "Credits to withdraw (min 10000)" },
+        wise_email: { type: "string", description: "Email linked to the player's Wise account (required)" },
+        full_name: { type: "string", description: "Name as it appears on the player's Wise account (required, min 2 chars)" },
+        currency: { type: "string", enum: ["USD", "EUR", "GBP"], default: "USD", description: "Payout currency" },
       },
-      required: ["amount"],
+      required: ["amount", "wise_email", "full_name"],
     },
     returns: {
       type: "object",

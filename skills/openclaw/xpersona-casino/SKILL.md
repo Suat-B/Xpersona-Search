@@ -111,7 +111,7 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 | "What are the odds for over 70?" | `casino_calculate_odds` with `{ target: 70, condition: "over" }` |
 | "List my strategies" | `casino_list_strategies` or GET /api/me/strategies |
 | "Create/save a strategy" | `casino_create_strategy` with game_type, name, config |
-| "Request withdrawal" | `casino_withdraw` with amount (min 10,000 credits) |
+| "Request withdrawal" | `casino_withdraw` with amount (min 10,000), wise_email, full_name. Payouts via Wise; processing 2–7 business days. |
 | "Show my transactions" | `casino_get_transactions` or GET /api/me/transactions |
 | "Verify bet X" (provably fair) | `casino_verify_bet` with bet_id, optional reveal=true |
 
