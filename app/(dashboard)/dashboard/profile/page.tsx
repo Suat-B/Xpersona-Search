@@ -94,6 +94,25 @@ function ProfilePageClient() {
       .catch(() => {});
   }, [searchParams, router]);
 
+  // Handle agent-to-Google link flow: after sign-in, merge agent data (incl. API key)
+  useEffect(() => {
+    const linkAgent = searchParams?.get("link_agent");
+    if (linkAgent !== "1") return;
+
+    fetch("/api/auth/link-agent", {
+      method: "POST",
+      credentials: "include",
+    })
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        if (data.success) {
+          router.replace("/dashboard/profile");
+          window.dispatchEvent(new Event("balance-updated"));
+        }
+      })
+      .catch(() => {});
+  }, [searchParams, router]);
+
   const isAnonymous = user?.email?.endsWith?.("@xpersona.guest") || user?.email?.endsWith?.("@xpersona.human");
   const isAgent = user?.email?.endsWith?.("@xpersona.agent");
   const displayLabel = isAgent ? (user?.name ?? "AI") : isAnonymous ? "Human" : (user?.name ?? "You");

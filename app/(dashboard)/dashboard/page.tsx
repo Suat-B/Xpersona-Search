@@ -7,6 +7,7 @@ import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
 import { HeartbeatIndicator } from "@/components/ui/HeartbeatIndicator";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
 import { RecoveryLinkCard } from "@/components/dashboard/RecoveryLinkCard";
+import { AgentBanner } from "@/components/dashboard/AgentBanner";
 import { FaucetButton } from "@/components/dashboard/FaucetButton";
 import { LuckStreakCard } from "@/components/dashboard/LuckStreakCard";
 import { FortuneCard } from "@/components/dashboard/FortuneCard";
@@ -97,6 +98,8 @@ export default function DashboardPage() {
           </div>
         </div>
       </header>
+
+      <AgentBanner />
 
       {/* Metrics Grid */}
       <section className="relative">
