@@ -75,16 +75,16 @@ export function QuantMetricsGrid({ metrics, recentResults }: QuantMetricsGridPro
     large?: boolean
   ) => (
     <div
-      className="flex justify-between items-center py-2 border-b border-white/5 last:border-0"
+      className="flex justify-between items-center py-2.5 border-b border-white/[0.06] last:border-0"
       {...(dataValue != null
         ? { "data-agent": `stat-${label.toLowerCase().replace(/\s/g, "-")}`, "data-value": String(dataValue) }
         : {})}
     >
-      <span className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider">{label}</span>
-      <span className="flex items-center gap-1.5">
+      <span className="text-xs text-[var(--text-tertiary)] uppercase tracking-wider">{label}</span>
+      <span className="flex items-center gap-2">
         {status != null && <StatusDot status={status} />}
         <span
-          className={`font-mono font-semibold tabular-nums ${
+          className={`font-semibold tabular-nums ${
             large ? "text-sm text-[var(--text-primary)]" : "text-xs text-[var(--text-primary)]"
           }`}
         >
@@ -99,24 +99,26 @@ export function QuantMetricsGrid({ metrics, recentResults }: QuantMetricsGridPro
 
   return (
     <div
-      className="rounded-xl border border-white/[0.08] bg-[var(--bg-card)] p-4 space-y-4 min-w-0 overflow-hidden"
+      className="agent-card p-5 space-y-4 min-w-0 overflow-hidden"
       data-agent="quant-metrics-grid"
     >
       <div className="flex items-center justify-between">
-        <h4 className="text-[10px] font-semibold text-[var(--text-secondary)] uppercase tracking-widest">
-          Performance metrics
-        </h4>
+        <div className="flex items-center gap-2">
+          <div className="w-1 h-5 rounded-full bg-[#0ea5e9]" />
+          <h4 className="text-xs font-semibold text-[var(--text-primary)]">
+            Performance Metrics
+          </h4>
+        </div>
         {recentResults.length > 0 && (
-          <span className="text-[9px] text-emerald-400/80 font-mono tabular-nums">
+          <span className="text-xs text-[#30d158]/80 tabular-nums">
             {recentResults.length} fills
           </span>
         )}
       </div>
 
-      {/* Quant insight — contextual tip when edge is negative */}
       {hasNegativeEdge && recentResults.length < 5 && (
-        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2.5 py-2">
-          <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2.5">
+          <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
             <span className="font-semibold text-amber-400/90">House edge −{edgePct}%.</span>{" "}
             Use Kelly criterion for position sizing. Strategy builder for backtests.
           </p>
@@ -186,30 +188,28 @@ export function QuantMetricsGrid({ metrics, recentResults }: QuantMetricsGridPro
         )}
       </div>
 
-      {/* Momentum — with streak bar */}
-      <h4 className="text-[10px] font-semibold text-[var(--text-secondary)] uppercase tracking-widest pt-1">
+      <h4 className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider pt-2">
         Momentum
       </h4>
       <div className="space-y-0">
         <div
-          className="flex justify-between items-center py-2 border-b border-white/5"
+          className="flex justify-between items-center py-2.5 border-b border-white/[0.06]"
           data-agent="stat-current-streak"
           data-value={String(currentStreak)}
         >
-          <span className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider">Current Streak</span>
+          <span className="text-xs text-[var(--text-tertiary)] uppercase tracking-wider">Current Streak</span>
           <span className="flex items-center gap-2">
-            {/* Mini streak bar */}
             <div className="flex h-2 w-16 rounded-full overflow-hidden bg-white/[0.06]">
               <div
                 className={`h-full transition-all duration-300 ${
-                  currentStreak > 0 ? "bg-emerald-500" : currentStreak < 0 ? "bg-red-500" : "bg-white/20"
+                  currentStreak > 0 ? "bg-[#30d158]" : currentStreak < 0 ? "bg-[#ff453a]" : "bg-white/20"
                 }`}
                 style={{
                   width: currentStreak !== 0 ? `${Math.min(100, Math.abs(currentStreak) * 10)}%` : "0%",
                 }}
               />
             </div>
-            <span className="text-xs font-mono font-semibold tabular-nums text-[var(--text-primary)]">
+            <span className="text-xs font-semibold tabular-nums text-[var(--text-primary)]">
               {streakLabel}
             </span>
           </span>
@@ -221,7 +221,7 @@ export function QuantMetricsGrid({ metrics, recentResults }: QuantMetricsGridPro
           <span
             className={
               momentum.label === "Hot"
-                ? "text-emerald-400"
+                ? "text-[#30d158]"
                 : momentum.label === "Cold"
                   ? "text-amber-400"
                   : "text-[var(--text-secondary)]"

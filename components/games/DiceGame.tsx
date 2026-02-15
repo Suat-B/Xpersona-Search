@@ -547,7 +547,7 @@ export function DiceGame({
   const aiState = { amount, target, condition, progressionType, activeStrategyName: activeStrategyName ?? undefined };
 
   return (
-    <div className="h-full flex flex-col min-h-0 font-mono" data-agent="dice-game" data-config={JSON.stringify(aiState)}>
+    <div className="h-full flex flex-col min-h-0" data-agent="dice-game" data-config={JSON.stringify(aiState)}>
       {/* Win Effects */}
       <WinEffects 
         active={showWinEffects} 
@@ -556,76 +556,62 @@ export function DiceGame({
         betAmount={amount}
       />
       
-      {/* Game Container — terminal style, seamless with page */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
-        
-        {/* Status Bar — result or ready */}
-        <div className="flex-shrink-0 px-4 py-2.5 border-b border-white/[0.06] bg-gradient-to-r from-[#0a0a0f]/80 via-transparent to-[#0a0a0f]/80 relative z-10" data-agent="dice-header">
+        <div className="flex-shrink-0 px-4 py-4 relative z-10" data-agent="dice-header">
           {loading ? (
-            <div className="flex items-center justify-center gap-2 text-[#0ea5e9] text-[11px] font-mono">
-              <span className="w-2 h-2 rounded-full bg-[#0ea5e9] animate-pulse shadow-[0_0_8px_rgba(14,165,233,0.6)]" />
-              EXECUTING...
+            <div className="flex items-center justify-center gap-2 text-[#0ea5e9] text-sm font-medium">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#0ea5e9] animate-pulse" />
+              Executing...
             </div>
           ) : result ? (
-            <div className="flex items-center justify-center gap-4">
+            <div className="flex items-center justify-center gap-5">
               <span
                 key={resultKey}
-                className={`font-mono font-bold text-3xl tabular-nums animate-count-up ${
-                  result.win
-                    ? "text-emerald-400 drop-shadow-[0_0_16px_rgba(52,211,153,0.5)]"
-                    : "text-red-400 drop-shadow-[0_0_16px_rgba(248,113,113,0.5)]"
+                className={`font-semibold text-4xl tabular-nums animate-count-up ${
+                  result.win ? "text-[#30d158]" : "text-[#ff453a]"
                 }`}
               >
                 {result.result.toFixed(2)}
               </span>
               <span
-                className={`inline-flex items-center gap-2 text-sm font-mono font-bold px-3 py-1.5 rounded-lg ${
+                className={`inline-flex items-center gap-2 text-base font-semibold px-4 py-2 rounded-xl ${
                   result.win
-                    ? "bg-emerald-500/20 text-emerald-400 shadow-[0_0_16px_rgba(52,211,153,0.2)] border border-emerald-500/30"
-                    : "bg-red-500/20 text-red-400 shadow-[0_0_16px_rgba(248,113,113,0.2)] border border-red-500/30"
+                    ? "bg-[#30d158]/10 text-[#30d158] border border-[#30d158]/30"
+                    : "bg-[#ff453a]/10 text-[#ff453a] border border-[#ff453a]/30"
                 }`}
               >
                 {result.win ? (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                   </svg>
                 ) : (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 )}
                 {result.win ? `+${result.payout}` : `-${amount}`} cr
               </span>
               {strategyRun ? null : aiDriving ? (
-                <span className="text-[9px] text-violet-400 uppercase tracking-wider">AI</span>
+                <span className="text-xs font-medium text-violet-400 uppercase tracking-wider">AI</span>
               ) : activeStrategyName ? (
-                <span className="text-[9px] text-[#0ea5e9] uppercase tracking-wider">{activeStrategyName}</span>
+                <span className="text-xs font-medium text-[#0ea5e9] uppercase tracking-wider">{activeStrategyName}</span>
               ) : null}
             </div>
           ) : (
-            <div className="flex items-center justify-center gap-3 text-[10px] text-[var(--text-tertiary)]">
+            <div className="flex items-center justify-center gap-3 text-sm text-[var(--text-tertiary)]" data-agent="dice-config" data-amount={amount} data-target={target} data-condition={condition}>
               {strategyRun ? null : aiDriving ? (
-                <span className="text-violet-400 uppercase tracking-wider font-bold">
+                <span className="font-medium text-violet-400">
                   AI · {amount} · {target}% {condition === "over" ? "Long" : "Short"}
                 </span>
               ) : activeStrategyName ? (
-                <span className="uppercase tracking-wider">
+                <span>
                   <span className="text-[#0ea5e9]">{activeStrategyName}</span>
-                  <span className="text-white/10 mx-2">│</span>
+                  <span className="text-white/20 mx-2">·</span>
                   <span className="tabular-nums">{amount} · {target}% {condition === "over" ? "L" : "S"}</span>
                 </span>
               ) : (
-                <span
-                  className="flex items-center gap-2 uppercase tracking-[0.25em] text-[var(--text-tertiary)]/60"
-                  data-agent="dice-config"
-                  data-amount={amount}
-                  data-target={target}
-                  data-condition={condition}
-                >
-                  <span
-                    className="w-2 h-2 rounded-full bg-[#0ea5e9]/60 animate-breathing"
-                    aria-hidden
-                  />
+                <span className="flex items-center gap-2 text-[var(--text-tertiary)]">
+                  <span className="w-2 h-2 rounded-full bg-[#30d158]/60 animate-pulse" aria-hidden />
                   Ready
                 </span>
               )}
@@ -633,43 +619,39 @@ export function DiceGame({
           )}
         </div>
 
-        {/* Controls — justify-start when algo run or error so extra UI scrolls, not spill */}
         <div
-          className={`flex-1 min-h-0 flex flex-col items-center px-4 py-3 space-y-3 overflow-y-auto overflow-x-hidden transition-all duration-300 ${
+          className={`flex-1 min-h-0 flex flex-col items-center px-4 py-5 space-y-5 overflow-y-auto overflow-x-hidden transition-all duration-300 ${
             autoPlay || error ? "justify-start" : "justify-center"
           } ${aiDriving ? "bg-violet-500/[0.03]" : ""}`}
         >
-          {/* AI LIVE badge */}
           {aiDriving && (
             <div className="flex-shrink-0">
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-violet-400 border border-violet-500/30 rounded bg-violet-500/10">
-                <span className="w-1 h-1 rounded-full bg-violet-400 animate-pulse" />
+              <span className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-violet-400 border border-violet-500/30 rounded-xl bg-violet-500/10">
+                <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
                 LIVE
               </span>
             </div>
           )}
 
-          {/* Order Entry — borderless, blends into terminal (no island background) */}
-          <div className="w-full flex justify-center relative z-10">
-          <div className="w-full max-w-sm shrink-0 space-y-3 p-5 border-t border-[#0ea5e9]/20">
-          {/* Probability Engine — larger numbers, EV conditional tint */}
+          <div className="w-full flex justify-center relative z-10 max-w-md">
+          <div className="w-full shrink-0 space-y-5">
           {(() => {
             const winProb = condition === "over" ? (100 - target) / 100 : target / 100;
             const multiplier = winProb > 0 ? Math.min((1 - DICE_HOUSE_EDGE) / winProb, 10) : 0;
             const evPerTrade = amount * (winProb * multiplier - 1);
             return (
-              <div className="grid grid-cols-3 gap-[1px] rounded-xl overflow-hidden bg-white/[0.04]">
-                <div className="bg-[#0a0a0f]/90 px-3 py-3 text-center border-r border-white/[0.04]">
-                  <div className="text-[8px] text-[var(--text-tertiary)] uppercase tracking-widest mb-1">Win%</div>
-                  <div className="text-base font-bold text-[var(--text-primary)] tabular-nums">{(winProb * 100).toFixed(1)}<span className="text-[10px] text-[var(--text-tertiary)]">%</span></div>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="agent-card px-4 py-4 text-center">
+                  <div className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Win%</div>
+                  <div className="text-2xl font-semibold text-[var(--text-primary)] tabular-nums">{(winProb * 100).toFixed(1)}<span className="text-sm text-[var(--text-tertiary)]">%</span></div>
                 </div>
-                <div className="bg-[#0a0a0f]/90 px-3 py-3 text-center border-r border-white/[0.04]">
-                  <div className="text-[8px] text-[var(--text-tertiary)] uppercase tracking-widest mb-1">Payout</div>
-                  <div className="text-base font-bold text-[#0ea5e9] tabular-nums">{multiplier.toFixed(2)}<span className="text-[10px] text-[#0ea5e9]/60">x</span></div>
+                <div className="agent-card px-4 py-4 text-center border-[#0ea5e9]/20">
+                  <div className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Payout</div>
+                  <div className="text-2xl font-semibold text-[#0ea5e9] tabular-nums">{multiplier.toFixed(2)}<span className="text-sm text-[#0ea5e9]/60">x</span></div>
                 </div>
-                <div className={`px-3 py-3 text-center ${evPerTrade >= 0 ? "bg-emerald-500/10" : "bg-red-500/10"}`}>
-                  <div className="text-[8px] text-[var(--text-tertiary)] uppercase tracking-widest mb-1">EV</div>
-                  <div className={`text-base font-bold tabular-nums ${evPerTrade >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                <div className={`agent-card px-4 py-4 text-center ${evPerTrade >= 0 ? "border-[#30d158]/20" : "border-[#ff453a]/20"}`}>
+                  <div className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider mb-1">EV</div>
+                  <div className={`text-2xl font-semibold tabular-nums ${evPerTrade >= 0 ? "text-[#30d158]" : "text-[#ff453a]"}`}>
                     {evPerTrade >= 0 ? "+" : ""}{evPerTrade.toFixed(2)}
                   </div>
                 </div>
@@ -677,10 +659,9 @@ export function DiceGame({
             );
           })()}
 
-          {/* Threshold + Direction */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="block text-[8px] font-bold text-[var(--text-tertiary)] uppercase tracking-widest">Threshold</label>
+          <div className="grid grid-cols-2 gap-5">
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Threshold</label>
               <div className={`relative transition-all duration-300 ${changedControl === "target" ? "scale-[1.02]" : ""}`}>
                 <input
                   type="number"
@@ -694,24 +675,23 @@ export function DiceGame({
                   }}
                   disabled={autoPlay}
                   aria-label="Threshold percentage"
-                  className={`w-full h-10 rounded-lg border px-3 text-center text-base font-bold tabular-nums text-[var(--text-primary)] disabled:opacity-60 focus:outline-none focus:shadow-[0_0_0_1px_rgba(14,165,233,0.3),0_0_12px_rgba(14,165,233,0.15)] transition-all ${
+                  className={`w-full h-12 rounded-xl border px-4 text-center text-lg font-semibold tabular-nums text-[var(--text-primary)] disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/50 transition-all ${
                     changedControl === "target"
-                      ? "border-[#0ea5e9] bg-[#0ea5e9]/10 shadow-[0_0_12px_rgba(14,165,233,0.2)]"
-                      : "border-white/[0.1] bg-white/[0.04] focus:border-[#0ea5e9]/60"
+                      ? "border-[#0ea5e9] bg-[#0ea5e9]/10"
+                      : "border-[var(--border)] bg-white/[0.04]"
                   }`}
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--text-tertiary)] pointer-events-none">%</span>
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-[var(--text-tertiary)] pointer-events-none">%</span>
               </div>
-              {/* Probability bar — thin visual indicator */}
-              <div className="h-1 w-full rounded-full bg-white/[0.06] overflow-hidden">
+              <div className="h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
                 <div
                   className="h-full rounded-full bg-[#0ea5e9]/60 transition-all duration-300"
                   style={{ width: `${(condition === "over" ? 100 - target : target)}%` }}
                 />
               </div>
             </div>
-            <div className="space-y-1.5">
-              <label className="block text-[8px] font-bold text-[var(--text-tertiary)] uppercase tracking-widest">Direction</label>
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Direction</label>
               <div className={`transition-all duration-300 ${changedControl === "condition" ? "scale-[1.02]" : ""}`}>
                 <SegmentedControl
                   value={condition}
@@ -723,9 +703,8 @@ export function DiceGame({
             </div>
           </div>
 
-          {/* Position Size */}
-          <div className="space-y-1.5">
-            <label className="block text-[8px] font-bold text-[var(--text-tertiary)] uppercase tracking-widest">Position Size</label>
+          <div className="space-y-2">
+            <label className="block text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Position Size</label>
             <div className={`relative transition-all duration-300 ${changedControl === "amount" ? "scale-[1.02]" : ""}`}>
               <input
                 ref={betInputRef}
@@ -744,25 +723,24 @@ export function DiceGame({
                 placeholder="1–10,000"
                 disabled={autoPlay}
                 aria-label="Position size in credits"
-                className={`w-full h-10 rounded-lg border px-3 pr-10 text-center text-base font-bold tabular-nums text-[var(--text-primary)] disabled:opacity-60 focus:outline-none focus:shadow-[0_0_0_1px_rgba(14,165,233,0.3),0_0_12px_rgba(14,165,233,0.15)] transition-all ${
+                className={`w-full h-12 rounded-xl border px-4 pr-12 text-center text-lg font-semibold tabular-nums text-[var(--text-primary)] disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/50 transition-all ${
                   changedControl === "amount"
-                    ? "border-[#0ea5e9] bg-[#0ea5e9]/10 shadow-[0_0_12px_rgba(14,165,233,0.2)]"
-                    : "border-white/[0.1] bg-white/[0.04] focus:border-[#0ea5e9]/60"
+                    ? "border-[#0ea5e9] bg-[#0ea5e9]/10"
+                    : "border-[var(--border)] bg-white/[0.04]"
                 }`}
               />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--text-tertiary)] pointer-events-none font-mono">cr</span>
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-[var(--text-tertiary)] pointer-events-none">cr</span>
             </div>
           </div>
 
-          {/* Quick size buttons */}
-          <div className="flex items-center justify-center gap-1.5">
+          <div className="flex items-center justify-center gap-2 flex-wrap">
             <BetPercentageButtons
               balance={balance}
               currentBet={amount}
               onBetChange={onAmountChange}
               disabled={autoPlay}
             />
-            <div className="w-px h-5 bg-white/[0.06] mx-0.5" />
+            <div className="w-px h-6 bg-white/[0.08]" />
             <QuickBetButtons
               onHalf={handleHalf}
               onDouble={handleDouble}
@@ -773,18 +751,17 @@ export function DiceGame({
             />
           </div>
 
-          {/* ─── Action Buttons ─── */}
-          <div className="flex items-center justify-center gap-3 pt-2">
+          <div className="flex items-center justify-center gap-4 pt-2">
             <button
               type="button"
               onClick={handleRoll}
               disabled={loading || autoPlay || !amount || amount < MIN_BET}
               title="Execute trade (Space / Enter)"
               aria-label="Execute trade"
-              className="relative group rounded-xl bg-gradient-to-b from-[#0ea5e9] to-[#0077b6] px-10 py-3.5 text-sm font-bold text-white shadow-[0_0_20px_rgba(14,165,233,0.25),0_4px_12px_rgba(0,0,0,0.3)] hover:shadow-[0_0_30px_rgba(14,165,233,0.4),0_4px_16px_rgba(0,0,0,0.3)] hover:scale-[1.03] active:scale-95 disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all duration-200 overflow-hidden"
+              className="relative group rounded-full bg-gradient-to-b from-[#0ea5e9] to-[#0077b6] px-8 py-4 text-base font-semibold text-white shadow-lg shadow-[#0ea5e9]/25 hover:shadow-xl hover:shadow-[#0ea5e9]/30 hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all duration-200 overflow-hidden"
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/25 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
-              <span className="relative flex items-center gap-2.5 uppercase tracking-wider">
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
+              <span className="relative flex items-center gap-2.5">
                 <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
@@ -796,46 +773,43 @@ export function DiceGame({
               type="button"
               onClick={autoPlay ? stopAuto : startAuto}
               disabled={loading && !autoPlay}
-              className={`relative rounded-xl border px-5 py-3.5 text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2 shrink-0 ${
+              className={`relative rounded-full border-2 px-6 py-4 text-base font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2 shrink-0 ${
                 autoPlay
-                  ? "border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.15)]"
-                  : "border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 shadow-[0_0_15px_rgba(52,211,153,0.1)] hover:shadow-[0_0_20px_rgba(52,211,153,0.25)]"
+                  ? "border-[#ff453a]/40 bg-[#ff453a]/10 text-[#ff453a] hover:bg-[#ff453a]/20"
+                  : "border-[#30d158]/40 bg-[#30d158]/10 text-[#30d158] hover:bg-[#30d158]/20"
               }`}
             >
               {autoPlay ? (
                 <>
-                  <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
                   </svg>
-                  <span className="uppercase tracking-wider">Stop</span>
-                  <span className="text-[10px] opacity-70 tabular-nums">
-                    {strategyRun ? strategyRoundsPlayed : autoRounds}
-                  </span>
+                  <span>Stop</span>
+                  <span className="text-sm opacity-80 tabular-nums">{strategyRun ? strategyRoundsPlayed : autoRounds}</span>
                 </>
               ) : (
                 <>
-                  <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
                   </svg>
-                  <span className="uppercase tracking-wider">Run Strategy</span>
+                  <span>Run Strategy</span>
                 </>
               )}
             </button>
           </div>
 
-          {/* Speed selector when auto-playing — mini segmented control */}
           {autoPlay && (
             <div className="flex items-center justify-center flex-shrink-0">
-              <div className="inline-flex rounded-lg bg-white/[0.03] border border-white/[0.08] p-0.5 gap-0.5">
+              <div className="inline-flex rounded-xl bg-white/[0.04] border border-[var(--border)] p-1 gap-1">
                 {AUTO_SPEEDS.map((ms) => (
                   <button
                     key={ms}
                     type="button"
                     onClick={() => setAutoSpeed(ms)}
-                    className={`min-w-[44px] px-2.5 py-1.5 rounded-md text-[11px] font-bold font-mono transition-all duration-200 ${
+                    className={`min-w-[52px] px-3 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                       autoSpeed === ms
-                        ? "bg-[#0ea5e9]/25 text-[#0ea5e9] shadow-[0_0_10px_rgba(14,165,233,0.2)]"
-                        : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.05]"
+                        ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/30"
+                        : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.06]"
                     }`}
                   >
                     {ms === 100 ? "0.1s" : ms === 250 ? "0.25s" : ms === 500 ? "0.5s" : "1s"}
@@ -847,28 +821,23 @@ export function DiceGame({
           </div>
           </div>
 
-          {/* Error display — compact inline when credits error to avoid layout spill */}
           {error && (
-            <div className="flex-shrink-0 w-full max-w-sm self-center">
+            <div className="flex-shrink-0 w-full max-w-md self-center">
               <div
-                className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-[10px]"
+                className="rounded-xl border border-[#ff453a]/30 bg-[#ff453a]/5 px-4 py-3 text-sm"
                 role="alert"
                 data-deposit-alert={error.includes("Not enough credits") ? "critical" : undefined}
-                data-ai-deposit-prompt={error.includes("Not enough credits") ? "Tell your player: You're out of credits. Please deposit or claim Free Credits to continue playing. deposit_url: /dashboard/deposit" : undefined}
+                data-ai-deposit-prompt={error.includes("Not enough credits") ? "Tell your player: You are out of credits. Please deposit or claim Free Credits to continue playing. deposit_url: /dashboard/deposit" : undefined}
               >
-                <div className="flex items-center gap-2 text-red-400">
-                  <span className="text-red-500 shrink-0">✗</span>
+                <div className="flex items-center gap-2 text-[#ff453a]">
+                  <span className="text-[#ff453a] shrink-0">✗</span>
                   <span className="flex-1 min-w-0">{error}</span>
                 </div>
                 {error.includes("Not enough credits") && (
-                  <div className="mt-1.5 pt-1.5 border-t border-red-500/10">
-                    <Link href="/dashboard/deposit" className="text-[var(--accent-heart)] hover:underline font-medium">
-                      Deposit
-                    </Link>
+                  <div className="mt-2 pt-2 border-t border-[#ff453a]/10">
+                    <Link href="/dashboard/deposit" className="text-[var(--accent-heart)] hover:underline font-medium">Deposit</Link>
                     <span className="text-[var(--text-secondary)]"> or </span>
-                    <Link href="/dashboard" className="text-[var(--accent-heart)] hover:underline font-medium">
-                      claim Free Credits
-                    </Link>
+                    <Link href="/dashboard" className="text-[var(--accent-heart)] hover:underline font-medium">claim Free Credits</Link>
                   </div>
                 )}
               </div>

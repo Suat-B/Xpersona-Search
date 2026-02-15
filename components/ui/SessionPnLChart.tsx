@@ -36,17 +36,15 @@ export function SessionPnLChart({
     }).join(" ");
     return (
       <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-md overflow-hidden ${isMini ? "p-2" : "p-4"}`}>
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <svg className="w-3.5 h-3.5 text-[var(--accent-heart)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-            </svg>
-            <span className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider">Equity Curve</span>
+            <div className="w-1 h-5 rounded-full bg-[#0ea5e9]" />
+            <span className="text-sm font-semibold text-[var(--text-primary)]">Equity Curve</span>
           </div>
           <button
             type="button"
             onClick={onReset}
-            className="text-[10px] text-[var(--text-secondary)] hover:text-[var(--accent-heart)] transition-colors px-2 py-1 rounded-lg hover:bg-white/5"
+            className="text-xs text-[var(--text-tertiary)] hover:text-[#0ea5e9] transition-colors px-2.5 py-1.5 rounded-lg hover:bg-white/[0.06]"
           >
             Reset
           </button>
@@ -121,37 +119,33 @@ export function SessionPnLChart({
           animation: pnl-dot-pulse-${uid} 1.6s ease-in-out infinite;
         }
       `}</style>
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <svg className="w-3.5 h-3.5 text-[var(--accent-heart)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-          </svg>
-          <span className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider">Equity Curve</span>
+          <div className="w-1 h-5 rounded-full bg-[#0ea5e9]" />
+          <span className="text-sm font-semibold text-[var(--text-primary)]">Equity Curve</span>
           {!isMini && (
-            <span className="inline-flex items-center gap-1 rounded bg-white/5 px-1.5 py-0.5">
-              <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" style={{ animationDuration: "1.2s" }} />
-              <span className="text-[9px] text-[var(--text-tertiary)] font-mono">LIVE</span>
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#30d158]/10 px-2 py-0.5 border border-[#30d158]/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#30d158] animate-pulse" style={{ animationDuration: "1.2s" }} />
+              <span className="text-[10px] font-medium text-[#30d158]">LIVE</span>
             </span>
           )}
         </div>
         <div className="flex items-center gap-2">
           <span
-            className={`text-base font-bold font-mono transition-colors duration-300 ${
-              totalPnl >= 0
-                ? "text-emerald-400 drop-shadow-[0_0_12px_rgba(16,185,129,0.5)]"
-                : "text-red-400 drop-shadow-[0_0_12px_rgba(239,68,68,0.5)]"
+            className={`text-lg font-semibold tabular-nums transition-colors duration-300 ${
+              totalPnl >= 0 ? "text-[#30d158]" : "text-[#ff453a]"
             }`}
           >
             {totalPnl >= 0 ? "+" : ""}
             {totalPnl}
           </span>
-          <span className="text-[10px] text-[var(--text-secondary)] bg-[var(--bg-matte)] px-2 py-0.5 rounded tabular-nums">
-            {rounds}
+          <span className="text-xs text-[var(--text-tertiary)] bg-white/[0.04] px-2 py-1 rounded-lg tabular-nums">
+            {rounds} rounds
           </span>
           <button
             type="button"
             onClick={onReset}
-            className="text-[10px] text-[var(--text-secondary)] hover:text-[var(--accent-heart)] transition-colors px-2 py-0.5 rounded hover:bg-white/5"
+            className="text-xs text-[var(--text-tertiary)] hover:text-[#0ea5e9] transition-colors px-2.5 py-1.5 rounded-lg hover:bg-white/[0.06]"
           >
             Reset
           </button>

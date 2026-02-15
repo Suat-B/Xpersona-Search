@@ -28,7 +28,7 @@ function SourceDot({ source }: { source?: "manual" | "algo" | "api" }) {
       title={s}
     >
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${color}`} aria-hidden />
-      <span className="capitalize text-[10px]">{s}</span>
+      <span className="capitalize text-xs">{s}</span>
     </span>
   );
 }
@@ -46,33 +46,30 @@ export function TradeLog({ entries, maxRows = 20 }: TradeLogProps) {
   const pnl = (e: TradeLogEntry) => e.payout - e.amount;
 
   return (
-    <div
-      className="rounded-xl border border-white/[0.08] bg-[var(--bg-card)] overflow-hidden min-h-0 flex-1 flex flex-col min-w-0"
-      data-agent="trade-log"
-    >
-      <div className="overflow-x-auto overflow-y-auto max-h-[140px] min-h-0 flex-1 scrollbar-sidebar">
-        <table className="w-full min-w-[320px] text-xs font-mono border-collapse">
-          <thead className="sticky top-0 bg-[var(--bg-matte)]/98 border-b-2 border-white/10 z-10">
-            <tr className="text-[var(--text-secondary)]">
-              <th className="text-left py-2 px-2 font-semibold text-[10px] w-8">#</th>
-              <th className="text-left py-2 px-2 font-semibold text-[10px] min-w-[52px]">Time</th>
-              <th className="text-left py-2 px-2 font-semibold text-[10px] min-w-[56px]">L/S %</th>
-              <th className="text-right py-2 px-2 font-semibold text-[10px] min-w-[44px]">Size</th>
-              <th className="text-right py-2 px-2 font-semibold text-[10px] min-w-[48px]">Result</th>
-              <th className="text-right py-2 px-2 font-semibold text-[10px] min-w-[56px]">P&L</th>
-              <th className="text-left py-2 px-2 font-semibold text-[10px] min-w-[48px]">Src</th>
+    <div className="overflow-hidden min-h-0 flex-1 flex flex-col min-w-0" data-agent="trade-log">
+      <div className="overflow-x-auto overflow-y-auto max-h-[200px] min-h-0 flex-1 scrollbar-sidebar">
+        <table className="w-full min-w-[320px] text-sm border-collapse">
+          <thead className="sticky top-0 bg-[var(--bg-card)]/98 border-b border-white/[0.08] z-10">
+            <tr className="text-[var(--text-tertiary)]">
+              <th className="text-left py-2.5 px-3 font-semibold text-xs uppercase tracking-wider w-10">#</th>
+              <th className="text-left py-2.5 px-3 font-semibold text-xs uppercase tracking-wider min-w-[52px]">Time</th>
+              <th className="text-left py-2.5 px-3 font-semibold text-xs uppercase tracking-wider min-w-[56px]">L/S %</th>
+              <th className="text-right py-2.5 px-3 font-semibold text-xs uppercase tracking-wider min-w-[44px]">Size</th>
+              <th className="text-right py-2.5 px-3 font-semibold text-xs uppercase tracking-wider min-w-[48px]">Result</th>
+              <th className="text-right py-2.5 px-3 font-semibold text-xs uppercase tracking-wider min-w-[56px]">P&L</th>
+              <th className="text-left py-2.5 px-3 font-semibold text-xs uppercase tracking-wider min-w-[48px]">Src</th>
             </tr>
           </thead>
           <tbody>
             {displayEntries.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-10 text-center">
+                <td colSpan={7} className="py-12 text-center">
                   <div className="flex flex-col items-center gap-2 text-[var(--text-tertiary)]">
-                    <svg className="w-8 h-8 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                    <svg className="w-10 h-10 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                     </svg>
-                    <span className="text-[11px]">Execute a trade to see your log</span>
-                    <span className="text-[10px] text-[var(--text-quaternary)]">Time · Size · P&L · Source</span>
+                    <span className="text-sm">Execute a trade to see your log</span>
+                    <span className="text-xs text-[var(--text-quaternary)]">Time · Size · P&L · Source</span>
                   </div>
                 </td>
               </tr>
@@ -83,28 +80,28 @@ export function TradeLog({ entries, maxRows = 20 }: TradeLogProps) {
                 return (
                   <tr
                     key={`${e.roundNumber}-${i}`}
-                    className={`border-b border-white/5 hover:bg-white/[0.04] transition-colors ${
-                      i % 2 === 1 ? "bg-white/[0.015]" : ""
+                    className={`border-b border-white/[0.06] hover:bg-white/[0.04] transition-colors ${
+                      i % 2 === 1 ? "bg-white/[0.02]" : ""
                     } ${isNewest ? "animate-slide-in-from-bottom" : ""}`}
                   >
-                    <td className="py-1.5 px-2 text-[var(--text-secondary)] tabular-nums">{e.roundNumber}</td>
-                    <td className="py-1.5 px-2 text-[10px] text-[var(--text-tertiary)] tabular-nums truncate">
+                    <td className="py-2 px-3 text-[var(--text-secondary)] tabular-nums font-medium">{e.roundNumber}</td>
+                    <td className="py-2 px-3 text-xs text-[var(--text-tertiary)] tabular-nums truncate">
                       {formatTime(e.timestamp)}
                     </td>
-                    <td className="py-1.5 px-2 text-[10px]">{dirThreshold(e)}</td>
-                    <td className="py-1.5 px-2 text-right tabular-nums text-[var(--text-secondary)]">
+                    <td className="py-2 px-3 text-xs">{dirThreshold(e)}</td>
+                    <td className="py-2 px-3 text-right tabular-nums text-[var(--text-secondary)] font-medium">
                       {e.amount.toFixed(0)}
                     </td>
-                    <td className="py-1.5 px-2 text-right tabular-nums">{e.result.toFixed(2)}</td>
+                    <td className="py-2 px-3 text-right tabular-nums">{e.result.toFixed(2)}</td>
                     <td
-                      className={`py-1.5 px-2 text-right tabular-nums font-bold ${
-                        p >= 0 ? "text-emerald-400" : "text-red-400"
+                      className={`py-2 px-3 text-right tabular-nums font-semibold ${
+                        p >= 0 ? "text-[#30d158]" : "text-[#ff453a]"
                       }`}
                     >
                       {p >= 0 ? "+" : ""}
                       {p.toFixed(2)}
                     </td>
-                    <td className="py-1.5 px-2">
+                    <td className="py-2 px-3">
                       <SourceDot source={e.source} />
                     </td>
                   </tr>

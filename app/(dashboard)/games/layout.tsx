@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import { EnsureGuest } from "@/components/auth/EnsureGuest";
 
-/** Full-viewport layout for Pure Dice — entire screen (1920×1080) */
+/** Games layout — renders within dashboard chrome with sidebar. */
 export default async function GamesLayout({
   children,
 }: {
@@ -23,9 +23,9 @@ export default async function GamesLayout({
   const needsGuest = !hasSession && !hasGuest;
 
   return (
-    <div className="fixed inset-0 z-[100] h-screen w-screen bg-[var(--bg-deep)] overflow-hidden flex flex-col">
+    <>
       {needsGuest && <EnsureGuest needsGuest={true} />}
       {children}
-    </div>
+    </>
   );
 }
