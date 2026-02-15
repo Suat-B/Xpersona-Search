@@ -103,17 +103,28 @@ export function useDiceSessionPnL() {
     }
     const returns = series.map((p, i) => (i === 0 ? p.pnl : p.pnl - series[i - 1]!.pnl));
     const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
-    const variance = returns.reduce((acc, r) => acc + (r - mean) ** 2, 0) / returns.length;
-    const std = Math.sqrt(variance) || 1e-10;
-    const sharpeRatio = std > 0 ? mean / std : null;
+    const n = returns.length;
+    const variance = n > 1
+      ? returns.reduce((acc, r) => acc + (r - mean) ** 2, 0) / (n - 1)
+      : 0;
+    const std = Math.sqrt(variance);
+    const MIN_STD_FOR_SHARPE = 1e-6;
+    const MIN_ROUNDS_FOR_SHARPE = 10;
+    const sharpeRatio =
+      n >= MIN_ROUNDS_FOR_SHARPE && std >= MIN_STD_FOR_SHARPE
+        ? Math.min(mean / std, 10)
+        : null;
 
     const negativeReturns = returns.filter((r) => r < 0);
     const downsideVariance =
-      negativeReturns.length > 0
+      negativeReturns.length > 1
         ? negativeReturns.reduce((acc, r) => acc + r ** 2, 0) / negativeReturns.length
         : 0;
-    const downsideStd = Math.sqrt(downsideVariance) || 1e-10;
-    const sortinoRatio = downsideStd > 0 ? mean / downsideStd : null;
+    const downsideStd = Math.sqrt(downsideVariance);
+    const sortinoRatio =
+      n >= MIN_ROUNDS_FOR_SHARPE && downsideStd >= MIN_STD_FOR_SHARPE
+        ? Math.min(mean / downsideStd, 10)
+        : null;
 
     const winsList = returns.filter((r) => r > 0);
     const lossesList = returns.filter((r) => r < 0);
