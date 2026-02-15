@@ -20,7 +20,7 @@ export async function safeFetchJson<T = unknown>(
   return { ok: res.ok, status: res.status, data };
 }
 
-const BALANCE_RETRY_DELAYS_MS = [0, 500, 1500];
+const BALANCE_RETRY_DELAYS_MS = [0, 400, 1000, 2500];
 const BALANCE_API = "/api/me/balance";
 
 type BalanceResponse = {
@@ -58,6 +58,44 @@ export async function fetchBalanceDataWithRetry(): Promise<{
       };
     }
     if (status !== 401) break; // Only retry on 401 (auth not ready)
+  }
+  return null;
+}
+
+const SESSION_STATS_API = "/api/me/session-stats";
+
+type SessionStatsResponse = {
+  success?: boolean;
+  data?: {
+    balance?: number;
+    rounds?: number;
+    sessionPnl?: number;
+    winRate?: number;
+    recentBets?: Array<{ amount: number; outcome: string; payout: number; pnl: number }>;
+  };
+};
+
+/**
+ * Fetch session stats (balance, rounds, PnL, winRate, recentBets) with retry on 401.
+ * Single-call alternative to balance + rounds. Use for dashboard metrics.
+ */
+export async function fetchSessionStatsWithRetry(params?: {
+  gameType?: string;
+  limit?: number;
+}): Promise<SessionStatsResponse["data"] | null> {
+  const gameType = params?.gameType ?? "dice";
+  const limit = params?.limit ?? 100;
+  const url = `${SESSION_STATS_API}?gameType=${encodeURIComponent(gameType)}&limit=${limit}`;
+
+  for (let i = 0; i < BALANCE_RETRY_DELAYS_MS.length; i++) {
+    if (i > 0) {
+      await new Promise((r) => setTimeout(r, BALANCE_RETRY_DELAYS_MS[i]));
+    }
+    const { ok, status, data } = await safeFetchJson<SessionStatsResponse>(url);
+    if (ok && data?.success && data?.data) {
+      return data.data;
+    }
+    if (status !== 401) break;
   }
   return null;
 }

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
+import { HeartbeatIndicator } from "@/components/ui/HeartbeatIndicator";
 
 const ICONS = {
   dice: (
@@ -97,6 +99,7 @@ interface MobileDashboardNavProps {
 export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashboardNavProps) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const { hasApiKey } = useAiConnectionStatus();
 
   useEffect(() => {
     setOpen(false);
@@ -153,25 +156,33 @@ export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashb
             <div className="p-4 space-y-1">
               {LINKS.map(({ href, label, icon, exact }) => {
                 const active = isActive(pathname ?? "", href, exact);
+                const isConnectAi = href === "/dashboard/connect-ai";
+                const aiConnected = isConnectAi && hasApiKey === true;
+                const displayLabel = isConnectAi && hasApiKey === true ? "AI connected" : label;
                 return (
                   <Link
                     key={href}
                     href={href}
                     onClick={() => setOpen(false)}
                     className={cn(
-                      "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
+                      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
                       active
                         ? "bg-white/[0.08] text-white"
-                        : "text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-white"
+                        : "text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-white",
+                      aiConnected && "text-[#30d158]"
                     )}
                   >
                     <span className={cn(
                       "flex h-8 w-8 items-center justify-center rounded-lg",
-                      active ? "bg-[var(--accent-heart)]/20 text-[var(--accent-heart)]" : "bg-white/[0.04]"
+                      active ? aiConnected ? "bg-[#30d158]/20 text-[#30d158]" : "bg-[var(--accent-heart)]/20 text-[var(--accent-heart)]" : "bg-white/[0.04] group-hover:bg-white/[0.08]",
+                      aiConnected && !active && "group-hover:bg-[#30d158]/10"
                     )}>
                       {ICONS[icon]}
                     </span>
-                    {label}
+                    <span className="flex-1 flex items-center gap-2">
+                      {displayLabel}
+                      {aiConnected && <HeartbeatIndicator />}
+                    </span>
                   </Link>
                 );
               })}

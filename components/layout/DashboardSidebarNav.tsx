@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
+import { HeartbeatIndicator } from "@/components/ui/HeartbeatIndicator";
 
 const ICONS = {
   dice: (
@@ -92,12 +94,17 @@ interface DashboardSidebarNavProps {
 
 export function DashboardSidebarNav({ isAdmin = false }: DashboardSidebarNavProps) {
   const pathname = usePathname();
+  const { hasApiKey } = useAiConnectionStatus();
 
   return (
     <nav className="flex-1 overflow-y-auto py-4 px-3">
       <div className="space-y-1">
         {SIDEBAR_LINKS.map(({ href, label, icon, exact }) => {
           const active = isActive(pathname ?? "", href, exact);
+          const isConnectAi = href === "/dashboard/connect-ai";
+          const aiConnected = isConnectAi && hasApiKey === true;
+          const displayLabel = isConnectAi && hasApiKey === true ? "AI connected" : label;
+
           return (
             <Link
               key={href}
@@ -106,22 +113,27 @@ export function DashboardSidebarNav({ isAdmin = false }: DashboardSidebarNavProp
                 "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
                 active
                   ? "bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
-                  : "text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-white"
+                  : "text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-white",
+                aiConnected && "text-[#30d158]"
               )}
             >
               <span 
                 className={cn(
                   "flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200",
                   active 
-                    ? "bg-[var(--accent-heart)]/20 text-[var(--accent-heart)]" 
-                    : "bg-white/[0.04] text-[var(--text-tertiary)] group-hover:bg-white/[0.08] group-hover:text-[var(--text-secondary)]"
+                    ? aiConnected ? "bg-[#30d158]/20 text-[#30d158]" : "bg-[var(--accent-heart)]/20 text-[var(--accent-heart)]" 
+                    : "bg-white/[0.04] text-[var(--text-tertiary)] group-hover:bg-white/[0.08] group-hover:text-[var(--text-secondary)]",
+                  aiConnected && !active && "group-hover:bg-[#30d158]/10 group-hover:text-[#30d158]"
                 )}
               >
                 {ICONS[icon]}
               </span>
-              <span className="flex-1">{label}</span>
-              {active && (
+              <span className="flex-1">{displayLabel}</span>
+              {active && !aiConnected && (
                 <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent-heart)]" />
+              )}
+              {aiConnected && (
+                <HeartbeatIndicator />
               )}
             </Link>
           );

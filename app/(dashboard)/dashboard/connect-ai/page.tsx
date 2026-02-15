@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
+import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
+import { HeartbeatIndicator } from "@/components/ui/HeartbeatIndicator";
 
 const STEPS = [
   {
@@ -42,22 +44,40 @@ const INTEGRATIONS: Array<{ name: string; href: string; badge?: string; internal
 ];
 
 export default function ConnectAIPage() {
+  const { hasApiKey } = useAiConnectionStatus();
+  const aiConnected = hasApiKey === true;
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       {/* Hero */}
       <section>
         <div className="flex items-start gap-4">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[var(--accent-heart)]/20 to-[var(--accent-purple)]/20 border border-[var(--accent-heart)]/30">
-            <svg className="w-7 h-7 text-[var(--accent-heart)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
+          <div
+            className={
+              aiConnected
+                ? "flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#30d158]/20 to-[#30d158]/10 border border-[#30d158]/30 shadow-[0_0_24px_rgba(48,209,88,0.15)]"
+                : "flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[var(--accent-heart)]/20 to-[var(--accent-purple)]/20 border border-[var(--accent-heart)]/30"
+            }
+          >
+            {aiConnected ? (
+              <svg className="w-7 h-7 text-[#30d158]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            ) : (
+              <svg className="w-7 h-7 text-[var(--accent-heart)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            )}
           </div>
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-[var(--text-primary)] tracking-tight">
-              Connect AI
+            <h1 className="text-2xl sm:text-3xl font-bold text-[var(--text-primary)] tracking-tight flex items-center gap-2">
+              {aiConnected ? "AI connected" : "Connect AI"}
+              {aiConnected && <HeartbeatIndicator size="md" />}
             </h1>
             <p className="mt-1 text-sm text-[var(--text-secondary)] max-w-lg">
-              Let your AI play dice with your balance. Generate an API key once — OpenClaw, LangChain, REST, all use the same key.
+              {aiConnected
+                ? "Your AI can play dice with your balance. OpenClaw, LangChain, REST — same key."
+                : "Let your AI play dice with your balance. Generate an API key once — OpenClaw, LangChain, REST, all use the same key."}
             </p>
           </div>
         </div>

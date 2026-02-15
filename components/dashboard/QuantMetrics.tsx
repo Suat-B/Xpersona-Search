@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { fetchBalanceWithRetry } from "@/lib/safeFetch";
+import { fetchSessionStatsWithRetry } from "@/lib/safeFetch";
 
 type Metric = {
     label: string;
@@ -50,7 +50,7 @@ const trendText = {
 
 export default function QuantMetrics() {
     const [metrics, setMetrics] = useState<Metric[]>([
-        { label: "Balance", value: "0", subtext: "credits", trend: "neutral", icon: icons.balance },
+        { label: "Balance", value: "...", subtext: "credits", trend: "neutral", icon: icons.balance },
         { label: "Session P&L", value: "+0", subtext: "0 bets", trend: "neutral", icon: icons.pnl },
         { label: "Win Rate", value: "0%", subtext: "0 Bets", trend: "neutral", icon: icons.winrate },
         { label: "Volume", value: "0", subtext: "Wagered", trend: "neutral", icon: icons.volume },
@@ -58,34 +58,15 @@ export default function QuantMetrics() {
 
     const refresh = useCallback(async () => {
         try {
-            const [balance, betsRes] = await Promise.all([
-                fetchBalanceWithRetry(),
-                fetch("/api/me/rounds?limit=100&gameType=dice", { credentials: "include" }),
-            ]);
-            
-            const parseJson = async (res: Response) => {
-                const text = await res.text();
-                try { return text ? JSON.parse(text) : {}; } catch { return {}; }
-            };
-            
-            const betsData = await parseJson(betsRes);
+            const stats = await fetchSessionStatsWithRetry({ gameType: "dice", limit: 100 });
 
-            const balanceVal = balance !== null ? balance : 0;
-
-            let sessionPnl = 0;
-            let roundCount = 0;
-            let wins = 0;
-            let volume = 0;
-            
-            if (betsData.success && Array.isArray(betsData.data?.bets)) {
-                sessionPnl = typeof betsData.data.sessionPnl === "number" ? betsData.data.sessionPnl : 0;
-                const bets = betsData.data.bets as { amount: number; outcome: string }[];
-                roundCount = bets.length;
-                wins = bets.filter((b) => b.outcome === "win").length;
-                volume = bets.reduce((s, b) => s + (b.amount ?? 0), 0);
-            }
-
-            const winRatePct = roundCount > 0 ? (wins / roundCount) * 100 : 0;
+            const balanceVal = stats?.balance ?? 0;
+            const sessionPnl = stats?.sessionPnl ?? 0;
+            const recentBets = stats?.recentBets ?? [];
+            const roundCount = recentBets.length;
+            const wins = recentBets.filter((b) => b.outcome === "win").length;
+            const volume = recentBets.reduce((s, b) => s + (b.amount ?? 0), 0);
+            const winRatePct = roundCount > 0 ? (wins / roundCount) * 100 : (stats?.winRate ?? 0);
             const pnlTrend: "up" | "down" | "neutral" = sessionPnl > 0 ? "up" : sessionPnl < 0 ? "down" : "neutral";
 
             setMetrics([
@@ -120,6 +101,14 @@ export default function QuantMetrics() {
     useEffect(() => {
         window.addEventListener("balance-updated", refresh);
         return () => window.removeEventListener("balance-updated", refresh);
+    }, [refresh]);
+
+    useEffect(() => {
+        const handler = () => {
+            if (document.visibilityState === "visible") refresh();
+        };
+        window.addEventListener("visibilitychange", handler);
+        return () => window.removeEventListener("visibilitychange", handler);
     }, [refresh]);
 
     return (
