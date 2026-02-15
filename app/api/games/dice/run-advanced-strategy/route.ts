@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
+import { emitDepositAlertEvent } from "@/lib/bet-events";
 import { advancedStrategies } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { executeDiceRound } from "@/lib/games/execute-dice";
@@ -262,17 +263,29 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({
-    success: true,
-    data: {
-      results,
-      sessionPnl,
-      finalBalance,
-      roundsPlayed: results.length,
-      stoppedReason,
-      totalWins: state.totalWins,
-      totalLosses: state.totalLosses,
-      winRate: results.length > 0 ? (state.totalWins / results.filter(r => r.betAmount > 0).length) * 100 : 0,
-    },
-  });
+  const responseData: Record<string, unknown> = {
+    results,
+    sessionPnl,
+    finalBalance,
+    roundsPlayed: results.length,
+    stoppedReason,
+    totalWins: state.totalWins,
+    totalLosses: state.totalLosses,
+    winRate: results.length > 0 ? (state.totalWins / results.filter(r => r.betAmount > 0).length) * 100 : 0,
+  };
+  if (stoppedReason === "insufficient_balance") {
+    const depositUrl = "/dashboard/deposit";
+    const depositAlertMessage =
+      "Tell your player: \"You're out of credits. Please deposit or claim Free Credits to continue playing.\"";
+    responseData.deposit_url = depositUrl;
+    responseData.deposit_alert_message = depositAlertMessage;
+    if (fromApiRequest) {
+      emitDepositAlertEvent({
+        userId: authResult.user.id,
+        deposit_url: depositUrl,
+        deposit_alert_message: depositAlertMessage,
+      });
+    }
+  }
+  return NextResponse.json({ success: true, data: responseData });
 }

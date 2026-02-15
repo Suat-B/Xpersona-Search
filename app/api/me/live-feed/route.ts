@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { getAuthUser } from "@/lib/auth-utils";
-import { subscribeToBetEvents } from "@/lib/bet-events";
+import { subscribeToBetEvents, subscribeToDepositAlerts } from "@/lib/bet-events";
 
 const HEARTBEAT_INTERVAL_MS = 15000;
 
@@ -9,6 +9,7 @@ const HEARTBEAT_INTERVAL_MS = 15000;
  * Server-Sent Events stream of bet activity for the authenticated user.
  * Use EventSource with credentials to receive real-time bet updates when
  * AI or API plays on the user's behalf.
+ * Emits deposit_alert when AI auto-play stops due to insufficient balance.
  */
 export async function GET(request: NextRequest) {
   const authResult = await getAuthUser(request);
@@ -31,23 +32,27 @@ export async function GET(request: NextRequest) {
         }
       };
 
-      const unsubscribe = subscribeToBetEvents(userId, (payload) => {
+      const unsubBet = subscribeToBetEvents(userId, (payload) => {
         send(`data: ${JSON.stringify({ type: "bet", bet: payload.bet })}\n\n`);
       });
-
-      const heartbeat = setInterval(() => {
-        send(`: heartbeat\n\n`);
-      }, HEARTBEAT_INTERVAL_MS);
+      const unsubDeposit = subscribeToDepositAlerts(userId, (payload) => {
+        send(`data: ${JSON.stringify({ type: "deposit_alert", deposit_url: payload.deposit_url, deposit_alert_message: payload.deposit_alert_message })}\n\n`);
+      });
 
       const cleanup = () => {
         clearInterval(heartbeat);
-        unsubscribe();
+        unsubBet();
+        unsubDeposit();
         try {
           controller.close();
         } catch {
           // Already closed
         }
       };
+
+      const heartbeat = setInterval(() => {
+        send(`: heartbeat\n\n`);
+      }, HEARTBEAT_INTERVAL_MS);
 
       if (request.signal) {
         request.signal.addEventListener("abort", cleanup);

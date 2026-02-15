@@ -375,16 +375,24 @@ async function handleRunStrategy(params: any, agentContext: AgentContext | null,
     throw new Error(data.error ?? data.message ?? "Run strategy failed");
   }
   const d = data.data ?? {};
-  return {
+  const stoppedReason = d.stoppedReason ?? "max_rounds";
+  const out: Record<string, unknown> = {
     success: true,
     session_id: crypto.randomUUID(),
     status: "completed",
     total_rounds: d.roundsPlayed ?? 0,
     final_balance: d.finalBalance ?? user.credits,
     session_pnl: d.sessionPnl ?? 0,
-    stopped_reason: d.stoppedReason ?? "max_rounds",
+    stopped_reason: stoppedReason,
     results: d.results ?? [],
   };
+  if (stoppedReason === "insufficient_balance") {
+    out.deposit_url = d.deposit_url ?? "/dashboard/deposit";
+    out.deposit_alert_message =
+      d.deposit_alert_message ??
+      'Tell your player: "You\'re out of credits. Please deposit or claim Free Credits to continue playing."';
+  }
+  return out;
 }
 
 async function handleListStrategies(params: any, agentContext: AgentContext | null, request: NextRequest) {
@@ -766,17 +774,25 @@ async function handleRunAdvancedStrategy(
     throw new Error(data.error ?? "Run advanced strategy failed");
   }
   const d = data.data ?? {};
-  return {
+  const stoppedReason = d.stoppedReason ?? "max_rounds";
+  const out: Record<string, unknown> = {
     success: true,
     results: d.results ?? [],
     session_pnl: d.sessionPnl ?? 0,
     final_balance: d.finalBalance ?? authResult.user.credits,
     rounds_played: d.roundsPlayed ?? 0,
-    stopped_reason: d.stoppedReason ?? "max_rounds",
+    stopped_reason: stoppedReason,
     total_wins: d.totalWins ?? 0,
     total_losses: d.totalLosses ?? 0,
     win_rate: d.winRate ?? 0,
   };
+  if (stoppedReason === "insufficient_balance") {
+    out.deposit_url = d.deposit_url ?? "/dashboard/deposit";
+    out.deposit_alert_message =
+      d.deposit_alert_message ??
+      'Tell your player: "You\'re out of credits. Please deposit or claim Free Credits to continue playing."';
+  }
+  return out;
 }
 
 async function handleCreateStrategy(
