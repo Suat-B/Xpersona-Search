@@ -38,12 +38,24 @@ export default function ApiDocsPage() {
         <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
           {AI_FIRST_MESSAGING.agentIn5Minutes}
         </h2>
-        <ol className="space-y-3 text-sm text-[var(--text-primary)] list-decimal list-inside">
-          <li>Generate API key from above.</li>
-          <li>Set <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> in your env.</li>
-          <li><code className="bg-white/10 px-1 rounded font-mono">GET /api/me/balance</code> — verify auth.</li>
-          <li><code className="bg-white/10 px-1 rounded font-mono">POST /api/faucet</code> — claim Free Credits.</li>
-          <li><code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/bet</code> — place a bet.</li>
+        <ol className="space-y-3 text-sm text-[var(--text-primary)] list-none pl-0">
+          {[
+            "Generate API key from above.",
+            <>Set <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> in your env.</>,
+            <><code className="bg-white/10 px-1 rounded font-mono">GET /api/me/balance</code> — verify auth.</>,
+            <><code className="bg-white/10 px-1 rounded font-mono">POST /api/faucet</code> — claim Free Credits.</>,
+            <><code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/bet</code> — place a bet.</>,
+          ].map((content, i) => (
+            <li key={i} className="flex items-start gap-3">
+              <span
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--accent-heart)]/20 border border-[var(--accent-heart)]/30 text-[var(--accent-heart)] font-bold text-xs"
+                aria-hidden
+              >
+                {i + 1}
+              </span>
+              <span className="pt-0.5">{content}</span>
+            </li>
+          ))}
         </ol>
       </GlassCard>
 
