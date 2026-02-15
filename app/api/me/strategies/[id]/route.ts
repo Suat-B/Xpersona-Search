@@ -5,7 +5,7 @@ import { strategies } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import {
   type GameType,
-  validateStrategyConfig,
+  coerceDiceConfigFromBody,
 } from "@/lib/strategies";
 
 /** GET /api/me/strategies/[id] */
@@ -68,20 +68,29 @@ export async function PATCH(
       { status: 404 }
     );
   }
-  const body = await request.json().catch(() => ({}));
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json(
+      { success: false, error: "VALIDATION_ERROR", message: "Invalid JSON body" },
+      { status: 400 }
+    );
+  }
   const name = typeof body.name === "string" ? body.name.trim() : undefined;
-  const config = body.config;
+  const rawConfig = body.config;
 
   const updates: { name?: string; config?: object } = {};
   if (name !== undefined) updates.name = name;
-  if (config !== undefined) {
-    if (!validateStrategyConfig(existing.gameType as GameType, config)) {
+  if (rawConfig !== undefined) {
+    const config = coerceDiceConfigFromBody(rawConfig);
+    if (!config) {
       return NextResponse.json(
-        { success: false, error: "VALIDATION_ERROR", message: "Invalid config" },
+        { success: false, error: "VALIDATION_ERROR", message: "Invalid config: amount (1-10000), target (0-99.99), condition ('over'|'under')" },
         { status: 400 }
       );
     }
-    updates.config = config as object;
+    updates.config = config;
   }
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({

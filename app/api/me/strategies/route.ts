@@ -6,7 +6,7 @@ import { eq, desc } from "drizzle-orm";
 import {
   type GameType,
   GAME_TYPES,
-  validateStrategyConfig,
+  coerceDiceConfigFromBody,
 } from "@/lib/strategies";
 
 /** GET /api/me/strategies — List current user's strategies. Query: ?gameType=dice */
@@ -58,10 +58,18 @@ export async function POST(request: Request) {
       { status: 401 }
     );
   }
-  const body = await request.json().catch(() => ({}));
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json(
+      { success: false, error: "VALIDATION_ERROR", message: "Invalid JSON body" },
+      { status: 400 }
+    );
+  }
   const gameType = body.gameType as GameType | undefined;
   const name = typeof body.name === "string" ? body.name.trim() : "";
-  const config = body.config;
+  const rawConfig = body.config;
 
   if (
     !gameType ||
@@ -70,14 +78,15 @@ export async function POST(request: Request) {
     name.length > 100
   ) {
     return NextResponse.json(
-      { success: false, error: "VALIDATION_ERROR", message: "gameType and name required" },
+      { success: false, error: "VALIDATION_ERROR", message: "gameType and name required (gameType: 'dice', name: non-empty string)" },
       { status: 400 }
     );
   }
 
-  if (!validateStrategyConfig(gameType, config)) {
+  const config = coerceDiceConfigFromBody(rawConfig);
+  if (!config) {
     return NextResponse.json(
-      { success: false, error: "VALIDATION_ERROR", message: "Invalid config for game type" },
+      { success: false, error: "VALIDATION_ERROR", message: "Invalid config: amount (1-10000), target (0-99.99), condition ('over'|'under') required" },
       { status: 400 }
     );
   }
@@ -89,7 +98,7 @@ export async function POST(request: Request) {
         userId: authResult.user.id,
         gameType,
         name,
-        config: config as object,
+        config,
       })
       .returning({
         id: strategies.id,

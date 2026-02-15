@@ -52,9 +52,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: authResult.error }, { status: 401 });
   }
 
+  let body: AdvancedDiceStrategy & Record<string, unknown>;
   try {
-    const body = (await request.json()) as AdvancedDiceStrategy;
+    body = (await request.json()) as AdvancedDiceStrategy & Record<string, unknown>;
+  } catch {
+    return NextResponse.json(
+      { success: false, error: "VALIDATION_ERROR", message: "Invalid JSON body" },
+      { status: 400 }
+    );
+  }
 
+  try {
     // Validate required fields
     if (!body.name || !body.baseConfig || !body.rules) {
       return NextResponse.json(
