@@ -480,9 +480,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 </span>
               </div>
             )}
-            {/* Strategy Running Banner */}
+            {/* Strategy Running Banner — compact to preserve trading hub space */}
             {strategyRun && (
-              <div className="flex-shrink-0 px-2 py-1">
+              <div className="flex-shrink-0 px-3 py-1">
                 <StrategyRunningBanner
                   strategyName={strategyRun.strategyName}
                   status="running"
@@ -496,15 +496,16 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 />
               </div>
             )}
-            {/* DiceGame — the actual trading hub */}
-            <ClientOnly
-              fallback={
-                <div className="flex-1 flex items-center justify-center text-xs text-[var(--text-secondary)] font-mono">
-                  <span className="animate-pulse">Loading terminal...</span>
-                </div>
-              }
-            >
-              <DiceGame
+            {/* DiceGame — the actual trading hub; flex-1 min-h-0 ensures it gets remaining space during algo run */}
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              <ClientOnly
+                fallback={
+                  <div className="flex-1 flex items-center justify-center text-xs text-[var(--text-secondary)] font-mono">
+                    <span className="animate-pulse">Loading terminal...</span>
+                  </div>
+                }
+              >
+                <DiceGame
                 amount={amount}
                 target={target}
                 condition={condition}
@@ -540,7 +541,8 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 livePlayAnimationMs={livePlayDisplayMs}
                 aiDriving={aiBannerVisible || !!livePlay}
               />
-            </ClientOnly>
+              </ClientOnly>
+            </div>
           </div>
 
           {/* ████ RIGHT SIDEBAR — 280px ████ */}
