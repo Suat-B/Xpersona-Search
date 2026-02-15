@@ -55,16 +55,15 @@ export function QuantChartsAesthetic({
   rounds,
 }: QuantChartsAestheticProps) {
   const n = recentResults.length;
-  if (n === 0) return null;
+  const hasData = n > 0;
 
-  const wins = recentResults.filter((r) => r.win).length;
+  const wins = hasData ? recentResults.filter((r) => r.win).length : 0;
   const losses = n - wins;
   const { drawdowns, maxDrawdown } = computeDrawdown(series);
   const resultBuckets = getResultBuckets(recentResults, 10);
-  const maxBucket = Math.max(1, ...resultBuckets.map((b) => b.wins + b.losses));
 
-  const isHot = winRate >= 55 || (recentResults.slice(-5).filter((r) => r.win).length >= 4);
-  const isCold = winRate <= 40 || (recentResults.slice(-5).filter((r) => r.win).length <= 1);
+  const isHot = hasData && (winRate >= 55 || recentResults.slice(-5).filter((r) => r.win).length >= 4);
+  const isCold = hasData && (winRate <= 40 || recentResults.slice(-5).filter((r) => r.win).length <= 1);
 
   return (
     <div className="space-y-4" data-agent="quant-charts-aesthetic">
@@ -156,28 +155,38 @@ export function QuantChartsAesthetic({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-2xl">
-              {isHot ? "🔥" : isCold ? "❄️" : "⚖️"}
+              {hasData ? (isHot ? "🔥" : isCold ? "❄️" : "⚖️") : "🎲"}
             </span>
             <div>
               <h4 className="text-xs font-semibold text-[var(--text-primary)]">
-                {isHot ? "Hot streak" : isCold ? "Cold streak" : "Neutral"}
+                {hasData
+                  ? (isHot ? "Hot streak" : isCold ? "Cold streak" : "Neutral")
+                  : "Session momentum"}
               </h4>
               <p className="text-[10px] text-[var(--text-secondary)]">
-                {isHot
-                  ? "Session running above expectation"
-                  : isCold
-                    ? "Below average — variance at play"
-                    : "Steady session"}
+                {hasData
+                  ? (isHot
+                    ? "Session running above expectation"
+                    : isCold
+                      ? "Below average — variance at play"
+                      : "Steady session")
+                  : "Roll to see momentum"}
               </p>
             </div>
           </div>
           <div className="text-right">
             <span
               className={`text-lg font-bold font-mono ${
-                isHot ? "text-emerald-400" : isCold ? "text-cyan-400" : "text-amber-400"
+                hasData
+                  ? isHot
+                    ? "text-emerald-400"
+                    : isCold
+                      ? "text-cyan-400"
+                      : "text-amber-400"
+                  : "text-[var(--text-tertiary)]"
               }`}
             >
-              {recentResults.slice(-5).filter((r) => r.win).length}/5
+              {hasData ? `${recentResults.slice(-5).filter((r) => r.win).length}/5` : "—"}
             </span>
             <div className="text-[10px] text-[var(--text-secondary)]">Last 5</div>
           </div>
@@ -244,7 +253,7 @@ export function QuantChartsAesthetic({
             </svg>
             <div className="absolute inset-0 flex items-center justify-center">
               <span className="text-sm font-bold font-mono text-[var(--text-primary)]">
-                {n}
+                {hasData ? n : "—"}
               </span>
             </div>
           </div>

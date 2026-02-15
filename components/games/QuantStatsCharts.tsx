@@ -88,16 +88,18 @@ interface QuantStatsChartsProps {
 
 export function QuantStatsCharts({ recentResults }: QuantStatsChartsProps) {
   const n = recentResults.length;
-  if (n === 0) return null;
+  const hasData = n > 0;
 
-  const { currentStreak, currentIsWin, maxWinStreak, maxLossStreak } = computeStreaks(recentResults);
-  const rolling10 = computeRollingWinRate(recentResults, 10);
-  const rolling20 = computeRollingWinRate(recentResults, 20);
-  const profitFactor = computeProfitFactor(recentResults);
+  const { currentStreak, currentIsWin, maxWinStreak, maxLossStreak } = hasData
+    ? computeStreaks(recentResults)
+    : { currentStreak: 0, currentIsWin: null as boolean | null, maxWinStreak: 0, maxLossStreak: 0 };
+  const rolling10 = hasData ? computeRollingWinRate(recentResults, 10) : 0;
+  const rolling20 = hasData ? computeRollingWinRate(recentResults, 20) : 0;
+  const profitFactor = hasData ? computeProfitFactor(recentResults) : null;
   const betBuckets = getBetSizeBuckets(recentResults);
   const maxBucketCount = Math.max(1, ...betBuckets.map((b) => b.count));
 
-  const last30 = recentResults.slice(-30);
+  const last30 = hasData ? recentResults.slice(-30) : [];
 
   return (
     <div className="space-y-4" data-agent="quant-stats">
@@ -108,17 +110,21 @@ export function QuantStatsCharts({ recentResults }: QuantStatsChartsProps) {
           Run chart (last 30)
         </h4>
         <div className="flex flex-wrap gap-1.5" data-agent="run-chart">
-          {last30.map((r, i) => (
-            <div
-              key={i}
-              className={`w-2.5 h-2.5 rounded-md transition-all duration-200 hover:scale-125 ${
-                r.win
-                  ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]"
-                  : "bg-red-500/90 shadow-[0_0_6px_rgba(239,68,68,0.4)]"
-              }`}
-              title={`Round ${recentResults.length - last30.length + i + 1}: ${r.win ? "Win" : "Loss"}`}
-            />
-          ))}
+          {last30.length > 0
+            ? last30.map((r, i) => (
+                <div
+                  key={i}
+                  className={`w-2.5 h-2.5 rounded-md transition-all duration-200 hover:scale-125 ${
+                    r.win
+                      ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]"
+                      : "bg-red-500/90 shadow-[0_0_6px_rgba(239,68,68,0.4)]"
+                  }`}
+                  title={`Round ${recentResults.length - last30.length + i + 1}: ${r.win ? "Win" : "Loss"}`}
+                />
+              ))
+            : (
+                <span className="text-[10px] text-[var(--text-tertiary)] italic py-2">No rounds yet — roll to see run chart</span>
+              )}
         </div>
       </div>
 
