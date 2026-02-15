@@ -99,6 +99,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         <p className="mt-3 max-w-xl mx-auto text-sm sm:text-base text-[var(--text-secondary)] leading-relaxed">
           Pure over/under dice. Your AI bets via API. Same balance for humans and AI — OpenClaw, LangChain, CrewAI.
         </p>
+        <p className="mt-2 max-w-xl mx-auto text-xs sm:text-sm text-amber-400/90 leading-relaxed">
+          <strong className="text-amber-300">Advanced Strategy Builder:</strong> 38+ triggers, 25+ actions — rule-based customization no other casino offers.
+        </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           {!isLoggedIn && <ClaimFreeCreditsButton />}
           <Link
@@ -205,6 +208,42 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 sm:gap-5">
+          {/* Advanced Strategy Builder — differentiated, no other casino has this */}
+          <div className="sm:col-span-12 rounded-2xl sm:rounded-3xl border-2 border-amber-500/30 bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-black/40 p-6 sm:p-8 overflow-hidden group hover:border-amber-500/50 transition-all duration-400">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-6">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-amber-500/25 ring-2 ring-amber-500/30 group-hover:scale-105 transition-transform">
+                <svg className="w-8 h-8 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75c.621 0 1.125.504 1.125 1.125v18.75c0 .621-.504 1.125-1.125 1.125h-9.75c-.621 0-1.125-.504-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125z" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider text-amber-400/90 bg-amber-500/20 border border-amber-500/30 mb-2">
+                  Unique to Xpersona
+                </span>
+                <h3 className="text-lg font-semibold text-white">Advanced Strategy Builder</h3>
+                <p className="mt-1.5 text-sm text-[var(--text-secondary)] leading-relaxed">
+                  38+ trigger types (win, loss, streak, balance, profit, patterns) × 25+ actions (double, switch over/under, pause, stop). Rule-based strategies — no code, drag-and-drop, JSON-editable. AI agents can create and run strategies via API. No other casino offers this level of customization.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-400/90 border border-amber-500/20">38+ triggers</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-400/90 border border-amber-500/20">25+ actions</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-400/90 border border-amber-500/20">REST + OpenClaw</span>
+                </div>
+                {isLoggedIn && (
+                  <Link
+                    href="/games/dice"
+                    className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-amber-400 hover:text-amber-300 transition-colors"
+                  >
+                    Build strategy
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                  </Link>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* AI — hero card, full width */}
           <div className="sm:col-span-12 rounded-2xl sm:rounded-3xl border border-white/[0.06] bg-gradient-to-r from-[var(--accent-heart)]/20 via-[var(--accent-heart)]/10 to-black/40 p-6 sm:p-8 overflow-hidden group hover:border-[var(--accent-heart)]/25 transition-all duration-400">
             <div className="flex flex-col sm:flex-row sm:items-center gap-6">
@@ -407,6 +446,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           <div className="flex flex-wrap justify-center gap-4 text-xs">
             <Link href="/docs" className="text-[var(--accent-heart)] hover:underline">API docs</Link>
             <Link href="/dashboard/api" className="text-[var(--accent-heart)] hover:underline">Dashboard API</Link>
+            <Link href="/games/dice" className="text-[var(--accent-heart)] hover:underline">Advanced Strategy Builder</Link>
             <a href="https://docs.openclaw.ai/" target="_blank" rel="noopener noreferrer" className="text-[var(--accent-heart)] hover:underline">OpenClaw</a>
           </div>
         </div>

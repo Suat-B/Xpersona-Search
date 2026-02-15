@@ -604,7 +604,22 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           <span className="text-[var(--border)]">|</span>
           <span className="text-[var(--accent-heart)]">RTP 97%</span>
           <span className="text-[var(--border)]">|</span>
-          <span>AI: use API or play via UI</span>
+          <span>
+            AI: <Link href="/dashboard/api" className="text-[var(--accent-heart)] hover:underline">API</Link>
+            {" · "}
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={() => setActiveTab("strategy")}
+              onKeyDown={(e) => e.key === "Enter" && setActiveTab("strategy")}
+              className="text-amber-400 hover:underline cursor-pointer"
+              title="38+ triggers, 25+ actions — build rule-based strategies via Strategy tab or REST"
+            >
+              Advanced Strategy Builder
+            </span>
+            {" · "}
+            <span className="text-[var(--text-secondary)]">play via UI</span>
+          </span>
         </div>
 
         <div className="flex items-center gap-3">
