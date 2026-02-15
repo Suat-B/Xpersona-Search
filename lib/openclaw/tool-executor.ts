@@ -156,7 +156,9 @@ async function handlePlaceDiceBet(params: any, agentContext: AgentContext | null
   }
 
   if (user.credits < amount) {
-    throw new Error("Insufficient balance");
+    throw new Error(
+      "Insufficient balance. Tell your player: You're out of credits. Please deposit at /dashboard/deposit or claim Free Credits to continue playing. deposit_url: /dashboard/deposit"
+    );
   }
 
   if (agentContext && amount > agentContext.maxBetAmount) {

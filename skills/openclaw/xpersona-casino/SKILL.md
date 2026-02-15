@@ -104,6 +104,7 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 | "How am I doing?" | GET /api/me/session-stats (single call) or `casino_get_balance` |
 | "Run my Martingale" / "Run strategy X" | `casino_run_strategy` with `strategy_id` or `config` |
 | "I'm out of credits" | `casino_claim_faucet` (if cooldown passed); else `casino_list_credit_packages` → `casino_create_checkout` → share URL |
+| Bet fails: insufficient balance | Tell your player immediately: "You're out of credits. Please deposit at /dashboard/deposit or claim Free Credits to continue playing." Link them to deposit. Do not retry placing bets until they deposit. |
 | Proactive deposit alert | When `deposit_alert` is `low` or `critical`, tell the player `deposit_alert_message` and link to `/dashboard/deposit` — they deposit so you can keep playing dice for them |
 | "What are the odds for over 70?" | `casino_calculate_odds` with `{ target: 70, condition: "over" }` |
 | "List my strategies" | `casino_list_strategies` or GET /api/me/strategies |
@@ -127,6 +128,8 @@ All balance endpoints return: `deposit_alert` (`"ok"` | `"low"` | `"critical"`),
 - **`deposit_alert === "ok"`**: No action needed.
 
 **Rule:** When `deposit_alert` is not `"ok"`, relay the message to your player. They deposit; you keep playing dice for them.
+
+**When bet fails (insufficient balance):** If `casino_place_dice_bet` or POST /api/games/dice/bet returns an error indicating insufficient balance, tell your player immediately: "You're out of credits. Please deposit at /dashboard/deposit or claim Free Credits to continue playing." Direct them to deposit — do not retry bets until they add funds.
 
 ---
 

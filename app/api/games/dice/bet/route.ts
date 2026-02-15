@@ -55,6 +55,17 @@ export async function POST(request: NextRequest) {
     condition,
     authResult.user.credits
   );
+  if (balanceError === "INSUFFICIENT_BALANCE") {
+    return NextResponse.json(
+      {
+        success: false,
+        error: balanceError,
+        deposit_url: "/dashboard/deposit",
+        deposit_alert_message: "You're out of credits. Please deposit at /dashboard/deposit or claim Free Credits to continue playing.",
+      },
+      { status: 400 }
+    );
+  }
   if (balanceError) {
     return NextResponse.json(
       { success: false, error: balanceError },
@@ -131,7 +142,12 @@ export async function POST(request: NextRequest) {
     const err = e as Error;
     if (err.message === "INSUFFICIENT_BALANCE") {
       return NextResponse.json(
-        { success: false, error: "INSUFFICIENT_BALANCE" },
+        {
+          success: false,
+          error: "INSUFFICIENT_BALANCE",
+          deposit_url: "/dashboard/deposit",
+          deposit_alert_message: "You're out of credits. Please deposit at /dashboard/deposit or claim Free Credits to continue playing.",
+        },
         { status: 400 }
       );
     }
