@@ -389,26 +389,6 @@ export function DiceGame({
     };
   }, []);
 
-  // Pause when tab is hidden (prevents ghost games in background)
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (document.hidden) {
-        stopRef.current = true;
-        strategyStopRef.current = true;
-        abortControllerRef.current?.abort();
-        abortControllerRef.current = null;
-        if (timeoutRef.current != null) {
-          clearTimeout(timeoutRef.current);
-          timeoutRef.current = null;
-        }
-        setAutoPlay(false);
-        onAutoPlayChange?.(false);
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, [onAutoPlayChange]);
-
   const handleRoll = useCallback(async () => {
     if (autoPlay) return;
     setLoading(true);
