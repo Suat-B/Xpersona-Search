@@ -13,6 +13,10 @@ export const MAX_BET = parseInt(process.env.MAX_BET ?? "10000", 10);
 export const DICE_HOUSE_EDGE = 0.03;
 export const DICE_MAX_MULTIPLIER = 10;
 
+/** Suggested thresholds for AI to alert player to deposit — use in prompt logic */
+export const DEPOSIT_ALERT_LOW = 100;      // balance < this: suggest deposit soon
+export const DEPOSIT_ALERT_CRITICAL = 10;  // balance < this: alert immediately
+
 /** Withdrawal: 1 credit = $0.01 USD */
 export const CREDITS_TO_USD = 0.01;
 /** Minimum withdrawal in USD */

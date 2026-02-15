@@ -10,7 +10,7 @@ import { getAuthUser } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
 import { gameBets, users, strategies, advancedStrategies, agentSessions, creditPackages } from "@/lib/db/schema";
 import { eq, desc, and } from "drizzle-orm";
-import { DICE_HOUSE_EDGE, FAUCET_AMOUNT } from "@/lib/constants";
+import { DICE_HOUSE_EDGE, FAUCET_AMOUNT, DEPOSIT_ALERT_LOW, DEPOSIT_ALERT_CRITICAL, MIN_BET } from "@/lib/constants";
 import { executeDiceRound } from "@/lib/games/execute-dice";
 import { grantFaucet } from "@/lib/faucet";
 import Stripe from "stripe";
@@ -206,14 +206,27 @@ async function handleGetBalance(params: any, agentContext: AgentContext | null, 
   const winRate = totalRounds > 0 ? (wins / totalRounds) * 100 : 0;
   const sessionPnl = recentBets.reduce((sum, b) => sum + (b.payout - b.amount), 0);
   
+  const balance = user.credits;
+  const depositAlert = balance < DEPOSIT_ALERT_CRITICAL ? "critical" as const
+    : balance < DEPOSIT_ALERT_LOW ? "low" as const
+    : "ok" as const;
+
   return {
-    balance: user.credits,
+    balance,
     initial_balance: 1000,
     session_pnl: sessionPnl,
     total_rounds: totalRounds,
     win_rate: winRate,
     current_streak: calculateStreak(recentBets),
-    best_streak: calculateBestStreak(recentBets)
+    best_streak: calculateBestStreak(recentBets),
+    deposit_alert: depositAlert,
+    deposit_alert_message: depositAlert === "critical"
+      ? `Balance ${balance} credits. Deposit now to keep playing — credits arrive instantly.`
+      : depositAlert === "low"
+        ? `Balance running low (${balance} credits). Consider depositing at /dashboard/deposit.`
+        : null,
+    deposit_url: "/dashboard/deposit",
+    deposit_thresholds: { low: DEPOSIT_ALERT_LOW, critical: DEPOSIT_ALERT_CRITICAL, min_bet: MIN_BET },
   };
 }
 

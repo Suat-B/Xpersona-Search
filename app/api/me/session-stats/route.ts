@@ -3,6 +3,7 @@ import { getAuthUser } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
 import { gameBets } from "@/lib/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
+import { DEPOSIT_ALERT_LOW, DEPOSIT_ALERT_CRITICAL, MIN_BET } from "@/lib/constants";
 
 /**
  * GET /api/me/session-stats
@@ -60,15 +61,28 @@ export async function GET(request: Request) {
   }));
 
   const winRate = totalRounds > 0 ? (totalWins / totalRounds) * 100 : 0;
+  const balance = authResult.user.credits;
+
+  const depositAlert = balance < DEPOSIT_ALERT_CRITICAL ? "critical" as const
+    : balance < DEPOSIT_ALERT_LOW ? "low" as const
+    : "ok" as const;
 
   return NextResponse.json({
     success: true,
     data: {
-      balance: authResult.user.credits,
+      balance,
       rounds: totalRounds,
       sessionPnl: totalPnl,
       winRate: Math.round(winRate * 100) / 100,
       recentBets,
+      deposit_alert: depositAlert,
+      deposit_alert_message: depositAlert === "critical"
+        ? `Balance ${balance} credits. Deposit now to keep playing — credits arrive instantly.`
+        : depositAlert === "low"
+          ? `Balance running low (${balance} credits). Consider depositing at /dashboard/deposit.`
+          : null,
+      deposit_url: "/dashboard/deposit",
+      deposit_thresholds: { low: DEPOSIT_ALERT_LOW, critical: DEPOSIT_ALERT_CRITICAL, min_bet: MIN_BET },
     },
   });
 }

@@ -18,8 +18,8 @@ Base URL: `https://xpersona.co` (override with `XPERSONA_BASE_URL` if set).
 
 | Action | Method | Path | Body / Notes |
 |--------|--------|------|--------------|
-| **Session stats (AI-first)** | GET | /api/me/session-stats?gameType=dice&limit=50 | → `data.balance`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentBets` — prefer this for "how am I doing?" |
-| Balance | GET | /api/me/balance | → `data.balance` |
+| **Session stats (AI-first)** | GET | /api/me/session-stats?gameType=dice&limit=50 | → `data.balance`, `data.deposit_alert`, `data.deposit_alert_message`, `data.deposit_url`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentBets` — prefer this for "how am I doing?" |
+| Balance | GET | /api/me/balance | → `data.balance`, `data.deposit_alert`, `data.deposit_alert_message`, `data.deposit_url` |
 | Session PnL & history | GET | /api/me/bets?limit=50 | → `data.bets`, `data.sessionPnl`, `data.roundCount` |
 | List strategies | GET | /api/me/strategies?gameType=dice | → `data.strategies` |
 | Create strategy | POST | /api/me/strategies | `{ gameType: "dice", name, config }` |
@@ -65,7 +65,7 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 | casino_auth_guest | Create or authenticate as a guest user |
 | casino_auth_agent | Authenticate as an AI agent with permissions |
 | casino_place_dice_bet | Place a dice bet (amount, target, condition) |
-| casino_get_balance | Get balance and session stats (win rate, streak, session PnL) |
+| casino_get_balance | Get balance and session stats. Returns deposit_alert, deposit_alert_message — when low/critical, alert player to deposit |
 | casino_get_history | Get bet history and statistics by game_type |
 | casino_analyze_patterns | Analyze dice patterns and trends |
 | casino_run_strategy | Run dice strategy (strategy_id or inline config with progression_type) |
@@ -104,6 +104,7 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 | "How am I doing?" | GET /api/me/session-stats (single call) or `casino_get_balance` |
 | "Run my Martingale" / "Run strategy X" | `casino_run_strategy` with `strategy_id` or `config` |
 | "I'm out of credits" | `casino_claim_faucet` (if cooldown passed); else `casino_list_credit_packages` → `casino_create_checkout` → share URL |
+| Proactive deposit alert | When `deposit_alert` is `low` or `critical`, tell the player `deposit_alert_message` and link to `/dashboard/deposit` — they deposit so you can keep playing dice for them |
 | "What are the odds for over 70?" | `casino_calculate_odds` with `{ target: 70, condition: "over" }` |
 | "List my strategies" | `casino_list_strategies` or GET /api/me/strategies |
 | "Create/save a strategy" | `casino_create_strategy` with game_type, name, config |
@@ -112,6 +113,20 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 | "Verify bet X" (provably fair) | `casino_verify_bet` with bet_id, optional reveal=true |
 
 **Recommended flow:** (1) Get balance (`casino_get_balance` or GET /api/me/session-stats). (2) If low, claim faucet (`casino_claim_faucet`) or suggest deposit. (3) Place bets or run strategy. (4) Report session PnL from session-stats or `casino_get_balance`.
+
+---
+
+## Deposit alerts (tell your player to deposit)
+
+When you play dice for a player, you need credits. **If balance is low, alert the player to deposit** so you can keep playing for them.
+
+All balance endpoints return: `deposit_alert` (`"ok"` | `"low"` | `"critical"`), `deposit_alert_message` (ready-to-use text), `deposit_url` (`/dashboard/deposit`).
+
+- **`deposit_alert === "critical"`** (balance &lt; 10): Tell the player immediately. Say `deposit_alert_message` verbatim. Direct them to deposit — credits arrive instantly. Without deposit, you cannot place more bets.
+- **`deposit_alert === "low"`** (balance &lt; 100): Suggest deposit soon. Use `deposit_alert_message` or your own phrasing. Link them to `/dashboard/deposit` so they can add funds before they run out.
+- **`deposit_alert === "ok"`**: No action needed.
+
+**Rule:** When `deposit_alert` is not `"ok"`, relay the message to your player. They deposit; you keep playing dice for them.
 
 ---
 
