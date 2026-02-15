@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 
 interface Bet {
   id: string;
@@ -258,18 +259,21 @@ export function ProvablyFairBetHistory() {
         )}
       </div>
 
-      {verifyId && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
-          onClick={closeModal}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="verify-title"
-        >
+      {verifyId &&
+        typeof document !== "undefined" &&
+        createPortal(
           <div
-            className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-xl max-w-md w-full p-6 space-y-4"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60"
+            style={{ top: 0, left: 0, right: 0, bottom: 0 }}
+            onClick={closeModal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="verify-title"
           >
+            <div
+              className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-xl max-w-md w-full p-6 space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
             <div className="flex items-center justify-between">
               <h2 id="verify-title" className="text-base font-semibold text-[var(--text-primary)]">
                 Provably fair verification
@@ -326,9 +330,10 @@ export function ProvablyFairBetHistory() {
                 {detailLoading ? "Loading…" : "Reveal server seed"}
               </button>
             )}
-          </div>
-        </div>
-      )}
+            </div>
+          </div>,
+          document.body
+        )}
     </>
   );
 }
