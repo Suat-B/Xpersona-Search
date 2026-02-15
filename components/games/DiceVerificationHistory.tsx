@@ -32,7 +32,7 @@ export function DiceVerificationHistory() {
   const fetchBets = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/me/bets?gameType=dice&limit=15", { credentials: "include" });
+      const res = await fetch("/api/me/rounds?gameType=dice&limit=15", { credentials: "include" });
       const text = await res.text();
       let data: { success?: boolean; data?: { bets?: DiceBet[] } };
       try {
@@ -69,7 +69,7 @@ export function DiceVerificationHistory() {
     setRevealed(false);
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/me/bets/${betId}`, { credentials: "include" });
+      const res = await fetch(`/api/me/rounds/${betId}`, { credentials: "include" });
       const text = await res.text();
       let data: { success?: boolean; data?: { verification?: VerificationDetail } };
       try {
@@ -97,7 +97,7 @@ export function DiceVerificationHistory() {
     if (!verifyId) return;
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/me/bets/${verifyId}?reveal=1`, { credentials: "include" });
+      const res = await fetch(`/api/me/rounds/${verifyId}?reveal=1`, { credentials: "include" });
       const text = await res.text();
       let data: { success?: boolean; data?: { verification?: VerificationDetail & { serverSeed?: string } } };
       try {
@@ -143,7 +143,7 @@ export function DiceVerificationHistory() {
           {loading ? (
             <div className="px-4 py-4 text-center text-xs text-[var(--text-secondary)]">Loading…</div>
           ) : bets.length === 0 ? (
-            <div className="px-4 py-4 text-center text-xs text-[var(--text-secondary)]">No dice bets yet</div>
+            <div className="px-4 py-4 text-center text-xs text-[var(--text-secondary)]">No dice rounds yet</div>
           ) : (
             <ul className="divide-y divide-[var(--border)]">
               {bets.slice(0, 8).map((b) => (

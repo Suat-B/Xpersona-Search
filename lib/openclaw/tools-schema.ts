@@ -70,7 +70,7 @@ export const CasinoToolsSchema = {
   // Gameplay Tools
   "casino_place_dice_bet": {
     name: "casino_place_dice_bet",
-    description: "Place a bet on the dice game. If insufficient balance: tell your player to deposit at /dashboard/deposit or claim Free Credits. Do not retry until they add funds.",
+    description: "Play a dice round (amount, target, condition). If insufficient balance: tell your player to deposit at /dashboard/deposit or claim Free Credits. Do not retry until they add funds.",
     parameters: {
       type: "object",
       properties: {

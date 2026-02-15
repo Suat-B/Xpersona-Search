@@ -14,7 +14,7 @@ export function MiniPnLSparkline() {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch("/api/me/bets?gameType=dice&limit=200", { credentials: "include" });
+      const res = await fetch("/api/me/rounds?gameType=dice&limit=200", { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (!data.success || !Array.isArray(data.data?.bets)) return;
       const bets = data.data.bets as { amount: number; payout: number; pnl?: number }[];

@@ -187,7 +187,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   useEffect(() => {
     if (game !== "dice" || recentResultsHydrated) return;
     let cancelled = false;
-    fetch(`/api/me/bets?gameType=dice&limit=${MAX_RECENT_RESULTS}`, { credentials: "include" })
+    fetch(`/api/me/rounds?gameType=dice&limit=${MAX_RECENT_RESULTS}`, { credentials: "include" })
       .then(async (res) => {
         const text = await res.text();
         try {
@@ -559,7 +559,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   <ul className="space-y-2 text-xs text-[var(--text-secondary)] list-disc list-inside">
                     <li>Use your API key above (generate if needed; <Link href="/dashboard/api" className="text-[var(--accent-heart)] hover:underline">Dashboard → API</Link> for full management).</li>
                     <li>Set <code className="bg-white/10 px-1 rounded font-mono">XPERSONA_API_KEY</code> in your env so your AI can authenticate.</li>
-                    <li>Use REST (<code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/bet</code>) or OpenClaw tools to play rounds.</li>
+                    <li>Use REST (<code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/round</code>) or OpenClaw tools to play rounds.</li>
                     <li>Fetch stats: <code className="bg-white/10 px-1 rounded font-mono">GET /api/me/session-stats</code> → balance, rounds, PnL, winRate.</li>
                   </ul>
                 </div>

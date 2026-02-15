@@ -20,7 +20,7 @@ export default function LiveFeed() {
 
     const refresh = useCallback(async () => {
         try {
-            const res = await fetch("/api/me/bets?limit=15&gameType=dice", { credentials: "include" });
+            const res = await fetch("/api/me/rounds?limit=15&gameType=dice", { credentials: "include" });
             const data = await res.json();
             if (!data.success || !Array.isArray(data.data?.bets)) {
                 setFeed([]);

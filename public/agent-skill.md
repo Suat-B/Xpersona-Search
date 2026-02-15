@@ -21,12 +21,12 @@ Base URL: `https://xpersona.co` (override with `XPERSONA_BASE_URL` if set).
 |--------|--------|------|--------------|
 | **Session stats (AI-first)** | GET | /api/me/session-stats?gameType=dice&limit=50 | → `data.balance`, `data.deposit_alert`, `data.deposit_url`, `data.balance_milestone`, `data.milestone_message`, `data.proof_of_life_alerts`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentBets` — prefer this for "how am I doing?" |
 | Balance | GET | /api/me/balance | → `data.balance`, `data.deposit_alert`, `data.deposit_alert_message`, `data.deposit_url` |
-| Session PnL & history | GET | /api/me/bets?limit=50 | → `data.bets`, `data.sessionPnl`, `data.roundCount` |
+| Session PnL & history | GET | /api/me/rounds?limit=50 | → `data.bets`, `data.sessionPnl`, `data.roundCount` |
 | List strategies | GET | /api/me/strategies?gameType=dice | → `data.strategies` |
 | Create strategy | POST | /api/me/strategies | `{ gameType: "dice", name, config }` |
 | Run dice strategy | POST | /api/games/dice/run-strategy | `{ strategyId? or config?, maxRounds? }` → `data.results`, `data.sessionPnl`, `data.finalBalance` |
 | Faucet | POST | /api/faucet | Once per hour → `data.balance`, `data.granted`, `data.nextFaucetAt` |
-| Dice bet | POST | /api/games/dice/bet | `{ amount, target, condition: "over"\|"under" }` |
+| Play dice round | POST | /api/games/dice/round | `{ amount, target, condition: "over"\|"under" }` |
 | **Advanced strategies** | GET | /api/me/advanced-strategies | List rule-based strategies |
 | Run advanced strategy | POST | /api/games/dice/run-advanced-strategy | `{ strategyId? or strategy?, maxRounds? }` |
 | **Live feed (SSE)** | GET | /api/me/live-feed | Real-time round events when AI/API plays |
@@ -63,11 +63,11 @@ Use GET /api/me/session-stats for single-call stats.
 
 | User intent | Action |
 |-------------|--------|
-| "Bet 10 on over 50" | POST /api/games/dice/bet or casino_place_dice_bet: `{ amount: 10, target: 50, condition: "over" }` |
+| "Play 10 on over 50" | POST /api/games/dice/round or casino_place_dice_bet: `{ amount: 10, target: 50, condition: "over" }` |
 | "How am I doing?" | GET /api/me/session-stats or casino_get_balance |
 | "Run my Martingale" | casino_run_strategy with strategy_id or config |
 | "I'm out of credits" | casino_claim_faucet; else casino_list_credit_packages → casino_create_checkout |
-| Bet fails: insufficient balance | Tell player: "You're out of credits. Please deposit at /dashboard/deposit or claim Free Credits." |
+| When round fails (insufficient balance) | Tell player: "You're out of credits. Please deposit at /dashboard/deposit or claim Free Credits." |
 | deposit_alert low/critical | Relay deposit_alert_message, link to /dashboard/deposit |
 | "What are the odds for over 70?" | casino_calculate_odds with { target: 70, condition: "over" } |
 

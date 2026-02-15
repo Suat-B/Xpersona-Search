@@ -59,7 +59,7 @@ export default function QuantMetrics() {
         try {
             const [balanceRes, betsRes] = await Promise.all([
                 fetch("/api/me/balance", { credentials: "include" }),
-                fetch("/api/me/bets?limit=100&gameType=dice", { credentials: "include" }),
+                fetch("/api/me/rounds?limit=100&gameType=dice", { credentials: "include" }),
             ]);
             
             const parseJson = async (res: Response) => {

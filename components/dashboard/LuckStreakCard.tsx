@@ -13,7 +13,7 @@ export function LuckStreakCard() {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch("/api/me/bets?gameType=dice&limit=20", { credentials: "include" });
+      const res = await fetch("/api/me/rounds?gameType=dice&limit=20", { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (!data.success || !Array.isArray(data.data?.bets)) return;
       const bets = data.data.bets as { outcome: string }[];

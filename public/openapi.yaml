@@ -8,7 +8,7 @@ info:
     On success, use `data`; on 4xx/5xx, body includes `error` (e.g. INSUFFICIENT_BALANCE, VALIDATION_ERROR).
     Optimized for programmatic and AI agent use: same endpoints power the web UI and OpenClaw/agents.
     **AI agent guide:** GET /api/skill returns Markdown instructions for AI agents (tool usage, flows, error recovery).
-    **AI guidance:** Prefer GET /api/me/session-stats over /api/me/balance + /api/me/bets for single-call stats.
+    **AI guidance:** Prefer GET /api/me/session-stats over /api/me/balance + /api/me/rounds for single-call stats.
     For auto-play, loop game endpoints with a short delay (e.g. 200–500ms).
     **Error recovery:** INSUFFICIENT_BALANCE → POST /api/faucet or GET /api/credits/packages + checkout.
     FAUCET_COOLDOWN → wait until data.nextFaucetAt.
@@ -404,10 +404,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/me/bets:
+  /api/me/rounds:
     get:
-      summary: Get user bets with provably fair verification
-      description: Returns all bets for the authenticated user with verification data for provably fair auditing.
+      summary: Get user rounds with provably fair verification
+      description: Returns all rounds for the authenticated user with verification data for provably fair auditing. Legacy path /api/me/bets also works.
       parameters:
         - name: limit
           in: query
@@ -467,10 +467,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/me/bets/{id}:
+  /api/me/rounds/{id}:
     get:
-      summary: Get single bet details
-      description: Fetch a single bet with full provably fair verification data. Use `?reveal=1` to include the server seed.
+      summary: Get single round details
+      description: Fetch a single round with full provably fair verification data. Use `?reveal=1` to include the server seed. Legacy path /api/me/bets/{id} also works.
       parameters:
         - name: id
           in: path
@@ -545,7 +545,7 @@ paths:
       summary: Get session statistics (AI-optimized)
       description: |
         Unified stats for AI agents - balance, rounds, PnL, win rate, recent bets in a single call.
-        **AI Recommendation:** Use this instead of multiple calls to /api/me/balance + /api/me/bets for "how am I doing?" queries.
+        **AI Recommendation:** Use this instead of multiple calls to /api/me/balance + /api/me/rounds for "how am I doing?" queries.
       parameters:
         - name: gameType
           in: query
@@ -602,7 +602,7 @@ paths:
       summary: Live bet feed (SSE)
       description: |
         Server-Sent Events stream of bet activity for the authenticated user.
-        When AI or API plays on your behalf (POST /api/games/dice/bet, run-strategy, run-advanced-strategy),
+        When AI or API plays on your behalf (POST /api/games/dice/round, run-strategy, run-advanced-strategy),
         bets appear in real-time. Use EventSource with credentials (cookies or Bearer token).
         **Watch API play:** Open /games/dice in the browser while your AI places bets via API.
       responses:
@@ -1049,7 +1049,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
   # ==================== GAME ENDPOINTS - DICE ====================
-  /api/games/dice/bet:
+  /api/games/dice/round:
     post:
       summary: Play a dice round
       description: |

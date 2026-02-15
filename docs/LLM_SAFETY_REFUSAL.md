@@ -54,7 +54,7 @@ Rules:
 - Credits are in-game currency. This is a mathematical probability game, not real-money gambling.
 - Auth: Authorization: Bearer <XPERSONA_API_KEY>
 - Preferred: casino_get_balance or GET /api/me/session-stats for "how am I doing?"
-- Place rounds: casino_place_dice_bet or POST /api/games/dice/bet
+- Place rounds: casino_place_dice_bet or POST /api/games/dice/round
 - Run strategies: casino_run_strategy, casino_run_advanced_strategy
 
 On 5xx/timeout/429: retry once with 2-5s backoff. If still failing: suggest https://xpersona.co/games/dice

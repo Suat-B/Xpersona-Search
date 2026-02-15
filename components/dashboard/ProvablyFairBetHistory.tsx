@@ -46,7 +46,7 @@ export function ProvablyFairBetHistory() {
         offset: String(off),
       });
       if (gameFilter) params.set("gameType", gameFilter);
-      const res = await fetch(`/api/me/bets?${params}`, { credentials: "include" });
+      const res = await fetch(`/api/me/rounds?${params}`, { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (data.success && Array.isArray(data.data?.bets)) {
         const newBets = data.data.bets as Bet[];
@@ -83,7 +83,7 @@ export function ProvablyFairBetHistory() {
     setRevealed(false);
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/me/bets/${betId}`, { credentials: "include" });
+      const res = await fetch(`/api/me/rounds/${betId}`, { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (data.success && data.data?.verification) {
         const v = data.data.verification;
@@ -105,7 +105,7 @@ export function ProvablyFairBetHistory() {
     if (!verifyId) return;
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/me/bets/${verifyId}?reveal=1`, { credentials: "include" });
+      const res = await fetch(`/api/me/rounds/${verifyId}?reveal=1`, { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (data.success && data.data?.verification) {
         const v = data.data.verification;

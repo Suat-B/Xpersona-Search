@@ -1,4 +1,4 @@
-/** GET /api/me/bets/[id] — Legacy path. Use /api/me/rounds/[id]. Both work for backward compatibility. */
+/** GET /api/me/rounds/[id] — Fetch a single round (owner only) with verification data. */
 import { getRoundByIdHandler } from "@/lib/api/handlers/rounds";
 
 export async function GET(

@@ -1,6 +1,6 @@
 ---
 name: xpersona-casino
-description: Play xpersona.co probability game (dice) using the user's API key; check balance, claim faucet, play rounds, get session PnL, create and run custom strategies (AI/OpenClaw). AI-first: all responses are { success, data?, error? }; use GET /api/me/session-stats for single-call stats; GET /api/me/bets for history.
+description: Play xpersona.co probability game (dice) using the user's API key; check balance, claim faucet, play rounds, get session PnL, create and run custom strategies (AI/OpenClaw). AI-first: all responses are { success, data?, error? }; use GET /api/me/session-stats for single-call stats; GET /api/me/rounds for history.
 metadata: {"openclaw":{"requires":{"env":["XPERSONA_API_KEY"]},"primaryEnv":"XPERSONA_API_KEY","homepage":"https://xpersona.co"}}
 ---
 
@@ -20,7 +20,7 @@ Base URL: `https://xpersona.co` (override with `XPERSONA_BASE_URL` if set).
 |--------|--------|------|--------------|
 | **Session stats (AI-first)** | GET | /api/me/session-stats?gameType=dice&limit=50 | → `data.balance`, `data.deposit_alert`, `data.deposit_url`, `data.balance_milestone`, `data.milestone_message`, `data.proof_of_life_alerts`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentBets` — prefer this for "how am I doing?" |
 | Balance | GET | /api/me/balance | → `data.balance`, `data.deposit_alert`, `data.deposit_alert_message`, `data.deposit_url`, `data.balance_milestone`, `data.milestone_message` |
-| Session PnL & history | GET | /api/me/bets?limit=50 | → `data.bets`, `data.sessionPnl`, `data.roundCount` |
+| Session PnL & history | GET | /api/me/rounds?limit=50 | → `data.bets`, `data.sessionPnl`, `data.roundCount` |
 | List strategies | GET | /api/me/strategies?gameType=dice | → `data.strategies` |
 | Create strategy | POST | /api/me/strategies | `{ gameType: "dice", name, config }` |
 | Get strategy | GET | /api/me/strategies/:id | → `data` |
@@ -28,7 +28,7 @@ Base URL: `https://xpersona.co` (override with `XPERSONA_BASE_URL` if set).
 | Delete strategy | DELETE | /api/me/strategies/:id | |
 | Run dice strategy | POST | /api/games/dice/run-strategy | `{ strategyId? or config?, maxRounds? }` → `data.results`, `data.sessionPnl`, `data.finalBalance` |
 | Faucet | POST | /api/faucet | Once per hour → `data.balance`, `data.granted`, `data.nextFaucetAt` |
-| Dice bet | POST | /api/games/dice/bet | `{ amount, target, condition: "over"\|"under" }` |
+| Play dice round | POST | /api/games/dice/round | `{ amount, target, condition: "over"\|"under" }` |
 
 All game responses include `data.balance` and outcome. Use GET /api/me/session-stats for single-call stats.
 
@@ -64,9 +64,9 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 |------|---------|
 | casino_auth_guest | Create or authenticate as a guest user |
 | casino_auth_agent | Authenticate as an AI agent with permissions |
-| casino_place_dice_bet | Place a dice bet (amount, target, condition) |
+| casino_place_dice_bet | Play a dice round (amount, target, condition) |
 | casino_get_balance | Get balance and session stats. Returns deposit_alert, deposit_alert_message — when low/critical, alert player to deposit |
-| casino_get_history | Get bet history and statistics by game_type |
+| casino_get_history | Get round history and statistics by game_type |
 | casino_analyze_patterns | Analyze dice patterns and trends |
 | casino_run_strategy | Run dice strategy (strategy_id or inline config with progression_type) |
 | casino_list_strategies | List deployed strategies |
@@ -100,11 +100,11 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 
 | User intent | Action |
 |-------------|--------|
-| "Bet 10 on over 50" | `casino_place_dice_bet` or POST /api/games/dice/bet with `{ amount: 10, target: 50, condition: "over" }` |
+| "Play 10 on over 50" | `casino_place_dice_bet` or POST /api/games/dice/round with `{ amount: 10, target: 50, condition: "over" }` |
 | "How am I doing?" | GET /api/me/session-stats (single call) or `casino_get_balance` |
 | "Run my Martingale" / "Run strategy X" | `casino_run_strategy` with `strategy_id` or `config` |
 | "I'm out of credits" | `casino_claim_faucet` (if cooldown passed); else `casino_list_credit_packages` → `casino_create_checkout` → share URL |
-| Bet fails: insufficient balance | Tell your player immediately: "You're out of credits. Please deposit at /dashboard/deposit or claim Free Credits to continue playing." Link them to deposit. Do not retry placing bets until they deposit. |
+| When round fails (insufficient balance) | Tell your player immediately: "You're out of credits. Please deposit at /dashboard/deposit or claim Free Credits to continue playing." Link them to deposit. Do not retry until they deposit. |
 | Proactive deposit alert | When `deposit_alert` is `low` or `critical`, tell the player `deposit_alert_message` and link to `/dashboard/deposit` — they deposit so you can keep playing dice for them |
 | Balance milestone reached | When `balance_milestone` is set (1000, 2000, 5000, etc.), congratulate your player with `milestone_message` when it fits — e.g., after a big win or when they ask "how am I doing?" |
 | Proof-of-life update | Use `proof_of_life_alerts` to proactively tell your player how it's going — e.g., "You're up 250 this session!", "On a 5-win streak!", "Played 50 rounds so far." Pick 1–2 when appropriate; don't spam. |
@@ -116,7 +116,7 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 | "Show my transactions" | `casino_get_transactions` or GET /api/me/transactions |
 | "Verify bet X" (provably fair) | `casino_verify_bet` with bet_id, optional reveal=true |
 
-**Recommended flow:** (1) Get balance (`casino_get_balance` or GET /api/me/session-stats). (2) If low, claim faucet (`casino_claim_faucet`) or suggest deposit. (3) Place bets or run strategy. (4) Report session PnL from session-stats or `casino_get_balance`.
+**Recommended flow:** (1) Get balance (`casino_get_balance` or GET /api/me/session-stats). (2) If low, claim faucet (`casino_claim_faucet`) or suggest deposit. (3) Play rounds or run strategy. (4) Report session PnL from session-stats or `casino_get_balance`.
 
 ---
 
@@ -143,7 +143,7 @@ When the player's balance reaches 1,000, 2,000, 5,000, 10,000, 25,000, or 50,000
 
 **Rule:** When `balance_milestone` is present and it feels natural (e.g., after a win or when they ask how they're doing), tell your player `milestone_message` or your own encouraging phrasing. Don't spam — use it when the moment fits (e.g., they just crossed the threshold or asked for a status update).
 
-**When bet fails (insufficient balance):** If `casino_place_dice_bet` or POST /api/games/dice/bet returns an error indicating insufficient balance, tell your player immediately: "You're out of credits. Please deposit at /dashboard/deposit or claim Free Credits to continue playing." Direct them to deposit — do not retry bets until they add funds.
+**When round fails (insufficient balance):** If `casino_place_dice_bet` or POST /api/games/dice/round returns an error indicating insufficient balance, tell your player immediately: "You're out of credits. Please deposit at /dashboard/deposit or claim Free Credits to continue playing." Direct them to deposit — do not retry until they add funds.
 
 ---
 
@@ -168,7 +168,7 @@ When you play dice for a player, proactively send status updates so they know ho
 
 - `data.balance`, `data.rounds`, `data.sessionPnl`, `data.winRate`, `data.recentBets`, `data.proof_of_life_alerts`, `data.current_streak`
 
-**GET /api/me/bets?limit=50** — detailed history:
+**GET /api/me/rounds?limit=50** — detailed history:
 
 - `data.bets`: array of `{ id, gameType, amount, outcome, payout, pnl, createdAt }`
 - `data.sessionPnl`, `data.roundCount`
@@ -177,7 +177,7 @@ When you play dice for a player, proactively send status updates so they know ho
 
 ## Auto-play (AI pattern)
 
-**Dice:** Call POST /api/games/dice/bet in a loop with 200–500 ms delay. Stop on `INSUFFICIENT_BALANCE` or user stop. Always check `data.balance` before each bet.
+**Dice:** Call POST /api/games/dice/round in a loop with 200–500 ms delay. Stop on `INSUFFICIENT_BALANCE` or user stop. Always check `data.balance` before each round.
 
 ---
 
@@ -210,7 +210,7 @@ curl -s -H "Authorization: Bearer $XPERSONA_API_KEY" "https://xpersona.co/api/me
 Play dice (bet 10, over 50):
 ```bash
 curl -s -X POST -H "Authorization: Bearer $XPERSONA_API_KEY" -H "Content-Type: application/json" \
-  -d '{"amount":10,"target":50,"condition":"over"}' https://xpersona.co/api/games/dice/bet
+  -d '{"amount":10,"target":50,"condition":"over"}' https://xpersona.co/api/games/dice/round
 ```
 
 ---

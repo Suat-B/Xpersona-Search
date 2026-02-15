@@ -948,7 +948,7 @@ async function handleVerifyBet(
   const auth = request.headers.get("authorization");
   if (auth) headers.Authorization = auth;
 
-  const url = new URL(`${baseUrl}/api/me/bets/${bet_id}`);
+  const url = new URL(`${baseUrl}/api/me/rounds/${bet_id}`);
   if (reveal) url.searchParams.set("reveal", "1");
 
   const res = await fetch(url.toString(), { headers });

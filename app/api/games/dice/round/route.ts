@@ -1,4 +1,4 @@
-/** POST /api/games/dice/bet — Legacy path. Use /api/games/dice/round. Both work for backward compatibility. */
+/** POST /api/games/dice/round — Play one dice round. */
 import { NextRequest } from "next/server";
 import { postDiceRoundHandler } from "@/lib/api/handlers/dice-round";
 

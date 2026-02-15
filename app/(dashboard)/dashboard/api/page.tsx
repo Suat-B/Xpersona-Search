@@ -44,7 +44,7 @@ export default function ApiDocsPage() {
             <>Set <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> in your env.</>,
             <><code className="bg-white/10 px-1 rounded font-mono">GET /api/me/balance</code> — verify auth.</>,
             <><code className="bg-white/10 px-1 rounded font-mono">POST /api/faucet</code> — claim Free Credits.</>,
-            <><code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/bet</code> — play a dice round.</>,
+            <><code className="bg-white/10 px-1 rounded font-mono">POST /api/games/dice/round</code> — play a dice round.</>,
           ].map((content, i) => (
             <li key={i} className="flex items-start gap-3">
               <span
@@ -110,7 +110,7 @@ export default function ApiDocsPage() {
             <tbody className="text-[var(--text-primary)]">
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Session stats <span className="text-[var(--accent-heart)] text-[10px]">AI-first</span></td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/session-stats?gameType=dice&limit=50</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Balance</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/balance</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4">Session PnL and history</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/bets?limit=50</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4">Session PnL and history</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/rounds?limit=50</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">List strategies</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/strategies?gameType=dice</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Create strategy</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/me/strategies — {"{ gameType, name, config }"}</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Update strategy</td><td className="py-2 pr-4 font-mono">PATCH</td><td className="py-2 font-mono">/api/me/strategies/:id — {"{ name?, config? }"}</td></tr>
@@ -120,10 +120,10 @@ export default function ApiDocsPage() {
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Simulate advanced strategy</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/me/advanced-strategies/simulate or /:id/simulate</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Run advanced strategy</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/games/dice/run-advanced-strategy — strategyId or strategy, maxRounds</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Transactions</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/transactions?limit=50&offset=0&type=all|bet|faucet</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4">Verify bet (provably fair)</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/bets/:id?reveal=1</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4">Verify round (provably fair)</td><td className="py-2 pr-4 font-mono">GET</td><td className="py-2 font-mono">/api/me/rounds/:id?reveal=1</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Withdraw</td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/me/withdraw — {"{ amount }"} (min 10,000 credits)</td></tr>
               <tr className="border-b border-white/5"><td className="py-2 pr-4">Free Credits <span className="text-[var(--accent-heart)] text-[10px]">AI-first</span></td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/faucet</td></tr>
-              <tr className="border-b border-white/5"><td className="py-2 pr-4">Play dice round <span className="text-[var(--accent-heart)] text-[10px]">AI-first</span></td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/games/dice/bet — {"{ amount, target, condition: \"over\"|\"under\" }"}</td></tr>
+              <tr className="border-b border-white/5"><td className="py-2 pr-4">Play dice round <span className="text-[var(--accent-heart)] text-[10px]">AI-first</span></td><td className="py-2 pr-4 font-mono">POST</td><td className="py-2 font-mono">/api/games/dice/round — {"{ amount, target, condition: \"over\"|\"under\" }"}</td></tr>
             </tbody>
           </table>
         </div>
@@ -201,7 +201,7 @@ export default function ApiDocsPage() {
             <h3 className="font-medium text-[var(--text-primary)] mb-2">Bets and session PnL</h3>
             <ul className="space-y-1 text-[var(--text-secondary)] font-mono text-xs">
               <li>GET /api/me/session-stats?gameType=dice&limit=50 — Balance, rounds, PnL, win rate, recent bets (AI-first)</li>
-              <li>GET /api/me/bets?limit=50 — Recent bets, data.sessionPnl, data.roundCount (max limit 200)</li>
+              <li>GET /api/me/rounds?limit=50 — Recent rounds, data.sessionPnl, data.roundCount (max limit 200)</li>
             </ul>
           </div>
           <div>
@@ -219,7 +219,7 @@ export default function ApiDocsPage() {
             <h3 className="font-medium text-[var(--text-primary)] mb-2">Free Credits and games</h3>
             <ul className="space-y-1 text-[var(--text-secondary)] font-mono text-xs">
               <li>POST /api/faucet — Claim hourly Free Credits</li>
-              <li>POST /api/games/dice/bet — {"{ amount, target, condition }"}</li>
+              <li>POST /api/games/dice/round — {"{ amount, target, condition }"}</li>
             </ul>
           </div>
           <div>
@@ -254,7 +254,7 @@ export default function ApiDocsPage() {
             <p className="text-xs text-[var(--text-secondary)] mb-1">Play dice round (10 credits, over 50)</p>
             <pre className="rounded-lg bg-[var(--bg-deep)] border border-[var(--border)] p-4 text-xs font-mono text-[var(--text-primary)] overflow-x-auto">
 {`curl -s -X POST -H "Authorization: Bearer $XPERSONA_API_KEY" -H "Content-Type: application/json" \\
-  -d '{"amount":10,"target":50,"condition":"over"}' https://xpersona.co/api/games/dice/bet`}
+  -d '{"amount":10,"target":50,"condition":"over"}' https://xpersona.co/api/games/dice/round`}
             </pre>
           </div>
           <div>

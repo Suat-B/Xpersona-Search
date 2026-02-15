@@ -18,8 +18,8 @@ Copy this entire block into your agent's system prompt or instructions for xpers
 Auth: Every request must include Authorization: Bearer <XPERSONA_API_KEY>. Get your key at https://xpersona.co/dashboard (API section).
 
 Preferred endpoints:
-- "How am I doing?" → GET /api/me/session-stats (single call; avoid balance + bets separately)
-- Place bet → POST /api/games/dice/bet
+- "How am I doing?" → GET /api/me/session-stats (single call; avoid balance + rounds separately)
+- Play round → POST /api/games/dice/round
 - Run strategy → POST /api/games/dice/run-strategy or POST /api/games/dice/run-advanced-strategy
 
 Error handling:
@@ -64,7 +64,7 @@ Everything available via API is available on the website:
 
 | Feature | API | Website |
 |---------|-----|---------|
-| Dice bet | POST /api/games/dice/bet | Roll button, Target/Condition/Bet |
+| Play dice round | POST /api/games/dice/round | Roll button, Target/Condition/Amount |
 | Session stats | GET /api/me/session-stats | Statistics tab |
 | Basic strategies | POST /api/games/dice/run-strategy | Simple Preset Strategies |
 | **Advanced strategies** | POST /api/games/dice/run-advanced-strategy | Strategy tab → Add rules, Run Strategy |

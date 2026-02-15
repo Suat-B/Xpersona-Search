@@ -77,4 +77,4 @@ class Strategy:
 
 ## Dice compatibility
 
-The dice bet API expects `amount`, `target`, and `condition` ("over" / "under"). Your `BetDecision` maps 1:1 to `POST /api/games/dice/bet`. Limits and house edge are available via `ctx.get_limits()`.
+The dice round API expects `amount`, `target`, and `condition` ("over" / "under"). Your `BetDecision` maps 1:1 to `POST /api/games/dice/round`. Limits and house edge are available via `ctx.get_limits()`.

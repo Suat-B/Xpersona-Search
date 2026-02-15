@@ -28,8 +28,8 @@ In our codebase this is implemented in `lib/games/rng.ts` (`hashToFloat`) and `l
 
 ## API
 
-- **GET /api/me/bets?gameType=dice** — List your recent dice bets. Each bet includes verification data: `serverSeedHash`, `clientSeed`, `nonce`, and `resultPayload` (value, target, condition, win, multiplier).
-- **GET /api/me/bets/[id]** — Fetch a single bet (yours only) with full verification payload. Use **?reveal=1** to include the `serverSeed` in the response so you can run the formula locally and confirm the hash.
+- **GET /api/me/rounds?gameType=dice** — List your recent dice rounds. Each round includes verification data: `serverSeedHash`, `clientSeed`, `nonce`, and `resultPayload` (value, target, condition, win, multiplier).
+- **GET /api/me/rounds/[id]** — Fetch a single round (yours only) with full verification payload. Use **?reveal=1** to include the `serverSeed` in the response so you can run the formula locally and confirm the hash.
 
 Example verification response (without reveal):
 

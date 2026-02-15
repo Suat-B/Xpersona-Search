@@ -118,7 +118,7 @@ export function DiceGame({
       let httpStatus: number;
       let data: BetRes;
       try {
-        const response = await fetch("/api/games/dice/bet", {
+        const response = await fetch("/api/games/dice/round", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",

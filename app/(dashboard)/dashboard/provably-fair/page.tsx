@@ -71,9 +71,9 @@ export default function ProvablyFairPage() {
           <li className="flex gap-4">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent-heart)]/10 text-[var(--accent-heart)] font-mono text-sm font-bold">3</span>
             <div>
-              <strong className="text-[var(--text-primary)]">After the bet</strong>
+              <strong className="text-[var(--text-primary)]">After the round</strong>
               <p className="text-sm text-[var(--text-secondary)] mt-1">
-                You can reveal the server seed for any of your dice bets and verify locally that (a) <code className="bg-white/10 px-1.5 py-0.5 rounded text-xs font-mono">SHA256(serverSeed)</code> matches the committed hash, and (b) the formula yields the same result.
+                You can reveal the server seed for any of your dice rounds and verify locally that (a) <code className="bg-white/10 px-1.5 py-0.5 rounded text-xs font-mono">SHA256(serverSeed)</code> matches the committed hash, and (b) the formula yields the same result.
               </p>
             </div>
           </li>
@@ -98,13 +98,13 @@ export default function ProvablyFairPage() {
         </pre>
       </GlassCard>
 
-      {/* All past bets — Provably fair audit */}
+      {/* All past rounds — Provably fair audit */}
       <section>
         <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
-          All past bets — Provably fair audit
+          All past rounds — Provably fair audit
         </h2>
         <p className="text-sm text-[var(--text-secondary)] mb-4">
-          Every game is tracked in <code className="bg-white/10 px-1 rounded font-mono text-xs">game_bets</code>. Click <strong className="text-[var(--accent-heart)]">Verify</strong> on any bet to see server seed hash, client seed, nonce, and the formula. Reveal the server seed to run the calculation yourself.
+          Every game is tracked in <code className="bg-white/10 px-1 rounded font-mono text-xs">game_bets</code>. Click <strong className="text-[var(--accent-heart)]">Verify</strong> on any round to see server seed hash, client seed, nonce, and the formula. Reveal the server seed to run the calculation yourself.
         </p>
         <ProvablyFairBetHistory />
       </section>
@@ -115,7 +115,7 @@ export default function ProvablyFairPage() {
           Play dice
         </h2>
         <p className="text-sm text-[var(--text-secondary)] mb-4">
-          On the dice game page, the <strong className="text-[var(--text-primary)]">Stats</strong> tab also has a compact <strong className="text-[var(--text-primary)]">Verifiable history</strong> section. All bets are tracked here too.
+          On the dice game page, the <strong className="text-[var(--text-primary)]">Stats</strong> tab also has a compact <strong className="text-[var(--text-primary)]">Verifiable history</strong> section. All rounds are tracked here too.
         </p>
         <Link
           href="/games/dice"
@@ -136,10 +136,10 @@ export default function ProvablyFairPage() {
         </h2>
         <ul className="space-y-2 text-sm text-[var(--text-secondary)]">
           <li>
-            <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">GET /api/me/bets</code> — All past bets (limit, offset, gameType). Every bet includes verification when available.
+            <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">GET /api/me/rounds</code> — All past rounds (limit, offset, gameType). Every round includes verification when available.
           </li>
           <li>
-            <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">GET /api/me/bets/[id]</code> — Single bet with full verification. Use <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">?reveal=1</code> to include the server seed.
+            <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">GET /api/me/rounds/[id]</code> — Single round with full verification. Use <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">?reveal=1</code> to include the server seed.
           </li>
         </ul>
       </GlassCard>
@@ -150,7 +150,7 @@ export default function ProvablyFairPage() {
           Audit trail
         </h2>
         <p className="text-sm text-[var(--text-secondary)]">
-          All dice plays — manual rolls from the web app, strategy runs, and OpenClaw AI bets — use the same execution path: a server seed is created, stored in <code className="bg-white/10 px-1 rounded font-mono text-xs">server_seeds</code>, and linked from <code className="bg-white/10 px-1 rounded font-mono text-xs">game_bets</code> via <code className="bg-white/10 px-1 rounded font-mono text-xs">server_seed_id</code>. There are no unlinked dice bets; every round is part of the same provably fair audit trail.
+          All dice plays — manual rolls from the web app, strategy runs, and OpenClaw AI rounds — use the same execution path: a server seed is created, stored in <code className="bg-white/10 px-1 rounded font-mono text-xs">server_seeds</code>, and linked from <code className="bg-white/10 px-1 rounded font-mono text-xs">game_bets</code> via <code className="bg-white/10 px-1 rounded font-mono text-xs">server_seed_id</code>. There are no unlinked dice rounds; every round is part of the same provably fair audit trail.
         </p>
       </GlassCard>
     </div>
