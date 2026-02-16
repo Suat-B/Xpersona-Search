@@ -23,7 +23,7 @@ export function MomentumMeter({ recentResults, compact = false }: MomentumMeterP
         </span>
         <div className="flex items-center gap-1.5">
           {isHot && (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-gradient-to-r from-amber-500/30 to-red-500/30 text-amber-400 border border-amber-500/40 animate-fire-glow">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/40">
               HOT
             </span>
           )}
@@ -37,7 +37,7 @@ export function MomentumMeter({ recentResults, compact = false }: MomentumMeterP
           className="h-full rounded-full transition-all duration-500 ease-out relative overflow-hidden"
           style={{
             width: `${heatPercent}%`,
-            background: `linear-gradient(90deg, #0ea5e9 0%, #0ea5e9 ${Math.max(0, heatPercent - 60)}%, #f59e0b ${Math.max(0, heatPercent - 40)}%, #ef4444 100%)`,
+            background: "#0ea5e9",
           }}
         >
           {heatPercent > 5 && (

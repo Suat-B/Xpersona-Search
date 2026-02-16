@@ -261,7 +261,7 @@ export function SessionAura({
       <div className="flex-shrink-0 px-2 pb-2 relative">
         <div className="h-1.5 w-full rounded-full overflow-hidden bg-white/[0.06] relative">
           <div
-            className="h-full w-full rounded-full bg-gradient-to-r from-[#30d158] via-[#ff9f0a] to-[#ff453a]"
+            className="h-full w-full rounded-full bg-gradient-to-r from-[#30d158] via-[#0ea5e9] to-[#ff453a]"
             aria-hidden
           />
           <div

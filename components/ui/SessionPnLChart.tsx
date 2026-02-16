@@ -105,7 +105,7 @@ export function SessionPnLChart({
   const lastX = PAD + ((points.length - 1) / Math.max(1, points.length - 1)) * (CHART_W - PAD * 2);
   const lastY = maxPnl <= 0 ? CHART_H - PAD : PAD + (maxPnl - (points[points.length - 1]?.pnl ?? 0)) * scaleY;
   const isUp = (points[points.length - 1]?.pnl ?? 0) >= 0;
-  const strokeColor = totalPnl >= 0 ? "#10b981" : "#f59e0b";
+  const strokeColor = totalPnl >= 0 ? "#30d158" : "#ff453a";
 
   const strokeW = isHero ? 5 : isLarge ? 4 : isMini ? 2.5 : 3;
   const dotR = isHero ? 6 : isLarge ? 5 : isMini ? 2.5 : 3;
@@ -178,14 +178,14 @@ export function SessionPnLChart({
             <path d={`M ${isHero ? 40 : 32} 0 L 0 0 0 ${isHero ? 40 : 32}`} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={isHero ? 1 : 0.5} />
           </pattern>
           <linearGradient id={`pnl-fill-up-${uid}`} x1="0" y1="1" x2="0" y2="0">
-            <stop offset="0%" stopColor="#10b981" stopOpacity={0} />
-            <stop offset="40%" stopColor="#10b981" stopOpacity={0.2} />
-            <stop offset="100%" stopColor="#10b981" stopOpacity={0.55} />
+            <stop offset="0%" stopColor="#30d158" stopOpacity={0} />
+            <stop offset="40%" stopColor="#30d158" stopOpacity={0.2} />
+            <stop offset="100%" stopColor="#30d158" stopOpacity={0.5} />
           </linearGradient>
           <linearGradient id={`pnl-fill-down-${uid}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.55} />
-            <stop offset="60%" stopColor="#f59e0b" stopOpacity={0.25} />
-            <stop offset="100%" stopColor="#f59e0b" stopOpacity={0} />
+            <stop offset="0%" stopColor="#ff453a" stopOpacity={0.5} />
+            <stop offset="60%" stopColor="#ff453a" stopOpacity={0.2} />
+            <stop offset="100%" stopColor="#ff453a" stopOpacity={0} />
           </linearGradient>
           <linearGradient id={`pnl-fill-neutral-${uid}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--accent-heart)" stopOpacity={0.3} />
@@ -241,7 +241,7 @@ export function SessionPnLChart({
               cx={lastX}
               cy={lastY}
               r={dotR}
-              fill={isUp ? "#10b981" : "#f59e0b"}
+              fill={isUp ? "#30d158" : "#ff453a"}
               stroke="rgba(10,10,15,0.9)"
               strokeWidth={isLarge ? 2.5 : 1.5}
               className={`pnl-dot-${uid}`}
@@ -251,7 +251,7 @@ export function SessionPnLChart({
               cy={lastY}
               r={pingR}
               fill="none"
-              stroke={isUp ? "#10b981" : "#f59e0b"}
+              stroke={isUp ? "#30d158" : "#ff453a"}
               strokeWidth={isLarge ? 2 : 1.5}
               strokeOpacity={0.35}
               className="animate-ping"

@@ -34,11 +34,11 @@ function momentumScore(last10: number, last20: number): { score: number; label: 
   return { score: 0, label: "Neutral" };
 }
 
-function statusColor(val: number | null, good: number, bad: number): "emerald" | "amber" | "red" | "neutral" {
+function statusColor(val: number | null, good: number, bad: number): "emerald" | "blue" | "red" | "neutral" {
   if (val == null) return "neutral";
   if (val >= good) return "emerald";
   if (val <= bad) return "red";
-  return "amber";
+  return "blue";
 }
 
 interface QuantMetricsGridProps {
@@ -48,10 +48,10 @@ interface QuantMetricsGridProps {
   compact?: boolean;
 }
 
-function StatusDot({ status }: { status: "emerald" | "amber" | "red" | "neutral" }) {
+function StatusDot({ status }: { status: "emerald" | "blue" | "red" | "neutral" }) {
   if (status === "neutral") return <span className="w-1.5 h-1.5 rounded-full bg-white/20 shrink-0" />;
   const color =
-    status === "emerald" ? "bg-emerald-400" : status === "amber" ? "bg-amber-400" : "bg-red-400";
+    status === "emerald" ? "bg-emerald-400" : status === "blue" ? "bg-[#0ea5e9]" : "bg-red-400";
   return <span className={`w-1.5 h-1.5 rounded-full ${color} shrink-0`} aria-hidden />;
 }
 
@@ -73,7 +73,7 @@ export function QuantMetricsGrid({ metrics, recentResults, compact = false }: Qu
     label: string,
     value: React.ReactNode,
     dataValue?: string | number | null,
-    status?: "emerald" | "amber" | "red" | "neutral",
+    status?: "emerald" | "blue" | "red" | "neutral",
     large?: boolean
   ) => (
     <div
@@ -121,9 +121,9 @@ export function QuantMetricsGrid({ metrics, recentResults, compact = false }: Qu
       )}
 
       {!compact && hasNegativeEdge && recentResults.length < 5 && (
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2.5">
+        <div className="rounded-xl border border-[#0ea5e9]/20 bg-[#0ea5e9]/5 px-3 py-2.5">
           <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-            <span className="font-semibold text-amber-400/90">House edge −{edgePct}%.</span>{" "}
+            <span className="font-semibold text-[#0ea5e9]/90">House edge −{edgePct}%.</span>{" "}
             Use Kelly criterion for position sizing. Strategy builder for backtests.
           </p>
         </div>
@@ -227,7 +227,7 @@ export function QuantMetricsGrid({ metrics, recentResults, compact = false }: Qu
               momentum.label === "Hot"
                 ? "text-[#30d158]"
                 : momentum.label === "Cold"
-                  ? "text-amber-400"
+                  ? "text-[#0ea5e9]"
                   : "text-[var(--text-secondary)]"
             }
           >

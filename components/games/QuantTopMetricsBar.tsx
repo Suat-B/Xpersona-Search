@@ -36,17 +36,17 @@ interface QuantTopMetricsBarProps {
   mobile?: boolean;
 }
 
-function formatSharpeColor(sharpe: number | null): "emerald" | "amber" | "neutral" {
+function formatSharpeColor(sharpe: number | null): "emerald" | "blue" | "neutral" {
   if (sharpe == null) return "neutral";
   if (sharpe >= 0.5) return "emerald";
-  if (sharpe >= 0) return "amber";
+  if (sharpe >= 0) return "blue";
   return "neutral";
 }
 
-function formatKellyColor(kelly: number | null): "emerald" | "amber" | "neutral" {
+function formatKellyColor(kelly: number | null): "emerald" | "blue" | "neutral" {
   if (kelly == null) return "neutral";
   if (kelly >= 5) return "emerald";
-  if (kelly >= 1) return "amber";
+  if (kelly >= 1) return "blue";
   return "neutral";
 }
 
@@ -102,9 +102,9 @@ export function QuantTopMetricsBar({
         }`}
       >
       <div className="flex items-center gap-0">
-      {/* NAV */}
+      {/* BALANCE */}
       <div className="metric-badge shrink-0 px-2 py-0.5">
-        <span className="text-[10px] sm:text-[8px] text-[var(--text-tertiary)] uppercase tracking-wider">NAV</span>
+        <span className="text-[10px] sm:text-[8px] text-[var(--text-tertiary)] uppercase tracking-wider">BALANCE</span>
         <span className="text-[11px] lg:text-[11px] font-semibold text-[var(--text-primary)] tabular-nums">
           {navLoading ? "…" : nav.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </span>
@@ -140,7 +140,7 @@ export function QuantTopMetricsBar({
         <span className="text-[10px] sm:text-[8px] text-[var(--text-tertiary)] uppercase tracking-wider">Sharpe</span>
         <span
           className={`text-[11px] font-semibold tabular-nums ${
-            sharpeColor === "emerald" ? "text-emerald-400" : sharpeColor === "amber" ? "text-amber-400" : "text-[var(--text-primary)]"
+            sharpeColor === "emerald" ? "text-emerald-400" : sharpeColor === "blue" ? "text-[#0ea5e9]" : "text-[var(--text-primary)]"
           }`}
         >
           {sharpeRatio != null ? sharpeRatio.toFixed(2) : "—"}
@@ -151,9 +151,9 @@ export function QuantTopMetricsBar({
 
       {/* Win Rate */}
       <div className="metric-badge shrink-0 px-2 py-0.5 flex items-center gap-1">
-        {winRate < 45 && rounds > 0 && <span className="w-1 h-1 rounded-full bg-amber-400/80 shrink-0" aria-hidden />}
+        {winRate < 45 && rounds > 0 && <span className="w-1 h-1 rounded-full bg-[#ff453a]/80 shrink-0" aria-hidden />}
         <span className="text-[10px] sm:text-[8px] text-[var(--text-tertiary)] uppercase tracking-wider">WR</span>
-        <span className={`text-[11px] font-semibold tabular-nums ${winRate >= 50 ? "text-emerald-400/90" : winRate < 45 && rounds > 0 ? "text-amber-400" : "text-[var(--text-primary)]"}`}>
+        <span className={`text-[11px] font-semibold tabular-nums ${winRate >= 50 ? "text-emerald-400/90" : winRate < 45 && rounds > 0 ? "text-[#ff453a]" : "text-[var(--text-primary)]"}`}>
           {winRate.toFixed(1)}%
         </span>
       </div>
@@ -192,7 +192,7 @@ export function QuantTopMetricsBar({
         <span className="text-[10px] sm:text-[8px] text-[var(--text-tertiary)] uppercase tracking-wider">Kelly</span>
         <span
           className={`text-[11px] font-semibold tabular-nums ${
-            kellyColor === "emerald" ? "text-emerald-400" : kellyColor === "amber" ? "text-amber-400" : "text-[var(--text-primary)]"
+            kellyColor === "emerald" ? "text-emerald-400" : kellyColor === "blue" ? "text-[#0ea5e9]" : "text-[var(--text-primary)]"
           }`}
         >
           {kellyFraction != null ? `${kellyFraction.toFixed(1)}%` : "—"}

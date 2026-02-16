@@ -24,9 +24,9 @@ export function ProbabilityBar({ target, condition, className = "" }: Probabilit
   if (percentage >= 50) {
     riskLevel = { label: "Low Risk", color: "bg-emerald-500" };
   } else if (percentage >= 25) {
-    riskLevel = { label: "Medium Risk", color: "bg-amber-500" };
+    riskLevel = { label: "Medium Risk", color: "bg-[#0ea5e9]" };
   } else if (percentage >= 10) {
-    riskLevel = { label: "High Risk", color: "bg-orange-500" };
+    riskLevel = { label: "High Risk", color: "bg-[#ff453a]" };
   } else {
     riskLevel = { label: "Extreme Risk", color: "bg-red-500" };
   }

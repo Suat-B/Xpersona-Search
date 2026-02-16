@@ -21,7 +21,7 @@ const PROGRESSION_LABELS: Record<string, string> = {
 function riskColor(risk: string): string {
   switch (risk) {
     case "LOW": return "text-emerald-400 bg-emerald-500/10";
-    case "MEDIUM": return "text-amber-400 bg-amber-500/10";
+    case "MEDIUM": return "text-[#0ea5e9] bg-[#0ea5e9]/10";
     case "HIGH": return "text-red-400 bg-red-500/10";
     case "CALCULATED": return "text-violet-400 bg-violet-500/10";
     default: return "text-[var(--text-secondary)] bg-white/5";

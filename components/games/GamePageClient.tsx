@@ -114,8 +114,8 @@ function BacktestTabContent({ strategy }: { strategy: AdvancedDiceStrategy | nul
             </div>
           </div>
           {simulationResult.shouldStop && simulationResult.stopReason && (
-            <div className="p-3 rounded-sm bg-amber-500/10 border border-amber-500/30">
-              <p className="text-sm text-amber-400"><strong>Stopped:</strong> {simulationResult.stopReason}</p>
+            <div className="p-3 rounded-sm bg-[#0ea5e9]/10 border border-[#0ea5e9]/30">
+              <p className="text-sm text-[#0ea5e9]"><strong>Stopped:</strong> {simulationResult.stopReason}</p>
             </div>
           )}
           <div className="terminal-pane p-3 rounded-sm">
@@ -657,7 +657,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
 
       {hasApiKey === false && (
         <Link href="/dashboard/connect-ai" className="fixed top-4 left-0 right-0 z-[60] flex items-center justify-center gap-3 py-2.5 px-4 bg-[#0ea5e9]/10 border-b border-[#0ea5e9]/30 text-[#0ea5e9] hover:bg-[#0ea5e9]/15 transition-colors backdrop-blur-sm">
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+          <span className="w-2 h-2 rounded-full bg-[#0ea5e9] animate-pulse shrink-0" />
           <span className="text-sm font-medium">Connect your AI — Your agent needs an API key</span>
           <span className="text-xs font-semibold">Connect now →</span>
         </Link>
@@ -739,7 +739,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             </svg>
             <span>Deposit</span>
           </Link>
-          <Link href="/dashboard/withdraw" className="hidden sm:inline text-[11px] lg:text-[10px] text-amber-400/80 hover:text-amber-400 font-semibold uppercase tracking-wider min-h-[40px] lg:min-h-0 flex items-center">Withdraw</Link>
+          <Link href="/dashboard/withdraw" className="hidden sm:inline text-[11px] lg:text-[10px] text-[#0ea5e9]/80 hover:text-[#0ea5e9] font-semibold uppercase tracking-wider min-h-[40px] lg:min-h-0 flex items-center">Withdraw</Link>
         </div>
       </header>
 

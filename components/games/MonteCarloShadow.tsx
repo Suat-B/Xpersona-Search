@@ -24,14 +24,8 @@ function normalFromUniform(u1: number, u2: number): number {
   return r * Math.cos(2 * Math.PI * u2);
 }
 
-/** Distinct colors for each path — teal, cyan, blue, purple, violet, pink, amber, green */
-const PATH_COLORS = [
-  "#64d2ff", "#0ea5e9", "#0a84ff", "#5e5ce6", "#bf5af2",
-  "#ff2d55", "#ff9f0a", "#30d158", "#10b981", "#14b8a6",
-  "#06b6d4", "#3b82f6", "#8b5cf6", "#a855f7", "#ec4899",
-  "#f43f5e", "#fb923c", "#22c55e", "#84cc16", "#eab308",
-  "#f97316", "#6366f1", "#a78bfa", "#f472b6", "#fb7185",
-];
+/** Single accent — all paths use same blue with opacity variation for depth */
+const PATH_ACCENT = "#0ea5e9";
 
 interface MonteCarloShadowProps {
   series: PnLPoint[];
@@ -53,7 +47,7 @@ export function MonteCarloShadow({ series, totalPnl, rounds }: MonteCarloShadowP
   const { pathData, viewW, viewH, stats, zeroY, isEmpty } = useMemo(() => {
     if (series.length < 5) {
       return {
-        pathData: [] as { d: string; color: string }[],
+        pathData: [] as { d: string; color: string; opacity: number }[],
         viewW: 400,
         viewH: 120,
         stats: null,
@@ -116,7 +110,8 @@ export function MonteCarloShadow({ series, totalPnl, rounds }: MonteCarloShadowP
       });
       return {
         d: `M ${points.join(" L ")}`,
-        color: PATH_COLORS[i % PATH_COLORS.length],
+        color: PATH_ACCENT,
+        opacity: 0.12 + (i / Math.max(1, allPaths.length - 1)) * 0.2,
       };
     });
 
@@ -161,7 +156,7 @@ export function MonteCarloShadow({ series, totalPnl, rounds }: MonteCarloShadowP
           <div className="flex items-center gap-x-3 gap-y-1 flex-wrap justify-end text-[10px] sm:text-[9px] font-mono tabular-nums">
             <span title="Mean projected P&L after 40 rounds">
               <span className="text-[var(--text-quaternary)]">E[P&L]:</span>{" "}
-              <span className={stats.meanFinal >= 0 ? "text-[#30d158]" : "text-[#f59e0b]"}>
+              <span className={stats.meanFinal >= 0 ? "text-[#30d158]" : "text-[#ff453a]"}>
                 {stats.meanFinal >= 0 ? "+" : ""}
                 {stats.meanFinal.toFixed(1)}
               </span>
@@ -174,7 +169,7 @@ export function MonteCarloShadow({ series, totalPnl, rounds }: MonteCarloShadowP
             </span>
             <span title="EV per round (μ)">
               <span className="text-[var(--text-quaternary)]">μ:</span>{" "}
-              <span className={stats.evPerRound >= 0 ? "text-[#30d158]" : "text-[#f59e0b]"}>
+              <span className={stats.evPerRound >= 0 ? "text-[#30d158]" : "text-[#ff453a]"}>
                 {stats.evPerRound >= 0 ? "+" : ""}
                 {stats.evPerRound.toFixed(2)}
               </span>
@@ -223,7 +218,7 @@ export function MonteCarloShadow({ series, totalPnl, rounds }: MonteCarloShadowP
               strokeLinecap="round"
             />
           )}
-          {pathData.map(({ d, color }, i) => (
+          {pathData.map(({ d, color, opacity = 0.2 }, i) => (
             <path
               key={i}
               d={d}
@@ -232,7 +227,7 @@ export function MonteCarloShadow({ series, totalPnl, rounds }: MonteCarloShadowP
               strokeWidth="1"
               strokeLinecap="round"
               strokeLinejoin="round"
-              strokeOpacity={0.12 + (i / pathData.length) * 0.14}
+              strokeOpacity={opacity}
               className="transition-opacity duration-300"
             />
           ))}

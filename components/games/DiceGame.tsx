@@ -613,7 +613,7 @@ export function DiceGame({
             <div className="flex items-center justify-between gap-2 lg:gap-3 flex-wrap">
               <div className="flex items-center gap-1.5 lg:gap-3 font-mono text-[10px] lg:text-[10px] min-w-0 shrink flex-wrap">
                 <span className="flex items-center gap-1.5">
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${loading || autoPlay ? "bg-amber-400 animate-pulse" : "bg-[#30d158]"}`} aria-hidden />
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${loading || autoPlay ? "bg-[#0ea5e9] animate-pulse" : "bg-[#30d158]"}`} aria-hidden />
                   <span className="text-[var(--text-tertiary)] uppercase tracking-wider">
                     {loading ? "Exec" : strategyRun ? "Strategy" : aiDriving ? "LIVE" : activeStrategyName ?? "Ready"}
                   </span>
@@ -631,9 +631,9 @@ export function DiceGame({
                     className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm text-[10px] font-bold tabular-nums ${
                       isWinStreak
                         ? currentStreak >= 8
-                          ? "bg-amber-500/20 text-amber-400 border border-amber-500/40"
+                          ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/40"
                           : currentStreak >= 5
-                            ? "bg-orange-500/15 text-orange-400 border border-orange-500/30"
+                            ? "bg-[#0ea5e9]/15 text-[#0ea5e9] border border-[#0ea5e9]/30"
                             : "bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/30"
                         : "bg-[#ff453a]/15 text-[#ff453a] border border-[#ff453a]/30"
                     }`}
@@ -666,7 +666,7 @@ export function DiceGame({
                       <span>{result.win ? `+${result.payout}` : `-${amount}`} U</span>
                     </div>
                     {!result.win && Math.abs(result.result - target) < 2.0 && (
-                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[10px] font-bold uppercase tracking-wider bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/40">
                         <span>SO CLOSE</span>
                         <span className="tabular-nums opacity-90">{Math.abs(result.result - target).toFixed(2)} away</span>
                       </div>
@@ -713,7 +713,7 @@ export function DiceGame({
                 </div>
                 <div className="h-1 w-full rounded-sm bg-white/[0.06] overflow-hidden">
                   <div
-                    className="h-full rounded-sm bg-gradient-to-r from-[#0ea5e9] to-[#5e5ce6] transition-all duration-300"
+                    className="h-full rounded-sm bg-[#0ea5e9] transition-all duration-300"
                     style={{ width: `${(condition === "over" ? 100 - target : target)}%` }}
                   />
                 </div>

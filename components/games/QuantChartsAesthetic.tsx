@@ -74,7 +74,7 @@ export function QuantChartsAesthetic({
       {/* Win rate gauge — hidden in analytics layout */}
       {!isAnalytics && (
       <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 p-4 shadow-lg shadow-black/20 backdrop-blur-sm">
-        <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-red-500/5 pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-br from-[#30d158]/5 via-transparent to-[#ff453a]/5 pointer-events-none" />
         <h4 className="relative text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest mb-3 flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-heart)] animate-pulse" />
           Win rate gauge
@@ -84,12 +84,12 @@ export function QuantChartsAesthetic({
             <svg viewBox="0 0 120 70" className="w-28 h-14">
               <defs>
                 <linearGradient id="gauge-bg" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor="#ef4444" />
-                  <stop offset="50%" stopColor="#f59e0b" />
-                  <stop offset="100%" stopColor="#10b981" />
+                  <stop offset="0%" stopColor="#ff453a" />
+                  <stop offset="50%" stopColor="#0ea5e9" />
+                  <stop offset="100%" stopColor="#30d158" />
                 </linearGradient>
                 <linearGradient id="gauge-fill" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor="#10b981" />
+                  <stop offset="0%" stopColor="#30d158" />
                   <stop offset="100%" stopColor="#34d399" />
                 </linearGradient>
                 <filter id="glow">
@@ -130,7 +130,7 @@ export function QuantChartsAesthetic({
             <div className="absolute inset-0 flex items-end justify-center pb-1">
               <span
                 className={`text-xl font-black font-mono tabular-nums ${
-                  winRate >= 55 ? "text-emerald-400" : winRate <= 45 ? "text-red-400" : "text-amber-400"
+                  winRate >= 55 ? "text-emerald-400" : winRate <= 45 ? "text-red-400" : "text-[#0ea5e9]"
                 }`}
               >
                 {winRate.toFixed(0)}%
@@ -139,7 +139,7 @@ export function QuantChartsAesthetic({
           </div>
           <div className="flex flex-col gap-1 text-[10px]">
             <span className="text-emerald-400/90 font-medium">0%</span>
-            <span className="text-amber-400/90 font-medium">50%</span>
+            <span className="text-[#0ea5e9]/90 font-medium">50%</span>
             <span className="text-red-400/90 font-medium">100%</span>
           </div>
         </div>
@@ -154,7 +154,7 @@ export function QuantChartsAesthetic({
             ? "border-emerald-500/30 bg-gradient-to-br from-emerald-500/20 to-emerald-500/5"
             : isCold
               ? "border-cyan-500/30 bg-gradient-to-br from-cyan-500/15 to-cyan-500/5"
-              : "border-amber-500/20 bg-gradient-to-br from-amber-500/10 to-transparent"
+              : "border-[#0ea5e9]/20 bg-[#0ea5e9]/10"
         }`}
         data-agent="session-momentum"
         data-value={isHot ? "hot" : isCold ? "cold" : "neutral"}
@@ -189,7 +189,7 @@ export function QuantChartsAesthetic({
                     ? "text-emerald-400"
                     : isCold
                       ? "text-cyan-400"
-                      : "text-amber-400"
+                      : "text-[#0ea5e9]"
                   : "text-[var(--text-tertiary)]"
               }`}
             >
@@ -217,8 +217,8 @@ export function QuantChartsAesthetic({
                   <stop offset="100%" stopColor="#10b981" />
                 </linearGradient>
                 <linearGradient id="donut-loss" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0%" stopColor="#fbbf24" />
-                  <stop offset="100%" stopColor="#f59e0b" />
+                  <stop offset="0%" stopColor="#ff453a" />
+                  <stop offset="100%" stopColor="#ff6b6b" />
                 </linearGradient>
                 <filter id="donut-glow">
                   <feGaussianBlur stdDeviation="1" result="blur" />
@@ -377,7 +377,7 @@ export function QuantChartsAesthetic({
             </h4>
             <div className="relative h-3 rounded-full bg-[var(--bg-matte)] overflow-hidden">
               <div
-                className="absolute top-0 h-full rounded-full bg-gradient-to-r from-red-500/50 via-amber-500/30 to-emerald-500/50 transition-all duration-500"
+                className="absolute top-0 h-full rounded-full bg-gradient-to-r from-red-500/50 via-[#0ea5e9]/30 to-emerald-500/50 transition-all duration-500"
                 style={{ left: "0%", width: `${Math.max(2, Math.min(98, posPct))}%` }}
               />
               <div

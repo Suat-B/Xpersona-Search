@@ -23,7 +23,7 @@ interface TradeLogProps {
 function SourceDot({ source }: { source?: "manual" | "algo" | "api" }) {
   const s = source ?? "manual";
   const color =
-    s === "api" ? "bg-violet-400" : s === "algo" ? "bg-[#0ea5e9]" : "bg-emerald-400";
+    s === "api" ? "bg-[#0ea5e9]" : s === "algo" ? "bg-[#0ea5e9]" : "bg-emerald-400";
   return (
     <span className="inline-flex items-center justify-center" title={s}>
       <span className={`w-1.5 h-1.5 rounded-full ${color}`} aria-hidden />
