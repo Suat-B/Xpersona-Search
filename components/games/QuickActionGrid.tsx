@@ -341,6 +341,24 @@ export function QuickActionGrid({
           })}
         </div>
       </div>
+      <div className="pt-0.5 flex justify-center">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => {
+            if (onLoadConfig) {
+              onLoadConfig({ amount: 10, target: 50, condition: "over", progressionType: "flat" });
+            } else {
+              onTargetChange(50);
+              onConditionChange("over");
+              onAmountChange(10);
+            }
+          }}
+          className="rounded-sm border border-white/[0.12] bg-white/[0.04] px-3 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] hover:bg-white/[0.08] hover:text-[var(--text-primary)] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Reset
+        </button>
+      </div>
     </div>
   );
 }
