@@ -46,7 +46,10 @@ export function DataStream({ logs }: DataStreamProps) {
   };
 
   return (
-    <div className="h-28 bg-[var(--quant-bg-surface)] border-t border-[var(--quant-border)] flex">
+    <div
+      className="min-h-28 bg-[var(--quant-bg-surface)] border-t border-[var(--quant-border)] flex flex-shrink-0"
+      style={{ paddingBottom: "calc(2rem + env(safe-area-inset-bottom, 0px))" }}
+    >
       {/* Log Section */}
       <div className="flex-1 flex flex-col min-w-0">
         <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--quant-bg-card)] border-b border-[var(--quant-border)]">
