@@ -25,6 +25,7 @@ export async function POST(request: Request) {
       apiKeyHash,
       apiKeyPrefix,
       apiKeyCreatedAt: new Date(),
+      apiKeyViewedAt: new Date(),
     })
     .where(eq(users.id, user.id));
 

@@ -30,6 +30,10 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
       .then(({ ok, data }) => {
         if (ok && data.success) {
           setPrefix(data.data?.apiKeyPrefix ?? null);
+          const p = data.data?.apiKeyPrefix;
+          if (typeof p === "string" && p.length >= 11 && p.startsWith("xp_")) {
+            fetch("/api/me/mark-key-viewed", { method: "POST", credentials: "include" }).catch(() => {});
+          }
         }
       });
   }, []);

@@ -13,9 +13,9 @@ function isValidApiKeyPrefix(value: unknown): boolean {
 }
 
 /**
- * Fetches GET /api/me and derives whether the user has an active API key.
- * "AI connected" = hasApiKey === true (only when a valid apiKeyPrefix exists).
- * Uses cache: "no-store" to avoid stale auth state.
+ * Fetches GET /api/me and derives whether the user has connected their AI.
+ * "AI connected" = valid apiKeyPrefix AND apiKeyViewedAt (user has seen/copied key).
+ * Avoids showing "AI connected" for first-session guests who have a key but never viewed it.
  */
 export function useAiConnectionStatus(): { hasApiKey: boolean | null } {
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
@@ -32,7 +32,9 @@ export function useAiConnectionStatus(): { hasApiKey: boolean | null } {
         }
       })
       .then(({ ok, data }) => {
-        setHasApiKey(ok && data?.success ? isValidApiKeyPrefix(data?.data?.apiKeyPrefix) : false);
+        const hasPrefix = ok && data?.success && isValidApiKeyPrefix(data?.data?.apiKeyPrefix);
+        const hasViewed = !!data?.data?.apiKeyViewedAt;
+        setHasApiKey(hasPrefix && hasViewed);
       })
       .catch(() => setHasApiKey(false));
   }, []);

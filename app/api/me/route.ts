@@ -25,6 +25,7 @@ export async function GET(request: Request) {
       image: user.image,
       credits: user.credits,
       apiKeyPrefix: user.apiKeyPrefix,
+      apiKeyViewedAt: user.apiKeyViewedAt,
       accountType: user.accountType,
       agentId: user.agentId,
       createdAt: user.createdAt,

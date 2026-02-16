@@ -36,6 +36,8 @@ export const users = pgTable(
     apiKeyHash: varchar("api_key_hash", { length: 64 }).unique(),
     apiKeyPrefix: varchar("api_key_prefix", { length: 12 }),
     apiKeyCreatedAt: timestamp("api_key_created_at", { withTimezone: true }),
+    /** Set when user first views/copies their API key (Connect AI or API page). Used to avoid showing "AI connected" before user has seen key. */
+    apiKeyViewedAt: timestamp("api_key_viewed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     lastFaucetAt: timestamp("last_faucet_at", { withTimezone: true }).defaultNow(),
   },
