@@ -71,15 +71,30 @@ const ICONS = {
   ),
 } as const;
 
-const SIDEBAR_LINKS = [
-  { href: "/games/dice", label: "Open Game", icon: "dice" as const, exact: true },
-  { href: "/dashboard", label: "Dashboard", icon: "dashboard" as const, exact: true },
-  { href: "/dashboard/connect-ai", label: "Connect AI", icon: "connectAi" as const, exact: false },
-  { href: "/dashboard/profile", label: "Profile", icon: "profile" as const, exact: true },
-  { href: "/dashboard/deposit", label: "Deposit", icon: "deposit" as const, exact: true },
-  { href: "/dashboard/withdraw", label: "Withdraw", icon: "withdraw" as const, exact: true },
-  { href: "/dashboard/strategies", label: "Strategies", icon: "strategies" as const, exact: false },
-  { href: "/dashboard/api", label: "API", icon: "api" as const, exact: false },
+const NAV_GROUPS = [
+  {
+    label: "Account",
+    links: [
+      { href: "/games/dice", label: "Open Game", icon: "dice" as const, exact: true },
+      { href: "/dashboard", label: "Dashboard", icon: "dashboard" as const, exact: true },
+      { href: "/dashboard/profile", label: "Profile", icon: "profile" as const, exact: true },
+    ],
+  },
+  {
+    label: "Funds",
+    links: [
+      { href: "/dashboard/connect-ai", label: "Connect AI", icon: "connectAi" as const, exact: false },
+      { href: "/dashboard/deposit", label: "Deposit", icon: "deposit" as const, exact: true },
+      { href: "/dashboard/withdraw", label: "Withdraw", icon: "withdraw" as const, exact: true },
+    ],
+  },
+  {
+    label: "Tools",
+    links: [
+      { href: "/dashboard/strategies", label: "Strategies", icon: "strategies" as const, exact: false },
+      { href: "/dashboard/api", label: "API", icon: "api" as const, exact: false },
+    ],
+  },
 ] as const;
 
 function isActive(pathname: string, href: string, exact: boolean): boolean {
@@ -96,51 +111,56 @@ export function DashboardSidebarNav({ isAdmin = false }: DashboardSidebarNavProp
   const { hasApiKey } = useAiConnectionStatus();
 
   return (
-    <nav className="flex-1 overflow-y-auto py-4 px-3">
-      <div className="space-y-1">
-        {SIDEBAR_LINKS.map(({ href, label, icon, exact }) => {
-          const active = isActive(pathname ?? "", href, exact);
-          const isConnectAi = href === "/dashboard/connect-ai";
-          const aiConnected = isConnectAi && hasApiKey === true;
-          const displayLabel = isConnectAi && hasApiKey === true ? "AI connected" : label;
+    <nav className="flex-1 overflow-y-auto py-4 px-3 scrollbar-sidebar">
+      {NAV_GROUPS.map((group, groupIdx) => (
+        <div key={group.label} className={groupIdx > 0 ? "mt-6 pt-4 border-t border-[var(--dash-divider)]" : ""}>
+          <p className="px-3 mb-2 text-[10px] font-semibold text-[var(--dash-text-secondary)] uppercase tracking-wider">
+            {group.label}
+          </p>
+          <div className="space-y-1">
+            {group.links.map(({ href, label, icon, exact }) => {
+              const active = isActive(pathname ?? "", href, exact);
+              const isConnectAi = href === "/dashboard/connect-ai";
+              const aiConnected = isConnectAi && hasApiKey === true;
+              const displayLabel = isConnectAi && hasApiKey === true ? "AI connected" : label;
 
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                "group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                active
-                  ? "bg-[var(--dash-nav-active)] text-white"
-                  : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white",
-                aiConnected && "text-[#30d158]"
-              )}
-            >
-              <span 
-                className={cn(
-                  "flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200",
-                  active 
-                    ? aiConnected ? "bg-[#30d158]/20 text-[#30d158]" : "text-white" 
-                    : "text-[var(--dash-text-secondary)] group-hover:text-white",
-                  aiConnected && !active && "group-hover:text-[#30d158]"
-                )}
-              >
-                {ICONS[icon]}
-              </span>
-              <span className="flex-1">{displayLabel}</span>
-              {active && !aiConnected && (
-                <div className="w-1.5 h-1.5 rounded-full bg-[#0ea5e9]" />
-              )}
-              {aiConnected && (
-                <HeartbeatIndicator />
-              )}
-            </Link>
-          );
-        })}
-      </div>
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  className={cn(
+                    "group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                    active
+                      ? "bg-[var(--dash-nav-active)] text-white"
+                      : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white",
+                    aiConnected && "text-[#30d158]"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200",
+                      active
+                        ? aiConnected ? "bg-[#30d158]/20 text-[#30d158]" : "text-white"
+                        : "text-[var(--dash-text-secondary)] group-hover:text-white",
+                      aiConnected && !active && "group-hover:text-[#30d158]"
+                    )}
+                  >
+                    {ICONS[icon]}
+                  </span>
+                  <span className="flex-1">{displayLabel}</span>
+                  {active && !aiConnected && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-[#0ea5e9]" />
+                  )}
+                  {aiConnected && <HeartbeatIndicator />}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      ))}
       
       {isAdmin && (
-        <div className="mt-4 pt-4 border-t border-[var(--dash-divider)]">
+        <div className="mt-6 pt-4 border-t border-[var(--dash-divider)]">
           <Link
             href="/admin"
             className={cn(
@@ -165,7 +185,11 @@ export function DashboardSidebarNav({ isAdmin = false }: DashboardSidebarNavProp
         </div>
       )}
       
-      <div className="mt-6 pt-6 border-t border-[var(--dash-divider)]">
+      <div className="mt-6 pt-4 border-t border-[var(--dash-divider)]">
+        <p className="px-3 mb-2 text-[10px] font-semibold text-[var(--dash-text-secondary)] uppercase tracking-wider">
+          Support
+        </p>
+        <div className="space-y-1">
         <Link
           href="/dashboard/transactions"
           className={cn(
@@ -231,6 +255,7 @@ export function DashboardSidebarNav({ isAdmin = false }: DashboardSidebarNavProp
           </span>
           <span className="flex-1">Settings</span>
         </Link>
+        </div>
       </div>
     </nav>
   );

@@ -339,32 +339,32 @@ export default function DashboardPage() {
       </div>
 
       {/* Footer — cohesive bottom section */}
-      <footer className="mt-12 pt-6 border-t border-white/[0.06]">
+      <footer className="mt-12 pt-6 border-t border-[var(--dash-divider)]">
         <div className="flex flex-col gap-6">
           {/* Nav links — single row, consistent spacing */}
           <nav className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-            <Link href="/games/dice" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">
+            <Link href="/games/dice" className="text-[var(--dash-text-secondary)] hover:text-[#0ea5e9] transition-colors">
               Open Game
             </Link>
-            <Link href="/dashboard/strategies" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">
+            <Link href="/dashboard/strategies" className="text-[var(--dash-text-secondary)] hover:text-[#0ea5e9] transition-colors">
               Strategies
             </Link>
-            <Link href="/dashboard/provably-fair" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">
+            <Link href="/dashboard/provably-fair" className="text-[var(--dash-text-secondary)] hover:text-[#0ea5e9] transition-colors">
               Provably Fair
             </Link>
-            <Link href="/dashboard/api" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">
+            <Link href="/dashboard/api" className="text-[var(--dash-text-secondary)] hover:text-[#0ea5e9] transition-colors">
               API Docs
             </Link>
           </nav>
 
           {/* Bottom row: branding + status */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-white/[0.04]">
-            <p className="text-xs text-[var(--text-tertiary)] order-2 sm:order-1">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-[var(--dash-divider)]">
+            <p className="text-xs text-[var(--dash-text-secondary)] order-2 sm:order-1">
               Data-Driven · AI-First · Provably Fair · Xpersona over/under dice
             </p>
             <div className="flex items-center gap-2 order-1 sm:order-2">
               <span className="w-1.5 h-1.5 rounded-full bg-[#30d158] animate-pulse shrink-0" aria-hidden />
-              <span className="text-[11px] text-[var(--text-tertiary)]">All systems operational</span>
+              <span className="text-[11px] text-[var(--dash-text-secondary)]">All systems operational</span>
             </div>
           </div>
         </div>

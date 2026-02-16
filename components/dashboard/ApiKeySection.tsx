@@ -123,7 +123,7 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
                 <button ref={copyButtonRef} type="button" onClick={copyAndClose} className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#0a84ff] px-4 py-3 text-sm font-medium text-white hover:bg-[#0a84ff]/90">
                   Copy to Clipboard
                 </button>
-                <button type="button" onClick={closeModal} className="rounded-xl border border-[var(--border)] px-4 py-3 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/5">Skip</button>
+                <button type="button" onClick={closeModal} className="dash-btn px-4 py-3 text-sm font-medium transition-colors">Skip</button>
               </div>
             </div>
           </div>,
@@ -276,7 +276,7 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
                 </svg>
               </button>
               <div className="flex items-center gap-3 mb-4 pr-10">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#ff2d55]/10 border border-[#ff2d55]/20 text-[#ff2d55]">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-heart)]/10 border border-[var(--accent-heart)]/20 text-[var(--accent-heart)]">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                   </svg>
@@ -309,7 +309,7 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="rounded-xl border border-[var(--border)] px-4 py-3 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/5 hover:text-[var(--text-primary)] transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+                  className="dash-btn px-4 py-3 text-sm font-medium transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20 focus:ring-offset-2 focus:ring-offset-[var(--dash-bg)]"
                 >
                   Skip
                 </button>

@@ -108,7 +108,7 @@ export function RecoveryLinkCard() {
                 <button
                   type="button"
                   onClick={() => copyUrl(recoveryUrl, "recovery")}
-                  className="shrink-0 px-2 py-1 rounded text-xs font-medium bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors"
+                  className="dash-btn shrink-0 px-2 py-1 text-xs font-medium transition-colors"
                 >
                   {copied === "recovery" ? "Copied!" : "Copy"}
                 </button>

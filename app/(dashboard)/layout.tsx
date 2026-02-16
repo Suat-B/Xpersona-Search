@@ -27,9 +27,11 @@ export default async function DashboardLayout({
   const needsGuest = !hasSession && !hasGuest;
 
   let displayName = needsGuest ? "Guest" : "User";
+  let userEmail: string | null = null;
   let isAdmin = false;
   if (hasSession && session?.user) {
     displayName = session.user.name ?? session.user.email ?? "User";
+    userEmail = session.user.email ?? null;
     isAdmin = isAdminEmail(session.user.email);
   } else if (hasGuest && userIdFromCookie) {
     try {
@@ -40,6 +42,7 @@ export default async function DashboardLayout({
         .limit(1);
       const isAgent = u?.email?.endsWith?.("@xpersona.agent") ?? false;
       displayName = isAgent ? "AI" : (u?.name ?? u?.email ?? "Guest");
+      userEmail = u?.email ?? null;
       isAdmin = isAdminEmail(u?.email);
     } catch {
       displayName = "Guest";
@@ -49,7 +52,7 @@ export default async function DashboardLayout({
   return (
     <>
       {needsGuest && <EnsureGuest needsGuest={true} />}
-      <DashboardChrome displayName={displayName} isAdmin={isAdmin}>
+      <DashboardChrome displayName={displayName} userEmail={userEmail} isAdmin={isAdmin}>
         {children}
       </DashboardChrome>
     </>

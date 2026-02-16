@@ -111,6 +111,15 @@
     --quant-panel-gap: 4px;
     --quant-panel-padding: 12px;
     --quant-border-radius: 4px;
+
+    /* Dashboard theme (for modals/portals that render outside .dashboard-theme) */
+    --dash-bg: #1e1e1e;
+    --dash-bg-card: #2f2f2f;
+    --dash-nav-active: #333333;
+    --dash-divider: #3a3a3a;
+    --dash-text-secondary: #a0a0a0;
+    --dash-btn-bg: #383838;
+    --dash-radius: 10px;
   }
 }
 
@@ -314,6 +323,20 @@ input[type="reset"] {
 
 .dashboard-theme .agent-card::before {
   display: none;
+}
+
+.dashboard-theme .dash-btn,
+.dash-btn {
+  background: var(--dash-btn-bg);
+  color: #e0e0e0;
+  border: 1px solid var(--dash-divider);
+  border-radius: var(--dash-radius);
+}
+
+.dashboard-theme .dash-btn:hover,
+.dash-btn:hover {
+  background: var(--dash-nav-active);
+  color: white;
 }
 
 /* Quant Dice Card */

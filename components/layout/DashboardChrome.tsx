@@ -13,6 +13,7 @@ function isGamesRoute(pathname: string | null): boolean {
 
 interface DashboardChromeProps {
   displayName: string;
+  userEmail?: string | null;
   isAdmin?: boolean;
   children: React.ReactNode;
 }
@@ -23,6 +24,7 @@ interface DashboardChromeProps {
  */
 export function DashboardChrome({
   displayName,
+  userEmail = null,
   isAdmin = false,
   children,
 }: DashboardChromeProps) {
@@ -38,8 +40,8 @@ export function DashboardChrome({
       <MobileDashboardNav displayName={displayName} isAdmin={isAdmin} />
       <aside className="scroll-stable-layer dashboard-sidebar hidden w-[280px] min-w-[280px] flex-col md:flex sticky top-0 h-screen border-r border-[var(--dash-divider)] overflow-x-hidden bg-[var(--dash-bg)]">
         <div className="relative flex h-full flex-col">
-          <div className="h-20 flex items-center px-6 border-b border-[var(--dash-divider)]">
-            <Link href="/" className="flex items-center gap-3 group">
+          <div className="px-6 pt-6 pb-4 border-b border-[var(--dash-divider)]">
+            <Link href="/" className="flex items-center gap-3 group mb-4">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#0ea5e9] to-[#0077b6] shadow-lg shadow-[#0ea5e9]/20 group-hover:shadow-[#0ea5e9]/40 transition-shadow">
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
@@ -54,25 +56,22 @@ export function DashboardChrome({
                 </span>
               </div>
             </Link>
+            <div className="pt-2">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-white">{displayName}</span>
+                <svg className="w-3.5 h-3.5 text-[var(--dash-text-secondary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+              </div>
+              <p className="text-xs text-[var(--dash-text-secondary)] truncate mt-0.5">
+                {userEmail ? `Free Plan - ${userEmail}` : "Free Plan"}
+              </p>
+            </div>
           </div>
           <div className="px-4 pt-4">
             <DataIntelligenceBadge variant="compact" />
           </div>
           <DashboardSidebarNav isAdmin={isAdmin} />
-          <div className="p-4 border-t border-[var(--dash-divider)]">
-            <div className="flex items-center gap-3 px-3 py-2 rounded-[var(--dash-radius)] bg-[var(--dash-bg-card)] border border-[var(--dash-divider)]">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0ea5e9] to-[#0ea5e9]/80">
-                <span className="text-sm font-semibold text-white">
-                  {displayName.charAt(0).toUpperCase()}
-                </span>
-              </div>
-              <div className="flex-1 min-w-0 overflow-hidden">
-                <p className="text-xs text-[var(--dash-text-secondary)] truncate">
-                  Logged in as {displayName}
-                </p>
-              </div>
-            </div>
-          </div>
         </div>
       </aside>
       <main className="scroll-contain-paint flex-1 overflow-y-auto bg-[var(--dash-bg)]">
