@@ -71,7 +71,7 @@ export function DashboardChrome({
         </div>
       </aside>
       <main className="scroll-contain-paint flex-1 overflow-y-auto bg-[var(--dash-bg)]">
-        <div className="container mx-auto max-w-7xl px-3 py-4 sm:p-6 md:p-8 space-y-6 min-w-0 overflow-x-hidden">
+        <div className="w-full max-w-7xl mx-auto px-4 py-4 sm:px-6 sm:py-6 md:px-8 md:py-8 space-y-6 min-w-0 sm:overflow-x-hidden">
           <AIFirstBanner />
           {children}
         </div>
