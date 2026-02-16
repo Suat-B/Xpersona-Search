@@ -33,8 +33,8 @@ export function StrategyRunningBanner({
 
   if (compact) {
     return (
-      <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <span className="flex-shrink-0 w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           <span className="text-xs text-[var(--text-secondary)] truncate">
             Your strategy
@@ -43,7 +43,7 @@ export function StrategyRunningBanner({
             {strategyName}
           </span>
         </div>
-        <div className="flex items-center gap-3 flex-shrink-0 text-xs font-mono">
+        <div className="flex items-center gap-3 flex-shrink-0 text-xs font-mono flex-wrap">
           <span className="text-[var(--text-secondary)] tabular-nums min-w-[3ch]">R{currentRound}</span>
           <span className={sessionPnl >= 0 ? "text-emerald-400" : "text-red-400"}>
             {sessionPnl >= 0 ? "+" : ""}{sessionPnl}
@@ -52,7 +52,7 @@ export function StrategyRunningBanner({
             <button
               type="button"
               onClick={onStop}
-              className="rounded-lg border border-red-500/50 bg-red-500/10 px-2 py-1 text-red-400 hover:bg-red-500/20 text-xs font-medium transition-colors"
+              className="rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-2 text-red-400 hover:bg-red-500/20 text-xs font-medium transition-colors min-h-[44px] min-w-[60px] flex items-center justify-center"
             >
               Stop
             </button>

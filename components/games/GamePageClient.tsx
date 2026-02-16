@@ -33,6 +33,7 @@ import { DICE_HOUSE_EDGE } from "@/lib/constants";
 const MAX_RECENT_RESULTS = 50;
 
 type CenterTab = "chart" | "strategy" | "backtest";
+type MobileTab = "play" | "chart" | "strategy" | "log";
 
 function BacktestTabContent({ strategy }: { strategy: AdvancedDiceStrategy | null }) {
   const [simulationBalance, setSimulationBalance] = useState(1000);
@@ -212,6 +213,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const [depositSuccess, setDepositSuccess] = useState(false);
   const [loadedStrategyForBuilder, setLoadedStrategyForBuilder] = useState<AdvancedDiceStrategy | null | undefined>(undefined);
   const [centerTab, setCenterTab] = useState<CenterTab>("chart");
+  const [mobileTab, setMobileTab] = useState<MobileTab>("play");
   const [strategyForBacktest, setStrategyForBacktest] = useState<AdvancedDiceStrategy | null>(null);
   const [livePlay, setLivePlay] = useState<{ result: number; win: boolean; payout: number } | null>(null);
   const [livePlayDisplayMs, setLivePlayDisplayMs] = useState(450);
@@ -669,7 +671,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
 
       {depositAlertFromAI && (
         <div
-          className="fixed inset-x-0 top-0 z-[110] px-4 py-2.5 bg-[#0a0a0f]/98 border-b border-[var(--accent-heart)]/40 backdrop-blur-sm shadow-lg"
+          className="fixed inset-x-0 top-0 z-[110] px-4 py-2.5 bg-[#050506] border-b border-[var(--accent-heart)]/40 backdrop-blur-sm shadow-lg"
           data-deposit-alert="critical"
           role="alert"
         >
@@ -696,11 +698,13 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         </div>
       )}
 
-      {/* Merged header + metrics — single row (nav | metrics | actions) */}
-      <header className="flex-shrink-0 h-10 flex items-center min-w-0 border-b border-white/[0.06] bg-gradient-to-r from-[#0a0a0f]/95 via-[#0d0d14]/90 to-[#0a0a0f]/95 backdrop-blur-sm">
-        <div className="flex items-center gap-3 shrink-0 px-3">
-          <Link href="/dashboard" className="flex items-center gap-1.5 text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors group">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+      {/* Merged header + metrics — single row (nav | metrics | actions). Mobile: h-12, larger touch targets */}
+      <header className="flex-shrink-0 h-12 lg:h-10 flex items-center min-w-0 border-b border-white/[0.06] bg-[#050506] backdrop-blur-sm">
+        <div className="flex items-center gap-2 lg:gap-3 shrink-0 px-2 lg:px-3">
+          <Link href="/dashboard" className="flex items-center gap-1.5 text-[11px] lg:text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors group min-h-[44px] lg:min-h-0 min-w-[44px] lg:min-w-0 justify-center lg:justify-start" aria-label="Back to Dashboard">
+            <svg className="w-4 h-4 lg:w-3.5 lg:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
             <span className="hidden sm:inline uppercase tracking-wider">Dashboard</span>
           </Link>
           <span className="text-[10px] text-white/10 hidden sm:inline">│</span>
@@ -710,6 +714,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         </div>
         <QuantTopMetricsBar
           compact
+          mobile
           nav={balance}
           navLoading={balanceLoading}
           sessionPnl={totalPnl}
@@ -722,16 +727,18 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           live={aiConnected}
           sessionStartTime={sessionStartTime}
         />
-        <div className="flex items-center gap-2 shrink-0 px-3">
-          <Link href="/dashboard/connect-ai" className={aiConnected ? "hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-[#30d158]/30 bg-[#30d158]/10 px-2 py-1 text-[10px] font-medium text-[#30d158]" : "hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-[#0ea5e9]/30 bg-[#0ea5e9]/10 px-2 py-1 text-[10px] font-medium text-[#0ea5e9]"}>
+        <div className="flex items-center gap-1 lg:gap-2 shrink-0 px-2 lg:px-3">
+          <Link href="/dashboard/connect-ai" className={aiConnected ? "hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-[#30d158]/30 bg-[#30d158]/10 px-2.5 py-2 lg:py-1 text-[11px] lg:text-[10px] font-medium text-[#30d158] min-h-[40px] lg:min-h-0 justify-center" : "hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-[#0ea5e9]/30 bg-[#0ea5e9]/10 px-2.5 py-2 lg:py-1 text-[11px] lg:text-[10px] font-medium text-[#0ea5e9] min-h-[40px] lg:min-h-0 justify-center"}>
             {aiConnected ? <HeartbeatIndicator size="sm" /> : <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>}
             <span>{aiConnected ? "AI" : "Connect"}</span>
           </Link>
-          <Link href="/dashboard/deposit" className="flex items-center gap-1.5 text-[10px] text-[#0ea5e9] hover:text-[#0ea5e9] font-semibold uppercase tracking-wider">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+          <Link href="/dashboard/deposit" className="flex items-center gap-1.5 text-[11px] lg:text-[10px] text-[#0ea5e9] hover:text-[#0ea5e9] font-semibold uppercase tracking-wider min-h-[40px] lg:min-h-0 px-3 lg:px-0 justify-center items-center">
+            <svg className="w-4 h-4 lg:w-3.5 lg:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
             <span>Deposit</span>
           </Link>
-          <Link href="/dashboard/withdraw" className="text-[10px] text-amber-400/80 hover:text-amber-400 font-semibold uppercase tracking-wider">Withdraw</Link>
+          <Link href="/dashboard/withdraw" className="hidden sm:inline text-[11px] lg:text-[10px] text-amber-400/80 hover:text-amber-400 font-semibold uppercase tracking-wider min-h-[40px] lg:min-h-0 flex items-center">Withdraw</Link>
         </div>
       </header>
 
@@ -1026,72 +1033,271 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </div>
         </aside>
 
-        {/* Mobile: stacked layout with hero chart on top when visible */}
-        <div className="lg:hidden flex flex-col min-h-0 overflow-y-auto">
-          <div className="terminal-pane m-2 flex-shrink-0">
-            <div className="terminal-header flex-shrink-0 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="terminal-header-accent" />
-                <span>Equity Curve</span>
+        {/* Mobile: tabbed layout with bottom tab bar */}
+        <div className="lg:hidden flex flex-col min-h-0 overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-y-auto" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 88px)" }}>
+            {mobileTab === "play" && (
+              <div className="terminal-pane m-2 flex flex-col min-h-[200px]">
+                <div className="terminal-header flex-shrink-0">
+                  <div className="terminal-header-accent" />
+                  <span>Order Ticket</span>
+                </div>
+                <div className="flex-1 min-h-0 overflow-hidden p-3">
+                  <ClientOnly fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-secondary)]"><span className="animate-pulse">Loading...</span></div>}>
+                    <DiceGame
+                      amount={amount}
+                      target={target}
+                      condition={condition}
+                      balance={balance}
+                      activeStrategyName={activeStrategyName}
+                      progressionType={progressionType}
+                      onAmountChange={setAmount}
+                      onTargetChange={setTarget}
+                      onConditionChange={setCondition}
+                      onRoundComplete={(amt, payout) => addRound(amt, payout)}
+                      onAutoPlayChange={setAutoPlayActive}
+                      onResult={handleResult}
+                      strategyRun={strategyRun}
+                      onStrategyComplete={(sessionPnl, roundsPlayed, wins) => {
+                        setStrategyRun(null);
+                        setStrategyStats(null);
+                        addBulkSession(sessionPnl, roundsPlayed, wins);
+                        window.dispatchEvent(new Event("balance-updated"));
+                      }}
+                      onStrategyStop={() => { setStrategyRun(null); setStrategyStats(null); }}
+                      onStrategyProgress={(stats) => setStrategyStats({ currentRound: stats.currentRound, sessionPnl: stats.sessionPnl, initialBalance: balance, winRatePercent: stats.currentRound > 0 ? (stats.wins / stats.currentRound) * 100 : 0 })}
+                      livePlay={livePlay}
+                      livePlayAnimationMs={livePlayDisplayMs}
+                      aiDriving={aiBannerVisible || !!livePlay}
+                      recentResults={recentResults.map((r) => ({ win: r.win }))}
+                      sessionStartTime={sessionStartTime}
+                      rounds={rounds}
+                    />
+                  </ClientOnly>
+                </div>
               </div>
-              <button type="button" onClick={handleReset} className="text-[9px] text-[var(--text-tertiary)] hover:text-[#0ea5e9]">Reset</button>
-            </div>
-            <div className="p-3">
-              <SessionPnLChart
-                series={statsSeries}
-                totalPnl={totalPnl}
-                rounds={rounds}
-                onReset={handleReset}
-                layout="large"
-                sharpeRatio={m.sharpeRatio}
-                maxDrawdownPct={m.maxDrawdownPct}
-              />
-            </div>
-          </div>
-          <div className="terminal-pane m-2 flex-1 min-h-0 flex flex-col">
-            <div className="terminal-header flex-shrink-0">
-              <div className="terminal-header-accent" />
-              <span>Order Ticket</span>
-            </div>
-            <div className="flex-1 min-h-0 overflow-hidden p-3">
-              <ClientOnly fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-secondary)]"><span className="animate-pulse">Loading...</span></div>}>
-                <DiceGame
-                  amount={amount}
-                  target={target}
-                  condition={condition}
-                  balance={balance}
-                  activeStrategyName={activeStrategyName}
-                  progressionType={progressionType}
-                  onAmountChange={setAmount}
-                  onTargetChange={setTarget}
-                  onConditionChange={setCondition}
-                  onRoundComplete={(amt, payout) => addRound(amt, payout)}
-                  onAutoPlayChange={setAutoPlayActive}
-                  onResult={handleResult}
-                  strategyRun={strategyRun}
-                  onStrategyComplete={(sessionPnl, roundsPlayed, wins) => {
-                    setStrategyRun(null);
-                    setStrategyStats(null);
-                    addBulkSession(sessionPnl, roundsPlayed, wins);
-                    window.dispatchEvent(new Event("balance-updated"));
+            )}
+            {mobileTab === "chart" && (
+              <div className="space-y-2 m-2">
+                <div className="terminal-pane">
+                  <div className="terminal-header flex-shrink-0 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="terminal-header-accent" />
+                      <span>Equity Curve</span>
+                    </div>
+                    <button type="button" onClick={handleReset} className="text-[11px] text-[var(--text-tertiary)] hover:text-[#0ea5e9] min-h-[44px] min-w-[44px] flex items-center justify-center -m-1">Reset</button>
+                  </div>
+                  <div className="p-3">
+                    <SessionPnLChart
+                      series={statsSeries}
+                      totalPnl={totalPnl}
+                      rounds={rounds}
+                      onReset={handleReset}
+                      layout="large"
+                      sharpeRatio={m.sharpeRatio}
+                      maxDrawdownPct={m.maxDrawdownPct}
+                    />
+                  </div>
+                </div>
+                <div className="terminal-pane min-h-[120px]">
+                  <div className="terminal-header flex-shrink-0">
+                    <div className="terminal-header-accent" />
+                    <span>Monte Carlo</span>
+                  </div>
+                  <div className="p-3 h-[120px]">
+                    <MonteCarloShadow
+                      series={statsSeries}
+                      totalPnl={totalPnl}
+                      rounds={rounds}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+            {mobileTab === "strategy" && (
+              <div className="m-2 space-y-2 overflow-y-auto">
+                <SavedAdvancedStrategiesList
+                  onRun={(strategy, maxRounds) => {
+                    setAmount(strategy.baseConfig.amount);
+                    setTarget(strategy.baseConfig.target);
+                    setCondition(strategy.baseConfig.condition);
+                    setActiveStrategyName(strategy.name);
+                    setStrategyRun({
+                      config: { amount: strategy.baseConfig.amount, target: strategy.baseConfig.target, condition: strategy.baseConfig.condition, progressionType: "flat" },
+                      maxRounds,
+                      strategyName: strategy.name,
+                      isAdvanced: true,
+                      advancedStrategy: strategy,
+                    });
+                    setMobileTab("play");
                   }}
-                  onStrategyStop={() => { setStrategyRun(null); setStrategyStats(null); }}
-                  onStrategyProgress={(stats) => setStrategyStats({ currentRound: stats.currentRound, sessionPnl: stats.sessionPnl, initialBalance: balance, winRatePercent: stats.currentRound > 0 ? (stats.wins / stats.currentRound) * 100 : 0 })}
-                  livePlay={livePlay}
-                  livePlayAnimationMs={livePlayDisplayMs}
-                  aiDriving={aiBannerVisible || !!livePlay}
-                  recentResults={recentResults.map((r) => ({ win: r.win }))}
-                  sessionStartTime={sessionStartTime}
-                  rounds={rounds}
+                  onLoad={(strategy) => setLoadedStrategyForBuilder(strategy)}
+                  defaultMaxRounds={50}
                 />
-              </ClientOnly>
+                <CompactAdvancedStrategyBuilder
+                  key={loadedStrategyForBuilder?.id ?? "builder"}
+                  initialStrategy={loadedStrategyForBuilder}
+                  onStrategyChange={setStrategyForBacktest}
+                  fullWidth
+                  onSave={async (strategy) => {
+                    try {
+                      const url = strategy.id ? `/api/me/advanced-strategies/${strategy.id}` : "/api/me/advanced-strategies";
+                      const method = strategy.id ? "PATCH" : "POST";
+                      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(strategy) });
+                      const data = await res.json();
+                      const savedId = data.data?.strategy?.id ?? data.data?.id;
+                      if (data.success && savedId) return { id: savedId };
+                      return !!data.success;
+                    } catch {
+                      return false;
+                    }
+                  }}
+                  onRun={(strategy, maxRounds) => {
+                    setAmount(strategy.baseConfig.amount);
+                    setTarget(strategy.baseConfig.target);
+                    setCondition(strategy.baseConfig.condition);
+                    setActiveStrategyName(strategy.name);
+                    setStrategyRun({
+                      config: { amount: strategy.baseConfig.amount, target: strategy.baseConfig.target, condition: strategy.baseConfig.condition, progressionType: "flat" },
+                      maxRounds,
+                      strategyName: strategy.name,
+                      isAdvanced: true,
+                      advancedStrategy: strategy,
+                    });
+                    setMobileTab("play");
+                  }}
+                  onApply={(strategy) => {
+                    setAmount(strategy.baseConfig.amount);
+                    setTarget(strategy.baseConfig.target);
+                    setCondition(strategy.baseConfig.condition);
+                    setActiveStrategyName(strategy.name);
+                    setMobileTab("play");
+                  }}
+                />
+                <div className="flex items-center gap-2 py-1">
+                  <div className="flex-1 border-t border-white/[0.06]" />
+                  <span className="text-[11px] uppercase tracking-widest text-[var(--text-tertiary)]">or</span>
+                  <div className="flex-1 border-t border-white/[0.06]" />
+                </div>
+                <CreativeDiceStrategiesSection
+                  activeStrategyName={activeStrategyName}
+                  onLoadConfig={loadStrategyConfig}
+                  onStartStrategyRun={(config, maxRounds, strategyName) => {
+                    setAmount(config.amount);
+                    setTarget(config.target);
+                    setCondition(config.condition);
+                    setStrategyRun({ config, maxRounds, strategyName });
+                    setMobileTab("play");
+                  }}
+                />
+                <Link href="/dashboard/strategies" className="flex items-center justify-center gap-1.5 w-full py-3 min-h-[44px] rounded-sm border border-dashed border-white/[0.06] text-[11px] text-[var(--text-tertiary)] hover:text-[#0ea5e9] hover:border-[#0ea5e9]/30 transition-all">
+                  Manage Strategies →
+                </Link>
+              </div>
+            )}
+            {mobileTab === "log" && (
+              <div className="m-2 space-y-2">
+                <div className="terminal-pane">
+                  <div className="terminal-header flex-shrink-0 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="terminal-header-accent" />
+                      <span>Trade Log</span>
+                    </div>
+                    <span className="text-[11px] text-[var(--text-tertiary)] tabular-nums">{recentResults.length} fills</span>
+                  </div>
+                  <div className="p-2 max-h-[200px] overflow-y-auto overflow-x-auto scrollbar-sidebar">
+                    <TradeLog
+                      entries={recentResults.map((r, i) => ({
+                        roundNumber: r.roundNumber ?? Math.max(1, rounds - recentResults.length + 1 + i),
+                        result: r.result,
+                        win: r.win,
+                        payout: r.payout,
+                        amount: r.playAmount ?? amount,
+                        target: r.target ?? target,
+                        condition: (r.condition ?? condition) as "over" | "under",
+                        balance: r.balance,
+                        source: r.source,
+                        timestamp: r.timestamp,
+                      }))}
+                      maxRows={20}
+                    />
+                  </div>
+                </div>
+                <div className="terminal-pane">
+                  <div className="terminal-header flex-shrink-0">
+                    <div className="terminal-header-accent" />
+                    <span>Metrics</span>
+                  </div>
+                  <div className="p-3 overflow-y-auto scrollbar-sidebar max-h-[300px]">
+                    <QuantMetricsGrid
+                      metrics={quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null }}
+                      recentResults={recentResults}
+                      compact
+                    />
+                  </div>
+                </div>
+                <div className="terminal-pane">
+                  <SessionAura
+                    series={statsSeries}
+                    quantMetrics={quantMetrics ?? m}
+                    rounds={rounds}
+                    wins={wins}
+                    totalPnl={totalPnl}
+                    recentResults={recentResults}
+                  />
+                </div>
+                <div className="terminal-pane p-2">
+                  <div className="terminal-header flex-shrink-0">
+                    <div className="terminal-header-accent" />
+                    <span>AI API</span>
+                  </div>
+                  <div className="p-2 space-y-1.5">
+                    <ApiKeySection compact />
+                    <Link href="/dashboard/api" className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#0ea5e9] hover:underline min-h-[44px] items-center">
+                      Full API Docs →
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          {/* Mobile footer — above tab bar */}
+          <div className="lg:hidden flex-shrink-0 px-3 py-1.5 border-t border-white/[0.06] flex items-center justify-between text-[10px] text-[var(--text-tertiary)] bg-[#050506]">
+            <span className="truncate">3% Edge · 97% RTP · Min 1 · Max 10k</span>
+            <div className="flex items-center gap-2 shrink-0">
+              <Link href="/dashboard" className="hover:text-[#0ea5e9] transition-colors">Dashboard</Link>
+              <Link href="/dashboard/api" className="hover:text-[#0ea5e9] transition-colors">API</Link>
             </div>
           </div>
+          {/* Mobile bottom tab bar — 44px + safe area */}
+          <nav className="lg:hidden flex-shrink-0 flex items-center justify-around h-11 safe-area-bottom border-t border-white/[0.06] bg-[#050506] backdrop-blur-sm" aria-label="Mobile navigation">
+            {(
+              [
+                { id: "play" as MobileTab, label: "Play", icon: "🎲" },
+                { id: "chart" as MobileTab, label: "Chart", icon: "📈" },
+                { id: "strategy" as MobileTab, label: "Strategy", icon: "⚙️" },
+                { id: "log" as MobileTab, label: "Log", icon: "📋" },
+              ] as const
+            ).map(({ id, label, icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setMobileTab(id)}
+                className={`flex flex-col items-center justify-center flex-1 min-h-[44px] py-1 gap-0.5 transition-colors ${
+                  mobileTab === id ? "text-[#0ea5e9]" : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                }`}
+                aria-current={mobileTab === id ? "page" : undefined}
+              >
+                <span className="text-base leading-none" aria-hidden>{icon}</span>
+                <span className="text-[10px] font-medium">{label}</span>
+              </button>
+            ))}
+          </nav>
         </div>
       </main>
 
-      {/* Minimal footer — single line */}
-      <footer className="flex-shrink-0 px-4 py-2 border-t border-white/[0.06] flex items-center justify-between text-[10px] text-[var(--text-tertiary)] bg-[#0a0a0f]/80">
+      {/* Minimal footer — single line (hidden on mobile; tab bar provides nav) */}
+      <footer className="hidden lg:flex flex-shrink-0 px-4 py-2 border-t border-white/[0.06] items-center justify-between text-[10px] text-[var(--text-tertiary)] bg-[#050506] safe-area-bottom">
         <span>Xpersona · 3% Edge · 97% Return · Min 1 · Max 10k</span>
         <div className="flex items-center gap-3">
           <Link href="/dashboard" className="hover:text-[#0ea5e9] transition-colors">Dashboard</Link>

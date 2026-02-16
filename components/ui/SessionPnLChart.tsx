@@ -40,7 +40,7 @@ export function SessionPnLChart({
       return `${i === 0 ? "M" : "L"} ${x} ${y}`;
     }).join(" ");
     return (
-      <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-md overflow-hidden ${isHero ? "p-6" : isMini ? "p-2" : "p-4"}`}>
+      <div className={`rounded-2xl border border-white/10 shadow-md overflow-hidden ${isHero ? "p-6 bg-[var(--quant-panel-bg)]" : isMini ? "p-2 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80" : "p-4 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80"}`}>
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-1 h-5 rounded-full bg-[#0ea5e9]" />
@@ -113,7 +113,7 @@ export function SessionPnLChart({
   const glowStdDev = isHero ? 3 : isLarge ? 2.5 : 1.5;
 
   return (
-    <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-lg overflow-hidden min-w-0 min-h-0 transition-all duration-300 hover:border-white/20 hover:shadow-xl ${isHero ? "p-6" : isMini ? "p-2" : "p-4"}`}>
+    <div className={`rounded-2xl border border-white/10 shadow-lg overflow-hidden min-w-0 min-h-0 transition-all duration-300 hover:border-white/20 hover:shadow-xl ${isHero ? "p-6 bg-[var(--quant-panel-bg)]" : isMini ? "p-2 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80" : "p-4 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80"}`}>
       <style>{`
         @keyframes pnl-dot-pulse-${uid} {
           0%, 100% { transform: scale(1); opacity: 1; }

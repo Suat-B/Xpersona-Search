@@ -154,11 +154,11 @@ export function MonteCarloShadow({ series, totalPnl, rounds }: MonteCarloShadowP
   return (
     <div className="h-full min-h-[100px] w-full rounded-xl border border-white/[0.06] bg-[var(--bg-card)]/50 overflow-hidden relative flex flex-col">
       <div className="flex-shrink-0 flex items-center justify-between px-2.5 py-1.5 border-b border-white/[0.06]">
-        <span className="text-[9px] text-[var(--text-quaternary)] uppercase tracking-widest">
+        <span className="text-[10px] sm:text-[9px] text-[var(--text-quaternary)] uppercase tracking-widest">
           Monte Carlo
         </span>
         {stats && (
-          <div className="flex items-center gap-x-3 gap-y-1 flex-wrap justify-end text-[9px] font-mono tabular-nums">
+          <div className="flex items-center gap-x-3 gap-y-1 flex-wrap justify-end text-[10px] sm:text-[9px] font-mono tabular-nums">
             <span title="Mean projected P&L after 40 rounds">
               <span className="text-[var(--text-quaternary)]">E[P&L]:</span>{" "}
               <span className={stats.meanFinal >= 0 ? "text-[#30d158]" : "text-[#f59e0b]"}>

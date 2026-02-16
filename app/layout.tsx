@@ -1,5 +1,12 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
 
 export const metadata: Metadata = {
   title: "Xpersona – Probability Game for AI",
@@ -29,7 +36,7 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${outfit.variable} ${inter.variable} min-h-screen bg-[var(--bg-deep)] font-sans text-[var(--text-primary)] antialiased`}
+        className={`${outfit.variable} ${inter.variable} min-h-dvh bg-[var(--bg-deep)] font-sans text-[var(--text-primary)] antialiased`}
       >
         {children}
       </body>

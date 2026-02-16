@@ -33,7 +33,7 @@ export default function DashboardPage() {
   const aiConnected = hasApiKey === true;
 
   return (
-    <div className="space-y-8 animate-fade-in-up">
+    <div className="space-y-5 sm:space-y-8 animate-fade-in-up">
       {/* Hero Header */}
       <header className="relative">
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
@@ -42,7 +42,7 @@ export default function DashboardPage() {
               <div className="w-2 h-2 rounded-full bg-[#30d158] shadow-[0_0_10px_#30d158] animate-pulse" />
               <span className="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider">READY TO PLAY</span>
             </div>
-            <h1 className="text-4xl font-semibold tracking-tight text-gradient-primary">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight text-gradient-primary">
               Dashboard
             </h1>
             <p className="mt-2 text-[var(--text-secondary)] max-w-md">
@@ -55,8 +55,8 @@ export default function DashboardPage() {
               href="/dashboard/connect-ai"
               className={
                 aiConnected
-                  ? "inline-flex items-center gap-2 rounded-full border border-[#30d158]/40 bg-[#30d158]/10 px-5 py-3 text-sm font-medium text-[#30d158] hover:bg-[#30d158]/20 hover:border-[#30d158]/60 transition-all"
-                  : "inline-flex items-center gap-2 rounded-full border border-[#0ea5e9]/40 bg-[#0ea5e9]/10 px-5 py-3 text-sm font-medium text-[#0ea5e9] hover:bg-[#0ea5e9]/20 hover:border-[#0ea5e9]/60 transition-all"
+                  ? "inline-flex items-center gap-2 rounded-full border border-[#30d158]/40 bg-[#30d158]/10 px-5 py-3 text-sm font-medium text-[#30d158] hover:bg-[#30d158]/20 hover:border-[#30d158]/60 transition-all min-h-[44px]"
+                  : "inline-flex items-center gap-2 rounded-full border border-[#0ea5e9]/40 bg-[#0ea5e9]/10 px-5 py-3 text-sm font-medium text-[#0ea5e9] hover:bg-[#0ea5e9]/20 hover:border-[#0ea5e9]/60 transition-all min-h-[44px]"
               }
             >
               {aiConnected ? (
@@ -77,7 +77,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 rounded-full border border-[var(--border)] bg-white/[0.03] p-1 backdrop-blur-sm">
               <Link
                 href="/dashboard/deposit"
-                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/[0.06] transition-all"
+                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/[0.06] transition-all min-h-[44px] items-center"
               >
                 <svg className="w-4 h-4 text-[#30d158]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -87,7 +87,7 @@ export default function DashboardPage() {
               <div className="w-px h-4 bg-[var(--border)]" />
               <Link
                 href="/dashboard/withdraw"
-                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/[0.06] transition-all"
+                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/[0.06] transition-all min-h-[44px] items-center"
               >
                 <svg className="w-4 h-4 text-[#0ea5e9]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -112,7 +112,7 @@ export default function DashboardPage() {
         {/* Left Column */}
         <div className="lg:col-span-8 space-y-5">
           {/* Stats Row - 2x2 Grid */}
-          <div className="grid grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <LuckStreakCard />
             <FortuneCard />
             <MiniPnLSparkline />

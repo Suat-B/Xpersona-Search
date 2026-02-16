@@ -50,7 +50,7 @@ export function TradeLog({ entries, maxRows = 20, compact = true }: TradeLogProp
             <thead className="sticky top-0 bg-[var(--bg-card)]/98 border-b border-white/[0.08] z-10">
               <tr className="text-[var(--text-tertiary)]">
                 <th className="text-left py-2 px-2 font-semibold text-[10px] uppercase tracking-wider">#</th>
-                <th className="text-left py-2 px-2 font-semibold text-[10px] uppercase tracking-wider">Time</th>
+                <th className="text-left py-2 px-2 font-semibold text-[10px] uppercase tracking-wider hidden sm:table-cell">Time</th>
                 <th className="text-left py-2 px-2 font-semibold text-[10px] uppercase tracking-wider">Dir</th>
                 <th className="text-right py-2 px-2 font-semibold text-[10px] uppercase tracking-wider">Size</th>
                 <th className="text-right py-2 px-2 font-semibold text-[10px] uppercase tracking-wider">Result</th>
@@ -69,7 +69,7 @@ export function TradeLog({ entries, maxRows = 20, compact = true }: TradeLogProp
                   return (
                     <tr key={`${e.roundNumber}-${i}`} className={`border-b border-white/[0.04] hover:bg-white/[0.03] ${i === 0 ? "animate-slide-in-from-bottom" : ""}`}>
                       <td className="py-1.5 px-2 tabular-nums text-[var(--text-secondary)]">{e.roundNumber}</td>
-                      <td className="py-1.5 px-2 tabular-nums text-[var(--text-tertiary)]">{formatTime(e.timestamp)}</td>
+                      <td className="py-1.5 px-2 tabular-nums text-[var(--text-tertiary)] hidden sm:table-cell">{formatTime(e.timestamp)}</td>
                       <td className="py-1.5 px-2">{e.condition === "over" ? "L" : "S"} {e.target}%</td>
                       <td className="py-1.5 px-2 text-right tabular-nums">{e.amount.toFixed(0)}</td>
                       <td className="py-1.5 px-2 text-right tabular-nums font-medium">{e.result.toFixed(2)}</td>
@@ -109,15 +109,15 @@ export function TradeLog({ entries, maxRows = 20, compact = true }: TradeLogProp
                 } ${isNewest ? "animate-slide-in-from-bottom" : ""}`}
               >
                 <SourceDot source={e.source} />
-                <span className="text-[var(--text-tertiary)] shrink-0 w-[34px]">{formatTime(e.timestamp)}</span>
-                <span className={`shrink-0 w-[14px] text-center font-bold text-[9px] ${
+                <span className="text-[var(--text-tertiary)] shrink-0 min-w-[28px] w-[34px] hidden sm:inline">{formatTime(e.timestamp)}</span>
+                <span className={`shrink-0 min-w-[12px] w-[14px] text-center font-bold text-[10px] sm:text-[9px] ${
                   e.condition === "over"
                     ? "text-emerald-400"
                     : "text-red-400"
                 }`}>
                   {e.condition === "over" ? "L" : "S"}
                 </span>
-                <span className="text-[var(--text-secondary)] shrink-0 w-[22px] text-right">{e.amount.toFixed(0)}</span>
+                <span className="text-[var(--text-secondary)] shrink-0 min-w-[18px] w-[22px] text-right">{e.amount.toFixed(0)}</span>
                 <span className="text-[var(--text-quaternary)] shrink-0">→</span>
                 <span className="text-[var(--text-secondary)] font-medium shrink-0">{e.result.toFixed(1)}</span>
                 <span className={`ml-auto font-semibold shrink-0 ${p >= 0 ? "text-[#30d158]" : "text-[#ff453a]"}`}>

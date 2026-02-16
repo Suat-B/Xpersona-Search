@@ -150,11 +150,24 @@ export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashb
             aria-hidden
           />
           <nav
-            className="fixed top-14 left-0 right-0 bottom-0 z-50 overflow-y-auto bg-[var(--bg-matte)] border-r border-[var(--border)] animate-in fade-in slide-in-from-top-2 duration-200"
+            className="fixed top-14 left-0 right-0 bottom-0 z-50 flex flex-col bg-[var(--bg-matte)] border-r border-[var(--border)] animate-in fade-in slide-in-from-top-2 duration-200"
             aria-label="Navigation menu"
           >
-            <div className="p-4 space-y-1">
-              {LINKS.map(({ href, label, icon, exact }) => {
+            <div className="flex-1 overflow-y-auto p-4 space-y-1 pb-20">
+              <Link
+                href="/games/dice"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/40 mb-3"
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0ea5e9]/30">
+                  {ICONS.dice}
+                </span>
+                <span>Play Game</span>
+                <svg className="w-4 h-4 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </Link>
+              {LINKS.filter((l) => l.href !== "/games/dice").map(({ href, label, icon, exact }) => {
                 const active = isActive(pathname ?? "", href, exact);
                 const isConnectAi = href === "/dashboard/connect-ai";
                 const aiConnected = isConnectAi && hasApiKey === true;
@@ -204,7 +217,7 @@ export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashb
                 </Link>
               )}
             </div>
-            <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-[var(--border)]">
+            <div className="sticky bottom-0 left-0 right-0 p-4 border-t border-[var(--border)] bg-[var(--bg-matte)] mt-auto shrink-0">
               <p className="text-xs text-[var(--text-tertiary)] truncate">
                 Logged in as {displayName}
               </p>

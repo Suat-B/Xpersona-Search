@@ -609,19 +609,19 @@ export function DiceGame({
               )}
             </div>
           ) : (
-            <div className="flex items-center justify-between gap-3 flex-nowrap">
-              <div className="flex items-center gap-3 font-mono text-[10px] min-w-0 shrink">
+            <div className="flex items-center justify-between gap-2 lg:gap-3 flex-wrap">
+              <div className="flex items-center gap-1.5 lg:gap-3 font-mono text-[10px] lg:text-[10px] min-w-0 shrink flex-wrap">
                 <span className="flex items-center gap-1.5">
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${loading || autoPlay ? "bg-amber-400 animate-pulse" : "bg-[#30d158]"}`} aria-hidden />
                   <span className="text-[var(--text-tertiary)] uppercase tracking-wider">
                     {loading ? "Exec" : strategyRun ? "Strategy" : aiDriving ? "LIVE" : activeStrategyName ?? "Ready"}
                   </span>
                 </span>
-                <span className="text-white/20">|</span>
-                <span className="text-[var(--text-tertiary)]">Prob <span className="text-[var(--text-primary)] font-semibold">{(winProb * 100).toFixed(1)}%</span></span>
-                <span className="text-white/20">|</span>
-                <span className="text-[var(--text-tertiary)]">Mult <span className="text-[#0ea5e9] font-semibold">{multiplier.toFixed(2)}x</span></span>
-                <span className="text-white/20">|</span>
+                <span className="text-white/20 hidden sm:inline">|</span>
+                <span className="text-[var(--text-tertiary)]"><span className="hidden sm:inline">Prob </span><span className="text-[var(--text-primary)] font-semibold">{(winProb * 100).toFixed(1)}%</span></span>
+                <span className="text-white/20 hidden sm:inline">|</span>
+                <span className="text-[var(--text-tertiary)] hidden md:inline">Mult <span className="text-[#0ea5e9] font-semibold">{multiplier.toFixed(2)}x</span></span>
+                <span className="text-white/20 hidden md:inline">|</span>
                 <span className="text-[var(--text-tertiary)]">EV <span className={`font-semibold ${evPerTrade >= 0 ? "text-[#30d158]" : "text-[#ff453a]"}`}>{evPerTrade >= 0 ? "+" : ""}{evPerTrade.toFixed(2)}</span></span>
               </div>
               <div className="shrink-0 flex items-center justify-end gap-2 flex-wrap">
@@ -687,7 +687,7 @@ export function DiceGame({
             </div>
           )}
 
-          <div className="space-y-2 w-full max-w-sm">
+          <div className="space-y-2 w-full max-w-full lg:max-w-sm">
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Threshold</label>
@@ -704,7 +704,7 @@ export function DiceGame({
                     }}
                     disabled={autoPlay}
                     aria-label="Threshold percentage"
-                    className={`terminal-input w-full h-8 rounded-sm pr-8 text-center text-xs ${
+                    className={`terminal-input w-full h-10 lg:h-8 rounded-sm pr-8 text-center text-xs ${
                       changedControl === "target" ? "border-[#0ea5e9] bg-[#0ea5e9]/10" : ""
                     }`}
                   />
@@ -743,7 +743,7 @@ export function DiceGame({
                   placeholder="1–10,000"
                   disabled={autoPlay}
                   aria-label="Position size in units"
-                  className={`terminal-input w-full h-8 rounded-sm pr-8 text-center text-xs ${
+                  className={`terminal-input w-full h-10 lg:h-8 rounded-sm pr-8 text-center text-xs ${
                     changedControl === "amount" ? "border-[#0ea5e9] bg-[#0ea5e9]/10" : ""
                   }`}
                 />
@@ -764,7 +764,7 @@ export function DiceGame({
                 disabled={loading || autoPlay || !amount || amount < MIN_BET}
                 title="Place order (Space / Enter)"
                 aria-label="Place order"
-                className="flex-1 h-8 rounded-sm bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white text-xs font-bold flex items-center justify-center gap-2 border border-[#0ea5e9]/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                className="flex-1 h-12 lg:h-8 rounded-sm bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white text-xs font-bold flex items-center justify-center gap-2 border border-[#0ea5e9]/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all min-h-[44px] lg:min-h-0"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -776,7 +776,7 @@ export function DiceGame({
                 type="button"
                 onClick={autoPlay ? stopAuto : startAuto}
                 disabled={loading && !autoPlay}
-                className={`h-8 rounded-sm px-3 min-w-[88px] text-xs font-bold flex items-center justify-center gap-2 border disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0 ${
+                className={`h-12 lg:h-8 rounded-sm px-3 min-w-[88px] text-xs font-bold flex items-center justify-center gap-2 border disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0 min-h-[44px] lg:min-h-0 ${
                   autoPlay
                     ? "border-[#ff453a]/50 bg-[#ff453a]/10 text-[#ff453a] hover:bg-[#ff453a]/15"
                     : "border-[#30d158]/50 bg-[#30d158]/10 text-[#30d158] hover:bg-[#30d158]/15"
@@ -807,7 +807,7 @@ export function DiceGame({
                     key={ms}
                     type="button"
                     onClick={() => setAutoSpeed(ms)}
-                    className={`min-w-[44px] px-2 py-1.5 rounded text-[10px] font-semibold transition-all ${
+                    className={`min-w-[48px] min-h-[44px] px-2 py-1.5 rounded text-[10px] font-semibold transition-all flex items-center justify-center ${
                       autoSpeed === ms ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/30" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.06]"
                     }`}
                   >
@@ -820,7 +820,7 @@ export function DiceGame({
             <MomentumMeter recentResults={recentResults} compact />
 
             {sessionStartTime != null && rounds > 0 && (
-              <div className="text-[9px] text-[var(--text-tertiary)] font-medium pt-1 border-t border-white/[0.06]">
+              <div className="text-[11px] lg:text-[9px] text-[var(--text-tertiary)] font-medium pt-1 border-t border-white/[0.06]">
                 <span className="tabular-nums">{sessionMinutes}m</span> invested · <span className="tabular-nums">{rounds}</span> rounds · Keep building
               </div>
             )}

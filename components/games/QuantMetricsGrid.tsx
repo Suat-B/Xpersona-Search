@@ -82,7 +82,7 @@ export function QuantMetricsGrid({ metrics, recentResults, compact = false }: Qu
         ? { "data-agent": `stat-${label.toLowerCase().replace(/\s/g, "-")}`, "data-value": String(dataValue) }
         : {})}
     >
-      <span className="text-xs text-[var(--text-tertiary)] uppercase tracking-wider">{label}</span>
+      <span className="text-[11px] sm:text-xs text-[var(--text-tertiary)] uppercase tracking-wider">{label}</span>
       <span className="flex items-center gap-2">
         {status != null && <StatusDot status={status} />}
         <span

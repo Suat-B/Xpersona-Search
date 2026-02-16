@@ -113,7 +113,7 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
         </div>
         {modalKey && typeof document !== "undefined" && createPortal(
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm min-h-screen min-w-full" style={{ top: 0, left: 0, right: 0, bottom: 0 }} role="dialog" aria-modal="true" onClick={(e) => e.target === e.currentTarget && closeModal()}>
-            <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[var(--bg-card)] p-6 shadow-2xl shadow-black/50 relative" onClick={(e) => e.stopPropagation()}>
+            <div className="w-full max-w-[95vw] sm:max-w-md rounded-2xl border border-white/10 bg-[var(--bg-card)] p-6 shadow-2xl shadow-black/50 relative" onClick={(e) => e.stopPropagation()}>
               <button type="button" onClick={closeModal} className="absolute top-4 right-4 p-2 rounded-lg text-[var(--text-tertiary)] hover:text-white hover:bg-white/10 transition-colors" aria-label="Close">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
@@ -262,7 +262,7 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
             onClick={(e) => e.target === e.currentTarget && closeModal()}
           >
             <div
-              className="w-full max-w-md rounded-2xl border border-white/10 bg-[var(--bg-card)] p-6 shadow-2xl shadow-black/50 relative"
+              className="w-full max-w-[95vw] sm:max-w-md rounded-2xl border border-white/10 bg-[var(--bg-card)] p-6 shadow-2xl shadow-black/50 relative"
               onClick={(e) => e.stopPropagation()}
             >
               <button
