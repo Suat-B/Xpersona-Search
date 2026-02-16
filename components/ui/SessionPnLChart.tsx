@@ -12,21 +12,26 @@ export function SessionPnLChart({
   rounds,
   onReset,
   layout = "default",
+  sharpeRatio = null,
+  maxDrawdownPct = null,
 }: {
   series: PnLPoint[];
   totalPnl: number;
   rounds: number;
   onReset: () => void;
-  layout?: "default" | "large" | "mini";
+  layout?: "default" | "large" | "mini" | "hero";
+  sharpeRatio?: number | null;
+  maxDrawdownPct?: number | null;
 }) {
   const uid = useId().replace(/[^a-z0-9-]/gi, "") || "pnl";
   const isLarge = layout === "large";
   const isMini = layout === "mini";
-  const CHART_W = isLarge ? 640 : isMini ? 240 : 400;
-  const CHART_H = isLarge ? 180 : isMini ? 65 : 100;
+  const isHero = layout === "hero";
+  const CHART_W = isHero ? 800 : isLarge ? 640 : isMini ? 240 : 400;
+  const CHART_H = isHero ? 280 : isLarge ? 180 : isMini ? 65 : 100;
   if (rounds === 0) {
-    const emptyW = isLarge ? 420 : isMini ? 200 : 160;
-    const emptyH = isLarge ? 120 : isMini ? 40 : 60;
+    const emptyW = isHero ? 600 : isLarge ? 420 : isMini ? 200 : 160;
+    const emptyH = isHero ? 200 : isLarge ? 120 : isMini ? 40 : 60;
     // Gentle sine-wave placeholder hint (subtle, quant-aesthetic)
     const samplePoints = 24;
     const pathD = Array.from({ length: samplePoints }, (_, i) => {
@@ -35,7 +40,7 @@ export function SessionPnLChart({
       return `${i === 0 ? "M" : "L"} ${x} ${y}`;
     }).join(" ");
     return (
-      <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-md overflow-hidden ${isMini ? "p-2" : "p-4"}`}>
+      <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-md overflow-hidden ${isHero ? "p-6" : isMini ? "p-2" : "p-4"}`}>
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-1 h-5 rounded-full bg-[#0ea5e9]" />
@@ -49,7 +54,7 @@ export function SessionPnLChart({
             Reset
           </button>
         </div>
-        <div className={`relative flex flex-col items-center justify-center text-[var(--text-secondary)] gap-3 ${isMini ? "h-[60px]" : isLarge ? "h-[140px]" : "h-[100px]"}`}>
+        <div className={`relative flex flex-col items-center justify-center text-[var(--text-secondary)] gap-3 ${isHero ? "h-[220px]" : isMini ? "h-[60px]" : isLarge ? "h-[140px]" : "h-[100px]"}`}>
           {/* Subtle animated placeholder curve — quant-style hint */}
           <svg className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[85%] h-[60%] opacity-[0.15]" viewBox={`0 0 ${emptyW} ${emptyH}`} preserveAspectRatio="xMidYMid slice" aria-hidden>
             <defs>
@@ -102,13 +107,13 @@ export function SessionPnLChart({
   const isUp = (points[points.length - 1]?.pnl ?? 0) >= 0;
   const strokeColor = totalPnl >= 0 ? "#10b981" : "#f59e0b";
 
-  const strokeW = isLarge ? 4 : isMini ? 2.5 : 3;
-  const dotR = isLarge ? 5 : isMini ? 2.5 : 3;
-  const pingR = isLarge ? 10 : isMini ? 5 : 6;
-  const glowStdDev = isLarge ? 2.5 : 1.5;
+  const strokeW = isHero ? 5 : isLarge ? 4 : isMini ? 2.5 : 3;
+  const dotR = isHero ? 6 : isLarge ? 5 : isMini ? 2.5 : 3;
+  const pingR = isHero ? 14 : isLarge ? 10 : isMini ? 5 : 6;
+  const glowStdDev = isHero ? 3 : isLarge ? 2.5 : 1.5;
 
   return (
-    <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-lg overflow-hidden min-w-0 min-h-0 transition-all duration-300 hover:border-white/20 hover:shadow-xl ${isMini ? "p-2" : "p-4"}`}>
+    <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-card)]/80 shadow-lg overflow-hidden min-w-0 min-h-0 transition-all duration-300 hover:border-white/20 hover:shadow-xl ${isHero ? "p-6" : isMini ? "p-2" : "p-4"}`}>
       <style>{`
         @keyframes pnl-dot-pulse-${uid} {
           0%, 100% { transform: scale(1); opacity: 1; }
@@ -151,6 +156,16 @@ export function SessionPnLChart({
           </button>
         </div>
       </div>
+      <div className="relative">
+        {isHero && (
+          <div className="absolute top-3 left-3 z-10 flex flex-col gap-1 rounded-md bg-black/60 px-3 py-2 font-mono text-[10px] backdrop-blur-sm border border-white/[0.06]">
+            <span className={totalPnl >= 0 ? "text-[#30d158]" : "text-[#ff453a]"}>
+              P&L {totalPnl >= 0 ? "+" : ""}{totalPnl.toFixed(2)}
+            </span>
+            {sharpeRatio != null && <span className="text-[var(--text-secondary)]">Sharpe {sharpeRatio.toFixed(2)}</span>}
+            {maxDrawdownPct != null && <span className="text-[#ff453a]/90">DD -{maxDrawdownPct.toFixed(1)}%</span>}
+          </div>
+        )}
       <svg
         viewBox={`0 0 ${CHART_W} ${CHART_H}`}
         className="w-full max-w-full"
@@ -159,8 +174,8 @@ export function SessionPnLChart({
         aria-hidden
       >
         <defs>
-          <pattern id={`pnl-grid-${uid}`} width="32" height="32" patternUnits="userSpaceOnUse">
-            <path d="M 32 0 L 0 0 0 32" fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="0.5" />
+          <pattern id={`pnl-grid-${uid}`} width={isHero ? 40 : 32} height={isHero ? 40 : 32} patternUnits="userSpaceOnUse">
+            <path d={`M ${isHero ? 40 : 32} 0 L 0 0 0 ${isHero ? 40 : 32}`} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={isHero ? 1 : 0.5} />
           </pattern>
           <linearGradient id={`pnl-fill-up-${uid}`} x1="0" y1="1" x2="0" y2="0">
             <stop offset="0%" stopColor="#10b981" stopOpacity={0} />
@@ -192,8 +207,9 @@ export function SessionPnLChart({
             x2={CHART_W - PAD}
             y2={zeroY}
             stroke="var(--text-secondary)"
-            strokeOpacity={0.3}
-            strokeDasharray="4 2"
+            strokeOpacity={isHero ? 0.5 : 0.3}
+            strokeWidth={isHero ? 1.5 : 1}
+            strokeDasharray="6 4"
             className="animate-pulse"
             style={{ animationDuration: "3s" }}
           />
@@ -244,6 +260,7 @@ export function SessionPnLChart({
           </g>
         )}
       </svg>
+      </div>
     </div>
   );
 }

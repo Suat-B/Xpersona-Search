@@ -546,319 +546,206 @@ export function DiceGame({
 
   const aiState = { amount, target, condition, progressionType, activeStrategyName: activeStrategyName ?? undefined };
 
+  const winProb = condition === "over" ? (100 - target) / 100 : target / 100;
+  const multiplier = winProb > 0 ? Math.min((1 - DICE_HOUSE_EDGE) / winProb, 10) : 0;
+  const evPerTrade = amount * (winProb * multiplier - 1);
+
   return (
     <div className="h-full flex flex-col min-h-0 relative" data-agent="dice-game" data-config={JSON.stringify(aiState)}>
-      {/* Subtle probability arc / ambient background */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden>
-        <svg className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md h-1/2 opacity-[0.04]" viewBox="0 0 400 200" preserveAspectRatio="none">
-          <defs>
-            <linearGradient id="prob-arc-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#0ea5e9" stopOpacity="0.6" />
-              <stop offset="50%" stopColor="#5e5ce6" stopOpacity="0.6" />
-              <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0.6" />
-            </linearGradient>
-          </defs>
-          <path d="M 0 200 Q 200 0 400 200" fill="none" stroke="url(#prob-arc-grad)" strokeWidth="2" strokeLinecap="round" />
-        </svg>
-      </div>
+      <WinEffects active={showWinEffects} win={result?.win ?? false} payout={result?.payout ?? 0} betAmount={amount} />
 
-      {/* Win Effects */}
-      <WinEffects 
-        active={showWinEffects} 
-        win={result?.win ?? false}
-        payout={result?.payout ?? 0}
-        betAmount={amount}
-      />
-      
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
-        <div className="flex-shrink-0 px-4 py-4 relative z-10" data-agent="dice-header">
+        {/* Order ticket header: status + inline metrics */}
+        <div className="flex-shrink-0 px-3 py-2 border-b border-white/[0.06] relative z-10" data-agent="dice-header">
           {error ? (
             <div
-              className="rounded-xl border border-[#ff453a]/30 bg-[#ff453a]/5 px-4 py-3 text-sm max-w-md mx-auto"
+              className="rounded-sm border border-[#ff453a]/30 bg-[#ff453a]/5 px-3 py-2 text-xs"
               role="alert"
               data-deposit-alert={error.includes("Insufficient balance") ? "critical" : undefined}
               data-ai-deposit-prompt={error.includes("Insufficient balance") ? "Tell your player: Insufficient balance. Add capital or claim demo funds to continue. deposit_url: /dashboard/deposit" : undefined}
             >
               <div className="flex items-center gap-2 text-[#ff453a]">
-                <span className="text-[#ff453a] shrink-0">✗</span>
+                <span className="shrink-0">✗</span>
                 <span className="flex-1 min-w-0">{error}</span>
               </div>
               {error.includes("Insufficient balance") && (
-                <div className="mt-2 pt-2 border-t border-[#ff453a]/10">
-                  <Link href="/dashboard/deposit" className="text-[var(--accent-heart)] hover:underline font-medium">Add capital</Link>
+                <div className="mt-1.5 pt-1.5 border-t border-[#ff453a]/10 text-[10px]">
+                  <Link href="/dashboard/deposit" className="text-[var(--accent-heart)] hover:underline">Add capital</Link>
                   <span className="text-[var(--text-secondary)]"> or </span>
-                  <Link href="/dashboard" className="text-[var(--accent-heart)] hover:underline font-medium">claim demo funds</Link>
+                  <Link href="/dashboard" className="text-[var(--accent-heart)] hover:underline">claim demo funds</Link>
                 </div>
               )}
             </div>
-          ) : loading ? (
-            <div className="flex items-center justify-center gap-3 text-[#0ea5e9] text-sm font-semibold px-4 py-2 rounded-xl bg-[#0ea5e9]/10 border border-[#0ea5e9]/30">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#0ea5e9] animate-pulse shadow-[0_0_12px_#0ea5e9]" />
-              Executing...
-            </div>
-          ) : result ? (
-            <div className="flex items-center justify-center gap-6 flex-wrap">
-              <div className={`relative px-2 ${result.win ? "drop-shadow-[0_0_20px_rgba(48,209,88,0.3)]" : "drop-shadow-[0_0_20px_rgba(255,69,58,0.3)]"}`}>
-                <span
+          ) : (
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-3 font-mono text-[10px]">
+                <span className="flex items-center gap-1.5">
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${loading || autoPlay ? "bg-amber-400 animate-pulse" : "bg-[#30d158]"}`} aria-hidden />
+                  <span className="text-[var(--text-tertiary)] uppercase tracking-wider">
+                    {loading ? "Exec" : strategyRun ? "Strategy" : aiDriving ? "LIVE" : activeStrategyName ?? "Ready"}
+                  </span>
+                </span>
+                <span className="text-white/20">|</span>
+                <span className="text-[var(--text-tertiary)]">Prob <span className="text-[var(--text-primary)] font-semibold">{(winProb * 100).toFixed(1)}%</span></span>
+                <span className="text-white/20">|</span>
+                <span className="text-[var(--text-tertiary)]">Mult <span className="text-[#0ea5e9] font-semibold">{multiplier.toFixed(2)}x</span></span>
+                <span className="text-white/20">|</span>
+                <span className="text-[var(--text-tertiary)]">EV <span className={`font-semibold ${evPerTrade >= 0 ? "text-[#30d158]" : "text-[#ff453a]"}`}>{evPerTrade >= 0 ? "+" : ""}{evPerTrade.toFixed(2)}</span></span>
+              </div>
+              {result && (
+                <div
                   key={resultKey}
-                  className={`font-bold text-5xl tabular-nums animate-count-up bg-clip-text ${
-                    result.win
-                      ? "text-[#30d158] [text-shadow:0_0_30px_rgba(48,209,88,0.5)]"
-                      : "text-[#ff453a] [text-shadow:0_0_30px_rgba(255,69,58,0.5)]"
+                  className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-sm text-xs font-semibold tabular-nums animate-count-up ${
+                    result.win ? "bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/30" : "bg-[#ff453a]/15 text-[#ff453a] border border-[#ff453a]/30"
                   }`}
                 >
-                  {result.result.toFixed(2)}
-                </span>
-              </div>
-              <span
-                className={`inline-flex items-center gap-2 text-base font-bold px-5 py-2.5 rounded-xl shadow-lg transition-all ${
-                  result.win
-                    ? "bg-gradient-to-br from-[#30d158]/20 to-[#30d158]/5 text-[#30d158] border border-[#30d158]/40 shadow-[0_0_20px_rgba(48,209,88,0.2)]"
-                    : "bg-gradient-to-br from-[#ff453a]/20 to-[#ff453a]/5 text-[#ff453a] border border-[#ff453a]/40 shadow-[0_0_20px_rgba(255,69,58,0.2)]"
-                }`}
-              >
-                {result.win ? (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                  </svg>
-                ) : (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                )}
-                {result.win ? `+${result.payout}` : `-${amount}`} U
-              </span>
-              {strategyRun ? null : aiDriving ? (
-                <span className="text-xs font-medium text-violet-400 uppercase tracking-wider">AI</span>
-              ) : activeStrategyName ? (
-                <span className="text-xs font-medium text-[#0ea5e9] uppercase tracking-wider">{activeStrategyName}</span>
-              ) : null}
-            </div>
-          ) : (
-            <div className="flex items-center justify-center gap-3 text-sm text-[var(--text-tertiary)]" data-agent="dice-config" data-amount={amount} data-target={target} data-condition={condition}>
-              {strategyRun ? null : aiDriving ? (
-                <span className="font-medium text-violet-400">
-                  AI · {amount} · {target}% {condition === "over" ? "Long" : "Short"}
-                </span>
-              ) : activeStrategyName ? (
-                <span>
-                  <span className="text-[#0ea5e9]">{activeStrategyName}</span>
-                  <span className="text-white/20 mx-2">·</span>
-                  <span className="tabular-nums">{amount} · {target}% {condition === "over" ? "L" : "S"}</span>
-                </span>
-              ) : (
-                <span className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#30d158]/10 border border-[#30d158]/30 text-[#30d158] font-medium">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#30d158] animate-pulse shadow-[0_0_12px_#30d158]" aria-hidden />
-                  Ready
-                </span>
+                  <span>{result.result.toFixed(2)}</span>
+                  <span>{result.win ? `+${result.payout}` : `-${amount}`} U</span>
+                </div>
               )}
             </div>
           )}
         </div>
 
-        <div
-          className={`flex-1 min-h-0 flex flex-col items-center px-4 py-5 space-y-5 overflow-y-auto overflow-x-hidden transition-all duration-300 ${
-            autoPlay ? "justify-start" : "justify-center"
-          } ${aiDriving ? "bg-gradient-to-b from-violet-500/[0.06] to-transparent" : ""}`}
-        >
+        <div className={`flex-1 min-h-0 flex flex-col px-3 py-3 space-y-3 overflow-y-auto overflow-x-hidden ${aiDriving ? "bg-gradient-to-b from-violet-500/[0.04] to-transparent" : ""}`}>
           {aiDriving && (
             <div className="flex-shrink-0">
-              <span className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-violet-400 border border-violet-500/30 rounded-xl bg-violet-500/10">
-                <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+              <span className="inline-flex items-center gap-1.5 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-violet-400 border border-violet-500/30 rounded-sm bg-violet-500/10">
+                <span className="w-1 h-1 rounded-full bg-violet-400 animate-pulse" />
                 LIVE
               </span>
             </div>
           )}
 
-          <div className="w-full flex justify-center relative z-10 max-w-md">
-          <div className="w-full shrink-0 space-y-5">
-          {(() => {
-            const winProb = condition === "over" ? (100 - target) / 100 : target / 100;
-            const multiplier = winProb > 0 ? Math.min((1 - DICE_HOUSE_EDGE) / winProb, 10) : 0;
-            const evPerTrade = amount * (winProb * multiplier - 1);
-              return (
-              <div className="grid grid-cols-3 gap-3">
-                <div className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-gradient-to-br from-white/[0.08] to-white/[0.02] px-4 py-4 text-center backdrop-blur-sm hover:border-[#0ea5e9]/20 transition-colors group">
-                  <div className="absolute inset-0 bg-gradient-to-br from-[#0ea5e9]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                  <div className="relative text-xs font-bold text-[var(--text-tertiary)] uppercase tracking-widest mb-1.5">Prob</div>
-                  <div className="relative text-2xl font-bold text-[var(--text-primary)] tabular-nums">{(winProb * 100).toFixed(1)}<span className="text-sm text-[var(--text-tertiary)] font-medium">%</span></div>
+          <div className="space-y-3 w-full max-w-sm">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Threshold</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min={0.01}
+                    max={99.99}
+                    step={0.01}
+                    value={target}
+                    onChange={(e) => {
+                      const value = Number(e.target.value);
+                      if (value > 0 && value < 100) onTargetChange(value);
+                    }}
+                    disabled={autoPlay}
+                    aria-label="Threshold percentage"
+                    className={`terminal-input w-full h-9 rounded-sm pr-8 text-center text-sm ${
+                      changedControl === "target" ? "border-[#0ea5e9] bg-[#0ea5e9]/10" : ""
+                    }`}
+                  />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--text-tertiary)]">%</span>
                 </div>
-                <div className="relative overflow-hidden rounded-xl border-2 border-[#0ea5e9]/30 bg-gradient-to-br from-[#0ea5e9]/15 to-[#0ea5e9]/5 px-4 py-4 text-center shadow-[0_0_30px_rgba(14,165,233,0.15)] hover:shadow-[0_0_40px_rgba(14,165,233,0.2)] transition-all">
-                  <div className="absolute inset-0 bg-gradient-to-r from-[#0ea5e9]/10 via-transparent to-[#0ea5e9]/10" />
-                  <div className="relative text-xs font-bold text-[#0ea5e9]/80 uppercase tracking-widest mb-1.5">Multiplier</div>
-                  <div className="relative text-2xl font-bold text-[#0ea5e9] tabular-nums drop-shadow-[0_0_10px_rgba(14,165,233,0.3)]">{multiplier.toFixed(2)}<span className="text-sm text-[#0ea5e9]/70">x</span></div>
-                </div>
-                <div className={`relative overflow-hidden rounded-xl border px-4 py-4 text-center transition-all ${evPerTrade >= 0 ? "border-[#30d158]/30 bg-gradient-to-br from-[#30d158]/15 to-[#30d158]/5 hover:shadow-[0_0_25px_rgba(48,209,88,0.15)]" : "border-[#ff453a]/30 bg-gradient-to-br from-[#ff453a]/15 to-[#ff453a]/5 hover:shadow-[0_0_25px_rgba(255,69,58,0.15)]"}`}>
-                  <div className="text-xs font-bold text-[var(--text-tertiary)] uppercase tracking-widest mb-1.5">EV</div>
-                  <div className={`text-2xl font-bold tabular-nums ${evPerTrade >= 0 ? "text-[#30d158] drop-shadow-[0_0_10px_rgba(48,209,88,0.3)]" : "text-[#ff453a] drop-shadow-[0_0_10px_rgba(255,69,58,0.3)]"}`}>
-                    {evPerTrade >= 0 ? "+" : ""}{evPerTrade.toFixed(2)}
-                  </div>
+                <div className="h-1 w-full rounded-sm bg-white/[0.06] overflow-hidden">
+                  <div
+                    className="h-full rounded-sm bg-gradient-to-r from-[#0ea5e9] to-[#5e5ce6] transition-all duration-300"
+                    style={{ width: `${(condition === "over" ? 100 - target : target)}%` }}
+                  />
                 </div>
               </div>
-            );
-          })()}
+              <div className="space-y-1">
+                <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Direction</label>
+                <SegmentedControl value={condition} onChange={onConditionChange} disabled={autoPlay} quantLabels />
+              </div>
+            </div>
 
-          <div className="grid grid-cols-2 gap-5">
-            <div className="space-y-2">
-              <label className="block text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Threshold</label>
-              <div className={`relative transition-all duration-300 ${changedControl === "target" ? "scale-[1.02]" : ""}`}>
+            <div className="space-y-1">
+              <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Position Size</label>
+              <div className="relative">
                 <input
+                  ref={betInputRef}
                   type="number"
-                  min={0.01}
-                  max={99.99}
-                  step={0.01}
-                  value={target}
+                  min={MIN_BET}
+                  max={MAX_BET}
+                  value={amount}
                   onChange={(e) => {
-                    const value = Number(e.target.value);
-                    if (value > 0 && value < 100) onTargetChange(value);
+                    const v = e.target.value;
+                    if (v === "") { onAmountChange(MIN_BET); return; }
+                    const num = Number(v);
+                    if (!Number.isNaN(num) && num >= 0) {
+                      onAmountChange(Math.min(MAX_BET, Math.max(MIN_BET, Math.floor(num))));
+                    }
                   }}
+                  placeholder="1–10,000"
                   disabled={autoPlay}
-                  aria-label="Threshold percentage"
-                  className={`w-full h-12 rounded-xl border px-4 text-center text-lg font-semibold tabular-nums text-[var(--text-primary)] disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/50 focus:border-[#0ea5e9]/50 transition-all ${
-                    changedControl === "target"
-                      ? "border-[#0ea5e9] bg-[#0ea5e9]/15 shadow-[0_0_20px_rgba(14,165,233,0.2)]"
-                      : "border-[var(--border)] bg-white/[0.04] hover:border-white/[0.1] hover:bg-white/[0.06]"
+                  aria-label="Position size in units"
+                  className={`terminal-input w-full h-9 rounded-sm pr-8 text-center text-sm ${
+                    changedControl === "amount" ? "border-[#0ea5e9] bg-[#0ea5e9]/10" : ""
                   }`}
                 />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-[var(--text-tertiary)] pointer-events-none">%</span>
-              </div>
-              <div className="h-2 w-full rounded-full bg-white/[0.06] overflow-hidden shadow-inner">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-[#0ea5e9] to-[#5e5ce6] transition-all duration-300 shadow-[0_0_12px_rgba(14,165,233,0.4)]"
-                  style={{ width: `${(condition === "over" ? 100 - target : target)}%` }}
-                />
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--text-tertiary)]">U</span>
               </div>
             </div>
-            <div className="space-y-2">
-              <label className="block text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Direction</label>
-              <div className={`transition-all duration-300 ${changedControl === "condition" ? "scale-[1.02]" : ""}`}>
-                <SegmentedControl
-                  value={condition}
-                  onChange={onConditionChange}
-                  disabled={autoPlay}
-                  quantLabels
-                />
-              </div>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <BetPercentageButtons balance={balance} currentBet={amount} onBetChange={onAmountChange} disabled={autoPlay} />
+              <span className="w-px h-4 bg-white/[0.08]" />
+              <QuickBetButtons onHalf={handleHalf} onDouble={handleDouble} onMax={handleMax} disabled={autoPlay} currentAmount={amount} maxAmount={MAX_BET} />
             </div>
-          </div>
 
-          <div className="space-y-2">
-            <label className="block text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Position Size</label>
-            <div className={`relative transition-all duration-300 ${changedControl === "amount" ? "scale-[1.02]" : ""}`}>
-              <input
-                ref={betInputRef}
-                type="number"
-                min={MIN_BET}
-                max={MAX_BET}
-                value={amount}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v === "") { onAmountChange(MIN_BET); return; }
-                  const num = Number(v);
-                  if (!Number.isNaN(num) && num >= 0) {
-                    onAmountChange(Math.min(MAX_BET, Math.max(MIN_BET, Math.floor(num))));
-                  }
-                }}
-                placeholder="1–10,000"
-                disabled={autoPlay}
-                aria-label="Position size in units"
-                className={`w-full h-12 rounded-xl border px-4 pr-12 text-center text-lg font-semibold tabular-nums text-[var(--text-primary)] disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/50 focus:border-[#0ea5e9]/50 transition-all ${
-                  changedControl === "amount"
-                    ? "border-[#0ea5e9] bg-[#0ea5e9]/15 shadow-[0_0_20px_rgba(14,165,233,0.2)]"
-                    : "border-[var(--border)] bg-white/[0.04] hover:border-white/[0.1] hover:bg-white/[0.06]"
-                }`}
-              />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-[var(--text-tertiary)] pointer-events-none">U</span>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-center gap-2 flex-wrap">
-            <BetPercentageButtons
-              balance={balance}
-              currentBet={amount}
-              onBetChange={onAmountChange}
-              disabled={autoPlay}
-            />
-            <div className="w-px h-6 bg-white/[0.08]" />
-            <QuickBetButtons
-              onHalf={handleHalf}
-              onDouble={handleDouble}
-              onMax={handleMax}
-              disabled={autoPlay}
-              currentAmount={amount}
-              maxAmount={MAX_BET}
-            />
-          </div>
-
-          <div className="flex items-center justify-center gap-4 pt-2">
-            <button
-              type="button"
-              onClick={handleRoll}
-              disabled={loading || autoPlay || !amount || amount < MIN_BET}
-              title="Execute trade (Space / Enter)"
-              aria-label="Execute trade"
-              className="relative group rounded-full bg-gradient-to-br from-[#0ea5e9] via-[#0ea5e9] to-[#0077b6] px-10 py-4 text-base font-bold text-white shadow-[0_0_30px_rgba(14,165,233,0.4)] hover:shadow-[0_0_50px_rgba(14,165,233,0.5)] hover:scale-[1.03] active:scale-95 disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all duration-200 overflow-hidden border border-[#0ea5e9]/30"
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
-              <span className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.2)_0%,transparent_50%)]" />
-              <span className="relative flex items-center gap-2.5">
-                <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleRoll}
+                disabled={loading || autoPlay || !amount || amount < MIN_BET}
+                title="Execute trade (Space / Enter)"
+                aria-label="Execute trade"
+                className="flex-1 h-9 rounded-sm bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white text-xs font-bold flex items-center justify-center gap-2 border border-[#0ea5e9]/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
                 {loading && !autoPlay ? "Executing..." : "Execute"}
-              </span>
-            </button>
+              </button>
 
-            <button
-              type="button"
-              onClick={autoPlay ? stopAuto : startAuto}
-              disabled={loading && !autoPlay}
-              className={`relative rounded-full border-2 px-6 py-4 text-base font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2 shrink-0 ${
-                autoPlay
-                  ? "border-[#ff453a]/50 bg-gradient-to-br from-[#ff453a]/20 to-[#ff453a]/5 text-[#ff453a] hover:shadow-[0_0_25px_rgba(255,69,58,0.2)] hover:scale-[1.02]"
-                  : "border-[#30d158]/50 bg-gradient-to-br from-[#30d158]/20 to-[#30d158]/5 text-[#30d158] hover:shadow-[0_0_25px_rgba(48,209,88,0.2)] hover:scale-[1.02]"
-              }`}
-            >
-              {autoPlay ? (
-                <>
-                  <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
-                  </svg>
-                  <span>Stop</span>
-                  <span className="text-sm opacity-80 tabular-nums">{strategyRun ? strategyRoundsPlayed : autoRounds}</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                  </svg>
-                  <span>Run Strategy</span>
-                </>
-              )}
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={autoPlay ? stopAuto : startAuto}
+                disabled={loading && !autoPlay}
+                className={`h-9 rounded-sm px-4 text-xs font-bold flex items-center justify-center gap-2 border disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0 ${
+                  autoPlay
+                    ? "border-[#ff453a]/50 bg-[#ff453a]/10 text-[#ff453a] hover:bg-[#ff453a]/15"
+                    : "border-[#30d158]/50 bg-[#30d158]/10 text-[#30d158] hover:bg-[#30d158]/15"
+                }`}
+              >
+                {autoPlay ? (
+                  <>
+                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
+                    </svg>
+                    Stop <span className="tabular-nums opacity-80">{strategyRun ? strategyRoundsPlayed : autoRounds}</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                    </svg>
+                    Run Strategy
+                  </>
+                )}
+              </button>
+            </div>
 
-          {autoPlay && (
-            <div className="flex items-center justify-center flex-shrink-0">
-              <div className="inline-flex rounded-xl bg-white/[0.04] border border-[var(--border)] p-1 gap-1">
+            {autoPlay && (
+              <div className="inline-flex rounded-sm bg-white/[0.04] border border-[var(--border)] p-0.5 gap-0.5">
                 {AUTO_SPEEDS.map((ms) => (
                   <button
                     key={ms}
                     type="button"
                     onClick={() => setAutoSpeed(ms)}
-                    className={`min-w-[52px] px-3 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
-                      autoSpeed === ms
-                        ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/30"
-                        : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.06]"
+                    className={`min-w-[44px] px-2 py-1.5 rounded text-[10px] font-semibold transition-all ${
+                      autoSpeed === ms ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/30" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.06]"
                     }`}
                   >
                     {ms === 100 ? "0.1s" : ms === 250 ? "0.25s" : ms === 500 ? "0.5s" : "1s"}
                   </button>
                 ))}
               </div>
-            </div>
-          )}
-          </div>
+            )}
           </div>
         </div>
       </div>

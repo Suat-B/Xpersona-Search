@@ -99,15 +99,15 @@ export function QuantMetricsGrid({ metrics, recentResults }: QuantMetricsGridPro
 
   return (
     <div
-      className="agent-card p-4 space-y-3 min-w-0 overflow-hidden border border-white/[0.08] hover:border-[#0ea5e9]/20 transition-colors"
+      className="space-y-2.5 min-w-0"
       data-agent="quant-metrics-grid"
     >
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-1 h-5 rounded-full bg-[#0ea5e9]" />
-          <h4 className="text-xs font-semibold text-[var(--text-primary)]">
+        <div className="flex items-center gap-1.5">
+          <div className="w-0.5 h-3 rounded-full bg-[#0ea5e9]" />
+          <span className="text-[10px] font-semibold text-[var(--text-primary)] uppercase tracking-wider">
             Performance Metrics
-          </h4>
+          </span>
         </div>
         {recentResults.length > 0 && (
           <span className="text-xs text-[#30d158]/80 tabular-nums">

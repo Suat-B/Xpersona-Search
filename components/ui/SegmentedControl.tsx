@@ -13,10 +13,10 @@ export function SegmentedControl({ value, onChange, disabled, quantLabels }: Seg
   const shortActive = value === "under";
 
   return (
-    <div className="relative flex w-full rounded-lg bg-white/[0.03] border border-white/[0.08] p-0.5 h-11">
+    <div className="relative flex w-full rounded-sm bg-white/[0.03] border border-white/[0.08] p-0.5 h-9">
       {/* Sliding background indicator */}
       <div
-        className="absolute top-0.5 bottom-0.5 w-[calc(50%-4px)] rounded-md transition-all duration-300 ease-out"
+        className="absolute top-0.5 bottom-0.5 w-[calc(50%-4px)] rounded-sm transition-all duration-300 ease-out"
         style={{
           left: longActive ? "2px" : "calc(50% + 2px)",
           backgroundColor: longActive ? "rgba(52, 211, 153, 0.25)" : "rgba(244, 63, 94, 0.25)",
@@ -29,7 +29,7 @@ export function SegmentedControl({ value, onChange, disabled, quantLabels }: Seg
         type="button"
         onClick={() => onChange("over")}
         disabled={disabled}
-        className={`relative flex-1 rounded-md text-xs font-bold transition-colors duration-200 z-10 ${
+        className={`relative flex-1 rounded-sm text-[11px] font-bold transition-colors duration-200 z-10 ${
           longActive
             ? "text-emerald-400"
             : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/[0.02]"
@@ -46,7 +46,7 @@ export function SegmentedControl({ value, onChange, disabled, quantLabels }: Seg
         type="button"
         onClick={() => onChange("under")}
         disabled={disabled}
-        className={`relative flex-1 rounded-md text-xs font-bold transition-colors duration-200 z-10 ${
+        className={`relative flex-1 rounded-sm text-[11px] font-bold transition-colors duration-200 z-10 ${
           shortActive
             ? "text-rose-400"
             : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/[0.02]"
