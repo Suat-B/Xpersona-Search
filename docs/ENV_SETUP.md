@@ -20,18 +20,24 @@ Without `NEXTAUTH_SECRET` you’ll see:
    - **Or:** `npm run setup` (works on both)
 3. `.env.local` already has `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/xpersona` which matches the container.
 
-## Google OAuth (free, ~5 min)
+## Google OAuth (hands-off: `npm run setup:google`)
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/) — create or select a project.
+Run once to enable Google Sign-In:
+
+```bash
+npm run setup:google
+```
+
+This opens the Google Cloud Console, prompts for Client ID and Secret, writes `.env.local`, and prints the redirect URI to add. Restart your dev server after.
+
+**Manual setup** (if you prefer):
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → create or select a project.
 2. **APIs & Services** → **Credentials** → **Create Credentials** → **OAuth client ID**.
 3. Application type: **Web application**.
-4. Authorized redirect URIs: `http://localhost:3000/api/auth/callback/google` (add production URL later, e.g. `https://xpersona.co/api/auth/callback/google`).
-5. Copy Client ID and Client Secret into `.env.local`:
-   ```
-   GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-   GOOGLE_CLIENT_SECRET=your-client-secret
-   ```
-6. Restart the dev server. The login page will show "Sign in with Google".
+4. Authorized redirect URIs: `http://localhost:3000/api/auth/callback/google` (or your `NEXTAUTH_URL` + `/api/auth/callback/google`).
+5. Copy Client ID and Secret into `.env.local`, or run `npm run setup:google` and paste when prompted.
+6. Restart the dev server. "Sign in with Google" and "Upgrade to Google" will work.
 
 ## Other required vars
 

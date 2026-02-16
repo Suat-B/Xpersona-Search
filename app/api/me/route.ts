@@ -11,6 +11,11 @@ export async function GET(request: Request) {
     );
   }
   const { user } = authResult;
+  const googleAuthEnabled = !!(
+    process.env.GOOGLE_CLIENT_ID &&
+    process.env.GOOGLE_CLIENT_SECRET
+  );
+
   return NextResponse.json({
     success: true,
     data: {
@@ -25,6 +30,7 @@ export async function GET(request: Request) {
       createdAt: user.createdAt,
       lastFaucetAt: user.lastFaucetAt,
       isAdmin: isAdmin(user),
+      googleAuthEnabled,
     },
   });
 }
