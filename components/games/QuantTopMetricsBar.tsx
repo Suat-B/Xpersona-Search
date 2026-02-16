@@ -13,6 +13,8 @@ interface QuantTopMetricsBarProps {
   kellyFraction: number | null;
   /** When true, shows a subtle "ready" status dot */
   ready?: boolean;
+  /** Compact inline mode for use inside merged header row */
+  compact?: boolean;
 }
 
 function formatSharpeColor(sharpe: number | null): "emerald" | "amber" | "neutral" {
@@ -41,12 +43,19 @@ export function QuantTopMetricsBar({
   rounds,
   kellyFraction,
   ready = true,
+  compact = false,
 }: QuantTopMetricsBarProps) {
   const sharpeColor = formatSharpeColor(sharpeRatio);
   const kellyColor = formatKellyColor(kellyFraction);
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 border-b border-white/[0.06] bg-gradient-to-r from-[#0a0a0f]/95 via-[#0d0d14]/80 to-[#0a0a0f]/95 backdrop-blur-sm overflow-x-auto scrollbar-sidebar">
+    <div
+      className={`flex items-center gap-2 overflow-x-auto scrollbar-sidebar ${
+        compact
+          ? "flex-1 min-w-0 px-3 py-1.5"
+          : "px-4 py-2 border-b border-white/[0.06] bg-gradient-to-r from-[#0a0a0f]/95 via-[#0d0d14]/80 to-[#0a0a0f]/95 backdrop-blur-sm"
+      }`}
+    >
       {/* NAV */}
       <div className="metric-badge shrink-0">
         <span className="text-[9px] text-[var(--text-tertiary)] uppercase tracking-wider">NAV</span>

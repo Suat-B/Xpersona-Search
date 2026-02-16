@@ -471,20 +471,32 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         </div>
       )}
 
-      {/* Compact header — sleek nav bar */}
-      <header className="flex-shrink-0 h-12 flex items-center justify-between px-4 border-b border-white/[0.06] bg-gradient-to-r from-[#0a0a0f]/95 via-[#0d0d14]/90 to-[#0a0a0f]/95 backdrop-blur-sm">
-        <div className="flex items-center gap-3">
+      {/* Merged header + metrics — single row (nav | metrics | actions) */}
+      <header className="flex-shrink-0 h-10 flex items-center min-w-0 border-b border-white/[0.06] bg-gradient-to-r from-[#0a0a0f]/95 via-[#0d0d14]/90 to-[#0a0a0f]/95 backdrop-blur-sm">
+        <div className="flex items-center gap-3 shrink-0 px-3">
           <Link href="/dashboard" className="flex items-center gap-1.5 text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors group">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
             <span className="hidden sm:inline uppercase tracking-wider">Dashboard</span>
           </Link>
           <span className="text-[10px] text-white/10 hidden sm:inline">│</span>
-          <span className="text-[10px] font-bold tracking-[0.15em] text-[var(--text-secondary)] uppercase">
+          <span className="text-[10px] font-bold tracking-[0.15em] text-[var(--text-secondary)] uppercase hidden md:inline">
             Play Dice <span className="text-[#0ea5e9]/70">Terminal</span>
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href="/dashboard/connect-ai" className={aiConnected ? "hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-[#30d158]/30 bg-[#30d158]/10 px-2.5 py-1.5 text-[10px] font-medium text-[#30d158]" : "hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-[#0ea5e9]/30 bg-[#0ea5e9]/10 px-2.5 py-1.5 text-[10px] font-medium text-[#0ea5e9]"}>
+        <QuantTopMetricsBar
+          compact
+          nav={balance}
+          navLoading={balanceLoading}
+          sessionPnl={totalPnl}
+          sharpeRatio={m.sharpeRatio}
+          winRate={winRatePct}
+          maxDrawdownPct={m.maxDrawdownPct}
+          rounds={rounds}
+          kellyFraction={m.kellyFraction}
+          ready={!strategyRun && !autoPlayActive}
+        />
+        <div className="flex items-center gap-2 shrink-0 px-3">
+          <Link href="/dashboard/connect-ai" className={aiConnected ? "hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-[#30d158]/30 bg-[#30d158]/10 px-2 py-1 text-[10px] font-medium text-[#30d158]" : "hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-[#0ea5e9]/30 bg-[#0ea5e9]/10 px-2 py-1 text-[10px] font-medium text-[#0ea5e9]"}>
             {aiConnected ? <HeartbeatIndicator size="sm" /> : <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>}
             <span>{aiConnected ? "AI" : "Connect"}</span>
           </Link>
@@ -496,25 +508,10 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         </div>
       </header>
 
-      {/* Metrics strip — QuantTopMetricsBar */}
-      <div className="flex-shrink-0">
-        <QuantTopMetricsBar
-          nav={balance}
-          navLoading={balanceLoading}
-          sessionPnl={totalPnl}
-          sharpeRatio={m.sharpeRatio}
-          winRate={winRatePct}
-          maxDrawdownPct={m.maxDrawdownPct}
-          rounds={rounds}
-          kellyFraction={m.kellyFraction}
-          ready={!strategyRun && !autoPlayActive}
-        />
-      </div>
-
-      {/* Main content — 70-30 split: game (70%) | sidebar (30%) */}
+      {/* Main content — 80-20 split: game (80%) | sidebar (20%) */}
       <main className="flex-1 min-h-0 flex overflow-hidden">
-        {/* Left: 70% — game panel + equity + trade log */}
-        <div className="flex-[7] min-w-0 min-h-0 flex flex-col overflow-hidden border-r border-white/[0.06] relative">
+        {/* Left: 80% — game panel only */}
+        <div className="flex-[8] min-w-0 min-h-0 flex flex-col overflow-hidden border-r border-white/[0.06] relative">
           <div className="absolute inset-0 dot-grid opacity-[0.02] pointer-events-none" aria-hidden />
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-4 relative">
             {/* Ambient glow behind game panel */}
@@ -577,50 +574,49 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             </ClientOnly>
               </div>
             </div>
-
-            {/* Equity curve + Trade log — compact row below game panel */}
-            <div className="flex-shrink-0 grid grid-cols-2 gap-3 mt-3 min-h-0" style={{ minHeight: "140px" }}>
-              <div className="agent-card p-3 min-h-0 overflow-hidden flex flex-col border-[#0ea5e9]/15 hover:border-[#0ea5e9]/25 transition-colors">
-                <SessionPnLChart
-                  series={statsSeries}
-                  totalPnl={totalPnl}
-                  rounds={rounds}
-                  onReset={handleReset}
-                  layout="mini"
-                />
-              </div>
-              <div className="agent-card p-3 min-h-0 flex flex-col overflow-hidden border-white/[0.06] hover:border-[#0ea5e9]/15 transition-colors">
-                <div className="flex items-center justify-between mb-1.5 flex-shrink-0">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-1 h-4 rounded-full bg-[#0ea5e9]" />
-                    <h3 className="text-xs font-semibold text-[var(--text-primary)]">Trade Log</h3>
-                  </div>
-                  <span className="text-[10px] text-[var(--text-tertiary)] tabular-nums">{recentResults.length}</span>
-                </div>
-                <div className="flex-1 min-h-0 overflow-y-auto">
-                  <TradeLog
-                    entries={recentResults.map((r, i) => ({
-                      roundNumber: r.roundNumber ?? Math.max(1, rounds - recentResults.length + 1 + i),
-                      result: r.result,
-                      win: r.win,
-                      payout: r.payout,
-                      amount: r.playAmount ?? amount,
-                      target: r.target ?? target,
-                      condition: (r.condition ?? condition) as "over" | "under",
-                      balance: r.balance,
-                      source: r.source,
-                      timestamp: r.timestamp,
-                    }))}
-                    maxRows={6}
-                  />
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 
-        {/* Right: 30% — sidebar, scrolls internally; hidden on small screens */}
-        <aside className="hidden lg:flex flex-[3] min-w-[280px] max-w-[420px] flex-col overflow-y-auto overflow-x-hidden border-l border-white/[0.06] bg-gradient-to-b from-[#0a0a0f]/90 to-[#050508] p-3 space-y-3">
+        {/* Right: 20% — sidebar (equity curve, trade log, metrics, strategy, etc.) */}
+        <aside className="hidden lg:flex flex-[2] min-w-[240px] max-w-[380px] flex-col overflow-y-auto overflow-x-hidden border-l border-white/[0.06] bg-gradient-to-b from-[#0a0a0f]/90 to-[#050508] p-3 space-y-3">
+          {/* Equity curve + Trade log — moved from left column for max game hub space */}
+          <div className="grid grid-cols-1 gap-3">
+            <div className="agent-card p-3 min-h-[100px] overflow-hidden flex flex-col border-[#0ea5e9]/15">
+              <SessionPnLChart
+                series={statsSeries}
+                totalPnl={totalPnl}
+                rounds={rounds}
+                onReset={handleReset}
+                layout="mini"
+              />
+            </div>
+            <div className="agent-card p-3 min-h-[120px] flex flex-col overflow-hidden">
+              <div className="flex items-center justify-between mb-1.5 flex-shrink-0">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1 h-4 rounded-full bg-[#0ea5e9]" />
+                  <h3 className="text-xs font-semibold text-[var(--text-primary)]">Trade Log</h3>
+                </div>
+                <span className="text-[10px] text-[var(--text-tertiary)] tabular-nums">{recentResults.length}</span>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                <TradeLog
+                  entries={recentResults.map((r, i) => ({
+                    roundNumber: r.roundNumber ?? Math.max(1, rounds - recentResults.length + 1 + i),
+                    result: r.result,
+                    win: r.win,
+                    payout: r.payout,
+                    amount: r.playAmount ?? amount,
+                    target: r.target ?? target,
+                    condition: (r.condition ?? condition) as "over" | "under",
+                    balance: r.balance,
+                    source: r.source,
+                    timestamp: r.timestamp,
+                  }))}
+                  maxRows={6}
+                />
+              </div>
+            </div>
+          </div>
           <QuantMetricsGrid
             metrics={quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null }}
             recentResults={recentResults}
