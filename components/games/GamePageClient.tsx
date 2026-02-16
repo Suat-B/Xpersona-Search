@@ -662,9 +662,45 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       )}
 
       {aiBannerVisible && (
-        <div className="fixed top-4 left-0 right-0 z-[60] flex items-center justify-center gap-2 py-2 px-4 bg-violet-500/10 border-b border-violet-500/30 text-violet-300 text-sm backdrop-blur-sm">
-          <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-          {liveQueueLength > 0 ? `AI executing — ${liveQueueLength} queued` : "AI executing"}
+        <div
+          className="fixed top-0 left-0 right-0 z-[60] overflow-hidden bg-gradient-to-r from-violet-950/95 via-violet-900/90 to-violet-950/95 border-b border-violet-500/40 backdrop-blur-md"
+          role="status"
+          aria-live="polite"
+          aria-label="Full AI mode active"
+        >
+          {/* Animated scanline / data stream */}
+          <div className="absolute inset-0 h-full opacity-[0.03] pointer-events-none">
+            <div className="absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent,transparent_2px,rgba(139,92,246,0.15)_2px,rgba(139,92,246,0.15)_4px)] animate-scanline" />
+          </div>
+          <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-3 px-4 sm:px-6">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse shrink-0" aria-hidden />
+                <h2 className="text-sm sm:text-base font-bold uppercase tracking-widest text-violet-200">
+                  Full AI Mode
+                </h2>
+                <span className="hidden sm:inline text-violet-500/80">·</span>
+                <span className="text-sm font-medium text-violet-300/90">
+                  AI playing on your behalf
+                </span>
+              </div>
+              <p className="text-xs text-violet-400/80 pl-4 sm:pl-0">
+                Watch only — automated execution live
+              </p>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              {liveQueueLength > 0 && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-500/20 border border-violet-500/40 text-violet-300 text-xs font-mono font-semibold tabular-nums">
+                  <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+                  {liveQueueLength} in queue
+                </span>
+              )}
+              <span className="flex items-center gap-1.5 text-[10px] font-mono text-violet-400/70 tabular-nums">
+                <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" />
+                LIVE
+              </span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -709,9 +745,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 <span className="text-xs font-medium uppercase tracking-wider">Dashboard</span>
               </Link>
               <span className="text-white/20">/</span>
-              <span className={`w-2 h-2 rounded-full shrink-0 ${strategyRun || autoPlayActive ? "bg-[#0ea5e9] animate-pulse" : "bg-[#30d158]"}`} aria-hidden />
+              <span className={`w-2 h-2 rounded-full shrink-0 ${aiBannerVisible ? "bg-violet-400 animate-pulse" : strategyRun || autoPlayActive ? "bg-[#0ea5e9] animate-pulse" : "bg-[#30d158]"}`} aria-hidden />
               <span className="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider">
-                {strategyRun || autoPlayActive ? "Playing" : "Ready"}
+                {aiBannerVisible ? "Watching AI" : strategyRun || autoPlayActive ? "Playing" : "Ready"}
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight text-gradient-primary">
@@ -781,8 +817,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           maxDrawdownPct={m.maxDrawdownPct}
           rounds={rounds}
           kellyFraction={m.kellyFraction}
-          ready={!strategyRun && !autoPlayActive}
+          ready={!strategyRun && !autoPlayActive && !aiBannerVisible}
           live={aiConnected}
+          aiMode={aiBannerVisible}
           sessionStartTime={sessionStartTime}
         />
       </section>
@@ -792,9 +829,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         {/* Left column — Order ticket + Chart/Strategy tabs */}
         <div className="lg:col-span-8 space-y-5">
           {/* Order Ticket Card */}
-          <div className="agent-card p-5 transition-all duration-300 hover:border-[var(--border-strong)]">
+          <div className={`agent-card p-5 transition-all duration-300 hover:border-[var(--border-strong)] ${aiBannerVisible ? "ring-1 ring-violet-500/40 bg-violet-500/[0.02]" : ""}`}>
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+              <div className={`w-1 h-6 rounded-full shrink-0 ${aiBannerVisible ? "bg-violet-500" : "bg-[#0ea5e9]"}`} />
               <h2 className="text-lg font-semibold text-[var(--text-primary)]">Order Ticket</h2>
             </div>
             <div className="flex flex-col min-h-0" key={sessionNudgesKey}>
@@ -1052,13 +1089,13 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             </div>
           </div>
 
-          {(liveActivityItems.length > 0 || liveQueueLength > 0) && (
+          {(liveActivityItems.length > 0 || liveQueueLength > 0 || aiBannerVisible) && (
             <div className="agent-card p-5 transition-all duration-300 hover:border-[var(--border-strong)]">
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                <div className={`w-1 h-6 rounded-full shrink-0 ${aiBannerVisible ? "bg-violet-500" : "bg-[#0ea5e9]"}`} />
                 <h2 className="text-lg font-semibold text-[var(--text-primary)]">Live Activity</h2>
               </div>
-              <LiveActivityFeed items={liveActivityItems} maxItems={20} embedded />
+              <LiveActivityFeed items={liveActivityItems} maxItems={20} embedded aiModeActive={aiBannerVisible} />
             </div>
           )}
 
@@ -1090,9 +1127,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         <div className="lg:hidden flex flex-col">
           <div className="flex-1 overflow-y-auto" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 88px)" }}>
             {mobileTab === "play" && (
-              <div className="agent-card p-5 m-3 flex flex-col min-h-[200px] transition-all duration-300">
+              <div className={`agent-card p-5 m-3 flex flex-col min-h-[200px] transition-all duration-300 ${aiBannerVisible ? "ring-1 ring-violet-500/40 bg-violet-500/[0.02]" : ""}`}>
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                  <div className={`w-1 h-6 rounded-full shrink-0 ${aiBannerVisible ? "bg-violet-500" : "bg-[#0ea5e9]"}`} />
                   <h2 className="text-lg font-semibold text-[var(--text-primary)]">Order Ticket</h2>
                 </div>
                 <div className="flex-1 min-h-0 overflow-hidden">

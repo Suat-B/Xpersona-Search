@@ -674,17 +674,22 @@ export function DiceGame({
           )}
         </div>
 
-        <div className={`flex-1 min-h-0 flex flex-col items-center px-4 py-2 pt-3 overflow-hidden w-full ${aiDriving ? "bg-gradient-to-b from-violet-500/[0.04] to-transparent" : ""}`}>
+        <div className={`flex-1 min-h-0 flex flex-col items-center px-4 py-2 pt-3 overflow-hidden w-full relative ${aiDriving ? "bg-gradient-to-b from-violet-500/[0.08] via-violet-500/[0.03] to-transparent ring-1 ring-inset ring-violet-500/20 rounded-xl" : ""}`}>
             {aiDriving && (
-            <div className="flex-shrink-0">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-violet-400 border border-violet-500/30 rounded-full bg-violet-500/10">
-                <span className="w-1 h-1 rounded-full bg-violet-400 animate-pulse" />
-                LIVE
-              </span>
+            <div className="flex-shrink-0 w-full max-w-[440px] space-y-2 mb-1">
+              <div className="flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-violet-500/15 border border-violet-500/30">
+                <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse shrink-0" aria-hidden />
+                <span className="text-xs font-bold uppercase tracking-widest text-violet-300">
+                  AI Pilot Active
+                </span>
+              </div>
+              <p className="text-[10px] text-center text-violet-400/80 font-medium">
+                You&apos;re watching · AI is playing
+              </p>
             </div>
           )}
 
-          <div className="space-y-1.5 w-full max-w-[440px] flex-shrink-0 min-w-0">
+          <div className={`space-y-1.5 w-full max-w-[440px] flex-shrink-0 min-w-0 transition-opacity ${aiDriving ? "opacity-70 pointer-events-none select-none" : ""}`}>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-0.5">
                 <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Threshold</label>
@@ -756,15 +761,28 @@ export function DiceGame({
               <button
                 type="button"
                 onClick={handleRoll}
-                disabled={loading || autoPlay || !amount || amount < MIN_BET}
-                title="Place order (Space / Enter)"
-                aria-label="Place order"
-                className="flex-1 h-11 rounded-xl bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white text-sm font-bold flex items-center justify-center gap-2 border border-[#0ea5e9]/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                disabled={loading || autoPlay || aiDriving || !amount || amount < MIN_BET}
+                title={aiDriving ? "AI is playing — watch only" : "Place order (Space / Enter)"}
+                aria-label={aiDriving ? "AI executing, watch only" : "Place order"}
+                className={`flex-1 h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 border transition-all ${
+                  aiDriving
+                    ? "bg-violet-500/20 text-violet-400 border-violet-500/40 cursor-default"
+                    : "bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white border-[#0ea5e9]/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                }`}
               >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                {loading && !autoPlay ? "Executing..." : "Execute"}
+                {aiDriving ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse shrink-0" />
+                    Watching…
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    {loading && !autoPlay ? "Executing..." : "Execute"}
+                  </>
+                )}
               </button>
 
               <button

@@ -31,6 +31,8 @@ interface QuantTopMetricsBarProps {
   compact?: boolean;
   /** AI/API connected — shows LIVE indicator */
   live?: boolean;
+  /** AI playing via API — violet accent, AI MODE badge */
+  aiMode?: boolean;
   /** Session start timestamp (ms) for elapsed timer */
   sessionStartTime?: number | null;
   /** Mobile mode: show only NAV, P&L, Rounds inline; expand for rest */
@@ -74,6 +76,7 @@ export function QuantTopMetricsBar({
   ready = true,
   compact = false,
   live = false,
+  aiMode = false,
   sessionStartTime = null,
   mobile = false,
   cardLayout = false,
@@ -99,7 +102,7 @@ export function QuantTopMetricsBar({
 
   if (cardLayout) {
     return (
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 ${aiMode ? "p-3 rounded-xl ring-1 ring-violet-500/30 bg-violet-500/[0.04]" : ""}`}>
         <MetricCard
           label="Balance"
           value={navLoading ? "…" : nav.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -127,14 +130,14 @@ export function QuantTopMetricsBar({
   }
 
   return (
-    <div className="relative">
+    <div className={`relative ${aiMode ? "ring-1 ring-violet-500/30 rounded-lg bg-violet-500/[0.04]" : ""}`}>
       <div className="terminal-scan-line" aria-hidden />
       <div
         className={`flex items-center font-mono ${
           compact
             ? "flex-1 min-w-0 px-2 lg:px-3 py-1 overflow-x-auto " + (useCondensed ? "scrollbar-none" : "scrollbar-sidebar")
             : "px-4 py-1.5 border-b border-white/[0.06] bg-[#050506] overflow-x-auto scrollbar-sidebar"
-        }`}
+        } ${aiMode ? "border-violet-500/20" : ""}`}
       >
       <div className="flex items-center gap-0">
       {/* BALANCE */}
@@ -245,13 +248,17 @@ export function QuantTopMetricsBar({
         </>
       )}
 
-      {/* LIVE indicator when AI connected */}
-      {live && (
+      {/* LIVE / AI MODE indicator when AI connected or playing */}
+      {(live || aiMode) && (
         <>
           <span className="w-px h-3 bg-white/[0.08] shrink-0 mx-0.5" aria-hidden />
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded-sm bg-violet-500/15 border border-violet-500/30 shrink-0">
+          <div className={`flex items-center gap-1 px-2 py-0.5 rounded-sm border shrink-0 ${
+            aiMode ? "bg-violet-500/25 border-violet-500/50" : "bg-violet-500/15 border-violet-500/30"
+          }`}>
             <span className="w-1 h-1 rounded-full bg-violet-400 animate-pulse shrink-0" aria-hidden />
-            <span className="text-[9px] font-semibold text-violet-400 uppercase tracking-wider">LIVE</span>
+            <span className="text-[9px] font-semibold text-violet-400 uppercase tracking-wider">
+              {aiMode ? "AI MODE" : "LIVE"}
+            </span>
           </div>
         </>
       )}

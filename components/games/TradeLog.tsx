@@ -23,10 +23,12 @@ interface TradeLogProps {
 function SourceDot({ source }: { source?: "manual" | "algo" | "api" }) {
   const s = source ?? "manual";
   const color =
-    s === "api" ? "bg-[#0ea5e9]" : s === "algo" ? "bg-[#0ea5e9]" : "bg-emerald-400";
+    s === "api" ? "bg-violet-400" : s === "algo" ? "bg-[#0ea5e9]" : "bg-emerald-400";
+  const label = s === "api" ? "AI / API" : s === "algo" ? "Algo" : "Manual";
   return (
-    <span className="inline-flex items-center justify-center" title={s}>
-      <span className={`w-1.5 h-1.5 rounded-full ${color}`} aria-hidden />
+    <span className="inline-flex items-center justify-center gap-1" title={label}>
+      <span className={`w-1.5 h-1.5 rounded-full ${color} ${s === "api" ? "ring-1 ring-violet-500/50" : ""}`} aria-hidden />
+      {s === "api" && <span className="text-[9px] font-semibold uppercase tracking-wider text-violet-400/90">AI</span>}
     </span>
   );
 }
