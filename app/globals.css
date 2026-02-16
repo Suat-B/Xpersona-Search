@@ -12,7 +12,7 @@
     --bg-elevated: rgba(22, 22, 26, 0.7);
     
     /* Neural Network Gradient Backgrounds (minimal for 2x darker) */
-    --bg-gradient-1: radial-gradient(ellipse at 20% 20%, rgba(255, 55, 95, 0.02) 0%, transparent 50%);
+    --bg-gradient-1: radial-gradient(ellipse at 20% 20%, rgba(10, 132, 255, 0.02) 0%, transparent 50%);
     --bg-gradient-2: radial-gradient(ellipse at 80% 80%, rgba(94, 92, 230, 0.015) 0%, transparent 50%);
     --bg-gradient-3: radial-gradient(ellipse at 50% 50%, rgba(10, 132, 255, 0.01) 0%, transparent 60%);
     
@@ -22,8 +22,8 @@
     --text-tertiary: rgba(255, 255, 255, 0.48);
     --text-quaternary: rgba(255, 255, 255, 0.28);
     
-    /* Xpersona Accent System */
-    --accent-heart: #ff2d55;
+    /* Xpersona Accent System — cyan (matches dashboard panels) */
+    --accent-heart: #0a84ff;
     --accent-neural: #5e5ce6;
     --accent-blue: #0a84ff;
     --accent-cyber: #0a84ff;
@@ -34,7 +34,7 @@
     --accent-teal: #64d2ff;
     
     /* Neural Glow Colors */
-    --glow-pink: rgba(255, 45, 85, 0.4);
+    --glow-pink: rgba(10, 132, 255, 0.4);
     --glow-purple: rgba(94, 92, 230, 0.4);
     --glow-blue: rgba(10, 132, 255, 0.4);
     --glow-green: rgba(48, 209, 88, 0.4);
@@ -42,7 +42,7 @@
     /* Borders & Dividers */
     --border: rgba(255, 255, 255, 0.06);
     --border-strong: rgba(255, 255, 255, 0.12);
-    --border-glow: rgba(255, 45, 85, 0.2);
+    --border-glow: rgba(10, 132, 255, 0.2);
     --divider: rgba(255, 255, 255, 0.04);
     
     /* Premium Shadows */
@@ -50,7 +50,7 @@
     --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.03);
     --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
     --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
-    --shadow-glow: 0 0 60px rgba(255, 45, 85, 0.15);
+    --shadow-glow: 0 0 60px rgba(10, 132, 255, 0.15);
     --shadow-neural: 0 0 80px rgba(94, 92, 230, 0.2);
     
     /* Border Radius - Ultra Modern */
@@ -290,6 +290,32 @@ input[type="reset"] {
   }
 }
 
+/* ════════════════════════════════════════════════════════════════
+   DASHBOARD THEME (Cursor-style charcoal)
+   ════════════════════════════════════════════════════════════════ */
+.dashboard-theme {
+  --dash-bg: #1e1e1e;
+  --dash-bg-card: #2f2f2f;
+  --dash-nav-active: #333333;
+  --dash-divider: #3a3a3a;
+  --dash-text-secondary: #a0a0a0;
+  --dash-btn-bg: #383838;
+  --dash-radius: 10px;
+}
+
+.dashboard-theme .agent-card {
+  background: var(--dash-bg-card);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid var(--dash-divider);
+  border-radius: var(--dash-radius);
+  box-shadow: none;
+}
+
+.dashboard-theme .agent-card::before {
+  display: none;
+}
+
 /* Quant Dice Card */
 .quant-card {
   background: linear-gradient(145deg, #060606 0%, #030303 100%);
@@ -326,7 +352,7 @@ input[type="reset"] {
   background: linear-gradient(
     45deg,
     transparent 0%,
-    rgba(255, 45, 85, 0.03) 25%,
+    rgba(10, 132, 255, 0.03) 25%,
     rgba(94, 92, 230, 0.03) 50%,
     rgba(10, 132, 255, 0.03) 75%,
     transparent 100%
@@ -415,7 +441,7 @@ input[type="reset"] {
 
 /* Glow Effects */
 .glow-pink {
-  box-shadow: 0 0 40px var(--glow-pink), 0 0 80px rgba(255, 45, 85, 0.1);
+  box-shadow: 0 0 40px var(--glow-pink), 0 0 80px rgba(10, 132, 255, 0.1);
 }
 
 .glow-purple {
@@ -515,7 +541,7 @@ input[type="reset"] {
 
 @keyframes faucet-glow-pulse {
   0%, 100% { box-shadow: 0 0 24px rgba(48, 209, 88, 0.4); }
-  50% { box-shadow: 0 0 40px rgba(48, 209, 88, 0.7), 0 0 60px rgba(255, 45, 85, 0.2); }
+  50% { box-shadow: 0 0 40px rgba(48, 209, 88, 0.7), 0 0 60px rgba(10, 132, 255, 0.2); }
 }
 
 .animate-faucet-burst {
@@ -560,7 +586,7 @@ input[type="reset"] {
 
 /* Selection */
 ::selection {
-  background: rgba(255, 45, 85, 0.25);
+  background: rgba(10, 132, 255, 0.25);
   color: white;
 }
 

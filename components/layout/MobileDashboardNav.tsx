@@ -112,7 +112,7 @@ export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashb
   }, [open]);
 
   return (
-    <div className="scroll-stable-layer md:hidden sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--bg-matte)]/95 backdrop-blur-xl">
+    <div className="scroll-stable-layer md:hidden sticky top-0 z-40 border-b border-[var(--dash-divider)] bg-[var(--dash-bg)]">
       <div className="flex h-14 items-center justify-between px-4">
         <Link href="/dashboard" className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[var(--accent-heart)] to-[var(--accent-purple)]">
@@ -126,7 +126,7 @@ export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashb
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.04] text-[var(--text-primary)] hover:bg-white/[0.08] transition-colors"
+          className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-[var(--dash-bg-card)] text-white hover:bg-[var(--dash-nav-active)] transition-colors"
           aria-label={open ? "Close menu" : "Open menu"}
           aria-expanded={open}
         >
@@ -150,14 +150,14 @@ export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashb
             aria-hidden
           />
           <nav
-            className="fixed top-14 left-0 right-0 bottom-0 z-50 flex flex-col bg-[var(--bg-matte)] border-r border-[var(--border)] animate-in fade-in slide-in-from-top-2 duration-200"
+            className="fixed top-14 left-0 right-0 bottom-0 z-50 flex flex-col bg-[var(--dash-bg)] border-r border-[var(--dash-divider)] animate-in fade-in slide-in-from-top-2 duration-200"
             aria-label="Navigation menu"
           >
             <div className="flex-1 overflow-y-auto p-4 space-y-1 pb-20">
               <Link
                 href="/games/dice"
                 onClick={() => setOpen(false)}
-                className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/40 mb-3"
+                className="flex items-center gap-3 rounded-[10px] px-3 py-3 text-sm font-semibold bg-[var(--dash-nav-active)] text-[#0ea5e9] border border-[var(--dash-divider)] mb-3"
               >
                 <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0ea5e9]/30">
                   {ICONS.dice}
@@ -178,17 +178,17 @@ export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashb
                     href={href}
                     onClick={() => setOpen(false)}
                     className={cn(
-                      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
+                      "group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-all",
                       active
-                        ? "bg-white/[0.08] text-white"
-                        : "text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-white",
+                        ? "bg-[var(--dash-nav-active)] text-white"
+                        : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white",
                       aiConnected && "text-[#30d158]"
                     )}
                   >
                     <span className={cn(
                       "flex h-8 w-8 items-center justify-center rounded-lg",
-                      active ? aiConnected ? "bg-[#30d158]/20 text-[#30d158]" : "bg-[var(--accent-heart)]/20 text-[var(--accent-heart)]" : "bg-white/[0.04] group-hover:bg-white/[0.08]",
-                      aiConnected && !active && "group-hover:bg-[#30d158]/10"
+                      active ? aiConnected ? "bg-[#30d158]/20 text-[#30d158]" : "text-white" : "text-[var(--dash-text-secondary)] group-hover:text-white",
+                      aiConnected && !active && "group-hover:text-[#30d158]"
                     )}>
                       {ICONS[icon]}
                     </span>
@@ -204,21 +204,21 @@ export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashb
                   href="/admin"
                   onClick={() => setOpen(false)}
                   className={cn(
-                    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium",
+                    "flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium",
                     (pathname ?? "").startsWith("/admin")
-                      ? "bg-amber-500/10 text-amber-400"
-                      : "text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-amber-400"
+                      ? "bg-[var(--dash-nav-active)] text-amber-400"
+                      : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-amber-400"
                   )}
                 >
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg text-amber-400">
                     {ICONS.admin}
                   </span>
                   Admin
                 </Link>
               )}
             </div>
-            <div className="sticky bottom-0 left-0 right-0 p-4 border-t border-[var(--border)] bg-[var(--bg-matte)] mt-auto shrink-0">
-              <p className="text-xs text-[var(--text-tertiary)] truncate">
+            <div className="sticky bottom-0 left-0 right-0 p-4 border-t border-[var(--dash-divider)] bg-[var(--dash-bg)] mt-auto shrink-0">
+              <p className="text-xs text-[var(--dash-text-secondary)] truncate">
                 Logged in as {displayName}
               </p>
             </div>

@@ -109,10 +109,10 @@ export function DashboardSidebarNav({ isAdmin = false }: DashboardSidebarNavProp
               key={href}
               href={href}
               className={cn(
-                "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                "group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-all duration-200",
                 active
-                  ? "bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
-                  : "text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-white",
+                  ? "bg-[var(--dash-nav-active)] text-white"
+                  : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white",
                 aiConnected && "text-[#30d158]"
               )}
             >
@@ -120,9 +120,9 @@ export function DashboardSidebarNav({ isAdmin = false }: DashboardSidebarNavProp
                 className={cn(
                   "flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200",
                   active 
-                    ? aiConnected ? "bg-[#30d158]/20 text-[#30d158]" : "bg-[#0ea5e9]/20 text-[#0ea5e9]" 
-                    : "bg-white/[0.04] text-[var(--text-tertiary)] group-hover:bg-white/[0.08] group-hover:text-[var(--text-secondary)]",
-                  aiConnected && !active && "group-hover:bg-[#30d158]/10 group-hover:text-[#30d158]"
+                    ? aiConnected ? "bg-[#30d158]/20 text-[#30d158]" : "text-white" 
+                    : "text-[var(--dash-text-secondary)] group-hover:text-white",
+                  aiConnected && !active && "group-hover:text-[#30d158]"
                 )}
               >
                 {ICONS[icon]}
@@ -140,22 +140,22 @@ export function DashboardSidebarNav({ isAdmin = false }: DashboardSidebarNavProp
       </div>
       
       {isAdmin && (
-        <div className="mt-4 pt-4 border-t border-[var(--divider)]">
+        <div className="mt-4 pt-4 border-t border-[var(--dash-divider)]">
           <Link
             href="/admin"
             className={cn(
-              "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+              "group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-all duration-200",
               (pathname ?? "").startsWith("/admin")
-                ? "bg-amber-500/10 text-amber-400 shadow-[inset_0_1px_0_rgba(251,191,36,0.1)]"
-                : "text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-amber-400"
+                ? "bg-[var(--dash-nav-active)] text-amber-400"
+                : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-amber-400"
             )}
           >
             <span
               className={cn(
                 "flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200",
                 (pathname ?? "").startsWith("/admin")
-                  ? "bg-amber-500/20 text-amber-400"
-                  : "bg-white/[0.04] text-[var(--text-tertiary)] group-hover:bg-amber-500/10 group-hover:text-amber-400"
+                  ? "text-amber-400"
+                  : "text-[var(--dash-text-secondary)] group-hover:text-amber-400"
               )}
             >
               {ICONS.admin}
@@ -165,22 +165,22 @@ export function DashboardSidebarNav({ isAdmin = false }: DashboardSidebarNavProp
         </div>
       )}
       
-      <div className="mt-6 pt-6 border-t border-[var(--divider)]">
+      <div className="mt-6 pt-6 border-t border-[var(--dash-divider)]">
         <Link
           href="/dashboard/transactions"
           className={cn(
-            "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+            "group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-all duration-200",
             (pathname ?? "").startsWith("/dashboard/transactions")
-              ? "bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
-              : "text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-white"
+              ? "bg-[var(--dash-nav-active)] text-white"
+              : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white"
           )}
         >
           <span 
             className={cn(
               "flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200",
               (pathname ?? "").startsWith("/dashboard/transactions")
-                ? "bg-[var(--accent-blue)]/20 text-[var(--accent-blue)]"
-                : "bg-white/[0.04] text-[var(--text-tertiary)] group-hover:bg-white/[0.08] group-hover:text-[var(--text-secondary)]"
+                ? "text-[var(--accent-blue)]"
+                : "text-[var(--dash-text-secondary)] group-hover:text-white"
             )}
           >
             {ICONS.transactions}
@@ -191,18 +191,18 @@ export function DashboardSidebarNav({ isAdmin = false }: DashboardSidebarNavProp
         <Link
           href="/dashboard/provably-fair"
           className={cn(
-            "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 mt-1",
+            "group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-all duration-200 mt-1",
             (pathname ?? "").startsWith("/dashboard/provably-fair")
-              ? "bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
-              : "text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-white"
+              ? "bg-[var(--dash-nav-active)] text-white"
+              : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white"
           )}
         >
           <span 
             className={cn(
               "flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200",
               (pathname ?? "").startsWith("/dashboard/provably-fair")
-                ? "bg-emerald-500/20 text-emerald-400"
-                : "bg-white/[0.04] text-[var(--text-tertiary)] group-hover:bg-white/[0.08] group-hover:text-[var(--text-secondary)]"
+                ? "text-emerald-400"
+                : "text-[var(--dash-text-secondary)] group-hover:text-white"
             )}
           >
             {ICONS.shield}
@@ -213,18 +213,18 @@ export function DashboardSidebarNav({ isAdmin = false }: DashboardSidebarNavProp
         <Link
           href="/dashboard/settings"
           className={cn(
-            "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 mt-1",
+            "group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-all duration-200 mt-1",
             (pathname ?? "").startsWith("/dashboard/settings")
-              ? "bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
-              : "text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-white"
+              ? "bg-[var(--dash-nav-active)] text-white"
+              : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white"
           )}
         >
           <span 
             className={cn(
               "flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200",
               (pathname ?? "").startsWith("/dashboard/settings")
-                ? "bg-[var(--accent-purple)]/20 text-[var(--accent-purple)]"
-                : "bg-white/[0.04] text-[var(--text-tertiary)] group-hover:bg-white/[0.08] group-hover:text-[var(--text-secondary)]"
+                ? "text-[var(--accent-purple)]"
+                : "text-[var(--dash-text-secondary)] group-hover:text-white"
             )}
           >
             {ICONS.settings}

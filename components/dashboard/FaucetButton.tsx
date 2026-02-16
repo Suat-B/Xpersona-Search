@@ -5,8 +5,6 @@ import { safeFetchJson } from "@/lib/safeFetch";
 import { FAUCET_COOLDOWN_SECONDS, FAUCET_AMOUNT } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
-const BURST_COUNT = 12;
-
 export function FaucetButton() {
   const [nextFaucetAt, setNextFaucetAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -96,29 +94,13 @@ export function FaucetButton() {
       role="region"
       aria-label="Free Credits"
     >
-      {/* Success animation overlay */}
+      {/* Success animation overlay (no burst particles, just +amount) */}
       {successAnim && (
         <div
           key={animKey}
           className="absolute inset-0 pointer-events-none overflow-visible rounded-[var(--radius-lg)] z-10"
           aria-hidden
         >
-          {/* Burst particles — each rotated, child animates outward */}
-          {Array.from({ length: BURST_COUNT }).map((_, i) => (
-            <div
-              key={i}
-              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-              style={{ transform: `translate(-50%, -50%) rotate(${(360 / BURST_COUNT) * i}deg)` }}
-            >
-              <div
-                className="w-2 h-2 rounded-full animate-faucet-burst"
-                style={{
-                  backgroundColor: i % 3 === 0 ? "#30d158" : i % 3 === 1 ? "#ff2d55" : "#5e5ce6",
-                  animationDelay: `${i * 0.02}s`,
-                }}
-              />
-            </div>
-          ))}
           {/* Floating +100 */}
           <div
             className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 animate-faucet-float text-xl font-bold text-[#30d158] drop-shadow-[0_0_12px_rgba(48,209,88,0.8)]"

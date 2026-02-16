@@ -28,7 +28,7 @@ export function AIFirstBanner() {
   if (dismissed) return null;
 
   return (
-    <div className="rounded-lg border border-[#0ea5e9]/30 bg-[#0ea5e9]/5 px-4 py-2 flex items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+    <div className="rounded-[10px] border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-4 py-2 flex items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
       <p className="text-xs text-[var(--text-primary)]">
         <span className="font-semibold text-[#0ea5e9]">AI-First, Data-Driven Probability Game</span>
         {" — "}
@@ -37,7 +37,7 @@ export function AIFirstBanner() {
       <button
         type="button"
         onClick={handleDismiss}
-        className="shrink-0 p-1 rounded text-[var(--text-secondary)] hover:text-white hover:bg-white/5 transition-colors"
+        className="shrink-0 p-1 rounded text-[var(--dash-text-secondary)] hover:text-white hover:bg-[var(--dash-nav-active)] transition-colors"
         aria-label="Dismiss"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

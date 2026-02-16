@@ -34,12 +34,11 @@ export function DashboardChrome({
   }
 
   return (
-    <div className="flex min-h-screen w-full bg-black">
+    <div className="dashboard-theme flex min-h-screen w-full bg-[var(--dash-bg)]">
       <MobileDashboardNav displayName={displayName} isAdmin={isAdmin} />
-      <aside className="scroll-stable-layer dashboard-sidebar hidden w-[280px] min-w-[280px] flex-col md:flex sticky top-0 h-screen border-r border-[var(--border)] overflow-x-hidden">
-        <div className="absolute inset-0 bg-[var(--bg-matte)]/80 backdrop-blur-xl" />
+      <aside className="scroll-stable-layer dashboard-sidebar hidden w-[280px] min-w-[280px] flex-col md:flex sticky top-0 h-screen border-r border-[var(--dash-divider)] overflow-x-hidden bg-[var(--dash-bg)]">
         <div className="relative flex h-full flex-col">
-          <div className="h-20 flex items-center px-6 border-b border-[var(--border)]">
+          <div className="h-20 flex items-center px-6 border-b border-[var(--dash-divider)]">
             <Link href="/" className="flex items-center gap-3 group">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#0ea5e9] to-[#0077b6] shadow-lg shadow-[#0ea5e9]/20 group-hover:shadow-[#0ea5e9]/40 transition-shadow">
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -50,7 +49,7 @@ export function DashboardChrome({
                 <span className="text-lg font-semibold tracking-tight text-[var(--text-primary)]">
                   Xpersona
                 </span>
-                <span className="text-[10px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">
+                <span className="text-[10px] font-medium text-[var(--dash-text-secondary)] uppercase tracking-wider">
                   AI-First Probability Game
                 </span>
               </div>
@@ -60,15 +59,15 @@ export function DashboardChrome({
             <DataIntelligenceBadge variant="compact" />
           </div>
           <DashboardSidebarNav isAdmin={isAdmin} />
-          <div className="p-4 border-t border-[var(--border)]">
-            <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-white/[0.03] border border-[var(--border)]">
+          <div className="p-4 border-t border-[var(--dash-divider)]">
+            <div className="flex items-center gap-3 px-3 py-2 rounded-[var(--dash-radius)] bg-[var(--dash-bg-card)] border border-[var(--dash-divider)]">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0ea5e9] to-[#0ea5e9]/80">
                 <span className="text-sm font-semibold text-white">
                   {displayName.charAt(0).toUpperCase()}
                 </span>
               </div>
               <div className="flex-1 min-w-0 overflow-hidden">
-                <p className="text-xs text-[var(--text-tertiary)] truncate">
+                <p className="text-xs text-[var(--dash-text-secondary)] truncate">
                   Logged in as {displayName}
                 </p>
               </div>
@@ -76,7 +75,7 @@ export function DashboardChrome({
           </div>
         </div>
       </aside>
-      <main className="scroll-contain-paint flex-1 overflow-y-auto">
+      <main className="scroll-contain-paint flex-1 overflow-y-auto bg-[var(--dash-bg)]">
         <div className="container mx-auto max-w-7xl p-4 sm:p-6 md:p-8 space-y-6">
           <AIFirstBanner />
           {children}
