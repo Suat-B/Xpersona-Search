@@ -38,7 +38,7 @@ export function FortuneCard() {
 
   return (
     <div className={cn(
-      "agent-card p-5 h-[140px] flex flex-col justify-between",
+      "agent-card p-4 sm:p-5 min-h-[120px] sm:min-h-[140px] flex flex-col justify-between min-w-0 overflow-hidden",
       "border-white/[0.06]",
       "hover:border-[var(--border-strong)] transition-all duration-300"
     )}

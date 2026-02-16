@@ -78,7 +78,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                 AI-FIRST PROBABILITY GAME
               </span>
             </div>
-            <h1 className="text-4xl font-semibold tracking-tight text-gradient-primary">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight text-gradient-primary">
               Xpersona<span className="text-[var(--accent-heart)]">.</span>
             </h1>
             <p className="mt-2 text-[var(--accent-heart)] font-semibold">
@@ -97,7 +97,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               <strong className="text-emerald-300">Data-Driven Intelligence:</strong> {AI_FIRST_MESSAGING.dataIntelligence.callout}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0">
             {!isLoggedIn && <ClaimFreeCreditsButton />}
             {isLoggedIn && (
               <div className="flex items-center gap-2 rounded-full border border-[var(--border)] bg-white/[0.03] p-1 backdrop-blur-sm">

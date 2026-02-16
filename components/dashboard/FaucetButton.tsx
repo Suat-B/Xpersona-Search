@@ -9,9 +9,6 @@ export function FaucetButton() {
   const [nextFaucetAt, setNextFaucetAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [successAnim, setSuccessAnim] = useState(false);
-  const [animKey, setAnimKey] = useState(0);
-
   const loadNextFaucetAt = useCallback(async () => {
     const { data } = await safeFetchJson<{ success?: boolean; data?: { lastFaucetAt?: string } }>("/api/me");
     if (data?.success && data?.data?.lastFaucetAt) {
@@ -37,9 +34,6 @@ export function FaucetButton() {
     const optimisticNext = new Date(Date.now() + FAUCET_COOLDOWN_SECONDS * 1000).toISOString();
 
     setNextFaucetAt(optimisticNext);
-    setSuccessAnim(true);
-    setAnimKey((k) => k + 1);
-    window.dispatchEvent(new Event("balance-updated"));
 
     try {
       const { ok, status, data } = await safeFetchJson<{
@@ -51,6 +45,7 @@ export function FaucetButton() {
 
       if (data?.success && data?.data) {
         setNextFaucetAt(data.data.nextFaucetAt ?? optimisticNext);
+        window.dispatchEvent(new CustomEvent("balance-updated", { detail: { balance: data.data.balance } }));
       } else if (data?.error === "FAUCET_COOLDOWN" && data?.nextFaucetAt) {
         setNextFaucetAt(data.nextFaucetAt);
         setMessage("Cooldown active — next claim available soon");
@@ -70,7 +65,6 @@ export function FaucetButton() {
       console.error("[FaucetButton] claim error:", e);
     } finally {
       setLoading(false);
-      setTimeout(() => setSuccessAnim(false), 1200);
     }
   }, [nextFaucetAt]);
 
@@ -94,22 +88,6 @@ export function FaucetButton() {
       role="region"
       aria-label="Free Credits"
     >
-      {/* Success animation overlay (no burst particles, just +amount) */}
-      {successAnim && (
-        <div
-          key={animKey}
-          className="absolute inset-0 pointer-events-none overflow-visible rounded-[var(--radius-lg)] z-10"
-          aria-hidden
-        >
-          {/* Floating +100 */}
-          <div
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 animate-faucet-float text-xl font-bold text-[#30d158] drop-shadow-[0_0_12px_rgba(48,209,88,0.8)]"
-          >
-            +{FAUCET_AMOUNT}
-          </div>
-        </div>
-      )}
-
       <div className="flex items-start gap-3 mb-4">
         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#30d158]/10 border border-[#30d158]/20 text-[#30d158]">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -144,8 +122,7 @@ export function FaucetButton() {
           className={cn(
             "w-full rounded-xl px-4 py-3 font-medium text-white transition-all duration-300 relative",
             disabled && "bg-[var(--text-tertiary)]/20 cursor-not-allowed",
-            !disabled && "bg-[#30d158] hover:bg-[#30d158]/90 shadow-lg shadow-[#30d158]/20 hover:shadow-[#30d158]/30 active:scale-[0.98]",
-            successAnim && "animate-faucet-glow"
+            !disabled && "bg-[#30d158] hover:bg-[#30d158]/90 shadow-lg shadow-[#30d158]/20 hover:shadow-[#30d158]/30 active:scale-[0.98]"
           )}
         >
           {loading ? (

@@ -28,8 +28,8 @@ export function AIFirstBanner() {
   if (dismissed) return null;
 
   return (
-    <div className="rounded-[10px] border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-4 py-2 flex items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
-      <p className="text-xs text-[var(--text-primary)]">
+    <div className="rounded-[10px] border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-3 sm:px-4 py-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 animate-in fade-in slide-in-from-top-2 duration-300 min-w-0">
+      <p className="text-xs text-[var(--text-primary)] min-w-0 break-words">
         <span className="font-semibold text-[#0ea5e9]">AI-First, Data-Driven Probability Game</span>
         {" — "}
         Your AI plays via API. Every strategy is pure data. Same balance. Same provably fair.

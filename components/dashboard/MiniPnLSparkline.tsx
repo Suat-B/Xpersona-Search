@@ -49,7 +49,7 @@ export function MiniPnLSparkline() {
 
   if (points.length < 2) {
     return (
-      <div className="agent-card p-5 h-[140px] flex flex-col justify-between">
+      <div className="agent-card p-4 sm:p-5 min-h-[120px] sm:min-h-[140px] flex flex-col justify-between min-w-0 overflow-hidden">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/[0.04] border border-white/[0.08] text-[var(--text-tertiary)]">
@@ -83,7 +83,7 @@ export function MiniPnLSparkline() {
   const isPositive = totalPnl >= 0;
 
   return (
-    <div className="agent-card p-5 h-[140px] flex flex-col justify-between group"
+    <div className="agent-card p-4 sm:p-5 min-h-[120px] sm:min-h-[140px] flex flex-col justify-between group min-w-0 overflow-hidden"
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">

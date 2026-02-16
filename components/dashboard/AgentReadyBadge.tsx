@@ -42,7 +42,7 @@ export function AgentReadyBadge() {
   return (
     <Link href={hasApiKey ? "/dashboard/api" : "/dashboard/connect-ai"} className="block group">
       <div className={cn(
-        "agent-card p-5 h-[140px] flex flex-col justify-between transition-all duration-300",
+        "agent-card p-4 sm:p-5 min-h-[120px] sm:min-h-[140px] flex flex-col justify-between transition-all duration-300 min-w-0 overflow-hidden",
         config.border,
         config.glow,
         "hover:border-[var(--border-strong)]"

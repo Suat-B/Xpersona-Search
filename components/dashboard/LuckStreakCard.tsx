@@ -92,14 +92,14 @@ export function LuckStreakCard() {
 
   return (
     <div className={cn(
-      "agent-card p-5 h-[140px] flex flex-col justify-between transition-all duration-300",
+      "agent-card p-4 sm:p-5 min-h-[120px] sm:min-h-[140px] flex flex-col justify-between transition-all duration-300 min-w-0 overflow-hidden",
       config.border,
       config.glow,
       "hover:border-[var(--border-strong)]"
     )}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-2 min-w-0 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <div className={cn(
             "flex h-11 w-11 items-center justify-center rounded-xl border",
             config.iconBg
@@ -116,17 +116,17 @@ export function LuckStreakCard() {
           </div>
         </div>
         
-        <div className="text-right">
-          <div className={cn("text-3xl font-semibold tabular-nums", config.text)}>
+        <div className="text-right shrink-0">
+          <div className={cn("text-xl sm:text-3xl font-semibold tabular-nums", config.text)}>
             {streak > 0 ? `+${streak}` : streak}
           </div>
           <div className="text-xs text-[var(--text-tertiary)] font-medium">Streak</div>
         </div>
       </div>
       
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 min-w-0">
         {recentTotal > 0 ? (
-          <span className="text-xs text-[var(--text-tertiary)]">
+          <span className="text-xs text-[var(--text-tertiary)] truncate">
             Last {recentTotal} bets: {recentWins}W · {recentTotal - recentWins}L
           </span>
         ) : (

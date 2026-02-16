@@ -52,7 +52,7 @@ export default function DashboardPage() {
             </h1>
           </div>
           
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <Link
               href="/dashboard/connect-ai"
               className={
@@ -76,7 +76,7 @@ export default function DashboardPage() {
               )}
             </Link>
             
-            <div className="flex items-center gap-1 rounded-[var(--dash-radius)] border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] p-1">
+            <div className="flex items-center gap-1 rounded-[var(--dash-radius)] border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] p-1 min-w-0 overflow-hidden">
               <Link
                 href="/dashboard/deposit"
                 className={cn(

@@ -99,8 +99,22 @@ export default function QuantMetrics() {
     }, [refresh]);
 
     useEffect(() => {
-        window.addEventListener("balance-updated", refresh);
-        return () => window.removeEventListener("balance-updated", refresh);
+        const handler = (e: Event) => {
+            const ce = e as CustomEvent<{ balance?: number }>;
+            if (ce.detail?.balance != null) {
+                setMetrics((prev) =>
+                    prev.map((m) =>
+                        m.label === "Balance"
+                            ? { ...m, value: String(ce.detail!.balance!) }
+                            : m
+                    )
+                );
+            } else {
+                refresh();
+            }
+        };
+        window.addEventListener("balance-updated", handler);
+        return () => window.removeEventListener("balance-updated", handler);
     }, [refresh]);
 
     useEffect(() => {
@@ -112,22 +126,22 @@ export default function QuantMetrics() {
     }, [refresh]);
 
     return (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
             {metrics.map((m, i) => (
                 <div 
                     key={m.label}
                     className={cn(
-                        "agent-card p-5 h-[140px] flex flex-col justify-between transition-all duration-300 hover:border-[var(--border-strong)]",
+                        "agent-card p-4 sm:p-5 min-h-[120px] sm:min-h-[140px] flex flex-col justify-between transition-all duration-300 hover:border-[var(--border-strong)] min-w-0 overflow-hidden",
                     )}
                 >
-                    <div className="flex items-start justify-between">
-                        <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider"
+                    <div className="flex items-start justify-between gap-2 shrink-0">
+                        <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider truncate"
                         >
                             {m.label}
                         </span>
                         
                         <div className={cn(
-                            "flex items-center justify-center w-10 h-10 rounded-xl border",
+                            "flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-xl border shrink-0",
                             trendBg[m.trend || "neutral"]
                         )}
                         >
@@ -135,9 +149,9 @@ export default function QuantMetrics() {
                         </div>
                     </div>
                     
-                    <div className="mt-auto">
-                        <div className="flex items-baseline gap-2">
-                            <span className={cn("text-3xl font-semibold tracking-tight", trendText[m.trend || "neutral"])}
+                    <div className="mt-auto min-w-0">
+                        <div className="flex items-baseline gap-2 min-w-0">
+                            <span className={cn("text-xl sm:text-3xl font-semibold tracking-tight truncate", trendText[m.trend || "neutral"])}
                             >
                                 {m.value}
                             </span>
@@ -155,9 +169,9 @@ export default function QuantMetrics() {
                             )}
                         </div>
                         
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-2 min-w-0">
                             <span className={cn(
-                                "text-xs font-medium",
+                                "text-xs font-medium truncate",
                                 m.trend === "up" ? "text-[#30d158]/70" : 
                                 m.trend === "down" ? "text-[#ff453a]/70" : 
                                 "text-[var(--text-tertiary)]"
@@ -169,7 +183,7 @@ export default function QuantMetrics() {
                             {i === 0 && (
                                 <Link
                                     href="/dashboard/deposit"
-                                    className="text-xs font-medium text-[#0ea5e9] hover:underline"
+                                    className="text-xs font-medium text-[#0ea5e9] hover:underline shrink-0"
                                 >
                                     Deposit →
                                 </Link>

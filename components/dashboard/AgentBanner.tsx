@@ -23,7 +23,7 @@ export function AgentBanner() {
 
   return (
     <div
-      className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-200"
+      className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 sm:px-4 py-3 text-sm text-cyan-200 min-w-0 break-words"
       role="status"
       aria-live="polite"
     >
