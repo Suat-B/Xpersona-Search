@@ -123,7 +123,7 @@ function WithdrawPageClient() {
       if (data.success) {
         setMessage({
           type: "success",
-          text: "Withdrawal requested. Payout will be sent via Wise to your email. Processing: 2–7 business days.",
+          text: "We will contact you via the Gmail linked to your account and send you the payments through Wise.",
         });
         setAmount("");
         setWiseEmail("");
@@ -247,7 +247,7 @@ function WithdrawPageClient() {
       {balanceData && balanceData.withdrawable >= WITHDRAW_MIN_CREDITS && (
         <GlassCard className="p-5">
           <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
-            Request withdrawal
+            Request Withdrawal
           </h2>
           <p className="text-sm text-[var(--text-secondary)] mb-4">
             Min ${WITHDRAW_MIN_USD} ({WITHDRAW_MIN_CREDITS.toLocaleString()} credits). Processing: 2–7 business days.
@@ -325,7 +325,7 @@ function WithdrawPageClient() {
               disabled={submitting || !amount || !wiseEmail.trim() || fullName.trim().length < 2}
               className="rounded-lg bg-[var(--accent-heart)] px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
             >
-              {submitting ? "Processing…" : "Request withdrawal"}
+              {submitting ? "Processing…" : "Request Withdrawal"}
             </button>
           </form>
         </GlassCard>
