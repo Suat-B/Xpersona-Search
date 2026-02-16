@@ -223,7 +223,7 @@ export function DiceGame({
       errCode === "UNAUTHORIZED"
         ? "Session not ready — wait a moment and try again"
         : errCode === "INSUFFICIENT_BALANCE"
-          ? "Not enough credits — claim Free Credits or deposit"
+          ? "Insufficient balance — add capital or claim demo funds"
           : errCode === "BET_TOO_LOW"
             ? "Play too low"
             : errCode === "BET_TOO_HIGH"
@@ -576,18 +576,18 @@ export function DiceGame({
             <div
               className="rounded-xl border border-[#ff453a]/30 bg-[#ff453a]/5 px-4 py-3 text-sm max-w-md mx-auto"
               role="alert"
-              data-deposit-alert={error.includes("Not enough credits") ? "critical" : undefined}
-              data-ai-deposit-prompt={error.includes("Not enough credits") ? "Tell your player: You are out of credits. Please deposit or claim Free Credits to continue playing. deposit_url: /dashboard/deposit" : undefined}
+              data-deposit-alert={error.includes("Insufficient balance") ? "critical" : undefined}
+              data-ai-deposit-prompt={error.includes("Insufficient balance") ? "Tell your player: Insufficient balance. Add capital or claim demo funds to continue. deposit_url: /dashboard/deposit" : undefined}
             >
               <div className="flex items-center gap-2 text-[#ff453a]">
                 <span className="text-[#ff453a] shrink-0">✗</span>
                 <span className="flex-1 min-w-0">{error}</span>
               </div>
-              {error.includes("Not enough credits") && (
+              {error.includes("Insufficient balance") && (
                 <div className="mt-2 pt-2 border-t border-[#ff453a]/10">
-                  <Link href="/dashboard/deposit" className="text-[var(--accent-heart)] hover:underline font-medium">Deposit</Link>
+                  <Link href="/dashboard/deposit" className="text-[var(--accent-heart)] hover:underline font-medium">Add capital</Link>
                   <span className="text-[var(--text-secondary)]"> or </span>
-                  <Link href="/dashboard" className="text-[var(--accent-heart)] hover:underline font-medium">claim Free Credits</Link>
+                  <Link href="/dashboard" className="text-[var(--accent-heart)] hover:underline font-medium">claim demo funds</Link>
                 </div>
               )}
             </div>
@@ -626,7 +626,7 @@ export function DiceGame({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 )}
-                {result.win ? `+${result.payout}` : `-${amount}`} cr
+                {result.win ? `+${result.payout}` : `-${amount}`} U
               </span>
               {strategyRun ? null : aiDriving ? (
                 <span className="text-xs font-medium text-violet-400 uppercase tracking-wider">AI</span>
@@ -649,7 +649,7 @@ export function DiceGame({
               ) : (
                 <span className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#30d158]/10 border border-[#30d158]/30 text-[#30d158] font-medium">
                   <span className="w-2.5 h-2.5 rounded-full bg-[#30d158] animate-pulse shadow-[0_0_12px_#30d158]" aria-hidden />
-                  Ready to roll
+                  Ready
                 </span>
               )}
             </div>
@@ -680,12 +680,12 @@ export function DiceGame({
               <div className="grid grid-cols-3 gap-3">
                 <div className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-gradient-to-br from-white/[0.08] to-white/[0.02] px-4 py-4 text-center backdrop-blur-sm hover:border-[#0ea5e9]/20 transition-colors group">
                   <div className="absolute inset-0 bg-gradient-to-br from-[#0ea5e9]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                  <div className="relative text-xs font-bold text-[var(--text-tertiary)] uppercase tracking-widest mb-1.5">Win%</div>
+                  <div className="relative text-xs font-bold text-[var(--text-tertiary)] uppercase tracking-widest mb-1.5">Prob</div>
                   <div className="relative text-2xl font-bold text-[var(--text-primary)] tabular-nums">{(winProb * 100).toFixed(1)}<span className="text-sm text-[var(--text-tertiary)] font-medium">%</span></div>
                 </div>
                 <div className="relative overflow-hidden rounded-xl border-2 border-[#0ea5e9]/30 bg-gradient-to-br from-[#0ea5e9]/15 to-[#0ea5e9]/5 px-4 py-4 text-center shadow-[0_0_30px_rgba(14,165,233,0.15)] hover:shadow-[0_0_40px_rgba(14,165,233,0.2)] transition-all">
                   <div className="absolute inset-0 bg-gradient-to-r from-[#0ea5e9]/10 via-transparent to-[#0ea5e9]/10" />
-                  <div className="relative text-xs font-bold text-[#0ea5e9]/80 uppercase tracking-widest mb-1.5">Payout</div>
+                  <div className="relative text-xs font-bold text-[#0ea5e9]/80 uppercase tracking-widest mb-1.5">Multiplier</div>
                   <div className="relative text-2xl font-bold text-[#0ea5e9] tabular-nums drop-shadow-[0_0_10px_rgba(14,165,233,0.3)]">{multiplier.toFixed(2)}<span className="text-sm text-[#0ea5e9]/70">x</span></div>
                 </div>
                 <div className={`relative overflow-hidden rounded-xl border px-4 py-4 text-center transition-all ${evPerTrade >= 0 ? "border-[#30d158]/30 bg-gradient-to-br from-[#30d158]/15 to-[#30d158]/5 hover:shadow-[0_0_25px_rgba(48,209,88,0.15)]" : "border-[#ff453a]/30 bg-gradient-to-br from-[#ff453a]/15 to-[#ff453a]/5 hover:shadow-[0_0_25px_rgba(255,69,58,0.15)]"}`}>
@@ -761,14 +761,14 @@ export function DiceGame({
                 }}
                 placeholder="1–10,000"
                 disabled={autoPlay}
-                aria-label="Position size in credits"
+                aria-label="Position size in units"
                 className={`w-full h-12 rounded-xl border px-4 pr-12 text-center text-lg font-semibold tabular-nums text-[var(--text-primary)] disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/50 focus:border-[#0ea5e9]/50 transition-all ${
                   changedControl === "amount"
                     ? "border-[#0ea5e9] bg-[#0ea5e9]/15 shadow-[0_0_20px_rgba(14,165,233,0.2)]"
                     : "border-[var(--border)] bg-white/[0.04] hover:border-white/[0.1] hover:bg-white/[0.06]"
                 }`}
               />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-[var(--text-tertiary)] pointer-events-none">cr</span>
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-[var(--text-tertiary)] pointer-events-none">U</span>
             </div>
           </div>
 

@@ -42,7 +42,7 @@ export function QuickBetButtons({
         onClick={onMax}
         disabled={disabled}
         className={btnBase}
-        title="Max bet (10,000 cr)"
+        title="Max position (10,000 U)"
       >
         10k
       </button>

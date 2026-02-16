@@ -138,7 +138,7 @@ export function CreativeDiceStrategiesSection({
                 {/* Config summary — use human-readable labels to avoid truncation like "martingal" */}
                 <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[10px] text-[var(--text-secondary)]">
                   <span className="px-1.5 py-0.5 rounded bg-[var(--bg-matte)] border border-[var(--border)] shrink-0">
-                    {s.config.amount} credits
+                    {s.config.amount} U
                   </span>
                   <span className="px-1.5 py-0.5 rounded bg-[var(--bg-matte)] border border-[var(--border)] shrink-0">
                     {s.config.target}% {s.config.condition}

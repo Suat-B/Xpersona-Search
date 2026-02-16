@@ -63,7 +63,7 @@ export function WinEffects({ active, win, payout, betAmount }: WinEffectsProps) 
             animation: "winFloatUp 2.2s cubic-bezier(0.16, 1, 0.3, 1) forwards",
           }}
         >
-          {win ? (isHugeWin ? "MEGA WIN!" : isBigWin ? "BIG WIN!" : "WIN!") : "LOSE"}
+          {win ? (isHugeWin ? "+CLOSE" : isBigWin ? "PROFIT" : "PROFIT") : "LOSS"}
         </div>
         {/* Payout amount floating up */}
         <div
@@ -75,7 +75,7 @@ export function WinEffects({ active, win, payout, betAmount }: WinEffectsProps) 
             opacity: 0,
           }}
         >
-          {win ? `+${payout.toFixed(0)} cr` : `-${betAmount.toFixed(0)} cr`}
+          {win ? `+${payout.toFixed(0)} U` : `-${betAmount.toFixed(0)} U`}
         </div>
       </div>
 

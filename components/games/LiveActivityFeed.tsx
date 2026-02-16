@@ -68,7 +68,7 @@ export function LiveActivityFeed({
                 {item.condition} {item.target}
               </span>
               <span className="text-[var(--text-secondary)] truncate">
-                {item.amount} cr
+                {item.amount} U
               </span>
             </div>
             <div className="flex items-center gap-2 shrink-0">

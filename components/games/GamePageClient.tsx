@@ -427,7 +427,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
 
       {depositSuccess && (
         <div className="flex-shrink-0 flex items-center justify-center gap-2 py-2 px-4 bg-[#30d158]/15 border-b border-[#30d158]/30 text-[#30d158] text-sm">
-          <span className="text-[#30d158]">✓</span> Payment successful. Credits added.
+          <span className="text-[#30d158]">✓</span> Payment successful. Capital added.
         </div>
       )}
 
@@ -442,7 +442,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       {aiBannerVisible && (
         <div className="flex-shrink-0 flex items-center justify-center gap-2 py-2 px-4 bg-violet-500/10 border-b border-violet-500/30 text-violet-300 text-sm">
           <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-          {liveQueueLength > 0 ? `AI PLAYING — ${liveQueueLength} QUEUED` : "AI PLAYING"}
+          {liveQueueLength > 0 ? `AI executing — ${liveQueueLength} queued` : "AI executing"}
         </div>
       )}
 
@@ -452,9 +452,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           data-deposit-alert="critical"
           role="alert"
         >
-          <span className="text-[var(--accent-heart)] font-semibold text-sm">⚠ Out of credits</span>
+          <span className="text-[var(--accent-heart)] font-semibold text-sm">⚠ Insufficient balance</span>
           <span className="text-[var(--text-secondary)] ml-2 text-sm">
-            <Link href="/dashboard/deposit" className="text-[var(--accent-heart)] hover:underline">Deposit</Link> or claim Free Credits.
+            <Link href="/dashboard/deposit" className="text-[var(--accent-heart)] hover:underline">Add capital</Link> or claim demo funds.
           </span>
         </div>
       )}
@@ -484,7 +484,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </Link>
           <span className="text-[10px] text-white/10 hidden sm:inline">│</span>
           <span className="text-[10px] font-bold tracking-[0.15em] text-[var(--text-secondary)] uppercase hidden md:inline">
-            Play Dice <span className="text-[#0ea5e9]/70">Terminal</span>
+            Trading <span className="text-[#0ea5e9]/70">Terminal</span>
           </span>
         </div>
         <QuantTopMetricsBar
@@ -745,7 +745,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
 
       {/* Minimal footer — single line */}
       <footer className="flex-shrink-0 px-4 py-2 border-t border-white/[0.06] flex items-center justify-between text-[10px] text-[var(--text-tertiary)] bg-[#0a0a0f]/80">
-        <span>Xpersona · 3% Edge · 97% RTP · Min 1 · Max 10k</span>
+        <span>Xpersona · 3% Edge · 97% Return · Min 1 · Max 10k</span>
         <div className="flex items-center gap-3">
           <Link href="/dashboard" className="hover:text-[#0ea5e9] transition-colors">Dashboard</Link>
           <Link href="/dashboard/api" className="hover:text-[#0ea5e9] transition-colors">API</Link>
