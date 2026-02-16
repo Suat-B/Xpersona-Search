@@ -73,7 +73,7 @@ const ICONS = {
 } as const;
 
 const LINKS = [
-  { href: "/games/dice", label: "Play Game", icon: "dice" as const, exact: true },
+  { href: "/games/dice", label: "Open Game", icon: "dice" as const, exact: true },
   { href: "/dashboard", label: "Dashboard", icon: "dashboard" as const, exact: true },
   { href: "/dashboard/connect-ai", label: "Connect AI", icon: "connectAi" as const, exact: false },
   { href: "/dashboard/profile", label: "Profile", icon: "profile" as const, exact: true },
@@ -162,7 +162,7 @@ export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashb
                 <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0ea5e9]/30">
                   {ICONS.dice}
                 </span>
-                <span>Play Game</span>
+                <span>Open Game</span>
                 <svg className="w-4 h-4 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                 </svg>

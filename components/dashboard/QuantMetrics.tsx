@@ -53,7 +53,7 @@ export default function QuantMetrics() {
         { label: "Balance", value: "...", subtext: "credits", trend: "neutral", icon: icons.balance },
         { label: "Session P&L", value: "+0", subtext: "0 plays", trend: "neutral", icon: icons.pnl },
         { label: "Win Rate", value: "0%", subtext: "0 Plays", trend: "neutral", icon: icons.winrate },
-        { label: "Volume", value: "0", subtext: "Wagered", trend: "neutral", icon: icons.volume },
+        { label: "Volume", value: "0", subtext: "Liquidity", trend: "neutral", icon: icons.volume },
     ]);
 
     const refresh = useCallback(async () => {
@@ -85,7 +85,7 @@ export default function QuantMetrics() {
                     trend: winRatePct >= 50 ? "up" : winRatePct < 50 ? "down" : "neutral",
                     icon: icons.winrate,
                 },
-                { label: "Volume", value: String(volume), subtext: "Wagered", trend: "neutral", icon: icons.volume },
+                { label: "Volume", value: String(volume), subtext: "Liquidity", trend: "neutral", icon: icons.volume },
             ]);
         } catch (e) {
             console.error("QuantMetrics fetch failed", e);

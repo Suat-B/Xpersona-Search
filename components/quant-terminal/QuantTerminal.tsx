@@ -9,7 +9,7 @@ import { RiskDashboard } from "./RiskDashboard";
 import { AlphaWorkbench } from "./AlphaWorkbench";
 import { DataStream } from "./DataStream";
 import { KeyboardShortcuts } from "./KeyboardShortcuts";
-import { useKeyboardShortcuts as useKeyboard } from "./useKeyboardShortcuts";
+
 
 interface Position {
   id: string;
@@ -219,9 +219,9 @@ export function QuantTerminal() {
               currentTarget={state.currentTarget}
               currentSize={state.currentSize}
               currentDirection={state.currentDirection}
-              onTargetChange={(target) => setState((prev) => ({ ...prev, currentTarget: target }))}
-              onSizeChange={(size) => setState((prev) => ({ ...prev, currentSize: size }))}
-              onDirectionChange={(direction) => setState((prev) => ({ ...prev, currentDirection: direction }))}
+              onTargetChange={(target: number) => setState((prev) => ({ ...prev, currentTarget: target }))}
+              onSizeChange={(size: number) => setState((prev) => ({ ...prev, currentSize: size }))}
+              onDirectionChange={(direction: "over" | "under") => setState((prev) => ({ ...prev, currentDirection: direction }))}
               onExecute={executePosition}
             />
           </div>

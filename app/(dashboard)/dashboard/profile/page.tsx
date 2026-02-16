@@ -299,7 +299,7 @@ function ProfilePageClient() {
                   href="/games/dice"
                   className="mt-3 inline-block text-sm font-medium text-[var(--accent-heart)] hover:underline"
                 >
-                  Play Dice →
+                  Open Game →
                 </Link>
               </GlassCard>
             )}

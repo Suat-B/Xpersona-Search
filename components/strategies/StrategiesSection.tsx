@@ -118,6 +118,9 @@ export function StrategiesSection() {
 
   return (
     <section data-agent="strategies-section" className="space-y-8">
+      {/* Advanced Strategy Builder — at top per UX preference */}
+      <AdvancedStrategiesSection />
+
       {/* Error display */}
       {error && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3" role="alert">
@@ -222,9 +225,6 @@ export function StrategiesSection() {
           </div>
         )}
       </div>
-
-      {/* Advanced Strategies Section */}
-      <AdvancedStrategiesSection />
     </section>
   );
 }

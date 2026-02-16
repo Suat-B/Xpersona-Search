@@ -133,7 +133,7 @@ export function QuantTopMetricsBar({
         className={`flex items-center font-mono ${
           compact
             ? "flex-1 min-w-0 px-2 lg:px-3 py-1 overflow-x-auto " + (useCondensed ? "scrollbar-none" : "scrollbar-sidebar")
-            : "px-4 py-1.5 border-b border-white/[0.06] bg-[#050506] overflow-x-auto scrollbar-sidebar"
+            : "px-4 py-1.5 border-b border-white/[0.06] bg-[#030303] overflow-x-auto scrollbar-sidebar"
         }`}
       >
       <div className="flex items-center gap-0">

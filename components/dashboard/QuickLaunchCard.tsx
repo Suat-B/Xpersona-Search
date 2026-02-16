@@ -28,7 +28,7 @@ export function QuickLaunchCard() {
             
             <div>
               <div className="text-base font-semibold text-white">
-                Play Dice
+                Open Game
               </div>
               <p className="text-sm text-white/70 mt-0.5">
                 Start playing now

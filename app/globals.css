@@ -4,17 +4,17 @@
 
 @layer base {
   :root {
-    /* 2026 Xpersona - Ultra Premium Dark Theme */
-    --bg-deep: #030303;
-    --bg-matte: #080808;
-    --bg-card: rgba(20, 20, 23, 0.7);
-    --bg-card-hover: rgba(28, 28, 32, 0.8);
-    --bg-elevated: rgba(35, 35, 40, 0.6);
+    /* 2026 Xpersona - Ultra Premium Dark Theme (even darker) */
+    --bg-deep: #000000;
+    --bg-matte: #020202;
+    --bg-card: rgba(12, 12, 14, 0.85);
+    --bg-card-hover: rgba(18, 18, 20, 0.9);
+    --bg-elevated: rgba(22, 22, 26, 0.7);
     
-    /* Neural Network Gradient Backgrounds */
-    --bg-gradient-1: radial-gradient(ellipse at 20% 20%, rgba(255, 55, 95, 0.08) 0%, transparent 50%);
-    --bg-gradient-2: radial-gradient(ellipse at 80% 80%, rgba(94, 92, 230, 0.06) 0%, transparent 50%);
-    --bg-gradient-3: radial-gradient(ellipse at 50% 50%, rgba(10, 132, 255, 0.04) 0%, transparent 60%);
+    /* Neural Network Gradient Backgrounds (subtler for darker look) */
+    --bg-gradient-1: radial-gradient(ellipse at 20% 20%, rgba(255, 55, 95, 0.04) 0%, transparent 50%);
+    --bg-gradient-2: radial-gradient(ellipse at 80% 80%, rgba(94, 92, 230, 0.03) 0%, transparent 50%);
+    --bg-gradient-3: radial-gradient(ellipse at 50% 50%, rgba(10, 132, 255, 0.02) 0%, transparent 60%);
     
     /* Premium Text Colors */
     --text-primary: #ffffff;
@@ -63,39 +63,45 @@
 
     /* Quant Dice Theme - matches games/dice UI */
     --quant-primary: #0ea5e9;
-    /* Dark near-black for games/dice panels (matches IDE charcoal) */
-    --quant-panel-bg: #050506;
+    /* Dark near-black for games/dice panels */
+    --quant-panel-bg: #030303;
 
     /* ════════════════════════════════════════════════════════════════
-       QUANTUM TERMINAL THEME - Professional Quant Trading Interface
+       QUANTUM TERMINAL THEME - VS Code Dark Theme Inspired
        ════════════════════════════════════════════════════════════════ */
     
-    /* Terminal Colors */
-    --quant-bg-primary: #0a0a0f;
-    --quant-bg-surface: #12121a;
-    --quant-bg-card: #1a1a24;
-    --quant-bg-hover: #22222c;
-    --quant-border: #2a2a3a;
-    --quant-border-strong: #3a3a4a;
-    --quant-border-glow: rgba(56, 189, 248, 0.3);
+    /* Quant terminal — even darker near-black */
+    --quant-bg-primary: #040404;           /* Terminal & panels */
+    --quant-bg-surface: #040404;          /* Panel backgrounds */
+    --quant-bg-card: #080808;             /* Panel headers, tables */
+    --quant-bg-hover: #0c0c0c;            /* Hover state */
+    --quant-bg-active: #141418;            /* Active state */
+    --quant-border: #1a1a1e;              /* Borders */
+    --quant-border-strong: #252528;        /* Strong borders */
+    --quant-border-glow: rgba(14, 165, 233, 0.3);
     
-    /* Semantic Colors */
-    --quant-bullish: #00d084;
-    --quant-bullish-glow: rgba(0, 208, 132, 0.4);
-    --quant-bearish: #ff4757;
-    --quant-bearish-glow: rgba(255, 71, 87, 0.4);
-    --quant-neutral: #94a3b8;
-    --quant-accent: #38bdf8;
-    --quant-accent-glow: rgba(56, 189, 248, 0.4);
-    --quant-warning: #fbbf24;
-    --quant-purple: #a855f7;
-    --quant-purple-glow: rgba(168, 85, 247, 0.4);
+    /* Semantic Colors - Adjusted for VS Code theme */
+    --quant-bullish: #4ec9b0;              /* VS Code teal */
+    --quant-bullish-glow: rgba(78, 201, 176, 0.4);
+    --quant-bearish: #f48771;              /* VS Code red-orange */
+    --quant-bearish-glow: rgba(244, 135, 113, 0.4);
+    --quant-neutral: #858585;              /* VS Code comments */
+    --quant-accent: #0ea5e9;               /* Keep your cyan */
+    --quant-accent-glow: rgba(14, 165, 233, 0.4);
+    --quant-warning: #dcdcaa;              /* VS Code yellow */
+    --quant-purple: #c586c0;               /* VS Code purple */
+    --quant-purple-glow: rgba(197, 134, 192, 0.4);
+    
+    /* Text Colors */
+    --quant-text-primary: #cccccc;         /* VS Code primary text */
+    --quant-text-secondary: #9cdcfe;       /* VS Code blue accent */
+    --quant-text-muted: #6a9955;           /* VS Code green comments */
     
     /* Data Visualization */
-    --quant-grid: rgba(148, 163, 184, 0.1);
-    --quant-chart-line: #38bdf8;
-    --quant-chart-fill: rgba(56, 189, 248, 0.1);
-    --quant-chart-secondary: #a855f7;
+    --quant-grid: rgba(255, 255, 255, 0.05);
+    --quant-chart-line: #0ea5e9;
+    --quant-chart-fill: rgba(14, 165, 233, 0.1);
+    --quant-chart-secondary: #c586c0;
     
     /* Typography */
     --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
@@ -258,7 +264,7 @@ input[type="reset"] {
 /* AI Agent Card Style — inside @layer components so Tailwind utilities can override */
 @layer components {
   .agent-card {
-    background: linear-gradient(145deg, rgba(30, 30, 35, 0.8) 0%, rgba(20, 20, 23, 0.7) 100%);
+    background: linear-gradient(145deg, rgba(18, 18, 22, 0.95) 0%, rgba(12, 12, 16, 0.9) 100%);
     backdrop-filter: saturate(180%) blur(30px);
     -webkit-backdrop-filter: saturate(180%) blur(30px);
     border: 1px solid rgba(255, 255, 255, 0.06);
@@ -285,9 +291,9 @@ input[type="reset"] {
   }
 }
 
-/* Quant Dice Card - dark near-black, terminal-style panels matching games/dice */
+/* Quant Dice Card - even darker, terminal-style panels */
 .quant-card {
-  background: linear-gradient(145deg, #050506 0%, #030304 100%);
+  background: linear-gradient(145deg, #060606 0%, #030303 100%);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: var(--radius-lg);
   box-shadow: 
@@ -668,9 +674,9 @@ input[type="reset"] {
   animation: breathing 2s ease-in-out infinite;
 }
 
-/* Unified frosted glass card style — dark near-black */
+/* Unified frosted glass card style — even darker */
 .glass-panel {
-  background: linear-gradient(145deg, #050506 0%, #030304 100%);
+  background: linear-gradient(145deg, #040404 0%, #020202 100%);
   backdrop-filter: saturate(180%) blur(24px);
   -webkit-backdrop-filter: saturate(180%) blur(24px);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -681,7 +687,7 @@ input[type="reset"] {
 
 /* Glass panel with cyan accent line at top */
 .glass-panel-accent {
-  background: linear-gradient(145deg, #050506 0%, #030304 100%);
+  background: linear-gradient(145deg, #040404 0%, #020202 100%);
   backdrop-filter: saturate(180%) blur(24px);
   -webkit-backdrop-filter: saturate(180%) blur(24px);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -781,9 +787,9 @@ input[type="reset"] {
 
 /* ═══════════ Quant Trading Terminal Styles ═══════════ */
 
-/* Terminal pane — dark near-black, top accent line (games/dice panels) */
+/* Terminal pane — even darker, top accent line */
 .terminal-pane {
-  background: linear-gradient(145deg, #050506 0%, #030304 100%);
+  background: linear-gradient(145deg, #040404 0%, #020202 100%);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: var(--radius-md);
   box-shadow:
@@ -848,7 +854,7 @@ input[type="reset"] {
 /* Fix native select dropdowns: white-on-white in dark theme (e.g. strategy builder Add rule) */
 select.terminal-input option,
 select option {
-  background-color: #0a0a0f;
+  background-color: #060608;
   color: #e4e4e7;
 }
 
