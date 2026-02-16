@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import { ClientOnly } from "@/components/ClientOnly";
 import { useDiceSessionPnL } from "./useSessionPnL";
 import { SessionPnLChart } from "@/components/ui/SessionPnLChart";
+import { MonteCarloShadow } from "./MonteCarloShadow";
 import { QuantMetricsGrid } from "./QuantMetricsGrid";
 import { SessionAura } from "./SessionAura";
 import { QuantTopMetricsBar } from "./QuantTopMetricsBar";
@@ -803,16 +804,25 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             </div>
             <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
               {centerTab === "chart" && (
-                <div className="flex-1 min-h-0 p-2 overflow-hidden">
-                  <SessionPnLChart
-                    series={statsSeries}
-                    totalPnl={totalPnl}
-                    rounds={rounds}
-                    onReset={handleReset}
-                    layout="hero"
-                    sharpeRatio={m.sharpeRatio}
-                    maxDrawdownPct={m.maxDrawdownPct}
-                  />
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                  <div className="flex-shrink-0 p-2 pb-1">
+                    <SessionPnLChart
+                      series={statsSeries}
+                      totalPnl={totalPnl}
+                      rounds={rounds}
+                      onReset={handleReset}
+                      layout="hero"
+                      sharpeRatio={m.sharpeRatio}
+                      maxDrawdownPct={m.maxDrawdownPct}
+                    />
+                  </div>
+                  <div className="flex-1 min-h-[100px] p-2 pt-1 overflow-hidden">
+                    <MonteCarloShadow
+                      series={statsSeries}
+                      totalPnl={totalPnl}
+                      rounds={rounds}
+                    />
+                  </div>
                 </div>
               )}
               {centerTab === "strategy" && (
