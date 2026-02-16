@@ -35,7 +35,7 @@ export function DashboardChrome({
   }
 
   return (
-    <div className="dashboard-theme flex min-h-screen w-full bg-[var(--dash-bg)]">
+    <div className="dashboard-theme flex min-h-screen w-full flex-col md:flex-row bg-[var(--dash-bg)]">
       <MobileDashboardNav displayName={displayName} isAdmin={isAdmin} />
       <aside className="scroll-stable-layer dashboard-sidebar hidden w-[280px] min-w-[280px] flex-col md:flex sticky top-0 h-screen border-r border-[var(--dash-divider)] overflow-x-hidden bg-[var(--dash-bg)]">
         <div className="relative flex h-full flex-col">
@@ -70,7 +70,7 @@ export function DashboardChrome({
           <DashboardSidebarNav isAdmin={isAdmin} />
         </div>
       </aside>
-      <main className="scroll-contain-paint flex-1 overflow-y-auto bg-[var(--dash-bg)]">
+      <main className="scroll-contain-paint flex-1 min-h-0 overflow-y-auto bg-[var(--dash-bg)]">
         <div className="w-full max-w-7xl mx-auto px-4 py-4 sm:px-6 sm:py-6 md:px-8 md:py-8 space-y-6 min-w-0 sm:overflow-x-hidden">
           <AIFirstBanner />
           {children}

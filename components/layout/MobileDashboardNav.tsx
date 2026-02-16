@@ -112,8 +112,11 @@ export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashb
   }, [open]);
 
   return (
-    <div className="scroll-stable-layer md:hidden sticky top-0 z-40 border-b border-[var(--dash-divider)] bg-[var(--dash-bg)]">
-      <div className="flex h-14 items-center justify-between px-4">
+    <header
+      className="scroll-stable-layer md:hidden sticky top-0 z-40 shrink-0 w-full border-b border-[var(--dash-divider)] bg-[var(--dash-bg)] shadow-sm"
+      role="banner"
+    >
+      <div className="flex h-14 min-h-[44px] items-center justify-between px-4">
         <Link href="/dashboard" className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[var(--accent-heart)] to-[var(--accent-purple)]">
             <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -225,6 +228,6 @@ export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashb
           </nav>
         </>
       )}
-    </div>
+    </header>
   );
 }
