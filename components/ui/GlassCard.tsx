@@ -21,7 +21,7 @@ export function GlassCard({
     glowColor = "none",
 }: GlassCardProps) {
     const glowClasses = {
-        pink: "shadow-[0_0_40px_rgba(255,45,85,0.15)]",
+        pink: "shadow-[0_0_40px_rgba(10,132,255,0.15)]",
         purple: "shadow-[0_0_40px_rgba(94,92,230,0.15)]",
         blue: "shadow-[0_0_40px_rgba(10,132,255,0.15)]",
         green: "shadow-[0_0_40px_rgba(48,209,88,0.15)]",
@@ -151,7 +151,7 @@ export function FeatureCard({ title, description, children, action, className, b
         green: "bg-[#30d158]/10 text-[#30d158] border-[#30d158]/30",
         blue: "bg-[#0a84ff]/10 text-[#0a84ff] border-[#0a84ff]/30",
         purple: "bg-[#5e5ce6]/10 text-[#5e5ce6] border-[#5e5ce6]/30",
-        pink: "bg-[#ff2d55]/10 text-[#ff2d55] border-[#ff2d55]/30",
+        pink: "bg-[#0a84ff]/10 text-[#0a84ff] border-[#0a84ff]/30",
     };
 
     return (

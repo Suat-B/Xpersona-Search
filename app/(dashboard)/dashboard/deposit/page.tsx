@@ -127,7 +127,7 @@ function DepositPageClient() {
             </div>
           </GlassCard>
         ) : starterBundle ? (
-          <GlassCard className="overflow-hidden border-[var(--accent-heart)]/20 shadow-[0_0_40px_-10px_rgba(244,63,94,0.15)] hover:shadow-[0_0_50px_-10px_rgba(244,63,94,0.25)] transition-shadow duration-300">
+          <GlassCard className="overflow-hidden border-[var(--accent-heart)]/20 shadow-[0_0_40px_-10px_rgba(10,132,255,0.15)] hover:shadow-[0_0_50px_-10px_rgba(10,132,255,0.25)] transition-shadow duration-300">
             <div className="relative">
               <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent-heart)]/5 via-transparent to-transparent pointer-events-none" />
               <div className="relative p-8">
@@ -157,7 +157,7 @@ function DepositPageClient() {
                   type="button"
                   onClick={() => buy(starterBundle.id)}
                   disabled={!!buyingId}
-                  className="mt-6 w-full rounded-xl bg-gradient-to-b from-[var(--accent-heart)] to-[#e11d48] px-6 py-4 text-base font-bold text-white shadow-lg shadow-[var(--accent-heart)]/30 hover:shadow-[var(--accent-heart)]/40 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:hover:scale-100 transition-all duration-200"
+                  className="mt-6 w-full rounded-xl bg-gradient-to-b from-[var(--accent-heart)] to-[#0662c4] px-6 py-4 text-base font-bold text-white shadow-lg shadow-[var(--accent-heart)]/30 hover:shadow-[var(--accent-heart)]/40 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:hover:scale-100 transition-all duration-200"
                 >
                   {buyingId === starterBundle.id ? (
                     <span className="flex items-center justify-center gap-2">

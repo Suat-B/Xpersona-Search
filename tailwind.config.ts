@@ -17,8 +17,8 @@ const config: Config = {
         "bg-matte": "#0a0a0a",
         "bg-card": "#111",
         "glass-surface": "rgba(255, 255, 255, 0.03)",
-        "accent-heart": "#f43f5e",
-        "accent-glow": "#fb7185", // Lighter pink for glows
+        "accent-heart": "#0a84ff",
+        "accent-glow": "#3b9bff",
         "quant-blue": "#0ea5e9",
         "success-green": "#10b981",
         border: "var(--border)",

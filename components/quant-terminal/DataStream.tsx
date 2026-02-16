@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+
 interface LogEntry {
   time: number;
   type: string;
@@ -11,6 +13,43 @@ interface DataStreamProps {
 }
 
 export function DataStream({ logs }: DataStreamProps) {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const lastScrollHeightRef = useRef(0);
+
+  // Scroll to bottom whenever content grows (new log added) — ResizeObserver fires after layout
+  useEffect(() => {
+    if (logs.length === 0) {
+      lastScrollHeightRef.current = 0;
+      return;
+    }
+    const container = scrollContainerRef.current;
+    const content = contentRef.current;
+    if (!container || !content) return;
+
+    const scrollToBottom = () => {
+      container.scrollTop = container.scrollHeight - container.clientHeight;
+    };
+
+    const ro = new ResizeObserver(() => {
+      const sh = content.scrollHeight;
+      if (sh > lastScrollHeightRef.current) {
+        lastScrollHeightRef.current = sh;
+        scrollToBottom();
+      }
+    });
+
+    ro.observe(content);
+    lastScrollHeightRef.current = content.scrollHeight;
+    scrollToBottom();
+    // Also run after any async layout (e.g. LOSS animation in sibling)
+    const t = setTimeout(scrollToBottom, 150);
+
+    return () => {
+      ro.disconnect();
+      clearTimeout(t);
+    };
+  }, [logs]);
   const formatTime = (timestamp: number) => {
     return new Date(timestamp).toISOString().split("T")[1].split(".")[0];
   };
@@ -47,8 +86,8 @@ export function DataStream({ logs }: DataStreamProps) {
 
   return (
     <div
-      className="min-h-28 bg-[var(--quant-bg-surface)] border-t border-[var(--quant-border)] flex flex-shrink-0"
-      style={{ paddingBottom: "calc(2rem + env(safe-area-inset-bottom, 0px))" }}
+      className="h-28 flex-shrink-0 bg-[var(--quant-bg-surface)] border-t border-[var(--quant-border)] flex"
+      style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}
     >
       {/* Log Section */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -75,16 +114,20 @@ export function DataStream({ logs }: DataStreamProps) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto quant-scrollbar p-2">
-          <div className="space-y-0.5">
+        <div
+          ref={scrollContainerRef}
+          className="flex-1 overflow-auto overflow-x-hidden quant-scrollbar p-2"
+          style={{ overflowAnchor: "none" } as React.CSSProperties}
+        >
+          <div ref={contentRef} className="space-y-0.5">
             {logs.length === 0 ? (
               <div className="text-[11px] text-[var(--quant-neutral)] italic px-2 py-4 text-center">
                 No activity yet. Execute your first position to begin.
               </div>
             ) : (
-              logs.slice(0, 20).map((log, idx) => (
+              [...logs.slice(0, 20)].reverse().map((log, idx) => (
                 <div
-                  key={idx}
+                  key={`${log.time}-${idx}`}
                   className="flex items-start gap-2 px-2 py-1 text-[11px] font-mono hover:bg-[var(--quant-bg-hover)] rounded transition-colors"
                 >
                   <span className="text-[var(--quant-neutral)] tabular-nums flex-shrink-0">

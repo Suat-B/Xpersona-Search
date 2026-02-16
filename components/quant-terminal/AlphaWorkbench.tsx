@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { SavedStrategiesWorkbenchPanel } from "./SavedStrategiesWorkbenchPanel";
+import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
 
 interface AlphaWorkbenchProps {
   currentTarget: number;
@@ -11,6 +13,13 @@ interface AlphaWorkbenchProps {
   onDirectionChange: (direction: "over" | "under") => void;
   onExecute: () => void;
   isLoading?: boolean;
+  lastResult?: { exit: number; win: boolean } | null;
+  /** Run saved advanced strategy by ID */
+  onRunStrategy?: (strategyId: string, maxRounds: number) => void;
+  /** Load strategy base config into manual mode */
+  onLoadToManual?: (strategy: AdvancedDiceStrategy) => void;
+  /** ID of strategy currently running (only that Run button shows "Running…") */
+  runningStrategyId?: string | null;
 }
 
 export function AlphaWorkbench({
@@ -22,6 +31,10 @@ export function AlphaWorkbench({
   onDirectionChange,
   onExecute,
   isLoading = false,
+  lastResult,
+  onRunStrategy,
+  onLoadToManual,
+  runningStrategyId = null,
 }: AlphaWorkbenchProps) {
   const [activeTab, setActiveTab] = useState<"manual" | "strategy">("manual");
 
@@ -57,6 +70,22 @@ export function AlphaWorkbench({
       <div className="flex-1 p-4">
         {activeTab === "manual" ? (
           <div className="h-full flex flex-col gap-4">
+            {/* Exit Number — subtle result display */}
+            {lastResult && (
+              <div
+                className="flex items-center justify-center gap-2 py-2 px-4 rounded-lg bg-[var(--quant-bg-card)] border border-[var(--quant-border)] animate-count-up"
+              >
+                <span className="text-xs text-[var(--quant-neutral)]">
+                  Exit
+                </span>
+                <span
+                  className={`text-lg font-mono font-medium tabular-nums ${lastResult.win ? "text-bullish" : "text-bearish"}`}
+                >
+                  {lastResult.exit.toFixed(2)}
+                </span>
+              </div>
+            )}
+
             {/* Direction Toggle */}
             <div className="flex gap-2">
               {(["over", "under"] as const).map((dir) => (
@@ -157,6 +186,12 @@ export function AlphaWorkbench({
               </div>
             </div>
           </div>
+        ) : onRunStrategy ? (
+          <SavedStrategiesWorkbenchPanel
+            onRun={onRunStrategy}
+            onLoadToManual={onLoadToManual}
+            runningStrategyId={runningStrategyId}
+          />
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-[var(--quant-neutral)]">
             <div className="text-center">

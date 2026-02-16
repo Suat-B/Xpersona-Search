@@ -33,7 +33,7 @@ export function AmbientParticles() {
     window.addEventListener("resize", resize);
 
     // Initialize particles
-    const colors = ["#f43f5e", "#ec4899", "#8b5cf6", "#3b82f6", "#10b981"];
+    const colors = ["#0a84ff", "#3b82f6", "#8b5cf6", "#3b82f6", "#10b981"];
     const particleCount = 25;
     
     particlesRef.current = Array.from({ length: particleCount }, () => ({

@@ -26,7 +26,7 @@ export function Sparkles({ active, count = 20 }: SparklesProps) {
         id: Date.now() + i,
         x: Math.random() * 100,
         y: Math.random() * 100,
-        color: Math.random() > 0.5 ? "#10b981" : "#f43f5e",
+        color: Math.random() > 0.5 ? "#10b981" : "#0a84ff",
         size: Math.random() * 6 + 2,
         delay: Math.random() * 0.5,
         duration: Math.random() * 1 + 0.5,
@@ -78,7 +78,7 @@ export function Confetti({ active }: { active: boolean }) {
 
   useEffect(() => {
     if (active) {
-      const colors = ["#f43f5e", "#10b981", "#0ea5e9", "#f59e0b", "#8b5cf6"];
+      const colors = ["#0a84ff", "#10b981", "#0ea5e9", "#f59e0b", "#8b5cf6"];
       const newPieces = Array.from({ length: 30 }, (_, i) => ({
         id: Date.now() + i,
         x: Math.random() * 100,

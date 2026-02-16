@@ -43,6 +43,9 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
   const [logs, setLogs] = useState<Array<{ time: number; type: string; message: string }>>([]);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [runningStrategyId, setRunningStrategyId] = useState<string | null>(null);
+  const [lastResult, setLastResult] = useState<{ exit: number; win: boolean } | null>(null);
+  const lastResultTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadBalanceRef = useRef<((showLoading?: boolean) => Promise<boolean>) | null>(null);
 
@@ -54,7 +57,7 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
       if (showLoading) setIsLoadingBalance(true);
       try {
         const loadedBalance = await fetchBalanceWithRetry();
-        if (!mounted) return;
+        if (!mounted) return false;
         if (loadedBalance != null) {
           setBalance(loadedBalance);
           setEquityData((prev) =>
@@ -116,6 +119,12 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
     };
   }, [serverBalance]);
 
+  useEffect(() => {
+    return () => {
+      if (lastResultTimeoutRef.current) clearTimeout(lastResultTimeoutRef.current);
+    };
+  }, []);
+
   const handleRetryBalance = useCallback(() => {
     loadBalanceRef.current?.(true);
   }, []);
@@ -175,6 +184,10 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
         setPositions((prev) => [newPosition, ...prev]);
         setEquityData((prev) => [...prev, { time: Date.now(), value: newBalance, pnl: sessionPnl + pnl }]);
 
+        setLastResult({ exit: result, win });
+        if (lastResultTimeoutRef.current) clearTimeout(lastResultTimeoutRef.current);
+        lastResultTimeoutRef.current = setTimeout(() => setLastResult(null), 3500);
+
         addLog("fill", `${currentDirection.toUpperCase()} ${currentSize}U @ ${currentTarget.toFixed(2)} → ${result.toFixed(2)} | PnL: ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}`);
         
         window.dispatchEvent(new Event("balance-updated"));
@@ -187,6 +200,54 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
       setIsLoading(false);
     }
   }, [currentTarget, currentSize, currentDirection, balance, sessionPnl, isLoading, addLog]);
+
+  // Run saved advanced strategy
+  const runStrategy = useCallback(
+    async (strategyId: string, maxRounds: number) => {
+      if (runningStrategyId) return;
+      setRunningStrategyId(strategyId);
+      addLog("info", `Starting strategy run (${maxRounds} rounds)…`);
+      try {
+        const res = await fetch("/api/games/dice/run-advanced-strategy", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ strategyId, maxRounds }),
+        });
+        const data = await res.json();
+        if (data.success && data.data) {
+          const { sessionPnl: stratPnl, finalBalance, roundsPlayed, stoppedReason, winRate } = data.data;
+          setBalance(finalBalance);
+          setSessionPnl((prev) => prev + stratPnl);
+          setEquityData((prev) => [...prev, { time: Date.now(), value: finalBalance, pnl: sessionPnl + stratPnl }]);
+          addLog(
+            "fill",
+            `Strategy complete: ${roundsPlayed}r | PnL ${stratPnl >= 0 ? "+" : ""}$${stratPnl.toFixed(2)} | ${stoppedReason}${winRate != null ? ` | WR ${Number(winRate).toFixed(1)}%` : ""}`
+          );
+          window.dispatchEvent(new Event("balance-updated"));
+        } else {
+          addLog("error", data.message || data.error || "Strategy run failed");
+        }
+      } catch (err) {
+        addLog("error", "Network error - check connection");
+      } finally {
+        setRunningStrategyId(null);
+      }
+    },
+    [runningStrategyId, sessionPnl, addLog]
+  );
+
+  // Load strategy base config into manual mode
+  const loadStrategyToManual = useCallback(
+    (strategy: { baseConfig: { amount: number; target: number; condition: "over" | "under" } }) => {
+      const { amount, target, condition } = strategy.baseConfig;
+      setCurrentSize(amount);
+      setCurrentTarget(target);
+      setCurrentDirection(condition);
+      addLog("info", `Loaded config: ${amount}U ${condition} ${target}%`);
+    },
+    [addLog]
+  );
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -328,6 +389,10 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
               onDirectionChange={setCurrentDirection}
               onExecute={executePosition}
               isLoading={isLoading}
+              lastResult={lastResult}
+              onRunStrategy={runStrategy}
+              onLoadToManual={loadStrategyToManual}
+              runningStrategyId={runningStrategyId}
             />
           </div>
         </div>
@@ -335,12 +400,12 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
         {/* RIGHT PANEL - Market Depth + Compact Chart */}
         <div className="w-80 flex-shrink-0 flex flex-col min-w-0" style={{ gap: "var(--quant-panel-gap)" }}>
           {/* Market Depth */}
-          <div className="flex-1 quant-panel flex flex-col">
+          <div className="flex-1 min-h-0 quant-panel flex flex-col">
             <div className="quant-panel-header">
               <span>Market Depth</span>
               <span className="text-[10px] text-[var(--quant-neutral)]">{currentDirection.toUpperCase()}</span>
             </div>
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 min-h-0 overflow-auto">
               <MarketDepth
                 target={currentTarget}
                 direction={currentDirection}

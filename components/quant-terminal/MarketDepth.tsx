@@ -42,9 +42,9 @@ export function MarketDepth({ target, direction, size, onExecute, isLoading = fa
         <span className="text-[10px] text-[var(--quant-neutral)]">{direction === "over" ? "LONG" : "SHORT"}</span>
       </div>
 
-      <div className="flex-1 p-4 flex flex-col gap-4">
-        {/* Probability Visualization */}
-        <div className="flex-1 flex flex-col gap-1">
+      <div className="flex-1 min-h-0 p-4 flex flex-col gap-4 overflow-hidden">
+        {/* Probability Visualization — scrolls when space is tight */}
+        <div className="flex-1 min-h-0 flex flex-col gap-1 overflow-auto">
           <div className="flex justify-between text-[10px] text-[var(--quant-neutral)] mb-1">
             <span>{direction === "over" ? "0%" : "100%"}</span>
             <span>Probability Distribution</span>
@@ -78,8 +78,8 @@ export function MarketDepth({ target, direction, size, onExecute, isLoading = fa
           </div>
         </div>
 
-        {/* Current Settings */}
-        <div className="space-y-2 pt-3 border-t border-[var(--quant-border)]">
+        {/* Current Settings + Execute — always visible, never shrinks */}
+        <div className="flex-shrink-0 space-y-2 pt-3 border-t border-[var(--quant-border)]">
           <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px]">
             <div>
               <span className="text-[var(--quant-neutral)] text-[10px]">Target:</span>
@@ -113,14 +113,14 @@ export function MarketDepth({ target, direction, size, onExecute, isLoading = fa
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
-                EXECUTING...
+                STARTING...
               </>
             ) : (
               <>
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
-                EXECUTE
+                START STRATEGY
               </>
             )}
           </button>
