@@ -35,7 +35,9 @@ This opens the Google Cloud Console, prompts for Client ID and Secret, writes `.
 1. Go to [Google Cloud Console](https://console.cloud.google.com/) → create or select a project.
 2. **APIs & Services** → **Credentials** → **Create Credentials** → **OAuth client ID**.
 3. Application type: **Web application**.
-4. Authorized redirect URIs: `http://localhost:3000/api/auth/callback/google` (or your `NEXTAUTH_URL` + `/api/auth/callback/google`).
+4. Add both (different requirements):
+   - **Authorized JavaScript origins**: origin only, no path or trailing slash (e.g. `http://localhost:3000` or `https://xpersona.co`).
+   - **Authorized redirect URIs**: full path (e.g. `http://localhost:3000/api/auth/callback/google`).
 5. Copy Client ID and Secret into `.env.local`, or run `npm run setup:google` and paste when prompted.
 6. Restart the dev server. "Sign in with Google" and "Upgrade to Google" will work.
 

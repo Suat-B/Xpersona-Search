@@ -80,13 +80,18 @@ async function main() {
   console.log("  2. Go to APIs & Services → Credentials");
   console.log("  3. Create Credentials → OAuth client ID");
   console.log("  4. Application type: Web application");
-  console.log("  5. Authorized redirect URIs: add the URIs printed below");
+  console.log("  5. Add URIs (no path, no trailing slash for origins):");
   console.log("  6. Copy Client ID and Client Secret\n");
 
-  const baseUrl = getBaseUrl();
-  const callbackUri = `${baseUrl.replace(/\/$/, "")}/api/auth/callback/google`;
+  const baseUrl = getBaseUrl().replace(/\/$/, "");
+  const origin = baseUrl;
+  const redirectUri = `${baseUrl}/api/auth/callback/google`;
 
-  console.log(`  Add this redirect URI in Google Console:\n    ${callbackUri}\n`);
+  console.log("  Authorized JavaScript origins — NO path, NO trailing slash:");
+  console.log(`    ${origin}\n`);
+  console.log("  Authorized redirect URIs — full path:");
+  console.log(`    ${redirectUri}\n`);
+  console.log("  (Google error \"URIs must not contain a path\" = wrong value in origins field.)\n");
 
   const clientId = await prompt("  Paste Client ID (or press Enter to skip): ");
   if (!clientId) {
