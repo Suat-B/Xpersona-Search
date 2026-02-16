@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
 import { GlassCard } from "@/components/ui/GlassCard";
 import QuantMetrics from "@/components/dashboard/QuantMetrics";
 import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
@@ -31,6 +33,7 @@ const GAMES = [
 ];
 
 export default function DashboardPage() {
+  const pathname = usePathname();
   const { hasApiKey } = useAiConnectionStatus();
   const aiConnected = hasApiKey === true;
 
@@ -41,15 +44,12 @@ export default function DashboardPage() {
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-2 h-2 rounded-full bg-[#30d158] shadow-[0_0_10px_#30d158] animate-pulse" />
-              <span className="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider">READY TO PLAY</span>
+              <div className="w-2 h-2 rounded-full bg-[#30d158] animate-pulse" />
+              <span className="text-xs font-medium text-[var(--dash-text-secondary)] uppercase tracking-wider">READY TO PLAY</span>
             </div>
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight text-gradient-primary">
               Dashboard
             </h1>
-            <p className="mt-2 text-[var(--text-secondary)] max-w-md">
-              Your home for provably fair dice. Play yourself or deploy AI to play for you.
-            </p>
           </div>
           
           <div className="flex flex-wrap items-center gap-3">
@@ -76,20 +76,30 @@ export default function DashboardPage() {
               )}
             </Link>
             
-            <div className="flex items-center gap-2 rounded-full border border-[var(--border)] bg-white/[0.03] p-1 backdrop-blur-sm">
+            <div className="flex items-center gap-1 rounded-[var(--dash-radius)] border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] p-1">
               <Link
                 href="/dashboard/deposit"
-                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/[0.06] transition-all min-h-[44px] items-center"
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all min-h-[44px] items-center",
+                  pathname === "/dashboard/deposit"
+                    ? "bg-[var(--dash-nav-active)] text-white"
+                    : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white"
+                )}
               >
                 <svg className="w-4 h-4 text-[#30d158]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                 </svg>
                 Deposit
               </Link>
-              <div className="w-px h-4 bg-[var(--border)]" />
+              <div className="w-px h-4 bg-[var(--dash-divider)]" />
               <Link
                 href="/dashboard/withdraw"
-                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/[0.06] transition-all min-h-[44px] items-center"
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all min-h-[44px] items-center",
+                  pathname === "/dashboard/withdraw"
+                    ? "bg-[var(--dash-nav-active)] text-white"
+                    : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white"
+                )}
               >
                 <svg className="w-4 h-4 text-[#0ea5e9]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -133,7 +143,7 @@ export default function DashboardPage() {
               </div>
               <Link 
                 href="/games" 
-                className="group flex items-center gap-1 text-sm text-[var(--text-tertiary)] hover:text-[#0ea5e9] transition-colors"
+                className="group flex items-center gap-1 text-sm text-[var(--dash-text-secondary)] hover:text-[#0ea5e9] transition-colors"
               >
                 View all
                 <svg className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -176,7 +186,7 @@ export default function DashboardPage() {
                             Live
                           </span>
                         </div>
-                        <p className="mt-1.5 text-sm text-[var(--text-secondary)]">
+                        <p className="mt-1.5 text-sm text-[var(--dash-text-secondary)]">
                           {game.desc}
                         </p>
                         
