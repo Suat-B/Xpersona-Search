@@ -49,25 +49,39 @@ function WithdrawPageClient() {
 
   useEffect(() => {
     let mounted = true;
-    let fallbackId: ReturnType<typeof setTimeout> | null = null;
+    const timeouts: ReturnType<typeof setTimeout>[] = [];
 
     const runInitialLoad = () => {
       loadBalance().then((ok) => {
         if (!mounted) return;
-        if (!ok) fallbackId = setTimeout(() => loadBalance(false), 2500);
+        if (!ok) {
+          // Retry at 2.5s and 6s to recover from auth/session race
+          const id1 = setTimeout(() => {
+            if (!mounted) return;
+            loadBalance(false).then((ok2) => {
+              if (!mounted || ok2) return;
+              const id2 = setTimeout(() => {
+                if (!mounted) return;
+                loadBalance(false);
+              }, 3500);
+              timeouts.push(id2);
+            });
+          }, 2500);
+          timeouts.push(id1);
+        }
       });
     };
 
-    // Give EnsureGuest / auth ~300ms to settle before first fetch (same as game page)
-    const timeoutId = setTimeout(runInitialLoad, 300);
+    // Give EnsureGuest / auth ~600ms to settle before first fetch (withdraw page often loads before guest cookie)
+    const timeoutId = setTimeout(runInitialLoad, 600);
+    timeouts.push(timeoutId);
 
     const handler = () => loadBalance();
     window.addEventListener("balance-updated", handler);
 
     return () => {
       mounted = false;
-      clearTimeout(timeoutId);
-      if (fallbackId) clearTimeout(fallbackId);
+      timeouts.forEach(clearTimeout);
       window.removeEventListener("balance-updated", handler);
     };
   }, [loadBalance]);
@@ -178,16 +192,28 @@ function WithdrawPageClient() {
             </p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <p className="text-sm text-[var(--text-secondary)]">Unable to load balance.</p>
-            <button
-              type="button"
-              onClick={() => loadBalance()}
-              disabled={loading}
-              className="text-sm font-medium text-[var(--accent-heart)] hover:underline disabled:opacity-50"
-            >
-              Retry
-            </button>
+            <p className="text-xs text-[var(--text-secondary)]/80">
+              Refresh the page or sign in — this often fixes session issues.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => loadBalance()}
+                disabled={loading}
+                className="rounded-lg bg-[var(--accent-heart)]/20 px-3 py-1.5 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/30 disabled:opacity-50 transition-colors"
+              >
+                {loading ? "Retrying…" : "Retry"}
+              </button>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/5 transition-colors"
+              >
+                Refresh page
+              </button>
+            </div>
           </div>
         )}
       </GlassCard>

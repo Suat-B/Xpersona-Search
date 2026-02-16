@@ -20,7 +20,7 @@ export async function safeFetchJson<T = unknown>(
   return { ok: res.ok, status: res.status, data };
 }
 
-const BALANCE_RETRY_DELAYS_MS = [0, 400, 1000, 2500];
+const BALANCE_RETRY_DELAYS_MS = [0, 400, 1000, 2500, 5000];
 const BALANCE_API = "/api/me/balance";
 
 type BalanceResponse = {
