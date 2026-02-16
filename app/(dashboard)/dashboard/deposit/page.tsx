@@ -72,7 +72,6 @@ function DepositPageClient() {
 
   const creditsPerDollar = (pkg: Package) =>
     pkg.amountCents > 0 ? Math.round(pkg.credits / (pkg.amountCents / 100)) : 0;
-  const isPopular = (pkg: Package) => pkg.credits === 2000;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -145,18 +144,11 @@ function DepositPageClient() {
             {packages.map((pkg) => (
               <GlassCard
                 key={pkg.id}
-                className={`overflow-hidden border-[var(--accent-heart)]/20 shadow-[0_0_40px_-10px_rgba(10,132,255,0.15)] hover:shadow-[0_0_50px_-10px_rgba(10,132,255,0.25)] transition-all duration-300 hover:scale-[1.02] ${
-                  isPopular(pkg) ? "ring-1 ring-[var(--accent-heart)]/40" : ""
-                }`}
+                className="overflow-hidden border-[var(--accent-heart)]/20 shadow-[0_0_40px_-10px_rgba(10,132,255,0.15)] hover:shadow-[0_0_50px_-10px_rgba(10,132,255,0.25)] transition-all duration-300 hover:scale-[1.02]"
               >
                 <div className="relative">
                   <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent-heart)]/5 via-transparent to-transparent pointer-events-none" />
                   <div className="relative p-6">
-                    {isPopular(pkg) && (
-                      <span className="absolute top-4 right-4 rounded-full bg-[var(--accent-heart)]/20 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--accent-heart)] border border-[var(--accent-heart)]/30">
-                        Popular
-                      </span>
-                    )}
                     <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-[var(--accent-heart)]/10 border border-[var(--accent-heart)]/20 mb-4">
                       <svg className="w-6 h-6 text-[var(--accent-heart)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
