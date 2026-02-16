@@ -113,7 +113,7 @@ export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashb
 
   return (
     <header
-      className="scroll-stable-layer md:hidden sticky top-0 z-40 shrink-0 w-full border-b border-[var(--dash-divider)] bg-[var(--dash-bg)] shadow-sm"
+      className="scroll-stable-layer md:hidden sticky top-0 z-[60] shrink-0 w-full border-b border-[var(--dash-divider)] bg-[var(--dash-bg)] shadow-sm"
       role="banner"
     >
       <div className="flex h-14 min-h-[44px] items-center justify-between px-4">
@@ -148,12 +148,12 @@ export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashb
       {open && (
         <>
           <div
-            className="fixed inset-0 top-14 bg-black/60 backdrop-blur-sm z-40"
+            className="fixed inset-0 top-14 z-[70] bg-black/60 backdrop-blur-sm"
             onClick={() => setOpen(false)}
             aria-hidden
           />
           <nav
-            className="fixed top-14 left-0 right-0 bottom-0 z-50 flex flex-col bg-[var(--dash-bg)] border-r border-[var(--dash-divider)] animate-in fade-in slide-in-from-top-2 duration-200"
+            className="fixed top-14 left-0 right-0 bottom-0 z-[80] flex flex-col bg-[var(--dash-bg)] border-r border-[var(--dash-divider)] animate-in fade-in slide-in-from-top-2 duration-200"
             aria-label="Navigation menu"
           >
             <div className="flex-1 overflow-y-auto p-4 space-y-1 pb-20">
