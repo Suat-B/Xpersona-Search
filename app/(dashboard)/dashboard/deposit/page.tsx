@@ -64,7 +64,7 @@ function DepositPageClient() {
         window.location.href = data.data.url;
         return;
       }
-      if (res.status === 403) setBuyError(data.message ?? "Deposit failed.");
+      setBuyError(data.message ?? data.error ?? "Deposit failed. Please try again.");
     } finally {
       setBuyingId(null);
     }
@@ -174,7 +174,7 @@ function DepositPageClient() {
         ) : (
           <GlassCard className="p-6">
             <p className="text-sm text-[var(--text-secondary)]">
-              No packages available. Run <code className="bg-white/10 px-1 rounded">npm run seed</code> and set <code className="bg-white/10 px-1 rounded">STRIPE_PRICE_500</code> in .env.
+              No packages available. Add STRIPE_PRICE_500, STRIPE_PRICE_2000, STRIPE_PRICE_10000 to env, then run <code className="bg-white/10 px-1 rounded">npm run seed</code> (local) or <code className="bg-white/10 px-1 rounded">npm run db:seed-production</code> (prod). See docs/STRIPE_SETUP.md.
             </p>
           </GlassCard>
         )}

@@ -49,6 +49,7 @@ async function main() {
   }
 
   const required = ["NEXTAUTH_SECRET", "NEXTAUTH_URL", "DATABASE_URL", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"];
+  const stripePrices = ["STRIPE_PRICE_500", "STRIPE_PRICE_2000", "STRIPE_PRICE_10000"];
   const missing = required.filter((k) => {
     const m = env.match(new RegExp(`${k}=(.+)`, "m"));
     return !m || !m[1].trim() || m[1].trim().length < 3;
@@ -57,6 +58,15 @@ async function main() {
     console.log("⚠️  .env.local missing or empty:", missing.join(", "));
     console.log("   Fill these in before deploying.\n");
     process.exit(1);
+  }
+  const missingPrices = stripePrices.filter((k) => {
+    const m = env.match(new RegExp(`${k}=(.+)`, "m"));
+    return !m || !m[1].trim() || !m[1].trim().startsWith("price_");
+  });
+  if (missingPrices.length > 0) {
+    console.log("⚠️  Credit packages need Stripe Price IDs:", missingPrices.join(", "));
+    console.log("   Create products in Stripe Dashboard, then run: npm run seed");
+    console.log("   See docs/STRIPE_SETUP.md. Deposit page will show empty until seeded.\n");
   }
 
   if (!env.includes("NEXTAUTH_URL=https://xpersona.co")) {
@@ -71,7 +81,8 @@ async function main() {
 
   console.log("\n✅ Deploy done.");
   console.log("   First time? Add env vars in Vercel → Project → Settings → Environment Variables (copy from .env.local)");
-  console.log("   Add domain: Vercel → Settings → Domains → xpersona.co\n");
+  console.log("   Add domain: Vercel → Settings → Domains → xpersona.co");
+  console.log("   Credit packages empty? Run: npm run seed (with STRIPE_PRICE_* in .env.local, then sync to Vercel)\n");
 }
 
 main().catch((e) => {

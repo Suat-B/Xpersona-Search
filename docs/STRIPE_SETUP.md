@@ -105,10 +105,9 @@ Your app reads packages from the `credit_packages` table; each row must have a v
 1. Ensure **DATABASE_URL** and the three **STRIPE_PRICE_*** env vars are set (in `.env.local` or your deployment env).
 2. Run migrations if you haven’t: `npm run db:push` or `npm run db:migrate`.
 3. Seed packages:
-   ```bash
-   npm run seed
-   ```
-   This inserts (or skips on conflict) the three packages with the Price IDs from your env. If you didn’t set **STRIPE_PRICE_***, the script uses placeholders — replace those with real Price IDs and re-run, or insert/update rows manually in the DB.
+   - **Local**: `npm run seed` (uses DATABASE_URL + STRIPE_PRICE_* from .env.local)
+   - **Production (xpersona.co)**: Add STRIPE_PRICE_500, STRIPE_PRICE_2000, STRIPE_PRICE_10000 to Vercel env, then run `npm run db:seed-production`
+   The seed script requires real Stripe Price IDs (no placeholders). Create products in Stripe Dashboard first (step 3). from your env. If you didn’t set **STRIPE_PRICE_***, the script uses placeholders — replace those with real Price IDs and re-run, or insert/update rows manually in the DB.
 
 ---
 
