@@ -24,7 +24,7 @@ const GAMES = [
     icon: "🎲",
     desc: "Roll over or under. Pure probability.",
     color: "from-[#0ea5e9] to-[#0077b6]",
-    glow: "shadow-[#0ea5e9]/20",
+    glow: "",
   },
 ];
 
@@ -103,7 +103,6 @@ export default function DashboardPage() {
 
       {/* Metrics Grid */}
       <section className="relative">
-        <div className="absolute -inset-8 bg-gradient-to-r from-[#0ea5e9]/5 via-[#0ea5e9]/3 to-transparent rounded-[40px] blur-3xl opacity-60 pointer-events-none" />
         <QuantMetrics />
       </section>
 
@@ -230,7 +229,7 @@ export default function DashboardPage() {
               
               <Link
                 href="/dashboard/strategies"
-                className="shrink-0 inline-flex items-center gap-2 rounded-full border border-[#0ea5e9]/30 bg-[#0ea5e9]/10 px-5 py-2.5 text-sm font-medium text-[#0ea5e9] hover:bg-[#0ea5e9]/20 hover:shadow-[0_0_20px_rgba(14,165,233,0.2)] transition-all duration-200"
+                className="shrink-0 inline-flex items-center gap-2 rounded-full border border-[#0ea5e9]/30 bg-[#0ea5e9]/10 px-5 py-2.5 text-sm font-medium text-[#0ea5e9] hover:bg-[#0ea5e9]/20 transition-all duration-200"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
@@ -244,7 +243,6 @@ export default function DashboardPage() {
         {/* Right Sidebar */}
         <aside className="lg:col-span-4 space-y-5">
           <div className="relative">
-            <div className="absolute -top-10 -right-10 w-48 h-48 bg-[#0ea5e9]/10 rounded-full blur-[80px] pointer-events-none" />
             <QuickLaunchCard />
           </div>
           
@@ -264,7 +262,7 @@ export default function DashboardPage() {
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-[#0ea5e9]/20 to-[#0ea5e9]/10 text-[#0ea5e9] border border-[#0ea5e9]/20 group-hover:shadow-[0_0_20px_rgba(14,165,233,0.3)] transition-shadow"
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-[#0ea5e9]/20 to-[#0ea5e9]/10 text-[#0ea5e9] border border-[#0ea5e9]/20 transition-colors"
                   >
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />

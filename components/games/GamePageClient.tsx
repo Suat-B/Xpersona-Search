@@ -64,7 +64,7 @@ function BacktestTabContent({ strategy }: { strategy: AdvancedDiceStrategy | nul
             min={1}
             value={simulationBalance}
             onChange={(e) => setSimulationBalance(parseInt(e.target.value) || 1000)}
-            className="terminal-input w-full px-3 py-2"
+            className="terminal-input w-full px-3 py-2 rounded-xl"
           />
         </div>
         <div>
@@ -75,14 +75,14 @@ function BacktestTabContent({ strategy }: { strategy: AdvancedDiceStrategy | nul
             max={10000}
             value={simulationRounds}
             onChange={(e) => setSimulationRounds(parseInt(e.target.value) || 100)}
-            className="terminal-input w-full px-3 py-2"
+            className="terminal-input w-full px-3 py-2 rounded-xl"
           />
         </div>
       </div>
 
       <button
         onClick={runSimulation}
-        className="w-full py-3 rounded-sm bg-violet-500/20 text-violet-400 border border-violet-500/50 hover:bg-violet-500/30 transition-colors font-medium terminal-pane"
+        className="w-full py-3 rounded-xl bg-violet-500/20 text-violet-400 border border-violet-500/50 hover:bg-violet-500/30 transition-colors font-medium"
       >
         Run Simulation
       </button>
@@ -90,35 +90,35 @@ function BacktestTabContent({ strategy }: { strategy: AdvancedDiceStrategy | nul
       {simulationResult && (
         <div className="space-y-4">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="terminal-pane p-3 rounded-sm">
+            <div className="agent-card p-3">
               <p className="text-xs text-[var(--text-secondary)]">Final Balance</p>
               <p className={`text-lg font-semibold tabular-nums ${simulationResult.profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                 {simulationResult.finalBalance.toFixed(0)}
               </p>
             </div>
-            <div className="terminal-pane p-3 rounded-sm">
+            <div className="agent-card p-3">
               <p className="text-xs text-[var(--text-secondary)]">Profit/Loss</p>
               <p className={`text-lg font-semibold tabular-nums ${simulationResult.profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                 {simulationResult.profit >= 0 ? "+" : ""}{simulationResult.profit.toFixed(0)}
               </p>
             </div>
-            <div className="terminal-pane p-3 rounded-sm">
+            <div className="agent-card p-3">
               <p className="text-xs text-[var(--text-secondary)]">Win Rate</p>
               <p className="text-lg font-semibold tabular-nums text-[var(--text-primary)]">
                 {simulationResult.roundHistory.length > 0 ? ((simulationResult.totalWins / simulationResult.roundHistory.length) * 100).toFixed(1) : "0"}%
               </p>
             </div>
-            <div className="terminal-pane p-3 rounded-sm">
+            <div className="agent-card p-3">
               <p className="text-xs text-[var(--text-secondary)]">Rounds</p>
               <p className="text-lg font-semibold tabular-nums text-[var(--text-primary)]">{simulationResult.roundHistory.length}</p>
             </div>
           </div>
           {simulationResult.shouldStop && simulationResult.stopReason && (
-            <div className="p-3 rounded-sm bg-[#0ea5e9]/10 border border-[#0ea5e9]/30">
+            <div className="p-3 rounded-xl bg-[#0ea5e9]/10 border border-[#0ea5e9]/30">
               <p className="text-sm text-[#0ea5e9]"><strong>Stopped:</strong> {simulationResult.stopReason}</p>
             </div>
           )}
-          <div className="terminal-pane p-3 rounded-sm">
+          <div className="agent-card p-3">
             <p className="text-xs text-[var(--text-secondary)] mb-2">Balance Range</p>
             <div className="flex items-center gap-2">
               <span className="text-sm text-red-400 tabular-nums">Low: {simulationResult.minBalance.toFixed(0)}</span>
@@ -135,7 +135,7 @@ function BacktestTabContent({ strategy }: { strategy: AdvancedDiceStrategy | nul
           </div>
           <div>
             <p className="text-sm text-[var(--text-secondary)] mb-2">Recent Rounds</p>
-            <div className="max-h-48 overflow-y-auto rounded-sm border border-[var(--border)] terminal-pane">
+            <div className="max-h-48 overflow-y-auto rounded-xl border border-[var(--border)] bg-white/[0.02]">
               <table className="w-full text-xs">
                 <thead className="bg-white/[0.02] sticky top-0">
                   <tr>
@@ -644,11 +644,8 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const m = quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null };
 
   return (
-    <div className="h-screen w-full flex flex-col min-h-0 overflow-hidden relative pt-4" style={{ contain: "layout" }}>
-      {/* Top accent line — trading terminal feel */}
-      <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[var(--accent-heart)] via-violet-500 to-[var(--accent-heart)] z-50 opacity-80" aria-hidden />
-
-      {/* Banners: fixed overlays — never affect layout, hub stays stable */}
+    <div className="w-full min-h-screen relative space-y-5 sm:space-y-8 animate-fade-in-up pb-8">
+      {/* Banners: fixed overlays — never affect layout */}
       {depositSuccess && (
         <div className="fixed top-4 left-0 right-0 z-[60] flex items-center justify-center gap-2 py-2 px-4 bg-[#30d158]/15 border-b border-[#30d158]/30 text-[#30d158] text-sm backdrop-blur-sm">
           <span className="text-[#30d158]">✓</span> Payment successful. Capital added.
@@ -699,23 +696,82 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         </div>
       )}
 
-      {/* Merged header + metrics — single row (nav | metrics | actions). Mobile: h-12, larger touch targets */}
-      <header className="flex-shrink-0 h-12 lg:h-10 flex items-center min-w-0 border-b border-white/[0.06] bg-[#050506] backdrop-blur-sm">
-        <div className="flex items-center gap-2 lg:gap-3 shrink-0 px-2 lg:px-3">
-          <Link href="/dashboard" className="flex items-center gap-1.5 text-[11px] lg:text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors group min-h-[44px] lg:min-h-0 min-w-[44px] lg:min-w-0 justify-center lg:justify-start" aria-label="Back to Dashboard">
-            <svg className="w-4 h-4 lg:w-3.5 lg:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            <span className="hidden sm:inline uppercase tracking-wider">Dashboard</span>
-          </Link>
-          <span className="text-[10px] text-white/10 hidden sm:inline">│</span>
-          <span className="text-[10px] font-bold tracking-[0.15em] text-[var(--text-secondary)] uppercase hidden md:inline">
-            Game <span className="text-[#0ea5e9]/70">Terminal</span>
-          </span>
+      {/* Hero Header — dashboard style */}
+      <header className="relative">
+        <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Link href="/dashboard" className="flex items-center gap-1.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors" aria-label="Back to Dashboard">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                <span className="text-xs font-medium uppercase tracking-wider">Dashboard</span>
+              </Link>
+              <span className="text-white/20">/</span>
+              <span className={`w-2 h-2 rounded-full shrink-0 ${strategyRun || autoPlayActive ? "bg-[#0ea5e9] animate-pulse" : "bg-[#30d158]"}`} aria-hidden />
+              <span className="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider">
+                {strategyRun || autoPlayActive ? "Playing" : "Ready"}
+              </span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight text-gradient-primary">
+              Game Terminal
+            </h1>
+            <p className="mt-2 text-[var(--text-secondary)] max-w-md">
+              Dice — roll over or under. Pure probability. Play yourself or let AI play for you.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/dashboard/connect-ai"
+              className={
+                aiConnected
+                  ? "inline-flex items-center gap-2 rounded-full border border-[#30d158]/40 bg-[#30d158]/10 px-5 py-3 text-sm font-medium text-[#30d158] hover:bg-[#30d158]/20 hover:border-[#30d158]/60 transition-all min-h-[44px]"
+                  : "inline-flex items-center gap-2 rounded-full border border-[#0ea5e9]/40 bg-[#0ea5e9]/10 px-5 py-3 text-sm font-medium text-[#0ea5e9] hover:bg-[#0ea5e9]/20 hover:border-[#0ea5e9]/60 transition-all min-h-[44px]"
+              }
+            >
+              {aiConnected ? (
+                <>
+                  <HeartbeatIndicator size="md" />
+                  <span>AI connected</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                  <span>Connect AI</span>
+                </>
+              )}
+            </Link>
+            <div className="flex items-center gap-2 rounded-full border border-[var(--border)] bg-white/[0.03] p-1 backdrop-blur-sm">
+              <Link
+                href="/dashboard/deposit"
+                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/[0.06] transition-all min-h-[44px] items-center"
+              >
+                <svg className="w-4 h-4 text-[#30d158]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Deposit
+              </Link>
+              <div className="w-px h-4 bg-[var(--border)]" />
+              <Link
+                href="/dashboard/withdraw"
+                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/[0.06] transition-all min-h-[44px] items-center"
+              >
+                <svg className="w-4 h-4 text-[#0ea5e9]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                Withdraw
+              </Link>
+            </div>
+          </div>
         </div>
+      </header>
+
+      {/* Metrics row — dashboard-style agent cards */}
+      <section className="relative">
         <QuantTopMetricsBar
-          compact
-          mobile
+          cardLayout
           nav={balance}
           navLoading={balanceLoading}
           sessionPnl={totalPnl}
@@ -728,32 +784,20 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           live={aiConnected}
           sessionStartTime={sessionStartTime}
         />
-        <div className="flex items-center gap-1 lg:gap-2 shrink-0 px-2 lg:px-3">
-          <Link href="/dashboard/connect-ai" className={aiConnected ? "hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-[#30d158]/30 bg-[#30d158]/10 px-2.5 py-2 lg:py-1 text-[11px] lg:text-[10px] font-medium text-[#30d158] min-h-[40px] lg:min-h-0 justify-center" : "hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-[#0ea5e9]/30 bg-[#0ea5e9]/10 px-2.5 py-2 lg:py-1 text-[11px] lg:text-[10px] font-medium text-[#0ea5e9] min-h-[40px] lg:min-h-0 justify-center"}>
-            {aiConnected ? <HeartbeatIndicator size="sm" /> : <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>}
-            <span>{aiConnected ? "AI" : "Connect"}</span>
-          </Link>
-          <Link href="/dashboard/deposit" className="flex items-center gap-1.5 text-[11px] lg:text-[10px] text-[#0ea5e9] hover:text-[#0ea5e9] font-semibold uppercase tracking-wider min-h-[40px] lg:min-h-0 px-3 lg:px-0 justify-center items-center">
-            <svg className="w-4 h-4 lg:w-3.5 lg:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-            <span>Deposit</span>
-          </Link>
-          <Link href="/dashboard/withdraw" className="hidden sm:inline text-[11px] lg:text-[10px] text-[#0ea5e9]/80 hover:text-[#0ea5e9] font-semibold uppercase tracking-wider min-h-[40px] lg:min-h-0 flex items-center">Withdraw</Link>
-        </div>
-      </header>
+      </section>
 
-      {/* Main content — 3-pane terminal layout */}
-      <main className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(240px,28%)_1fr_minmax(220px,22%)] overflow-hidden">
-        {/* Left pane — Order ticket (full length) */}
-        <div className="hidden lg:flex flex-col min-w-0 min-h-0 overflow-hidden border-r border-white/[0.06]">
-          <div className="terminal-pane flex-1 min-h-0 flex flex-col overflow-hidden m-1.5 mr-0">
-            <div className="terminal-header flex-shrink-0">
-              <div className="terminal-header-accent" />
-              <span>Order Ticket</span>
+      {/* Main content — 12-column grid (dashboard style); hidden on mobile (tabbed layout shown instead) */}
+      <main className="hidden lg:grid grid-cols-1 lg:grid-cols-12 gap-5">
+        {/* Left column — Order ticket + Chart/Strategy tabs */}
+        <div className="lg:col-span-8 space-y-5">
+          {/* Order Ticket Card */}
+          <div className="agent-card p-5 transition-all duration-300 hover:border-[var(--border-strong)]">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">Order Ticket</h2>
             </div>
-            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-              <div className="flex-shrink-0 min-h-[40px] px-4 pt-2.5 pb-1.5" key={sessionNudgesKey}>
+            <div className="flex flex-col min-h-0" key={sessionNudgesKey}>
+              <div className="flex-shrink-0 mb-3">
                 <SessionNudges
                   totalPnl={totalPnl}
                   rounds={rounds}
@@ -765,7 +809,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   hasPositiveEv={(m.expectedValuePerTrade ?? 0) > 0}
                 />
               </div>
-              <div className="flex-1 min-h-0 overflow-hidden p-3 pt-2">
+              <div className="flex-1 min-h-0 overflow-hidden">
               <ClientOnly
                 fallback={
                   <div className="flex h-full items-center justify-center text-sm text-[var(--text-secondary)]">
@@ -816,22 +860,24 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Center pane — Tabbed: Chart | Strategy | Backtest */}
-        <div className="hidden lg:flex flex-col min-w-0 min-h-0 overflow-hidden">
-          <div className="terminal-pane flex-1 min-h-0 flex flex-col overflow-hidden m-1.5 mx-1">
-            <div className="terminal-header flex-shrink-0 flex items-center justify-between">
-              <div className="flex items-center gap-1">
+          {/* Chart / Strategy / Backtest / Metrics Card */}
+          <div className="agent-card p-5 transition-all duration-300 hover:border-[var(--border-strong)]">
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Analytics</h2>
+              </div>
+              <div className="flex items-center gap-2">
                 {(["chart", "strategy", "backtest", "metrics"] as const).map((tab) => (
                   <button
                     key={tab}
                     type="button"
                     onClick={() => setCenterTab(tab)}
-                    className={`px-3 py-1.5 text-[11px] font-medium rounded-sm transition-colors capitalize ${
+                    className={`px-4 py-2 text-sm font-medium rounded-full transition-all duration-200 capitalize ${
                       centerTab === tab
                         ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/40"
-                        : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-white/[0.04] border border-transparent"
+                        : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06] border border-transparent"
                     }`}
                   >
                     {tab === "chart" ? "Chart" : tab === "strategy" ? "Strategy" : tab === "backtest" ? "Backtest" : "Metrics"}
@@ -841,12 +887,12 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               <button
                 type="button"
                 onClick={handleReset}
-                className="text-[9px] text-[var(--text-tertiary)] hover:text-[#0ea5e9] transition-colors px-2 py-1 rounded"
+                className="text-sm text-[var(--text-tertiary)] hover:text-[#0ea5e9] transition-colors px-3 py-2 rounded-xl hover:bg-white/[0.04]"
               >
                 Reset
               </button>
             </div>
-            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+            <div className="flex flex-col min-h-[320px]">
               {centerTab === "chart" && (
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                   <div className="flex-shrink-0 p-2 pb-1">
@@ -972,17 +1018,18 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </div>
         </div>
 
-        {/* Right pane — Trade blotter + Strategy + AI API */}
-        <aside className="hidden lg:flex flex-col min-w-[220px] max-w-[340px] overflow-y-auto overflow-x-hidden scrollbar-sidebar border-l border-white/[0.06]">
-          <div className="terminal-pane flex-1 min-h-0 flex flex-col overflow-hidden m-1.5 ml-0">
-            <div className="terminal-header flex-shrink-0 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="terminal-header-accent" />
-                <span>Trade Log</span>
+        {/* Right sidebar */}
+        <aside className="lg:col-span-4 space-y-5">
+          {/* Trade Log Card */}
+          <div className="agent-card p-5 transition-all duration-300 hover:border-[var(--border-strong)]">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Trade Log</h2>
               </div>
-              <span className="text-[9px] text-[var(--text-tertiary)] tabular-nums">{recentResults.length} fills</span>
+              <span className="text-xs text-[var(--text-tertiary)] tabular-nums">{recentResults.length} fills</span>
             </div>
-            <div className="flex-1 min-h-0 overflow-hidden p-2">
+            <div className="flex-1 min-h-0 overflow-hidden">
               <TradeLog
                 entries={recentResults.map((r, i) => ({
                   roundNumber: r.roundNumber ?? Math.max(1, rounds - recentResults.length + 1 + i),
@@ -1002,45 +1049,49 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </div>
 
           {(liveActivityItems.length > 0 || liveQueueLength > 0) && (
-            <div className="terminal-pane m-1.5 ml-0 flex-shrink-0">
-              <LiveActivityFeed items={liveActivityItems} maxItems={20} />
+            <div className="agent-card p-5 transition-all duration-300 hover:border-[var(--border-strong)]">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Live Activity</h2>
+              </div>
+              <LiveActivityFeed items={liveActivityItems} maxItems={20} embedded />
             </div>
           )}
 
-          <div className="terminal-pane m-1.5 ml-0 flex-shrink-0">
-            <div className="terminal-header flex-shrink-0">
-              <div className="terminal-header-accent" />
-              <span>AI API</span>
+          <div className="agent-card p-5 transition-all duration-300 hover:border-[var(--border-strong)]">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">AI API</h2>
             </div>
-            <div className="p-2 space-y-1.5">
+            <div className="space-y-3">
               <ApiKeySection compact />
-              <Link href="/dashboard/api" className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#0ea5e9] hover:underline">
+              <Link href="/dashboard/api" className="inline-flex items-center gap-1.5 text-sm font-medium text-[#0ea5e9] hover:underline">
                 Full API Docs →
               </Link>
             </div>
           </div>
 
-          <div className="terminal-pane m-1.5 ml-0 flex-shrink-0">
+          <div className="agent-card p-5 transition-all duration-300 hover:border-[var(--border-strong)]">
             <KeyboardShortcutsHelp />
           </div>
 
-          <div className="m-1.5 ml-0">
-            <button onClick={handleReset} className="w-full py-1.5 rounded-sm border border-white/[0.06] text-[10px] font-medium text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.04] transition-all">
+          <div>
+            <button onClick={handleReset} className="w-full py-3 rounded-xl border border-[var(--border)] text-sm font-medium text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.04] hover:border-[var(--border-strong)] transition-all">
               Reset Session
             </button>
           </div>
         </aside>
 
         {/* Mobile: tabbed layout with bottom tab bar */}
-        <div className="lg:hidden flex flex-col min-h-0 overflow-hidden">
-          <div className="flex-1 min-h-0 overflow-y-auto" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 88px)" }}>
+        <div className="lg:hidden flex flex-col">
+          <div className="flex-1 overflow-y-auto" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 88px)" }}>
             {mobileTab === "play" && (
-              <div className="terminal-pane m-2 flex flex-col min-h-[200px]">
-                <div className="terminal-header flex-shrink-0">
-                  <div className="terminal-header-accent" />
-                  <span>Order Ticket</span>
+              <div className="agent-card p-5 m-3 flex flex-col min-h-[200px] transition-all duration-300">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                  <h2 className="text-lg font-semibold text-[var(--text-primary)]">Order Ticket</h2>
                 </div>
-                <div className="flex-1 min-h-0 overflow-hidden p-3">
+                <div className="flex-1 min-h-0 overflow-hidden">
                   <ClientOnly fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-secondary)]"><span className="animate-pulse">Loading...</span></div>}>
                     <DiceGame
                       amount={amount}
@@ -1076,16 +1127,16 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               </div>
             )}
             {mobileTab === "chart" && (
-              <div className="space-y-2 m-2">
-                <div className="terminal-pane">
-                  <div className="terminal-header flex-shrink-0 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="terminal-header-accent" />
-                      <span>Equity Curve</span>
+              <div className="space-y-5 m-3">
+                <div className="agent-card p-5 transition-all duration-300">
+                  <div className="flex items-center justify-between gap-4 mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                      <h2 className="text-lg font-semibold text-[var(--text-primary)]">Equity Curve</h2>
                     </div>
-                    <button type="button" onClick={handleReset} className="text-[11px] text-[var(--text-tertiary)] hover:text-[#0ea5e9] min-h-[44px] min-w-[44px] flex items-center justify-center -m-1">Reset</button>
+                    <button type="button" onClick={handleReset} className="text-sm text-[var(--text-tertiary)] hover:text-[#0ea5e9] min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl hover:bg-white/[0.04]">Reset</button>
                   </div>
-                  <div className="p-3">
+                  <div>
                     <SessionPnLChart
                       series={statsSeries}
                       totalPnl={totalPnl}
@@ -1097,12 +1148,12 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                     />
                   </div>
                 </div>
-                <div className="terminal-pane min-h-[120px]">
-                  <div className="terminal-header flex-shrink-0">
-                    <div className="terminal-header-accent" />
-                    <span>Monte Carlo</span>
+                <div className="agent-card p-5 min-h-[120px] transition-all duration-300">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                    <h2 className="text-lg font-semibold text-[var(--text-primary)]">Monte Carlo</h2>
                   </div>
-                  <div className="p-3 h-[120px]">
+                  <div className="h-[120px]">
                     <MonteCarloShadow
                       series={statsSeries}
                       totalPnl={totalPnl}
@@ -1113,7 +1164,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               </div>
             )}
             {mobileTab === "strategy" && (
-              <div className="m-2 space-y-2 overflow-y-auto">
+              <div className="m-3 space-y-4 overflow-y-auto">
                 <SavedAdvancedStrategiesList
                   onRun={(strategy, maxRounds) => {
                     setAmount(strategy.baseConfig.amount);
@@ -1188,22 +1239,22 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                     setMobileTab("play");
                   }}
                 />
-                <Link href="/dashboard/strategies" className="flex items-center justify-center gap-1.5 w-full py-3 min-h-[44px] rounded-sm border border-dashed border-white/[0.06] text-[11px] text-[var(--text-tertiary)] hover:text-[#0ea5e9] hover:border-[#0ea5e9]/30 transition-all">
+                <Link href="/dashboard/strategies" className="flex items-center justify-center gap-1.5 w-full py-3 min-h-[44px] rounded-xl border border-dashed border-[var(--border)] text-sm text-[var(--text-tertiary)] hover:text-[#0ea5e9] hover:border-[#0ea5e9]/30 transition-all">
                   Manage Strategies →
                 </Link>
               </div>
             )}
             {mobileTab === "log" && (
-              <div className="m-2 space-y-2">
-                <div className="terminal-pane">
-                  <div className="terminal-header flex-shrink-0 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="terminal-header-accent" />
-                      <span>Trade Log</span>
+              <div className="m-3 space-y-4">
+                <div className="agent-card p-5 transition-all duration-300">
+                  <div className="flex items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                      <h2 className="text-lg font-semibold text-[var(--text-primary)]">Trade Log</h2>
                     </div>
-                    <span className="text-[11px] text-[var(--text-tertiary)] tabular-nums">{recentResults.length} fills</span>
+                    <span className="text-xs text-[var(--text-tertiary)] tabular-nums">{recentResults.length} fills</span>
                   </div>
-                  <div className="p-2 max-h-[200px] overflow-y-auto overflow-x-auto scrollbar-sidebar">
+                  <div className="max-h-[200px] overflow-y-auto overflow-x-auto scrollbar-sidebar">
                     <TradeLog
                       entries={recentResults.map((r, i) => ({
                         roundNumber: r.roundNumber ?? Math.max(1, rounds - recentResults.length + 1 + i),
@@ -1221,12 +1272,12 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                     />
                   </div>
                 </div>
-                <div className="terminal-pane flex-1 min-h-0 flex flex-col overflow-hidden">
-                  <div className="terminal-header flex-shrink-0">
-                    <div className="terminal-header-accent" />
-                    <span>Metrics</span>
+                <div className="agent-card p-5 flex flex-col overflow-hidden transition-all duration-300">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                    <h2 className="text-lg font-semibold text-[var(--text-primary)]">Metrics</h2>
                   </div>
-                  <div className="flex-1 min-h-0 p-3 overflow-y-auto scrollbar-sidebar">
+                  <div className="flex-1 min-h-0 overflow-y-auto scrollbar-sidebar">
                     <QuantMetricsGrid
                       metrics={quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null }}
                       recentResults={recentResults}
@@ -1234,12 +1285,12 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                     />
                   </div>
                 </div>
-                <div className="terminal-pane p-2">
-                  <div className="terminal-header flex-shrink-0">
-                    <div className="terminal-header-accent" />
-                    <span>AI API</span>
+                <div className="agent-card p-5 transition-all duration-300">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                    <h2 className="text-lg font-semibold text-[var(--text-primary)]">AI API</h2>
                   </div>
-                  <div className="p-2 space-y-1.5">
+                  <div className="space-y-3">
                     <ApiKeySection compact />
                     <Link href="/dashboard/api" className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#0ea5e9] hover:underline min-h-[44px] items-center">
                       Full API Docs →
@@ -1250,15 +1301,15 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             )}
           </div>
           {/* Mobile footer — above tab bar */}
-          <div className="lg:hidden flex-shrink-0 px-3 py-1.5 border-t border-white/[0.06] flex items-center justify-between text-[10px] text-[var(--text-tertiary)] bg-[#050506]">
+          <div className="lg:hidden flex-shrink-0 px-4 py-3 border-t border-white/[0.06] flex items-center justify-between text-xs text-[var(--text-tertiary)]">
             <span className="truncate">3% Edge · 97% RTP · Min 1 · Max 10k</span>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-3 shrink-0">
               <Link href="/dashboard" className="hover:text-[#0ea5e9] transition-colors">Dashboard</Link>
               <Link href="/dashboard/api" className="hover:text-[#0ea5e9] transition-colors">API</Link>
             </div>
           </div>
-          {/* Mobile bottom tab bar — 44px + safe area */}
-          <nav className="lg:hidden flex-shrink-0 flex items-center justify-around h-11 safe-area-bottom border-t border-white/[0.06] bg-[#050506] backdrop-blur-sm" aria-label="Mobile navigation">
+          {/* Mobile bottom tab bar — dashboard-style rounded pills */}
+          <nav className="lg:hidden flex-shrink-0 flex items-center justify-around h-14 safe-area-bottom border-t border-white/[0.06] px-2 py-2 gap-1" aria-label="Mobile navigation">
             {(
               [
                 { id: "play" as MobileTab, label: "Play", icon: "🎲" },
@@ -1271,25 +1322,50 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 key={id}
                 type="button"
                 onClick={() => setMobileTab(id)}
-                className={`flex flex-col items-center justify-center flex-1 min-h-[44px] py-1 gap-0.5 transition-colors ${
-                  mobileTab === id ? "text-[#0ea5e9]" : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                className={`flex flex-col items-center justify-center flex-1 min-h-[44px] py-2 gap-1 rounded-xl transition-all duration-200 ${
+                  mobileTab === id
+                    ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/40"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-white/[0.04]"
                 }`}
                 aria-current={mobileTab === id ? "page" : undefined}
               >
                 <span className="text-base leading-none" aria-hidden>{icon}</span>
-                <span className="text-[10px] font-medium">{label}</span>
+                <span className="text-xs font-medium">{label}</span>
               </button>
             ))}
           </nav>
         </div>
       </main>
 
-      {/* Minimal footer — single line (hidden on mobile; tab bar provides nav) */}
-      <footer className="hidden lg:flex flex-shrink-0 px-4 py-2 border-t border-white/[0.06] items-center justify-between text-[10px] text-[var(--text-tertiary)] bg-[#050506] safe-area-bottom">
-        <span>Xpersona · 3% Edge · 97% Return · Min 1 · Max 10k</span>
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="hover:text-[#0ea5e9] transition-colors">Dashboard</Link>
-          <Link href="/dashboard/api" className="hover:text-[#0ea5e9] transition-colors">API</Link>
+      {/* Footer — dashboard style */}
+      <footer className="mt-12 pt-6 border-t border-white/[0.06]">
+        <div className="flex flex-col gap-6">
+          <nav className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+            <Link href="/dashboard" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">
+              Dashboard
+            </Link>
+            <Link href="/games/dice" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">
+              Play Dice
+            </Link>
+            <Link href="/dashboard/strategies" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">
+              Strategies
+            </Link>
+            <Link href="/dashboard/provably-fair" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">
+              Provably Fair
+            </Link>
+            <Link href="/dashboard/api" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">
+              API Docs
+            </Link>
+          </nav>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-white/[0.04]">
+            <p className="text-xs text-[var(--text-tertiary)] order-2 sm:order-1">
+              Xpersona · 3% Edge · 97% Return · Min 1 · Max 10k
+            </p>
+            <div className="flex items-center gap-2 order-1 sm:order-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#30d158] animate-pulse shrink-0" aria-hidden />
+              <span className="text-[11px] text-[var(--text-tertiary)]">All systems operational</span>
+            </div>
+          </div>
         </div>
       </footer>
     </div>

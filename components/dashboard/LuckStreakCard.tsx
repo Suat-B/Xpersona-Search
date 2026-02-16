@@ -60,7 +60,7 @@ export function LuckStreakCard() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
         </svg>
       ),
-      glow: "shadow-[0_0_30px_rgba(48,209,88,0.15)]",
+      glow: "",
     },
     cold: {
       gradient: "from-[#0ea5e9]/20 via-[#0ea5e9]/10 to-transparent",
@@ -73,7 +73,7 @@ export function LuckStreakCard() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       ),
-      glow: "shadow-[0_0_30px_rgba(14,165,233,0.15)]",
+      glow: "",
     },
     neutral: {
       gradient: "from-white/10 via-white/5 to-transparent",

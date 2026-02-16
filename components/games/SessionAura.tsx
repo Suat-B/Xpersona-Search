@@ -197,9 +197,9 @@ export function SessionAura({
       className="relative h-[100px] flex flex-col overflow-hidden"
       aria-label={`Session aura: ${regime.label}`}
     >
-      <div className="terminal-header flex-shrink-0">
-        <div className="terminal-header-accent" />
-        <span>Session Aura</span>
+      <div className="flex items-center gap-3 flex-shrink-0 mb-2">
+        <div className="w-1 h-5 rounded-full bg-[#0ea5e9]" />
+        <span className="text-sm font-semibold text-[var(--text-primary)]">Session Aura</span>
       </div>
 
       <div className="flex-1 relative min-h-0 p-2 flex items-center justify-center">

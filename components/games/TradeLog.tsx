@@ -90,34 +90,34 @@ export function TradeLog({ entries, maxRows = 20, compact = true }: TradeLogProp
   return (
     <div className="flex flex-col min-h-0 flex-1 min-w-0 w-full" data-agent="trade-log">
       {displayEntries.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-1.5 py-5 text-[var(--text-tertiary)]">
-          <svg className="w-6 h-6 opacity-25" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+        <div className="flex flex-col items-center justify-center gap-2 py-6 text-[var(--text-tertiary)]">
+          <svg className="w-8 h-8 opacity-25" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
           </svg>
-          <span className="text-[10px]">Execute a trade to begin</span>
+          <span className="text-sm">Execute a trade to begin</span>
         </div>
       ) : (
-        <div className="overflow-y-auto max-h-[160px] scrollbar-sidebar">
+        <div className="overflow-y-auto max-h-[200px] scrollbar-sidebar">
           {displayEntries.map((e, i) => {
             const p = pnl(e);
             const isNewest = i === 0;
             return (
               <div
                 key={`${e.roundNumber}-${i}`}
-                className={`flex items-center gap-1 px-1 py-[3px] rounded text-[10px] tabular-nums hover:bg-white/[0.04] transition-colors ${
+                className={`flex items-center gap-2 px-2 py-2 rounded-xl text-sm tabular-nums hover:bg-white/[0.04] transition-colors ${
                   i % 2 === 1 ? "bg-white/[0.015]" : ""
                 } ${isNewest ? "animate-slide-in-from-bottom" : ""}`}
               >
                 <SourceDot source={e.source} />
-                <span className="text-[var(--text-tertiary)] shrink-0 min-w-[28px] w-[34px] hidden sm:inline">{formatTime(e.timestamp)}</span>
-                <span className={`shrink-0 min-w-[12px] w-[14px] text-center font-bold text-[10px] sm:text-[9px] ${
+                <span className="text-[var(--text-tertiary)] shrink-0 min-w-[32px] hidden sm:inline">{formatTime(e.timestamp)}</span>
+                <span className={`shrink-0 min-w-[14px] text-center font-bold text-xs ${
                   e.condition === "over"
                     ? "text-emerald-400"
                     : "text-red-400"
                 }`}>
                   {e.condition === "over" ? "L" : "S"}
                 </span>
-                <span className="text-[var(--text-secondary)] shrink-0 min-w-[18px] w-[22px] text-right">{e.amount.toFixed(0)}</span>
+                <span className="text-[var(--text-secondary)] shrink-0 min-w-[24px] text-right">{e.amount.toFixed(0)}</span>
                 <span className="text-[var(--text-quaternary)] shrink-0">→</span>
                 <span className="text-[var(--text-secondary)] font-medium shrink-0">{e.result.toFixed(1)}</span>
                 <span className={`ml-auto font-semibold shrink-0 ${p >= 0 ? "text-[#30d158]" : "text-[#ff453a]"}`}>

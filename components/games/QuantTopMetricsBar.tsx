@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useSyncExternalStore } from "react";
+import { MetricCard } from "@/components/ui/GlassCard";
 
 function useIsMobile() {
   return useSyncExternalStore(
@@ -34,6 +35,8 @@ interface QuantTopMetricsBarProps {
   sessionStartTime?: number | null;
   /** Mobile mode: show only NAV, P&L, Rounds inline; expand for rest */
   mobile?: boolean;
+  /** Dashboard-style: render as agent-card metric grid (Balance, P&L, Win Rate, Rounds) */
+  cardLayout?: boolean;
 }
 
 function formatSharpeColor(sharpe: number | null): "emerald" | "blue" | "neutral" {
@@ -73,6 +76,7 @@ export function QuantTopMetricsBar({
   live = false,
   sessionStartTime = null,
   mobile = false,
+  cardLayout = false,
 }: QuantTopMetricsBarProps) {
   const sharpeColor = formatSharpeColor(sharpeRatio);
   const kellyColor = formatKellyColor(kellyFraction);
@@ -80,6 +84,8 @@ export function QuantTopMetricsBar({
   const [expanded, setExpanded] = useState(false);
   const isMobile = useIsMobile();
   const useCondensed = mobile && isMobile && !expanded;
+  const pnlTrend: "up" | "down" | "neutral" = sessionPnl > 0 ? "up" : sessionPnl < 0 ? "down" : "neutral";
+  const wrTrend: "up" | "down" | "neutral" = winRate >= 50 ? "up" : winRate < 45 && rounds > 0 ? "down" : "neutral";
 
   useEffect(() => {
     if (sessionStartTime == null || rounds === 0) {
@@ -90,6 +96,35 @@ export function QuantTopMetricsBar({
     const id = setInterval(() => setElapsed(formatElapsed(sessionStartTime)), 1000);
     return () => clearInterval(id);
   }, [sessionStartTime, rounds]);
+
+  if (cardLayout) {
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <MetricCard
+          label="Balance"
+          value={navLoading ? "…" : nav.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          trend="neutral"
+        />
+        <MetricCard
+          label="Session P&L"
+          value={`${sessionPnl >= 0 ? "+" : ""}${sessionPnl.toFixed(2)}`}
+          subtext={`${rounds} rounds`}
+          trend={pnlTrend}
+        />
+        <MetricCard
+          label="Win Rate"
+          value={`${winRate.toFixed(1)}%`}
+          trend={wrTrend}
+        />
+        <MetricCard
+          label="Rounds"
+          value={rounds}
+          subtext={elapsed ? `Time: ${elapsed}` : undefined}
+          trend="neutral"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="relative">

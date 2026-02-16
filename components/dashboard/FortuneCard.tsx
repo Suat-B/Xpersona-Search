@@ -39,8 +39,8 @@ export function FortuneCard() {
   return (
     <div className={cn(
       "agent-card p-5 h-[140px] flex flex-col justify-between",
-      "border-[#0ea5e9]/20",
-      "hover:border-[#0ea5e9]/40 transition-all duration-300"
+      "border-white/[0.06]",
+      "hover:border-[var(--border-strong)] transition-all duration-300"
     )}
     >
       <div className="flex items-start gap-3">

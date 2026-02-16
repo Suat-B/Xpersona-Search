@@ -145,8 +145,8 @@ export function FaucetButton() {
         </div>
       </div>
 
-      <div className="mb-4 p-3 rounded-xl bg-[#ff9f0a]/5 border border-[#ff9f0a]/20">
-        <p className="text-xs text-[#ff9f0a]/80 flex items-center gap-2">
+      <div className="mb-4 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+        <p className="text-xs text-[var(--text-tertiary)] flex items-center gap-2">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>

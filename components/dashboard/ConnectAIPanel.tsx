@@ -16,7 +16,7 @@ export function ConnectAIPanel() {
         
         <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
           <div className="flex items-start gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#0ea5e9]/25 to-[#0ea5e9]/15 border border-[#0ea5e9]/30 text-[#0ea5e9] group-hover:shadow-[0_0_30px_rgba(14,165,233,0.2)] transition-shadow duration-300">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#0ea5e9]/25 to-[#0ea5e9]/15 border border-[#0ea5e9]/30 text-[#0ea5e9] transition-colors duration-300">
               <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
@@ -47,7 +47,7 @@ export function ConnectAIPanel() {
             </div>
           </div>
           
-          <span className="shrink-0 inline-flex items-center gap-2 rounded-full border border-[#0ea5e9]/40 bg-[#0ea5e9]/10 px-5 py-2.5 text-sm font-medium text-[#0ea5e9] group-hover:bg-[#0ea5e9]/20 group-hover:border-[#0ea5e9]/60 group-hover:shadow-[0_0_20px_rgba(14,165,233,0.2)] transition-all duration-200">
+          <span className="shrink-0 inline-flex items-center gap-2 rounded-full border border-[#0ea5e9]/40 bg-[#0ea5e9]/10 px-5 py-2.5 text-sm font-medium text-[#0ea5e9] group-hover:bg-[#0ea5e9]/20 group-hover:border-[#0ea5e9]/60 transition-all duration-200">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
             </svg>
