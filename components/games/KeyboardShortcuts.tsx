@@ -79,17 +79,17 @@ export function KeyboardShortcutsHelp() {
   ];
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
-        <h4 className="text-lg font-semibold text-[var(--text-primary)]">
-          Keyboard Shortcuts
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 mb-2">
+        <div className="w-1 h-4 rounded-full bg-[#0ea5e9]" />
+        <h4 className="text-sm font-semibold text-[var(--text-primary)]">
+          Shortcuts
         </h4>
       </div>
-      <div className="space-y-2">
+      <div className="space-y-1">
         {shortcuts.map(({ key, action }) => (
-          <div key={key} className="flex items-center justify-between text-sm">
-            <kbd className="px-2 py-1 rounded-xl bg-white/[0.04] border border-[var(--border)] font-mono text-[var(--text-secondary)] text-xs">
+          <div key={key} className="flex items-center justify-between text-xs">
+            <kbd className="px-1.5 py-0.5 rounded-lg bg-white/[0.04] border border-[var(--border)] font-mono text-[var(--text-secondary)] text-[10px]">
               {key}
             </kbd>
             <span className="text-[var(--text-tertiary)]">{action}</span>

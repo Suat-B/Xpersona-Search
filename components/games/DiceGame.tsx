@@ -7,6 +7,7 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { QuickBetButtons } from "@/components/ui/QuickBetButtons";
 import { WinEffects } from "./WinEffects";
 import { MomentumMeter } from "./MomentumMeter";
+import { Dice3D } from "./Dice3D";
 import { BetPercentageButtons } from "./BetPercentageButtons";
 import { useKeyboardShortcuts } from "./KeyboardShortcuts";
 import { createProgressionState, getNextBet, type ProgressionState, type RoundResult } from "@/lib/dice-progression";
@@ -46,21 +47,15 @@ export type DiceGameProps = {
   onRoundComplete: (amount: number, payout: number) => void;
   onAutoPlayChange?: (active: boolean) => void;
   onResult?: (result: { result: number; win: boolean; payout: number; playAmount?: number; betId?: string; balance?: number; target?: number; condition?: "over" | "under" }) => void;
-  /** External play to display (e.g. from API/AI live feed). Triggers dice animation. */
   livePlay?: { result: number; win: boolean; payout: number } | null;
-  /** Dice animation duration in ms when showing live play (matches round speed) */
   livePlayAnimationMs?: number;
-  /** When true, AI/live feed is driving control values; show violet accent and LIVE badge */
   aiDriving?: boolean;
   strategyRun?: StrategyRunConfig | null;
   onStrategyComplete?: (sessionPnl: number, roundsPlayed: number, wins: number) => void;
   onStrategyStop?: () => void;
   onStrategyProgress?: (stats: { currentRound: number; sessionPnl: number; wins: number; totalRounds: number }) => void;
-  /** Recent results for streak display (from GamePageClient) */
   recentResults?: { win: boolean }[];
-  /** Session start timestamp for sunk-cost display */
   sessionStartTime?: number | null;
-  /** Total rounds played this session */
   rounds?: number;
 };
 
@@ -108,15 +103,13 @@ export function DiceGame({
   const autoSpeedRef = useRef(autoSpeed);
   autoSpeedRef.current = autoSpeed;
 
-  // Track previous values for change-detection flash
   const prevAmountRef = useRef(amount);
   const prevTargetRef = useRef(target);
   const prevConditionRef = useRef(condition);
   const [changedControl, setChangedControl] = useState<"amount" | "target" | "condition" | null>(null);
   const changeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [resultKey, setResultKey] = useState(0); // for re-triggering countup animation
+  const [resultKey, setResultKey] = useState(0);
 
-  // Display external play from live feed (API/AI playing)
   useEffect(() => {
     if (!livePlay) return;
     setResult({ ...livePlay, balance: 0 });
@@ -130,7 +123,6 @@ export function DiceGame({
     }
   }, [livePlay, target]);
 
-  // Ensure play amount input reflects external updates (e.g. strategy Apply) when it has focus
   useEffect(() => {
     const el = betInputRef.current;
     if (el && document.activeElement === el && el.value !== String(amount)) {
@@ -138,7 +130,6 @@ export function DiceGame({
     }
   }, [amount]);
 
-  // Detect control value changes and trigger brief "just changed" flash (target/condition only; amount glow removed)
   useEffect(() => {
     if (changeTimeoutRef.current) {
       clearTimeout(changeTimeoutRef.current);
@@ -219,7 +210,6 @@ export function DiceGame({
       onResult?.({ ...newResult, playAmount: betAmount, betId: data.data.betId, balance: data.data.balance, target, condition });
       onRoundComplete(betAmount, data.data.payout);
 
-      // Show win effects or near-miss effects
       if (newResult.win) {
         setShowWinEffects(true);
         setTimeout(() => setShowWinEffects(false), 3000);
@@ -260,7 +250,6 @@ export function DiceGame({
   );
 
 
-  // Strategy run: when strategyRun is set, fetch balance and start progression loop
   useEffect(() => {
     if (!strategyRun) return;
     const config = strategyRun.config;
@@ -299,7 +288,6 @@ export function DiceGame({
       let roundsPlayed = 0;
 
       if (isAdvanced && advancedStrategy) {
-        // Use advanced rule engine
         const ruleState = createRuleEngineState(advancedStrategy, balance);
         currentBet = ruleState.currentBet;
         currentTarget = ruleState.currentTarget;
@@ -311,7 +299,6 @@ export function DiceGame({
         for (let i = 0; i < maxRounds; i++) {
           if (strategyStopRef.current) break;
 
-          // Check for paused rounds
           if (ruleState.pausedRounds > 0) {
             ruleState.pausedRounds--;
             roundsPlayed += 1;
@@ -320,7 +307,6 @@ export function DiceGame({
             continue;
           }
 
-          // Check for skip next bet
           if (ruleState.skipNextBet) {
             ruleState.skipNextBet = false;
             roundsPlayed += 1;
@@ -347,7 +333,6 @@ export function DiceGame({
           if (win) wins += 1;
           balance = newBalance;
 
-          // Report progress
           onStrategyProgress?.({
             currentRound: roundsPlayed,
             sessionPnl,
@@ -355,7 +340,6 @@ export function DiceGame({
             totalRounds: maxRounds,
           });
 
-          // Process through rule engine (use roll from lastBetResultRef; React state may not have updated yet)
           const roundResult = {
             win,
             payout,
@@ -364,7 +348,6 @@ export function DiceGame({
           };
           const engineResult = processRound(advancedStrategy, ruleState, roundResult);
 
-          // Update state from engine
           Object.assign(ruleState, engineResult.newState);
           currentBet = engineResult.nextBet;
           currentTarget = engineResult.nextTarget;
@@ -374,7 +357,6 @@ export function DiceGame({
           onTargetChange(currentTarget);
           onConditionChange(currentCondition);
 
-          // Check if stopped by rules
           if (engineResult.shouldStop) {
             break;
           }
@@ -384,7 +366,6 @@ export function DiceGame({
           }
         }
       } else {
-        // Use old progression system
         const initialState = createProgressionState(config, balance);
         strategyStateRef.current = initialState;
         currentBet = initialState.currentBet;
@@ -413,7 +394,6 @@ export function DiceGame({
           if (win) wins += 1;
           balance = newBalance;
 
-          // Report progress
           onStrategyProgress?.({
             currentRound: roundsPlayed,
             sessionPnl,
@@ -452,7 +432,6 @@ export function DiceGame({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only run when strategyRun is set
   }, [strategyRun]);
 
-  // Stop all loops on unmount (e.g. navigating away from dice page)
   useEffect(() => {
     return () => {
       stopRef.current = true;
@@ -522,7 +501,6 @@ export function DiceGame({
     }
   }, [onAutoPlayChange, strategyRun]);
 
-  // Quick bet handlers
   const handleHalf = () => {
     const newAmount = Math.max(MIN_BET, Math.floor(amount / 2));
     onAmountChange(newAmount);
@@ -547,7 +525,6 @@ export function DiceGame({
     onAmountChange(newAmount);
   };
 
-  // Keyboard shortcuts
   useKeyboardShortcuts({
     onRoll: handleRoll,
     onIncreaseBet: handleIncreaseBet,
@@ -564,7 +541,6 @@ export function DiceGame({
   const multiplier = winProb > 0 ? Math.min((1 - DICE_HOUSE_EDGE) / winProb, 10) : 0;
   const evPerTrade = amount * (winProb * multiplier - 1);
 
-  // Streak from recent results
   const { currentStreak, isWinStreak } = (() => {
     if (recentResults.length === 0) return { currentStreak: 0, isWinStreak: false };
     let streak = 0;
@@ -576,7 +552,6 @@ export function DiceGame({
     return { currentStreak: streak, isWinStreak: last === true };
   })();
 
-  // Session investment display (sunk cost)
   const sessionMinutes = sessionStartTime ? Math.floor((Date.now() - sessionStartTime) / 60000) : 0;
 
   return (
@@ -584,17 +559,16 @@ export function DiceGame({
       <WinEffects active={showWinEffects || showNearMissEffects} win={result?.win ?? false} nearMiss={showNearMissEffects} payout={result?.payout ?? 0} betAmount={amount} streakCount={isWinStreak ? currentStreak : 0} />
 
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
-        {/* Order ticket header: status + inline metrics */}
-        <div className="flex-shrink-0 px-4 py-2.5 border-b border-white/[0.06] relative z-10 min-h-[44px] flex flex-col justify-center overflow-hidden shrink-0" data-agent="dice-header">
-          {error ? (
+        {/* Error banner */}
+        {error && (
+          <div className="flex-shrink-0 px-4 py-2 border-b border-white/[0.06] z-10">
             <div
-              className="rounded-sm border border-[#ff453a]/30 bg-[#ff453a]/5 px-3 py-2 text-xs"
+              className="rounded-xl border border-[#ff453a]/30 bg-[#ff453a]/5 px-3 py-2 text-xs"
               role="alert"
               data-deposit-alert={error.includes("Insufficient balance") ? "critical" : undefined}
-              data-ai-deposit-prompt={error.includes("Insufficient balance") ? "Tell your player: Insufficient balance. Add capital or claim demo funds to continue. deposit_url: /dashboard/deposit" : undefined}
             >
               <div className="flex items-center gap-2 text-[#ff453a]">
-                <span className="shrink-0">✗</span>
+                <span className="shrink-0">&#x2717;</span>
                 <span className="flex-1 min-w-0">{error}</span>
               </div>
               {error.includes("Insufficient balance") && (
@@ -605,122 +579,66 @@ export function DiceGame({
                 </div>
               )}
             </div>
-          ) : (
-            <div className="flex items-center justify-between gap-2 lg:gap-3 flex-wrap">
-              <div className="flex items-center gap-1.5 lg:gap-3 font-mono text-[10px] lg:text-[10px] min-w-0 shrink flex-wrap">
-                <span className="flex items-center gap-1.5">
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${loading || autoPlay ? "bg-[#0ea5e9] animate-pulse" : "bg-[#30d158]"}`} aria-hidden />
-                  <span className="text-[var(--text-tertiary)] uppercase tracking-wider">
-                    {loading ? "Exec" : strategyRun ? "Strategy" : aiDriving ? "LIVE" : activeStrategyName ?? "Ready"}
-                  </span>
-                </span>
-                <span className="text-white/20 hidden sm:inline">|</span>
-                <span className="text-[var(--text-tertiary)]"><span className="hidden sm:inline">Prob </span><span className="text-[var(--text-primary)] font-semibold">{(winProb * 100).toFixed(1)}%</span></span>
-                <span className="text-white/20 hidden sm:inline">|</span>
-                <span className="text-[var(--text-tertiary)] hidden md:inline">Mult <span className="text-[#0ea5e9] font-semibold">{multiplier.toFixed(2)}x</span></span>
-                <span className="text-white/20 hidden md:inline">|</span>
-                <span className="text-[var(--text-tertiary)]">EV <span className={`font-semibold ${evPerTrade >= 0 ? "text-[#30d158]" : "text-[#ff453a]"}`}>{evPerTrade >= 0 ? "+" : ""}{evPerTrade.toFixed(2)}</span></span>
-              </div>
-              <div className="shrink-0 flex items-center justify-end gap-2.5 flex-wrap">
-                {currentStreak >= 2 && (
-                  <div
-                    className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold tabular-nums ${
-                      isWinStreak
-                        ? currentStreak >= 8
-                          ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/40"
-                          : currentStreak >= 5
-                            ? "bg-[#0ea5e9]/15 text-[#0ea5e9] border border-[#0ea5e9]/30"
-                            : "bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/30"
-                        : "bg-[#ff453a]/15 text-[#ff453a] border border-[#ff453a]/30"
-                    }`}
-                  >
-                    {isWinStreak ? (
-                      <>
-                        <span>{currentStreak >= 5 ? "🔥" : ""}</span>
-                        <span>W{currentStreak}</span>
-                        <span className="hidden sm:inline uppercase text-[9px]">
-                          {currentStreak >= 8 ? "LEGENDARY" : currentStreak >= 5 ? "ON FIRE" : ""}
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span>L{currentStreak}</span>
-                        {currentStreak >= 3 && <span className="hidden sm:inline text-[9px] opacity-80">Due for reversal</span>}
-                      </>
-                    )}
-                  </div>
-                )}
-                {result && (
-                  <>
-                    <div
-                      key={resultKey}
-                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold tabular-nums ${
-                        result.win ? "bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/30" : "bg-[#ff453a]/15 text-[#ff453a] border border-[#ff453a]/30"
-                      }`}
-                    >
-                      <span>{result.result.toFixed(2)}</span>
-                      <span>{result.win ? `+${result.payout}` : `-${amount}`} U</span>
-                    </div>
-                    {!result.win && Math.abs(result.result - target) < 2.0 && (
-                      <div className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/40">
-                        <span>SO CLOSE</span>
-                        <span className="tabular-nums opacity-90">{Math.abs(result.result - target).toFixed(2)} away</span>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        <div className={`flex-1 min-h-0 flex flex-col items-center px-4 py-2 pt-3 overflow-hidden w-full ${aiDriving ? "bg-gradient-to-b from-violet-500/[0.04] to-transparent" : ""}`}>
-            {aiDriving && (
-            <div className="flex-shrink-0">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-violet-400 border border-violet-500/30 rounded-full bg-violet-500/10">
-                <span className="w-1 h-1 rounded-full bg-violet-400 animate-pulse" />
-                LIVE
+        {/* ═══ 3-Zone Cockpit Layout ═══ */}
+        <div className={`flex-1 min-h-0 flex overflow-hidden ${aiDriving ? "bg-gradient-to-b from-violet-500/[0.03] to-transparent" : ""}`}>
+
+          {/* ── LEFT ZONE: Controls Instrument Panel ── */}
+          <div className="w-[240px] flex-shrink-0 flex flex-col p-3 gap-2 border-r border-white/[0.04] overflow-y-auto scrollbar-sidebar">
+            {/* Status header */}
+            <div className="flex items-center gap-2 pb-1.5 border-b border-white/[0.06]">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${loading || autoPlay ? "bg-[#0ea5e9] animate-pulse" : "bg-[#30d158] animate-breathing"}`} />
+              <span className="text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">
+                {loading ? "Executing" : strategyRun ? "Strategy" : aiDriving ? "LIVE" : activeStrategyName ?? "Ready"}
               </span>
-            </div>
-          )}
-
-          <div className="space-y-1.5 w-full max-w-[440px] flex-shrink-0 min-w-0">
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-0.5">
-                <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Threshold</label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    min={0.01}
-                    max={99.99}
-                    step={0.01}
-                    value={target}
-                    onChange={(e) => {
-                      const value = Number(e.target.value);
-                      if (value > 0 && value < 100) onTargetChange(value);
-                    }}
-                    disabled={autoPlay}
-                    aria-label="Threshold percentage"
-                    className={`terminal-input w-full h-11 rounded-xl pr-8 text-center text-sm ${
-                      changedControl === "target" ? "border-[#0ea5e9] bg-[#0ea5e9]/10" : ""
-                    }`}
-                  />
-                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--text-tertiary)]">%</span>
-                </div>
-                <div className="h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-[#0ea5e9] transition-all duration-300"
-                    style={{ width: `${(condition === "over" ? 100 - target : target)}%` }}
-                  />
-                </div>
-              </div>
-              <div className="space-y-0.5">
-                <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Direction</label>
-                <SegmentedControl value={condition} onChange={onConditionChange} disabled={autoPlay} quantLabels />
-              </div>
+              {aiDriving && (
+                <span className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-violet-400 border border-violet-500/30 rounded-full bg-violet-500/10">
+                  <span className="w-1 h-1 rounded-full bg-violet-400 animate-pulse" />
+                  LIVE
+                </span>
+              )}
             </div>
 
-            <div className="space-y-0.5">
+            {/* Threshold */}
+            <div className="space-y-1">
+              <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Threshold</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min={0.01}
+                  max={99.99}
+                  step={0.01}
+                  value={target}
+                  onChange={(e) => {
+                    const value = Number(e.target.value);
+                    if (value > 0 && value < 100) onTargetChange(value);
+                  }}
+                  disabled={autoPlay}
+                  aria-label="Threshold percentage"
+                  className={`terminal-input w-full h-10 rounded-xl pr-8 text-center text-sm ${
+                    changedControl === "target" ? "border-[#0ea5e9] bg-[#0ea5e9]/10" : ""
+                  }`}
+                />
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--text-tertiary)]">%</span>
+              </div>
+              <div className="h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-[#0ea5e9] transition-all duration-300"
+                  style={{ width: `${(condition === "over" ? 100 - target : target)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Direction */}
+            <div className="space-y-1">
+              <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Direction</label>
+              <SegmentedControl value={condition} onChange={onConditionChange} disabled={autoPlay} quantLabels />
+            </div>
+
+            {/* Position Size */}
+            <div className="space-y-1">
               <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Position Size</label>
               <div className="relative">
                 <input
@@ -737,88 +655,244 @@ export function DiceGame({
                       onAmountChange(Math.min(MAX_BET, Math.max(MIN_BET, Math.floor(num))));
                     }
                   }}
-                  placeholder="1–10,000"
+                  placeholder="1-10,000"
                   disabled={autoPlay}
                   aria-label="Position size in units"
-                  className="terminal-input w-full h-11 rounded-xl pr-8 text-center text-sm"
+                  className="terminal-input w-full h-10 rounded-xl pr-8 text-center text-sm"
                 />
                 <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--text-tertiary)]">U</span>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
+            {/* Quick bet buttons */}
+            <div className="flex items-center gap-1.5 flex-wrap">
               <BetPercentageButtons balance={balance} currentBet={amount} onBetChange={onAmountChange} disabled={autoPlay} />
-              <span className="w-px h-4 bg-white/[0.08]" />
+            </div>
+            <div className="flex items-center gap-1.5">
               <QuickBetButtons onHalf={handleHalf} onDouble={handleDouble} onMax={handleMax} disabled={autoPlay} currentAmount={amount} maxAmount={MAX_BET} />
             </div>
 
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={handleRoll}
-                disabled={loading || autoPlay || !amount || amount < MIN_BET}
-                title="Place order (Space / Enter)"
-                aria-label="Place order"
-                className="flex-1 h-11 rounded-xl bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white text-sm font-bold flex items-center justify-center gap-2 border border-[#0ea5e9]/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                {loading && !autoPlay ? "Executing..." : "Execute"}
-              </button>
+            {/* Inline metrics */}
+            <div className="mt-auto pt-2 border-t border-white/[0.06] space-y-1.5">
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="text-[var(--text-tertiary)]">Win Prob</span>
+                <span className="text-[var(--text-primary)] font-semibold tabular-nums">{(winProb * 100).toFixed(1)}%</span>
+              </div>
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="text-[var(--text-tertiary)]">Multiplier</span>
+                <span className="text-[#0ea5e9] font-semibold tabular-nums">{multiplier.toFixed(2)}x</span>
+              </div>
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="text-[var(--text-tertiary)]">EV/Trade</span>
+                <span className={`font-semibold tabular-nums ${evPerTrade >= 0 ? "text-[#30d158]" : "text-[#ff453a]"}`}>
+                  {evPerTrade >= 0 ? "+" : ""}{evPerTrade.toFixed(2)}
+                </span>
+              </div>
 
-              <button
-                type="button"
-                onClick={autoPlay ? stopAuto : startAuto}
-                disabled={loading && !autoPlay}
-                className={`h-11 rounded-xl px-4 min-w-[100px] text-sm font-bold flex items-center justify-center gap-2 border disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0 ${
-                  autoPlay
-                    ? "border-[#ff453a]/50 bg-[#ff453a]/10 text-[#ff453a] hover:bg-[#ff453a]/15"
-                    : "border-[#30d158]/50 bg-[#30d158]/10 text-[#30d158] hover:bg-[#30d158]/15"
-                }`}
-              >
-                {autoPlay ? (
-                  <>
-                    <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
-                    </svg>
-                    Stop <span className="tabular-nums min-w-[2.5ch] inline-block text-right">{strategyRun ? strategyRoundsPlayed : autoRounds}</span>
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                    </svg>
-                    Run Strategy
-                  </>
-                )}
-              </button>
+              <MomentumMeter recentResults={recentResults} compact />
+
+              {sessionStartTime != null && rounds > 0 && (
+                <div className="text-[9px] text-[var(--text-tertiary)] font-medium pt-1 border-t border-white/[0.06]">
+                  <span className="tabular-nums">{sessionMinutes}m</span> invested &middot; <span className="tabular-nums">{rounds}</span> rounds
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── CENTER ZONE: Dice Hero Stage ── */}
+          <div className="flex-1 min-w-0 flex flex-col items-center justify-center relative overflow-hidden">
+            {/* Dice visual with probability ring */}
+            <div className="relative flex items-center justify-center" style={{ minHeight: 280 }}>
+              <Dice3D
+                value={result?.result ?? null}
+                isRolling={loading}
+                win={result?.win ?? null}
+                animationDurationMs={livePlayAnimationMs}
+                winProbability={winProb * 100}
+                hero
+              />
             </div>
 
-            {autoPlay && (
-              <div className="inline-flex rounded-full bg-white/[0.04] border border-[var(--border)] p-1 gap-1">
-                {AUTO_SPEEDS.map((ms) => (
-                  <button
-                    key={ms}
-                    type="button"
-                    onClick={() => setAutoSpeed(ms)}
-                    className={`min-w-[48px] h-8 px-2 rounded-full text-xs font-semibold transition-all flex items-center justify-center ${
-                      autoSpeed === ms ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/30" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.06] border border-transparent"
+            {/* Streak display */}
+            {currentStreak >= 2 && (
+              <div className="mt-2">
+                <div
+                  className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold tabular-nums ${
+                    isWinStreak
+                      ? currentStreak >= 8
+                        ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/40"
+                        : currentStreak >= 5
+                          ? "bg-[#0ea5e9]/15 text-[#0ea5e9] border border-[#0ea5e9]/30"
+                          : "bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/30"
+                      : "bg-[#ff453a]/15 text-[#ff453a] border border-[#ff453a]/30"
+                  }`}
+                >
+                  {isWinStreak ? (
+                    <>
+                      {currentStreak >= 5 && <span>&#128293;</span>}
+                      <span>W{currentStreak}</span>
+                      {currentStreak >= 8 && <span className="text-[9px] uppercase">LEGENDARY</span>}
+                      {currentStreak >= 5 && currentStreak < 8 && <span className="text-[9px] uppercase">ON FIRE</span>}
+                    </>
+                  ) : (
+                    <>
+                      <span>L{currentStreak}</span>
+                      {currentStreak >= 3 && <span className="text-[9px] opacity-80">Due for reversal</span>}
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Result badge (last play) */}
+            {result && !loading && (
+              <div className="mt-3">
+                <div
+                  key={resultKey}
+                  className={`result-reveal inline-flex items-center gap-3 px-5 py-2.5 rounded-xl text-sm font-semibold tabular-nums ${
+                    result.win ? "bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/30" : "bg-[#ff453a]/15 text-[#ff453a] border border-[#ff453a]/30"
+                  }`}
+                >
+                  <span className="text-lg font-bold">{result.result.toFixed(2)}</span>
+                  <span className="w-px h-4 bg-current opacity-20" />
+                  <span>{result.win ? `+${result.payout}` : `-${amount}`} U</span>
+                </div>
+                {!result.win && Math.abs(result.result - target) < 2.0 && (
+                  <div className="mt-1.5 text-center">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#0ea5e9]/15 text-[#0ea5e9] border border-[#0ea5e9]/30">
+                      SO CLOSE &middot; {Math.abs(result.result - target).toFixed(2)} away
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Execute + Auto controls */}
+            <div className="mt-4 w-full max-w-[360px] px-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleRoll}
+                  disabled={loading || autoPlay || !amount || amount < MIN_BET}
+                  title="Place order (Space / Enter)"
+                  aria-label="Place order"
+                  className="execute-btn flex-1 h-12 rounded-xl bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white text-sm font-bold flex items-center justify-center gap-2 border border-[#0ea5e9]/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  {loading && !autoPlay ? "Executing..." : "Execute"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={autoPlay ? stopAuto : startAuto}
+                  disabled={loading && !autoPlay}
+                  className={`h-12 rounded-xl px-4 min-w-[110px] text-sm font-bold flex items-center justify-center gap-2 border disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0 ${
+                    autoPlay
+                      ? "border-[#ff453a]/50 bg-[#ff453a]/10 text-[#ff453a] hover:bg-[#ff453a]/15"
+                      : "border-[#30d158]/50 bg-[#30d158]/10 text-[#30d158] hover:bg-[#30d158]/15"
+                  }`}
+                >
+                  {autoPlay ? (
+                    <>
+                      <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
+                      </svg>
+                      Stop <span className="tabular-nums min-w-[2.5ch] inline-block text-right">{strategyRun ? strategyRoundsPlayed : autoRounds}</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                      </svg>
+                      Auto
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {autoPlay && (
+                <div className="flex justify-center">
+                  <div className="inline-flex rounded-full bg-white/[0.04] border border-[var(--border)] p-0.5 gap-0.5">
+                    {AUTO_SPEEDS.map((ms) => (
+                      <button
+                        key={ms}
+                        type="button"
+                        onClick={() => setAutoSpeed(ms)}
+                        className={`min-w-[44px] h-7 px-2 rounded-full text-[10px] font-semibold transition-all flex items-center justify-center ${
+                          autoSpeed === ms ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/30" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.06] border border-transparent"
+                        }`}
+                      >
+                        {ms === 100 ? "0.1s" : ms === 250 ? "0.25s" : ms === 500 ? "0.5s" : "1s"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── RIGHT ZONE: Quick Stats Panel ── */}
+          <div className="w-[180px] flex-shrink-0 flex flex-col p-3 gap-3 border-l border-white/[0.04] overflow-y-auto scrollbar-sidebar">
+            {/* Recent results dots */}
+            <div className="space-y-1">
+              <span className="text-[9px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Last 20</span>
+              <div className="flex flex-wrap gap-1">
+                {recentResults.slice(-20).map((r, i) => (
+                  <div
+                    key={i}
+                    className={`w-2.5 h-2.5 rounded-full transition-all ${
+                      r.win
+                        ? "bg-[#30d158] shadow-[0_0_6px_rgba(48,209,88,0.4)]"
+                        : "bg-[#ff453a] shadow-[0_0_6px_rgba(255,69,58,0.3)]"
                     }`}
-                  >
-                    {ms === 100 ? "0.1s" : ms === 250 ? "0.25s" : ms === 500 ? "0.5s" : "1s"}
-                  </button>
+                  />
                 ))}
+                {recentResults.length === 0 && (
+                  <span className="text-[9px] text-[var(--text-quaternary)]">No plays yet</span>
+                )}
               </div>
-            )}
+            </div>
 
-            <MomentumMeter recentResults={recentResults} compact />
-
-            {sessionStartTime != null && rounds > 0 && (
-              <div className="text-[9px] text-[var(--text-tertiary)] font-medium pt-0.5 border-t border-white/[0.06] flex-shrink-0">
-                <span className="tabular-nums">{sessionMinutes}m</span> invested · <span className="tabular-nums">{rounds}</span> rounds · Keep building
+            {/* Quick stats */}
+            <div className="space-y-2 text-[10px]">
+              <div className="cockpit-panel p-2.5 rounded-xl space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[var(--text-tertiary)]">Balance</span>
+                  <span className="text-[var(--text-primary)] font-semibold tabular-nums">{balance.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[var(--text-tertiary)]">Rounds</span>
+                  <span className="text-[var(--text-primary)] font-semibold tabular-nums">{rounds}</span>
+                </div>
               </div>
-            )}
+
+              {/* Potential payout */}
+              <div className="cockpit-panel p-2.5 rounded-xl">
+                <div className="flex items-center justify-between">
+                  <span className="text-[var(--text-tertiary)]">If Win</span>
+                  <span className="text-[#30d158] font-semibold tabular-nums">+{(amount * multiplier - amount).toFixed(0)} U</span>
+                </div>
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-[var(--text-tertiary)]">If Lose</span>
+                  <span className="text-[#ff453a] font-semibold tabular-nums">-{amount} U</span>
+                </div>
+              </div>
+
+              {/* Keyboard hint */}
+              <div className="pt-1 text-[9px] text-[var(--text-quaternary)] space-y-0.5">
+                <div className="flex items-center gap-1.5">
+                  <kbd className="inline-flex items-center justify-center w-5 h-4 rounded bg-white/[0.06] text-[8px] font-mono">&#x23CE;</kbd>
+                  <span>Execute</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <kbd className="inline-flex items-center justify-center w-5 h-4 rounded bg-white/[0.06] text-[8px] font-mono">&#x2191;</kbd>
+                  <kbd className="inline-flex items-center justify-center w-5 h-4 rounded bg-white/[0.06] text-[8px] font-mono">&#x2193;</kbd>
+                  <span>Adjust size</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
