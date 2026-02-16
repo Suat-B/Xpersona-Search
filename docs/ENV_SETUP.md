@@ -45,6 +45,6 @@ This opens the Google Cloud Console, prompts for Client ID and Secret, writes `.
 
 - **DATABASE_URL** – PostgreSQL connection string (for users, credits, games).
 - **GOOGLE_CLIENT_ID** / **GOOGLE_CLIENT_SECRET** – For Google sign-in (optional if you only use guest).
-- **STRIPE_SECRET_KEY** / **STRIPE_WEBHOOK_SECRET** – For credit packages (see [STRIPE_SETUP.md](./STRIPE_SETUP.md)).
+- **STRIPE_SECRET_KEY** / **STRIPE_WEBHOOK_SECRET** / **STRIPE_PRICE_*** – Run `npm run setup:stripe` for hands-off setup, or see [STRIPE_SETUP.md](./STRIPE_SETUP.md).
 
 After changing env, restart the dev server.

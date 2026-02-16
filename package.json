@@ -14,6 +14,7 @@
     "db:studio": "drizzle-kit studio",
     "setup": "docker compose up -d && npm run db:push",
     "setup:google": "node scripts/setup-google-auth.mjs",
+    "setup:stripe": "node scripts/setup-stripe.mjs",
     "seed": "tsx scripts/seed-packages.ts",
     "db:backfill-agent-ids": "tsx scripts/backfill-agent-ids.ts",
     "db:backfill-deposits": "tsx scripts/backfill-deposits.ts",

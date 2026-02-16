@@ -174,7 +174,13 @@ function DepositPageClient() {
         ) : (
           <GlassCard className="p-6">
             <p className="text-sm text-[var(--text-secondary)]">
-              No packages available. Add STRIPE_PRICE_500, STRIPE_PRICE_2000, STRIPE_PRICE_10000 to env, then run <code className="bg-white/10 px-1 rounded">npm run seed</code> (local) or <code className="bg-white/10 px-1 rounded">npm run db:seed-production</code> (prod). See docs/STRIPE_SETUP.md.
+              No packages available. Run the hands-off setup:
+            </p>
+            <code className="mt-2 block rounded bg-white/10 px-3 py-2 font-mono text-xs text-[var(--accent-heart)]">
+              npm run setup:stripe
+            </code>
+            <p className="mt-2 text-xs text-[var(--text-secondary)]/80">
+              Creates products in Stripe, prompts for keys, seeds DB. See docs/STRIPE_SETUP.md.
             </p>
           </GlassCard>
         )}

@@ -1,10 +1,27 @@
 # Step-by-step: Connecting Stripe to xpersona.co
 
-Follow these steps to accept credit package payments.
+## Hands-off setup: `npm run setup:stripe`
+
+Run once to enable payments and credit delivery:
+
+```bash
+npm run setup:stripe
+```
+
+This will:
+1. Open Stripe Dashboard (copy your Secret key)
+2. Create the 3 credit packages in Stripe via API
+3. Prompt for Webhook signing secret
+4. Write all env vars to `.env.local`
+5. Seed `credit_packages` in your DB
+
+**After running:** Start `stripe listen --forward-to <your-url>/api/stripe/webhook` in another terminal for local testing. Restart your dev server.
 
 ---
 
-## 1. Create or log into Stripe
+## Manual setup
+
+### 1. Create or log into Stripe
 
 1. Go to [https://dashboard.stripe.com](https://dashboard.stripe.com).
 2. Sign up or log in.
