@@ -9,7 +9,6 @@ import { useDiceSessionPnL } from "./useSessionPnL";
 import { SessionPnLChart } from "@/components/ui/SessionPnLChart";
 import { MonteCarloShadow } from "./MonteCarloShadow";
 import { QuantMetricsGrid } from "./QuantMetricsGrid";
-import { SessionAura } from "./SessionAura";
 import { QuantTopMetricsBar } from "./QuantTopMetricsBar";
 import { TradeLog } from "./TradeLog";
 import { HeartbeatIndicator } from "@/components/ui/HeartbeatIndicator";
@@ -21,6 +20,7 @@ import { KeyboardShortcutsHelp } from "./KeyboardShortcuts";
 import { StrategyRunningBanner } from "@/components/strategies/StrategyRunningBanner";
 import { LiveActivityFeed, type LiveActivityItem } from "./LiveActivityFeed";
 import { SessionNudges } from "./SessionNudges";
+import { SessionAura } from "./SessionAura";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
 import { fetchBalanceWithRetry, fetchSessionStatsWithRetry, safeFetchJson } from "@/lib/safeFetch";
 import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
@@ -32,7 +32,7 @@ import { DICE_HOUSE_EDGE } from "@/lib/constants";
 
 const MAX_RECENT_RESULTS = 50;
 
-type CenterTab = "chart" | "strategy" | "backtest";
+type CenterTab = "chart" | "strategy" | "backtest" | "metrics";
 type MobileTab = "play" | "chart" | "strategy" | "log";
 
 function BacktestTabContent({ strategy }: { strategy: AdvancedDiceStrategy | null }) {
@@ -644,18 +644,19 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const m = quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null };
 
   return (
-    <div className="h-screen w-full flex flex-col min-h-0 overflow-hidden animate-fade-in-up relative pt-4">
+    <div className="h-screen w-full flex flex-col min-h-0 overflow-hidden relative pt-4" style={{ contain: "layout" }}>
       {/* Top accent line — trading terminal feel */}
       <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[var(--accent-heart)] via-violet-500 to-[var(--accent-heart)] z-50 opacity-80" aria-hidden />
 
+      {/* Banners: fixed overlays — never affect layout, hub stays stable */}
       {depositSuccess && (
-        <div className="flex-shrink-0 flex items-center justify-center gap-2 py-2 px-4 bg-[#30d158]/15 border-b border-[#30d158]/30 text-[#30d158] text-sm">
+        <div className="fixed top-4 left-0 right-0 z-[60] flex items-center justify-center gap-2 py-2 px-4 bg-[#30d158]/15 border-b border-[#30d158]/30 text-[#30d158] text-sm backdrop-blur-sm">
           <span className="text-[#30d158]">✓</span> Payment successful. Capital added.
         </div>
       )}
 
       {hasApiKey === false && (
-        <Link href="/dashboard/connect-ai" className="flex-shrink-0 flex items-center justify-center gap-3 py-2.5 px-4 bg-[#0ea5e9]/10 border-b border-[#0ea5e9]/30 text-[#0ea5e9] hover:bg-[#0ea5e9]/15 transition-colors">
+        <Link href="/dashboard/connect-ai" className="fixed top-4 left-0 right-0 z-[60] flex items-center justify-center gap-3 py-2.5 px-4 bg-[#0ea5e9]/10 border-b border-[#0ea5e9]/30 text-[#0ea5e9] hover:bg-[#0ea5e9]/15 transition-colors backdrop-blur-sm">
           <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
           <span className="text-sm font-medium">Connect your AI — Your agent needs an API key</span>
           <span className="text-xs font-semibold">Connect now →</span>
@@ -663,7 +664,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       )}
 
       {aiBannerVisible && (
-        <div className="flex-shrink-0 flex items-center justify-center gap-2 py-2 px-4 bg-violet-500/10 border-b border-violet-500/30 text-violet-300 text-sm">
+        <div className="fixed top-4 left-0 right-0 z-[60] flex items-center justify-center gap-2 py-2 px-4 bg-violet-500/10 border-b border-violet-500/30 text-violet-300 text-sm backdrop-blur-sm">
           <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
           {liveQueueLength > 0 ? `AI executing — ${liveQueueLength} queued` : "AI executing"}
         </div>
@@ -683,7 +684,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       )}
 
       {strategyRun && (
-        <div className="flex-shrink-0">
+        <div className="fixed top-4 left-0 right-0 z-[60] backdrop-blur-sm">
           <StrategyRunningBanner
             strategyName={strategyRun.strategyName}
             status="running"
@@ -744,15 +745,15 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
 
       {/* Main content — 3-pane terminal layout */}
       <main className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(240px,28%)_1fr_minmax(220px,22%)] overflow-hidden">
-        {/* Left pane — Order ticket + Quant metrics */}
+        {/* Left pane — Order ticket (full length) */}
         <div className="hidden lg:flex flex-col min-w-0 min-h-0 overflow-hidden border-r border-white/[0.06]">
           <div className="terminal-pane flex-1 min-h-0 flex flex-col overflow-hidden m-1.5 mr-0">
             <div className="terminal-header flex-shrink-0">
               <div className="terminal-header-accent" />
               <span>Order Ticket</span>
             </div>
-            <div className="flex-1 min-h-0 overflow-hidden p-2 flex flex-col gap-2 relative">
-              <div className="flex-shrink-0 min-h-0" key={sessionNudgesKey}>
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+              <div className="flex-shrink-0 min-h-[64px] px-4 pt-4 pb-2" key={sessionNudgesKey}>
                 <SessionNudges
                   totalPnl={totalPnl}
                   rounds={rounds}
@@ -764,6 +765,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   hasPositiveEv={(m.expectedValuePerTrade ?? 0) > 0}
                 />
               </div>
+              <div className="flex-1 min-h-0 overflow-hidden p-3 pt-2">
               <ClientOnly
                 fallback={
                   <div className="flex h-full items-center justify-center text-sm text-[var(--text-secondary)]">
@@ -811,31 +813,8 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   rounds={rounds}
                 />
               </ClientOnly>
+              </div>
             </div>
-          </div>
-          <div className="terminal-pane m-1.5 mr-0 max-h-[150px] overflow-hidden flex-shrink-0">
-            <div className="terminal-header flex-shrink-0">
-              <div className="terminal-header-accent" />
-              <span>Metrics</span>
-            </div>
-            <div className="p-2 overflow-y-auto scrollbar-sidebar max-h-[110px]">
-              <QuantMetricsGrid
-                metrics={quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null }}
-                recentResults={recentResults}
-                compact
-              />
-            </div>
-          </div>
-          {/* Session Aura — living soul of the session */}
-          <div className="terminal-pane m-1.5 mr-0 flex-shrink-0">
-            <SessionAura
-              series={statsSeries}
-              quantMetrics={quantMetrics ?? m}
-              rounds={rounds}
-              wins={wins}
-              totalPnl={totalPnl}
-              recentResults={recentResults}
-            />
           </div>
         </div>
 
@@ -844,7 +823,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           <div className="terminal-pane flex-1 min-h-0 flex flex-col overflow-hidden m-1.5 mx-1">
             <div className="terminal-header flex-shrink-0 flex items-center justify-between">
               <div className="flex items-center gap-1">
-                {(["chart", "strategy", "backtest"] as const).map((tab) => (
+                {(["chart", "strategy", "backtest", "metrics"] as const).map((tab) => (
                   <button
                     key={tab}
                     type="button"
@@ -855,7 +834,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                         : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-white/[0.04] border border-transparent"
                     }`}
                   >
-                    {tab === "chart" ? "Chart" : tab === "strategy" ? "Strategy" : "Backtest"}
+                    {tab === "chart" ? "Chart" : tab === "strategy" ? "Strategy" : tab === "backtest" ? "Backtest" : "Metrics"}
                   </button>
                 ))}
               </div>
@@ -969,6 +948,25 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               )}
               {centerTab === "backtest" && (
                 <BacktestTabContent strategy={strategyForBacktest} />
+              )}
+              {centerTab === "metrics" && (
+                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 space-y-4 scrollbar-sidebar">
+                  <QuantMetricsGrid
+                    metrics={quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null }}
+                    recentResults={recentResults}
+                    compact={false}
+                  />
+                  <div className="pt-4 border-t border-white/[0.06]">
+                    <SessionAura
+                      series={statsSeries}
+                      quantMetrics={quantMetrics ?? m}
+                      rounds={rounds}
+                      wins={wins}
+                      totalPnl={totalPnl}
+                      recentResults={recentResults}
+                    />
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -1223,28 +1221,18 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                     />
                   </div>
                 </div>
-                <div className="terminal-pane">
+                <div className="terminal-pane flex-1 min-h-0 flex flex-col overflow-hidden">
                   <div className="terminal-header flex-shrink-0">
                     <div className="terminal-header-accent" />
                     <span>Metrics</span>
                   </div>
-                  <div className="p-3 overflow-y-auto scrollbar-sidebar max-h-[300px]">
+                  <div className="flex-1 min-h-0 p-3 overflow-y-auto scrollbar-sidebar">
                     <QuantMetricsGrid
                       metrics={quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null }}
                       recentResults={recentResults}
                       compact
                     />
                   </div>
-                </div>
-                <div className="terminal-pane">
-                  <SessionAura
-                    series={statsSeries}
-                    quantMetrics={quantMetrics ?? m}
-                    rounds={rounds}
-                    wins={wins}
-                    totalPnl={totalPnl}
-                    recentResults={recentResults}
-                  />
                 </div>
                 <div className="terminal-pane p-2">
                   <div className="terminal-header flex-shrink-0">

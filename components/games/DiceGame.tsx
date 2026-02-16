@@ -138,17 +138,14 @@ export function DiceGame({
     }
   }, [amount]);
 
-  // Detect control value changes and trigger brief "just changed" flash
+  // Detect control value changes and trigger brief "just changed" flash (target/condition only; amount glow removed)
   useEffect(() => {
     if (changeTimeoutRef.current) {
       clearTimeout(changeTimeoutRef.current);
       changeTimeoutRef.current = null;
     }
     let control: "amount" | "target" | "condition" | null = null;
-    if (amount !== prevAmountRef.current) {
-      prevAmountRef.current = amount;
-      control = "amount";
-    }
+    prevAmountRef.current = amount;
     if (target !== prevTargetRef.current) {
       prevTargetRef.current = target;
       control = "target";
@@ -588,7 +585,7 @@ export function DiceGame({
 
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
         {/* Order ticket header: status + inline metrics */}
-        <div className="flex-shrink-0 px-2 py-1.5 border-b border-white/[0.06] relative z-10 min-h-[40px] flex flex-col justify-center" data-agent="dice-header">
+        <div className="flex-shrink-0 px-4 py-2.5 border-b border-white/[0.06] relative z-10 min-h-[52px] flex flex-col justify-center overflow-hidden shrink-0" data-agent="dice-header">
           {error ? (
             <div
               className="rounded-sm border border-[#ff453a]/30 bg-[#ff453a]/5 px-3 py-2 text-xs"
@@ -624,15 +621,15 @@ export function DiceGame({
                 <span className="text-white/20 hidden md:inline">|</span>
                 <span className="text-[var(--text-tertiary)]">EV <span className={`font-semibold ${evPerTrade >= 0 ? "text-[#30d158]" : "text-[#ff453a]"}`}>{evPerTrade >= 0 ? "+" : ""}{evPerTrade.toFixed(2)}</span></span>
               </div>
-              <div className="shrink-0 flex items-center justify-end gap-2 flex-wrap">
+              <div className="shrink-0 flex items-center justify-end gap-2.5 flex-wrap">
                 {currentStreak >= 2 && (
                   <div
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-bold tabular-nums ${
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm text-[10px] font-bold tabular-nums ${
                       isWinStreak
                         ? currentStreak >= 8
-                          ? "bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-fire-glow"
+                          ? "bg-amber-500/20 text-amber-400 border border-amber-500/40"
                           : currentStreak >= 5
-                            ? "bg-orange-500/15 text-orange-400 border border-orange-500/30 animate-fire-glow"
+                            ? "bg-orange-500/15 text-orange-400 border border-orange-500/30"
                             : "bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/30"
                         : "bg-[#ff453a]/15 text-[#ff453a] border border-[#ff453a]/30"
                     }`}
@@ -657,7 +654,7 @@ export function DiceGame({
                   <>
                     <div
                       key={resultKey}
-                      className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-sm text-xs font-semibold tabular-nums animate-count-up ${
+                      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-xs font-semibold tabular-nums ${
                         result.win ? "bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/30" : "bg-[#ff453a]/15 text-[#ff453a] border border-[#ff453a]/30"
                       }`}
                     >
@@ -665,7 +662,7 @@ export function DiceGame({
                       <span>{result.win ? `+${result.payout}` : `-${amount}`} U</span>
                     </div>
                     {!result.win && Math.abs(result.result - target) < 2.0 && (
-                      <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-sm text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-pulse">
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/40">
                         <span>SO CLOSE</span>
                         <span className="tabular-nums opacity-90">{Math.abs(result.result - target).toFixed(2)} away</span>
                       </div>
@@ -677,7 +674,7 @@ export function DiceGame({
           )}
         </div>
 
-        <div className={`flex-1 min-h-0 flex flex-col px-2 py-2 space-y-2 overflow-y-auto overflow-x-hidden ${aiDriving ? "bg-gradient-to-b from-violet-500/[0.04] to-transparent" : ""}`}>
+        <div className={`flex-1 min-h-0 flex flex-col px-2 py-2 pt-8 overflow-y-auto overflow-x-hidden mt-4 ${aiDriving ? "bg-gradient-to-b from-violet-500/[0.04] to-transparent" : ""}`}>
           {aiDriving && (
             <div className="flex-shrink-0">
               <span className="inline-flex items-center gap-1.5 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-violet-400 border border-violet-500/30 rounded-sm bg-violet-500/10">
@@ -687,7 +684,7 @@ export function DiceGame({
             </div>
           )}
 
-          <div className="space-y-2 w-full max-w-full lg:max-w-sm">
+          <div className="space-y-2 w-full max-w-full lg:max-w-sm mx-auto">
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Threshold</label>
@@ -743,9 +740,7 @@ export function DiceGame({
                   placeholder="1–10,000"
                   disabled={autoPlay}
                   aria-label="Position size in units"
-                  className={`terminal-input w-full h-10 lg:h-8 rounded-sm pr-8 text-center text-xs ${
-                    changedControl === "amount" ? "border-[#0ea5e9] bg-[#0ea5e9]/10" : ""
-                  }`}
+                  className="terminal-input w-full h-10 lg:h-8 rounded-sm pr-8 text-center text-xs"
                 />
                 <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--text-tertiary)]">U</span>
               </div>
