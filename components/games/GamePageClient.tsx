@@ -670,7 +670,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
 
       {depositAlertFromAI && (
         <div
-          className="fixed inset-x-0 top-0 z-[110] px-4 py-2.5 bg-[#030303] border-b border-[var(--accent-heart)]/40 backdrop-blur-sm shadow-lg"
+          className="fixed inset-x-0 top-0 z-[110] px-4 py-2.5 bg-[#050506] border-b border-[var(--accent-heart)]/40 backdrop-blur-sm shadow-lg"
           data-deposit-alert="critical"
           role="alert"
         >

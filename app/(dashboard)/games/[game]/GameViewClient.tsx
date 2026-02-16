@@ -9,7 +9,7 @@ const QuantDiceGame = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="flex min-h-screen items-center justify-center bg-[#040404] text-[var(--quant-neutral)] font-mono">
+      <div className="flex min-h-screen items-center justify-center bg-[#010101] text-[var(--quant-neutral)] font-mono">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-[var(--quant-accent)] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-sm">Initializing QUANTUM Terminal...</p>
