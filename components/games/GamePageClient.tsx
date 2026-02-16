@@ -447,7 +447,11 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       )}
 
       {depositAlertFromAI && (
-        <div className="flex-shrink-0 px-4 py-2.5 bg-[var(--accent-heart)]/10 border-b border-[var(--accent-heart)]/30" data-deposit-alert="critical">
+        <div
+          className="fixed inset-x-0 top-0 z-[110] px-4 py-2.5 bg-[#0a0a0f]/98 border-b border-[var(--accent-heart)]/40 backdrop-blur-sm shadow-lg"
+          data-deposit-alert="critical"
+          role="alert"
+        >
           <span className="text-[var(--accent-heart)] font-semibold text-sm">⚠ Out of credits</span>
           <span className="text-[var(--text-secondary)] ml-2 text-sm">
             <Link href="/dashboard/deposit" className="text-[var(--accent-heart)] hover:underline">Deposit</Link> or claim Free Credits.

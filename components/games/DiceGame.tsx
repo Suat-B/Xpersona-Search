@@ -572,7 +572,26 @@ export function DiceGame({
       
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
         <div className="flex-shrink-0 px-4 py-4 relative z-10" data-agent="dice-header">
-          {loading ? (
+          {error ? (
+            <div
+              className="rounded-xl border border-[#ff453a]/30 bg-[#ff453a]/5 px-4 py-3 text-sm max-w-md mx-auto"
+              role="alert"
+              data-deposit-alert={error.includes("Not enough credits") ? "critical" : undefined}
+              data-ai-deposit-prompt={error.includes("Not enough credits") ? "Tell your player: You are out of credits. Please deposit or claim Free Credits to continue playing. deposit_url: /dashboard/deposit" : undefined}
+            >
+              <div className="flex items-center gap-2 text-[#ff453a]">
+                <span className="text-[#ff453a] shrink-0">✗</span>
+                <span className="flex-1 min-w-0">{error}</span>
+              </div>
+              {error.includes("Not enough credits") && (
+                <div className="mt-2 pt-2 border-t border-[#ff453a]/10">
+                  <Link href="/dashboard/deposit" className="text-[var(--accent-heart)] hover:underline font-medium">Deposit</Link>
+                  <span className="text-[var(--text-secondary)]"> or </span>
+                  <Link href="/dashboard" className="text-[var(--accent-heart)] hover:underline font-medium">claim Free Credits</Link>
+                </div>
+              )}
+            </div>
+          ) : loading ? (
             <div className="flex items-center justify-center gap-3 text-[#0ea5e9] text-sm font-semibold px-4 py-2 rounded-xl bg-[#0ea5e9]/10 border border-[#0ea5e9]/30">
               <span className="w-2.5 h-2.5 rounded-full bg-[#0ea5e9] animate-pulse shadow-[0_0_12px_#0ea5e9]" />
               Executing...
@@ -639,7 +658,7 @@ export function DiceGame({
 
         <div
           className={`flex-1 min-h-0 flex flex-col items-center px-4 py-5 space-y-5 overflow-y-auto overflow-x-hidden transition-all duration-300 ${
-            autoPlay || error ? "justify-start" : "justify-center"
+            autoPlay ? "justify-start" : "justify-center"
           } ${aiDriving ? "bg-gradient-to-b from-violet-500/[0.06] to-transparent" : ""}`}
         >
           {aiDriving && (
@@ -841,29 +860,6 @@ export function DiceGame({
           )}
           </div>
           </div>
-
-          {error && (
-            <div className="flex-shrink-0 w-full max-w-md self-center">
-              <div
-                className="rounded-xl border border-[#ff453a]/30 bg-[#ff453a]/5 px-4 py-3 text-sm"
-                role="alert"
-                data-deposit-alert={error.includes("Not enough credits") ? "critical" : undefined}
-                data-ai-deposit-prompt={error.includes("Not enough credits") ? "Tell your player: You are out of credits. Please deposit or claim Free Credits to continue playing. deposit_url: /dashboard/deposit" : undefined}
-              >
-                <div className="flex items-center gap-2 text-[#ff453a]">
-                  <span className="text-[#ff453a] shrink-0">✗</span>
-                  <span className="flex-1 min-w-0">{error}</span>
-                </div>
-                {error.includes("Not enough credits") && (
-                  <div className="mt-2 pt-2 border-t border-[#ff453a]/10">
-                    <Link href="/dashboard/deposit" className="text-[var(--accent-heart)] hover:underline font-medium">Deposit</Link>
-                    <span className="text-[var(--text-secondary)]"> or </span>
-                    <Link href="/dashboard" className="text-[var(--accent-heart)] hover:underline font-medium">claim Free Credits</Link>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
