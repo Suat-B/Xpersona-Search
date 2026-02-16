@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
 import { HeartbeatIndicator } from "@/components/ui/HeartbeatIndicator";
@@ -145,17 +146,19 @@ export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashb
         </button>
       </div>
 
-      {open && (
-        <>
-          <div
-            className="fixed inset-0 top-14 z-[70] bg-black/60 backdrop-blur-sm"
-            onClick={() => setOpen(false)}
-            aria-hidden
-          />
-          <nav
-            className="fixed top-14 left-0 right-0 bottom-0 z-[80] flex flex-col bg-[var(--dash-bg)] border-r border-[var(--dash-divider)] animate-in fade-in slide-in-from-top-2 duration-200"
-            aria-label="Navigation menu"
-          >
+      {open &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <>
+            <div
+              className="fixed inset-0 top-14 z-[9998] bg-black/60 backdrop-blur-sm"
+              onClick={() => setOpen(false)}
+              aria-hidden
+            />
+            <nav
+              className="fixed top-14 left-0 right-0 bottom-0 z-[9999] flex flex-col bg-[var(--dash-bg)] border-r border-[var(--dash-divider)] animate-in fade-in slide-in-from-top-2 duration-200"
+              aria-label="Navigation menu"
+            >
             <div className="flex-1 overflow-y-auto p-4 space-y-1 pb-20">
               <Link
                 href="/games/dice"
@@ -226,8 +229,9 @@ export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashb
               </p>
             </div>
           </nav>
-        </>
-      )}
+          </>,
+          document.body
+        )}
     </header>
   );
 }
