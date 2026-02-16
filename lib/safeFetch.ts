@@ -37,8 +37,12 @@ export async function fetchBalanceWithRetry(): Promise<number | null> {
   return data ? data.balance : null;
 }
 
+/** Status codes that warrant retry (auth race, transient server/network). */
+const RETRYABLE_STATUS = new Set([401, 500, 502, 503, 504]);
+
 /**
- * Fetch full balance data (balance, faucetCredits, withdrawable) with retry on 401.
+ * Fetch full balance data (balance, faucetCredits, withdrawable) with retry.
+ * Retries on 401 (auth race), 5xx (transient server errors).
  */
 export async function fetchBalanceDataWithRetry(): Promise<{
   balance: number;
@@ -49,15 +53,19 @@ export async function fetchBalanceDataWithRetry(): Promise<{
     if (i > 0) {
       await new Promise((r) => setTimeout(r, BALANCE_RETRY_DELAYS_MS[i]));
     }
-    const { ok, status, data } = await safeFetchJson<BalanceResponse>(BALANCE_API);
-    if (ok && data?.success && data?.data) {
-      return {
-        balance: data.data.balance ?? 0,
-        faucetCredits: data.data.faucetCredits ?? 0,
-        withdrawable: data.data.withdrawable ?? 0,
-      };
+    try {
+      const { ok, status, data } = await safeFetchJson<BalanceResponse>(BALANCE_API);
+      if (ok && data?.success && data?.data) {
+        return {
+          balance: data.data.balance ?? 0,
+          faucetCredits: data.data.faucetCredits ?? 0,
+          withdrawable: data.data.withdrawable ?? 0,
+        };
+      }
+      if (!RETRYABLE_STATUS.has(status)) break;
+    } catch {
+      // Network error — retry on next iteration
     }
-    if (status !== 401) break; // Only retry on 401 (auth not ready)
   }
   return null;
 }
@@ -91,11 +99,15 @@ export async function fetchSessionStatsWithRetry(params?: {
     if (i > 0) {
       await new Promise((r) => setTimeout(r, BALANCE_RETRY_DELAYS_MS[i]));
     }
-    const { ok, status, data } = await safeFetchJson<SessionStatsResponse>(url);
-    if (ok && data?.success && data?.data) {
-      return data.data;
+    try {
+      const { ok, status, data } = await safeFetchJson<SessionStatsResponse>(url);
+      if (ok && data?.success && data?.data) {
+        return data.data;
+      }
+      if (!RETRYABLE_STATUS.has(status)) break;
+    } catch {
+      // Network error — retry
     }
-    if (status !== 401) break;
   }
   return null;
 }

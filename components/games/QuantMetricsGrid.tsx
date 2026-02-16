@@ -77,7 +77,7 @@ export function QuantMetricsGrid({ metrics, recentResults, compact = false }: Qu
     large?: boolean
   ) => (
     <div
-      className={`flex justify-between items-center border-b border-white/[0.06] last:border-0 ${compact ? "py-1.5" : "py-2.5"}`}
+      className={`flex justify-between items-center border-b border-white/[0.06] last:border-0 ${compact ? "py-1" : "py-2.5"}`}
       {...(dataValue != null
         ? { "data-agent": `stat-${label.toLowerCase().replace(/\s/g, "-")}`, "data-value": String(dataValue) }
         : {})}

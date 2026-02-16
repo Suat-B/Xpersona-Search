@@ -78,6 +78,28 @@ export function useDiceSessionPnL() {
     });
   }, []);
 
+  /** Replace session with server values (for initial hydrate). Uses plays to build series. */
+  const replaceSession = useCallback(
+    (sessionPnl: number, roundsPlayed: number, winsCount: number, plays?: Array<{ payout: number; amount: number }>) => {
+      if (roundsPlayed <= 0) return;
+      setRounds(roundsPlayed);
+      setWins(winsCount);
+      setTotalPnl(sessionPnl);
+      if (plays && plays.length > 0) {
+        let cum = 0;
+        setSeries(
+          plays.map((p, i) => {
+            cum += Number(p.payout) - Number(p.amount);
+            return { round: i + 1, pnl: cum };
+          })
+        );
+      } else {
+        setSeries([{ round: 1, pnl: sessionPnl }]);
+      }
+    },
+    []
+  );
+
   const reset = useCallback(() => {
     setRounds(0);
     setTotalPnl(0);
@@ -171,5 +193,5 @@ export function useDiceSessionPnL() {
     };
   }, [series, rounds, wins, totalPnl]);
 
-  return { series, totalPnl, rounds, wins, addRound, addBulkSession, reset, quantMetrics };
+  return { series, totalPnl, rounds, wins, addRound, addBulkSession, replaceSession, reset, quantMetrics };
 }

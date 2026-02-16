@@ -101,7 +101,7 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
               disabled={loading}
               className="ml-auto flex-shrink-0 px-2 py-1 text-[10px] rounded-sm border border-[#0a84ff]/40 bg-[#0a84ff]/10 text-[#0a84ff] hover:bg-[#0a84ff]/20 disabled:opacity-50 transition-colors"
             >
-              {loading ? "…" : prefix ? "Regenerate" : "Generate"}
+              {loading ? "…" : "Generate"}
             </button>
           </div>
           {error === "auth" && (
@@ -117,7 +117,7 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
               <button type="button" onClick={closeModal} className="absolute top-4 right-4 p-2 rounded-lg text-[var(--text-tertiary)] hover:text-white hover:bg-white/10 transition-colors" aria-label="Close">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
-              <p className="text-sm font-semibold text-[var(--text-primary)] mb-2">Copy your API key — won&apos;t be shown again</p>
+              <p className="text-sm font-semibold text-[var(--text-primary)] mb-2">Give this API key to your OpenClaw AI &lt;3</p>
               <pre className="mb-4 overflow-x-auto rounded-xl bg-black/40 p-4 text-xs font-mono break-all border border-white/10">{modalKey}</pre>
               <div className="flex gap-3">
                 <button ref={copyButtonRef} type="button" onClick={copyAndClose} className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#0a84ff] px-4 py-3 text-sm font-medium text-white hover:bg-[#0a84ff]/90">
@@ -201,7 +201,7 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            Regenerate Key
+            Generate Key
           </span>
         ) : (
           <span className="flex items-center justify-center gap-2">
@@ -282,7 +282,7 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
                   </svg>
                 </div>
                 <div>
-                  <p id="secure-key-title" className="text-sm font-semibold text-[var(--text-primary)]">Secure your key</p>
+                  <p id="secure-key-title" className="text-sm font-semibold text-[var(--text-primary)]">Give this API key to your OpenClaw AI &lt;3</p>
                   <p className="text-xs text-[var(--text-tertiary)]">Copy now — won&apos;t be shown again</p>
                 </div>
               </div>

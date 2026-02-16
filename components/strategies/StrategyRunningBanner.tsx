@@ -44,7 +44,7 @@ export function StrategyRunningBanner({
           </span>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0 text-xs font-mono">
-          <span className="text-[var(--text-secondary)]">R{currentRound}</span>
+          <span className="text-[var(--text-secondary)] tabular-nums min-w-[3ch]">R{currentRound}</span>
           <span className={sessionPnl >= 0 ? "text-emerald-400" : "text-red-400"}>
             {sessionPnl >= 0 ? "+" : ""}{sessionPnl}
           </span>

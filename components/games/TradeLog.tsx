@@ -97,14 +97,14 @@ export function TradeLog({ entries, maxRows = 20, compact = true }: TradeLogProp
           <span className="text-[10px]">Execute a trade to begin</span>
         </div>
       ) : (
-        <div className="overflow-y-auto max-h-[200px] scrollbar-sidebar">
+        <div className="overflow-y-auto max-h-[160px] scrollbar-sidebar">
           {displayEntries.map((e, i) => {
             const p = pnl(e);
             const isNewest = i === 0;
             return (
               <div
                 key={`${e.roundNumber}-${i}`}
-                className={`flex items-center gap-1.5 px-1 py-[4px] rounded text-[10px] tabular-nums hover:bg-white/[0.04] transition-colors ${
+                className={`flex items-center gap-1 px-1 py-[3px] rounded text-[10px] tabular-nums hover:bg-white/[0.04] transition-colors ${
                   i % 2 === 1 ? "bg-white/[0.015]" : ""
                 } ${isNewest ? "animate-slide-in-from-bottom" : ""}`}
               >

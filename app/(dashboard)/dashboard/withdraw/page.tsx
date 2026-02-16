@@ -23,9 +23,9 @@ function WithdrawPageClient() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
 
-  const loadBalance = useCallback(async () => {
+  const loadBalance = useCallback(async (clearMessage = true): Promise<boolean> => {
     setLoading(true);
-    setMessage(null);
+    if (clearMessage) setMessage(null);
     try {
       const data = await fetchBalanceDataWithRetry();
       if (data) {
@@ -34,21 +34,42 @@ function WithdrawPageClient() {
           faucetCredits: data.faucetCredits,
           withdrawable: data.withdrawable,
         });
-      } else {
-        setMessage({ type: "error", text: "Failed to load balance." });
+        setMessage(null);
+        return true;
       }
+      setMessage({ type: "error", text: "Failed to load balance." });
+      return false;
     } catch {
       setMessage({ type: "error", text: "Failed to load balance." });
+      return false;
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadBalance();
+    let mounted = true;
+    let fallbackId: ReturnType<typeof setTimeout> | null = null;
+
+    const runInitialLoad = () => {
+      loadBalance().then((ok) => {
+        if (!mounted) return;
+        if (!ok) fallbackId = setTimeout(() => loadBalance(false), 2500);
+      });
+    };
+
+    // Give EnsureGuest / auth ~300ms to settle before first fetch (same as game page)
+    const timeoutId = setTimeout(runInitialLoad, 300);
+
     const handler = () => loadBalance();
     window.addEventListener("balance-updated", handler);
-    return () => window.removeEventListener("balance-updated", handler);
+
+    return () => {
+      mounted = false;
+      clearTimeout(timeoutId);
+      if (fallbackId) clearTimeout(fallbackId);
+      window.removeEventListener("balance-updated", handler);
+    };
   }, [loadBalance]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -208,7 +229,17 @@ function WithdrawPageClient() {
             </p>
           </div>
         ) : (
-          <p className="text-sm text-[var(--text-secondary)]">Unable to load balance.</p>
+          <div className="space-y-2">
+            <p className="text-sm text-[var(--text-secondary)]">Unable to load balance.</p>
+            <button
+              type="button"
+              onClick={() => loadBalance()}
+              disabled={loading}
+              className="text-sm font-medium text-[var(--accent-heart)] hover:underline disabled:opacity-50"
+            >
+              Retry
+            </button>
+          </div>
         )}
       </GlassCard>
 

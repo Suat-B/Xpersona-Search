@@ -164,13 +164,6 @@ interface SessionAuraProps {
   recentResults: RollResult[];
 }
 
-const PARTICLE_POSITIONS = [
-  { x: 15, y: 25, delay: 0 },
-  { x: 75, y: 40, delay: 0.5 },
-  { x: 40, y: 60, delay: 1 },
-  { x: 85, y: 70, delay: 1.5 },
-];
-
 export function SessionAura({
   series,
   quantMetrics,
@@ -224,21 +217,6 @@ export function SessionAura({
             }}
           />
         </div>
-
-        {/* Ambient particles */}
-        {PARTICLE_POSITIONS.map((pos, i) => (
-          <div
-            key={i}
-            className="absolute w-1 h-1 rounded-full opacity-60 particle-drift"
-            style={{
-              left: `${pos.x}%`,
-              top: `${pos.y}%`,
-              background: regime.glowColor,
-              animationDelay: `${pos.delay}s`,
-            }}
-            aria-hidden
-          />
-        ))}
 
         {/* Regime label */}
         <div
