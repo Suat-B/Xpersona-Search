@@ -664,6 +664,24 @@ body::before {
   animation: win-effects-border-pulse-lose 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+@keyframes win-effects-border-pulse-gold {
+  0% {
+    box-shadow: inset 0 0 0 4px rgba(251, 191, 36, 0.7), inset 0 0 60px rgba(251, 191, 36, 0.2);
+    opacity: 1;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    box-shadow: inset 0 0 0 4px rgba(251, 191, 36, 0), inset 0 0 60px rgba(251, 191, 36, 0);
+    opacity: 0;
+  }
+}
+
+.win-effects-border-gold {
+  animation: win-effects-border-pulse-gold 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 /* ═══════════ Quant Trading Terminal Styles ═══════════ */
 
 /* Terminal pane — opaque glass, top accent line */
@@ -815,5 +833,104 @@ select option {
   stroke-dasharray: 200;
   stroke-dashoffset: 200;
   animation: sparkline-draw 1s ease-out forwards;
+}
+
+/* ═══════════ Psychology Engagement Animations ═══════════ */
+
+@keyframes nearMissFlash {
+  0%, 100% {
+    box-shadow: inset 0 0 0 3px rgba(251, 191, 36, 0.6);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: inset 0 0 0 4px rgba(251, 191, 36, 0.9);
+    opacity: 1;
+  }
+}
+
+@keyframes fireGlow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(249, 115, 22, 0.4), 0 0 40px rgba(239, 68, 68, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(249, 115, 22, 0.7), 0 0 60px rgba(239, 68, 68, 0.4);
+  }
+}
+
+@keyframes milestoneSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  15% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  85% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+
+@keyframes momentumShimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes floatUp {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-48px) scale(1.1);
+  }
+}
+
+@keyframes screenShake {
+  0%, 100% { transform: translateX(0); }
+  10% { transform: translateX(-2px) translateY(0); }
+  20% { transform: translateX(2px) translateY(-1px); }
+  30% { transform: translateX(-2px) translateY(0); }
+  40% { transform: translateX(2px) translateY(1px); }
+  50% { transform: translateX(-1px) translateY(0); }
+  60% { transform: translateX(1px) translateY(0); }
+  70% { transform: translateX(-1px) translateY(0); }
+  80% { transform: translateX(1px) translateY(0); }
+  90% { transform: translateX(-1px) translateY(0); }
+}
+
+.animate-near-miss-flash {
+  animation: nearMissFlash 0.6s cubic-bezier(0.16, 1, 0.3, 1) 2 forwards;
+}
+
+.animate-fire-glow {
+  animation: fireGlow 0.8s ease-in-out infinite;
+}
+
+.animate-milestone-slide-in {
+  animation: milestoneSlideIn 3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-momentum-shimmer {
+  background-size: 200% 100%;
+  animation: momentumShimmer 2s linear infinite;
+}
+
+.animate-float-up {
+  animation: floatUp 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-screen-shake {
+  animation: screenShake 0.4s ease-in-out;
 }
 

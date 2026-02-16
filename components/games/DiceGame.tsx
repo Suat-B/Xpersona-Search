@@ -6,6 +6,7 @@ import { DICE_HOUSE_EDGE } from "@/lib/constants";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { QuickBetButtons } from "@/components/ui/QuickBetButtons";
 import { WinEffects } from "./WinEffects";
+import { MomentumMeter } from "./MomentumMeter";
 import { BetPercentageButtons } from "./BetPercentageButtons";
 import { useKeyboardShortcuts } from "./KeyboardShortcuts";
 import { createProgressionState, getNextBet, type ProgressionState, type RoundResult } from "@/lib/dice-progression";
@@ -55,6 +56,12 @@ export type DiceGameProps = {
   onStrategyComplete?: (sessionPnl: number, roundsPlayed: number, wins: number) => void;
   onStrategyStop?: () => void;
   onStrategyProgress?: (stats: { currentRound: number; sessionPnl: number; wins: number; totalRounds: number }) => void;
+  /** Recent results for streak display (from GamePageClient) */
+  recentResults?: { win: boolean }[];
+  /** Session start timestamp for sunk-cost display */
+  sessionStartTime?: number | null;
+  /** Total rounds played this session */
+  rounds?: number;
 };
 
 export function DiceGame({
@@ -77,6 +84,9 @@ export function DiceGame({
   livePlay,
   livePlayAnimationMs = 450,
   aiDriving = false,
+  recentResults = [],
+  sessionStartTime = null,
+  rounds = 0,
 }: DiceGameProps) {
   const [result, setResult] = useState<Result>(null);
   const [loading, setLoading] = useState(false);
@@ -86,6 +96,7 @@ export function DiceGame({
   const [autoRounds, setAutoRounds] = useState(0);
   const [strategyRoundsPlayed, setStrategyRoundsPlayed] = useState(0);
   const [showWinEffects, setShowWinEffects] = useState(false);
+  const [showNearMissEffects, setShowNearMissEffects] = useState(false);
   const stopRef = useRef(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const betInputRef = useRef<HTMLInputElement | null>(null);
@@ -113,8 +124,11 @@ export function DiceGame({
     if (livePlay.win) {
       setShowWinEffects(true);
       setTimeout(() => setShowWinEffects(false), 3000);
+    } else if (Math.abs(livePlay.result - target) < 2.0) {
+      setShowNearMissEffects(true);
+      setTimeout(() => setShowNearMissEffects(false), 800);
     }
-  }, [livePlay]);
+  }, [livePlay, target]);
 
   // Ensure play amount input reflects external updates (e.g. strategy Apply) when it has focus
   useEffect(() => {
@@ -208,10 +222,13 @@ export function DiceGame({
       onResult?.({ ...newResult, playAmount: betAmount, betId: data.data.betId, balance: data.data.balance, target, condition });
       onRoundComplete(betAmount, data.data.payout);
 
-      // Show win effects
+      // Show win effects or near-miss effects
       if (newResult.win) {
         setShowWinEffects(true);
         setTimeout(() => setShowWinEffects(false), 3000);
+      } else if (Math.abs(newResult.result - target) < 2.0) {
+        setShowNearMissEffects(true);
+        setTimeout(() => setShowNearMissEffects(false), 800);
       }
       
       setTimeout(() => window.dispatchEvent(new Event("balance-updated")), 0);
@@ -550,13 +567,28 @@ export function DiceGame({
   const multiplier = winProb > 0 ? Math.min((1 - DICE_HOUSE_EDGE) / winProb, 10) : 0;
   const evPerTrade = amount * (winProb * multiplier - 1);
 
+  // Streak from recent results
+  const { currentStreak, isWinStreak } = (() => {
+    if (recentResults.length === 0) return { currentStreak: 0, isWinStreak: false };
+    let streak = 0;
+    const last = recentResults[recentResults.length - 1]?.win ?? null;
+    for (let i = recentResults.length - 1; i >= 0; i--) {
+      if (recentResults[i]?.win === last) streak++;
+      else break;
+    }
+    return { currentStreak: streak, isWinStreak: last === true };
+  })();
+
+  // Session investment display (sunk cost)
+  const sessionMinutes = sessionStartTime ? Math.floor((Date.now() - sessionStartTime) / 60000) : 0;
+
   return (
     <div className="h-full flex flex-col min-h-0 relative" data-agent="dice-game" data-config={JSON.stringify(aiState)}>
-      <WinEffects active={showWinEffects} win={result?.win ?? false} payout={result?.payout ?? 0} betAmount={amount} />
+      <WinEffects active={showWinEffects || showNearMissEffects} win={result?.win ?? false} nearMiss={showNearMissEffects} payout={result?.payout ?? 0} betAmount={amount} streakCount={isWinStreak ? currentStreak : 0} />
 
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
         {/* Order ticket header: status + inline metrics */}
-        <div className="flex-shrink-0 px-3 py-2 border-b border-white/[0.06] relative z-10" data-agent="dice-header">
+        <div className="flex-shrink-0 px-2 py-1.5 border-b border-white/[0.06] relative z-10 min-h-[40px] flex flex-col justify-center" data-agent="dice-header">
           {error ? (
             <div
               className="rounded-sm border border-[#ff453a]/30 bg-[#ff453a]/5 px-3 py-2 text-xs"
@@ -577,8 +609,8 @@ export function DiceGame({
               )}
             </div>
           ) : (
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex items-center gap-3 font-mono text-[10px]">
+            <div className="flex items-center justify-between gap-3 flex-nowrap">
+              <div className="flex items-center gap-3 font-mono text-[10px] min-w-0 shrink">
                 <span className="flex items-center gap-1.5">
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${loading || autoPlay ? "bg-amber-400 animate-pulse" : "bg-[#30d158]"}`} aria-hidden />
                   <span className="text-[var(--text-tertiary)] uppercase tracking-wider">
@@ -592,22 +624,60 @@ export function DiceGame({
                 <span className="text-white/20">|</span>
                 <span className="text-[var(--text-tertiary)]">EV <span className={`font-semibold ${evPerTrade >= 0 ? "text-[#30d158]" : "text-[#ff453a]"}`}>{evPerTrade >= 0 ? "+" : ""}{evPerTrade.toFixed(2)}</span></span>
               </div>
-              {result && (
-                <div
-                  key={resultKey}
-                  className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-sm text-xs font-semibold tabular-nums animate-count-up ${
-                    result.win ? "bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/30" : "bg-[#ff453a]/15 text-[#ff453a] border border-[#ff453a]/30"
-                  }`}
-                >
-                  <span>{result.result.toFixed(2)}</span>
-                  <span>{result.win ? `+${result.payout}` : `-${amount}`} U</span>
-                </div>
-              )}
+              <div className="shrink-0 flex items-center justify-end gap-2 flex-wrap">
+                {currentStreak >= 2 && (
+                  <div
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-bold tabular-nums ${
+                      isWinStreak
+                        ? currentStreak >= 8
+                          ? "bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-fire-glow"
+                          : currentStreak >= 5
+                            ? "bg-orange-500/15 text-orange-400 border border-orange-500/30 animate-fire-glow"
+                            : "bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/30"
+                        : "bg-[#ff453a]/15 text-[#ff453a] border border-[#ff453a]/30"
+                    }`}
+                  >
+                    {isWinStreak ? (
+                      <>
+                        <span>{currentStreak >= 5 ? "🔥" : ""}</span>
+                        <span>W{currentStreak}</span>
+                        <span className="hidden sm:inline uppercase text-[9px]">
+                          {currentStreak >= 8 ? "LEGENDARY" : currentStreak >= 5 ? "ON FIRE" : ""}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span>L{currentStreak}</span>
+                        {currentStreak >= 3 && <span className="hidden sm:inline text-[9px] opacity-80">Due for reversal</span>}
+                      </>
+                    )}
+                  </div>
+                )}
+                {result && (
+                  <>
+                    <div
+                      key={resultKey}
+                      className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-sm text-xs font-semibold tabular-nums animate-count-up ${
+                        result.win ? "bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/30" : "bg-[#ff453a]/15 text-[#ff453a] border border-[#ff453a]/30"
+                      }`}
+                    >
+                      <span>{result.result.toFixed(2)}</span>
+                      <span>{result.win ? `+${result.payout}` : `-${amount}`} U</span>
+                    </div>
+                    {!result.win && Math.abs(result.result - target) < 2.0 && (
+                      <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-sm text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-pulse">
+                        <span>SO CLOSE</span>
+                        <span className="tabular-nums opacity-90">{Math.abs(result.result - target).toFixed(2)} away</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
 
-        <div className={`flex-1 min-h-0 flex flex-col px-3 py-3 space-y-3 overflow-y-auto overflow-x-hidden ${aiDriving ? "bg-gradient-to-b from-violet-500/[0.04] to-transparent" : ""}`}>
+        <div className={`flex-1 min-h-0 flex flex-col px-2 py-2 space-y-2 overflow-y-auto overflow-x-hidden ${aiDriving ? "bg-gradient-to-b from-violet-500/[0.04] to-transparent" : ""}`}>
           {aiDriving && (
             <div className="flex-shrink-0">
               <span className="inline-flex items-center gap-1.5 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-violet-400 border border-violet-500/30 rounded-sm bg-violet-500/10">
@@ -617,8 +687,8 @@ export function DiceGame({
             </div>
           )}
 
-          <div className="space-y-3 w-full max-w-sm">
-            <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2 w-full max-w-sm">
+            <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Threshold</label>
                 <div className="relative">
@@ -634,7 +704,7 @@ export function DiceGame({
                     }}
                     disabled={autoPlay}
                     aria-label="Threshold percentage"
-                    className={`terminal-input w-full h-9 rounded-sm pr-8 text-center text-sm ${
+                    className={`terminal-input w-full h-8 rounded-sm pr-8 text-center text-xs ${
                       changedControl === "target" ? "border-[#0ea5e9] bg-[#0ea5e9]/10" : ""
                     }`}
                   />
@@ -673,7 +743,7 @@ export function DiceGame({
                   placeholder="1–10,000"
                   disabled={autoPlay}
                   aria-label="Position size in units"
-                  className={`terminal-input w-full h-9 rounded-sm pr-8 text-center text-sm ${
+                  className={`terminal-input w-full h-8 rounded-sm pr-8 text-center text-xs ${
                     changedControl === "amount" ? "border-[#0ea5e9] bg-[#0ea5e9]/10" : ""
                   }`}
                 />
@@ -692,9 +762,9 @@ export function DiceGame({
                 type="button"
                 onClick={handleRoll}
                 disabled={loading || autoPlay || !amount || amount < MIN_BET}
-                title="Execute trade (Space / Enter)"
-                aria-label="Execute trade"
-                className="flex-1 h-9 rounded-sm bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white text-xs font-bold flex items-center justify-center gap-2 border border-[#0ea5e9]/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                title="Place order (Space / Enter)"
+                aria-label="Place order"
+                className="flex-1 h-8 rounded-sm bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white text-xs font-bold flex items-center justify-center gap-2 border border-[#0ea5e9]/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -706,7 +776,7 @@ export function DiceGame({
                 type="button"
                 onClick={autoPlay ? stopAuto : startAuto}
                 disabled={loading && !autoPlay}
-                className={`h-9 rounded-sm px-4 text-xs font-bold flex items-center justify-center gap-2 border disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0 ${
+                className={`h-8 rounded-sm px-3 min-w-[88px] text-xs font-bold flex items-center justify-center gap-2 border disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0 ${
                   autoPlay
                     ? "border-[#ff453a]/50 bg-[#ff453a]/10 text-[#ff453a] hover:bg-[#ff453a]/15"
                     : "border-[#30d158]/50 bg-[#30d158]/10 text-[#30d158] hover:bg-[#30d158]/15"
@@ -714,10 +784,10 @@ export function DiceGame({
               >
                 {autoPlay ? (
                   <>
-                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
                     </svg>
-                    Stop <span className="tabular-nums opacity-80">{strategyRun ? strategyRoundsPlayed : autoRounds}</span>
+                    Stop <span className="tabular-nums min-w-[2.5ch] inline-block text-right">{strategyRun ? strategyRoundsPlayed : autoRounds}</span>
                   </>
                 ) : (
                   <>
@@ -744,6 +814,14 @@ export function DiceGame({
                     {ms === 100 ? "0.1s" : ms === 250 ? "0.25s" : ms === 500 ? "0.5s" : "1s"}
                   </button>
                 ))}
+              </div>
+            )}
+
+            <MomentumMeter recentResults={recentResults} compact />
+
+            {sessionStartTime != null && rounds > 0 && (
+              <div className="text-[9px] text-[var(--text-tertiary)] font-medium pt-1 border-t border-white/[0.06]">
+                <span className="tabular-nums">{sessionMinutes}m</span> invested · <span className="tabular-nums">{rounds}</span> rounds · Keep building
               </div>
             )}
           </div>

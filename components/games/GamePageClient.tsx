@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -20,6 +20,7 @@ import { getAndClearStrategyRunPayload } from "@/lib/strategy-run-payload";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcuts";
 import { StrategyRunningBanner } from "@/components/strategies/StrategyRunningBanner";
 import { LiveActivityFeed, type LiveActivityItem } from "./LiveActivityFeed";
+import { SessionNudges } from "./SessionNudges";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
 import { fetchBalanceWithRetry, fetchSessionStatsWithRetry, safeFetchJson } from "@/lib/safeFetch";
 import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
@@ -225,8 +226,45 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const livePlayQueueRef = useRef<Array<{ result: number; win: boolean; payout: number; amount: number; target: number; condition: string; betId?: string; agentId?: string; receivedAt: number }>>([]);
   const liveQueueProcessingRef = useRef(false);
   const aiBannerCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionHighRef = useRef(0);
+  const prevPnlRef = useRef(0);
+  const sessionLowRef = useRef(0);
 
   const MIN_LIVE_PLAY_DISPLAY_MS = 50;
+
+  // Session nudges derived state
+  const { sessionHigh, isNewSessionHigh, justRecovered, lossStreak, newDrawdown } = useMemo(() => {
+    const prevHigh = sessionHighRef.current;
+    const isNewHigh = totalPnl > prevHigh && totalPnl > 0;
+    const newHigh = Math.max(prevHigh, totalPnl);
+
+    const wasNegative = prevPnlRef.current < 0;
+    const recovered = wasNegative && totalPnl > 0;
+
+    const prevLow = sessionLowRef.current;
+    const isNewLow = totalPnl < prevLow && totalPnl < 0;
+
+    let streak = 0;
+    for (let i = recentResults.length - 1; i >= 0; i--) {
+      if (!recentResults[i]?.win) streak++;
+      else break;
+    }
+
+    return {
+      sessionHigh: newHigh,
+      isNewSessionHigh: isNewHigh,
+      justRecovered: recovered,
+      lossStreak: streak,
+      newDrawdown: isNewLow,
+    };
+  }, [totalPnl, recentResults]);
+
+  // Keep refs in sync
+  useEffect(() => {
+    if (totalPnl > sessionHighRef.current) sessionHighRef.current = totalPnl;
+    if (totalPnl < sessionLowRef.current && totalPnl < 0) sessionLowRef.current = totalPnl;
+    prevPnlRef.current = totalPnl;
+  }, [totalPnl]);
 
   // Handle deposit=success from Stripe redirect
   useEffect(() => {
@@ -577,10 +615,15 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     return () => clearInterval(interval);
   }, [game, aiBannerVisible, liveQueueLength, rounds, replaceSession]);
 
+  const [sessionNudgesKey, setSessionNudgesKey] = useState(0);
   const handleReset = () => {
     reset();
     setRecentResults([]);
     setSessionStartTime(null);
+    setSessionNudgesKey((k) => k + 1);
+    sessionHighRef.current = 0;
+    sessionLowRef.current = 0;
+    prevPnlRef.current = 0;
   };
 
   useEffect(() => {
@@ -701,7 +744,19 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               <div className="terminal-header-accent" />
               <span>Order Ticket</span>
             </div>
-            <div className="flex-1 min-h-0 overflow-hidden p-2">
+            <div className="flex-1 min-h-0 overflow-hidden p-2 flex flex-col gap-2 relative">
+              <div className="flex-shrink-0 min-h-0" key={sessionNudgesKey}>
+                <SessionNudges
+                  totalPnl={totalPnl}
+                  rounds={rounds}
+                  sessionHigh={sessionHigh}
+                  isNewSessionHigh={isNewSessionHigh}
+                  justRecovered={justRecovered}
+                  lossStreak={lossStreak}
+                  newDrawdown={newDrawdown}
+                  hasPositiveEv={(m.expectedValuePerTrade ?? 0) > 0}
+                />
+              </div>
               <ClientOnly
                 fallback={
                   <div className="flex h-full items-center justify-center text-sm text-[var(--text-secondary)]">
@@ -744,6 +799,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   livePlay={livePlay}
                   livePlayAnimationMs={livePlayDisplayMs}
                   aiDriving={aiBannerVisible || !!livePlay}
+                  recentResults={recentResults.map((r) => ({ win: r.win }))}
+                  sessionStartTime={sessionStartTime}
+                  rounds={rounds}
                 />
               </ClientOnly>
             </div>
@@ -1022,6 +1080,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   livePlay={livePlay}
                   livePlayAnimationMs={livePlayDisplayMs}
                   aiDriving={aiBannerVisible || !!livePlay}
+                  recentResults={recentResults.map((r) => ({ win: r.win }))}
+                  sessionStartTime={sessionStartTime}
+                  rounds={rounds}
                 />
               </ClientOnly>
             </div>
