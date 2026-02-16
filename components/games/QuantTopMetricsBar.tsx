@@ -46,7 +46,7 @@ export function QuantTopMetricsBar({
   const kellyColor = formatKellyColor(kellyFraction);
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.08] bg-gradient-to-r from-[var(--bg-card)]/90 via-[var(--bg-card)]/70 to-[var(--bg-card)]/50 overflow-x-auto scrollbar-sidebar">
+    <div className="flex items-center gap-2 px-4 py-2 border-b border-white/[0.06] bg-gradient-to-r from-[#0a0a0f]/95 via-[#0d0d14]/80 to-[#0a0a0f]/95 backdrop-blur-sm overflow-x-auto scrollbar-sidebar">
       {/* NAV */}
       <div className="metric-badge shrink-0">
         <span className="text-[9px] text-[var(--text-tertiary)] uppercase tracking-wider">NAV</span>

@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import { EnsureGuest } from "@/components/auth/EnsureGuest";
 
-/** Games layout — renders within dashboard chrome with sidebar. */
+/** Full-viewport layout for games — entire screen (no scroll), immersive trading terminal. */
 export default async function GamesLayout({
   children,
 }: {
@@ -23,9 +23,10 @@ export default async function GamesLayout({
   const needsGuest = !hasSession && !hasGuest;
 
   return (
-    <>
+    <div className="fixed inset-0 z-[100] h-screen w-screen overflow-hidden flex flex-col bg-[var(--bg-deep)]">
+      <div className="absolute inset-0 dot-grid opacity-[0.03] pointer-events-none" aria-hidden />
       {needsGuest && <EnsureGuest needsGuest={true} />}
       {children}
-    </>
+    </div>
   );
 }

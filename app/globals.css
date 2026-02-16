@@ -274,6 +274,12 @@ body::before {
   animation: game-panel-focus 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
+/* Staggered entrance delays for terminal layout */
+.animate-delay-75 { animation-delay: 75ms; }
+.animate-delay-150 { animation-delay: 150ms; }
+.animate-delay-225 { animation-delay: 225ms; }
+.animate-delay-300 { animation-delay: 300ms; }
+
 /* Shimmer Effect */
 @keyframes shimmer {
   0% { transform: translateX(-100%); }

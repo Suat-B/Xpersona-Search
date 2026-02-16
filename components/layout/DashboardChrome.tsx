@@ -1,9 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { DashboardSidebarNav } from "@/components/layout/DashboardSidebarNav";
 import { MobileDashboardNav } from "@/components/layout/MobileDashboardNav";
 import { AIFirstBanner } from "@/components/ui/AIFirstBanner";
+
+function isGamesRoute(pathname: string | null): boolean {
+  return !!pathname?.startsWith("/games");
+}
 
 interface DashboardChromeProps {
   displayName: string;
@@ -12,13 +17,21 @@ interface DashboardChromeProps {
 }
 
 /**
- * Renders dashboard chrome (sidebar, mobile nav, banner) for all dashboard routes including games.
+ * Conditionally renders dashboard chrome. On /games/* routes we render only children
+ * for an immersive full-screen trading terminal experience.
  */
 export function DashboardChrome({
   displayName,
   isAdmin = false,
   children,
 }: DashboardChromeProps) {
+  const pathname = usePathname();
+  const onGamesRoute = isGamesRoute(pathname);
+
+  if (onGamesRoute) {
+    return <>{children}</>;
+  }
+
   return (
     <div className="flex min-h-screen w-full bg-black">
       <MobileDashboardNav displayName={displayName} isAdmin={isAdmin} />
