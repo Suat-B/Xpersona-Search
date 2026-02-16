@@ -421,7 +421,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const m = quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null };
 
   return (
-    <div className="h-screen w-full flex flex-col min-h-0 overflow-hidden animate-fade-in-up relative">
+    <div className="h-screen w-full flex flex-col min-h-0 overflow-hidden animate-fade-in-up relative pt-4">
       {/* Top accent line — trading terminal feel */}
       <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[var(--accent-heart)] via-violet-500 to-[var(--accent-heart)] z-50 opacity-80" aria-hidden />
 
