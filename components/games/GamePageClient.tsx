@@ -484,7 +484,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </Link>
           <span className="text-[10px] text-white/10 hidden sm:inline">│</span>
           <span className="text-[10px] font-bold tracking-[0.15em] text-[var(--text-secondary)] uppercase hidden md:inline">
-            Trading <span className="text-[#0ea5e9]/70">Terminal</span>
+            Game <span className="text-[#0ea5e9]/70">Terminal</span>
           </span>
         </div>
         <QuantTopMetricsBar
