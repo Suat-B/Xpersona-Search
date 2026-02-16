@@ -21,20 +21,57 @@ function DepositPageClient() {
   const [buyingId, setBuyingId] = useState<string | null>(null);
   const [buyError, setBuyError] = useState<string | null>(null);
 
-  const loadBalance = useCallback(async () => {
+  const loadBalance = useCallback(async (): Promise<boolean> => {
     setBalanceLoading(true);
     try {
       const bal = await fetchBalanceWithRetry();
-      if (bal !== null) setBalance(bal);
+      if (bal !== null) {
+        setBalance(bal);
+        return true;
+      }
+      return false;
     } catch {
-      // ignore
+      return false;
     } finally {
       setBalanceLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadBalance();
+    let mounted = true;
+    const timeouts: ReturnType<typeof setTimeout>[] = [];
+
+    const runInitialLoad = () => {
+      loadBalance().then((ok) => {
+        if (!mounted) return;
+        if (!ok) {
+          const id1 = setTimeout(() => {
+            if (!mounted) return;
+            loadBalance().then((ok2) => {
+              if (!mounted || ok2) return;
+              const id2 = setTimeout(() => {
+                if (!mounted) return;
+                loadBalance();
+              }, 3500);
+              timeouts.push(id2);
+            });
+          }, 2500);
+          timeouts.push(id1);
+        }
+      });
+    };
+
+    const timeoutId = setTimeout(runInitialLoad, 600);
+    timeouts.push(timeoutId);
+
+    const handler = () => loadBalance();
+    window.addEventListener("balance-updated", handler);
+
+    return () => {
+      mounted = false;
+      timeouts.forEach(clearTimeout);
+      window.removeEventListener("balance-updated", handler);
+    };
   }, [loadBalance]);
 
 
@@ -109,7 +146,26 @@ function DepositPageClient() {
             {balance.toLocaleString()} credits
           </p>
         ) : (
-          <p className="text-sm text-[var(--text-secondary)]">Unable to load balance.</p>
+          <div className="space-y-2">
+            <p className="text-sm text-[var(--text-secondary)]">Unable to load balance.</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => loadBalance()}
+                disabled={balanceLoading}
+                className="rounded-lg bg-[var(--accent-heart)]/20 px-3 py-1.5 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/30 disabled:opacity-50 transition-colors"
+              >
+                {balanceLoading ? "Retrying…" : "Retry"}
+              </button>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/5 transition-colors"
+              >
+                Refresh page
+              </button>
+            </div>
+          </div>
         )}
       </GlassCard>
 
