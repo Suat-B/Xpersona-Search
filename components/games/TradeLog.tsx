@@ -16,8 +16,8 @@ export interface TradeLogEntry {
 interface TradeLogProps {
   entries: TradeLogEntry[];
   maxRows?: number;
+  /** Compact mode for narrow sidebar */
   compact?: boolean;
-  fillHeight?: boolean;
 }
 
 function SourceDot({ source }: { source?: "manual" | "algo" | "api" }) {
@@ -31,17 +31,18 @@ function SourceDot({ source }: { source?: "manual" | "algo" | "api" }) {
   );
 }
 
-export function TradeLog({ entries, maxRows = 20, compact = true, fillHeight = false }: TradeLogProps) {
+export function TradeLog({ entries, maxRows = 20, compact = true }: TradeLogProps) {
   const displayEntries = entries.slice(-maxRows).reverse();
 
   const formatTime = (d?: Date) => {
-    if (!d) return "\u2014";
+    if (!d) return "—";
     return d.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" });
   };
 
   const pnl = (e: TradeLogEntry) => e.payout - e.amount;
 
   if (!compact) {
+    /* Full-width table for non-sidebar contexts */
     return (
       <div className="overflow-hidden min-h-0 flex-1 flex flex-col min-w-0 w-full" data-agent="trade-log">
         <div className="overflow-x-auto overflow-y-auto max-h-[300px] min-h-0 flex-1 scrollbar-sidebar min-w-0">
@@ -66,24 +67,10 @@ export function TradeLog({ entries, maxRows = 20, compact = true, fillHeight = f
                 displayEntries.map((e, i) => {
                   const p = pnl(e);
                   return (
-                    <tr
-                      key={`${e.roundNumber}-${i}`}
-                      className={`border-b border-white/[0.04] hover:bg-white/[0.04] transition-colors trade-log-entry ${i === 0 ? "animate-slide-in-from-bottom" : ""}`}
-                      style={{ animationDelay: i === 0 ? "0ms" : undefined }}
-                    >
-                      <td className="py-1.5 px-2 tabular-nums text-[var(--text-secondary)]">
-                        <div className="flex items-center gap-1.5">
-                          <div className={`w-0.5 h-4 rounded-full ${e.win ? "bg-[#30d158]" : "bg-[#ff453a]"}`} />
-                          {e.roundNumber}
-                        </div>
-                      </td>
+                    <tr key={`${e.roundNumber}-${i}`} className={`border-b border-white/[0.04] hover:bg-white/[0.03] ${i === 0 ? "animate-slide-in-from-bottom" : ""}`}>
+                      <td className="py-1.5 px-2 tabular-nums text-[var(--text-secondary)]">{e.roundNumber}</td>
                       <td className="py-1.5 px-2 tabular-nums text-[var(--text-tertiary)] hidden sm:table-cell">{formatTime(e.timestamp)}</td>
-                      <td className="py-1.5 px-2">
-                        <span className={e.condition === "over" ? "text-emerald-400" : "text-rose-400"}>
-                          {e.condition === "over" ? "L" : "S"}
-                        </span>
-                        {" "}{e.target}%
-                      </td>
+                      <td className="py-1.5 px-2">{e.condition === "over" ? "L" : "S"} {e.target}%</td>
                       <td className="py-1.5 px-2 text-right tabular-nums">{e.amount.toFixed(0)}</td>
                       <td className="py-1.5 px-2 text-right tabular-nums font-medium">{e.result.toFixed(2)}</td>
                       <td className={`py-1.5 px-2 text-right tabular-nums font-semibold ${p >= 0 ? "text-[#30d158]" : "text-[#ff453a]"}`}>{p >= 0 ? "+" : ""}{p.toFixed(2)}</td>
@@ -99,6 +86,7 @@ export function TradeLog({ entries, maxRows = 20, compact = true, fillHeight = f
     );
   }
 
+  /* ─── Compact sidebar layout: row-based, no table ─── */
   return (
     <div className="flex flex-col min-h-0 flex-1 min-w-0 w-full" data-agent="trade-log">
       {displayEntries.length === 0 ? (
@@ -109,16 +97,14 @@ export function TradeLog({ entries, maxRows = 20, compact = true, fillHeight = f
           <span className="text-sm">Execute a trade to begin</span>
         </div>
       ) : (
-        <div className={`overflow-y-auto scrollbar-sidebar ${fillHeight ? "flex-1 min-h-0" : "max-h-[200px]"}`}>
+        <div className="overflow-y-auto max-h-[200px] scrollbar-sidebar">
           {displayEntries.map((e, i) => {
             const p = pnl(e);
             const isNewest = i === 0;
             return (
               <div
                 key={`${e.roundNumber}-${i}`}
-                className={`trade-log-entry flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs tabular-nums hover:bg-white/[0.05] hover:backdrop-blur-sm transition-all border-l-2 ${
-                  e.win ? "border-l-[#30d158]/60" : "border-l-[#ff453a]/40"
-                } ${
+                className={`flex items-center gap-2 px-2 py-2 rounded-xl text-sm tabular-nums hover:bg-white/[0.04] transition-colors ${
                   i % 2 === 1 ? "bg-white/[0.015]" : ""
                 } ${isNewest ? "animate-slide-in-from-bottom" : ""}`}
               >
@@ -132,7 +118,7 @@ export function TradeLog({ entries, maxRows = 20, compact = true, fillHeight = f
                   {e.condition === "over" ? "L" : "S"}
                 </span>
                 <span className="text-[var(--text-secondary)] shrink-0 min-w-[24px] text-right">{e.amount.toFixed(0)}</span>
-                <span className="text-[var(--text-quaternary)] shrink-0">&rarr;</span>
+                <span className="text-[var(--text-quaternary)] shrink-0">→</span>
                 <span className="text-[var(--text-secondary)] font-medium shrink-0">{e.result.toFixed(1)}</span>
                 <span className={`ml-auto font-semibold shrink-0 ${p >= 0 ? "text-[#30d158]" : "text-[#ff453a]"}`}>
                   {p >= 0 ? "+" : ""}{p.toFixed(1)}

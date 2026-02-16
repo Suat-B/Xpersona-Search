@@ -32,7 +32,7 @@ import { DICE_HOUSE_EDGE } from "@/lib/constants";
 
 const MAX_RECENT_RESULTS = 50;
 
-type DockTab = "chart" | "strategy" | "backtest" | "metrics" | "log";
+type CenterTab = "chart" | "strategy" | "backtest" | "metrics";
 type MobileTab = "play" | "chart" | "strategy" | "log";
 
 function BacktestTabContent({ strategy }: { strategy: AdvancedDiceStrategy | null }) {
@@ -212,8 +212,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   } | null>(null);
   const [depositSuccess, setDepositSuccess] = useState(false);
   const [loadedStrategyForBuilder, setLoadedStrategyForBuilder] = useState<AdvancedDiceStrategy | null | undefined>(undefined);
-  const [dockTab, setDockTab] = useState<DockTab>("chart");
-  const [dockExpanded, setDockExpanded] = useState(true);
+  const [centerTab, setCenterTab] = useState<CenterTab>("chart");
   const [mobileTab, setMobileTab] = useState<MobileTab>("play");
   const [strategyForBacktest, setStrategyForBacktest] = useState<AdvancedDiceStrategy | null>(null);
   const [livePlay, setLivePlay] = useState<{ result: number; win: boolean; payout: number } | null>(null);
@@ -235,6 +234,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
 
   const MIN_LIVE_PLAY_DISPLAY_MS = 50;
 
+  // Session nudges derived state
   const { sessionHigh, isNewSessionHigh, justRecovered, lossStreak, newDrawdown } = useMemo(() => {
     const prevHigh = sessionHighRef.current;
     const isNewHigh = totalPnl > prevHigh && totalPnl > 0;
@@ -261,12 +261,14 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     };
   }, [totalPnl, recentResults]);
 
+  // Keep refs in sync
   useEffect(() => {
     if (totalPnl > sessionHighRef.current) sessionHighRef.current = totalPnl;
     if (totalPnl < sessionLowRef.current && totalPnl < 0) sessionLowRef.current = totalPnl;
     prevPnlRef.current = totalPnl;
   }, [totalPnl]);
 
+  // Handle deposit=success from Stripe redirect
   useEffect(() => {
     if (searchParams.get("deposit") === "success") {
       setDepositSuccess(true);
@@ -277,6 +279,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     }
   }, [searchParams, router]);
 
+  // Read strategy-run payload when ?run=1 or ?run=advanced, then redirect
   useEffect(() => {
     const runParam = searchParams.get("run");
     if (game !== "dice" || (runParam !== "1" && runParam !== "advanced")) return;
@@ -297,6 +300,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       });
     };
 
+    // Handle advanced strategy
     if (payload.isAdvanced && payload.strategy) {
       const advancedConfig: DiceStrategyConfig = {
         amount: payload.strategy.baseConfig.amount,
@@ -347,6 +351,8 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     }
   }, [game, searchParams, router]);
 
+  // Load balance on mount (retries on 401 to handle auth race with EnsureGuest)
+  // Brief delay gives EnsureGuest time to create guest session on first load
   useEffect(() => {
     let fallbackId: ReturnType<typeof setTimeout> | null = null;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -381,8 +387,10 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       });
     };
 
+    // Give EnsureGuest ~300ms to create guest session before first balance fetch
     timeoutId = setTimeout(runInitialLoad, 300);
 
+    // Safety: clear loading if still stuck after 12s (fetches can hang)
     const safetyTimeout = setTimeout(() => {
       if (mounted) setBalanceLoading(false);
     }, 12000);
@@ -404,6 +412,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     };
   }, []);
 
+  // Hydrate recent results from server so streak and P&L reflect full history
   useEffect(() => {
     if (game !== "dice" || recentResultsHydrated) return;
     let cancelled = false;
@@ -429,6 +438,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         }));
         setRecentResults(hydrated.slice(-MAX_RECENT_RESULTS));
         setRecentResultsHydrated(true);
+        // Seed session P&L so chart and header show correct values (includes AI plays before page load)
         if (chronological.length > 0) {
           const sessionPnl = chronological.reduce((sum, p) => sum + (Number(p.payout) - Number(p.amount)), 0);
           const winsCount = chronological.filter((p) => p.outcome === "win").length;
@@ -472,6 +482,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     if (result.betId) processedPlayIdsRef.current.add(result.betId);
   }, [amount, target, condition, addRound]);
 
+  // Process live play queue sequentially
   const processLivePlayQueue = useCallback(() => {
     if (liveQueueProcessingRef.current || livePlayQueueRef.current.length === 0) return;
     liveQueueProcessingRef.current = true;
@@ -505,10 +516,12 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     playNext();
   }, []);
 
+  // Cleanup banner cooldown on unmount
   useEffect(() => () => {
     if (aiBannerCooldownRef.current) clearTimeout(aiBannerCooldownRef.current);
   }, []);
 
+  // Subscribe to live feed for API/AI play activity
   useEffect(() => {
     if (game !== "dice") return;
     const url = typeof window !== "undefined" ? `${window.location.origin}/api/me/live-feed` : "";
@@ -583,6 +596,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     };
   }, [game, handleResult, processLivePlayQueue]);
 
+  // Poll session stats when AI is active to catch any dropped SSE events (real-time P&L)
   useEffect(() => {
     if (game !== "dice" || (!aiBannerVisible && liveQueueLength === 0)) return;
     const interval = setInterval(async () => {
@@ -625,30 +639,24 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
 
   const aiConnected = hasApiKey === true;
   const winRatePct = rounds > 0 ? (wins / rounds) * 100 : 0;
+  const pnlTrend: "up" | "down" | "neutral" = totalPnl > 0 ? "up" : totalPnl < 0 ? "down" : "neutral";
 
   const m = quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null };
 
-  /* Ambient background tint based on P&L */
-  const ambientTint = totalPnl > 50
-    ? "from-[#30d158]/[0.03] via-transparent to-transparent"
-    : totalPnl < -50
-      ? "from-[#ff453a]/[0.02] via-transparent to-transparent"
-      : "from-transparent via-transparent to-transparent";
-
   return (
-    <div className={`w-full flex-1 min-h-0 flex flex-col overflow-hidden relative bg-gradient-to-br ${ambientTint}`}>
-      {/* Banners */}
+    <div className="w-full min-h-screen relative space-y-5 sm:space-y-8 animate-fade-in-up pb-8">
+      {/* Banners: fixed overlays — never affect layout */}
       {depositSuccess && (
         <div className="fixed top-4 left-0 right-0 z-[60] flex items-center justify-center gap-2 py-2 px-4 bg-[#30d158]/15 border-b border-[#30d158]/30 text-[#30d158] text-sm backdrop-blur-sm">
-          <span className="text-[#30d158]">&#x2713;</span> Payment successful. Capital added.
+          <span className="text-[#30d158]">✓</span> Payment successful. Capital added.
         </div>
       )}
 
       {hasApiKey === false && (
         <Link href="/dashboard/connect-ai" className="fixed top-4 left-0 right-0 z-[60] flex items-center justify-center gap-3 py-2.5 px-4 bg-[#0ea5e9]/10 border-b border-[#0ea5e9]/30 text-[#0ea5e9] hover:bg-[#0ea5e9]/15 transition-colors backdrop-blur-sm">
           <span className="w-2 h-2 rounded-full bg-[#0ea5e9] animate-pulse shrink-0" />
-          <span className="text-sm font-medium">Connect your AI &mdash; Your agent needs an API key</span>
-          <span className="text-xs font-semibold">Connect now &rarr;</span>
+          <span className="text-sm font-medium">Connect your AI — Your agent needs an API key</span>
+          <span className="text-xs font-semibold">Connect now →</span>
         </Link>
       )}
 
@@ -665,7 +673,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           data-deposit-alert="critical"
           role="alert"
         >
-          <span className="text-[var(--accent-heart)] font-semibold text-sm">&#x26A0; Insufficient balance</span>
+          <span className="text-[var(--accent-heart)] font-semibold text-sm">⚠ Insufficient balance</span>
           <span className="text-[var(--text-secondary)] ml-2 text-sm">
             <Link href="/dashboard/deposit" className="text-[var(--accent-heart)] hover:underline">Add capital</Link> or claim demo funds.
           </span>
@@ -688,67 +696,82 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         </div>
       )}
 
-      {/* ═══ Compact Header ═══ */}
-      <header className="flex-shrink-0 flex items-center justify-between gap-4 py-2 px-3 border-b border-white/[0.06]">
-        <div className="flex items-center gap-3 min-w-0">
-          <Link href="/dashboard" className="flex items-center gap-1.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors shrink-0" aria-label="Back to Dashboard">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            <span className="text-xs font-medium uppercase tracking-wider">Dashboard</span>
-          </Link>
-          <span className="text-white/20 shrink-0">/</span>
-          <span className={`w-2 h-2 rounded-full shrink-0 ${strategyRun || autoPlayActive ? "bg-[#0ea5e9] animate-pulse" : "bg-[#30d158]"}`} aria-hidden />
-          <h1 className="text-lg font-semibold tracking-tight text-gradient-primary truncate">
-            Dice Terminal
-          </h1>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Link
-            href="/dashboard/connect-ai"
-            className={
-              aiConnected
-                ? "inline-flex items-center gap-1.5 rounded-full border border-[#30d158]/40 bg-[#30d158]/10 px-3 py-2 text-xs font-medium text-[#30d158] hover:bg-[#30d158]/20 transition-all"
-                : "inline-flex items-center gap-1.5 rounded-full border border-[#0ea5e9]/40 bg-[#0ea5e9]/10 px-3 py-2 text-xs font-medium text-[#0ea5e9] hover:bg-[#0ea5e9]/20 transition-all"
-            }
-          >
-            {aiConnected ? (
-              <>
-                <HeartbeatIndicator size="sm" />
-                <span>AI connected</span>
-              </>
-            ) : (
-              <>
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+      {/* Hero Header — dashboard style */}
+      <header className="relative">
+        <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Link href="/dashboard" className="flex items-center gap-1.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors" aria-label="Back to Dashboard">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
-                <span>Connect AI</span>
-              </>
-            )}
-          </Link>
-          <div className="flex items-center gap-1 rounded-full border border-[var(--border)] bg-white/[0.03] p-0.5">
-            <Link href="/dashboard/deposit" className="inline-flex items-center gap-1 rounded-full px-2 py-1.5 text-xs font-medium text-[var(--text-primary)] hover:bg-white/[0.06] transition-all">
-              <svg className="w-3.5 h-3.5 text-[#30d158]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              Deposit
+                <span className="text-xs font-medium uppercase tracking-wider">Dashboard</span>
+              </Link>
+              <span className="text-white/20">/</span>
+              <span className={`w-2 h-2 rounded-full shrink-0 ${strategyRun || autoPlayActive ? "bg-[#0ea5e9] animate-pulse" : "bg-[#30d158]"}`} aria-hidden />
+              <span className="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider">
+                {strategyRun || autoPlayActive ? "Playing" : "Ready"}
+              </span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight text-gradient-primary">
+              Game Terminal
+            </h1>
+            <p className="mt-2 text-[var(--text-secondary)] max-w-md">
+              Dice — roll over or under. Pure probability. Play yourself or let AI play for you.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/dashboard/connect-ai"
+              className={
+                aiConnected
+                  ? "inline-flex items-center gap-2 rounded-full border border-[#30d158]/40 bg-[#30d158]/10 px-5 py-3 text-sm font-medium text-[#30d158] hover:bg-[#30d158]/20 hover:border-[#30d158]/60 transition-all min-h-[44px]"
+                  : "inline-flex items-center gap-2 rounded-full border border-[#0ea5e9]/40 bg-[#0ea5e9]/10 px-5 py-3 text-sm font-medium text-[#0ea5e9] hover:bg-[#0ea5e9]/20 hover:border-[#0ea5e9]/60 transition-all min-h-[44px]"
+              }
+            >
+              {aiConnected ? (
+                <>
+                  <HeartbeatIndicator size="md" />
+                  <span>AI connected</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                  <span>Connect AI</span>
+                </>
+              )}
             </Link>
-            <div className="w-px h-3 bg-[var(--border)]" />
-            <Link href="/dashboard/withdraw" className="inline-flex items-center gap-1 rounded-full px-2 py-1.5 text-xs font-medium text-[var(--text-primary)] hover:bg-white/[0.06] transition-all">
-              <svg className="w-3.5 h-3.5 text-[#0ea5e9]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-              Withdraw
-            </Link>
+            <div className="flex items-center gap-2 rounded-full border border-[var(--border)] bg-white/[0.03] p-1 backdrop-blur-sm">
+              <Link
+                href="/dashboard/deposit"
+                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/[0.06] transition-all min-h-[44px] items-center"
+              >
+                <svg className="w-4 h-4 text-[#30d158]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Deposit
+              </Link>
+              <div className="w-px h-4 bg-[var(--border)]" />
+              <Link
+                href="/dashboard/withdraw"
+                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/[0.06] transition-all min-h-[44px] items-center"
+              >
+                <svg className="w-4 h-4 text-[#0ea5e9]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                Withdraw
+              </Link>
+            </div>
           </div>
         </div>
       </header>
 
-      {/* ═══ Metrics Ribbon ═══ */}
-      <section className="flex-shrink-0 px-2 py-1.5">
+      {/* Metrics row — dashboard-style agent cards */}
+      <section className="relative">
         <QuantTopMetricsBar
           cardLayout
-          cardLayoutCompact
           nav={balance}
           navLoading={balanceLoading}
           sessionPnl={totalPnl}
@@ -763,26 +786,30 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         />
       </section>
 
-      {/* ═══ DESKTOP: Main Stage + Bottom Analytics Dock ═══ */}
-      <main className="hidden lg:flex flex-1 min-h-0 overflow-hidden flex-col">
-        {/* Main hero area: order ticket with 3-zone cockpit */}
-        <div className="flex-1 min-h-0 flex flex-col">
-          <div className="agent-card mx-2 flex-1 min-h-0 flex flex-col transition-all duration-300 hover:border-[var(--border-strong)] overflow-hidden">
-            {/* Session nudges */}
-            <div className="flex-shrink-0 px-4 pt-2" key={sessionNudgesKey}>
-              <SessionNudges
-                totalPnl={totalPnl}
-                rounds={rounds}
-                sessionHigh={sessionHigh}
-                isNewSessionHigh={isNewSessionHigh}
-                justRecovered={justRecovered}
-                lossStreak={lossStreak}
-                newDrawdown={newDrawdown}
-                hasPositiveEv={(m.expectedValuePerTrade ?? 0) > 0}
-              />
+      {/* Main content — 12-column grid (dashboard style); hidden on mobile (tabbed layout shown instead) */}
+      <main className="hidden lg:grid grid-cols-1 lg:grid-cols-12 gap-5">
+        {/* Left column — Order ticket + Chart/Strategy tabs */}
+        <div className="lg:col-span-8 space-y-5">
+          {/* Order Ticket Card */}
+          <div className="agent-card p-5 transition-all duration-300 hover:border-[var(--border-strong)]">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">Order Ticket</h2>
             </div>
-            {/* DiceGame (3-zone cockpit layout inside) */}
-            <div className="flex-1 min-h-0 overflow-hidden">
+            <div className="flex flex-col min-h-0" key={sessionNudgesKey}>
+              <div className="flex-shrink-0 mb-3">
+                <SessionNudges
+                  totalPnl={totalPnl}
+                  rounds={rounds}
+                  sessionHigh={sessionHigh}
+                  isNewSessionHigh={isNewSessionHigh}
+                  justRecovered={justRecovered}
+                  lossStreak={lossStreak}
+                  newDrawdown={newDrawdown}
+                  hasPositiveEv={(m.expectedValuePerTrade ?? 0) > 0}
+                />
+              </div>
+              <div className="flex-1 min-h-0 overflow-hidden">
               <ClientOnly
                 fallback={
                   <div className="flex h-full items-center justify-center text-sm text-[var(--text-secondary)]">
@@ -830,478 +857,515 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   rounds={rounds}
                 />
               </ClientOnly>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* ═══ Bottom Analytics Dock ═══ */}
-        <div className={`flex-shrink-0 mx-2 mb-1 mt-1 transition-all duration-300 ${dockExpanded ? "max-h-[320px]" : "max-h-[40px]"}`}>
-          <div className="agent-card flex flex-col h-full overflow-hidden transition-all duration-300 hover:border-[var(--border-strong)]">
-            {/* Dock tab bar */}
-            <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-white/[0.06] flex-shrink-0">
-              <div className="flex items-center gap-1">
-                <div className="w-1 h-4 rounded-full bg-[#0ea5e9] mr-1" />
-                {(["chart", "strategy", "backtest", "metrics", "log"] as const).map((tab) => (
+          {/* Chart / Strategy / Backtest / Metrics Card */}
+          <div className="agent-card p-5 transition-all duration-300 hover:border-[var(--border-strong)]">
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Analytics</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                {(["chart", "strategy", "backtest", "metrics"] as const).map((tab) => (
                   <button
                     key={tab}
                     type="button"
-                    onClick={() => { setDockTab(tab); if (!dockExpanded) setDockExpanded(true); }}
-                    className={`px-3 py-1 text-[10px] font-semibold rounded-full transition-all duration-200 capitalize ${
-                      dockTab === tab && dockExpanded
+                    onClick={() => setCenterTab(tab)}
+                    className={`px-4 py-2 text-sm font-medium rounded-full transition-all duration-200 capitalize ${
+                      centerTab === tab
                         ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/40"
                         : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-white/[0.06] border border-transparent"
                     }`}
                   >
-                    {tab === "chart" ? "Chart" : tab === "strategy" ? "Strategy" : tab === "backtest" ? "Backtest" : tab === "metrics" ? "Metrics" : "Trade Log"}
+                    {tab === "chart" ? "Chart" : tab === "strategy" ? "Strategy" : tab === "backtest" ? "Backtest" : "Metrics"}
                   </button>
                 ))}
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleReset}
-                  className="text-[10px] text-[var(--text-tertiary)] hover:text-[#0ea5e9] transition-colors px-2 py-1 rounded-lg hover:bg-white/[0.04]"
-                >
-                  Reset
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDockExpanded(!dockExpanded)}
-                  className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors p-1 rounded-lg hover:bg-white/[0.04]"
-                  aria-label={dockExpanded ? "Collapse dock" : "Expand dock"}
-                >
-                  <svg className={`w-3.5 h-3.5 transition-transform duration-200 ${dockExpanded ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                  </svg>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleReset}
+                className="text-sm text-[var(--text-tertiary)] hover:text-[#0ea5e9] transition-colors px-3 py-2 rounded-xl hover:bg-white/[0.04]"
+              >
+                Reset
+              </button>
             </div>
-
-            {/* Dock content */}
-            {dockExpanded && (
-              <div className="flex-1 min-h-0 overflow-hidden animate-dock-slide-up">
-                {dockTab === "chart" && (
-                  <div className="flex h-full min-h-0 overflow-hidden">
-                    <div className="flex-1 p-2 min-h-0">
-                      <SessionPnLChart
-                        series={statsSeries}
-                        totalPnl={totalPnl}
-                        rounds={rounds}
-                        onReset={handleReset}
-                        layout="default"
-                        sharpeRatio={m.sharpeRatio}
-                        maxDrawdownPct={m.maxDrawdownPct}
-                      />
-                    </div>
-                    <div className="w-[200px] flex-shrink-0 p-2 min-h-0 border-l border-white/[0.04]">
-                      <MonteCarloShadow
-                        series={statsSeries}
-                        totalPnl={totalPnl}
-                        rounds={rounds}
-                      />
-                    </div>
-                  </div>
-                )}
-                {dockTab === "strategy" && (
-                  <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 space-y-2 scrollbar-sidebar">
-                    <SavedAdvancedStrategiesList
-                      onRun={(strategy, maxRounds) => {
-                        setAmount(strategy.baseConfig.amount);
-                        setTarget(strategy.baseConfig.target);
-                        setCondition(strategy.baseConfig.condition);
-                        setActiveStrategyName(strategy.name);
-                        setStrategyRun({
-                          config: { amount: strategy.baseConfig.amount, target: strategy.baseConfig.target, condition: strategy.baseConfig.condition, progressionType: "flat" },
-                          maxRounds,
-                          strategyName: strategy.name,
-                          isAdvanced: true,
-                          advancedStrategy: strategy,
-                        });
-                      }}
-                      onLoad={(strategy) => setLoadedStrategyForBuilder(strategy)}
-                      defaultMaxRounds={50}
+            <div className="flex flex-col min-h-[320px]">
+              {centerTab === "chart" && (
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                  <div className="flex-shrink-0 p-2 pb-1">
+                    <SessionPnLChart
+                      series={statsSeries}
+                      totalPnl={totalPnl}
+                      rounds={rounds}
+                      onReset={handleReset}
+                      layout="hero"
+                      sharpeRatio={m.sharpeRatio}
+                      maxDrawdownPct={m.maxDrawdownPct}
                     />
-                    <CompactAdvancedStrategyBuilder
-                      key={loadedStrategyForBuilder?.id ?? "builder"}
-                      initialStrategy={loadedStrategyForBuilder}
-                      onStrategyChange={setStrategyForBacktest}
-                      fullWidth
-                      onSave={async (strategy) => {
-                        try {
-                          const url = strategy.id ? `/api/me/advanced-strategies/${strategy.id}` : "/api/me/advanced-strategies";
-                          const method = strategy.id ? "PATCH" : "POST";
-                          const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(strategy) });
-                          const data = await res.json();
-                          const savedId = data.data?.strategy?.id ?? data.data?.id;
-                          if (data.success && savedId) return { id: savedId };
-                          return !!data.success;
-                        } catch {
-                          return false;
-                        }
-                      }}
-                      onRun={(strategy, maxRounds) => {
-                        setAmount(strategy.baseConfig.amount);
-                        setTarget(strategy.baseConfig.target);
-                        setCondition(strategy.baseConfig.condition);
-                        setActiveStrategyName(strategy.name);
-                        setStrategyRun({
-                          config: { amount: strategy.baseConfig.amount, target: strategy.baseConfig.target, condition: strategy.baseConfig.condition, progressionType: "flat" },
-                          maxRounds,
-                          strategyName: strategy.name,
-                          isAdvanced: true,
-                          advancedStrategy: strategy,
-                        });
-                      }}
-                      onApply={(strategy) => {
-                        setAmount(strategy.baseConfig.amount);
-                        setTarget(strategy.baseConfig.target);
-                        setCondition(strategy.baseConfig.condition);
-                        setActiveStrategyName(strategy.name);
-                      }}
+                  </div>
+                  <div className="flex-1 min-h-[100px] p-2 pt-1 overflow-hidden">
+                    <MonteCarloShadow
+                      series={statsSeries}
+                      totalPnl={totalPnl}
+                      rounds={rounds}
                     />
-                    <div className="flex items-center gap-2 py-1">
-                      <div className="flex-1 border-t border-white/[0.06]" />
-                      <span className="text-[10px] uppercase tracking-widest text-[var(--text-tertiary)]">or</span>
-                      <div className="flex-1 border-t border-white/[0.06]" />
-                    </div>
-                    <CreativeDiceStrategiesSection
-                      activeStrategyName={activeStrategyName}
-                      onLoadConfig={loadStrategyConfig}
-                      onStartStrategyRun={(config, maxRounds, strategyName) => {
-                        setAmount(config.amount);
-                        setTarget(config.target);
-                        setCondition(config.condition);
-                        setStrategyRun({ config, maxRounds, strategyName });
-                      }}
-                    />
-                    <Link href="/dashboard/strategies" className="flex items-center justify-center gap-1.5 w-full py-2 rounded-sm border border-dashed border-white/[0.06] text-[11px] text-[var(--text-tertiary)] hover:text-[#0ea5e9] hover:border-[#0ea5e9]/30 transition-all">
-                      Manage Strategies &rarr;
-                    </Link>
                   </div>
-                )}
-                {dockTab === "backtest" && (
-                  <BacktestTabContent strategy={strategyForBacktest} />
-                )}
-                {dockTab === "metrics" && (
-                  <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 scrollbar-sidebar">
-                    <div className="flex gap-4">
-                      <div className="flex-1">
-                        <QuantMetricsGrid
-                          metrics={quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null }}
-                          recentResults={recentResults}
-                          compact={false}
-                        />
-                      </div>
-                      <div className="w-[240px] flex-shrink-0">
-                        <SessionAura
-                          series={statsSeries}
-                          quantMetrics={quantMetrics ?? m}
-                          rounds={rounds}
-                          wins={wins}
-                          totalPnl={totalPnl}
-                          recentResults={recentResults}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {dockTab === "log" && (
-                  <div className="flex-1 min-h-0 overflow-hidden p-3 flex gap-3">
-                    <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto scrollbar-sidebar">
-                      <TradeLog
-                        entries={recentResults.map((r, i) => ({
-                          roundNumber: r.roundNumber ?? Math.max(1, rounds - recentResults.length + 1 + i),
-                          result: r.result,
-                          win: r.win,
-                          payout: r.payout,
-                          amount: r.playAmount ?? amount,
-                          target: r.target ?? target,
-                          condition: (r.condition ?? condition) as "over" | "under",
-                          balance: r.balance,
-                          source: r.source,
-                          timestamp: r.timestamp,
-                        }))}
-                        maxRows={20}
-                      />
-                    </div>
-                    {(liveActivityItems.length > 0 || liveQueueLength > 0) && (
-                      <div className="w-[240px] flex-shrink-0 min-h-0 overflow-y-auto scrollbar-sidebar">
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className="w-1 h-4 rounded-full bg-violet-500" />
-                          <h3 className="text-xs font-semibold text-[var(--text-primary)]">Live Activity</h3>
-                        </div>
-                        <LiveActivityFeed items={liveActivityItems} maxItems={20} embedded />
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </main>
-
-      {/* ═══ MOBILE: Tabbed Layout ═══ */}
-      <main className="lg:hidden flex flex-col flex-1 min-h-0 overflow-hidden">
-        <div className="flex-1 overflow-y-auto" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 88px)" }}>
-          {mobileTab === "play" && (
-            <div className="agent-card p-5 m-3 flex flex-col min-h-[200px] transition-all duration-300">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
-                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Order Ticket</h2>
-              </div>
-              <div className="flex-1 min-h-0 overflow-hidden">
-                <ClientOnly fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-secondary)]"><span className="animate-pulse">Loading...</span></div>}>
-                  <DiceGame
-                    amount={amount}
-                    target={target}
-                    condition={condition}
-                    balance={balance}
-                    activeStrategyName={activeStrategyName}
-                    progressionType={progressionType}
-                    onAmountChange={setAmount}
-                    onTargetChange={setTarget}
-                    onConditionChange={setCondition}
-                    onRoundComplete={(amt, payout) => addRound(amt, payout)}
-                    onAutoPlayChange={setAutoPlayActive}
-                    onResult={handleResult}
-                    strategyRun={strategyRun}
-                    onStrategyComplete={(sessionPnl, roundsPlayed, wins) => {
-                      setStrategyRun(null);
-                      setStrategyStats(null);
-                      addBulkSession(sessionPnl, roundsPlayed, wins);
-                      window.dispatchEvent(new Event("balance-updated"));
+                </div>
+              )}
+              {centerTab === "strategy" && (
+                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2 space-y-2 scrollbar-sidebar">
+                  <SavedAdvancedStrategiesList
+                    onRun={(strategy, maxRounds) => {
+                      setAmount(strategy.baseConfig.amount);
+                      setTarget(strategy.baseConfig.target);
+                      setCondition(strategy.baseConfig.condition);
+                      setActiveStrategyName(strategy.name);
+                      setStrategyRun({
+                        config: { amount: strategy.baseConfig.amount, target: strategy.baseConfig.target, condition: strategy.baseConfig.condition, progressionType: "flat" },
+                        maxRounds,
+                        strategyName: strategy.name,
+                        isAdvanced: true,
+                        advancedStrategy: strategy,
+                      });
                     }}
-                    onStrategyStop={() => { setStrategyRun(null); setStrategyStats(null); }}
-                    onStrategyProgress={(stats) => setStrategyStats({ currentRound: stats.currentRound, sessionPnl: stats.sessionPnl, initialBalance: balance, winRatePercent: stats.currentRound > 0 ? (stats.wins / stats.currentRound) * 100 : 0 })}
-                    livePlay={livePlay}
-                    livePlayAnimationMs={livePlayDisplayMs}
-                    aiDriving={aiBannerVisible || !!livePlay}
-                    recentResults={recentResults.map((r) => ({ win: r.win }))}
-                    sessionStartTime={sessionStartTime}
-                    rounds={rounds}
+                    onLoad={(strategy) => setLoadedStrategyForBuilder(strategy)}
+                    defaultMaxRounds={50}
                   />
-                </ClientOnly>
-              </div>
-            </div>
-          )}
-          {mobileTab === "chart" && (
-            <div className="space-y-5 m-3">
-              <div className="agent-card p-5 transition-all duration-300">
-                <div className="flex items-center justify-between gap-4 mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
-                    <h2 className="text-lg font-semibold text-[var(--text-primary)]">Equity Curve</h2>
+                  <CompactAdvancedStrategyBuilder
+                    key={loadedStrategyForBuilder?.id ?? "builder"}
+                    initialStrategy={loadedStrategyForBuilder}
+                    onStrategyChange={setStrategyForBacktest}
+                    fullWidth
+                    onSave={async (strategy) => {
+                      try {
+                        const url = strategy.id ? `/api/me/advanced-strategies/${strategy.id}` : "/api/me/advanced-strategies";
+                        const method = strategy.id ? "PATCH" : "POST";
+                        const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(strategy) });
+                        const data = await res.json();
+                        const savedId = data.data?.strategy?.id ?? data.data?.id;
+                        if (data.success && savedId) return { id: savedId };
+                        return !!data.success;
+                      } catch {
+                        return false;
+                      }
+                    }}
+                    onRun={(strategy, maxRounds) => {
+                      setAmount(strategy.baseConfig.amount);
+                      setTarget(strategy.baseConfig.target);
+                      setCondition(strategy.baseConfig.condition);
+                      setActiveStrategyName(strategy.name);
+                      setStrategyRun({
+                        config: { amount: strategy.baseConfig.amount, target: strategy.baseConfig.target, condition: strategy.baseConfig.condition, progressionType: "flat" },
+                        maxRounds,
+                        strategyName: strategy.name,
+                        isAdvanced: true,
+                        advancedStrategy: strategy,
+                      });
+                    }}
+                    onApply={(strategy) => {
+                      setAmount(strategy.baseConfig.amount);
+                      setTarget(strategy.baseConfig.target);
+                      setCondition(strategy.baseConfig.condition);
+                      setActiveStrategyName(strategy.name);
+                    }}
+                  />
+                  <div className="flex items-center gap-2 py-1">
+                    <div className="flex-1 border-t border-white/[0.06]" />
+                    <span className="text-[10px] uppercase tracking-widest text-[var(--text-tertiary)]">or</span>
+                    <div className="flex-1 border-t border-white/[0.06]" />
                   </div>
-                  <button type="button" onClick={handleReset} className="text-sm text-[var(--text-tertiary)] hover:text-[#0ea5e9] min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl hover:bg-white/[0.04]">Reset</button>
-                </div>
-                <div>
-                  <SessionPnLChart
-                    series={statsSeries}
-                    totalPnl={totalPnl}
-                    rounds={rounds}
-                    onReset={handleReset}
-                    layout="default"
-                    sharpeRatio={m.sharpeRatio}
-                    maxDrawdownPct={m.maxDrawdownPct}
+                  <CreativeDiceStrategiesSection
+                    activeStrategyName={activeStrategyName}
+                    onLoadConfig={loadStrategyConfig}
+                    onStartStrategyRun={(config, maxRounds, strategyName) => {
+                      setAmount(config.amount);
+                      setTarget(config.target);
+                      setCondition(config.condition);
+                      setStrategyRun({ config, maxRounds, strategyName });
+                    }}
                   />
+                  <Link href="/dashboard/strategies" className="flex items-center justify-center gap-1.5 w-full py-2 rounded-sm border border-dashed border-white/[0.06] text-[11px] text-[var(--text-tertiary)] hover:text-[#0ea5e9] hover:border-[#0ea5e9]/30 transition-all">
+                    Manage Strategies →
+                  </Link>
                 </div>
-              </div>
-              <div className="agent-card p-5 min-h-[120px] transition-all duration-300">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
-                  <h2 className="text-lg font-semibold text-[var(--text-primary)]">Monte Carlo</h2>
-                </div>
-                <div className="h-[120px]">
-                  <MonteCarloShadow
-                    series={statsSeries}
-                    totalPnl={totalPnl}
-                    rounds={rounds}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-          {mobileTab === "strategy" && (
-            <div className="m-3 space-y-4 overflow-y-auto">
-              <SavedAdvancedStrategiesList
-                onRun={(strategy, maxRounds) => {
-                  setAmount(strategy.baseConfig.amount);
-                  setTarget(strategy.baseConfig.target);
-                  setCondition(strategy.baseConfig.condition);
-                  setActiveStrategyName(strategy.name);
-                  setStrategyRun({
-                    config: { amount: strategy.baseConfig.amount, target: strategy.baseConfig.target, condition: strategy.baseConfig.condition, progressionType: "flat" },
-                    maxRounds,
-                    strategyName: strategy.name,
-                    isAdvanced: true,
-                    advancedStrategy: strategy,
-                  });
-                  setMobileTab("play");
-                }}
-                onLoad={(strategy) => setLoadedStrategyForBuilder(strategy)}
-                defaultMaxRounds={50}
-              />
-              <CompactAdvancedStrategyBuilder
-                key={loadedStrategyForBuilder?.id ?? "builder"}
-                initialStrategy={loadedStrategyForBuilder}
-                onStrategyChange={setStrategyForBacktest}
-                fullWidth
-                onSave={async (strategy) => {
-                  try {
-                    const url = strategy.id ? `/api/me/advanced-strategies/${strategy.id}` : "/api/me/advanced-strategies";
-                    const method = strategy.id ? "PATCH" : "POST";
-                    const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(strategy) });
-                    const data = await res.json();
-                    const savedId = data.data?.strategy?.id ?? data.data?.id;
-                    if (data.success && savedId) return { id: savedId };
-                    return !!data.success;
-                  } catch {
-                    return false;
-                  }
-                }}
-                onRun={(strategy, maxRounds) => {
-                  setAmount(strategy.baseConfig.amount);
-                  setTarget(strategy.baseConfig.target);
-                  setCondition(strategy.baseConfig.condition);
-                  setActiveStrategyName(strategy.name);
-                  setStrategyRun({
-                    config: { amount: strategy.baseConfig.amount, target: strategy.baseConfig.target, condition: strategy.baseConfig.condition, progressionType: "flat" },
-                    maxRounds,
-                    strategyName: strategy.name,
-                    isAdvanced: true,
-                    advancedStrategy: strategy,
-                  });
-                  setMobileTab("play");
-                }}
-                onApply={(strategy) => {
-                  setAmount(strategy.baseConfig.amount);
-                  setTarget(strategy.baseConfig.target);
-                  setCondition(strategy.baseConfig.condition);
-                  setActiveStrategyName(strategy.name);
-                  setMobileTab("play");
-                }}
-              />
-              <div className="flex items-center gap-2 py-1">
-                <div className="flex-1 border-t border-white/[0.06]" />
-                <span className="text-[11px] uppercase tracking-widest text-[var(--text-tertiary)]">or</span>
-                <div className="flex-1 border-t border-white/[0.06]" />
-              </div>
-              <CreativeDiceStrategiesSection
-                activeStrategyName={activeStrategyName}
-                onLoadConfig={loadStrategyConfig}
-                onStartStrategyRun={(config, maxRounds, strategyName) => {
-                  setAmount(config.amount);
-                  setTarget(config.target);
-                  setCondition(config.condition);
-                  setStrategyRun({ config, maxRounds, strategyName });
-                  setMobileTab("play");
-                }}
-              />
-              <Link href="/dashboard/strategies" className="flex items-center justify-center gap-1.5 w-full py-3 min-h-[44px] rounded-xl border border-dashed border-[var(--border)] text-sm text-[var(--text-tertiary)] hover:text-[#0ea5e9] hover:border-[#0ea5e9]/30 transition-all">
-                Manage Strategies &rarr;
-              </Link>
-            </div>
-          )}
-          {mobileTab === "log" && (
-            <div className="m-3 space-y-4">
-              <div className="agent-card p-5 transition-all duration-300">
-                <div className="flex items-center justify-between gap-3 mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
-                    <h2 className="text-lg font-semibold text-[var(--text-primary)]">Trade Log</h2>
-                  </div>
-                  <span className="text-xs text-[var(--text-tertiary)] tabular-nums">{recentResults.length} fills</span>
-                </div>
-                <div className="max-h-[200px] overflow-y-auto overflow-x-auto scrollbar-sidebar">
-                  <TradeLog
-                    entries={recentResults.map((r, i) => ({
-                      roundNumber: r.roundNumber ?? Math.max(1, rounds - recentResults.length + 1 + i),
-                      result: r.result,
-                      win: r.win,
-                      payout: r.payout,
-                      amount: r.playAmount ?? amount,
-                      target: r.target ?? target,
-                      condition: (r.condition ?? condition) as "over" | "under",
-                      balance: r.balance,
-                      source: r.source,
-                      timestamp: r.timestamp,
-                    }))}
-                    maxRows={20}
-                  />
-                </div>
-              </div>
-              <div className="agent-card p-5 flex flex-col overflow-hidden transition-all duration-300">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
-                  <h2 className="text-lg font-semibold text-[var(--text-primary)]">Metrics</h2>
-                </div>
-                <div className="flex-1 min-h-0 overflow-y-auto scrollbar-sidebar">
+              )}
+              {centerTab === "backtest" && (
+                <BacktestTabContent strategy={strategyForBacktest} />
+              )}
+              {centerTab === "metrics" && (
+                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 space-y-4 scrollbar-sidebar">
                   <QuantMetricsGrid
                     metrics={quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null }}
                     recentResults={recentResults}
-                    compact
+                    compact={false}
                   />
+                  <div className="pt-4 border-t border-white/[0.06]">
+                    <SessionAura
+                      series={statsSeries}
+                      quantMetrics={quantMetrics ?? m}
+                      rounds={rounds}
+                      wins={wins}
+                      totalPnl={totalPnl}
+                      recentResults={recentResults}
+                    />
+                  </div>
                 </div>
-              </div>
-              <div className="agent-card p-5 transition-all duration-300">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
-                  <h2 className="text-lg font-semibold text-[var(--text-primary)]">AI API</h2>
-                </div>
-                <div className="space-y-3">
-                  <ApiKeySection compact />
-                  <Link href="/dashboard/api" className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#0ea5e9] hover:underline min-h-[44px] items-center">
-                    Full API Docs &rarr;
-                  </Link>
-                </div>
-              </div>
+              )}
             </div>
-          )}
-        </div>
-        {/* Mobile footer */}
-        <div className="lg:hidden flex-shrink-0 px-4 py-3 border-t border-white/[0.06] flex items-center justify-between text-xs text-[var(--text-tertiary)]">
-          <span className="truncate">3% Edge &middot; 97% RTP &middot; Min 1 &middot; Max 10k</span>
-          <div className="flex items-center gap-3 shrink-0">
-            <Link href="/dashboard" className="hover:text-[#0ea5e9] transition-colors">Dashboard</Link>
-            <Link href="/dashboard/api" className="hover:text-[#0ea5e9] transition-colors">API</Link>
           </div>
         </div>
-        {/* Mobile bottom tab bar */}
-        <nav className="lg:hidden flex-shrink-0 flex items-center justify-around h-14 safe-area-bottom border-t border-white/[0.06] px-2 py-2 gap-1" aria-label="Mobile navigation">
-          {(
-            [
-              { id: "play" as MobileTab, label: "Play", icon: "\uD83C\uDFB2" },
-              { id: "chart" as MobileTab, label: "Chart", icon: "\uD83D\uDCC8" },
-              { id: "strategy" as MobileTab, label: "Strategy", icon: "\u2699\uFE0F" },
-              { id: "log" as MobileTab, label: "Log", icon: "\uD83D\uDCCB" },
-            ] as const
-          ).map(({ id, label, icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setMobileTab(id)}
-              className={`flex flex-col items-center justify-center flex-1 min-h-[44px] py-2 gap-1 rounded-xl transition-all duration-200 ${
-                mobileTab === id
-                  ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/40"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-white/[0.04]"
-              }`}
-              aria-current={mobileTab === id ? "page" : undefined}
-            >
-              <span className="text-base leading-none" aria-hidden>{icon}</span>
-              <span className="text-xs font-medium">{label}</span>
+
+        {/* Right sidebar */}
+        <aside className="lg:col-span-4 space-y-5">
+          {/* Trade Log Card */}
+          <div className="agent-card p-5 transition-all duration-300 hover:border-[var(--border-strong)]">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Trade Log</h2>
+              </div>
+              <span className="text-xs text-[var(--text-tertiary)] tabular-nums">{recentResults.length} fills</span>
+            </div>
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <TradeLog
+                entries={recentResults.map((r, i) => ({
+                  roundNumber: r.roundNumber ?? Math.max(1, rounds - recentResults.length + 1 + i),
+                  result: r.result,
+                  win: r.win,
+                  payout: r.payout,
+                  amount: r.playAmount ?? amount,
+                  target: r.target ?? target,
+                  condition: (r.condition ?? condition) as "over" | "under",
+                  balance: r.balance,
+                  source: r.source,
+                  timestamp: r.timestamp,
+                }))}
+                maxRows={12}
+              />
+            </div>
+          </div>
+
+          {(liveActivityItems.length > 0 || liveQueueLength > 0) && (
+            <div className="agent-card p-5 transition-all duration-300 hover:border-[var(--border-strong)]">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Live Activity</h2>
+              </div>
+              <LiveActivityFeed items={liveActivityItems} maxItems={20} embedded />
+            </div>
+          )}
+
+          <div className="agent-card p-5 transition-all duration-300 hover:border-[var(--border-strong)]">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">AI API</h2>
+            </div>
+            <div className="space-y-3">
+              <ApiKeySection compact />
+              <Link href="/dashboard/api" className="inline-flex items-center gap-1.5 text-sm font-medium text-[#0ea5e9] hover:underline">
+                Full API Docs →
+              </Link>
+            </div>
+          </div>
+
+          <div className="agent-card p-5 transition-all duration-300 hover:border-[var(--border-strong)]">
+            <KeyboardShortcutsHelp />
+          </div>
+
+          <div>
+            <button onClick={handleReset} className="w-full py-3 rounded-xl border border-[var(--border)] text-sm font-medium text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.04] hover:border-[var(--border-strong)] transition-all">
+              Reset Session
             </button>
-          ))}
-        </nav>
+          </div>
+        </aside>
+
+        {/* Mobile: tabbed layout with bottom tab bar */}
+        <div className="lg:hidden flex flex-col">
+          <div className="flex-1 overflow-y-auto" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 88px)" }}>
+            {mobileTab === "play" && (
+              <div className="agent-card p-5 m-3 flex flex-col min-h-[200px] transition-all duration-300">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                  <h2 className="text-lg font-semibold text-[var(--text-primary)]">Order Ticket</h2>
+                </div>
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <ClientOnly fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-secondary)]"><span className="animate-pulse">Loading...</span></div>}>
+                    <DiceGame
+                      amount={amount}
+                      target={target}
+                      condition={condition}
+                      balance={balance}
+                      activeStrategyName={activeStrategyName}
+                      progressionType={progressionType}
+                      onAmountChange={setAmount}
+                      onTargetChange={setTarget}
+                      onConditionChange={setCondition}
+                      onRoundComplete={(amt, payout) => addRound(amt, payout)}
+                      onAutoPlayChange={setAutoPlayActive}
+                      onResult={handleResult}
+                      strategyRun={strategyRun}
+                      onStrategyComplete={(sessionPnl, roundsPlayed, wins) => {
+                        setStrategyRun(null);
+                        setStrategyStats(null);
+                        addBulkSession(sessionPnl, roundsPlayed, wins);
+                        window.dispatchEvent(new Event("balance-updated"));
+                      }}
+                      onStrategyStop={() => { setStrategyRun(null); setStrategyStats(null); }}
+                      onStrategyProgress={(stats) => setStrategyStats({ currentRound: stats.currentRound, sessionPnl: stats.sessionPnl, initialBalance: balance, winRatePercent: stats.currentRound > 0 ? (stats.wins / stats.currentRound) * 100 : 0 })}
+                      livePlay={livePlay}
+                      livePlayAnimationMs={livePlayDisplayMs}
+                      aiDriving={aiBannerVisible || !!livePlay}
+                      recentResults={recentResults.map((r) => ({ win: r.win }))}
+                      sessionStartTime={sessionStartTime}
+                      rounds={rounds}
+                    />
+                  </ClientOnly>
+                </div>
+              </div>
+            )}
+            {mobileTab === "chart" && (
+              <div className="space-y-5 m-3">
+                <div className="agent-card p-5 transition-all duration-300">
+                  <div className="flex items-center justify-between gap-4 mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                      <h2 className="text-lg font-semibold text-[var(--text-primary)]">Equity Curve</h2>
+                    </div>
+                    <button type="button" onClick={handleReset} className="text-sm text-[var(--text-tertiary)] hover:text-[#0ea5e9] min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl hover:bg-white/[0.04]">Reset</button>
+                  </div>
+                  <div>
+                    <SessionPnLChart
+                      series={statsSeries}
+                      totalPnl={totalPnl}
+                      rounds={rounds}
+                      onReset={handleReset}
+                      layout="large"
+                      sharpeRatio={m.sharpeRatio}
+                      maxDrawdownPct={m.maxDrawdownPct}
+                    />
+                  </div>
+                </div>
+                <div className="agent-card p-5 min-h-[120px] transition-all duration-300">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                    <h2 className="text-lg font-semibold text-[var(--text-primary)]">Monte Carlo</h2>
+                  </div>
+                  <div className="h-[120px]">
+                    <MonteCarloShadow
+                      series={statsSeries}
+                      totalPnl={totalPnl}
+                      rounds={rounds}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+            {mobileTab === "strategy" && (
+              <div className="m-3 space-y-4 overflow-y-auto">
+                <SavedAdvancedStrategiesList
+                  onRun={(strategy, maxRounds) => {
+                    setAmount(strategy.baseConfig.amount);
+                    setTarget(strategy.baseConfig.target);
+                    setCondition(strategy.baseConfig.condition);
+                    setActiveStrategyName(strategy.name);
+                    setStrategyRun({
+                      config: { amount: strategy.baseConfig.amount, target: strategy.baseConfig.target, condition: strategy.baseConfig.condition, progressionType: "flat" },
+                      maxRounds,
+                      strategyName: strategy.name,
+                      isAdvanced: true,
+                      advancedStrategy: strategy,
+                    });
+                    setMobileTab("play");
+                  }}
+                  onLoad={(strategy) => setLoadedStrategyForBuilder(strategy)}
+                  defaultMaxRounds={50}
+                />
+                <CompactAdvancedStrategyBuilder
+                  key={loadedStrategyForBuilder?.id ?? "builder"}
+                  initialStrategy={loadedStrategyForBuilder}
+                  onStrategyChange={setStrategyForBacktest}
+                  fullWidth
+                  onSave={async (strategy) => {
+                    try {
+                      const url = strategy.id ? `/api/me/advanced-strategies/${strategy.id}` : "/api/me/advanced-strategies";
+                      const method = strategy.id ? "PATCH" : "POST";
+                      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(strategy) });
+                      const data = await res.json();
+                      const savedId = data.data?.strategy?.id ?? data.data?.id;
+                      if (data.success && savedId) return { id: savedId };
+                      return !!data.success;
+                    } catch {
+                      return false;
+                    }
+                  }}
+                  onRun={(strategy, maxRounds) => {
+                    setAmount(strategy.baseConfig.amount);
+                    setTarget(strategy.baseConfig.target);
+                    setCondition(strategy.baseConfig.condition);
+                    setActiveStrategyName(strategy.name);
+                    setStrategyRun({
+                      config: { amount: strategy.baseConfig.amount, target: strategy.baseConfig.target, condition: strategy.baseConfig.condition, progressionType: "flat" },
+                      maxRounds,
+                      strategyName: strategy.name,
+                      isAdvanced: true,
+                      advancedStrategy: strategy,
+                    });
+                    setMobileTab("play");
+                  }}
+                  onApply={(strategy) => {
+                    setAmount(strategy.baseConfig.amount);
+                    setTarget(strategy.baseConfig.target);
+                    setCondition(strategy.baseConfig.condition);
+                    setActiveStrategyName(strategy.name);
+                    setMobileTab("play");
+                  }}
+                />
+                <div className="flex items-center gap-2 py-1">
+                  <div className="flex-1 border-t border-white/[0.06]" />
+                  <span className="text-[11px] uppercase tracking-widest text-[var(--text-tertiary)]">or</span>
+                  <div className="flex-1 border-t border-white/[0.06]" />
+                </div>
+                <CreativeDiceStrategiesSection
+                  activeStrategyName={activeStrategyName}
+                  onLoadConfig={loadStrategyConfig}
+                  onStartStrategyRun={(config, maxRounds, strategyName) => {
+                    setAmount(config.amount);
+                    setTarget(config.target);
+                    setCondition(config.condition);
+                    setStrategyRun({ config, maxRounds, strategyName });
+                    setMobileTab("play");
+                  }}
+                />
+                <Link href="/dashboard/strategies" className="flex items-center justify-center gap-1.5 w-full py-3 min-h-[44px] rounded-xl border border-dashed border-[var(--border)] text-sm text-[var(--text-tertiary)] hover:text-[#0ea5e9] hover:border-[#0ea5e9]/30 transition-all">
+                  Manage Strategies →
+                </Link>
+              </div>
+            )}
+            {mobileTab === "log" && (
+              <div className="m-3 space-y-4">
+                <div className="agent-card p-5 transition-all duration-300">
+                  <div className="flex items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                      <h2 className="text-lg font-semibold text-[var(--text-primary)]">Trade Log</h2>
+                    </div>
+                    <span className="text-xs text-[var(--text-tertiary)] tabular-nums">{recentResults.length} fills</span>
+                  </div>
+                  <div className="max-h-[200px] overflow-y-auto overflow-x-auto scrollbar-sidebar">
+                    <TradeLog
+                      entries={recentResults.map((r, i) => ({
+                        roundNumber: r.roundNumber ?? Math.max(1, rounds - recentResults.length + 1 + i),
+                        result: r.result,
+                        win: r.win,
+                        payout: r.payout,
+                        amount: r.playAmount ?? amount,
+                        target: r.target ?? target,
+                        condition: (r.condition ?? condition) as "over" | "under",
+                        balance: r.balance,
+                        source: r.source,
+                        timestamp: r.timestamp,
+                      }))}
+                      maxRows={20}
+                    />
+                  </div>
+                </div>
+                <div className="agent-card p-5 flex flex-col overflow-hidden transition-all duration-300">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                    <h2 className="text-lg font-semibold text-[var(--text-primary)]">Metrics</h2>
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-y-auto scrollbar-sidebar">
+                    <QuantMetricsGrid
+                      metrics={quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null }}
+                      recentResults={recentResults}
+                      compact
+                    />
+                  </div>
+                </div>
+                <div className="agent-card p-5 transition-all duration-300">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
+                    <h2 className="text-lg font-semibold text-[var(--text-primary)]">AI API</h2>
+                  </div>
+                  <div className="space-y-3">
+                    <ApiKeySection compact />
+                    <Link href="/dashboard/api" className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#0ea5e9] hover:underline min-h-[44px] items-center">
+                      Full API Docs →
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          {/* Mobile footer — above tab bar */}
+          <div className="lg:hidden flex-shrink-0 px-4 py-3 border-t border-white/[0.06] flex items-center justify-between text-xs text-[var(--text-tertiary)]">
+            <span className="truncate">3% Edge · 97% RTP · Min 1 · Max 10k</span>
+            <div className="flex items-center gap-3 shrink-0">
+              <Link href="/dashboard" className="hover:text-[#0ea5e9] transition-colors">Dashboard</Link>
+              <Link href="/dashboard/api" className="hover:text-[#0ea5e9] transition-colors">API</Link>
+            </div>
+          </div>
+          {/* Mobile bottom tab bar — dashboard-style rounded pills */}
+          <nav className="lg:hidden flex-shrink-0 flex items-center justify-around h-14 safe-area-bottom border-t border-white/[0.06] px-2 py-2 gap-1" aria-label="Mobile navigation">
+            {(
+              [
+                { id: "play" as MobileTab, label: "Play", icon: "🎲" },
+                { id: "chart" as MobileTab, label: "Chart", icon: "📈" },
+                { id: "strategy" as MobileTab, label: "Strategy", icon: "⚙️" },
+                { id: "log" as MobileTab, label: "Log", icon: "📋" },
+              ] as const
+            ).map(({ id, label, icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setMobileTab(id)}
+                className={`flex flex-col items-center justify-center flex-1 min-h-[44px] py-2 gap-1 rounded-xl transition-all duration-200 ${
+                  mobileTab === id
+                    ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/40"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-white/[0.04]"
+                }`}
+                aria-current={mobileTab === id ? "page" : undefined}
+              >
+                <span className="text-base leading-none" aria-hidden>{icon}</span>
+                <span className="text-xs font-medium">{label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
       </main>
 
-      {/* Footer */}
-      <footer className="hidden lg:flex flex-shrink-0 items-center justify-between py-1 px-3 border-t border-white/[0.06] text-[10px] text-[var(--text-tertiary)]">
-        <span>3% Edge &middot; 97% RTP &middot; Min 1 &middot; Max 10k</span>
-        <div className="flex items-center gap-3">
-          <KeyboardShortcutsHelp />
-          <Link href="/dashboard" className="hover:text-[#0ea5e9] transition-colors">Dashboard</Link>
-          <Link href="/dashboard/api" className="hover:text-[#0ea5e9] transition-colors">API</Link>
+      {/* Footer — dashboard style */}
+      <footer className="mt-12 pt-6 border-t border-white/[0.06]">
+        <div className="flex flex-col gap-6">
+          <nav className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+            <Link href="/dashboard" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">
+              Dashboard
+            </Link>
+            <Link href="/games/dice" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">
+              Play Dice
+            </Link>
+            <Link href="/dashboard/strategies" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">
+              Strategies
+            </Link>
+            <Link href="/dashboard/provably-fair" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">
+              Provably Fair
+            </Link>
+            <Link href="/dashboard/api" className="text-[var(--text-secondary)] hover:text-[#0ea5e9] transition-colors">
+              API Docs
+            </Link>
+          </nav>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-white/[0.04]">
+            <p className="text-xs text-[var(--text-tertiary)] order-2 sm:order-1">
+              Xpersona · 3% Edge · 97% Return · Min 1 · Max 10k
+            </p>
+            <div className="flex items-center gap-2 order-1 sm:order-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#30d158] animate-pulse shrink-0" aria-hidden />
+              <span className="text-[11px] text-[var(--text-tertiary)]">All systems operational</span>
+            </div>
+          </div>
         </div>
       </footer>
     </div>

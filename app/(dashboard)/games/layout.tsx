@@ -23,19 +23,10 @@ export default async function GamesLayout({
   const needsGuest = !hasSession && !hasGuest;
 
   return (
-    <div className="fixed inset-0 z-[100] h-dvh w-screen overflow-hidden flex flex-col bg-[#000000]">
-      {/* Ambient mesh background with floating orbs */}
-      <div className="ambient-mesh" aria-hidden>
-        <div className="ambient-mesh-orb ambient-mesh-orb-1 bg-[#0ea5e9]/[0.03]" />
-        <div className="ambient-mesh-orb ambient-mesh-orb-2 bg-[#5e5ce6]/[0.025]" />
-        <div className="ambient-mesh-orb ambient-mesh-orb-3 bg-[#30d158]/[0.02]" />
-      </div>
-      {/* Subtle dot grid overlay */}
-      <div className="absolute inset-0 dot-grid-animated opacity-[0.015] pointer-events-none" aria-hidden />
+    <div className="fixed inset-0 z-[100] h-screen w-screen overflow-hidden flex flex-col bg-[#000000]">
+      <div className="absolute inset-0 dot-grid opacity-[0.02] pointer-events-none" aria-hidden />
       {needsGuest && <EnsureGuest needsGuest={true} />}
-      <div className="flex-1 min-h-0 overflow-hidden flex flex-col relative z-10">
-        {children}
-      </div>
+      {children}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useSyncExternalStore } from "react";
+import { useState, useEffect, useSyncExternalStore } from "react";
 import { MetricCard } from "@/components/ui/GlassCard";
 
 function useIsMobile() {
@@ -25,13 +25,18 @@ interface QuantTopMetricsBarProps {
   maxDrawdownPct: number | null;
   rounds: number;
   kellyFraction: number | null;
+  /** When true, shows a subtle "ready" status dot */
   ready?: boolean;
+  /** Compact inline mode for use inside merged header row */
   compact?: boolean;
+  /** AI/API connected — shows LIVE indicator */
   live?: boolean;
+  /** Session start timestamp (ms) for elapsed timer */
   sessionStartTime?: number | null;
+  /** Mobile mode: show only NAV, P&L, Rounds inline; expand for rest */
   mobile?: boolean;
+  /** Dashboard-style: render as agent-card metric grid (Balance, P&L, Win Rate, Rounds) */
   cardLayout?: boolean;
-  cardLayoutCompact?: boolean;
 }
 
 function formatSharpeColor(sharpe: number | null): "emerald" | "blue" | "neutral" {
@@ -57,44 +62,6 @@ function formatElapsed(ms: number): string {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
-function AnimatedValue({ value, className }: { value: string; className?: string }) {
-  const prevRef = useRef(value);
-  const [flash, setFlash] = useState(false);
-
-  useEffect(() => {
-    if (value !== prevRef.current) {
-      prevRef.current = value;
-      setFlash(true);
-      const t = setTimeout(() => setFlash(false), 400);
-      return () => clearTimeout(t);
-    }
-  }, [value]);
-
-  return (
-    <span className={`metric-value-transition ${flash ? "metric-value-flash" : ""} ${className ?? ""}`}>
-      {value}
-    </span>
-  );
-}
-
-function TrendArrow({ direction }: { direction: "up" | "down" | "neutral" }) {
-  if (direction === "neutral") return null;
-  return (
-    <svg
-      className={`w-2.5 h-2.5 ${direction === "up" ? "text-emerald-400" : "text-red-400"}`}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      {direction === "up" ? (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-      ) : (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-      )}
-    </svg>
-  );
-}
-
 export function QuantTopMetricsBar({
   nav,
   navLoading = false,
@@ -110,7 +77,6 @@ export function QuantTopMetricsBar({
   sessionStartTime = null,
   mobile = false,
   cardLayout = false,
-  cardLayoutCompact = false,
 }: QuantTopMetricsBarProps) {
   const sharpeColor = formatSharpeColor(sharpeRatio);
   const kellyColor = formatKellyColor(kellyFraction);
@@ -132,36 +98,29 @@ export function QuantTopMetricsBar({
   }, [sessionStartTime, rounds]);
 
   if (cardLayout) {
-    const cardClass = cardLayoutCompact
-      ? "!h-[56px] !p-2 !min-h-0 [&_.text-3xl]:!text-lg"
-      : undefined;
     return (
-      <div className={`grid grid-cols-2 md:grid-cols-4 ${cardLayoutCompact ? "gap-2" : "gap-4"}`}>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <MetricCard
           label="Balance"
-          value={navLoading ? "\u2026" : nav.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          value={navLoading ? "…" : nav.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           trend="neutral"
-          className={cardClass}
         />
         <MetricCard
           label="Session P&L"
           value={`${sessionPnl >= 0 ? "+" : ""}${sessionPnl.toFixed(2)}`}
-          subtext={!cardLayoutCompact ? `${rounds} rounds` : undefined}
+          subtext={`${rounds} rounds`}
           trend={pnlTrend}
-          className={cardClass}
         />
         <MetricCard
           label="Win Rate"
           value={`${winRate.toFixed(1)}%`}
           trend={wrTrend}
-          className={cardClass}
         />
         <MetricCard
           label="Rounds"
           value={rounds}
-          subtext={!cardLayoutCompact && elapsed ? `Time: ${elapsed}` : undefined}
+          subtext={elapsed ? `Time: ${elapsed}` : undefined}
           trend="neutral"
-          className={cardClass}
         />
       </div>
     );
@@ -181,10 +140,9 @@ export function QuantTopMetricsBar({
       {/* BALANCE */}
       <div className="metric-badge shrink-0 px-2 py-0.5">
         <span className="text-[10px] sm:text-[8px] text-[var(--text-tertiary)] uppercase tracking-wider">BALANCE</span>
-        <AnimatedValue
-          value={navLoading ? "\u2026" : nav.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          className="text-[11px] lg:text-[11px] font-semibold text-[var(--text-primary)] tabular-nums"
-        />
+        <span className="text-[11px] lg:text-[11px] font-semibold text-[var(--text-primary)] tabular-nums">
+          {navLoading ? "…" : nav.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
       </div>
 
       <span className="w-px h-3 bg-white/[0.08] shrink-0 mx-0.5" aria-hidden />
@@ -198,11 +156,14 @@ export function QuantTopMetricsBar({
         }`}
       >
         <span className="text-[10px] sm:text-[8px] text-[var(--text-tertiary)] uppercase tracking-wider">P&L</span>
-        <TrendArrow direction={pnlTrend} />
-        <AnimatedValue
-          value={`${sessionPnl >= 0 ? "+" : ""}${sessionPnl.toFixed(2)}`}
-          className={`text-[11px] font-semibold tabular-nums ${sessionPnl >= 0 ? "text-emerald-400" : "text-red-400"}`}
-        />
+        <span
+          className={`text-[11px] font-semibold tabular-nums ${
+            sessionPnl >= 0 ? "text-emerald-400" : "text-red-400"
+          }`}
+        >
+          {sessionPnl >= 0 ? "+" : ""}
+          {sessionPnl.toFixed(2)}
+        </span>
       </div>
 
       <span className="w-px h-3 bg-white/[0.08] shrink-0 mx-0.5" aria-hidden />
@@ -212,12 +173,13 @@ export function QuantTopMetricsBar({
       {/* Sharpe */}
       <div className="metric-badge shrink-0 px-2 py-0.5">
         <span className="text-[10px] sm:text-[8px] text-[var(--text-tertiary)] uppercase tracking-wider">Sharpe</span>
-        <AnimatedValue
-          value={sharpeRatio != null ? sharpeRatio.toFixed(2) : "\u2014"}
+        <span
           className={`text-[11px] font-semibold tabular-nums ${
             sharpeColor === "emerald" ? "text-emerald-400" : sharpeColor === "blue" ? "text-[#0ea5e9]" : "text-[var(--text-primary)]"
           }`}
-        />
+        >
+          {sharpeRatio != null ? sharpeRatio.toFixed(2) : "—"}
+        </span>
       </div>
 
       <span className="w-px h-3 bg-white/[0.08] shrink-0 mx-0.5" aria-hidden />
@@ -226,11 +188,9 @@ export function QuantTopMetricsBar({
       <div className="metric-badge shrink-0 px-2 py-0.5 flex items-center gap-1">
         {winRate < 45 && rounds > 0 && <span className="w-1 h-1 rounded-full bg-[#ff453a]/80 shrink-0" aria-hidden />}
         <span className="text-[10px] sm:text-[8px] text-[var(--text-tertiary)] uppercase tracking-wider">WR</span>
-        <TrendArrow direction={wrTrend} />
-        <AnimatedValue
-          value={`${winRate.toFixed(1)}%`}
-          className={`text-[11px] font-semibold tabular-nums ${winRate >= 50 ? "text-emerald-400/90" : winRate < 45 && rounds > 0 ? "text-[#ff453a]" : "text-[var(--text-primary)]"}`}
-        />
+        <span className={`text-[11px] font-semibold tabular-nums ${winRate >= 50 ? "text-emerald-400/90" : winRate < 45 && rounds > 0 ? "text-[#ff453a]" : "text-[var(--text-primary)]"}`}>
+          {winRate.toFixed(1)}%
+        </span>
       </div>
 
       <span className="w-px h-3 bg-white/[0.08] shrink-0 mx-0.5" aria-hidden />
@@ -238,10 +198,9 @@ export function QuantTopMetricsBar({
       {/* Max DD */}
       <div className="metric-badge shrink-0 px-2 py-0.5">
         <span className="text-[10px] sm:text-[8px] text-[var(--text-tertiary)] uppercase tracking-wider">Max DD</span>
-        <AnimatedValue
-          value={maxDrawdownPct != null ? `-${maxDrawdownPct.toFixed(1)}%` : "\u2014"}
-          className="text-[11px] font-semibold text-red-400/90 tabular-nums"
-        />
+        <span className="text-[11px] font-semibold text-red-400/90 tabular-nums">
+          {maxDrawdownPct != null ? `-${maxDrawdownPct.toFixed(1)}%` : "—"}
+        </span>
       </div>
 
       <span className="w-px h-3 bg-white/[0.08] shrink-0 mx-0.5" aria-hidden />
@@ -250,10 +209,7 @@ export function QuantTopMetricsBar({
       <div className="metric-badge shrink-0 px-2 py-0.5 flex items-center gap-1">
         <span className="w-1 h-1 rounded-full bg-[#0ea5e9] animate-pulse shrink-0" aria-hidden />
         <span className="text-[10px] sm:text-[8px] text-[var(--text-tertiary)] uppercase tracking-wider">Rnd</span>
-        <AnimatedValue
-          value={String(rounds)}
-          className="text-[11px] font-semibold text-[var(--text-primary)] tabular-nums"
-        />
+        <span className="text-[11px] font-semibold text-[var(--text-primary)] tabular-nums">{rounds}</span>
       </div>
 
       <span className="w-px h-3 bg-white/[0.08] shrink-0 mx-0.5" aria-hidden />
@@ -269,12 +225,13 @@ export function QuantTopMetricsBar({
       {/* Kelly */}
       <div className="metric-badge shrink-0 px-2 py-0.5">
         <span className="text-[10px] sm:text-[8px] text-[var(--text-tertiary)] uppercase tracking-wider">Kelly</span>
-        <AnimatedValue
-          value={kellyFraction != null ? `${kellyFraction.toFixed(1)}%` : "\u2014"}
+        <span
           className={`text-[11px] font-semibold tabular-nums ${
             kellyColor === "emerald" ? "text-emerald-400" : kellyColor === "blue" ? "text-[#0ea5e9]" : "text-[var(--text-primary)]"
           }`}
-        />
+        >
+          {kellyFraction != null ? `${kellyFraction.toFixed(1)}%` : "—"}
+        </span>
       </div>
 
       {/* Session timer */}
@@ -312,7 +269,7 @@ export function QuantTopMetricsBar({
       </>
       )}
 
-      {/* Mobile expand button */}
+      {/* Mobile expand button — show more metrics */}
       {mobile && isMobile && (
         <button
           type="button"
@@ -320,7 +277,7 @@ export function QuantTopMetricsBar({
           className="shrink-0 ml-1 flex items-center justify-center w-8 h-8 rounded-sm bg-white/[0.04] hover:bg-white/[0.08] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors min-h-[36px] min-w-[36px]"
           aria-label={expanded ? "Show fewer metrics" : "Show all metrics"}
         >
-          <span className="text-sm font-bold">{expanded ? "\u2212" : "\u22EF"}</span>
+          <span className="text-sm font-bold">{expanded ? "−" : "⋯"}</span>
         </button>
       )}
       </div>
