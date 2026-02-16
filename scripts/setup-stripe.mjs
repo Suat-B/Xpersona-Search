@@ -23,12 +23,12 @@ const root = join(__dirname, "..");
 
 const ENV_LOCAL = join(root, ".env.local");
 const ENV_EXAMPLE = join(root, ".env.example");
+const CONFIG_PATH = join(root, "lib/credit-packages-config.json");
 
-const PACKAGES = [
-  { name: "Starter Bundle", credits: 500, amountCents: 500 },
-  { name: "2000 Credits", credits: 2000, amountCents: 1499 },
-  { name: "10000 Credits", credits: 10000, amountCents: 3999 },
-];
+function loadPackages() {
+  const raw = readFileSync(CONFIG_PATH, "utf8");
+  return JSON.parse(raw);
+}
 
 const PREFIX = "Xpersona";
 
@@ -93,8 +93,8 @@ function setVar(content, key, value) {
   return content.trimEnd() + `\n${line}\n`;
 }
 
-async function createProductsAndPrices(stripe) {
-  const priceIds = { 500: null, 2000: null, 10000: null };
+async function createProductsAndPrices(stripe, PACKAGES) {
+  const priceIds = {};
   const products = await stripe.products.list({ limit: 100 });
   for (const pkg of PACKAGES) {
     const tag = `${PREFIX} - ${pkg.name}`;
@@ -116,9 +116,8 @@ async function createProductsAndPrices(stripe) {
         currency: "usd",
       });
     }
-    if (pkg.credits === 500) priceIds[500] = price.id;
-    else if (pkg.credits === 2000) priceIds[2000] = price.id;
-    else if (pkg.credits === 10000) priceIds[10000] = price.id;
+    const envKey = pkg.envKey || `STRIPE_PRICE_${pkg.credits}`;
+    priceIds[envKey.replace("STRIPE_PRICE_", "")] = price.id;
   }
   return priceIds;
 }
@@ -151,17 +150,18 @@ async function main() {
 
   const stripe = new Stripe(secretKey, { apiVersion: "2025-02-24.acacia" });
 
+  const PACKAGES = loadPackages();
   console.log("\n  Creating credit packages in Stripe...");
   let priceIds;
   try {
-    priceIds = await createProductsAndPrices(stripe);
+    priceIds = await createProductsAndPrices(stripe, PACKAGES);
   } catch (err) {
     console.error("\n  Stripe API error:", err.message);
     console.log("\n  Add STRIPE_PRICE_500, STRIPE_PRICE_2000, STRIPE_PRICE_10000 manually after creating products in Stripe Dashboard.");
     process.exit(1);
   }
 
-  console.log("  Created/found prices: 500, 2000, 10000 credits.\n");
+  console.log(`  Created/found ${PACKAGES.length} package(s).\n`);
 
   const webhookUrl = getWebhookUrl();
   console.log("  Webhook Secret:");
@@ -182,9 +182,11 @@ async function main() {
 
   content = setVar(content, "STRIPE_SECRET_KEY", secretKey);
   if (webhookSecret) content = setVar(content, "STRIPE_WEBHOOK_SECRET", webhookSecret);
-  content = setVar(content, "STRIPE_PRICE_500", priceIds[500]);
-  content = setVar(content, "STRIPE_PRICE_2000", priceIds[2000]);
-  content = setVar(content, "STRIPE_PRICE_10000", priceIds[10000]);
+  for (const pkg of PACKAGES) {
+    const envKey = pkg.envKey || `STRIPE_PRICE_${pkg.credits}`;
+    const priceId = priceIds[envKey.replace("STRIPE_PRICE_", "")];
+    if (priceId) content = setVar(content, envKey, priceId);
+  }
 
   writeEnv(content);
 

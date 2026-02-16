@@ -1,16 +1,12 @@
 /**
  * Seed credit_packages. Run after migrations.
- * Requires STRIPE_PRICE_500, STRIPE_PRICE_2000, STRIPE_PRICE_10000 in env.
- * Create products in Stripe Dashboard first (see docs/STRIPE_SETUP.md).
+ * Package specs from lib/credit-packages-config.json.
+ * Set STRIPE_PRICE_* env vars (or run npm run setup:stripe).
  */
+import "./load-env";
 import { db } from "../lib/db";
 import { creditPackages } from "../lib/db/schema";
-
-const PACKAGE_SPECS = [
-  { envKey: "STRIPE_PRICE_500", name: "Starter Bundle", credits: 500, amountCents: 500 },
-  { envKey: "STRIPE_PRICE_2000", name: "2000 Credits", credits: 2000, amountCents: 1499 },
-  { envKey: "STRIPE_PRICE_10000", name: "10000 Credits", credits: 10000, amountCents: 3999 },
-] as const;
+import { PACKAGE_SPECS } from "../lib/credit-packages-config";
 
 function isValidStripePriceId(id: string): boolean {
   return typeof id === "string" && id.startsWith("price_") && id.length > 10 && !id.includes("placeholder");

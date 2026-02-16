@@ -10,10 +10,12 @@ npm run setup:stripe
 
 This will:
 1. Open Stripe Dashboard (copy your Secret key)
-2. Create the 3 credit packages in Stripe via API
+2. Create the credit packages in Stripe via API (from `lib/credit-packages-config.json`)
 3. Prompt for Webhook signing secret
 4. Write all env vars to `.env.local`
 5. Seed `credit_packages` in your DB
+
+**To change package values** (credits, prices, names): Edit `lib/credit-packages-config.json`, then run `npm run seed`. If you changed prices, run `npm run setup:stripe` to create new Stripe products.
 
 **After running:** Start `stripe listen --forward-to <your-url>/api/stripe/webhook` in another terminal for local testing. Restart your dev server.
 
