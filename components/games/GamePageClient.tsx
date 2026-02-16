@@ -586,8 +586,8 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           {/* Left-edge accent — terminal feel */}
           <div className="absolute left-0 top-0 bottom-0 w-px bg-gradient-to-b from-[#0ea5e9]/50 via-violet-500/30 to-[#0ea5e9]/30 pointer-events-none" aria-hidden />
           {/* Equity curve + Trade log */}
-          <div className="grid grid-cols-1 gap-4">
-            <div className="agent-card p-3 min-h-[100px] overflow-hidden flex flex-col border border-white/[0.08] hover:border-[#0ea5e9]/25 transition-colors shadow-sm">
+          <div className="grid grid-cols-1 gap-4 min-w-0 shrink-0">
+            <div className="agent-card p-3 min-h-[100px] overflow-hidden flex flex-col min-w-0 border border-white/[0.08] hover:border-[#0ea5e9]/25 transition-colors shadow-sm">
               <SessionPnLChart
                 series={statsSeries}
                 totalPnl={totalPnl}
@@ -596,7 +596,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 layout="mini"
               />
             </div>
-            <div className="agent-card p-3 min-h-[120px] flex flex-col overflow-hidden border border-white/[0.08] hover:border-[#0ea5e9]/25 transition-colors shadow-sm">
+            <div className="agent-card p-3 min-h-[120px] flex flex-col min-w-0 overflow-hidden border border-white/[0.08] hover:border-[#0ea5e9]/25 transition-colors shadow-sm">
               <div className="flex items-center justify-between mb-1.5 flex-shrink-0">
                 <div className="flex items-center gap-1.5">
                   <div className="w-1 h-4 rounded-full bg-[#0ea5e9]" />
@@ -624,7 +624,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             </div>
           </div>
           {/* Strategy — premium section, above metrics for prominence */}
-          <div className="agent-card agent-card-overflow-visible p-4 flex flex-col min-h-0 max-h-[520px] overflow-y-auto scrollbar-sidebar border border-violet-500/20 bg-gradient-to-br from-violet-500/[0.06] to-emerald-500/[0.04] shadow-[0_0_40px_rgba(139,92,246,0.08)] hover:border-violet-500/30 transition-all">
+          <div className="agent-card p-4 flex flex-col min-h-0 max-h-[480px] overflow-y-auto overflow-x-hidden scrollbar-sidebar border border-violet-500/20 bg-gradient-to-br from-violet-500/[0.06] to-emerald-500/[0.04] shadow-[0_0_40px_rgba(139,92,246,0.08)] hover:border-violet-500/30 transition-all">
             <div className="flex items-center justify-between gap-2 mb-3 flex-shrink-0">
               <div className="flex items-center gap-2">
                 <div className="w-1 h-5 rounded-full bg-gradient-to-b from-violet-500 to-emerald-500" />
