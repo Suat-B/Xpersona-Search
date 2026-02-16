@@ -32,15 +32,22 @@ const MAX_ROUNDS_OPTIONS = [10, 20, 50, 100] as const;
 
 interface SavedStrategiesWorkbenchPanelProps {
   onRun: (strategyId: string, maxRounds: number) => void;
+  onRunNonstop?: (strategyId: string, roundsPerBatch: number) => void;
+  onStopNonstop?: () => void;
   onLoadToManual?: (strategy: AdvancedDiceStrategy) => void;
   /** ID of strategy currently running — only that button shows "Running…" */
   runningStrategyId?: string | null;
+  /** ID of strategy in nonstop mode — Nonstop button shows "Stop" */
+  nonstopStrategyId?: string | null;
 }
 
 export function SavedStrategiesWorkbenchPanel({
   onRun,
+  onRunNonstop,
+  onStopNonstop,
   onLoadToManual,
   runningStrategyId = null,
+  nonstopStrategyId = null,
 }: SavedStrategiesWorkbenchPanelProps) {
   const [strategies, setStrategies] = useState<SavedStrategyRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -177,6 +184,38 @@ export function SavedStrategiesWorkbenchPanel({
                     </>
                   )}
                 </button>
+                {onRunNonstop && onStopNonstop && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      nonstopStrategyId === row.id
+                        ? onStopNonstop()
+                        : onRunNonstop(row.id, maxRounds)
+                    }
+                    disabled={runningStrategyId != null && runningStrategyId !== row.id}
+                    className={`inline-flex items-center gap-1 px-2 py-1.5 rounded text-[10px] font-bold transition-all ${
+                      nonstopStrategyId === row.id
+                        ? "bg-[var(--quant-bearish)]/20 border border-[var(--quant-bearish)]/40 text-[var(--quant-bearish)] hover:bg-[var(--quant-bearish)]/30"
+                        : "bg-[var(--quant-accent)]/20 border border-[var(--quant-accent)]/40 text-[var(--quant-accent)] hover:bg-[var(--quant-accent)]/30"
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {nonstopStrategyId === row.id ? (
+                      <>
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6h12v12H6z" />
+                        </svg>
+                        Stop
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Nonstop
+                      </>
+                    )}
+                  </button>
+                )}
                 {onLoadToManual && (
                   <button
                     type="button"

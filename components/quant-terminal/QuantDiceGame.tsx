@@ -45,8 +45,10 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [runningStrategyId, setRunningStrategyId] = useState<string | null>(null);
+  const [nonstopStrategyId, setNonstopStrategyId] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<{ exit: number; win: boolean } | null>(null);
   const lastResultTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nonstopAbortRef = useRef(false);
 
   const loadBalanceRef = useRef<((showLoading?: boolean) => Promise<boolean>) | null>(null);
 
@@ -202,32 +204,44 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
     }
   }, [currentTarget, currentSize, currentDirection, balance, sessionPnl, isLoading, addLog]);
 
-  // Run saved advanced strategy
+  // Run one batch of strategy rounds (used by both Run and Nonstop)
+  const runStrategyBatch = useCallback(
+    async (strategyId: string, maxRounds: number): Promise<{ ok: boolean; stoppedReason?: string; finalBalance?: number; sessionPnl?: number; roundsPlayed?: number; winRate?: number }> => {
+      const res = await fetch("/api/games/dice/run-advanced-strategy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ strategyId, maxRounds }),
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        return { ok: true, ...data.data };
+      }
+      return { ok: false };
+    },
+    []
+  );
+
+  // Run saved advanced strategy (single batch)
   const runStrategy = useCallback(
     async (strategyId: string, maxRounds: number) => {
       if (runningStrategyId) return;
       setRunningStrategyId(strategyId);
       addLog("info", `Starting strategy run (${maxRounds} rounds)…`);
       try {
-        const res = await fetch("/api/games/dice/run-advanced-strategy", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ strategyId, maxRounds }),
-        });
-        const data = await res.json();
-        if (data.success && data.data) {
-          const { sessionPnl: stratPnl, finalBalance, roundsPlayed, stoppedReason, winRate } = data.data;
+        const result = await runStrategyBatch(strategyId, maxRounds);
+        if (result.ok && result.finalBalance != null && result.sessionPnl != null) {
+          const { sessionPnl: stratPnl, finalBalance, roundsPlayed, stoppedReason, winRate } = result;
           setBalance(finalBalance);
           setSessionPnl((prev) => prev + stratPnl);
           setEquityData((prev) => [...prev, { time: Date.now(), value: finalBalance, pnl: sessionPnl + stratPnl }]);
           addLog(
             "fill",
-            `Strategy complete: ${roundsPlayed}r | PnL ${stratPnl >= 0 ? "+" : ""}$${stratPnl.toFixed(2)} | ${stoppedReason}${winRate != null ? ` | WR ${Number(winRate).toFixed(1)}%` : ""}`
+            `Strategy complete: ${roundsPlayed ?? 0}r | PnL ${stratPnl >= 0 ? "+" : ""}$${stratPnl.toFixed(2)} | ${stoppedReason ?? "done"}${winRate != null ? ` | WR ${Number(winRate).toFixed(1)}%` : ""}`
           );
           window.dispatchEvent(new Event("balance-updated"));
         } else {
-          addLog("error", data.message || data.error || "Strategy run failed");
+          addLog("error", "Strategy run failed");
         }
       } catch (err) {
         addLog("error", "Network error - check connection");
@@ -235,8 +249,70 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
         setRunningStrategyId(null);
       }
     },
-    [runningStrategyId, sessionPnl, addLog]
+    [runningStrategyId, sessionPnl, addLog, runStrategyBatch]
   );
+
+  // Nonstop autoplay: run strategy in batches until stopped, balance depleted, or stop condition
+  const runStrategyNonstop = useCallback(
+    async (strategyId: string, roundsPerBatch: number) => {
+      if (runningStrategyId) return;
+      nonstopAbortRef.current = false;
+      setNonstopStrategyId(strategyId);
+      setRunningStrategyId(strategyId);
+      addLog("info", `Nonstop autoplay started (${roundsPerBatch} rounds per batch)…`);
+      try {
+        let accumulatedPnl = 0;
+        let totalRounds = 0;
+        let batchCount = 0;
+        for (;;) {
+          if (nonstopAbortRef.current) {
+            addLog("info", "Nonstop stopped by user");
+            break;
+          }
+          const result = await runStrategyBatch(strategyId, roundsPerBatch);
+          if (!result.ok) {
+            addLog("error", "Strategy batch failed");
+            break;
+          }
+          const { finalBalance, sessionPnl: batchPnl, roundsPlayed, stoppedReason } = result;
+          if (finalBalance != null) setBalance(finalBalance);
+          if (batchPnl != null) {
+            accumulatedPnl += batchPnl;
+            setSessionPnl((prev) => prev + batchPnl);
+          }
+          totalRounds += roundsPlayed ?? 0;
+          batchCount += 1;
+          setEquityData((prev) => {
+            const lastPnl = prev[prev.length - 1]?.pnl ?? 0;
+            return [...prev, { time: Date.now(), value: finalBalance ?? 0, pnl: lastPnl + (batchPnl ?? 0) }];
+          });
+          addLog("fill", `Nonstop batch ${batchCount}: ${roundsPlayed ?? 0}r | PnL ${(batchPnl ?? 0) >= 0 ? "+" : ""}$${(batchPnl ?? 0).toFixed(2)} | ${stoppedReason ?? "done"}`);
+          window.dispatchEvent(new Event("balance-updated"));
+
+          if (nonstopAbortRef.current) break;
+          if (stoppedReason === "insufficient_balance" || (finalBalance != null && finalBalance <= 0)) {
+            addLog("info", "Nonstop stopped: insufficient balance");
+            break;
+          }
+          if (stoppedReason && stoppedReason !== "max_rounds") {
+            addLog("info", `Nonstop stopped: ${stoppedReason}`);
+            break;
+          }
+        }
+        addLog("fill", `Nonstop complete: ${totalRounds}r total`);
+      } catch (err) {
+        addLog("error", "Network error - check connection");
+      } finally {
+        setRunningStrategyId(null);
+        setNonstopStrategyId(null);
+      }
+    },
+    [runningStrategyId, sessionPnl, addLog, runStrategyBatch]
+  );
+
+  const stopNonstop = useCallback(() => {
+    nonstopAbortRef.current = true;
+  }, []);
 
   // Load strategy base config into manual mode
   const loadStrategyToManual = useCallback(
@@ -392,8 +468,11 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
               isLoading={isLoading}
               lastResult={lastResult}
               onRunStrategy={runStrategy}
+              onRunNonstop={runStrategyNonstop}
+              onStopNonstop={stopNonstop}
               onLoadToManual={loadStrategyToManual}
               runningStrategyId={runningStrategyId}
+              nonstopStrategyId={nonstopStrategyId}
             />
           </div>
         </div>

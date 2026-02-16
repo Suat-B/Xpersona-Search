@@ -16,10 +16,16 @@ interface AlphaWorkbenchProps {
   lastResult?: { exit: number; win: boolean } | null;
   /** Run saved advanced strategy by ID */
   onRunStrategy?: (strategyId: string, maxRounds: number) => void;
+  /** Run strategy in nonstop autoplay (batches until stopped or balance depleted) */
+  onRunNonstop?: (strategyId: string, roundsPerBatch: number) => void;
+  /** Stop nonstop autoplay */
+  onStopNonstop?: () => void;
   /** Load strategy base config into manual mode */
   onLoadToManual?: (strategy: AdvancedDiceStrategy) => void;
   /** ID of strategy currently running (only that Run button shows "Running…") */
   runningStrategyId?: string | null;
+  /** ID of strategy in nonstop mode (Nonstop button shows "Stop") */
+  nonstopStrategyId?: string | null;
 }
 
 export function AlphaWorkbench({
@@ -33,8 +39,11 @@ export function AlphaWorkbench({
   isLoading = false,
   lastResult,
   onRunStrategy,
+  onRunNonstop,
+  onStopNonstop,
   onLoadToManual,
   runningStrategyId = null,
+  nonstopStrategyId = null,
 }: AlphaWorkbenchProps) {
   const [activeTab, setActiveTab] = useState<"manual" | "strategy">("manual");
 
@@ -189,8 +198,11 @@ export function AlphaWorkbench({
         ) : onRunStrategy ? (
           <SavedStrategiesWorkbenchPanel
             onRun={onRunStrategy}
+            onRunNonstop={onRunNonstop}
+            onStopNonstop={onStopNonstop}
             onLoadToManual={onLoadToManual}
             runningStrategyId={runningStrategyId}
+            nonstopStrategyId={nonstopStrategyId}
           />
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-[var(--quant-neutral)]">
