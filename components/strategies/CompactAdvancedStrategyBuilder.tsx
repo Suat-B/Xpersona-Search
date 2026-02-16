@@ -20,6 +20,10 @@ interface CompactAdvancedStrategyBuilderProps {
   initialStrategy?: AdvancedDiceStrategy | null;
   /** When provided, enables Save button. Called with strategy; returns true + optional saved strategy with id for updates. */
   onSave?: (strategy: AdvancedDiceStrategy) => Promise<boolean | { id: string }>;
+  /** Called when strategy changes (e.g. for Backtest tab to use current strategy) */
+  onStrategyChange?: (strategy: AdvancedDiceStrategy) => void;
+  /** Use full-width center pane layout with terminal aesthetics */
+  fullWidth?: boolean;
 }
 
 export function CompactAdvancedStrategyBuilder({
@@ -27,8 +31,14 @@ export function CompactAdvancedStrategyBuilder({
   onApply,
   initialStrategy,
   onSave,
+  onStrategyChange,
+  fullWidth = false,
 }: CompactAdvancedStrategyBuilderProps) {
   const [strategy, setStrategy] = useState<AdvancedDiceStrategy>(initialStrategy ?? DEFAULT_STRATEGY);
+
+  useEffect(() => {
+    onStrategyChange?.(strategy);
+  }, [strategy, onStrategyChange]);
 
   useEffect(() => {
     if (initialStrategy) {
@@ -120,30 +130,31 @@ export function CompactAdvancedStrategyBuilder({
     }
   }, [onSave, strategy]);
 
+  const inputCls = fullWidth ? "terminal-input w-full px-2 py-1.5 text-xs" : "w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-xs text-[var(--text-primary)]";
+  const roundedCls = fullWidth ? "rounded-sm" : "rounded-lg";
+
   return (
-    <div className="space-y-4">
+    <div className={fullWidth ? "space-y-4" : "space-y-4"}>
       {/* Header */}
-      <div className="rounded-lg border border-violet-500/30 bg-violet-500/5 p-3">
+      <div className={`${roundedCls} border ${fullWidth ? "terminal-pane border-white/[0.06]" : "border-violet-500/30 bg-violet-500/5"} p-3`}>
         <div className="flex items-center gap-2 mb-2">
-          <svg className="w-4 h-4 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-          </svg>
-          <span className="text-sm font-medium text-violet-400">AI Strategy Builder</span>
+          <div className={`w-0.5 h-3 rounded-full ${fullWidth ? "bg-gradient-to-b from-[#0ea5e9] to-violet-500" : ""}`} />
+          <span className={`text-sm font-medium ${fullWidth ? "text-[var(--text-primary)]" : "text-violet-400"}`}>Strategy Builder</span>
         </div>
         <p className="text-xs text-[var(--text-secondary)]">
-          Create rule-based strategies with unlimited conditions and actions. Perfect for AI and advanced users.
+          Create rule-based strategies with unlimited conditions and actions. Use the Backtest tab to simulate.
         </p>
       </div>
 
-      {/* Quick Presets */}
+      {/* Quick Presets — wider when fullWidth */}
       <div>
         <label className="block text-[10px] text-[var(--text-secondary)] uppercase tracking-wider mb-1.5">Quick Presets</label>
         <div className="flex flex-wrap gap-1.5">
-          {STRATEGY_PRESETS.slice(0, 4).map((preset) => (
+          {(fullWidth ? STRATEGY_PRESETS : STRATEGY_PRESETS.slice(0, 4)).map((preset) => (
             <button
               key={preset.id}
               onClick={() => loadPreset(preset.id)}
-              className="px-2.5 py-1.5 text-[10px] font-medium rounded-lg border border-violet-500/30 bg-violet-500/5 text-violet-300 hover:bg-violet-500/15 hover:border-violet-500/50 transition-all"
+              className={`px-2.5 py-1.5 text-[10px] font-medium ${roundedCls} border border-violet-500/30 bg-violet-500/5 text-violet-300 hover:bg-violet-500/15 hover:border-violet-500/50 transition-all`}
               title={preset.description}
             >
               {preset.name}
@@ -152,64 +163,65 @@ export function CompactAdvancedStrategyBuilder({
         </div>
       </div>
 
-      {/* Base Config */}
-      <div className="grid grid-cols-3 gap-2">
-        <div>
-          <label className="block text-[10px] text-[var(--text-secondary)] mb-1">Bet</label>
-          <input
-            type="number"
-            min={1}
-            value={strategy.baseConfig.amount}
-            onChange={(e) =>
-              setStrategy({
-                ...strategy,
-                baseConfig: { ...strategy.baseConfig, amount: parseInt(e.target.value) || 1 },
-              })
-            }
-            className="w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-xs text-[var(--text-primary)]"
-          />
+      {/* Base Config — 2-col layout when fullWidth (left: config, right: rules) */}
+      <div className={fullWidth ? "grid grid-cols-1 lg:grid-cols-2 gap-4" : ""}>
+        <div className={fullWidth ? "grid grid-cols-3 gap-2" : "grid grid-cols-3 gap-2"}>
+          <div>
+            <label className="block text-[10px] text-[var(--text-secondary)] mb-1">Bet</label>
+            <input
+              type="number"
+              min={1}
+              value={strategy.baseConfig.amount}
+              onChange={(e) =>
+                setStrategy({
+                  ...strategy,
+                  baseConfig: { ...strategy.baseConfig, amount: parseInt(e.target.value) || 1 },
+                })
+              }
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] text-[var(--text-secondary)] mb-1">Target</label>
+            <input
+              type="number"
+              min={0}
+              max={99}
+              value={strategy.baseConfig.target}
+              onChange={(e) =>
+                setStrategy({
+                  ...strategy,
+                  baseConfig: { ...strategy.baseConfig, target: parseInt(e.target.value) || 0 },
+                })
+              }
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] text-[var(--text-secondary)] mb-1">Condition</label>
+            <select
+              value={strategy.baseConfig.condition}
+              onChange={(e) =>
+                setStrategy({
+                  ...strategy,
+                  baseConfig: { ...strategy.baseConfig, condition: e.target.value as "over" | "under" },
+                })
+              }
+              className={inputCls}
+            >
+              <option value="over">Over</option>
+              <option value="under">Under</option>
+            </select>
+          </div>
         </div>
-        <div>
-          <label className="block text-[10px] text-[var(--text-secondary)] mb-1">Target</label>
-          <input
-            type="number"
-            min={0}
-            max={99}
-            value={strategy.baseConfig.target}
-            onChange={(e) =>
-              setStrategy({
-                ...strategy,
-                baseConfig: { ...strategy.baseConfig, target: parseInt(e.target.value) || 0 },
-              })
-            }
-            className="w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-xs text-[var(--text-primary)]"
-          />
-        </div>
-        <div>
-          <label className="block text-[10px] text-[var(--text-secondary)] mb-1">Condition</label>
-          <select
-            value={strategy.baseConfig.condition}
-            onChange={(e) =>
-              setStrategy({
-                ...strategy,
-                baseConfig: { ...strategy.baseConfig, condition: e.target.value as "over" | "under" },
-              })
-            }
-            className="w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-xs text-[var(--text-primary)]"
-          >
-            <option value="over">Over</option>
-            <option value="under">Under</option>
-          </select>
-        </div>
-      </div>
 
       {/* Rules */}
-      <div>
+      <div className={fullWidth ? "min-h-0" : ""}>
         <div className="flex items-center justify-between mb-2">
           <label className="block text-xs text-[var(--text-secondary)]">Rules ({strategy.rules.length})</label>
           <button
             onClick={addRule}
-            className="flex items-center gap-1 px-2 py-1 text-[10px] rounded border border-violet-500/50 text-violet-400 hover:bg-violet-500/10 transition-colors"
+            className={`flex items-center gap-1 px-2 py-1 text-[10px] ${roundedCls} border border-violet-500/50 text-violet-400 hover:bg-violet-500/10 transition-colors`}
           >
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -220,7 +232,7 @@ export function CompactAdvancedStrategyBuilder({
 
         <div className="space-y-2 max-h-48 overflow-y-auto scrollbar-sidebar">
           {strategy.rules.length === 0 ? (
-            <div className="text-center py-4 border border-dashed border-[var(--border)] rounded-lg">
+            <div className={`text-center py-4 border border-dashed border-[var(--border)] ${roundedCls}`}>
               <p className="text-xs text-[var(--text-secondary)]">No rules yet</p>
               <p className="text-[10px] text-[var(--text-secondary)]/70">Add rules to automate your strategy</p>
             </div>
@@ -242,6 +254,7 @@ export function CompactAdvancedStrategyBuilder({
           )}
         </div>
       </div>
+      </div>
 
       {/* Execution Mode */}
       <div className="flex gap-2">
@@ -249,7 +262,7 @@ export function CompactAdvancedStrategyBuilder({
           <button
             key={mode}
             onClick={() => setStrategy({ ...strategy, executionMode: mode })}
-            className={`flex-1 px-2 py-1.5 text-[10px] rounded border transition-colors ${
+            className={`flex-1 px-2 py-1.5 text-[10px] ${roundedCls} border transition-colors ${
               strategy.executionMode === mode
                 ? "border-violet-500 bg-violet-500/10 text-violet-400"
                 : "border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
@@ -262,7 +275,7 @@ export function CompactAdvancedStrategyBuilder({
 
       {/* Simulation */}
       {simulationResult && (
-        <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-matte)] p-3">
+        <div className={`${roundedCls} border border-[var(--border)] bg-[var(--bg-matte)] p-3`}>
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-medium text-[var(--text-primary)]">Simulation Results</span>
             <button
@@ -326,7 +339,7 @@ export function CompactAdvancedStrategyBuilder({
               // Invalid JSON, ignore
             }
           }}
-          className="w-full h-32 rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-[10px] font-mono text-[var(--text-primary)] resize-none"
+          className={`w-full h-32 ${roundedCls} terminal-input px-2 py-1.5 text-[10px] font-mono resize-none`}
           spellCheck={false}
         />
       )}
@@ -341,13 +354,13 @@ export function CompactAdvancedStrategyBuilder({
             max={100}
             value={maxRounds}
             onChange={(e) => setMaxRounds(parseInt(e.target.value) || 50)}
-            className="w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-2 py-1.5 text-xs text-[var(--text-primary)]"
+            className={inputCls}
           />
         </div>
         {onApply && (
           <button
             onClick={() => onApply(strategy)}
-            className="px-3 py-1.5 rounded border border-[var(--border)] text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+            className={`px-3 py-1.5 ${roundedCls} border border-[var(--border)] text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors`}
           >
             Apply
           </button>
@@ -356,21 +369,21 @@ export function CompactAdvancedStrategyBuilder({
           <button
             onClick={handleSave}
             disabled={saving || !strategy.name?.trim()}
-            className="px-3 py-1.5 rounded border border-emerald-500/40 text-xs text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50"
+            className={`px-3 py-1.5 ${roundedCls} border border-emerald-500/40 text-xs text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50`}
           >
             {saving ? "Saving…" : "Save"}
           </button>
         )}
         <button
           onClick={() => onRun(strategy, maxRounds)}
-          className="flex-1 px-3 py-1.5 rounded bg-violet-500 text-white text-xs font-medium hover:bg-violet-500/90 transition-colors"
+          className={`flex-1 px-3 py-1.5 ${roundedCls} bg-violet-500 text-white text-xs font-medium hover:bg-violet-500/90 transition-colors`}
         >
           Run Strategy
         </button>
       </div>
 
       {/* AI Hint */}
-      <div className="rounded-lg border border-dashed border-[var(--border)] bg-[var(--bg-matte)]/50 p-3">
+      <div className={`${roundedCls} border border-dashed border-[var(--border)] bg-[var(--bg-matte)]/50 p-3`}>
         <div className="flex items-start gap-2">
           <svg className="w-4 h-4 text-[var(--accent-heart)] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />

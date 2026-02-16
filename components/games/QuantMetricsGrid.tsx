@@ -44,6 +44,8 @@ function statusColor(val: number | null, good: number, bad: number): "emerald" |
 interface QuantMetricsGridProps {
   metrics: QuantMetrics;
   recentResults: RollResult[];
+  /** Compact mode for left pane: no duplicate header, no hasNegativeEdge box, tighter spacing */
+  compact?: boolean;
 }
 
 function StatusDot({ status }: { status: "emerald" | "amber" | "red" | "neutral" }) {
@@ -53,7 +55,7 @@ function StatusDot({ status }: { status: "emerald" | "amber" | "red" | "neutral"
   return <span className={`w-1.5 h-1.5 rounded-full ${color} shrink-0`} aria-hidden />;
 }
 
-export function QuantMetricsGrid({ metrics, recentResults }: QuantMetricsGridProps) {
+export function QuantMetricsGrid({ metrics, recentResults, compact = false }: QuantMetricsGridProps) {
   const { currentStreak, currentIsWin } = computeStreaks(recentResults);
   const last10WinRate = computeRollingWinRate(recentResults, 10);
   const last20WinRate = computeRollingWinRate(recentResults, 20);
@@ -75,7 +77,7 @@ export function QuantMetricsGrid({ metrics, recentResults }: QuantMetricsGridPro
     large?: boolean
   ) => (
     <div
-      className="flex justify-between items-center py-2.5 border-b border-white/[0.06] last:border-0"
+      className={`flex justify-between items-center border-b border-white/[0.06] last:border-0 ${compact ? "py-1.5" : "py-2.5"}`}
       {...(dataValue != null
         ? { "data-agent": `stat-${label.toLowerCase().replace(/\s/g, "-")}`, "data-value": String(dataValue) }
         : {})}
@@ -99,24 +101,26 @@ export function QuantMetricsGrid({ metrics, recentResults }: QuantMetricsGridPro
 
   return (
     <div
-      className="space-y-2.5 min-w-0"
+      className={`min-w-0 ${compact ? "space-y-1.5" : "space-y-2.5"}`}
       data-agent="quant-metrics-grid"
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <div className="w-0.5 h-3 rounded-full bg-[#0ea5e9]" />
-          <span className="text-[10px] font-semibold text-[var(--text-primary)] uppercase tracking-wider">
-            Performance Metrics
-          </span>
+      {!compact && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <div className="w-0.5 h-3 rounded-full bg-[#0ea5e9]" />
+            <span className="text-[10px] font-semibold text-[var(--text-primary)] uppercase tracking-wider">
+              Performance Metrics
+            </span>
+          </div>
+          {recentResults.length > 0 && (
+            <span className="text-xs text-[#30d158]/80 tabular-nums">
+              {recentResults.length} fills
+            </span>
+          )}
         </div>
-        {recentResults.length > 0 && (
-          <span className="text-xs text-[#30d158]/80 tabular-nums">
-            {recentResults.length} fills
-          </span>
-        )}
-      </div>
+      )}
 
-      {hasNegativeEdge && recentResults.length < 5 && (
+      {!compact && hasNegativeEdge && recentResults.length < 5 && (
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2.5">
           <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
             <span className="font-semibold text-amber-400/90">House edge −{edgePct}%.</span>{" "}

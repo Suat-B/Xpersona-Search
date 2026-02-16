@@ -12,7 +12,6 @@ import { QuantTopMetricsBar } from "./QuantTopMetricsBar";
 import { TradeLog } from "./TradeLog";
 import { HeartbeatIndicator } from "@/components/ui/HeartbeatIndicator";
 import { CreativeDiceStrategiesSection } from "./CreativeDiceStrategiesSection";
-import { AgentApiSection } from "./AgentApiSection";
 import { CompactAdvancedStrategyBuilder } from "@/components/strategies/CompactAdvancedStrategyBuilder";
 import { SavedAdvancedStrategiesList } from "@/components/strategies/SavedAdvancedStrategiesList";
 import { getAndClearStrategyRunPayload } from "@/lib/strategy-run-payload";
@@ -25,8 +24,145 @@ import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
 import type { DiceStrategyConfig, DiceProgressionType } from "@/lib/strategies";
 import type { StrategyRunConfig } from "./DiceGame";
 import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
+import { simulateStrategy } from "@/lib/dice-rule-engine";
+import { DICE_HOUSE_EDGE } from "@/lib/constants";
 
 const MAX_RECENT_RESULTS = 50;
+
+type CenterTab = "chart" | "strategy" | "backtest";
+
+function BacktestTabContent({ strategy }: { strategy: AdvancedDiceStrategy | null }) {
+  const [simulationBalance, setSimulationBalance] = useState(1000);
+  const [simulationRounds, setSimulationRounds] = useState(100);
+  const [simulationResult, setSimulationResult] = useState<ReturnType<typeof simulateStrategy> | null>(null);
+
+  const runSimulation = useCallback(() => {
+    if (!strategy) return;
+    const result = simulateStrategy(strategy, simulationBalance, simulationRounds, DICE_HOUSE_EDGE);
+    setSimulationResult(result);
+  }, [strategy, simulationBalance, simulationRounds]);
+
+  if (!strategy) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full min-h-[200px] text-[var(--text-secondary)] text-sm">
+        <p>Load or create a strategy in the Strategy tab first.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 p-3 overflow-y-auto">
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs text-[var(--text-secondary)] mb-1">Starting Balance</label>
+          <input
+            type="number"
+            min={1}
+            value={simulationBalance}
+            onChange={(e) => setSimulationBalance(parseInt(e.target.value) || 1000)}
+            className="terminal-input w-full px-3 py-2"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-[var(--text-secondary)] mb-1">Rounds to Simulate</label>
+          <input
+            type="number"
+            min={1}
+            max={10000}
+            value={simulationRounds}
+            onChange={(e) => setSimulationRounds(parseInt(e.target.value) || 100)}
+            className="terminal-input w-full px-3 py-2"
+          />
+        </div>
+      </div>
+
+      <button
+        onClick={runSimulation}
+        className="w-full py-3 rounded-sm bg-violet-500/20 text-violet-400 border border-violet-500/50 hover:bg-violet-500/30 transition-colors font-medium terminal-pane"
+      >
+        Run Simulation
+      </button>
+
+      {simulationResult && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="terminal-pane p-3 rounded-sm">
+              <p className="text-xs text-[var(--text-secondary)]">Final Balance</p>
+              <p className={`text-lg font-semibold tabular-nums ${simulationResult.profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                {simulationResult.finalBalance.toFixed(0)}
+              </p>
+            </div>
+            <div className="terminal-pane p-3 rounded-sm">
+              <p className="text-xs text-[var(--text-secondary)]">Profit/Loss</p>
+              <p className={`text-lg font-semibold tabular-nums ${simulationResult.profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                {simulationResult.profit >= 0 ? "+" : ""}{simulationResult.profit.toFixed(0)}
+              </p>
+            </div>
+            <div className="terminal-pane p-3 rounded-sm">
+              <p className="text-xs text-[var(--text-secondary)]">Win Rate</p>
+              <p className="text-lg font-semibold tabular-nums text-[var(--text-primary)]">
+                {simulationResult.roundHistory.length > 0 ? ((simulationResult.totalWins / simulationResult.roundHistory.length) * 100).toFixed(1) : "0"}%
+              </p>
+            </div>
+            <div className="terminal-pane p-3 rounded-sm">
+              <p className="text-xs text-[var(--text-secondary)]">Rounds</p>
+              <p className="text-lg font-semibold tabular-nums text-[var(--text-primary)]">{simulationResult.roundHistory.length}</p>
+            </div>
+          </div>
+          {simulationResult.shouldStop && simulationResult.stopReason && (
+            <div className="p-3 rounded-sm bg-amber-500/10 border border-amber-500/30">
+              <p className="text-sm text-amber-400"><strong>Stopped:</strong> {simulationResult.stopReason}</p>
+            </div>
+          )}
+          <div className="terminal-pane p-3 rounded-sm">
+            <p className="text-xs text-[var(--text-secondary)] mb-2">Balance Range</p>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-red-400 tabular-nums">Low: {simulationResult.minBalance.toFixed(0)}</span>
+              <div className="flex-1 h-2 rounded-full bg-[var(--bg-card)] overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-red-400 via-yellow-400 to-emerald-400"
+                  style={{
+                    width: `${((simulationResult.finalBalance - simulationResult.minBalance) / (simulationResult.maxBalance - simulationResult.minBalance || 1)) * 100}%`,
+                  }}
+                />
+              </div>
+              <span className="text-sm text-emerald-400 tabular-nums">High: {simulationResult.maxBalance.toFixed(0)}</span>
+            </div>
+          </div>
+          <div>
+            <p className="text-sm text-[var(--text-secondary)] mb-2">Recent Rounds</p>
+            <div className="max-h-48 overflow-y-auto rounded-sm border border-[var(--border)] terminal-pane">
+              <table className="w-full text-xs">
+                <thead className="bg-white/[0.02] sticky top-0">
+                  <tr>
+                    <th className="px-2 py-1 text-left text-[var(--text-secondary)]">#</th>
+                    <th className="px-2 py-1 text-left text-[var(--text-secondary)]">Bet</th>
+                    <th className="px-2 py-1 text-left text-[var(--text-secondary)]">Roll</th>
+                    <th className="px-2 py-1 text-left text-[var(--text-secondary)]">Result</th>
+                    <th className="px-2 py-1 text-right text-[var(--text-secondary)]">Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {simulationResult.roundHistory.slice(-20).map((round) => (
+                    <tr key={round.round} className="border-t border-white/[0.06]">
+                      <td className="px-2 py-1 text-[var(--text-secondary)] tabular-nums">{round.round}</td>
+                      <td className="px-2 py-1 text-[var(--text-primary)] tabular-nums">{round.bet}</td>
+                      <td className="px-2 py-1 text-[var(--text-primary)] tabular-nums">{round.roll}</td>
+                      <td className="px-2 py-1">
+                        <span className={round.win ? "text-emerald-400" : "text-red-400"}>{round.win ? "Win" : "Loss"}</span>
+                      </td>
+                      <td className="px-2 py-1 text-right text-[var(--text-primary)] tabular-nums">{round.balance.toFixed(0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const DiceGame = dynamic(() => import("./DiceGame"), { ssr: false });
 
@@ -72,6 +208,8 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   } | null>(null);
   const [depositSuccess, setDepositSuccess] = useState(false);
   const [loadedStrategyForBuilder, setLoadedStrategyForBuilder] = useState<AdvancedDiceStrategy | null | undefined>(undefined);
+  const [centerTab, setCenterTab] = useState<CenterTab>("chart");
+  const [strategyForBacktest, setStrategyForBacktest] = useState<AdvancedDiceStrategy | null>(null);
   const [livePlay, setLivePlay] = useState<{ result: number; win: boolean; payout: number } | null>(null);
   const [livePlayDisplayMs, setLivePlayDisplayMs] = useState(450);
   const [showAiPlayingIndicator, setShowAiPlayingIndicator] = useState(false);
@@ -590,18 +728,31 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               <QuantMetricsGrid
                 metrics={quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null }}
                 recentResults={recentResults}
+                compact
               />
             </div>
           </div>
         </div>
 
-        {/* Center pane — Hero equity chart */}
+        {/* Center pane — Tabbed: Chart | Strategy | Backtest */}
         <div className="hidden lg:flex flex-col min-w-0 min-h-0 overflow-hidden">
           <div className="terminal-pane flex-1 min-h-0 flex flex-col overflow-hidden m-2 mx-1">
             <div className="terminal-header flex-shrink-0 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="terminal-header-accent" />
-                <span>Equity Curve</span>
+              <div className="flex items-center gap-1">
+                {(["chart", "strategy", "backtest"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setCenterTab(tab)}
+                    className={`px-3 py-1.5 text-[11px] font-medium rounded-sm transition-colors capitalize ${
+                      centerTab === tab
+                        ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/40"
+                        : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-white/[0.04] border border-transparent"
+                    }`}
+                  >
+                    {tab === "chart" ? "Chart" : tab === "strategy" ? "Strategy" : "Backtest"}
+                  </button>
+                ))}
               </div>
               <button
                 type="button"
@@ -611,16 +762,100 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 Reset
               </button>
             </div>
-            <div className="flex-1 min-h-0 p-3 overflow-hidden">
-              <SessionPnLChart
-                series={statsSeries}
-                totalPnl={totalPnl}
-                rounds={rounds}
-                onReset={handleReset}
-                layout="hero"
-                sharpeRatio={m.sharpeRatio}
-                maxDrawdownPct={m.maxDrawdownPct}
-              />
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+              {centerTab === "chart" && (
+                <div className="flex-1 min-h-0 p-3 overflow-hidden">
+                  <SessionPnLChart
+                    series={statsSeries}
+                    totalPnl={totalPnl}
+                    rounds={rounds}
+                    onReset={handleReset}
+                    layout="hero"
+                    sharpeRatio={m.sharpeRatio}
+                    maxDrawdownPct={m.maxDrawdownPct}
+                  />
+                </div>
+              )}
+              {centerTab === "strategy" && (
+                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 space-y-3 scrollbar-sidebar">
+                  <SavedAdvancedStrategiesList
+                    onRun={(strategy, maxRounds) => {
+                      setAmount(strategy.baseConfig.amount);
+                      setTarget(strategy.baseConfig.target);
+                      setCondition(strategy.baseConfig.condition);
+                      setActiveStrategyName(strategy.name);
+                      setStrategyRun({
+                        config: { amount: strategy.baseConfig.amount, target: strategy.baseConfig.target, condition: strategy.baseConfig.condition, progressionType: "flat" },
+                        maxRounds,
+                        strategyName: strategy.name,
+                        isAdvanced: true,
+                        advancedStrategy: strategy,
+                      });
+                    }}
+                    onLoad={(strategy) => setLoadedStrategyForBuilder(strategy)}
+                    defaultMaxRounds={50}
+                  />
+                  <CompactAdvancedStrategyBuilder
+                    key={loadedStrategyForBuilder?.id ?? "builder"}
+                    initialStrategy={loadedStrategyForBuilder}
+                    onStrategyChange={setStrategyForBacktest}
+                    fullWidth
+                    onSave={async (strategy) => {
+                      try {
+                        const url = strategy.id ? `/api/me/advanced-strategies/${strategy.id}` : "/api/me/advanced-strategies";
+                        const method = strategy.id ? "PATCH" : "POST";
+                        const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(strategy) });
+                        const data = await res.json();
+                        const savedId = data.data?.strategy?.id ?? data.data?.id;
+                        if (data.success && savedId) return { id: savedId };
+                        return !!data.success;
+                      } catch {
+                        return false;
+                      }
+                    }}
+                    onRun={(strategy, maxRounds) => {
+                      setAmount(strategy.baseConfig.amount);
+                      setTarget(strategy.baseConfig.target);
+                      setCondition(strategy.baseConfig.condition);
+                      setActiveStrategyName(strategy.name);
+                      setStrategyRun({
+                        config: { amount: strategy.baseConfig.amount, target: strategy.baseConfig.target, condition: strategy.baseConfig.condition, progressionType: "flat" },
+                        maxRounds,
+                        strategyName: strategy.name,
+                        isAdvanced: true,
+                        advancedStrategy: strategy,
+                      });
+                    }}
+                    onApply={(strategy) => {
+                      setAmount(strategy.baseConfig.amount);
+                      setTarget(strategy.baseConfig.target);
+                      setCondition(strategy.baseConfig.condition);
+                      setActiveStrategyName(strategy.name);
+                    }}
+                  />
+                  <div className="flex items-center gap-2 py-1">
+                    <div className="flex-1 border-t border-white/[0.06]" />
+                    <span className="text-[10px] uppercase tracking-widest text-[var(--text-tertiary)]">or</span>
+                    <div className="flex-1 border-t border-white/[0.06]" />
+                  </div>
+                  <CreativeDiceStrategiesSection
+                    activeStrategyName={activeStrategyName}
+                    onLoadConfig={loadStrategyConfig}
+                    onStartStrategyRun={(config, maxRounds, strategyName) => {
+                      setAmount(config.amount);
+                      setTarget(config.target);
+                      setCondition(config.condition);
+                      setStrategyRun({ config, maxRounds, strategyName });
+                    }}
+                  />
+                  <Link href="/dashboard/strategies" className="flex items-center justify-center gap-1.5 w-full py-2 rounded-sm border border-dashed border-white/[0.06] text-[11px] text-[var(--text-tertiary)] hover:text-[#0ea5e9] hover:border-[#0ea5e9]/30 transition-all">
+                    Manage Strategies →
+                  </Link>
+                </div>
+              )}
+              {centerTab === "backtest" && (
+                <BacktestTabContent strategy={strategyForBacktest} />
+              )}
             </div>
           </div>
         </div>
@@ -654,106 +889,19 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             </div>
           </div>
 
-          <div className="terminal-pane flex-1 min-h-0 max-h-[400px] overflow-y-auto overflow-x-hidden m-2 ml-0 flex flex-col border-violet-500/20">
-            <div className="terminal-header flex-shrink-0 flex items-center gap-2">
-              <div className="w-0.5 h-3 rounded-full bg-gradient-to-b from-violet-500 to-emerald-500" />
-              <span>Strategy</span>
-              <span className="px-1.5 py-px rounded text-[8px] font-semibold bg-violet-500/15 text-violet-300 border border-violet-500/25">
-                AI-Powered
-              </span>
-            </div>
-            <div className="p-3 space-y-2.5 overflow-y-auto scrollbar-sidebar">
-              <SavedAdvancedStrategiesList
-                onRun={(strategy, maxRounds) => {
-                  setAmount(strategy.baseConfig.amount);
-                  setTarget(strategy.baseConfig.target);
-                  setCondition(strategy.baseConfig.condition);
-                  setActiveStrategyName(strategy.name);
-                  setStrategyRun({
-                    config: { amount: strategy.baseConfig.amount, target: strategy.baseConfig.target, condition: strategy.baseConfig.condition, progressionType: "flat" },
-                    maxRounds,
-                    strategyName: strategy.name,
-                    isAdvanced: true,
-                    advancedStrategy: strategy,
-                  });
-                }}
-                onLoad={(strategy) => setLoadedStrategyForBuilder(strategy)}
-                defaultMaxRounds={50}
-              />
-              <CompactAdvancedStrategyBuilder
-                key={loadedStrategyForBuilder?.id ?? "builder"}
-                initialStrategy={loadedStrategyForBuilder}
-                onSave={async (strategy) => {
-                  try {
-                    const url = strategy.id ? `/api/me/advanced-strategies/${strategy.id}` : "/api/me/advanced-strategies";
-                    const method = strategy.id ? "PATCH" : "POST";
-                    const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(strategy) });
-                    const data = await res.json();
-                    const savedId = data.data?.strategy?.id ?? data.data?.id;
-                    if (data.success && savedId) return { id: savedId };
-                    return !!data.success;
-                  } catch {
-                    return false;
-                  }
-                }}
-                onRun={(strategy, maxRounds) => {
-                  setAmount(strategy.baseConfig.amount);
-                  setTarget(strategy.baseConfig.target);
-                  setCondition(strategy.baseConfig.condition);
-                  setActiveStrategyName(strategy.name);
-                  setStrategyRun({
-                    config: { amount: strategy.baseConfig.amount, target: strategy.baseConfig.target, condition: strategy.baseConfig.condition, progressionType: "flat" },
-                    maxRounds,
-                    strategyName: strategy.name,
-                    isAdvanced: true,
-                    advancedStrategy: strategy,
-                  });
-                }}
-                onApply={(strategy) => {
-                  setAmount(strategy.baseConfig.amount);
-                  setTarget(strategy.baseConfig.target);
-                  setCondition(strategy.baseConfig.condition);
-                  setActiveStrategyName(strategy.name);
-                }}
-              />
-              <div className="flex items-center gap-2 py-1">
-                <div className="flex-1 border-t border-white/[0.06]" />
-                <span className="text-[10px] uppercase tracking-widest text-[var(--text-tertiary)]">or</span>
-                <div className="flex-1 border-t border-white/[0.06]" />
-              </div>
-              <CreativeDiceStrategiesSection
-                activeStrategyName={activeStrategyName}
-                onLoadConfig={loadStrategyConfig}
-                onStartStrategyRun={(config, maxRounds, strategyName) => {
-                  setAmount(config.amount);
-                  setTarget(config.target);
-                  setCondition(config.condition);
-                  setStrategyRun({ config, maxRounds, strategyName });
-                }}
-              />
-              <Link href="/dashboard/strategies" className="flex items-center justify-center gap-1.5 w-full py-2 rounded-sm border border-dashed border-white/[0.06] text-[11px] text-[var(--text-tertiary)] hover:text-[#0ea5e9] hover:border-[#0ea5e9]/30 transition-all">
-                Manage Strategies →
-              </Link>
-            </div>
-          </div>
-
           {(liveActivityItems.length > 0 || liveQueueLength > 0) && (
             <div className="terminal-pane m-2 ml-0 flex-shrink-0">
               <LiveActivityFeed items={liveActivityItems} maxItems={20} />
             </div>
           )}
 
-          <div className="terminal-pane m-2 ml-0 flex-shrink-0 space-y-2">
+          <div className="terminal-pane m-2 ml-0 flex-shrink-0">
             <div className="terminal-header flex-shrink-0">
               <div className="terminal-header-accent" />
               <span>AI API</span>
             </div>
             <div className="p-3 space-y-2">
-              <p className="text-[10px] text-[var(--text-tertiary)]">
-                Connect any AI to play via REST API.
-              </p>
-              <ApiKeySection />
-              <AgentApiSection />
+              <ApiKeySection compact />
               <Link href="/dashboard/api" className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#0ea5e9] hover:underline">
                 Full API Docs →
               </Link>

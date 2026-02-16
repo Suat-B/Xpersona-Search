@@ -5,7 +5,12 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-export function ApiKeySection() {
+interface ApiKeySectionProps {
+  /** Compact layout for sidebar: key prefix + regenerate in a single row */
+  compact?: boolean;
+}
+
+export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
   const [prefix, setPrefix] = useState<string | null>(null);
   const [modalKey, setModalKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -73,6 +78,60 @@ export function ApiKeySection() {
       return () => clearTimeout(t);
     }
   }, [modalKey]);
+
+  if (compact) {
+    return (
+      <>
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            {prefix ? (
+              <>
+                <div className="w-2 h-2 rounded-full bg-[#30d158] animate-pulse flex-shrink-0" />
+                <p className="font-mono text-[11px] text-[var(--text-primary)] tabular-nums truncate">{(prefix as string).slice(0, 11)}…</p>
+              </>
+            ) : (
+              <>
+                <div className="w-2 h-2 rounded-full bg-[var(--text-tertiary)] flex-shrink-0" />
+                <p className="text-[11px] text-[var(--text-tertiary)]">No key</p>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={generate}
+              disabled={loading}
+              className="ml-auto flex-shrink-0 px-2 py-1 text-[10px] rounded-sm border border-[#0a84ff]/40 bg-[#0a84ff]/10 text-[#0a84ff] hover:bg-[#0a84ff]/20 disabled:opacity-50 transition-colors"
+            >
+              {loading ? "…" : prefix ? "Regenerate" : "Generate"}
+            </button>
+          </div>
+          {error === "auth" && (
+            <Link href="/api/auth/play" className="block text-[10px] text-amber-400 hover:underline">Sign in to generate</Link>
+          )}
+          {error === "generic" && (
+            <button type="button" onClick={() => setError(null)} className="text-[10px] text-red-400 hover:underline">Retry</button>
+          )}
+        </div>
+        {modalKey && typeof document !== "undefined" && createPortal(
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm min-h-screen min-w-full" style={{ top: 0, left: 0, right: 0, bottom: 0 }} role="dialog" aria-modal="true" onClick={(e) => e.target === e.currentTarget && closeModal()}>
+            <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[var(--bg-card)] p-6 shadow-2xl shadow-black/50 relative" onClick={(e) => e.stopPropagation()}>
+              <button type="button" onClick={closeModal} className="absolute top-4 right-4 p-2 rounded-lg text-[var(--text-tertiary)] hover:text-white hover:bg-white/10 transition-colors" aria-label="Close">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+              <p className="text-sm font-semibold text-[var(--text-primary)] mb-2">Copy your API key — won&apos;t be shown again</p>
+              <pre className="mb-4 overflow-x-auto rounded-xl bg-black/40 p-4 text-xs font-mono break-all border border-white/10">{modalKey}</pre>
+              <div className="flex gap-3">
+                <button ref={copyButtonRef} type="button" onClick={copyAndClose} className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#0a84ff] px-4 py-3 text-sm font-medium text-white hover:bg-[#0a84ff]/90">
+                  Copy to Clipboard
+                </button>
+                <button type="button" onClick={closeModal} className="rounded-xl border border-[var(--border)] px-4 py-3 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/5">Skip</button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+      </>
+    );
+  }
 
   return (
     <div className="agent-card p-5"

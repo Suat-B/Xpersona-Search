@@ -21,16 +21,16 @@ export function RuleCard({ rule, onUpdate, onDelete, onMoveUp, onMoveDown, isFir
 
   return (
     <div
-      className={`rounded-lg border transition-all ${
+      className={`rounded-sm border transition-all ${
         rule.enabled
-          ? "border-[var(--border)] bg-[var(--bg-card)]"
-          : "border-[var(--border)]/50 bg-[var(--bg-card)]/50 opacity-60"
+          ? "border-white/[0.12] terminal-pane"
+          : "border-white/[0.06] bg-white/[0.02] opacity-60"
       }`}
       data-rule-id={rule.id}
       data-rule-enabled={rule.enabled}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.06]">
         <div className="flex items-center gap-3">
           <span className="text-xs font-medium text-[var(--text-secondary)]">
             Condition {rule.order + 1}
@@ -84,26 +84,26 @@ export function RuleCard({ rule, onUpdate, onDelete, onMoveUp, onMoveDown, isFir
       </div>
 
       {/* Content */}
-      <div className="px-4 py-3">
+      <div className="px-3 py-2">
         {isEditing ? (
           <RuleEditor rule={rule} onUpdate={onUpdate} onClose={() => setIsEditing(false)} />
         ) : (
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm text-[var(--text-secondary)]">On</span>
-            <span className="text-sm font-medium text-[var(--accent-heart)]">
+          <div className="flex items-center gap-2 flex-wrap font-mono text-xs">
+            <span className="text-[var(--text-secondary)]">On</span>
+            <span className="font-medium text-[var(--accent-heart)] tabular-nums">
               {triggerInfo.label}
             </span>
             {triggerInfo.needsValue && rule.trigger.value !== undefined && (
-              <span className="text-sm font-bold text-[var(--text-primary)]">
+              <span className="font-semibold text-[var(--text-primary)] tabular-nums">
                 {rule.trigger.pattern || rule.trigger.value}
               </span>
             )}
-            <span className="text-sm text-[var(--text-secondary)]">&rarr;</span>
-            <span className="text-sm font-medium text-emerald-400">
+            <span className="text-[var(--text-secondary)]">&rarr;</span>
+            <span className="font-medium text-emerald-400 tabular-nums">
               {actionInfo.label}
             </span>
             {actionInfo.needsValue && rule.action.value !== undefined && (
-              <span className="text-sm font-bold text-[var(--text-primary)]">
+              <span className="font-semibold text-[var(--text-primary)] tabular-nums">
                 {rule.action.value}{rule.action.type.includes("percent") ? "%" : ""}
               </span>
             )}
@@ -113,7 +113,7 @@ export function RuleCard({ rule, onUpdate, onDelete, onMoveUp, onMoveDown, isFir
 
       {/* Footer with reorder controls */}
       {!isEditing && (
-        <div className="px-4 py-2 border-t border-[var(--border)] flex justify-end gap-1">
+        <div className="px-3 py-1.5 border-t border-white/[0.06] flex justify-end gap-1">
           <button
             onClick={onMoveUp}
             disabled={isFirst}
@@ -170,7 +170,7 @@ function RuleEditor({ rule, onUpdate, onClose }: RuleEditorProps) {
                 },
               });
             }}
-            className="w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-sm text-[var(--text-primary)]"
+            className="w-full terminal-input rounded-sm px-2 py-1.5 text-xs"
           >
             {Object.entries(TRIGGER_INFO).map(([type, info]) => (
               <option key={type} value={type}>{info.label}</option>
@@ -194,7 +194,7 @@ function RuleEditor({ rule, onUpdate, onClose }: RuleEditorProps) {
                 });
               }}
               placeholder={triggerInfo.valueLabel}
-              className="w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-sm text-[var(--text-primary)]"
+              className="w-full terminal-input rounded-sm px-2 py-1.5 text-xs"
             />
           )}
         </div>
@@ -218,7 +218,7 @@ function RuleEditor({ rule, onUpdate, onClose }: RuleEditorProps) {
                 },
               });
             }}
-            className="w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-sm text-[var(--text-primary)]"
+            className="w-full terminal-input rounded-sm px-2 py-1.5 text-xs"
           >
             {Object.entries(ACTION_INFO).map(([type, info]) => (
               <option key={type} value={type}>{info.label}</option>
@@ -239,7 +239,7 @@ function RuleEditor({ rule, onUpdate, onClose }: RuleEditorProps) {
                 });
               }}
               placeholder={actionInfo.valueLabel}
-              className="w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-sm text-[var(--text-primary)]"
+              className="w-full terminal-input rounded-sm px-2 py-1.5 text-xs"
             />
           )}
         </div>
@@ -247,7 +247,7 @@ function RuleEditor({ rule, onUpdate, onClose }: RuleEditorProps) {
       </div>
 
       {/* Advanced Options */}
-      <div className="grid grid-cols-2 gap-4 pt-2 border-t border-[var(--border)]">
+      <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/[0.06]">
         <div>
           <label className="block text-xs text-[var(--text-secondary)] mb-1">Cooldown (rounds)</label>
           <input
@@ -256,7 +256,7 @@ function RuleEditor({ rule, onUpdate, onClose }: RuleEditorProps) {
             value={rule.cooldownRounds || ""}
             onChange={(e) => onUpdate({ ...rule, cooldownRounds: parseInt(e.target.value) || undefined })}
             placeholder="0"
-            className="w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-sm text-[var(--text-primary)]"
+            className="w-full terminal-input rounded-sm px-2 py-1.5 text-xs"
           />
         </div>
         <div>
@@ -267,7 +267,7 @@ function RuleEditor({ rule, onUpdate, onClose }: RuleEditorProps) {
             value={rule.maxExecutions || ""}
             onChange={(e) => onUpdate({ ...rule, maxExecutions: parseInt(e.target.value) || undefined })}
             placeholder="∞"
-            className="w-full rounded border border-[var(--border)] bg-[var(--bg-matte)] px-3 py-2 text-sm text-[var(--text-primary)]"
+            className="w-full terminal-input rounded-sm px-2 py-1.5 text-xs"
           />
         </div>
       </div>
@@ -276,7 +276,7 @@ function RuleEditor({ rule, onUpdate, onClose }: RuleEditorProps) {
       <div className="flex justify-end">
         <button
           onClick={onClose}
-          className="px-4 py-2 text-sm font-medium rounded bg-[var(--accent-heart)] text-white hover:bg-[var(--accent-heart)]/90 transition-colors"
+          className="px-3 py-1.5 text-xs font-medium rounded-sm bg-[var(--accent-heart)] text-white hover:bg-[var(--accent-heart)]/90 transition-colors"
         >
           Done
         </button>
