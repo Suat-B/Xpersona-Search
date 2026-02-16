@@ -211,6 +211,7 @@ const TOOLS: ToolDef[] = [
   {
     id: "flip",
     label: "Flip",
+    isActive: (p) => p.condition === "under",
     icon: <ArrowsSwapIcon className="w-3 h-3" />,
     onClick: (p) => p.onConditionChange(p.condition === "over" ? "under" : "over"),
   },
@@ -238,7 +239,7 @@ const TOOLS: ToolDef[] = [
   {
     id: "allin",
     label: "All In",
-    isActive: (p) => p.amount >= Math.min(p.balance, MAX_BET) - 0.5,
+    isActive: (p) => p.balance > 0 && p.amount >= Math.min(p.balance, MAX_BET) - 0.5,
     icon: <FlameIcon className="w-3 h-3" />,
     onClick: (p) => p.onAmountChange(Math.min(p.balance, MAX_BET)),
   },
@@ -261,14 +262,14 @@ const TOOLS: ToolDef[] = [
   {
     id: "10x",
     label: "10x",
-    isActive: (p) => p.target >= 89,
+    isActive: (p) => p.target >= 88.5,
     icon: <RocketIcon className="w-3 h-3" />,
     onClick: (p) => p.onTargetChange(90),
   },
   {
     id: "safe",
     label: "Safe",
-    isActive: (p) => Math.abs(p.target - 25) < 1 && p.condition === "under",
+    isActive: (p) => Math.abs(p.target - 25) < 1.5 && p.condition === "under",
     icon: <LockIcon className="w-3 h-3" />,
     onClick: (p) => {
       p.onTargetChange(25);

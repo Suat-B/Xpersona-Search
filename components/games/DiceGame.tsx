@@ -678,7 +678,7 @@ export function DiceGame({
           )}
         </div>
 
-        <div className={`flex-1 min-h-0 flex flex-col px-2 py-1.5 pt-3 overflow-hidden ${aiDriving ? "bg-gradient-to-b from-violet-500/[0.04] to-transparent" : ""}`}>
+        <div className={`flex-1 min-h-0 flex flex-col items-center px-4 py-1.5 pt-3 overflow-hidden ${aiDriving ? "bg-gradient-to-b from-violet-500/[0.04] to-transparent" : ""}`}>
           {aiDriving && (
             <div className="flex-shrink-0">
               <span className="inline-flex items-center gap-1.5 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-violet-400 border border-violet-500/30 rounded-sm bg-violet-500/10">
@@ -688,7 +688,7 @@ export function DiceGame({
             </div>
           )}
 
-          <div className="space-y-1 w-full max-w-full lg:max-w-sm mx-auto flex-shrink-0">
+          <div className="space-y-1 w-full max-w-[320px] flex-shrink-0">
             <div className="grid grid-cols-2 gap-1.5">
               <div className="space-y-0.5">
                 <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Threshold</label>
