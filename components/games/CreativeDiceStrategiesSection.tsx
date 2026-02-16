@@ -96,8 +96,8 @@ export function CreativeDiceStrategiesSection({
         </div>
       )}
 
-      {/* Strategy grid — scrollable; min-h ensures cards always have space */}
-      <div className="grid grid-cols-1 gap-2 max-h-[340px] overflow-y-auto overflow-x-hidden pr-1 scroll-smooth">
+      {/* Strategy grid — scrollable */}
+      <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto overflow-x-hidden pr-1 scroll-smooth scrollbar-sidebar">
         {CREATIVE_DICE_STRATEGIES.map((s) => (
           <div
             key={s.id}

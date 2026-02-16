@@ -581,11 +581,13 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </div>
         </div>
 
-        {/* Right: 20% — sidebar (equity curve, trade log, metrics, strategy, etc.) */}
-        <aside className="hidden lg:flex flex-[2] min-w-[240px] max-w-[380px] flex-col overflow-y-auto overflow-x-hidden border-l border-white/[0.06] bg-gradient-to-b from-[#0a0a0f]/90 to-[#050508] p-3 space-y-3">
-          {/* Equity curve + Trade log — moved from left column for max game hub space */}
-          <div className="grid grid-cols-1 gap-3">
-            <div className="agent-card p-3 min-h-[100px] overflow-hidden flex flex-col border-[#0ea5e9]/15">
+        {/* Right: 20% — sidebar (equity curve, trade log, strategy, metrics, etc.) */}
+        <aside className="hidden lg:flex flex-[2] min-w-[260px] max-w-[380px] flex-col overflow-y-auto overflow-x-hidden overscroll-contain border-l border-white/[0.06] scrollbar-sidebar bg-gradient-to-b from-[#0a0a0f]/95 via-[#0c0c12]/90 to-[#050508] p-4 gap-4 relative">
+          {/* Left-edge accent — terminal feel */}
+          <div className="absolute left-0 top-0 bottom-0 w-px bg-gradient-to-b from-[#0ea5e9]/50 via-violet-500/30 to-[#0ea5e9]/30 pointer-events-none" aria-hidden />
+          {/* Equity curve + Trade log */}
+          <div className="grid grid-cols-1 gap-4">
+            <div className="agent-card p-3 min-h-[100px] overflow-hidden flex flex-col border border-white/[0.08] hover:border-[#0ea5e9]/25 transition-colors shadow-sm">
               <SessionPnLChart
                 series={statsSeries}
                 totalPnl={totalPnl}
@@ -594,7 +596,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 layout="mini"
               />
             </div>
-            <div className="agent-card p-3 min-h-[120px] flex flex-col overflow-hidden">
+            <div className="agent-card p-3 min-h-[120px] flex flex-col overflow-hidden border border-white/[0.08] hover:border-[#0ea5e9]/25 transition-colors shadow-sm">
               <div className="flex items-center justify-between mb-1.5 flex-shrink-0">
                 <div className="flex items-center gap-1.5">
                   <div className="w-1 h-4 rounded-full bg-[#0ea5e9]" />
@@ -602,7 +604,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 </div>
                 <span className="text-[10px] text-[var(--text-tertiary)] tabular-nums">{recentResults.length}</span>
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto">
+              <div className="flex-1 min-h-0 overflow-y-auto scrollbar-sidebar">
                 <TradeLog
                   entries={recentResults.map((r, i) => ({
                     roundNumber: r.roundNumber ?? Math.max(1, rounds - recentResults.length + 1 + i),
@@ -621,19 +623,19 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               </div>
             </div>
           </div>
-          <QuantMetricsGrid
-            metrics={quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null }}
-            recentResults={recentResults}
-          />
-          {(liveActivityItems.length > 0 || liveQueueLength > 0) && (
-            <LiveActivityFeed items={liveActivityItems} maxItems={20} />
-          )}
-
-          <div className="agent-card p-3 space-y-3">
-            <div className="flex items-center gap-1.5">
-              <div className="w-1 h-4 rounded-full bg-[#0ea5e9]" />
-              <h3 className="text-xs font-semibold text-[var(--text-primary)]">Strategy</h3>
+          {/* Strategy — premium section, above metrics for prominence */}
+          <div className="agent-card agent-card-overflow-visible p-4 flex flex-col min-h-0 max-h-[520px] overflow-y-auto scrollbar-sidebar border border-violet-500/20 bg-gradient-to-br from-violet-500/[0.06] to-emerald-500/[0.04] shadow-[0_0_40px_rgba(139,92,246,0.08)] hover:border-violet-500/30 transition-all">
+            <div className="flex items-center justify-between gap-2 mb-3 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-1 h-5 rounded-full bg-gradient-to-b from-violet-500 to-emerald-500" />
+                <h3 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider">Strategy</h3>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                  AI-Powered
+                </span>
+              </div>
             </div>
+            <p className="text-[10px] text-[var(--text-secondary)] mb-3 flex-shrink-0">Build rule-based strategies for AI and advanced users.</p>
+            <div className="space-y-3">
             <SavedAdvancedStrategiesList
               onRun={(strategy, maxRounds) => {
                 setAmount(strategy.baseConfig.amount);
@@ -702,12 +704,21 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 setStrategyRun({ config, maxRounds, strategyName });
               }}
             />
-            <Link href="/dashboard/strategies" className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border border-dashed border-white/[0.08] text-sm text-[var(--text-tertiary)] hover:text-[#0ea5e9] hover:border-[#0ea5e9]/30 transition-all">
+            <Link href="/dashboard/strategies" className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border border-dashed border-white/[0.08] text-sm text-[var(--text-tertiary)] hover:text-[#0ea5e9] hover:border-[#0ea5e9]/30 transition-all flex-shrink-0">
               Manage Strategies →
             </Link>
+            </div>
           </div>
 
-          <div className="agent-card p-3 space-y-3">
+          <QuantMetricsGrid
+            metrics={quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null }}
+            recentResults={recentResults}
+          />
+          {(liveActivityItems.length > 0 || liveQueueLength > 0) && (
+            <LiveActivityFeed items={liveActivityItems} maxItems={20} />
+          )}
+
+          <div className="agent-card p-3 space-y-3 border border-white/[0.08] hover:border-[#0ea5e9]/20 transition-colors">
             <div className="flex items-center gap-1.5">
               <div className="w-1 h-4 rounded-full bg-[#0ea5e9]" />
               <h3 className="text-xs font-semibold text-[var(--text-primary)]">AI API</h3>
@@ -722,7 +733,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             </Link>
           </div>
 
-          <div className="agent-card p-3">
+          <div className="agent-card p-3 border border-white/[0.08]">
             <KeyboardShortcutsHelp />
           </div>
 

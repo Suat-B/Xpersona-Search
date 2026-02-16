@@ -185,6 +185,11 @@ body::before {
   pointer-events: none;
 }
 
+/* Agent card with overflow visible — for dropdowns, tooltips, RuleCard */
+.agent-card-overflow-visible {
+  overflow: visible;
+}
+
 /* Quant Dice Card - darker, terminal-style panels matching games/dice */
 .quant-card {
   background: linear-gradient(145deg, rgba(10, 10, 15, 0.95) 0%, rgba(10, 10, 15, 0.9) 100%);

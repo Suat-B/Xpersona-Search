@@ -114,28 +114,28 @@ export function SavedAdvancedStrategiesList({
           return (
             <div
               key={row.id}
-              className="flex items-center justify-between gap-2 py-2 px-3 rounded-lg border border-[var(--border)] bg-[var(--bg-matte)]/50 hover:border-emerald-500/30 transition-colors"
+              className="flex items-center justify-between gap-2 py-2.5 px-3 rounded-xl border border-white/[0.08] bg-[var(--bg-matte)]/50 hover:border-emerald-500/40 hover:bg-emerald-500/5 transition-all"
             >
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-[var(--text-primary)] truncate">{row.name}</p>
+                <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{row.name}</p>
                 <p className="text-[10px] text-[var(--text-secondary)]">
-                  {rulesCount} rule{rulesCount !== 1 ? "s" : ""} · {row.baseConfig.amount} credits on {row.baseConfig.condition} {row.baseConfig.target}
+                  {rulesCount} rule{rulesCount !== 1 ? "s" : ""} · {row.baseConfig.amount} cr {row.baseConfig.condition} {row.baseConfig.target}
                 </p>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
                   onClick={() => onLoad(strategy)}
-                  className="px-2 py-1 text-[10px] font-medium rounded border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent-heart)]/50 transition-colors"
+                  className="px-2.5 py-1.5 text-[10px] font-medium rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-violet-500/50 transition-colors"
                 >
                   Load
                 </button>
                 <button
                   type="button"
                   onClick={() => onRun(strategy, defaultMaxRounds)}
-                  className="px-2 py-1 text-[10px] font-medium rounded bg-[var(--accent-heart)]/20 border border-[var(--accent-heart)]/40 text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/30 transition-colors"
+                  className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-emerald-500/25 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/35 hover:border-emerald-400/50 transition-all shadow-sm"
                 >
-                  Run
+                  Load & Run
                 </button>
               </div>
             </div>

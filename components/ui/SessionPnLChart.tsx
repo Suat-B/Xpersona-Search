@@ -22,10 +22,10 @@ export function SessionPnLChart({
   const uid = useId().replace(/[^a-z0-9-]/gi, "") || "pnl";
   const isLarge = layout === "large";
   const isMini = layout === "mini";
-  const CHART_W = isLarge ? 640 : isMini ? 280 : 400;
+  const CHART_W = isLarge ? 640 : isMini ? 240 : 400;
   const CHART_H = isLarge ? 180 : isMini ? 65 : 100;
   if (rounds === 0) {
-    const emptyW = isLarge ? 420 : isMini ? 120 : 160;
+    const emptyW = isLarge ? 420 : isMini ? 200 : 160;
     const emptyH = isLarge ? 120 : isMini ? 40 : 60;
     // Gentle sine-wave placeholder hint (subtle, quant-aesthetic)
     const samplePoints = 24;

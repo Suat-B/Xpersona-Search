@@ -137,13 +137,13 @@ export function CompactAdvancedStrategyBuilder({
 
       {/* Quick Presets */}
       <div>
-        <label className="block text-xs text-[var(--text-secondary)] mb-2">Quick Presets</label>
+        <label className="block text-[10px] text-[var(--text-secondary)] uppercase tracking-wider mb-1.5">Quick Presets</label>
         <div className="flex flex-wrap gap-1.5">
           {STRATEGY_PRESETS.slice(0, 4).map((preset) => (
             <button
               key={preset.id}
               onClick={() => loadPreset(preset.id)}
-              className="px-2 py-1 text-[10px] rounded border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-violet-500/50 transition-colors"
+              className="px-2.5 py-1.5 text-[10px] font-medium rounded-lg border border-violet-500/30 bg-violet-500/5 text-violet-300 hover:bg-violet-500/15 hover:border-violet-500/50 transition-all"
               title={preset.description}
             >
               {preset.name}
@@ -218,7 +218,7 @@ export function CompactAdvancedStrategyBuilder({
           </button>
         </div>
 
-        <div className="space-y-2 max-h-48 overflow-y-auto">
+        <div className="space-y-2 max-h-48 overflow-y-auto scrollbar-sidebar">
           {strategy.rules.length === 0 ? (
             <div className="text-center py-4 border border-dashed border-[var(--border)] rounded-lg">
               <p className="text-xs text-[var(--text-secondary)]">No rules yet</p>

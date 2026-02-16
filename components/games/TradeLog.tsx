@@ -16,24 +16,26 @@ export interface TradeLogEntry {
 interface TradeLogProps {
   entries: TradeLogEntry[];
   maxRows?: number;
+  /** Compact mode for narrow sidebar — smaller table, abbreviated source */
+  compact?: boolean;
 }
 
-function SourceDot({ source }: { source?: "manual" | "algo" | "api" }) {
+function SourceDot({ source, compact }: { source?: "manual" | "algo" | "api"; compact?: boolean }) {
   const s = source ?? "manual";
   const color =
     s === "api" ? "bg-violet-400" : s === "algo" ? "bg-[#0ea5e9]" : "bg-emerald-400";
   return (
     <span
-      className={`inline-flex items-center gap-1.5 ${s === "api" ? "text-violet-400" : s === "algo" ? "text-[#0ea5e9]" : "text-emerald-400/90"}`}
+      className={`inline-flex items-center gap-1 ${s === "api" ? "text-violet-400" : s === "algo" ? "text-[#0ea5e9]" : "text-emerald-400/90"}`}
       title={s}
     >
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${color}`} aria-hidden />
-      <span className="capitalize text-xs">{s}</span>
+      {!compact && <span className="capitalize text-[10px]">{s}</span>}
     </span>
   );
 }
 
-export function TradeLog({ entries, maxRows = 20 }: TradeLogProps) {
+export function TradeLog({ entries, maxRows = 20, compact = true }: TradeLogProps) {
   const displayEntries = entries.slice(-maxRows).reverse();
 
   const formatTime = (d?: Date) => {
@@ -48,16 +50,16 @@ export function TradeLog({ entries, maxRows = 20 }: TradeLogProps) {
   return (
     <div className="overflow-hidden min-h-0 flex-1 flex flex-col min-w-0" data-agent="trade-log">
       <div className="overflow-x-auto overflow-y-auto max-h-[200px] min-h-0 flex-1 scrollbar-sidebar">
-        <table className="w-full min-w-[320px] text-sm border-collapse">
+        <table className="w-full min-w-[260px] text-xs border-collapse">
           <thead className="sticky top-0 bg-[var(--bg-card)]/98 border-b border-white/[0.08] z-10">
             <tr className="text-[var(--text-tertiary)]">
-              <th className="text-left py-2.5 px-3 font-semibold text-xs uppercase tracking-wider w-10">#</th>
-              <th className="text-left py-2.5 px-3 font-semibold text-xs uppercase tracking-wider min-w-[52px]">Time</th>
-              <th className="text-left py-2.5 px-3 font-semibold text-xs uppercase tracking-wider min-w-[56px]">L/S %</th>
-              <th className="text-right py-2.5 px-3 font-semibold text-xs uppercase tracking-wider min-w-[44px]">Size</th>
-              <th className="text-right py-2.5 px-3 font-semibold text-xs uppercase tracking-wider min-w-[48px]">Result</th>
-              <th className="text-right py-2.5 px-3 font-semibold text-xs uppercase tracking-wider min-w-[56px]">P&L</th>
-              <th className="text-left py-2.5 px-3 font-semibold text-xs uppercase tracking-wider min-w-[48px]">Src</th>
+              <th className="text-left py-2 px-2 font-semibold text-[10px] uppercase tracking-wider w-8">#</th>
+              <th className="text-left py-2 px-2 font-semibold text-[10px] uppercase tracking-wider min-w-[48px]">Time</th>
+              <th className="text-left py-2 px-2 font-semibold text-[10px] uppercase tracking-wider min-w-[48px]">L/S</th>
+              <th className="text-right py-2 px-2 font-semibold text-[10px] uppercase tracking-wider w-12">Size</th>
+              <th className="text-right py-2 px-2 font-semibold text-[10px] uppercase tracking-wider min-w-[44px]">Res</th>
+              <th className="text-right py-2 px-2 font-semibold text-[10px] uppercase tracking-wider min-w-[48px]">P&L</th>
+              <th className="text-left py-2 px-2 font-semibold text-[10px] uppercase tracking-wider w-10">Src</th>
             </tr>
           </thead>
           <tbody>
@@ -84,25 +86,25 @@ export function TradeLog({ entries, maxRows = 20 }: TradeLogProps) {
                       i % 2 === 1 ? "bg-white/[0.02]" : ""
                     } ${isNewest ? "animate-slide-in-from-bottom" : ""}`}
                   >
-                    <td className="py-2 px-3 text-[var(--text-secondary)] tabular-nums font-medium">{e.roundNumber}</td>
-                    <td className="py-2 px-3 text-xs text-[var(--text-tertiary)] tabular-nums truncate">
+                    <td className="py-1.5 px-2 text-[var(--text-secondary)] tabular-nums font-medium">{e.roundNumber}</td>
+                    <td className="py-1.5 px-2 text-[var(--text-tertiary)] tabular-nums truncate">
                       {formatTime(e.timestamp)}
                     </td>
-                    <td className="py-2 px-3 text-xs">{dirThreshold(e)}</td>
-                    <td className="py-2 px-3 text-right tabular-nums text-[var(--text-secondary)] font-medium">
+                    <td className="py-1.5 px-2">{dirThreshold(e)}</td>
+                    <td className="py-1.5 px-2 text-right tabular-nums text-[var(--text-secondary)] font-medium">
                       {e.amount.toFixed(0)}
                     </td>
-                    <td className="py-2 px-3 text-right tabular-nums">{e.result.toFixed(2)}</td>
+                    <td className="py-1.5 px-2 text-right tabular-nums">{e.result.toFixed(2)}</td>
                     <td
-                      className={`py-2 px-3 text-right tabular-nums font-semibold ${
+                      className={`py-1.5 px-2 text-right tabular-nums font-semibold ${
                         p >= 0 ? "text-[#30d158]" : "text-[#ff453a]"
                       }`}
                     >
                       {p >= 0 ? "+" : ""}
                       {p.toFixed(2)}
                     </td>
-                    <td className="py-2 px-3">
-                      <SourceDot source={e.source} />
+                    <td className="py-1.5 px-2">
+                      <SourceDot source={e.source} compact={compact} />
                     </td>
                   </tr>
                 );

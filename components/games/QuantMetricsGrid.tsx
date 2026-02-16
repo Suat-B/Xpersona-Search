@@ -99,7 +99,7 @@ export function QuantMetricsGrid({ metrics, recentResults }: QuantMetricsGridPro
 
   return (
     <div
-      className="agent-card p-5 space-y-4 min-w-0 overflow-hidden"
+      className="agent-card p-4 space-y-3 min-w-0 overflow-hidden border border-white/[0.08] hover:border-[#0ea5e9]/20 transition-colors"
       data-agent="quant-metrics-grid"
     >
       <div className="flex items-center justify-between">

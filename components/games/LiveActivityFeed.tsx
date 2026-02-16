@@ -50,7 +50,7 @@ export function LiveActivityFeed({
           — {display.length} recent
         </span>
       </h4>
-      <div className="max-h-[240px] overflow-y-auto overscroll-contain">
+      <div className="max-h-[240px] overflow-y-auto overscroll-contain scrollbar-sidebar">
         {display.map((item) => (
           <div
             key={item.id}
