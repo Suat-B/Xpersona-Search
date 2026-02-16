@@ -1,0 +1,27 @@
+Add Data Intelligence branding across platform to showcase AI strategy harvest system
+
+Implement comprehensive Data Intelligence branding that turns the invisible ai_strategy_harvest 
+system into a visible trust/authority signal. Every AI-generated strategy is now positioned as 
+"pure data" powering platform intelligence.
+
+Changes:
+- Add dataIntelligence messaging constants to AI_FIRST_MESSAGING
+- Create /api/stats/harvest-count endpoint with 60s cache for live harvest count
+- Create DataIntelligenceBadge component with compact/full variants and optional live count
+- Add Data Intelligence feature card to landing page with emerald/cyan gradient accent
+- Update landing hero with data-driven intelligence callout line
+- Add Data Intelligence card to dashboard between strategies and API sections
+- Place compact badge in DashboardChrome sidebar for persistent visibility
+- Add harvest indicators to CompactAdvancedStrategyBuilder and AdvancedStrategiesSection
+- Update MarqueeStrip with "Data-Driven Intelligence" and corrected trigger/action counts (35/31)
+- Enhance AIFirstBanner with "AI-First, Data-Driven" positioning
+- Update both marketing and dashboard footers: "Data-Driven · AI-First · Provably Fair"
+- Add compact badges to GamePageClient strategy tabs (desktop + mobile)
+
+Visual identity:
+- Emerald/cyan gradient (#10b981 to #0ea5e9) distinct from amber strategy builder
+- Database + sparkle hybrid SVG icon with pulse animation
+- Quant-authoritative copy: "pure data", "intelligence layer", "data flows", "platform evolves"
+
+All harvest integration points remain unchanged - this is pure front-end trust signaling that 
+leverages the existing robust data capture pipeline.

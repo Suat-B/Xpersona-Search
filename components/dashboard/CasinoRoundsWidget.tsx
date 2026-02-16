@@ -99,13 +99,13 @@ export function CasinoRoundsWidget({
   if (variant === "compact") {
     return (
       <div
-        className={`flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 px-3 py-1.5 ${className}`}
+        className={`flex items-center gap-2 rounded-lg border border-[#0ea5e9]/20 bg-[#0ea5e9]/10 px-3 py-1.5 ${className}`}
       >
         <span className="relative flex h-2 w-2 shrink-0">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#0ea5e9] opacity-75" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-[#0ea5e9]" />
         </span>
-        <span className="text-xs font-medium text-emerald-400">
+        <span className="text-xs font-medium text-[#0ea5e9]">
             {loading && activity == null ? (
               <span className="animate-pulse">—</span>
             ) : (
@@ -125,17 +125,16 @@ export function CasinoRoundsWidget({
 
   return (
     <div
-      className={`rounded-xl border border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 via-cyan-500/10 to-emerald-500/10 px-4 py-3 ${className}`}
+      className={`rounded-xl border border-[#0ea5e9]/30 bg-[#0ea5e9]/10 px-4 py-3 ${className}`}
     >
       <div className="flex items-center gap-2 mb-3">
         <span className="relative flex h-2 w-2 shrink-0">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#0ea5e9] opacity-75" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-[#0ea5e9]" />
         </span>
-        <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">
+        <span className="text-[10px] font-semibold text-[#0ea5e9] uppercase tracking-wider">
           Live
         </span>
-        <span className="text-[10px] text-[var(--text-tertiary)]">Casino Floor</span>
       </div>
       <div className="space-y-1">
         <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
@@ -157,7 +156,7 @@ export function CasinoRoundsWidget({
         </div>
         {personal != null && personal >= 0 && (
           <div className="pt-2 mt-2 border-t border-white/5">
-            <span className="text-xs font-medium text-emerald-400/90">
+            <span className="text-xs font-medium text-[#0ea5e9]/90">
               Your {personalRoundsProp != null ? "session" : "total"}:{" "}
               <span className="tabular-nums">{personal.toLocaleString()}</span>{" "}
               rounds
