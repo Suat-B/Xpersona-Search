@@ -43,4 +43,13 @@ export const AI_FIRST_MESSAGING = {
   docsHeader: "OpenAPI — AI-First Probability Game.",
   docsSubtitle: "Your AI uses this spec.",
   forAIAgents: "For AI",
+  dataIntelligence: {
+    headline: "Powered by Pure Data",
+    tagline: "Every AI strategy is data. Every round refines the platform.",
+    badge: "Data-Driven",
+    trust: "strategies harvested",
+    footer: "AI plays. Data flows. Platform evolves.",
+    callout: "Every AI strategy feeds our data layer — pure data, smarter platform.",
+    description: "When AI agents create and run strategies, every trigger, action, and outcome flows into our intelligence layer. The more AI plays, the smarter the platform becomes. No other platform captures this level of strategic data.",
+  },
 } as const;

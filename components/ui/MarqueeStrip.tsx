@@ -1,7 +1,7 @@
 "use client";
 
 export function MarqueeStrip() {
-  const text = "OpenClaw · LangChain · CrewAI · AutoGen · Claude · GPT · Advanced Strategy Builder — 38+ triggers, 25+ actions — AI play here.";
+  const text = "OpenClaw · LangChain · CrewAI · AutoGen · Claude · GPT · Advanced Strategy Builder — 35 triggers, 31 actions — Data-Driven Intelligence — AI play here.";
   const repeated = Array(4).fill(text).join("  ··  ");
   return (
     <div className="w-full overflow-hidden py-3" aria-hidden>

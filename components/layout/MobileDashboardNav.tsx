@@ -80,9 +80,9 @@ const LINKS = [
   { href: "/dashboard/deposit", label: "Deposit", icon: "deposit" as const, exact: true },
   { href: "/dashboard/withdraw", label: "Withdraw", icon: "withdraw" as const, exact: true },
   { href: "/dashboard/strategies", label: "Strategies", icon: "strategies" as const, exact: false },
-  { href: "/dashboard/provably-fair", label: "Provably Fair", icon: "shield" as const, exact: false },
   { href: "/dashboard/api", label: "API", icon: "api" as const, exact: false },
   { href: "/dashboard/transactions", label: "Transactions", icon: "transactions" as const, exact: false },
+  { href: "/dashboard/provably-fair", label: "Provably Fair", icon: "shield" as const, exact: false },
   { href: "/dashboard/settings", label: "Settings", icon: "settings" as const, exact: false },
 ] as const;
 

@@ -15,6 +15,7 @@ import { HeartbeatIndicator } from "@/components/ui/HeartbeatIndicator";
 import { CreativeDiceStrategiesSection } from "./CreativeDiceStrategiesSection";
 import { CompactAdvancedStrategyBuilder } from "@/components/strategies/CompactAdvancedStrategyBuilder";
 import { SavedAdvancedStrategiesList } from "@/components/strategies/SavedAdvancedStrategiesList";
+import { DataIntelligenceBadge } from "@/components/ui/DataIntelligenceBadge";
 import { getAndClearStrategyRunPayload } from "@/lib/strategy-run-payload";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcuts";
 import { StrategyRunningBanner } from "@/components/strategies/StrategyRunningBanner";
@@ -917,6 +918,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               )}
               {centerTab === "strategy" && (
                 <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2 space-y-2 scrollbar-sidebar">
+                  <div className="mb-2">
+                    <DataIntelligenceBadge variant="compact" />
+                  </div>
                   <SavedAdvancedStrategiesList
                     onRun={(strategy, maxRounds) => {
                       setAmount(strategy.baseConfig.amount);
@@ -1165,6 +1169,9 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             )}
             {mobileTab === "strategy" && (
               <div className="m-3 space-y-4 overflow-y-auto">
+                <div className="mb-3">
+                  <DataIntelligenceBadge variant="compact" />
+                </div>
                 <SavedAdvancedStrategiesList
                   onRun={(strategy, maxRounds) => {
                     setAmount(strategy.baseConfig.amount);

@@ -79,7 +79,6 @@ const SIDEBAR_LINKS = [
   { href: "/dashboard/deposit", label: "Deposit", icon: "deposit" as const, exact: true },
   { href: "/dashboard/withdraw", label: "Withdraw", icon: "withdraw" as const, exact: true },
   { href: "/dashboard/strategies", label: "Strategies", icon: "strategies" as const, exact: false },
-  { href: "/dashboard/provably-fair", label: "Provably Fair", icon: "shield" as const, exact: false },
   { href: "/dashboard/api", label: "API", icon: "api" as const, exact: false },
 ] as const;
 
@@ -187,6 +186,28 @@ export function DashboardSidebarNav({ isAdmin = false }: DashboardSidebarNavProp
             {ICONS.transactions}
           </span>
           <span className="flex-1">Transactions</span>
+        </Link>
+
+        <Link
+          href="/dashboard/provably-fair"
+          className={cn(
+            "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 mt-1",
+            (pathname ?? "").startsWith("/dashboard/provably-fair")
+              ? "bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
+              : "text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-white"
+          )}
+        >
+          <span 
+            className={cn(
+              "flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200",
+              (pathname ?? "").startsWith("/dashboard/provably-fair")
+                ? "bg-emerald-500/20 text-emerald-400"
+                : "bg-white/[0.04] text-[var(--text-tertiary)] group-hover:bg-white/[0.08] group-hover:text-[var(--text-secondary)]"
+            )}
+          >
+            {ICONS.shield}
+          </span>
+          <span className="flex-1">Provably Fair</span>
         </Link>
         
         <Link

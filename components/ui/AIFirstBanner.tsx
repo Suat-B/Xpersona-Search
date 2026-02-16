@@ -30,9 +30,9 @@ export function AIFirstBanner() {
   return (
     <div className="rounded-lg border border-[#0ea5e9]/30 bg-[#0ea5e9]/5 px-4 py-2 flex items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
       <p className="text-xs text-[var(--text-primary)]">
-        <span className="font-semibold text-[#0ea5e9]">AI-First Probability Game</span>
+        <span className="font-semibold text-[#0ea5e9]">AI-First, Data-Driven Probability Game</span>
         {" — "}
-        Your AI bets via API. Same balance. Same provably fair.
+        Your AI plays via API. Every strategy is pure data. Same balance. Same provably fair.
       </p>
       <button
         type="button"

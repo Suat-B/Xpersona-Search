@@ -65,6 +65,47 @@
     --quant-primary: #0ea5e9;
     /* Dark near-black for games/dice panels (matches IDE charcoal) */
     --quant-panel-bg: #050506;
+
+    /* ════════════════════════════════════════════════════════════════
+       QUANTUM TERMINAL THEME - Professional Quant Trading Interface
+       ════════════════════════════════════════════════════════════════ */
+    
+    /* Terminal Colors */
+    --quant-bg-primary: #0a0a0f;
+    --quant-bg-surface: #12121a;
+    --quant-bg-card: #1a1a24;
+    --quant-bg-hover: #22222c;
+    --quant-border: #2a2a3a;
+    --quant-border-strong: #3a3a4a;
+    --quant-border-glow: rgba(56, 189, 248, 0.3);
+    
+    /* Semantic Colors */
+    --quant-bullish: #00d084;
+    --quant-bullish-glow: rgba(0, 208, 132, 0.4);
+    --quant-bearish: #ff4757;
+    --quant-bearish-glow: rgba(255, 71, 87, 0.4);
+    --quant-neutral: #94a3b8;
+    --quant-accent: #38bdf8;
+    --quant-accent-glow: rgba(56, 189, 248, 0.4);
+    --quant-warning: #fbbf24;
+    --quant-purple: #a855f7;
+    --quant-purple-glow: rgba(168, 85, 247, 0.4);
+    
+    /* Data Visualization */
+    --quant-grid: rgba(148, 163, 184, 0.1);
+    --quant-chart-line: #38bdf8;
+    --quant-chart-fill: rgba(56, 189, 248, 0.1);
+    --quant-chart-secondary: #a855f7;
+    
+    /* Typography */
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+    --font-sans: 'Inter', 'SF Pro Display', system-ui, sans-serif;
+    --font-display: 'Space Grotesk', 'Inter', sans-serif;
+    
+    /* Spacing */
+    --quant-panel-gap: 4px;
+    --quant-panel-padding: 12px;
+    --quant-border-radius: 4px;
   }
 }
 
@@ -1007,3 +1048,379 @@ select option {
   animation: screenShake 0.4s ease-in-out;
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   QUANTUM TERMINAL - QUANT TRADING INTERFACE STYLES
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ═══════════ Terminal Background & Base ═══════════ */
+
+.quant-terminal {
+  background: var(--quant-bg-primary);
+  font-family: var(--font-mono);
+  color: var(--quant-neutral);
+}
+
+/* Subtle CRT scanline effect */
+.quant-terminal::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  opacity: 0.5;
+}
+
+/* ═══════════ Panel System ═══════════ */
+
+.quant-panel {
+  background: var(--quant-bg-surface);
+  border: 1px solid var(--quant-border);
+  border-radius: var(--quant-border-radius);
+  overflow: hidden;
+}
+
+.quant-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--quant-bg-card);
+  border-bottom: 1px solid var(--quant-border);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--quant-neutral);
+}
+
+.quant-panel-content {
+  padding: var(--quant-panel-padding);
+}
+
+/* ═══════════ Data Tables ═══════════ */
+
+.quant-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.quant-table th {
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 10px;
+  color: var(--quant-neutral);
+  border-bottom: 1px solid var(--quant-border);
+  background: var(--quant-bg-card);
+}
+
+.quant-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--quant-border);
+  font-variant-numeric: tabular-nums;
+}
+
+.quant-table tr:hover td {
+  background: var(--quant-bg-hover);
+}
+
+.quant-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* ═══════════ Metrics & Numbers ═══════════ */
+
+.quant-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.quant-metric-label {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--quant-neutral);
+}
+
+.quant-metric-value {
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.quant-metric-value.bullish {
+  color: var(--quant-bullish);
+}
+
+.quant-metric-value.bearish {
+  color: var(--quant-bearish);
+}
+
+/* ═══════════ Status Indicators ═══════════ */
+
+.quant-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.quant-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.quant-status-dot.online {
+  background: var(--quant-bullish);
+  box-shadow: 0 0 8px var(--quant-bullish-glow);
+}
+
+.quant-status-dot.offline {
+  background: var(--quant-bearish);
+}
+
+.quant-status-dot.warning {
+  background: var(--quant-warning);
+}
+
+/* ═══════════ Animations ═══════════ */
+
+@keyframes quant-flash-green {
+  0%, 100% { background: transparent; }
+  50% { background: rgba(0, 208, 132, 0.2); }
+}
+
+@keyframes quant-flash-red {
+  0%, 100% { background: transparent; }
+  50% { background: rgba(255, 71, 87, 0.2); }
+}
+
+@keyframes quant-number-tick {
+  0% { 
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  100% { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes quant-pulse-border {
+  0%, 100% { 
+    border-color: var(--quant-border);
+  }
+  50% { 
+    border-color: var(--quant-accent);
+  }
+}
+
+.animate-quant-flash-green {
+  animation: quant-flash-green 0.3s ease;
+}
+
+.animate-quant-flash-red {
+  animation: quant-flash-red 0.3s ease;
+}
+
+.animate-quant-tick {
+  animation: quant-number-tick 0.15s ease-out;
+}
+
+.animate-quant-pulse {
+  animation: quant-pulse-border 2s ease-in-out infinite;
+}
+
+/* ═══════════ Chart Styles ═══════════ */
+
+.quant-chart-grid {
+  stroke: var(--quant-grid);
+  stroke-width: 1;
+}
+
+.quant-chart-line {
+  fill: none;
+  stroke: var(--quant-chart-line);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.quant-chart-area {
+  fill: url(#quant-chart-gradient);
+  opacity: 0.3;
+}
+
+.quant-chart-crosshair {
+  stroke: var(--quant-neutral);
+  stroke-width: 1;
+  stroke-dasharray: 4, 4;
+  opacity: 0.5;
+}
+
+/* ═══════════ Buttons ═══════════ */
+
+.quant-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+  border-radius: var(--quant-border-radius);
+  border: 1px solid var(--quant-border);
+  background: var(--quant-bg-card);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.quant-btn:hover {
+  background: var(--quant-bg-hover);
+  border-color: var(--quant-border-strong);
+}
+
+.quant-btn:active {
+  transform: scale(0.98);
+}
+
+.quant-btn-primary {
+  background: var(--quant-accent);
+  border-color: var(--quant-accent);
+  color: var(--quant-bg-primary);
+}
+
+.quant-btn-primary:hover {
+  background: rgba(56, 189, 248, 0.9);
+  box-shadow: 0 0 12px var(--quant-accent-glow);
+}
+
+.quant-btn-success {
+  background: var(--quant-bullish);
+  border-color: var(--quant-bullish);
+  color: var(--quant-bg-primary);
+}
+
+.quant-btn-danger {
+  background: var(--quant-bearish);
+  border-color: var(--quant-bearish);
+  color: var(--quant-bg-primary);
+}
+
+/* ═══════════ Input Fields ═══════════ */
+
+.quant-input {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  background: var(--quant-bg-primary);
+  border: 1px solid var(--quant-border);
+  border-radius: var(--quant-border-radius);
+  color: var(--text-primary);
+  transition: all 0.15s ease;
+}
+
+.quant-input:focus {
+  outline: none;
+  border-color: var(--quant-accent);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+}
+
+.quant-input::placeholder {
+  color: var(--quant-neutral);
+  opacity: 0.5;
+}
+
+/* ═══════════ Scrollbar (Terminal Style) ═══════════ */
+
+.quant-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.quant-scrollbar::-webkit-scrollbar-track {
+  background: var(--quant-bg-surface);
+}
+
+.quant-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--quant-border);
+  border-radius: 3px;
+}
+
+.quant-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--quant-border-strong);
+}
+
+/* ═══════════ Responsive ═══════════ */
+
+@media (max-width: 1024px) {
+  .quant-terminal {
+    font-size: 11px;
+  }
+  
+  .quant-metric-value {
+    font-size: 14px;
+  }
+  
+  .quant-table {
+    font-size: 11px;
+  }
+  
+  .quant-table th,
+  .quant-table td {
+    padding: 6px 8px;
+  }
+}
+
+/* ═══════════ Utility Classes ═══════════ */
+
+.text-bullish { color: var(--quant-bullish); }
+.text-bearish { color: var(--quant-bearish); }
+.text-accent { color: var(--quant-accent); }
+.text-neutral { color: var(--quant-neutral); }
+
+.bg-bullish { background: var(--quant-bullish); }
+.bg-bearish { background: var(--quant-bearish); }
+.bg-accent { background: var(--quant-accent); }
+
+.font-mono { font-family: var(--font-mono); }
+.font-sans { font-family: var(--font-sans); }
+.font-display { font-family: var(--font-display); }
+
+.tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* Glow effects for positive/negative values */
+.glow-bullish {
+  text-shadow: 0 0 10px var(--quant-bullish-glow);
+}
+
+.glow-bearish {
+  text-shadow: 0 0 10px var(--quant-bearish-glow);
+}
+
+.glow-accent {
+  text-shadow: 0 0 10px var(--quant-accent-glow);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   END QUANTUM TERMINAL STYLES
+   ════════════════════════════════════════════════════════════════════ */

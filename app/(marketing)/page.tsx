@@ -8,6 +8,7 @@ import { HomeApiKeySection } from "@/components/home/HomeApiKeySection";
 import { ContinueAsAIButton } from "@/components/auth/ContinueAsAIButton";
 import { ClaimFreeCreditsButton } from "@/components/auth/ClaimFreeCreditsButton";
 import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
+import { DataIntelligenceBadge } from "@/components/ui/DataIntelligenceBadge";
 
 const GAMES = [
   {
@@ -90,7 +91,10 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               Pure over/under dice. Your AI plays via API. Same balance for humans and AI — OpenClaw, LangChain, CrewAI.
             </p>
             <p className="mt-2 text-amber-400/90 text-sm leading-relaxed">
-              <strong className="text-amber-300">Advanced Strategy Builder:</strong> 38+ triggers, 25+ actions — rule-based customization no other platform offers.
+              <strong className="text-amber-300">Advanced Strategy Builder:</strong> 35 triggers, 31 actions — rule-based customization no other platform offers.
+            </p>
+            <p className="mt-2 text-emerald-400/90 text-sm leading-relaxed">
+              <strong className="text-emerald-300">Data-Driven Intelligence:</strong> {AI_FIRST_MESSAGING.dataIntelligence.callout}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 shrink-0">
@@ -236,8 +240,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                   38+ trigger types (win, loss, streak, balance, profit, patterns) × 25+ actions (double, switch over/under, pause, stop). Rule-based strategies — no code, drag-and-drop, JSON-editable. AI agents can create and run strategies via API. No other platform offers this level of customization.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-400/90 border border-amber-500/20">38+ triggers</span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-400/90 border border-amber-500/20">25+ actions</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-400/90 border border-amber-500/20">35 triggers</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-400/90 border border-amber-500/20">31 actions</span>
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-400/90 border border-amber-500/20">REST + OpenClaw</span>
                 </div>
                 {isLoggedIn && (
@@ -251,6 +255,38 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                     </svg>
                   </Link>
                 )}
+              </div>
+            </div>
+          </div>
+
+          {/* Data Intelligence — differentiated */}
+          <div className="sm:col-span-12 agent-card p-6 sm:p-8 border-emerald-500/30 hover:border-emerald-500/50 transition-all duration-300 group">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-6">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/25 to-cyan-500/25 ring-2 ring-emerald-500/30 group-hover:scale-105 transition-transform">
+                <svg className="w-8 h-8 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
+                </svg>
+                <svg className="absolute w-5 h-5 text-cyan-400 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider text-emerald-400/90 bg-emerald-500/20 border border-emerald-500/30 mb-2">
+                  {AI_FIRST_MESSAGING.dataIntelligence.badge}
+                </span>
+                <h3 className="text-lg font-semibold text-white">Every AI Strategy is Pure Data</h3>
+                <p className="mt-1.5 text-sm text-[var(--text-secondary)] leading-relaxed">
+                  {AI_FIRST_MESSAGING.dataIntelligence.description}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400/90 border border-emerald-500/20">Strategy Harvest</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400/90 border border-emerald-500/20">Execution Outcomes</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400/90 border border-emerald-500/20">P&L Tracking</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400/90 border border-emerald-500/20">Win Rate Analysis</span>
+                </div>
+                <div className="mt-4">
+                  <DataIntelligenceBadge variant="full" showCount={true} />
+                </div>
               </div>
             </div>
           </div>
@@ -458,7 +494,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </nav>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-white/[0.04]">
             <p className="text-xs text-[var(--text-tertiary)]">
-              {AI_FIRST_MESSAGING.builtFor} · OpenClaw skill on ClawHub · REST for LangChain, CrewAI, AutoGen
+              Data-Driven · {AI_FIRST_MESSAGING.builtFor} · Provably Fair · OpenClaw skill on ClawHub · REST for LangChain, CrewAI, AutoGen
             </p>
             <span className="text-[11px] text-[var(--text-tertiary)]">Same API for humans & AI</span>
           </div>

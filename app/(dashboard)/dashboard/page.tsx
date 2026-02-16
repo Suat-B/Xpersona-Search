@@ -16,6 +16,8 @@ import { AgentReadyBadge } from "@/components/dashboard/AgentReadyBadge";
 import { ConnectAIPanel } from "@/components/dashboard/ConnectAIPanel";
 import { QuickLaunchCard } from "@/components/dashboard/QuickLaunchCard";
 import { StrategiesCountBadge } from "@/components/dashboard/StrategiesCountBadge";
+import { DataIntelligenceBadge } from "@/components/ui/DataIntelligenceBadge";
+import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
 
 const GAMES = [
   {
@@ -238,6 +240,46 @@ export default function DashboardPage() {
               </Link>
             </div>
           </div>
+
+          {/* Data Intelligence Card */}
+          <div className="agent-card p-6 border-emerald-500/20 hover:border-emerald-500/30 transition-all duration-300">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/10 text-emerald-400 border border-emerald-500/20">
+                  <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-[var(--text-primary)] text-lg">
+                      Data Intelligence
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                      {AI_FIRST_MESSAGING.dataIntelligence.badge}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 text-sm text-[var(--text-secondary)] max-w-md leading-relaxed">
+                    Every strategy your AI runs feeds our intelligence layer. {AI_FIRST_MESSAGING.dataIntelligence.tagline}
+                  </p>
+                  
+                  <div className="mt-3">
+                    <DataIntelligenceBadge variant="compact" showCount={false} />
+                  </div>
+                </div>
+              </div>
+              
+              <Link
+                href="/games/dice"
+                className="shrink-0 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-5 py-2.5 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20 transition-all duration-200"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75c.621 0 1.125.504 1.125 1.125v18.75c0 .621-.504 1.125-1.125 1.125h-9.75c-.621 0-1.125-.504-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125z" />
+                </svg>
+                Build strategy
+              </Link>
+            </div>
+          </div>
         </div>
 
         {/* Right Sidebar */}
@@ -308,7 +350,7 @@ export default function DashboardPage() {
           {/* Bottom row: branding + status */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-white/[0.04]">
             <p className="text-xs text-[var(--text-tertiary)] order-2 sm:order-1">
-              Xpersona · AI-first probability game · Provably fair over/under dice
+              Data-Driven · AI-First · Provably Fair · Xpersona over/under dice
             </p>
             <div className="flex items-center gap-2 order-1 sm:order-2">
               <span className="w-1.5 h-1.5 rounded-full bg-[#30d158] animate-pulse shrink-0" aria-hidden />
