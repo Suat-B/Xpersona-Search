@@ -1,18 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
 
 export function AgentReadyBadge() {
-  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    fetch("/api/me", { credentials: "include" })
-      .then((r) => r.json())
-      .then((d) => setHasApiKey(!!d?.data?.apiKeyPrefix))
-      .catch(() => setHasApiKey(false));
-  }, []);
+  const { hasApiKey } = useAiConnectionStatus();
 
   if (hasApiKey === null) return null;
 
