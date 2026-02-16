@@ -39,7 +39,7 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
   );
   const [isAutoTrading, setIsAutoTrading] = useState(false);
   const [currentTarget, setCurrentTarget] = useState(50);
-  const [currentSize, setCurrentSize] = useState(100);
+  const [currentSize, setCurrentSize] = useState(10);
   const [currentDirection, setCurrentDirection] = useState<"over" | "under">("over");
   const [logs, setLogs] = useState<Array<{ time: number; type: string; message: string }>>([]);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -313,7 +313,7 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
 
     const interval = setInterval(() => {
       executePosition();
-    }, 2000);
+    }, 600);
 
     return () => clearInterval(interval);
   }, [isAutoTrading, executePosition]);
