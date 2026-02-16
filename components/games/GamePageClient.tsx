@@ -783,6 +783,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   onAmountChange={setAmount}
                   onTargetChange={setTarget}
                   onConditionChange={setCondition}
+                  onLoadConfig={loadStrategyConfig}
                   onRoundComplete={(amt, payout) => addRound(amt, payout)}
                   onAutoPlayChange={setAutoPlayActive}
                   onResult={handleResult}
@@ -1052,6 +1053,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                       onAmountChange={setAmount}
                       onTargetChange={setTarget}
                       onConditionChange={setCondition}
+                      onLoadConfig={loadStrategyConfig}
                       onRoundComplete={(amt, payout) => addRound(amt, payout)}
                       onAutoPlayChange={setAutoPlayActive}
                       onResult={handleResult}

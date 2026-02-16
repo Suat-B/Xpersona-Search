@@ -8,10 +8,11 @@ import { QuickBetButtons } from "@/components/ui/QuickBetButtons";
 import { WinEffects } from "./WinEffects";
 import { MomentumMeter } from "./MomentumMeter";
 import { BetPercentageButtons } from "./BetPercentageButtons";
+import { QuickActionGrid } from "./QuickActionGrid";
 import { useKeyboardShortcuts } from "./KeyboardShortcuts";
 import { createProgressionState, getNextBet, type ProgressionState, type RoundResult } from "@/lib/dice-progression";
 import { createRuleEngineState, processRound } from "@/lib/dice-rule-engine";
-import type { DiceStrategyConfig } from "@/lib/strategies";
+import type { DiceStrategyConfig, DiceProgressionType } from "@/lib/strategies";
 import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
 
 type Result = {
@@ -62,6 +63,8 @@ export type DiceGameProps = {
   sessionStartTime?: number | null;
   /** Total rounds played this session */
   rounds?: number;
+  /** Apply full config (amount, target, condition, progressionType) from quick-action strategies */
+  onLoadConfig?: (config: { amount: number; target: number; condition: "over" | "under"; progressionType?: DiceProgressionType }) => void;
 };
 
 export function DiceGame({
@@ -87,6 +90,7 @@ export function DiceGame({
   recentResults = [],
   sessionStartTime = null,
   rounds = 0,
+  onLoadConfig,
 }: DiceGameProps) {
   const [result, setResult] = useState<Result>(null);
   const [loading, setLoading] = useState(false);
@@ -813,6 +817,20 @@ export function DiceGame({
             )}
 
             <MomentumMeter recentResults={recentResults} compact />
+
+            <QuickActionGrid
+              target={target}
+              condition={condition}
+              amount={amount}
+              balance={balance}
+              progressionType={progressionType}
+              disabled={autoPlay}
+              recentResults={recentResults}
+              onTargetChange={onTargetChange}
+              onConditionChange={onConditionChange}
+              onAmountChange={onAmountChange}
+              onLoadConfig={onLoadConfig}
+            />
 
             {sessionStartTime != null && rounds > 0 && (
               <div className="text-[11px] lg:text-[9px] text-[var(--text-tertiary)] font-medium pt-1 border-t border-white/[0.06]">
