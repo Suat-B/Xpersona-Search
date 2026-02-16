@@ -31,15 +31,17 @@ async function main() {
   }
 
   const pulled = readFileSync(envVercel, "utf8");
-  const hasDb = /DATABASE_URL=\S+/.test(pulled);
-  const hasStripe = /STRIPE_PRICE_500=price_\S+/.test(pulled);
+  const hasDb = /DATABASE_URL=.+/.test(pulled);
+  const hasStripe = /STRIPE_PRICE_\d+=[^\n]*price_[a-zA-Z0-9]+/m.test(pulled);
   if (!hasDb) {
     console.error("DATABASE_URL not found in Vercel production env.");
     cleanup();
     process.exit(1);
   }
   if (!hasStripe) {
-    console.error("STRIPE_PRICE_500 (or other STRIPE_PRICE_*) not set in Vercel. Add them in Project → Settings → Environment Variables.");
+    console.error(
+      "STRIPE_PRICE_500, STRIPE_PRICE_2000, or STRIPE_PRICE_10000 not set in Vercel. Add them in Project → Settings → Environment Variables."
+    );
     cleanup();
     process.exit(1);
   }
