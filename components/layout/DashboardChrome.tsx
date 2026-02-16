@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { DashboardSidebarNav } from "@/components/layout/DashboardSidebarNav";
 import { MobileDashboardNav } from "@/components/layout/MobileDashboardNav";
 import { AIFirstBanner } from "@/components/ui/AIFirstBanner";
-import { DataIntelligenceBadge } from "@/components/ui/DataIntelligenceBadge";
 
 function isGamesRoute(pathname: string | null): boolean {
   return !!pathname?.startsWith("/games");
@@ -67,9 +66,6 @@ export function DashboardChrome({
                 {userEmail ? `Free Plan - ${userEmail}` : "Free Plan"}
               </p>
             </div>
-          </div>
-          <div className="px-4 pt-4">
-            <DataIntelligenceBadge variant="compact" />
           </div>
           <DashboardSidebarNav isAdmin={isAdmin} />
         </div>
