@@ -511,17 +511,26 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         />
       </div>
 
-      {/* Main content — flex-1 fills viewport */}
+      {/* Main content — 70-30 split: game (70%) | sidebar (30%) */}
       <main className="flex-1 min-h-0 flex overflow-hidden">
-        {/* Left: game panel + equity + trade log */}
-        <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden border-r border-white/[0.06]">
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-4">
+        {/* Left: 70% — game panel + equity + trade log */}
+        <div className="flex-[7] min-w-0 min-h-0 flex flex-col overflow-hidden border-r border-white/[0.06] relative">
+          <div className="absolute inset-0 dot-grid opacity-[0.02] pointer-events-none" aria-hidden />
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-4 relative">
+            {/* Ambient glow behind game panel */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden>
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] bg-[radial-gradient(ellipse_at_center,rgba(14,165,233,0.12)_0%,rgba(94,92,230,0.06)_40%,transparent_70%)]" />
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_30%,rgba(255,255,255,0.02)_0%,transparent_50%)]" />
+            </div>
             <div
               id="main-game-panel"
-              className={`flex-1 min-h-0 agent-card p-4 transition-all duration-300 border-[#0ea5e9]/25 shadow-[0_0_40px_rgba(14,165,233,0.08)] group hover:border-[#0ea5e9]/35 ${aiBannerVisible || livePlay ? "ring-1 ring-violet-500/20" : ""}`}
+              className={`relative flex-1 min-h-0 agent-card p-5 transition-all duration-300 border-[#0ea5e9]/30 shadow-[0_0_60px_rgba(14,165,233,0.12),0_0_120px_rgba(14,165,233,0.05)] group hover:border-[#0ea5e9]/40 hover:shadow-[0_0_80px_rgba(14,165,233,0.15)] overflow-hidden ${aiBannerVisible || livePlay ? "ring-2 ring-violet-500/30 shadow-[0_0_40px_rgba(139,92,246,0.15)]" : ""}`}
               role="main"
               aria-label="Main playing panel"
             >
+              {/* Inner vignette / glass edge */}
+              <div className="absolute inset-0 pointer-events-none rounded-[inherit] [box-shadow:inset_0_0_60px_rgba(0,0,0,0.2)]" aria-hidden />
+              <div className="relative z-10 h-full">
               <ClientOnly
                 fallback={
                   <div className="flex h-full min-h-[120px] items-center justify-center text-sm text-[var(--text-secondary)]">
@@ -566,11 +575,12 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 aiDriving={aiBannerVisible || !!livePlay}
               />
             </ClientOnly>
+              </div>
             </div>
 
             {/* Equity curve + Trade log — compact row below game panel */}
             <div className="flex-shrink-0 grid grid-cols-2 gap-3 mt-3 min-h-0" style={{ minHeight: "140px" }}>
-              <div className="agent-card p-3 min-h-0 overflow-hidden flex flex-col">
+              <div className="agent-card p-3 min-h-0 overflow-hidden flex flex-col border-[#0ea5e9]/15 hover:border-[#0ea5e9]/25 transition-colors">
                 <SessionPnLChart
                   series={statsSeries}
                   totalPnl={totalPnl}
@@ -579,7 +589,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   layout="mini"
                 />
               </div>
-              <div className="agent-card p-3 min-h-0 flex flex-col overflow-hidden">
+              <div className="agent-card p-3 min-h-0 flex flex-col overflow-hidden border-white/[0.06] hover:border-[#0ea5e9]/15 transition-colors">
                 <div className="flex items-center justify-between mb-1.5 flex-shrink-0">
                   <div className="flex items-center gap-1.5">
                     <div className="w-1 h-4 rounded-full bg-[#0ea5e9]" />
@@ -609,8 +619,8 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </div>
         </div>
 
-        {/* Right sidebar — scrolls internally; hidden on small screens */}
-        <aside className="hidden lg:flex w-[300px] xl:w-[340px] min-w-0 flex-shrink-0 flex-col overflow-y-auto overflow-x-hidden border-l border-white/[0.06] bg-[#0a0a0f]/50 p-3 space-y-3">
+        {/* Right: 30% — sidebar, scrolls internally; hidden on small screens */}
+        <aside className="hidden lg:flex flex-[3] min-w-[280px] max-w-[420px] flex-col overflow-y-auto overflow-x-hidden border-l border-white/[0.06] bg-gradient-to-b from-[#0a0a0f]/90 to-[#050508] p-3 space-y-3">
           <QuantMetricsGrid
             metrics={quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null }}
             recentResults={recentResults}
