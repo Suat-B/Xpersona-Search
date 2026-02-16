@@ -92,6 +92,30 @@ export function CommandCenter({
 
       {/* Right - Metrics */}
       <div className="flex items-center gap-6">
+        {/* Connect AI — left of balance, links to API page */}
+        <Link
+          href="/dashboard/api"
+          className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-all ${
+            aiConnected
+              ? "border-[#30d158]/40 bg-[#30d158]/10 text-[#30d158] hover:bg-[#30d158]/20 hover:border-[#30d158]/60"
+              : "border-[#0ea5e9]/40 bg-[#0ea5e9]/10 text-[#0ea5e9] hover:bg-[#0ea5e9]/20 hover:border-[#0ea5e9]/60"
+          }`}
+        >
+          {aiConnected ? (
+            <>
+              <HeartbeatIndicator size="sm" />
+              <span>AI connected</span>
+            </>
+          ) : (
+            <>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              <span>Connect AI</span>
+            </>
+          )}
+        </Link>
+
         {/* Balance */}
         <div className="quant-metric">
           <span className="quant-metric-label">NAV</span>
@@ -116,30 +140,6 @@ export function CommandCenter({
             )}
           </div>
         </div>
-
-        {/* Connect AI — near balance per UX request */}
-        <Link
-          href="/dashboard/connect-ai"
-          className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-all ${
-            aiConnected
-              ? "border-[#30d158]/40 bg-[#30d158]/10 text-[#30d158] hover:bg-[#30d158]/20 hover:border-[#30d158]/60"
-              : "border-[#0ea5e9]/40 bg-[#0ea5e9]/10 text-[#0ea5e9] hover:bg-[#0ea5e9]/20 hover:border-[#0ea5e9]/60"
-          }`}
-        >
-          {aiConnected ? (
-            <>
-              <HeartbeatIndicator size="sm" />
-              <span>AI connected</span>
-            </>
-          ) : (
-            <>
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-              <span>Connect AI</span>
-            </>
-          )}
-        </Link>
 
         {/* PnL */}
         <div className="quant-metric">
