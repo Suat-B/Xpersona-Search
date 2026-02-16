@@ -8,6 +8,7 @@ import { ClientOnly } from "@/components/ClientOnly";
 import { useDiceSessionPnL } from "./useSessionPnL";
 import { SessionPnLChart } from "@/components/ui/SessionPnLChart";
 import { QuantMetricsGrid } from "./QuantMetricsGrid";
+import { SessionAura } from "./SessionAura";
 import { QuantTopMetricsBar } from "./QuantTopMetricsBar";
 import { TradeLog } from "./TradeLog";
 import { HeartbeatIndicator } from "@/components/ui/HeartbeatIndicator";
@@ -19,7 +20,7 @@ import { KeyboardShortcutsHelp } from "./KeyboardShortcuts";
 import { StrategyRunningBanner } from "@/components/strategies/StrategyRunningBanner";
 import { LiveActivityFeed, type LiveActivityItem } from "./LiveActivityFeed";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
-import { fetchBalanceWithRetry, fetchSessionStatsWithRetry } from "@/lib/safeFetch";
+import { fetchBalanceWithRetry, fetchSessionStatsWithRetry, safeFetchJson } from "@/lib/safeFetch";
 import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
 import type { DiceStrategyConfig, DiceProgressionType } from "@/lib/strategies";
 import type { StrategyRunConfig } from "./DiceGame";
@@ -187,7 +188,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const searchParams = useSearchParams();
   const { hasApiKey } = useAiConnectionStatus();
   const sessionPnL = useDiceSessionPnL();
-  const { totalPnl = 0, rounds = 0, wins = 0, addRound, addBulkSession, reset, quantMetrics } = sessionPnL;
+  const { totalPnl = 0, rounds = 0, wins = 0, addRound, addBulkSession, replaceSession, reset, quantMetrics } = sessionPnL;
   const statsSeries = Array.isArray(sessionPnL?.series) ? sessionPnL.series : [];
   const [amount, setAmount] = useState(10);
   const [target, setTarget] = useState(50);
@@ -370,7 +371,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     };
   }, []);
 
-  // Hydrate recent results from server so streak reflects full history (uncapped)
+  // Hydrate recent results from server so streak and P&L reflect full history
   useEffect(() => {
     if (game !== "dice" || recentResultsHydrated) return;
     let cancelled = false;
@@ -396,12 +397,18 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         }));
         setRecentResults(hydrated.slice(-MAX_RECENT_RESULTS));
         setRecentResultsHydrated(true);
+        // Seed session P&L so chart and header show correct values (includes AI plays before page load)
+        if (chronological.length > 0) {
+          const sessionPnl = chronological.reduce((sum, p) => sum + (Number(p.payout) - Number(p.amount)), 0);
+          const winsCount = chronological.filter((p) => p.outcome === "win").length;
+          replaceSession(sessionPnl, chronological.length, winsCount, chronological.map((p) => ({ payout: p.payout, amount: p.amount })));
+        }
       })
       .catch(() => { });
     return () => {
       cancelled = true;
     };
-  }, [game, recentResultsHydrated]);
+  }, [game, recentResultsHydrated, replaceSession]);
 
   const loadStrategyConfig = (config: { amount: number; target: number; condition: "over" | "under"; progressionType?: DiceProgressionType }, strategyName?: string) => {
     setAmount(config.amount);
@@ -548,6 +555,27 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     };
   }, [game, handleResult, processLivePlayQueue]);
 
+  // Poll session stats when AI is active to catch any dropped SSE events (real-time P&L)
+  useEffect(() => {
+    if (game !== "dice" || (!aiBannerVisible && liveQueueLength === 0)) return;
+    const interval = setInterval(async () => {
+      const stats = await fetchSessionStatsWithRetry({ gameType: "dice", limit: 100 });
+      if (!stats || stats.rounds == null) return;
+      if (stats.rounds > rounds) {
+        const { data } = await safeFetchJson<{ success?: boolean; data?: { plays?: Array<{ outcome: string; payout: number; amount: number }> } }>(
+          `/api/me/rounds?gameType=dice&limit=${Math.max(stats.rounds, 100)}`
+        );
+        if (data?.success && Array.isArray(data.data?.plays)) {
+          const plays = (data.data.plays as Array<{ outcome: string; payout: number; amount: number }>).reverse();
+          const sessionPnl = plays.reduce((s, p) => s + (Number(p.payout) - Number(p.amount)), 0);
+          const winsCount = plays.filter((p) => p.outcome === "win").length;
+          replaceSession(sessionPnl, plays.length, winsCount, plays.map((p) => ({ payout: p.payout, amount: p.amount })));
+        }
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [game, aiBannerVisible, liveQueueLength, rounds, replaceSession]);
+
   const handleReset = () => {
     reset();
     setRecentResults([]);
@@ -664,15 +692,15 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       </header>
 
       {/* Main content — 3-pane terminal layout */}
-      <main className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(280px,30%)_1fr_minmax(260px,25%)] overflow-hidden">
+      <main className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(240px,28%)_1fr_minmax(220px,22%)] overflow-hidden">
         {/* Left pane — Order ticket + Quant metrics */}
         <div className="hidden lg:flex flex-col min-w-0 min-h-0 overflow-hidden border-r border-white/[0.06]">
-          <div className="terminal-pane flex-1 min-h-0 flex flex-col overflow-hidden m-2 mr-0">
+          <div className="terminal-pane flex-1 min-h-0 flex flex-col overflow-hidden m-1.5 mr-0">
             <div className="terminal-header flex-shrink-0">
               <div className="terminal-header-accent" />
               <span>Order Ticket</span>
             </div>
-            <div className="flex-1 min-h-0 overflow-hidden p-3">
+            <div className="flex-1 min-h-0 overflow-hidden p-2">
               <ClientOnly
                 fallback={
                   <div className="flex h-full items-center justify-center text-sm text-[var(--text-secondary)]">
@@ -719,12 +747,12 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               </ClientOnly>
             </div>
           </div>
-          <div className="terminal-pane m-2 mr-0 max-h-[200px] overflow-hidden flex-shrink-0">
+          <div className="terminal-pane m-1.5 mr-0 max-h-[150px] overflow-hidden flex-shrink-0">
             <div className="terminal-header flex-shrink-0">
               <div className="terminal-header-accent" />
               <span>Metrics</span>
             </div>
-            <div className="p-3 overflow-y-auto scrollbar-sidebar max-h-[160px]">
+            <div className="p-2 overflow-y-auto scrollbar-sidebar max-h-[110px]">
               <QuantMetricsGrid
                 metrics={quantMetrics ?? { sharpeRatio: null, sortinoRatio: null, profitFactor: null, winRate: 0, avgWin: null, avgLoss: null, maxDrawdown: 0, maxDrawdownPct: null, recoveryFactor: null, kellyFraction: null, expectedValuePerTrade: null }}
                 recentResults={recentResults}
@@ -732,11 +760,22 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               />
             </div>
           </div>
+          {/* Session Aura — living soul of the session */}
+          <div className="terminal-pane m-1.5 mr-0 flex-shrink-0">
+            <SessionAura
+              series={statsSeries}
+              quantMetrics={quantMetrics ?? m}
+              rounds={rounds}
+              wins={wins}
+              totalPnl={totalPnl}
+              recentResults={recentResults}
+            />
+          </div>
         </div>
 
         {/* Center pane — Tabbed: Chart | Strategy | Backtest */}
         <div className="hidden lg:flex flex-col min-w-0 min-h-0 overflow-hidden">
-          <div className="terminal-pane flex-1 min-h-0 flex flex-col overflow-hidden m-2 mx-1">
+          <div className="terminal-pane flex-1 min-h-0 flex flex-col overflow-hidden m-1.5 mx-1">
             <div className="terminal-header flex-shrink-0 flex items-center justify-between">
               <div className="flex items-center gap-1">
                 {(["chart", "strategy", "backtest"] as const).map((tab) => (
@@ -764,7 +803,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             </div>
             <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
               {centerTab === "chart" && (
-                <div className="flex-1 min-h-0 p-3 overflow-hidden">
+                <div className="flex-1 min-h-0 p-2 overflow-hidden">
                   <SessionPnLChart
                     series={statsSeries}
                     totalPnl={totalPnl}
@@ -777,7 +816,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 </div>
               )}
               {centerTab === "strategy" && (
-                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 space-y-3 scrollbar-sidebar">
+                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2 space-y-2 scrollbar-sidebar">
                   <SavedAdvancedStrategiesList
                     onRun={(strategy, maxRounds) => {
                       setAmount(strategy.baseConfig.amount);
@@ -861,8 +900,8 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         </div>
 
         {/* Right pane — Trade blotter + Strategy + AI API */}
-        <aside className="hidden lg:flex flex-col min-w-[260px] max-w-[380px] overflow-y-auto overflow-x-hidden scrollbar-sidebar border-l border-white/[0.06]">
-          <div className="terminal-pane flex-1 min-h-0 flex flex-col overflow-hidden m-2 ml-0">
+        <aside className="hidden lg:flex flex-col min-w-[220px] max-w-[340px] overflow-y-auto overflow-x-hidden scrollbar-sidebar border-l border-white/[0.06]">
+          <div className="terminal-pane flex-1 min-h-0 flex flex-col overflow-hidden m-1.5 ml-0">
             <div className="terminal-header flex-shrink-0 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="terminal-header-accent" />
@@ -870,7 +909,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               </div>
               <span className="text-[9px] text-[var(--text-tertiary)] tabular-nums">{recentResults.length} fills</span>
             </div>
-            <div className="flex-1 min-h-0 overflow-hidden p-3">
+            <div className="flex-1 min-h-0 overflow-hidden p-2">
               <TradeLog
                 entries={recentResults.map((r, i) => ({
                   roundNumber: r.roundNumber ?? Math.max(1, rounds - recentResults.length + 1 + i),
@@ -890,17 +929,17 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           </div>
 
           {(liveActivityItems.length > 0 || liveQueueLength > 0) && (
-            <div className="terminal-pane m-2 ml-0 flex-shrink-0">
+            <div className="terminal-pane m-1.5 ml-0 flex-shrink-0">
               <LiveActivityFeed items={liveActivityItems} maxItems={20} />
             </div>
           )}
 
-          <div className="terminal-pane m-2 ml-0 flex-shrink-0">
+          <div className="terminal-pane m-1.5 ml-0 flex-shrink-0">
             <div className="terminal-header flex-shrink-0">
               <div className="terminal-header-accent" />
               <span>AI API</span>
             </div>
-            <div className="p-3 space-y-2">
+            <div className="p-2 space-y-1.5">
               <ApiKeySection compact />
               <Link href="/dashboard/api" className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#0ea5e9] hover:underline">
                 Full API Docs →
@@ -908,12 +947,12 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             </div>
           </div>
 
-          <div className="terminal-pane m-2 ml-0 flex-shrink-0">
+          <div className="terminal-pane m-1.5 ml-0 flex-shrink-0">
             <KeyboardShortcutsHelp />
           </div>
 
-          <div className="m-2 ml-0">
-            <button onClick={handleReset} className="w-full py-2 rounded-sm border border-white/[0.06] text-[10px] font-medium text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.04] transition-all">
+          <div className="m-1.5 ml-0">
+            <button onClick={handleReset} className="w-full py-1.5 rounded-sm border border-white/[0.06] text-[10px] font-medium text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.04] transition-all">
               Reset Session
             </button>
           </div>
