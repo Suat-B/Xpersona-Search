@@ -525,7 +525,7 @@ export function AdvancedStrategyBuilder() {
           </button>
           {showJsonPreview && (
             <div className="relative">
-              <pre className="p-3 text-[9px] font-mono bg-[#080808] text-[var(--quant-text-primary)] overflow-auto max-h-48">
+              <pre className="p-3 text-[9px] font-mono bg-[var(--quant-bg-card)] text-[var(--quant-text-primary)] overflow-auto max-h-48">
                 {strategyJson}
               </pre>
               <button
