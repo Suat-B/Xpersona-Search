@@ -7,6 +7,7 @@ import "./load-env";
 import { db } from "../lib/db";
 import { creditPackages } from "../lib/db/schema";
 import { PACKAGE_SPECS } from "../lib/credit-packages-config";
+import { inArray } from "drizzle-orm";
 
 function isValidStripePriceId(id: string): boolean {
   return typeof id === "string" && id.startsWith("price_") && id.length > 10 && !id.includes("placeholder");
@@ -43,14 +44,17 @@ async function seed() {
     console.error(`
 ❌ No credit packages to seed. Set these in .env.local:
    STRIPE_PRICE_500=price_xxx   (Starter Bundle, $5)
-   STRIPE_PRICE_2000=price_xxx  (2000 Credits, $14.99)
-   STRIPE_PRICE_10000=price_xxx (10000 Credits, $39.99)
+   STRIPE_PRICE_2000=price_xxx  (2000 Credits, $20)
+   STRIPE_PRICE_10000=price_xxx (10000 Credits, $100)
 
 Create products in Stripe Dashboard → Product catalog → Add product.
 See docs/STRIPE_SETUP.md for steps.
 `);
     process.exit(1);
   }
+
+  const creditTiers = packages.map((p) => p.credits);
+  await db.delete(creditPackages).where(inArray(creditPackages.credits, creditTiers));
 
   for (const pkg of packages) {
     await db

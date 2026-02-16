@@ -1,5 +1,5 @@
 [
   { "envKey": "STRIPE_PRICE_500", "name": "Starter Bundle", "credits": 500, "amountCents": 500 },
-  { "envKey": "STRIPE_PRICE_2000", "name": "2000 Credits", "credits": 2000, "amountCents": 1499 },
-  { "envKey": "STRIPE_PRICE_10000", "name": "10000 Credits", "credits": 10000, "amountCents": 3999 }
+  { "envKey": "STRIPE_PRICE_2000", "name": "2000 Credits", "credits": 2000, "amountCents": 2000 },
+  { "envKey": "STRIPE_PRICE_10000", "name": "10000 Credits", "credits": 10000, "amountCents": 10000 }
 ]
