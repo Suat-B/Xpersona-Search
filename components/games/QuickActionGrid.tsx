@@ -292,15 +292,15 @@ export function QuickActionGrid({
 }: QuickActionGridProps) {
   const props: QuickActionGridProps = { target, condition, amount, balance, progressionType, disabled, recentResults, onTargetChange, onConditionChange, onAmountChange, onLoadConfig };
 
-  const btnBase = "rounded-sm border text-[9px] font-semibold uppercase tracking-wider min-h-[36px] lg:min-h-0 py-1.5 px-2 flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed";
+  const btnBase = "rounded-sm border text-[8px] font-semibold uppercase tracking-wider py-1 px-1.5 flex items-center justify-center gap-1 transition-all disabled:opacity-40 disabled:cursor-not-allowed shrink-0";
   const btnIdle = "bg-white/[0.03] border-white/[0.08] text-[var(--text-tertiary)] hover:bg-white/[0.08] hover:text-[var(--text-primary)]";
   const btnActive = "bg-[#0ea5e9]/15 text-[#0ea5e9] border-[#0ea5e9]/30";
 
   return (
-    <div className="w-full space-y-2 pt-2">
-      <div className="space-y-1.5">
-        <span className="block text-[8px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]/70">Strategies</span>
-        <div className="grid grid-cols-3 lg:grid-cols-4 gap-1">
+    <div className="w-full flex-shrink-0 pt-1 space-y-1">
+      <div className="flex items-center gap-2">
+        <span className="text-[8px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]/60 shrink-0 w-14">Strategies</span>
+        <div className="grid grid-cols-4 gap-0.5 flex-1 min-w-0">
           {STRATEGIES.map((def) => {
             const active = onLoadConfig && isStrategyActive(props, def);
             return (
@@ -318,10 +318,9 @@ export function QuickActionGrid({
           })}
         </div>
       </div>
-      <div className="pt-1.5 border-t border-white/[0.06]" />
-      <div className="space-y-1.5">
-        <span className="block text-[8px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]/70">Quick Tools</span>
-        <div className="grid grid-cols-3 lg:grid-cols-4 gap-1">
+      <div className="flex items-center gap-2">
+        <span className="text-[8px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]/60 shrink-0 w-14">Tools</span>
+        <div className="grid grid-cols-4 gap-0.5 flex-1 min-w-0">
           {TOOLS.map((def) => {
             const active = def.isActive?.(props) ?? false;
             return (

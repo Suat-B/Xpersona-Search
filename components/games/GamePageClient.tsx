@@ -753,7 +753,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               <span>Order Ticket</span>
             </div>
             <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-              <div className="flex-shrink-0 min-h-[64px] px-4 pt-4 pb-2" key={sessionNudgesKey}>
+              <div className="flex-shrink-0 min-h-[36px] px-3 pt-2 pb-1" key={sessionNudgesKey}>
                 <SessionNudges
                   totalPnl={totalPnl}
                   rounds={rounds}
@@ -765,7 +765,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                   hasPositiveEv={(m.expectedValuePerTrade ?? 0) > 0}
                 />
               </div>
-              <div className="flex-1 min-h-0 overflow-hidden p-3 pt-2">
+              <div className="flex-1 min-h-0 overflow-hidden p-2 pt-1">
               <ClientOnly
                 fallback={
                   <div className="flex h-full items-center justify-center text-sm text-[var(--text-secondary)]">

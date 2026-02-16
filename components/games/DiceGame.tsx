@@ -589,7 +589,7 @@ export function DiceGame({
 
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
         {/* Order ticket header: status + inline metrics */}
-        <div className="flex-shrink-0 px-4 py-2.5 border-b border-white/[0.06] relative z-10 min-h-[52px] flex flex-col justify-center overflow-hidden shrink-0" data-agent="dice-header">
+        <div className="flex-shrink-0 px-3 py-2 border-b border-white/[0.06] relative z-10 min-h-[40px] flex flex-col justify-center overflow-hidden shrink-0" data-agent="dice-header">
           {error ? (
             <div
               className="rounded-sm border border-[#ff453a]/30 bg-[#ff453a]/5 px-3 py-2 text-xs"
@@ -678,7 +678,7 @@ export function DiceGame({
           )}
         </div>
 
-        <div className={`flex-1 min-h-0 flex flex-col px-2 py-2 pt-8 overflow-y-auto overflow-x-hidden mt-4 ${aiDriving ? "bg-gradient-to-b from-violet-500/[0.04] to-transparent" : ""}`}>
+        <div className={`flex-1 min-h-0 flex flex-col px-2 py-1.5 pt-3 overflow-hidden ${aiDriving ? "bg-gradient-to-b from-violet-500/[0.04] to-transparent" : ""}`}>
           {aiDriving && (
             <div className="flex-shrink-0">
               <span className="inline-flex items-center gap-1.5 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-violet-400 border border-violet-500/30 rounded-sm bg-violet-500/10">
@@ -688,9 +688,9 @@ export function DiceGame({
             </div>
           )}
 
-          <div className="space-y-2 w-full max-w-full lg:max-w-sm mx-auto">
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
+          <div className="space-y-1 w-full max-w-full lg:max-w-sm mx-auto flex-shrink-0">
+            <div className="grid grid-cols-2 gap-1.5">
+              <div className="space-y-0.5">
                 <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Threshold</label>
                 <div className="relative">
                   <input
@@ -705,26 +705,26 @@ export function DiceGame({
                     }}
                     disabled={autoPlay}
                     aria-label="Threshold percentage"
-                    className={`terminal-input w-full h-10 lg:h-8 rounded-sm pr-8 text-center text-xs ${
+                    className={`terminal-input w-full h-8 rounded-sm pr-8 text-center text-xs ${
                       changedControl === "target" ? "border-[#0ea5e9] bg-[#0ea5e9]/10" : ""
                     }`}
                   />
                   <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--text-tertiary)]">%</span>
                 </div>
-                <div className="h-1 w-full rounded-sm bg-white/[0.06] overflow-hidden">
+                <div className="h-0.5 w-full rounded-sm bg-white/[0.06] overflow-hidden">
                   <div
                     className="h-full rounded-sm bg-gradient-to-r from-[#0ea5e9] to-[#5e5ce6] transition-all duration-300"
                     style={{ width: `${(condition === "over" ? 100 - target : target)}%` }}
                   />
                 </div>
               </div>
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Direction</label>
                 <SegmentedControl value={condition} onChange={onConditionChange} disabled={autoPlay} quantLabels />
               </div>
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               <label className="block text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Position Size</label>
               <div className="relative">
                 <input
@@ -744,7 +744,7 @@ export function DiceGame({
                   placeholder="1–10,000"
                   disabled={autoPlay}
                   aria-label="Position size in units"
-                  className="terminal-input w-full h-10 lg:h-8 rounded-sm pr-8 text-center text-xs"
+                  className="terminal-input w-full h-8 rounded-sm pr-8 text-center text-xs"
                 />
                 <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--text-tertiary)]">U</span>
               </div>
@@ -756,14 +756,14 @@ export function DiceGame({
               <QuickBetButtons onHalf={handleHalf} onDouble={handleDouble} onMax={handleMax} disabled={autoPlay} currentAmount={amount} maxAmount={MAX_BET} />
             </div>
 
-            <div className="flex items-center gap-2 pt-1">
+            <div className="flex items-center gap-1.5 pt-0.5">
               <button
                 type="button"
                 onClick={handleRoll}
                 disabled={loading || autoPlay || !amount || amount < MIN_BET}
                 title="Place order (Space / Enter)"
                 aria-label="Place order"
-                className="flex-1 h-12 lg:h-8 rounded-sm bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white text-xs font-bold flex items-center justify-center gap-2 border border-[#0ea5e9]/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all min-h-[44px] lg:min-h-0"
+                className="flex-1 h-8 rounded-sm bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white text-xs font-bold flex items-center justify-center gap-2 border border-[#0ea5e9]/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -775,7 +775,7 @@ export function DiceGame({
                 type="button"
                 onClick={autoPlay ? stopAuto : startAuto}
                 disabled={loading && !autoPlay}
-                className={`h-12 lg:h-8 rounded-sm px-3 min-w-[88px] text-xs font-bold flex items-center justify-center gap-2 border disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0 min-h-[44px] lg:min-h-0 ${
+                className={`h-8 rounded-sm px-2.5 min-w-[80px] text-xs font-bold flex items-center justify-center gap-2 border disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0 ${
                   autoPlay
                     ? "border-[#ff453a]/50 bg-[#ff453a]/10 text-[#ff453a] hover:bg-[#ff453a]/15"
                     : "border-[#30d158]/50 bg-[#30d158]/10 text-[#30d158] hover:bg-[#30d158]/15"
@@ -806,7 +806,7 @@ export function DiceGame({
                     key={ms}
                     type="button"
                     onClick={() => setAutoSpeed(ms)}
-                    className={`min-w-[48px] min-h-[44px] px-2 py-1.5 rounded text-[10px] font-semibold transition-all flex items-center justify-center ${
+                    className={`min-w-[42px] h-7 px-1.5 rounded text-[9px] font-semibold transition-all flex items-center justify-center ${
                       autoSpeed === ms ? "bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/30" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-white/[0.06]"
                     }`}
                   >
@@ -833,7 +833,7 @@ export function DiceGame({
             />
 
             {sessionStartTime != null && rounds > 0 && (
-              <div className="text-[11px] lg:text-[9px] text-[var(--text-tertiary)] font-medium pt-1 border-t border-white/[0.06]">
+              <div className="text-[9px] text-[var(--text-tertiary)] font-medium pt-0.5 border-t border-white/[0.06] flex-shrink-0">
                 <span className="tabular-nums">{sessionMinutes}m</span> invested · <span className="tabular-nums">{rounds}</span> rounds · Keep building
               </div>
             )}

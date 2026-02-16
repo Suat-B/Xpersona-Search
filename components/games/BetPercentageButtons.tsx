@@ -38,7 +38,7 @@ export function BetPercentageButtons({
             onClick={() => handleClick(value)}
             disabled={disabled || balance < 1}
             className={`
-              px-2.5 py-2 text-[10px] font-bold font-mono rounded-lg transition-all duration-200
+              px-2 py-1.5 text-[9px] font-bold font-mono rounded-lg transition-all duration-200
               ${isActive
                 ? "bg-[#0ea5e9] text-white shadow-[0_0_12px_rgba(14,165,233,0.4)] scale-105 border border-[#0ea5e9]/50"
                 : "bg-white/[0.04] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/[0.08] hover:shadow-[0_0_8px_rgba(14,165,233,0.1)] border border-white/[0.06]"

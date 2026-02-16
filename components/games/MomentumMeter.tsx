@@ -16,9 +16,9 @@ export function MomentumMeter({ recentResults, compact = false }: MomentumMeterP
   const isCold = heatPercent <= 20 && last10.length >= 3;
 
   return (
-    <div className={`w-full ${compact ? "space-y-1" : "space-y-1.5"}`}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
+    <div className={`w-full flex-shrink-0 ${compact ? "space-y-0.5" : "space-y-1.5"}`}>
+      <div className="flex items-center justify-between gap-1">
+        <span className="text-[9px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
           Momentum
         </span>
         <div className="flex items-center gap-1.5">
@@ -32,7 +32,7 @@ export function MomentumMeter({ recentResults, compact = false }: MomentumMeterP
           )}
         </div>
       </div>
-      <div className="relative h-2 w-full rounded-full overflow-hidden bg-white/[0.06]">
+      <div className={`relative w-full rounded-full overflow-hidden bg-white/[0.06] ${compact ? "h-1.5" : "h-2"}`}>
         <div
           className="h-full rounded-full transition-all duration-500 ease-out relative overflow-hidden"
           style={{
