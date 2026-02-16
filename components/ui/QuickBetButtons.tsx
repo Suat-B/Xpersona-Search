@@ -9,7 +9,7 @@ interface QuickBetButtonsProps {
   maxAmount: number;
 }
 
-const btnBase = "px-2.5 py-1.5 text-[10px] font-bold font-mono rounded-full border transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed border-white/[0.08] bg-white/[0.03] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/[0.06] hover:border-[#0ea5e9]/40 hover:shadow-[0_0_12px_rgba(14,165,233,0.15)]";
+const btnBase = "px-3 py-2 text-[10px] font-bold font-mono rounded-full border transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed border-white/[0.08] bg-white/[0.03] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/[0.06] hover:border-[#0ea5e9]/40 hover:shadow-[0_0_12px_rgba(14,165,233,0.15)]";
 
 export function QuickBetButtons({
   onHalf,
@@ -20,7 +20,7 @@ export function QuickBetButtons({
   maxAmount,
 }: QuickBetButtonsProps) {
   return (
-    <div className="flex gap-1">
+    <div className="flex gap-1.5">
       <button
         type="button"
         onClick={onHalf}

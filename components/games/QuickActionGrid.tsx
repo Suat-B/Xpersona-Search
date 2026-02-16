@@ -293,15 +293,15 @@ export function QuickActionGrid({
 }: QuickActionGridProps) {
   const props: QuickActionGridProps = { target, condition, amount, balance, progressionType, disabled, recentResults, onTargetChange, onConditionChange, onAmountChange, onLoadConfig };
 
-  const btnBase = "rounded-sm border aspect-square w-full min-w-0 min-h-0 flex flex-col items-center justify-center gap-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed p-1";
+  const btnBase = "rounded-sm border aspect-square w-full min-w-0 min-h-0 flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-40 disabled:cursor-not-allowed p-1.5";
   const btnIdle = "bg-white/[0.03] border-white/[0.08] text-[var(--text-tertiary)] hover:bg-white/[0.08] hover:text-[var(--text-primary)]";
   const btnActive = "bg-[#0ea5e9]/15 text-[#0ea5e9] border-[#0ea5e9]/30";
 
   return (
-    <div className="w-full flex-shrink-0 pt-1 space-y-1.5">
-      <div className="space-y-0.5">
-        <span className="block text-[8px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]/60">Strategies</span>
-        <div className="grid grid-cols-8 gap-1">
+    <div className="w-full flex-shrink-0 pt-1.5 space-y-2">
+      <div className="space-y-1">
+        <span className="block text-[9px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]/60">Strategies</span>
+        <div className="grid grid-cols-8 gap-1.5">
           {STRATEGIES.map((def) => {
             const active = onLoadConfig && isStrategyActive(props, def);
             return (
@@ -313,16 +313,16 @@ export function QuickActionGrid({
                 className={`${btnBase} ${active ? btnActive : btnIdle}`}
                 title={def.label}
               >
-                <span className="flex items-center justify-center shrink-0 [&>svg]:w-3 [&>svg]:h-3">{def.icon}</span>
-                <span className="text-[7px] font-semibold uppercase tracking-wider leading-tight truncate max-w-full">{def.label}</span>
+                <span className="flex items-center justify-center shrink-0 [&>svg]:w-3.5 [&>svg]:h-3.5">{def.icon}</span>
+                <span className="text-[8px] font-semibold uppercase tracking-wider leading-tight truncate max-w-full">{def.label}</span>
               </button>
             );
           })}
         </div>
       </div>
-      <div className="space-y-0.5">
-        <span className="block text-[8px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]/60">Tools</span>
-        <div className="grid grid-cols-8 gap-1">
+      <div className="space-y-1">
+        <span className="block text-[9px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]/60">Tools</span>
+        <div className="grid grid-cols-8 gap-1.5">
           {TOOLS.map((def) => {
             const active = def.isActive?.(props) ?? false;
             return (
@@ -334,8 +334,8 @@ export function QuickActionGrid({
                 className={`${btnBase} ${active ? btnActive : btnIdle}`}
                 title={def.label}
               >
-                <span className="flex items-center justify-center shrink-0 [&>svg]:w-3 [&>svg]:h-3">{def.icon}</span>
-                <span className="text-[7px] font-semibold uppercase tracking-wider leading-tight truncate max-w-full">{def.label}</span>
+                <span className="flex items-center justify-center shrink-0 [&>svg]:w-3.5 [&>svg]:h-3.5">{def.icon}</span>
+                <span className="text-[8px] font-semibold uppercase tracking-wider leading-tight truncate max-w-full">{def.label}</span>
               </button>
             );
           })}
