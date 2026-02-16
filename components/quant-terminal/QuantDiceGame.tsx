@@ -10,6 +10,7 @@ import { RiskDashboard } from "./RiskDashboard";
 import { AlphaWorkbench } from "./AlphaWorkbench";
 import { DataStream } from "./DataStream";
 import { KeyboardShortcuts } from "./KeyboardShortcuts";
+import { CasinoRoundsWidget } from "@/components/dashboard/CasinoRoundsWidget";
 
 interface Position {
   id: string;
@@ -444,9 +445,15 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
       {/* Keyboard Shortcuts Modal */}
       {showShortcuts && <KeyboardShortcuts onClose={() => setShowShortcuts(false)} />}
 
-      {/* Keyboard Hint */}
-      <div className="fixed bottom-4 right-4 text-[10px] text-[var(--quant-neutral)] opacity-50 hover:opacity-100 transition-opacity z-50">
-        Press <kbd className="px-1 py-0.5 bg-[var(--quant-bg-card)] rounded">Ctrl+K</kbd> for shortcuts
+      {/* Keyboard Hint + Casino Rounds Ticker */}
+      <div className="fixed bottom-4 right-4 flex flex-col items-end gap-2 z-50">
+        <CasinoRoundsWidget
+          variant="compact"
+          personalRounds={stats.total}
+        />
+        <div className="text-[10px] text-[var(--quant-neutral)] opacity-50 hover:opacity-100 transition-opacity">
+          Press <kbd className="px-1 py-0.5 bg-[var(--quant-bg-card)] rounded">Ctrl+K</kbd> for shortcuts
+        </div>
       </div>
     </div>
   );

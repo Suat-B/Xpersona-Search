@@ -19,6 +19,7 @@ import { ConnectAIPanel } from "@/components/dashboard/ConnectAIPanel";
 import { QuickLaunchCard } from "@/components/dashboard/QuickLaunchCard";
 import { StrategiesCountBadge } from "@/components/dashboard/StrategiesCountBadge";
 import { DataIntelligenceBadge } from "@/components/ui/DataIntelligenceBadge";
+import { CasinoRoundsWidget } from "@/components/dashboard/CasinoRoundsWidget";
 import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
 
 const GAMES = [
@@ -297,6 +298,8 @@ export default function DashboardPage() {
           <div className="relative">
             <QuickLaunchCard />
           </div>
+
+          <CasinoRoundsWidget variant="full" />
           
           <section id="free-credits" className="scroll-mt-6">
             <FaucetButton />
