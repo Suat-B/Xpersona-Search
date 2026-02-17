@@ -56,6 +56,8 @@ function SignInForm() {
         if (linkData.success) {
           window.dispatchEvent(new Event("balance-updated"));
         }
+      } else {
+        window.dispatchEvent(new Event("balance-updated"));
       }
 
       const redirectTo = link === "agent" || link === "guest" ? "/dashboard/profile" : effectiveCallback;

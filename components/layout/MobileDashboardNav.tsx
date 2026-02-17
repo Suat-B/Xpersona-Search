@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
+import { useIsPermanent } from "@/lib/hooks/use-is-permanent";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
@@ -98,10 +99,11 @@ interface MobileDashboardNavProps {
   isPermanent?: boolean;
 }
 
-export function MobileDashboardNav({ displayName, isAdmin = false, isPermanent = false }: MobileDashboardNavProps) {
+export function MobileDashboardNav({ displayName, isAdmin = false, isPermanent: serverIsPermanent = false }: MobileDashboardNavProps) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const { hasApiKey } = useAiConnectionStatus();
+  const isPermanent = useIsPermanent(serverIsPermanent);
 
   useEffect(() => {
     setOpen(false);

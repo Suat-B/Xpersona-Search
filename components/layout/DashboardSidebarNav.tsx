@@ -104,42 +104,14 @@ function isActive(pathname: string, href: string, exact: boolean): boolean {
 
 interface DashboardSidebarNavProps {
   isAdmin?: boolean;
-  isPermanent?: boolean;
 }
 
-export function DashboardSidebarNav({ isAdmin = false, isPermanent = false }: DashboardSidebarNavProps) {
+export function DashboardSidebarNav({ isAdmin = false }: DashboardSidebarNavProps) {
   const pathname = usePathname();
   const { hasApiKey } = useAiConnectionStatus();
 
   return (
     <nav className="flex-1 overflow-y-auto py-4 px-3 scrollbar-sidebar">
-      {!isPermanent && (
-        <div className="mb-6 rounded-xl border border-[var(--accent-heart)]/30 bg-[var(--accent-heart)]/5 p-3 space-y-2">
-          <p className="text-[10px] font-semibold text-[var(--dash-text-secondary)] uppercase tracking-wider px-1">
-            Save your progress
-          </p>
-          <div className="flex flex-col gap-2">
-            <Link
-              href="/auth/signin"
-              className="flex items-center justify-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/5 hover:border-[var(--accent-heart)]/50 transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-              </svg>
-              Sign in
-            </Link>
-            <Link
-              href="/auth/signup"
-              className="flex items-center justify-center gap-2 rounded-lg bg-[var(--accent-heart)] px-3 py-2 text-sm font-medium text-white hover:opacity-90 transition-opacity"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-              </svg>
-              Sign up
-            </Link>
-          </div>
-        </div>
-      )}
       {NAV_GROUPS.map((group, groupIdx) => (
         <div key={group.label} className={groupIdx > 0 ? "mt-6 pt-4 border-t border-[var(--dash-divider)]" : ""}>
           <p className="px-3 mb-2 text-[10px] font-semibold text-[var(--dash-text-secondary)] uppercase tracking-wider">

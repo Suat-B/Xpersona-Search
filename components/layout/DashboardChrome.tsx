@@ -69,7 +69,7 @@ export function DashboardChrome({
               </p>
             </div>
           </div>
-          <DashboardSidebarNav isAdmin={isAdmin} isPermanent={isPermanent} />
+          <DashboardSidebarNav isAdmin={isAdmin} />
         </div>
       </aside>
       <main className="scroll-contain-paint relative z-0 flex-1 min-h-0 overflow-y-auto bg-[var(--dash-bg)]">
