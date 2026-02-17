@@ -735,7 +735,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
 
       {/* Hero Header — dashboard style */}
       <header className="relative">
-        <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="relative grid grid-cols-1 gap-6 sm:grid-cols-[1fr_auto_1fr] sm:items-center sm:gap-4">
           <div>
             <div className="flex items-center gap-2 mb-2">
               <Link href="/dashboard" className="flex items-center gap-1.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors" aria-label="Back to Dashboard">
@@ -757,7 +757,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               Dice — roll over or under. Pure probability. Play yourself or let AI play for you.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex justify-center">
             <Link
               href="/dashboard/connect-ai"
               className={
@@ -769,17 +769,19 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
               {aiConnected ? (
                 <>
                   <HeartbeatIndicator size="md" />
-                  <span>AI connected</span>
+                  <span>AI is connected</span>
                 </>
               ) : (
                 <>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
-                  <span>Connect AI</span>
+                  <span>Connect your OpenClaw</span>
                 </>
               )}
             </Link>
+          </div>
+          <div className="flex flex-wrap items-center justify-center sm:justify-end gap-3">
             <div className="flex items-center gap-2 rounded-full border border-[var(--border)] bg-white/[0.03] p-1 backdrop-blur-sm">
               <Link
                 href="/dashboard/deposit"
