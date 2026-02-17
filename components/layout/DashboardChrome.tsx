@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { DashboardSidebarNav } from "@/components/layout/DashboardSidebarNav";
 import { MobileDashboardNav } from "@/components/layout/MobileDashboardNav";
+import { UserAccountMenu } from "@/components/layout/UserAccountMenu";
 import { AIFirstBanner } from "@/components/ui/AIFirstBanner";
 
 function isGamesRoute(pathname: string | null): boolean {
@@ -57,17 +58,11 @@ export function DashboardChrome({
                 </span>
               </div>
             </Link>
-            <div className="pt-2">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-white">{displayName}</span>
-                <svg className="w-3.5 h-3.5 text-[var(--dash-text-secondary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                </svg>
-              </div>
-              <p className="text-xs text-[var(--dash-text-secondary)] truncate mt-0.5">
-                {userEmail ? `Free Plan - ${userEmail}` : "Free Plan"}
-              </p>
-            </div>
+            <UserAccountMenu
+              displayName={displayName}
+              userEmail={userEmail}
+              isPermanent={isPermanent}
+            />
           </div>
           <DashboardSidebarNav isAdmin={isAdmin} />
         </div>
