@@ -117,7 +117,11 @@ function ProfilePageClient() {
   const isAgent =
     user?.email?.endsWith?.("@xpersona.agent") ||
     /^play_.+@xpersona\.co$/.test(user?.email ?? "");
-  const displayLabel = isAgent ? (user?.name ?? "AI") : isAnonymous ? "Human" : (user?.name ?? "You");
+  const displayLabel = isAgent
+    ? (user?.name ?? "AI")
+    : isAnonymous
+      ? (user?.name ?? user?.email ?? "Guest")
+      : (user?.name ?? user?.email ?? "You");
 
   const formatNumber = (n: number) => n.toLocaleString();
 
@@ -185,10 +189,8 @@ function ProfilePageClient() {
                 <h2 className="text-lg font-semibold text-[var(--text-primary)] truncate">
                   {displayLabel}
                 </h2>
-                <p className="text-sm text-[var(--text-secondary)]">
-                  {isAnonymous || isAgent
-                    ? "In-house session"
-                    : (user?.email ?? "—")}
+                <p className="text-sm text-[var(--text-secondary)] truncate">
+                  {isAgent ? "In-house session" : (user?.email ?? "—")}
                 </p>
                 {stats?.memberSince && (
                   <p className="mt-1 text-xs text-[var(--text-secondary)]">
