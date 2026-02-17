@@ -112,8 +112,7 @@ function SettingsPageClient() {
           API Key
         </h2>
         <p className="text-sm text-[var(--text-secondary)]">
-          For OpenClaw and AI. Generate and copy your key — you&apos;ll only
-          see it once.
+          Give your AI the link to xpersona.co and this API key.
         </p>
         <ApiKeySection />
         <Link

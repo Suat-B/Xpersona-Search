@@ -21,7 +21,7 @@ export function AgentProofBlock() {
   return (
     <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4 max-w-md w-full">
       <p className="text-xs text-[var(--text-primary)] mb-2">
-        Your AI assistant can play right now. Set <code className="bg-white/5 px-1.5 py-0.5 rounded font-mono text-[10px] text-[var(--text-secondary)]">XPERSONA_API_KEY</code> and go.
+        Give your AI the link to https://xpersona.co. Give it your API key. Done.
       </p>
       <div className="flex items-center gap-2">
         <pre className="flex-1 text-[10px] font-mono text-emerald-400/90 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2 overflow-x-auto">

@@ -28,7 +28,7 @@ export function AgentReadyBadge() {
         iconBg: "bg-[#ff9f0a]/10 border-[#ff9f0a]/20 text-[#ff9f0a]",
         border: "border-[#ff9f0a]/30",
         title: "Setup API Key",
-        subtitle: "Generate key for AI access",
+        subtitle: "Link + key to connect",
         text: "text-[#ff9f0a]",
         ping: false,
         glow: "",

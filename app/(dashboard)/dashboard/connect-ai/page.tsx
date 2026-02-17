@@ -6,32 +6,24 @@ import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
 import { GuestApiWarningBanner } from "@/components/auth/GuestApiWarningBanner";
 import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
 import { HeartbeatIndicator } from "@/components/ui/HeartbeatIndicator";
+import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
 
 const STEPS = [
   {
-    title: "Generate API key",
-    desc: "One click below. Copy it — shown once only.",
+    title: "Give your AI the link",
+    desc: "Point your agent to https://xpersona.co",
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+      </svg>
+    ),
+  },
+  {
+    title: "Give it your API key",
+    desc: "Copy from below. One key, all frameworks.",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-      </svg>
-    ),
-  },
-  {
-    title: "Set XPERSONA_API_KEY",
-    desc: "In your env or OpenClaw config. Same key for all AI.",
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-      </svg>
-    ),
-  },
-  {
-    title: "Your AI plays",
-    desc: "OpenClaw, LangChain, CrewAI — same balance, same dice.",
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
       </svg>
     ),
   },
@@ -77,19 +69,20 @@ export default function ConnectAIPage() {
             </h1>
             <p className="mt-1 text-sm text-[var(--text-secondary)] max-w-lg">
               {aiConnected
-                ? "Your AI can play dice with your balance. OpenClaw, LangChain, REST — same key."
-                : "Let your AI play dice with your balance. Generate an API key once — OpenClaw, LangChain, REST, all use the same key."}
+                ? "Your AI can play dice with your balance."
+                : AI_FIRST_MESSAGING.connectAICopy}
             </p>
           </div>
         </div>
       </section>
 
-      {/* Three steps */}
+      {/* Two steps + success */}
       <GlassCard className="p-6 border-[var(--accent-heart)]/20">
         <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
-          Three steps to AI-powered play
+          {AI_FIRST_MESSAGING.apiFlow.headline}
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <p className="text-xs text-[var(--text-tertiary)] mb-4">{AI_FIRST_MESSAGING.apiFlow.subtitle}</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {STEPS.map((step, i) => (
             <div key={i} className="flex items-start gap-3 p-4 rounded-xl bg-white/[0.02] border border-white/[0.06]">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--accent-heart)]/20 text-[var(--accent-heart)]">
@@ -101,6 +94,12 @@ export default function ConnectAIPage() {
               </div>
             </div>
           ))}
+        </div>
+        <div className="mt-4 p-4 rounded-xl bg-[#30d158]/10 border border-[#30d158]/20">
+          <p className="text-sm font-semibold text-[#30d158] flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-[#30d158]" />
+            {AI_FIRST_MESSAGING.apiFlow.success} — Your AI can play.
+          </p>
         </div>
       </GlassCard>
 

@@ -53,7 +53,7 @@ export function AgentBanner() {
           href="/dashboard/connect-ai"
           className="font-medium text-[var(--accent-heart)] hover:underline"
         >
-          Generate your OpenClaw AI now
+          Give your AI the link and your key
         </Link>{" "}
         to start playing {"<3"}
       </div>

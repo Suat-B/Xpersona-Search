@@ -656,7 +656,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       {hasApiKey === false && (
         <Link href="/dashboard/connect-ai" className="fixed top-4 left-0 right-0 z-[60] flex items-center justify-center gap-3 py-2.5 px-4 bg-[#0ea5e9]/10 border-b border-[#0ea5e9]/30 text-[#0ea5e9] hover:bg-[#0ea5e9]/15 transition-colors backdrop-blur-sm">
           <span className="w-2 h-2 rounded-full bg-[#0ea5e9] animate-pulse shrink-0" />
-          <span className="text-sm font-medium">Connect your AI — Your agent needs an API key</span>
+          <span className="text-sm font-medium">Connect your AI — Give it the link to xpersona.co and your API key</span>
           <span className="text-xs font-semibold">Connect now →</span>
         </Link>
       )}

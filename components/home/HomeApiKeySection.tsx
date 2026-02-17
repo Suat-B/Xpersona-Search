@@ -14,7 +14,7 @@ export function HomeApiKeySection() {
           Your API Key
         </h2>
         <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-lg">
-          Generate and manage your API key to let your AI start betting immediately.
+          Give your AI the link to xpersona.co and your API key. Done.
         </p>
       </div>
       <div className="agent-card p-5 max-w-md">
