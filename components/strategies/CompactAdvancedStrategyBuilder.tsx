@@ -173,7 +173,7 @@ export function CompactAdvancedStrategyBuilder({
       <div className={fullWidth ? "grid grid-cols-1 lg:grid-cols-2 gap-4" : ""}>
         <div className={fullWidth ? "grid grid-cols-3 gap-2" : "grid grid-cols-3 gap-2"}>
           <div>
-            <label className="block text-[10px] text-[var(--text-secondary)] mb-1">Bet</label>
+            <label className="block text-[10px] text-[var(--text-secondary)] mb-1">Transaction</label>
             <input
               type="number"
               min={1}

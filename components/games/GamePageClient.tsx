@@ -141,7 +141,7 @@ function BacktestTabContent({ strategy }: { strategy: AdvancedDiceStrategy | nul
                 <thead className="bg-white/[0.02] sticky top-0">
                   <tr>
                     <th className="px-2 py-1 text-left text-[var(--text-secondary)]">#</th>
-                    <th className="px-2 py-1 text-left text-[var(--text-secondary)]">Bet</th>
+                    <th className="px-2 py-1 text-left text-[var(--text-secondary)]">Transaction</th>
                     <th className="px-2 py-1 text-left text-[var(--text-secondary)]">Roll</th>
                     <th className="px-2 py-1 text-left text-[var(--text-secondary)]">Result</th>
                     <th className="px-2 py-1 text-right text-[var(--text-secondary)]">Balance</th>

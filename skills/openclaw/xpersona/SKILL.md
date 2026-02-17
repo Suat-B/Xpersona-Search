@@ -75,7 +75,7 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 | xpersona_update_strategy | Update basic strategy by ID |
 | xpersona_delete_strategy | Delete a strategy |
 | xpersona_withdraw | Request withdrawal (min 10,000 credits) |
-| xpersona_get_transactions | Unified feed: bets + faucet grants |
+| xpersona_get_transactions | Unified feed: transactions + faucet grants |
 | xpersona_verify_round | Get single round with provably fair verification |
 | xpersona_notify | Send notification about game events |
 | xpersona_get_limits | Get betting and rate limits |
@@ -89,7 +89,7 @@ You can use **REST** or the **Tools API**. Same auth; Tools API is a single POST
 | xpersona_get_advanced_strategy | Get advanced strategy by ID |
 | xpersona_update_advanced_strategy | Update advanced strategy |
 | xpersona_delete_advanced_strategy | Delete advanced strategy |
-| xpersona_simulate_advanced_strategy | Simulate (dry run, no real bets) |
+| xpersona_simulate_advanced_strategy | Simulate (dry run, no real transactions) |
 | xpersona_run_advanced_strategy | Run for real (strategy_id or inline strategy) |
 
 **Note:** `xpersona_stop_session` and `xpersona_get_session_status` exist in the schema but are reserved for future async sessions. Strategy runs are synchronous; there is no active session to stop. Use `xpersona_run_strategy` or `xpersona_run_advanced_strategy` result directly.
@@ -128,7 +128,7 @@ When you play dice for a player, you need credits. **If balance is low, alert th
 
 All balance endpoints return: `deposit_alert` (`"ok"` | `"low"` | `"critical"`), `deposit_alert_message` (ready-to-use text), `deposit_url` (`/dashboard/deposit`).
 
-- **`deposit_alert === "critical"`** (balance &lt; 10): Tell the player immediately. Say `deposit_alert_message` verbatim. Direct them to deposit — credits arrive instantly. Without deposit, you cannot place more bets.
+- **`deposit_alert === "critical"`** (balance &lt; 10): Tell the player immediately. Say `deposit_alert_message` verbatim. Direct them to deposit — credits arrive instantly. Without deposit, you cannot place more transactions.
 - **`deposit_alert === "low"`** (balance &lt; 100): Suggest deposit soon. Use `deposit_alert_message` or your own phrasing. Link them to `/dashboard/deposit` so they can add funds before they run out.
 - **`deposit_alert === "ok"`**: No action needed.
 
@@ -197,7 +197,7 @@ When you play dice for a player, proactively send status updates so they know ho
 
 **Simulate (dry run):** `POST /api/me/advanced-strategies/simulate` with `{ strategy, rounds?, startingBalance? }` or `POST /api/me/advanced-strategies/:id/simulate` with `{ rounds?, startingBalance? }`.
 
-**Run (real bets):** `POST /api/games/dice/run-advanced-strategy` with `{ strategyId }` or `{ strategy, maxRounds }`. Max 100,000 rounds per run.
+**Run (real transactions):** `POST /api/games/dice/run-advanced-strategy` with `{ strategyId }` or `{ strategy, maxRounds }`. Max 100,000 rounds per run.
 
 
 ---
@@ -209,7 +209,7 @@ Session stats (AI-first):
 curl -s -H "Authorization: Bearer $XPERSONA_API_KEY" "https://xpersona.co/api/me/session-stats?gameType=dice&limit=20"
 ```
 
-Play dice (bet 10, over 50):
+Play dice (transaction 10, over 50):
 ```bash
 curl -s -X POST -H "Authorization: Bearer $XPERSONA_API_KEY" -H "Content-Type: application/json" \
   -d '{"amount":10,"target":50,"condition":"over"}' https://xpersona.co/api/games/dice/round

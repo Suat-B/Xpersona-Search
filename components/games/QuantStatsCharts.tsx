@@ -273,7 +273,7 @@ export function QuantStatsCharts({ recentResults, layout = "default" }: QuantSta
       </div>
       )}
 
-      {/* Bet size distribution — hidden in analytics */}
+      {/* Transaction size distribution — hidden in analytics */}
       {!showHistogram && (
       <div className="rounded-2xl border border-white/10 bg-[var(--bg-card)] p-4 shadow-md">
         <h4 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest mb-3">

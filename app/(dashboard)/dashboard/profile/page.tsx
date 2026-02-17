@@ -240,7 +240,7 @@ function ProfilePageClient() {
                 value={stats ? `${stats.winRate}%` : "—"}
                 subtext={
                   stats && stats.totalBets > 0
-                    ? `${formatNumber(stats.totalBets)} rounds`
+                    ? `${formatNumber(stats.totalBets)} transactions`
                     : undefined
                 }
               />
@@ -249,7 +249,7 @@ function ProfilePageClient() {
                 value={stats ? `${formatNumber(stats.totalWagered)} credits` : "—"}
                 subtext={
                   stats?.lastBetAt
-                    ? `Last bet ${formatDate(stats.lastBetAt)}`
+                    ? `Last transaction ${formatDate(stats.lastBetAt)}`
                     : undefined
                 }
               />
@@ -283,7 +283,7 @@ function ProfilePageClient() {
                         </span>
                       </div>
                       <div className="mt-2 flex gap-4 text-xs text-[var(--text-secondary)]">
-                        <span>{formatNumber(s.bets)} bets</span>
+                        <span>{formatNumber(s.bets)} transactions</span>
                         <span>{formatNumber(s.wagered)} wagered</span>
                         <span>{s.winRate}% win</span>
                       </div>
@@ -297,7 +297,7 @@ function ProfilePageClient() {
             ) : (
               <GlassCard className="p-6">
                 <p className="text-sm text-[var(--text-secondary)]">
-                  No bets yet. Play a game to see your stats here.
+                  No transactions yet. Play a game to see your stats here.
                 </p>
                 <Link
                   href="/games/dice"

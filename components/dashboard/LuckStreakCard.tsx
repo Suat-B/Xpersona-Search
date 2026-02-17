@@ -127,7 +127,7 @@ export function LuckStreakCard() {
       <div className="flex items-center justify-between gap-2 min-w-0">
         {recentTotal > 0 ? (
           <span className="text-xs text-[var(--text-tertiary)] truncate">
-            Last {recentTotal} bets: {recentWins}W · {recentTotal - recentWins}L
+            Last {recentTotal} transactions: {recentWins}W · {recentTotal - recentWins}L
           </span>
         ) : (
           <span className="text-xs text-[var(--text-tertiary)]">Awaiting data...</span>

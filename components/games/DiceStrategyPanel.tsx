@@ -241,7 +241,7 @@ export function DiceStrategyPanel({
                 </span>
               </div>
               <div className="flex items-center gap-3 text-[10px] text-[var(--text-secondary)]">
-                <span>Bet: {selected.config.amount}</span>
+                <span>Transaction: {selected.config.amount}</span>
                 <span className="text-[var(--border)]">|</span>
                 <span>Target: {selected.config.target}% {selected.config.condition}</span>
               </div>

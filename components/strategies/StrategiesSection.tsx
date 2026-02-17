@@ -21,7 +21,7 @@ function configSummary(_gameType: string, config: Record<string, unknown>): stri
   const target = config.target ?? "?";
   const cond = config.condition ?? "?";
   const prog = config.progressionType ?? "flat";
-  return `Bet ${amount} @ ${cond} ${target} (${prog})`;
+  return `Transaction ${amount} @ ${cond} ${target} (${prog})`;
 }
 
 export function StrategiesSection() {

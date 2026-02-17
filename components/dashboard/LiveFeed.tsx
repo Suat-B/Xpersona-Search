@@ -11,7 +11,7 @@ type FeedItem = {
     amount: string;
     game: string;
     timestamp: number;
-    type: "win" | "bet";
+    type: "win" | "transaction";
 };
 
 export default function LiveFeed() {
@@ -34,7 +34,7 @@ export default function LiveFeed() {
                 amount: p.outcome === "win" ? `+${p.payout}` : `-${p.amount}`,
                 game: "Dice",
                 timestamp: p.createdAt ? new Date(p.createdAt).getTime() : Date.now(),
-                type: p.outcome === "win" ? "win" : "bet",
+                type: p.outcome === "win" ? "win" : "transaction",
             }));
             setFeed(items);
         } catch (e) {
@@ -63,13 +63,13 @@ export default function LiveFeed() {
                     </span>
                     LIVE FEED
                 </h3>
-                <span className="text-[10px] text-[var(--text-secondary)] font-mono">YOUR BETS</span>
+                <span className="text-[10px] text-[var(--text-secondary)] font-mono">YOUR TRANSACTIONS</span>
             </div>
             <div className="flex-1 overflow-y-auto p-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
                 <ul ref={listRef} className="space-y-1">
                     {feed.length === 0 ? (
                         <li className="p-4 text-center text-xs text-[var(--text-secondary)]">
-                            No bets yet. Play a game to see activity here.
+                            No transactions yet. Play a game to see activity here.
                         </li>
                     ) : (
                         feed.map((item) => (

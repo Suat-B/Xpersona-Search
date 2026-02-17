@@ -1,6 +1,6 @@
 # Python Strategies (Dice) — OpenClaw compatible
 
-AI-first probability game supports user-defined Python strategies for the dice game. The same contract works on the **web dashboard** (paste code, run with real bets) and via **OpenClaw** tools (`xpersona_create_strategy`, `xpersona_run_strategy`). Same contract for the web and for OpenClaw AI agents.
+AI-first probability game supports user-defined Python strategies for the dice game. The same contract works on the **web dashboard** (paste code, run with real transactions) and via **OpenClaw** tools (`xpersona_create_strategy`, `xpersona_run_strategy`). Same contract for the web and for OpenClaw AI agents.
 
 ## Dice game rules
 
@@ -12,9 +12,9 @@ AI-first probability game supports user-defined Python strategies for the dice g
 
 - Your code must define a **class** that implements at least:
   - **`on_round_start(self, ctx) -> BetDecision`**  
-    Called each round. Return a bet decision or stop.
+    Called each round. Return a transaction decision or stop.
   - **`on_round_complete(self, ctx, result)`** (optional)  
-    Called after each bet is settled. Use it to update internal state based on the outcome.
+    Called after each transaction is settled. Use it to update internal state based on the outcome.
 
 - The runtime provides a **context** `ctx` with:
   - **`ctx.get_balance() -> float`** — current balance
@@ -28,22 +28,22 @@ AI-first probability game supports user-defined Python strategies for the dice g
   - **`ctx.notify(message: str)`** — log a message
 
 - **Decisions:**
-  - **`BetDecision(amount, target, condition)`** — place a dice bet.  
-    `amount`: credits to bet.  
+  - **`BetDecision(amount, target, condition)`** — place a dice transaction.  
+    `amount`: credits to transact.  
     `target`: 0–99.99.  
     `condition`: `"over"` or `"under"` (win when result &gt; target or &lt; target).
   - **`BetDecision.stop(reason="...")`** — stop the session.
 
 ## Lifecycle
 
-- Each round: **`on_round_start(ctx)`** is called to get a decision (bet or stop).
-- After a bet is placed and settled, **`on_round_complete(ctx, result)`** is called with a **`RoundResult`** (`result`, `win`, `payout`, `balance`) so strategies can update internal state. Then the next round starts.
+- Each round: **`on_round_start(ctx)`** is called to get a decision (transaction or stop).
+- After a transaction is placed and settled, **`on_round_complete(ctx, result)`** is called with a **`RoundResult`** (`result`, `win`, `payout`, `balance`) so strategies can update internal state. Then the next round starts.
 
 ## Custom code
 
 **Any** Python is allowed as long as it defines a class with **`on_round_start(self, ctx)`** returning an object that has **`to_dict()`** returning:
 
-- **Bet:** `{ "action": "bet", "amount", "target", "condition" }`
+- **Transaction:** `{ "action": "bet", "amount", "target", "condition" }`
 - **Stop:** `{ "action": "stop", "reason"?: string }`
 
 `BetDecision` and `BetDecision.stop()` are provided by the runtime (you don't have to define them). You can also return your own type that implements `to_dict()` with the same shape. Same contract for the web and for **OpenClaw AI agents**.

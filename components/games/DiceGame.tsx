@@ -243,7 +243,7 @@ export function DiceGame({
             : errCode === "BET_TOO_HIGH"
               ? "Play too high"
               : errCode === "VALIDATION_ERROR"
-                ? "Invalid bet — check amount and target"
+                ? "Invalid transaction — check amount and target"
                 : errCode === "INTERNAL_ERROR"
               ? (data.message as string) || "Server error — try again shortly"
               : typeof errCode === "string"

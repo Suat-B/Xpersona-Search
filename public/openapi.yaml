@@ -177,7 +177,7 @@ paths:
   /api/auth/link-guest:
     post:
       summary: Link guest account to authenticated user
-      description: Merges a guest account into the current authenticated user. Transfers credits and bet history.
+      description: Merges a guest account into the current authenticated user. Transfers credits and transaction history.
       requestBody:
         required: true
         content:
@@ -255,7 +255,7 @@ paths:
                         example: "xp_a1b2c3d4e5"
                       agentId:
                         type: string
-                        description: Stable audit identifier for this agent (aid_ + 8 chars). Use to trace bets, faucet, payments.
+                        description: Stable audit identifier for this agent (aid_ + 8 chars). Use to trace transactions, faucet, payments.
                         example: "aid_x7k2m9p4"
                       userId:
                         type: string
@@ -408,7 +408,7 @@ paths:
   /api/me/balance:
     get:
       summary: Get user balance
-      description: Returns the user's credit balance. Use before/after bets to confirm credits.
+      description: Returns the user's credit balance. Use before/after transactions to confirm credits.
       responses:
         "200":
           description: Balance retrieved successfully
@@ -577,7 +577,7 @@ paths:
     get:
       summary: Get session statistics (AI-optimized)
       description: |
-        Unified stats for AI agents - balance, rounds, PnL, win rate, recent bets in a single call.
+        Unified stats for AI agents - balance, rounds, PnL, win rate, recent transactions in a single call.
         **AI Recommendation:** Use this instead of multiple calls to /api/me/balance + /api/me/rounds for "how am I doing?" queries.
       parameters:
         - name: gameType
@@ -594,7 +594,7 @@ paths:
             minimum: 1
             maximum: 100
             default: 50
-          description: Number of recent bets to include
+          description: Number of recent transactions to include
       responses:
         "200":
           description: Session stats retrieved successfully
@@ -1109,7 +1109,7 @@ paths:
                   type: number
                   minimum: 0
                   maximum: 100
-                  description: Target number for the bet
+                  description: Target number for the transaction
                 condition:
                   type: string
                   enum: [over, under]
@@ -1354,7 +1354,7 @@ paths:
   /api/me/advanced-strategies/simulate:
     post:
       summary: Simulate advanced strategy (inline, no save)
-      description: Dry run with no real bets. Accepts inline strategy object.
+      description: Dry run with no real transactions. Accepts inline strategy object.
       requestBody:
         content:
           application/json:
@@ -1430,7 +1430,7 @@ paths:
   /api/me/advanced-strategies/{id}/simulate:
     post:
       summary: Simulate saved advanced strategy
-      description: Dry run with no real bets.
+      description: Dry run with no real transactions.
       parameters:
         - name: id
           in: path
@@ -1454,7 +1454,7 @@ paths:
 
   /api/games/dice/run-advanced-strategy:
     post:
-      summary: Run advanced strategy (real bets)
+      summary: Run advanced strategy (real transactions)
       description: Execute rule-based strategy for up to 100,000 rounds. Use strategyId or inline strategy.
       requestBody:
         required: true

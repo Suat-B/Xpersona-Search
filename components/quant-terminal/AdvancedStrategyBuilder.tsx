@@ -44,7 +44,7 @@ const strategyTemplates: StrategyTemplate[] = [
   {
     id: 'martingale',
     name: 'Martingale',
-    description: 'Double bet after loss, reset after win',
+    description: 'Double transaction after loss, reset after win',
     config: {
       name: 'Martingale Strategy',
       description: 'Classic Martingale progression system',
@@ -74,7 +74,7 @@ const strategyTemplates: StrategyTemplate[] = [
   {
     id: 'anti_martingale',
     name: 'Anti-Martingale',
-    description: 'Increase bet after win, reset after loss',
+    description: 'Increase transaction after win, reset after loss',
     config: {
       name: 'Anti-Martingale Strategy',
       description: 'Ride winning streaks',
@@ -104,10 +104,10 @@ const strategyTemplates: StrategyTemplate[] = [
   {
     id: 'kelly',
     name: 'Kelly Criterion',
-    description: 'Optimal bet sizing based on edge',
+    description: 'Optimal transaction sizing based on edge',
     config: {
       name: 'Kelly Criterion',
-      description: 'Mathematically optimal bet sizing',
+      description: 'Mathematically optimal transaction sizing',
       initialBet: 10,
       maxBet: 100,
       stopLoss: 30,
@@ -130,7 +130,7 @@ const strategyTemplates: StrategyTemplate[] = [
     description: 'Follow winning streaks',
     config: {
       name: 'Trend Following',
-      description: 'Increase bets during winning streaks',
+      description: 'Increase transactions during winning streaks',
       initialBet: 10,
       maxBet: 200,
       stopLoss: 40,
@@ -177,12 +177,12 @@ const operatorOptions = [
 ];
 
 const actionOptions = [
-  { value: 'multiply_bet', label: 'Multiply Bet by' },
-  { value: 'add_to_bet', label: 'Add to Bet' },
-  { value: 'reset_bet', label: 'Reset Bet to Initial' },
+  { value: 'multiply_bet', label: 'Multiply Transaction by' },
+  { value: 'add_to_bet', label: 'Add to Transaction' },
+  { value: 'reset_bet', label: 'Reset Transaction to Initial' },
   { value: 'stop_trading', label: 'Stop Trading' },
   { value: 'switch_direction', label: 'Switch Direction' },
-  { value: 'set_bet', label: 'Set Bet to' },
+  { value: 'set_bet', label: 'Set Transaction to' },
 ];
 
 export function AdvancedStrategyBuilder() {
@@ -359,7 +359,7 @@ export function AdvancedStrategyBuilder() {
         {/* Base Parameters Grid */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-[10px] text-[var(--quant-neutral)] uppercase">Initial Bet</label>
+            <label className="text-[10px] text-[var(--quant-neutral)] uppercase">Initial Transaction</label>
             <input
               type="number"
               value={strategy.initialBet}
@@ -368,7 +368,7 @@ export function AdvancedStrategyBuilder() {
             />
           </div>
           <div>
-            <label className="text-[10px] text-[var(--quant-neutral)] uppercase">Max Bet</label>
+            <label className="text-[10px] text-[var(--quant-neutral)] uppercase">Max Transaction</label>
             <input
               type="number"
               value={strategy.maxBet}

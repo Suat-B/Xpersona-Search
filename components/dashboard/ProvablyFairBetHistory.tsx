@@ -147,7 +147,7 @@ export function ProvablyFairBetHistory() {
             <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
             </svg>
-            All past bets — Provably fair audit
+            All past transactions — Provably fair audit
           </h3>
           <div className="flex items-center gap-2">
             <select
@@ -171,7 +171,7 @@ export function ProvablyFairBetHistory() {
             </div>
           ) : bets.length === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-[var(--text-secondary)]">
-              No bets yet. Play dice to see your provably fair history.
+              No transactions yet. Play dice to see your provably fair history.
             </div>
           ) : (
             <table className="w-full text-sm">
@@ -179,7 +179,7 @@ export function ProvablyFairBetHistory() {
                 <tr className="border-b border-[var(--border)] text-left text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                   <th className="px-4 py-3">Date</th>
                   <th className="px-4 py-3">Game</th>
-                  <th className="px-4 py-3">Bet</th>
+                  <th className="px-4 py-3">Transaction</th>
                   <th className="px-4 py-3">Result</th>
                   <th className="px-4 py-3">Payout</th>
                   <th className="px-4 py-3">PnL</th>

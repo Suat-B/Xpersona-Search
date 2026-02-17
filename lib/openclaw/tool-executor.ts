@@ -150,7 +150,7 @@ async function handlePlaceDiceBet(params: any, agentContext: AgentContext | null
   const user = authResult.user;
 
   if (amount < 1 || amount > 10000) {
-    throw new Error("Invalid bet amount: must be 1–10000");
+    throw new Error("Invalid transaction amount: must be 1–10000");
   }
 
   if (target < 0 || target >= 100) {
@@ -164,7 +164,7 @@ async function handlePlaceDiceBet(params: any, agentContext: AgentContext | null
   }
 
   if (agentContext && amount > agentContext.maxBetAmount) {
-    throw new Error(`Agent bet limit exceeded: max ${agentContext.maxBetAmount}`);
+    throw new Error(`Agent transaction limit exceeded: max ${agentContext.maxBetAmount}`);
   }
 
   const resultPayloadExtra: Record<string, unknown> = {};

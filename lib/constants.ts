@@ -51,13 +51,13 @@ export const WIN_STREAK_ALERT_THRESHOLD = 3;
 /** Proof-of-life alert — ready-to-use message for AI to tell the player how things are going */
 export type ProofOfLifeAlert = { type: string; message: string };
 
-/** Count current win streak (positive) or loss streak (negative) from most recent bets. Bets ordered desc by time. */
+/** Count current win streak (positive) or loss streak (negative) from most recent transactions. Transactions ordered desc by time. */
 export function calculateCurrentStreak(bets: { outcome: string }[]): number {
   if (bets.length === 0) return 0;
   let streak = 0;
   const lastResult = bets[0]!.outcome === "win";
-  for (const bet of bets) {
-    if ((bet.outcome === "win") === lastResult) {
+  for (const tx of bets) {
+    if ((tx.outcome === "win") === lastResult) {
       streak = lastResult ? streak + 1 : streak - 1;
     } else break;
   }

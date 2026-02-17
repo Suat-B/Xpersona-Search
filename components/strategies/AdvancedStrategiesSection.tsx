@@ -253,7 +253,7 @@ export function AdvancedStrategiesSection() {
                       </span>
                     </div>
                     <p className="text-xs text-[var(--text-secondary)]">
-                      Bet {strategy.baseConfig.amount} @ {strategy.baseConfig.target}% {strategy.baseConfig.condition} ·{" "}
+                      Transaction {strategy.baseConfig.amount} @ {strategy.baseConfig.target}% {strategy.baseConfig.condition} ·{" "}
                       {strategy.rules.length} rule{strategy.rules.length !== 1 ? "s" : ""}
                     </p>
                   </div>

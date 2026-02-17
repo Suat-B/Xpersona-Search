@@ -63,7 +63,7 @@ export default function StrategyBuilderPage() {
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-[var(--accent-heart)]">2.</span>
-                <span>Set your base parameters (initial bet, max bet, stop loss, etc.)</span>
+                <span>Set your base parameters (initial transaction, max transaction, stop loss, etc.)</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-[var(--accent-heart)]">3.</span>

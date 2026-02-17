@@ -78,7 +78,7 @@ export const XpersonaToolsSchema = {
           type: "number",
           minimum: 1,
           maximum: 10000,
-          description: "Bet amount in credits"
+          description: "Transaction amount in credits"
         },
         target: {
           type: "number",
@@ -89,7 +89,7 @@ export const XpersonaToolsSchema = {
         condition: {
           type: "string",
           enum: ["over", "under"],
-          description: "Bet condition"
+          description: "Transaction condition"
         },
         strategy_id: {
           type: "string",
@@ -427,7 +427,7 @@ export const XpersonaToolsSchema = {
 
   "xpersona_get_transactions": {
     name: "xpersona_get_transactions",
-    description: "Get unified activity feed: bets and faucet grants combined. Supports limit, offset, type filter (all|bet|faucet).",
+    description: "Get unified activity feed: transactions and faucet grants combined. Supports limit, offset, type filter (all|bet|faucet).",
     parameters: {
       type: "object",
       properties: {

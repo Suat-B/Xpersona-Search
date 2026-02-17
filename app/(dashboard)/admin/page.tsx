@@ -278,7 +278,7 @@ export default function AdminPage() {
                     {overview.revenue.daily.earnings >= 0 ? "+" : ""}{overview.revenue.daily.earnings}
                   </p>
                   <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
-                    {overview.revenue.daily.volume.toLocaleString()} vol · {overview.revenue.daily.betCount ?? 0} bets
+                    {overview.revenue.daily.volume.toLocaleString()} vol · {overview.revenue.daily.betCount ?? 0} transactions
                   </p>
                   {overview.revenue.daily.theoreticalEdge != null && (
                     <p className="mt-1 text-[10px] text-amber-400/70">~{overview.revenue.daily.theoreticalEdge} theoretical (3%)</p>
@@ -290,7 +290,7 @@ export default function AdminPage() {
                     {overview.revenue.weekly.earnings >= 0 ? "+" : ""}{overview.revenue.weekly.earnings}
                   </p>
                   <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
-                    {overview.revenue.weekly.volume.toLocaleString()} vol · {overview.revenue.weekly.betCount ?? 0} bets
+                    {overview.revenue.weekly.volume.toLocaleString()} vol · {overview.revenue.weekly.betCount ?? 0} transactions
                   </p>
                   {overview.revenue.weekly.theoreticalEdge != null && (
                     <p className="mt-1 text-[10px] text-amber-400/70">~{overview.revenue.weekly.theoreticalEdge} theoretical (3%)</p>
@@ -302,7 +302,7 @@ export default function AdminPage() {
                     {overview.revenue.monthly.earnings >= 0 ? "+" : ""}{overview.revenue.monthly.earnings}
                   </p>
                   <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
-                    {overview.revenue.monthly.volume.toLocaleString()} vol · {overview.revenue.monthly.betCount ?? 0} bets
+                    {overview.revenue.monthly.volume.toLocaleString()} vol · {overview.revenue.monthly.betCount ?? 0} transactions
                   </p>
                   {overview.revenue.monthly.theoreticalEdge != null && (
                     <p className="mt-1 text-[10px] text-amber-400/70">~{overview.revenue.monthly.theoreticalEdge} theoretical (3%)</p>
@@ -326,7 +326,7 @@ export default function AdminPage() {
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
             <MetricCard label="Total Users" value={overview.users.total} />
-            <MetricCard label="Total Bets" value={overview.bets.totalCount} />
+            <MetricCard label="Total Transactions" value={overview.bets.totalCount} />
             <MetricCard
               label="Total Volume"
               value={overview.bets.totalVolume.toLocaleString()}
@@ -344,10 +344,10 @@ export default function AdminPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <GlassCard className="p-6">
-              <h3 className="text-sm font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-4">Recent Bets</h3>
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-4">Recent Transactions</h3>
               <div className="space-y-2 max-h-[400px] overflow-y-auto">
                 {overview.bets.recent.length === 0 ? (
-                  <p className="text-sm text-[var(--text-secondary)]">No bets yet</p>
+                  <p className="text-sm text-[var(--text-secondary)]">No transactions yet</p>
                 ) : (
                   overview.bets.recent.map((b) => (
                     <div
@@ -398,7 +398,7 @@ export default function AdminPage() {
       {tab === "games" && games && (
         <GlassCard className="overflow-hidden p-0">
           <div className="px-6 py-4 border-b border-[var(--border)] flex items-center justify-between">
-            <h3 className="font-semibold text-[var(--text-primary)]">All Bets ({games.totalCount})</h3>
+            <h3 className="font-semibold text-[var(--text-primary)]">All Transactions ({games.totalCount})</h3>
             <span className="text-sm text-[var(--text-secondary)]">
               Volume: {games.totalVolume.toLocaleString()} · PnL: {games.totalPnl}
             </span>
@@ -519,7 +519,7 @@ export default function AdminPage() {
                 <tr>
                   <th className="px-6 py-3">Email</th>
                   <th className="px-6 py-3">Credits</th>
-                  <th className="px-6 py-3">Bets</th>
+                  <th className="px-6 py-3">Transactions</th>
                   <th className="px-6 py-3">Volume</th>
                   <th className="px-6 py-3">PnL</th>
                   <th className="px-6 py-3">Joined</th>
