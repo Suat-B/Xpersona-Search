@@ -11,7 +11,7 @@ import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
 const STEPS = [
   {
     title: "Give your AI the link",
-    desc: "Point your agent to https://xpersona.co",
+    desc: "Point your agent to https://xpersona.co/dashboard/api",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
@@ -98,7 +98,7 @@ export default function ConnectAIPage() {
         <div className="mt-4 p-4 rounded-xl bg-[#30d158]/10 border border-[#30d158]/20">
           <p className="text-sm font-semibold text-[#30d158] flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-[#30d158]" />
-            {AI_FIRST_MESSAGING.apiFlow.success} — Your AI can play.
+            {AI_FIRST_MESSAGING.apiFlow.success}
           </p>
         </div>
       </GlassCard>

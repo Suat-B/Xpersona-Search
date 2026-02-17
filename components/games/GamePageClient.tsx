@@ -187,7 +187,13 @@ interface RollResult {
   source?: "manual" | "algo" | "api";
 }
 
-export default function GamePageClient({ game }: { game: GameSlug }) {
+export default function GamePageClient({
+  game,
+  initialBalance: initialBalanceProp,
+}: {
+  game: GameSlug;
+  initialBalance?: number | null;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { hasApiKey } = useAiConnectionStatus();
@@ -202,8 +208,8 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const [autoPlayActive, setAutoPlayActive] = useState(false);
   const [recentResults, setRecentResults] = useState<RollResult[]>([]);
   const [recentResultsHydrated, setRecentResultsHydrated] = useState(false);
-  const [balance, setBalance] = useState<number>(0);
-  const [balanceLoading, setBalanceLoading] = useState(true);
+  const [balance, setBalance] = useState<number>(initialBalanceProp ?? 0);
+  const [balanceLoading, setBalanceLoading] = useState(initialBalanceProp == null);
   const [strategyRun, setStrategyRun] = useState<StrategyRunConfig | null>(null);
   const [strategyStats, setStrategyStats] = useState<{
     currentRound: number;
@@ -222,11 +228,27 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
   const [aiBannerVisible, setAiBannerVisible] = useState(false);
   const [liveActivityItems, setLiveActivityItems] = useState<LiveActivityItem[]>([]);
   const [liveQueueLength, setLiveQueueLength] = useState(0);
+  const [spectatePaused, setSpectatePaused] = useState(false);
   const [depositAlertFromAI, setDepositAlertFromAI] = useState(false);
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
   const processedPlayIdsRef = useRef<Set<string>>(new Set());
   const liveFeedRef = useRef<EventSource | null>(null);
-  const livePlayQueueRef = useRef<Array<{ result: number; win: boolean; payout: number; amount: number; target: number; condition: string; betId?: string; agentId?: string; receivedAt: number }>>([]);
+  const spectatePausedRef = useRef(false);
+  spectatePausedRef.current = spectatePaused;
+  const livePlayQueueRef = useRef<
+    Array<{
+      result: number;
+      win: boolean;
+      payout: number;
+      amount: number;
+      target: number;
+      condition: string;
+      balance?: number;
+      betId?: string;
+      agentId?: string;
+      receivedAt: number;
+    }>
+  >([]);
   const liveQueueProcessingRef = useRef(false);
   const aiBannerCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionHighRef = useRef(0);
@@ -483,7 +505,7 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
     if (result.betId) processedPlayIdsRef.current.add(result.betId);
   }, [amount, target, condition, addRound]);
 
-  // Process live play queue sequentially
+  // Process live play queue sequentially — defer handleResult until each roll is displayed
   const processLivePlayQueue = useCallback(() => {
     if (liveQueueProcessingRef.current || livePlayQueueRef.current.length === 0) return;
     liveQueueProcessingRef.current = true;
@@ -502,6 +524,31 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         if (queue.length > 0) processLivePlayQueue();
         return;
       }
+      // Apply data update in sync with visual — user sees each round 1-by-1
+      handleResult({
+        result: next.result,
+        win: next.win,
+        payout: next.payout,
+        playAmount: next.amount,
+        balance: next.balance,
+        target: next.target,
+        condition: (next.condition === "under" ? "under" : "over") as "over" | "under",
+        source: "api",
+        betId: next.betId,
+      });
+      if (next.betId) processedPlayIdsRef.current.add(next.betId);
+      const item: LiveActivityItem = {
+        id: next.betId ?? `live-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        result: next.result,
+        win: next.win,
+        payout: next.payout,
+        amount: next.amount,
+        target: next.target,
+        condition: next.condition,
+        fromApi: !!next.agentId,
+      };
+      setLiveActivityItems((prev) => [...prev, item].slice(-50));
+
       const peek = queue[0];
       const displayMs = peek
         ? Math.max(MIN_LIVE_PLAY_DISPLAY_MS, peek.receivedAt - next.receivedAt)
@@ -515,6 +562,21 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       setTimeout(playNext, displayMs);
     };
     playNext();
+  }, [handleResult]);
+
+  const stopSpectating = useCallback(() => {
+    spectatePausedRef.current = true;
+    setSpectatePaused(true);
+    livePlayQueueRef.current = [];
+    liveQueueProcessingRef.current = false;
+    setLiveQueueLength(0);
+    setLivePlay(null);
+    setShowAiPlayingIndicator(false);
+    setAiBannerVisible(false);
+    if (aiBannerCooldownRef.current) {
+      clearTimeout(aiBannerCooldownRef.current);
+      aiBannerCooldownRef.current = null;
+    }
   }, []);
 
   // Cleanup banner cooldown on unmount
@@ -539,32 +601,11 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
         if (json?.type !== "bet" || !json?.bet) return;
         const bet = json.bet as { result: number; win: boolean; payout: number; balance: number; amount: number; target: number; condition: string; betId?: string; agentId?: string };
         if (bet.betId && processedPlayIdsRef.current.has(bet.betId)) return;
-        handleResult({
-          result: bet.result,
-          win: bet.win,
-          payout: bet.payout,
-          playAmount: bet.amount,
-          balance: bet.balance,
-          target: bet.target,
-          condition: (bet.condition === "under" ? "under" : "over") as "over" | "under",
-          source: "api",
-        });
-        if (bet.betId) processedPlayIdsRef.current.add(bet.betId);
-
         const fromApi = !!bet.agentId;
-        const item: LiveActivityItem = {
-          id: bet.betId ?? `live-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          result: bet.result,
-          win: bet.win,
-          payout: bet.payout,
-          amount: bet.amount,
-          target: bet.target,
-          condition: bet.condition,
-          fromApi,
-        };
-        setLiveActivityItems((prev) => [...prev, item].slice(-50));
 
         if (fromApi) {
+          // Defer handleResult and liveActivityItems until display — queue for 1-by-1 viewing
+          if (spectatePausedRef.current) return;
           if (aiBannerCooldownRef.current) {
             clearTimeout(aiBannerCooldownRef.current);
             aiBannerCooldownRef.current = null;
@@ -577,11 +618,36 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
             amount: bet.amount,
             target: bet.target,
             condition: bet.condition,
+            balance: bet.balance,
             betId: bet.betId,
             agentId: bet.agentId,
             receivedAt: Date.now(),
           });
           if (!liveQueueProcessingRef.current) processLivePlayQueue();
+        } else {
+          // Non-API bet — apply immediately
+          handleResult({
+            result: bet.result,
+            win: bet.win,
+            payout: bet.payout,
+            playAmount: bet.amount,
+            balance: bet.balance,
+            target: bet.target,
+            condition: (bet.condition === "under" ? "under" : "over") as "over" | "under",
+            source: "api",
+          });
+          if (bet.betId) processedPlayIdsRef.current.add(bet.betId);
+          const item: LiveActivityItem = {
+            id: bet.betId ?? `live-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            result: bet.result,
+            win: bet.win,
+            payout: bet.payout,
+            amount: bet.amount,
+            target: bet.target,
+            condition: bet.condition,
+            fromApi: false,
+          };
+          setLiveActivityItems((prev) => [...prev, item].slice(-50));
         }
       } catch {
         // Ignore parse errors
@@ -656,17 +722,17 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
       {hasApiKey === false && (
         <Link href="/dashboard/connect-ai" className="fixed top-4 left-0 right-0 z-[60] flex items-center justify-center gap-3 py-2.5 px-4 bg-[#0ea5e9]/10 border-b border-[#0ea5e9]/30 text-[#0ea5e9] hover:bg-[#0ea5e9]/15 transition-colors backdrop-blur-sm">
           <span className="w-2 h-2 rounded-full bg-[#0ea5e9] animate-pulse shrink-0" />
-          <span className="text-sm font-medium">Connect your AI — Give it the link to xpersona.co and your API key</span>
+          <span className="text-sm font-medium">Connect your AI — Give it the link to xpersona.co/dashboard/api and your API key</span>
           <span className="text-xs font-semibold">Connect now →</span>
         </Link>
       )}
 
-      {aiBannerVisible && (
+      {aiBannerVisible && !spectatePaused && (
         <div
-          className="fixed top-0 left-0 right-0 z-[60] overflow-hidden bg-gradient-to-r from-violet-950/95 via-violet-900/90 to-violet-950/95 border-b border-violet-500/40 backdrop-blur-md"
+          className="fixed top-0 left-0 right-0 z-[60] overflow-hidden bg-gradient-to-r from-violet-950/95 via-violet-900/90 to-violet-950/95 border-b border-violet-500/40 backdrop-blur-md shadow-[0_0_30px_rgba(139,92,246,0.15)]"
           role="status"
           aria-live="polite"
-          aria-label="Full AI mode active"
+          aria-label="AI is playing"
         >
           {/* Animated scanline / data stream */}
           <div className="absolute inset-0 h-full opacity-[0.03] pointer-events-none">
@@ -675,22 +741,22 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
           <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-3 px-4 sm:px-6">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse shrink-0" aria-hidden />
+                <span className="w-2.5 h-2.5 rounded-full bg-violet-400 animate-pulse shrink-0 shadow-[0_0_8px_rgba(139,92,246,0.6)]" aria-hidden />
                 <h2 className="text-sm sm:text-base font-bold uppercase tracking-widest text-violet-200">
-                  Full AI Mode
+                  AI is playing
                 </h2>
                 <span className="hidden sm:inline text-violet-500/80">·</span>
                 <span className="text-sm font-medium text-violet-300/90">
-                  AI playing on your behalf
+                  on your behalf
                 </span>
               </div>
               <p className="text-xs text-violet-400/80 pl-4 sm:pl-0">
-                Watch only — automated execution live
+                Spectate live — each roll shown one by one
               </p>
             </div>
             <div className="flex items-center gap-3 shrink-0">
               {liveQueueLength > 0 && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-500/20 border border-violet-500/40 text-violet-300 text-xs font-mono font-semibold tabular-nums">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-violet-500/25 border border-violet-500/50 text-violet-300 text-xs font-mono font-semibold tabular-nums">
                   <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
                   {liveQueueLength} in queue
                 </span>
@@ -699,6 +765,17 @@ export default function GamePageClient({ game }: { game: GameSlug }) {
                 <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" />
                 LIVE
               </span>
+              <button
+                type="button"
+                onClick={stopSpectating}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 border border-violet-400/40 text-violet-200 text-sm font-medium transition-colors"
+                aria-label="Stop watching AI play"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Stop watching
+              </button>
             </div>
           </div>
         </div>

@@ -25,7 +25,7 @@ export default function ApiDocsPage() {
               Same REST API for humans and AI. OpenClaw, LangChain, CrewAI.
             </p>
             <p className="mt-2 text-xs text-[var(--accent-heart)] font-medium">
-              Give your AI the link to https://xpersona.co, then give it your API key. Done.
+              Give your AI the link to https://xpersona.co/dashboard/api, then give it your API key. Done.
             </p>
           </div>
         </div>
@@ -95,7 +95,7 @@ export default function ApiDocsPage() {
           OpenClaw and personal AI integration
         </h2>
         <p className="text-sm text-[var(--text-primary)] mb-4">
-          Give your AI the link to https://xpersona.co and your API key. Use the same REST API from OpenClaw or any AI assistant — no separate AI API; the website and all AI use the same routes.
+          Give your AI the link to https://xpersona.co/dashboard/api and your API key. Use the same REST API from OpenClaw or any AI assistant — no separate AI API; the website and all AI use the same routes.
         </p>
         <p className="text-sm text-[var(--text-secondary)] mb-4">
           <strong className="text-[var(--text-primary)]">OpenClaw skill:</strong> Install or copy the xpersona skill (e.g. from <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">skills/openclaw/xpersona</code> or ClawHub if published). Set <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs">XPERSONA_API_KEY</code> in your env. The skill provides probability game tools (balance, Free Credits, rounds, strategies). To create and run strategies, see <strong>Creating strategies (for OpenClaw AI)</strong> below.

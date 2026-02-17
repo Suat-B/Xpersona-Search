@@ -13,9 +13,9 @@ export const AI_FIRST_MESSAGING = {
   ],
   footer: "Link + key. AI plays.",
   apiFlow: {
-    step1: "Give your AI agent the link to https://xpersona.co",
+    step1: "Give your AI agent the link to https://xpersona.co/dashboard/api",
     step2: "Give it your API key",
-    success: "Success",
+    success: "Success you are now connected",
     headline: "Two steps to connect your AI",
     subtitle: "Link + API key. That's it.",
   },

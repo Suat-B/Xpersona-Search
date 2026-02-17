@@ -112,7 +112,7 @@ function SettingsPageClient() {
           API Key
         </h2>
         <p className="text-sm text-[var(--text-secondary)]">
-          Give your AI the link to xpersona.co and this API key.
+          Give your AI the link to xpersona.co/dashboard/api and this API key.
         </p>
         <ApiKeySection />
         <Link
