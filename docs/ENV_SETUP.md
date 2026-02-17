@@ -48,3 +48,29 @@ This opens the Google Cloud Console, prompts for Client ID and Secret, writes `.
 - **STRIPE_SECRET_KEY** / **STRIPE_WEBHOOK_SECRET** / **STRIPE_PRICE_*** – Run `npm run setup:stripe` for hands-off setup, or see [STRIPE_SETUP.md](./STRIPE_SETUP.md).
 
 After changing env, restart the dev server.
+
+## Production: "Server error" / `?error=Configuration` on xpersona.co
+
+If "Upgrade to Google" or "Sign in with Google" redirects to `xpersona.co/api/auth/error?error=Configuration`, fix these:
+
+### 1. Vercel environment variables
+
+In **Vercel → Project → Settings → Environment Variables**, ensure these are set for **Production**:
+
+| Variable | Value |
+|----------|-------|
+| `NEXTAUTH_URL` | `https://xpersona.co` (exactly, no trailing slash) |
+| `NEXTAUTH_SECRET` | 32+ chars (generate: `openssl rand -base64 32`) |
+| `GOOGLE_CLIENT_ID` | Your OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | Your OAuth client secret |
+
+### 2. Google Cloud Console
+
+In **APIs & Services → Credentials → your OAuth client**:
+
+- **Authorized JavaScript origins**: `https://xpersona.co` (no path, no trailing slash)
+- **Authorized redirect URIs**: `https://xpersona.co/api/auth/callback/google`
+
+### 3. Redeploy
+
+After changing Vercel env vars: **Redeploy** (Vercel → Deployments → ⋮ → Redeploy, or push a new commit).

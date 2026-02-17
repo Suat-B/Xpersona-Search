@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { createHash, createHmac, timingSafeEqual } from "crypto";
+import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 
 const AGENT_COOKIE_NAME = "xp_agent_session";
@@ -202,7 +203,18 @@ export async function getAuthUser(
     }
   }
 
-  const agentCookie = request.cookies.get(AGENT_COOKIE_NAME)?.value;
+  let agentCookie: string | undefined;
+  let guestCookie: string | undefined;
+  try {
+    const cookieStore = await cookies();
+    agentCookie = cookieStore.get(AGENT_COOKIE_NAME)?.value;
+    guestCookie = cookieStore.get(GUEST_COOKIE_NAME)?.value;
+  } catch {
+    const raw = request.headers.get("Cookie") ?? "";
+    agentCookie = /(?:^|;\s*)xp_agent_session=([^;]*)/.exec(raw)?.[1]?.trim();
+    guestCookie = /(?:^|;\s*)xp_guest_session=([^;]*)/.exec(raw)?.[1]?.trim();
+  }
+
   if (agentCookie) {
     const userId = verifyAgentToken(agentCookie);
     if (userId) {
@@ -228,7 +240,6 @@ export async function getAuthUser(
     }
   }
 
-  const guestCookie = request.cookies.get(GUEST_COOKIE_NAME)?.value;
   if (guestCookie) {
     const userId = verifyGuestToken(guestCookie);
     if (userId) {

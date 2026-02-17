@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
-import Google from "next-auth/providers/google";
+import Credentials from "next-auth/providers/credentials";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
+import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import {
   users,
@@ -26,26 +27,30 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     verificationTokensTable: verificationTokens,
   } as never),
   providers: [
-    ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
-      ? [
-        Google({
-          clientId: process.env.GOOGLE_CLIENT_ID,
-          clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        }),
-      ]
-      : []),
+    Credentials({
+      name: "credentials",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        const email = credentials?.email as string | undefined;
+        const password = credentials?.password as string | undefined;
+        if (!email || !password) return null;
+        const [user] = await db
+          .select({ id: users.id, email: users.email, name: users.name, passwordHash: users.passwordHash })
+          .from(users)
+          .where(eq(users.email, email))
+          .limit(1);
+        if (!user?.passwordHash) return null;
+        const ok = await bcrypt.compare(password, user.passwordHash);
+        if (!ok) return null;
+        return { id: user.id, email: user.email, name: user.name };
+      },
+    }),
   ],
   callbacks: {
-    async signIn({ user, account }) {
-      if (account?.provider === "google" && user.id) {
-        await db
-          .update(users)
-          .set({
-            googleId: account.providerAccountId ?? undefined,
-            accountType: "google",
-          })
-          .where(eq(users.id, user.id));
-      }
+    async signIn() {
       return true;
     },
     jwt({ token, user }) {
@@ -58,7 +63,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
   pages: {
-    signIn: "/",
+    signIn: "/auth/signin",
+    error: "/auth-error",
   },
 });
 

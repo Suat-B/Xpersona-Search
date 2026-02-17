@@ -19,6 +19,7 @@
     "db:backfill-agent-ids": "tsx scripts/backfill-agent-ids.ts",
     "db:backfill-deposits": "tsx scripts/backfill-deposits.ts",
     "db:add-account-type": "tsx scripts/add-account-type-column.ts",
+    "db:add-password-hash": "node scripts/add-password-hash.mjs",
     "db:migrate-production": "node scripts/migrate-production.mjs",
     "db:seed-production": "node scripts/seed-production.mjs",
     "deploy": "node scripts/deploy.mjs",
@@ -26,6 +27,7 @@
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.7.2",
+    "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.38.0",
     "nanoid": "^5.0.9",
@@ -40,6 +42,7 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.11.0",
     "@types/react": "^19.0.0",

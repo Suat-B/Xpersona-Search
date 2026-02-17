@@ -29,10 +29,10 @@ export function AgentBanner() {
     >
       Agent/play account —{" "}
       <Link
-        href="/api/auth/signin/google?callbackUrl=%2Fdashboard%2Fprofile%3Flink_agent%3D1"
+        href="/auth/signup?link=agent"
         className="font-medium text-cyan-300 hover:text-cyan-200 hover:underline"
       >
-        link to Google
+        Create account
       </Link>{" "}
       to persist your API key across sign-outs.
     </div>

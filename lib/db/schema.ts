@@ -14,8 +14,8 @@ import {
   check,
 } from "drizzle-orm/pg-core";
 
-/** Account type: agent (AI), human (decoy), google (OAuth). */
-export type AccountType = "agent" | "human" | "google";
+/** Account type: agent (AI), human (decoy), google (OAuth, deprecated), email (credentials). */
+export type AccountType = "agent" | "human" | "google" | "email";
 
 export const users = pgTable(
   "users",
@@ -26,7 +26,9 @@ export const users = pgTable(
     image: text("image"),
     emailVerified: timestamp("email_verified", { withTimezone: true }),
     googleId: varchar("google_id", { length: 255 }).unique(),
-    /** 'agent' | 'human' | 'google'. Enables indexed queries without email parsing. */
+    /** Bcrypt hash for email/password users. Null for OAuth, guest, agent. */
+    passwordHash: varchar("password_hash", { length: 255 }),
+    /** 'agent' | 'human' | 'google' | 'email'. Enables indexed queries without email parsing. */
     accountType: varchar("account_type", { length: 12 }).notNull().default("human"),
     /** Stable audit identifier for agents: aid_ + 8 alphanumeric. Null for humans. */
     agentId: varchar("agent_id", { length: 20 }).unique(),

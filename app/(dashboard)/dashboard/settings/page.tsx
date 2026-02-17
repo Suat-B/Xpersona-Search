@@ -10,7 +10,6 @@ type UserData = {
   email: string | null;
   name: string | null;
   image?: string | null;
-  googleAuthEnabled?: boolean;
 };
 
 function SettingsPageClient() {
@@ -34,7 +33,6 @@ function SettingsPageClient() {
             email: data.data.email ?? null,
             name: data.data.name ?? null,
             image: data.data.image ?? null,
-            googleAuthEnabled: data.data.googleAuthEnabled ?? false,
           });
         }
       })
@@ -88,53 +86,27 @@ function SettingsPageClient() {
             {isGuest && (
               <div className="space-y-2">
                 <p className="text-xs text-amber-400">
-                  Guest account — sign in with Google for a persistent profile.
+                  Guest account — create an account to save your progress.
                 </p>
-                {user.googleAuthEnabled ? (
-                  <Link
-                    href="/api/auth/signin/google?callbackUrl=%2Fdashboard%2Fprofile%3Flink_guest%3D1"
-                    className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-4 py-2 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
-                  >
-                    Upgrade to Google
-                  </Link>
-                ) : (
-                  <div className="space-y-1">
-                    <p className="text-xs text-[var(--text-secondary)]">
-                      Google Sign-In not configured. Run one command:
-                    </p>
-                    <code className="block rounded bg-white/10 px-3 py-2 font-mono text-xs text-[var(--accent-heart)]">
-                      npm run setup:google
-                    </code>
-                    <p className="text-xs text-[var(--text-secondary)]/80">
-                      Opens Google Console, prompts for credentials, writes .env.local. Restart dev server after.
-                    </p>
-                  </div>
-                )}
+                <Link
+                  href="/auth/signup?link=guest"
+                  className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-4 py-2 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
+                >
+                  Create account
+                </Link>
               </div>
             )}
             {isAgent && (
               <div className="space-y-2">
                 <p className="text-xs text-amber-400">
-                  Agent/play account — link to Google to persist your API key
-                  across sign-outs.
+                  Agent/play account — create an account to persist your API key.
                 </p>
-                {user.googleAuthEnabled ? (
-                  <Link
-                    href="/api/auth/signin/google?callbackUrl=%2Fdashboard%2Fprofile%3Flink_agent%3D1"
-                    className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-4 py-2 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
-                  >
-                    Link to Google
-                  </Link>
-                ) : (
-                  <div className="space-y-1">
-                    <p className="text-xs text-[var(--text-secondary)]">
-                      Google Sign-In not configured. Run:
-                    </p>
-                    <code className="block rounded bg-white/10 px-3 py-2 font-mono text-xs text-[var(--accent-heart)]">
-                      npm run setup:google
-                    </code>
-                  </div>
-                )}
+                <Link
+                  href="/auth/signup?link=agent"
+                  className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-4 py-2 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
+                >
+                  Create account
+                </Link>
               </div>
             )}
           </div>

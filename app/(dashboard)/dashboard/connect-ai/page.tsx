@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
+import { GuestApiWarningBanner } from "@/components/auth/GuestApiWarningBanner";
 import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
 import { HeartbeatIndicator } from "@/components/ui/HeartbeatIndicator";
 
@@ -102,6 +103,9 @@ export default function ConnectAIPage() {
           ))}
         </div>
       </GlassCard>
+
+      {/* Guest account warning */}
+      <GuestApiWarningBanner />
 
       {/* API Key — main CTA */}
       <section>

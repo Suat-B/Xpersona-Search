@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
+import { GuestApiWarningBanner } from "@/components/auth/GuestApiWarningBanner";
 import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
 
 export default function ApiDocsPage() {
@@ -29,6 +30,9 @@ export default function ApiDocsPage() {
           </div>
         </div>
       </section>
+
+      {/* Guest account warning */}
+      <GuestApiWarningBanner />
 
       {/* API Key Management */}
       <ApiKeySection />

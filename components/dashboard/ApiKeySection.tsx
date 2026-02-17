@@ -3,11 +3,34 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+
+const POLL_INTERVAL_MS = 1500;
+const POLL_MAX_ATTEMPTS = 6; // ~9s total; EnsureGuest typically creates session in 1–2s
 
 interface ApiKeySectionProps {
   /** Compact layout for sidebar: key prefix + regenerate in a single row */
   compact?: boolean;
+}
+
+async function fetchMe(): Promise<{ ok: boolean; data: Record<string, unknown> }> {
+  const r = await fetch("/api/me", { credentials: "include" });
+  const text = await r.text();
+  try {
+    return { ok: r.ok, data: (text ? JSON.parse(text) : {}) as Record<string, unknown> };
+  } catch {
+    return { ok: false, data: {} };
+  }
+}
+
+function applyMeResult(resp: Record<string, unknown>): string | null {
+  const inner = resp?.data as { apiKeyPrefix?: string } | undefined;
+  const p = inner?.apiKeyPrefix ?? null;
+  if (typeof p === "string" && p.length >= 11 && p.startsWith("xp_")) {
+    fetch("/api/me/mark-key-viewed", { method: "POST", credentials: "include" }).catch(() => {});
+  }
+  return p ?? null;
 }
 
 export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
@@ -15,48 +38,120 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
   const [modalKey, setModalKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [sessionCreating, setSessionCreating] = useState(false);
+  const [guestCreating, setGuestCreating] = useState(false);
   const copyButtonRef = useRef<HTMLButtonElement>(null);
+  const router = useRouter();
 
   useEffect(() => {
-    fetch("/api/me", { credentials: "include" })
-      .then(async (r) => {
-        const text = await r.text();
-        try {
-          return { ok: r.ok, data: text ? JSON.parse(text) : {} };
-        } catch {
-          return { ok: false, data: {} };
-        }
-      })
-      .then(({ ok, data }) => {
-        if (ok && data.success) {
-          setPrefix(data.data?.apiKeyPrefix ?? null);
-          const p = data.data?.apiKeyPrefix;
-          if (typeof p === "string" && p.length >= 11 && p.startsWith("xp_")) {
-            fetch("/api/me/mark-key-viewed", { method: "POST", credentials: "include" }).catch(() => {});
-          }
-        }
-      });
+    let cancelled = false;
+    let attempts = 0;
+
+    const poll = async () => {
+      const { ok, data } = await fetchMe();
+      if (cancelled) return;
+      if (ok && (data?.success as boolean)) {
+        setPrefix(applyMeResult(data as Record<string, unknown>));
+        setSessionCreating(false);
+        return;
+      }
+      attempts++;
+      if (attempts < POLL_MAX_ATTEMPTS) {
+        setSessionCreating(true);
+        setTimeout(poll, POLL_INTERVAL_MS);
+      } else {
+        setSessionCreating(false);
+      }
+    };
+
+    fetchMe().then(({ ok, data }) => {
+      if (cancelled) return;
+      if (ok && (data?.success as boolean)) {
+        setPrefix(applyMeResult(data as Record<string, unknown>));
+        return;
+      }
+      setSessionCreating(true);
+      setTimeout(poll, POLL_INTERVAL_MS);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  /** Create guest session + generate key in one flow. Returns true if key was generated. */
+  const createGuestAndGenerate = async (): Promise<boolean> => {
+    setGuestCreating(true);
+    setError(null);
+    try {
+      const r = await fetch("/api/auth/guest", { method: "POST", credentials: "include" });
+      const json = (await r.json().catch(() => ({}))) as { success?: boolean };
+      if (!r.ok || !json.success) return false;
+      setError(null);
+      window.dispatchEvent(new Event("balance-updated"));
+      router.refresh();
+      // Now we have a cookie; generate the key immediately (no second click)
+      const res = await fetch("/api/me/api-key", { method: "POST", credentials: "include" });
+      const text = await res.text();
+      let data: { success?: boolean; data?: { apiKey?: string; apiKeyPrefix?: string } };
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = {};
+      }
+      if (data.success && data.data) {
+        setModalKey(data.data.apiKey ?? null);
+        setPrefix(data.data.apiKeyPrefix ?? null);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    } finally {
+      setGuestCreating(false);
+    }
+  };
+
+  const createGuestAndRetry = async () => {
+    const ok = await createGuestAndGenerate();
+    if (!ok) {
+      setError("generic");
+      setErrorMessage("Could not create session. Try Play or Home.");
+    }
+  };
 
   const generate = async () => {
     setError(null);
+    setErrorMessage(null);
     setLoading(true);
-    const res = await fetch("/api/me/api-key", { method: "POST", credentials: "include" });
-    const text = await res.text();
-    let data: { success?: boolean; data?: { apiKey?: string; apiKeyPrefix?: string }; error?: string };
     try {
-      data = text ? JSON.parse(text) : {};
-    } catch {
-      data = {};
-    }
-    setLoading(false);
-    if (data.success && data.data) {
-      setModalKey(data.data.apiKey ?? null);
-      setPrefix(data.data.apiKeyPrefix ?? null);
-    } else if (res.status === 401) {
-      setError("auth");
-    } else {
+      const res = await fetch("/api/me/api-key", { method: "POST", credentials: "include" });
+      const text = await res.text();
+      let data: { success?: boolean; data?: { apiKey?: string; apiKeyPrefix?: string }; error?: string; message?: string };
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = {};
+      }
+      if (data.success && data.data) {
+        setModalKey(data.data.apiKey ?? null);
+        setPrefix(data.data.apiKeyPrefix ?? null);
+        return;
+      }
+      if (res.status === 401) {
+        // Auto-recover: create guest + generate in one flow. No extra clicks.
+        const ok = await createGuestAndGenerate();
+        if (!ok) setError("auth");
+        return;
+      }
       setError("generic");
+      setErrorMessage(data.message ?? (res.ok ? null : `Request failed (${res.status})`));
+    } catch (fetchErr) {
+      setError("generic");
+      setErrorMessage(fetchErr instanceof Error ? fetchErr.message : "Network error");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -77,10 +172,10 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
   }, [modalKey, closeModal]);
 
   useEffect(() => {
-    if (modalKey) {
-      const t = setTimeout(() => copyButtonRef.current?.focus({ preventScroll: true }), 50);
-      return () => clearTimeout(t);
-    }
+    if (!modalKey) return;
+    navigator.clipboard?.writeText(modalKey).catch(() => {});
+    const t = setTimeout(() => copyButtonRef.current?.focus({ preventScroll: true }), 50);
+    return () => clearTimeout(t);
   }, [modalKey]);
 
   if (compact) {
@@ -102,14 +197,17 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
             <button
               type="button"
               onClick={generate}
-              disabled={loading}
+              disabled={loading || sessionCreating}
               className="ml-auto flex-shrink-0 px-2 py-1 text-[10px] rounded-sm border border-[#0a84ff]/40 bg-[#0a84ff]/10 text-[#0a84ff] hover:bg-[#0a84ff]/20 disabled:opacity-50 transition-colors"
             >
-              {loading ? "…" : "Generate"}
+              {loading ? "…" : sessionCreating ? "…" : "Generate"}
             </button>
           </div>
           {error === "auth" && (
-            <Link href="/api/auth/play" className="block text-[10px] text-amber-400 hover:underline">Sign in to generate</Link>
+            <div className="flex flex-wrap gap-1.5 text-[10px]">
+              <Link href="/api/auth/play" className="text-amber-400 hover:underline">Play</Link>
+              <button type="button" onClick={createGuestAndRetry} disabled={guestCreating} className="text-amber-400 hover:underline disabled:opacity-50">Continue as guest</button>
+            </div>
           )}
           {error === "generic" && (
             <button type="button" onClick={() => setError(null)} className="text-[10px] text-red-400 hover:underline">Retry</button>
@@ -121,7 +219,7 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
               <button type="button" onClick={closeModal} className="absolute top-4 right-4 p-2 rounded-lg text-[var(--text-tertiary)] hover:text-white hover:bg-white/10 transition-colors" aria-label="Close">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
-              <p className="text-sm font-semibold text-[var(--text-primary)] mb-2">Give this API key to your OpenClaw AI &lt;3</p>
+              <p className="text-sm font-semibold text-[var(--text-primary)] mb-2">Your API key &lt;3 — copied to clipboard</p>
               <pre className="mb-4 overflow-x-auto rounded-xl bg-black/40 p-4 text-xs font-mono break-all border border-white/10">{modalKey}</pre>
               <div className="flex gap-3">
                 <button ref={copyButtonRef} type="button" onClick={copyAndClose} className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#0a84ff] px-4 py-3 text-sm font-medium text-white hover:bg-[#0a84ff]/90">
@@ -185,7 +283,7 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
       <button
         type="button"
         onClick={generate}
-        disabled={loading}
+        disabled={loading || sessionCreating || guestCreating}
         className={cn(
           "w-full rounded-xl border px-4 py-3 text-sm font-medium transition-all duration-300",
           "border-[#0a84ff]/30 bg-[#0a84ff]/10 text-[#0a84ff]",
@@ -193,12 +291,19 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
           "disabled:opacity-50 disabled:cursor-not-allowed"
         )}
       >
-        {loading ? (
+        {loading || guestCreating ? (
           <span className="flex items-center justify-center gap-2">
             <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            Generating...
+            {guestCreating ? "Setting up your key…" : "Generating…"}
+          </span>
+        ) : sessionCreating ? (
+          <span className="flex items-center justify-center gap-2">
+            <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Creating session…
           </span>
         ) : prefix ? (
           <span className="flex items-center justify-center gap-2">
@@ -212,16 +317,16 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
             </svg>
-            Generate API Key
+            Get API Key
           </span>
         )}
       </button>
 
       {error === "auth" && (
         <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-          <p className="font-medium">Sign in to generate an API key</p>
+          <p className="font-medium">Couldn&apos;t create a session automatically</p>
           <p className="mt-1 text-xs text-amber-200/90">
-            Play to create your account and get an API key.
+            Try Play or Continue as guest to get your API key.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Link
@@ -230,6 +335,14 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
             >
               Play
             </Link>
+            <button
+              type="button"
+              onClick={createGuestAndRetry}
+              disabled={guestCreating}
+              className="inline-flex items-center rounded-lg border border-white/30 px-3 py-1.5 text-xs font-medium bg-white/5 hover:bg-white/10 disabled:opacity-50"
+            >
+              {guestCreating ? "Creating…" : "Continue as guest"}
+            </button>
             <Link
               href="/"
               className="inline-flex items-center rounded-lg border border-white/20 px-3 py-1.5 text-xs font-medium hover:bg-white/5"
@@ -242,10 +355,12 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
       {error === "generic" && (
         <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
           <p className="font-medium">Something went wrong</p>
-          <p className="mt-1 text-xs opacity-90">Please try again or sign in first.</p>
+          <p className="mt-1 text-xs opacity-90">
+            {errorMessage ?? "Please try again or sign in first."}
+          </p>
           <button
             type="button"
-            onClick={() => setError(null)}
+            onClick={() => { setError(null); setErrorMessage(null); }}
             className="mt-2 text-xs font-medium hover:underline"
           >
             Dismiss
@@ -286,8 +401,8 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
                   </svg>
                 </div>
                 <div>
-                  <p id="secure-key-title" className="text-sm font-semibold text-[var(--text-primary)]">Give this API key to your OpenClaw AI &lt;3</p>
-                  <p className="text-xs text-[var(--text-tertiary)]">Copy now — won&apos;t be shown again</p>
+                  <p id="secure-key-title" className="text-sm font-semibold text-[var(--text-primary)]">Your API key &lt;3</p>
+                  <p className="text-xs text-[#30d158]">Copied to clipboard — paste anywhere</p>
                 </div>
               </div>
               
