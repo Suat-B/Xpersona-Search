@@ -156,7 +156,7 @@ export function WithdrawPageClient({ initialBalanceData }: WithdrawPageClientPro
       if (data.success) {
         setMessage({
           type: "success",
-          text: "We will contact you via the Gmail linked to your account and send you the payments through Wise.",
+          text: "We will contact you via the email linked to your account and send you the payments through Wise.",
         });
         setAmount("");
         setWiseEmail("");
@@ -243,107 +243,128 @@ export function WithdrawPageClient({ initialBalanceData }: WithdrawPageClientPro
         )}
       </GlassCard>
 
-      {/* Request form — always visible */}
-      <GlassCard className="p-5 border-[var(--accent-heart)]/20">
-        <h2 className="text-base font-semibold text-[var(--text-primary)] mb-2">
-          Request Withdrawal
-        </h2>
-        <p className="text-sm text-[var(--text-secondary)] mb-4">
-          Enter the amount you wish to withdraw (up to your available balance). We will contact you via the Gmail linked to your account and send you the payments through Wise.
-        </p>
-        {!balanceData && !loading && (
-          <p className="text-amber-400 text-sm mb-4">
-            Load your balance first. Click Retry above if balance failed to load.
-          </p>
-        )}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">
-              Amount (credits)
-            </label>
-            <input
-              type="number"
-              min={WITHDRAW_MIN_CREDITS}
-              max={balanceData?.withdrawable ?? undefined}
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder={
-                balanceData
-                  ? `Min ${WITHDRAW_MIN_CREDITS.toLocaleString()} · Max ${balanceData.withdrawable.toLocaleString()}`
-                  : "Load balance to see limits"
-              }
-              disabled={!balanceData}
-              className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-matte)] px-4 py-2.5 text-[var(--text-primary)] focus:border-[var(--accent-heart)] focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
-            />
-            {amount && !Number.isNaN(parseInt(amount, 10)) && (
-              <p className="mt-1 text-xs text-[var(--text-secondary)]">
-                ≈ ${((parseInt(amount, 10) || 0) * CREDITS_TO_USD).toFixed(2)} USD
+      {/* Request form — premium design */}
+      <GlassCard interactive={false} className="relative overflow-hidden border-0 shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_0_40px_rgba(10,132,255,0.08)] bg-gradient-to-b from-[var(--bg-card)] to-[var(--bg-elevated)]">
+        <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent-heart)]/5 via-transparent to-[var(--accent-neural)]/5 pointer-events-none" aria-hidden />
+        <div className="relative p-6 md:p-8">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent-heart)]/15 text-[var(--accent-heart)]">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--text-primary)] tracking-tight">
+                Request Withdrawal
+              </h2>
+              <p className="text-[13px] text-[var(--text-secondary)] mt-0.5 leading-relaxed max-w-lg">
+                Enter the amount you wish to withdraw (up to your available balance). We will contact you via the email linked to your account and send you the payments through Wise.
               </p>
-            )}
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">
-              Wise email <span className="text-amber-400">*</span>
-            </label>
-            <input
-              type="email"
-              value={wiseEmail}
-              onChange={(e) => setWiseEmail(e.target.value)}
-              placeholder="you@example.com"
-              required
-              className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-matte)] px-4 py-2.5 text-[var(--text-primary)] focus:border-[var(--accent-heart)] focus:outline-none"
-            />
-            <p className="mt-1 text-xs text-[var(--text-secondary)]">
-              Email linked to your Wise account
-            </p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">
-              Full name <span className="text-amber-400">*</span>
-            </label>
-            <input
-              type="text"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              placeholder="John Doe"
-              required
-              minLength={2}
-              maxLength={255}
-              className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-matte)] px-4 py-2.5 text-[var(--text-primary)] focus:border-[var(--accent-heart)] focus:outline-none"
-            />
-            <p className="mt-1 text-xs text-[var(--text-secondary)]">
-              Name as it appears on your Wise account
-            </p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">
-              Currency
-            </label>
-            <select
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value as "USD" | "EUR" | "GBP")}
-              className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-matte)] px-4 py-2.5 text-[var(--text-primary)] focus:border-[var(--accent-heart)] focus:outline-none"
-            >
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-              <option value="GBP">GBP</option>
-            </select>
-          </div>
-          <button
-            type="submit"
-            disabled={
-              submitting ||
-              !balanceData ||
-              balanceData.withdrawable < WITHDRAW_MIN_CREDITS ||
-              !amount ||
-              !wiseEmail.trim() ||
-              fullName.trim().length < 2
-            }
-            className="rounded-lg bg-[var(--accent-heart)] px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
-          >
-            {submitting ? "Processing…" : "Request Withdrawal"}
-          </button>
-        </form>
+          {!balanceData && !loading && (
+            <div className="mb-5 flex items-center gap-2 rounded-xl bg-amber-500/15 border border-amber-500/25 px-4 py-2.5">
+              <svg className="h-4 w-4 flex-shrink-0 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <p className="text-sm text-amber-400">
+                Load your balance first. Click Retry above if balance failed to load.
+              </p>
+            </div>
+          )}
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="grid gap-5 md:grid-cols-2 md:gap-6">
+              <div className="md:col-span-2">
+                <label className="block text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
+                  Amount (credits)
+                </label>
+                <input
+                  type="number"
+                  min={WITHDRAW_MIN_CREDITS}
+                  max={balanceData?.withdrawable ?? undefined}
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder={
+                    balanceData
+                      ? `Min ${WITHDRAW_MIN_CREDITS.toLocaleString()} · Max ${balanceData.withdrawable.toLocaleString()}`
+                      : "Load balance to see limits"
+                  }
+                  disabled={!balanceData}
+                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-matte)]/80 px-4 py-3.5 text-[var(--text-primary)] placeholder:text-[var(--text-quaternary)] focus:border-[var(--accent-heart)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/25 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                />
+                {amount && !Number.isNaN(parseInt(amount, 10)) && (
+                  <p className="mt-2 text-sm font-medium text-[var(--accent-heart)]">
+                    ≈ ${((parseInt(amount, 10) || 0) * CREDITS_TO_USD).toFixed(2)} USD
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
+                  Wise email <span className="text-[var(--accent-heart)]">*</span>
+                </label>
+                <input
+                  type="email"
+                  value={wiseEmail}
+                  onChange={(e) => setWiseEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  required
+                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-matte)]/80 px-4 py-3 text-[var(--text-primary)] placeholder:text-[var(--text-quaternary)] focus:border-[var(--accent-heart)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/25 transition-all duration-200"
+                />
+                <p className="mt-1.5 text-xs text-[var(--text-tertiary)]">
+                  Email linked to your Wise account
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
+                  Full name <span className="text-[var(--accent-heart)]">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="John Doe"
+                  required
+                  minLength={2}
+                  maxLength={255}
+                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-matte)]/80 px-4 py-3 text-[var(--text-primary)] placeholder:text-[var(--text-quaternary)] focus:border-[var(--accent-heart)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/25 transition-all duration-200"
+                />
+                <p className="mt-1.5 text-xs text-[var(--text-tertiary)]">
+                  Name as it appears on your Wise account
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-end gap-4 pt-2">
+              <div className="flex-1 min-w-0">
+                <label className="block text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
+                  Currency
+                </label>
+                <select
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value as "USD" | "EUR" | "GBP")}
+                  className="w-full sm:max-w-[140px] rounded-xl border border-[var(--border)] bg-[var(--bg-matte)]/80 px-4 py-3 text-[var(--text-primary)] focus:border-[var(--accent-heart)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/25 transition-all duration-200"
+                >
+                  <option value="USD">USD</option>
+                  <option value="EUR">EUR</option>
+                  <option value="GBP">GBP</option>
+                </select>
+              </div>
+              <button
+                type="submit"
+                disabled={
+                  submitting ||
+                  !balanceData ||
+                  balanceData.withdrawable < WITHDRAW_MIN_CREDITS ||
+                  !amount ||
+                  !wiseEmail.trim() ||
+                  fullName.trim().length < 2
+                }
+                className="rounded-xl bg-gradient-to-r from-[var(--accent-heart)] to-[var(--accent-neural)] px-6 py-3.5 text-sm font-semibold text-white shadow-[0_4px_14px_rgba(10,132,255,0.35)] hover:shadow-[0_6px_20px_rgba(10,132,255,0.45)] hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100 disabled:shadow-none transition-all duration-200"
+              >
+                {submitting ? "Processing…" : "Request Withdrawal"}
+              </button>
+            </div>
+          </form>
+        </div>
       </GlassCard>
 
       {/* Withdraw process — full explanation */}
