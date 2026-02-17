@@ -248,6 +248,11 @@ export default function ApiDocsPage() {
         <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
           Examples (curl)
         </h2>
+        <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 mb-4">
+          <p className="text-xs text-[var(--text-primary)]">
+            <strong>Windows PowerShell:</strong> Use <code className="bg-white/10 px-1 rounded font-mono">curl.exe</code> instead of <code className="bg-white/10 px-1 rounded font-mono">curl</code> (PowerShell aliases curl to Invoke-WebRequest). Use <code className="bg-white/10 px-1 rounded font-mono">$env:XPERSONA_API_KEY</code> for the API key.
+          </p>
+        </div>
         <div className="space-y-4">
           <div>
             <p className="text-xs text-[var(--text-secondary)] mb-1">Schema discovery (no auth)</p>
@@ -363,6 +368,7 @@ export default function ApiDocsPage() {
           <li><strong className="text-[var(--text-primary)]">401:</strong> Invalid or missing API key. Generate a key using the API Key Manager above.</li>
           <li><strong className="text-[var(--text-primary)]">400 INSUFFICIENT_BALANCE:</strong> User needs more credits (Free Credits or purchase).</li>
           <li><strong className="text-[var(--text-primary)]">429 / FAUCET_COOLDOWN:</strong> Wait until <code className="bg-white/10 px-1 rounded font-mono text-xs">data.nextFaucetAt</code> before claiming again.</li>
+          <li><strong className="text-[var(--text-primary)]">PowerShell &quot;SessionVariable&quot; / curl error:</strong> Use <code className="bg-white/10 px-1 rounded font-mono text-xs">curl.exe</code> instead of <code className="bg-white/10 px-1 rounded font-mono text-xs">curl</code> and <code className="bg-white/10 px-1 rounded font-mono text-xs">$env:XPERSONA_API_KEY</code> for the key.</li>
         </ul>
         <div className="mt-4 pt-4 border-t border-[var(--border)]">
           <Link

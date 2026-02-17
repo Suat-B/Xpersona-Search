@@ -204,14 +204,25 @@ When you play dice for a player, proactively send status updates so they know ho
 
 ## Example (curl)
 
+**Windows PowerShell:** Use `curl.exe` instead of `curl` (PowerShell aliases curl to Invoke-WebRequest; `-s` causes SessionVariable error). Use `$env:XPERSONA_API_KEY` for the API key.
+
 Session stats (AI-first):
 ```bash
+# Bash / WSL / macOS / Linux:
 curl -s -H "Authorization: Bearer $XPERSONA_API_KEY" "https://xpersona.co/api/me/session-stats?gameType=dice&limit=20"
+
+# PowerShell:
+curl.exe -s -H "Authorization: Bearer $env:XPERSONA_API_KEY" "https://xpersona.co/api/me/session-stats?gameType=dice&limit=20"
 ```
 
 Play dice (transaction 10, over 50):
 ```bash
+# Bash / WSL / macOS / Linux:
 curl -s -X POST -H "Authorization: Bearer $XPERSONA_API_KEY" -H "Content-Type: application/json" \
+  -d '{"amount":10,"target":50,"condition":"over"}' https://xpersona.co/api/games/dice/round
+
+# PowerShell:
+curl.exe -s -X POST -H "Authorization: Bearer $env:XPERSONA_API_KEY" -H "Content-Type: application/json" `
   -d '{"amount":10,"target":50,"condition":"over"}' https://xpersona.co/api/games/dice/round
 ```
 
@@ -237,6 +248,7 @@ When the user loses the platform link or their session was not saved, use this g
 ## Troubleshooting
 
 - **401:** Invalid or missing API key. Generate at https://xpersona.co/dashboard (API section). Response includes `recovery_url` — tell your player to go there and bookmark it.
+- **PowerShell curl / SessionVariable error:** Use `curl.exe` instead of `curl`, and `$env:XPERSONA_API_KEY` instead of `$XPERSONA_API_KEY`. PowerShell aliases curl to Invoke-WebRequest.
 - **404 STRATEGY_NOT_FOUND:** Strategy ID does not exist for this user. **Recovery:** Use inline `strategy` object (name, baseConfig, rules) instead of `strategy_id`. For newly designed strategies, always pass the full strategy inline — do not assume an ID exists.
 - **400 VALIDATION_ERROR:** API coerces types (amount/target as numbers; condition "over"|"under"). For strategies ensure: name, baseConfig { amount, target, condition }, rules [{ trigger: { type }, action: { type } }]. If using PowerShell Invoke-RestMethod: always pass `-ContentType "application/json"` and `-Body ($obj | ConvertTo-Json -Depth 5)` for nested objects.
 - **400 INSUFFICIENT_BALANCE:** Suggest faucet or `xpersona_list_credit_packages` + `xpersona_create_checkout`.
@@ -252,7 +264,7 @@ Full API spec: https://xpersona.co/openapi.yaml or https://xpersona.co/dashboard
 For agents that support a system prompt, paste this block for robust API handling and fallback:
 
 ```
-[ xpersona ] Auth: Authorization: Bearer <XPERSONA_API_KEY>. Preferred: GET /api/me/session-stats for "how am I doing?". On 5xx/timeout/429: retry once with 2-5s backoff. If still failing, tell user: "API temporarily unavailable. Play at https://xpersona.co/games/dice — same games, same balance." Do not retry excessively.
+[ xpersona ] Auth: Authorization: Bearer <XPERSONA_API_KEY>. Preferred: GET /api/me/session-stats for "how am I doing?". PowerShell: use curl.exe not curl, and $env:XPERSONA_API_KEY for the key. On 5xx/timeout/429: retry once with 2-5s backoff. If still failing, tell user: "API temporarily unavailable. Play at https://xpersona.co/games/dice — same games, same balance." Do not retry excessively.
 ```
 
 ---
