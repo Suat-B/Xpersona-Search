@@ -27,38 +27,45 @@ export default async function MarketingLayout({
 
   if (hasSession || hasGuest) {
     let displayName = "User";
+    let userEmail: string | null = null;
     let isAdmin = false;
+    let isPermanent = false;
     if (hasSession && session?.user?.id) {
       try {
         const [u] = await db
-          .select({ name: users.name, email: users.email })
+          .select({ name: users.name, email: users.email, accountType: users.accountType, passwordHash: users.passwordHash })
           .from(users)
           .where(eq(users.id, session.user.id))
           .limit(1);
         const isAgent = u?.email?.endsWith?.("@xpersona.agent") ?? false;
         displayName = isAgent ? "AI" : (u?.name ?? u?.email ?? "User");
+        userEmail = u?.email ?? null;
         isAdmin = isAdminEmail(u?.email);
+        isPermanent = u?.accountType === "email" || !!u?.passwordHash;
       } catch {
         displayName = session.user.name ?? session.user.email ?? "User";
+        userEmail = session.user.email ?? null;
         isAdmin = isAdminEmail(session.user.email);
       }
     } else if (hasGuest && userIdFromCookie) {
       try {
         const [u] = await db
-          .select({ name: users.name, email: users.email })
+          .select({ name: users.name, email: users.email, accountType: users.accountType, passwordHash: users.passwordHash })
           .from(users)
           .where(eq(users.id, userIdFromCookie))
           .limit(1);
         const isAgent = u?.email?.endsWith?.("@xpersona.agent") ?? false;
         displayName = isAgent ? "AI" : (u?.name ?? u?.email ?? "Guest");
+        userEmail = u?.email ?? null;
         isAdmin = isAdminEmail(u?.email);
+        isPermanent = u?.accountType === "email" || !!u?.passwordHash;
       } catch {
         displayName = "Guest";
       }
     }
 
     return (
-      <DashboardChrome displayName={displayName} isAdmin={isAdmin}>
+      <DashboardChrome displayName={displayName} userEmail={userEmail} isAdmin={isAdmin} isPermanent={isPermanent}>
         {children}
       </DashboardChrome>
     );

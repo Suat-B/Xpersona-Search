@@ -14,6 +14,7 @@ interface DashboardChromeProps {
   displayName: string;
   userEmail?: string | null;
   isAdmin?: boolean;
+  isPermanent?: boolean;
   children: React.ReactNode;
 }
 
@@ -25,6 +26,7 @@ export function DashboardChrome({
   displayName,
   userEmail = null,
   isAdmin = false,
+  isPermanent = false,
   children,
 }: DashboardChromeProps) {
   const pathname = usePathname();
@@ -36,7 +38,7 @@ export function DashboardChrome({
 
   return (
     <div className="dashboard-theme flex min-h-screen w-full flex-col md:flex-row bg-[var(--dash-bg)]">
-      <MobileDashboardNav displayName={displayName} isAdmin={isAdmin} />
+      <MobileDashboardNav displayName={displayName} isAdmin={isAdmin} isPermanent={isPermanent} />
       <aside className="scroll-stable-layer dashboard-sidebar hidden w-[280px] min-w-[280px] flex-col md:flex sticky top-0 h-screen border-r border-[var(--dash-divider)] overflow-x-hidden bg-[var(--dash-bg)]">
         <div className="relative flex h-full flex-col">
           <div className="px-6 pt-6 pb-4 border-b border-[var(--dash-divider)]">
@@ -67,7 +69,7 @@ export function DashboardChrome({
               </p>
             </div>
           </div>
-          <DashboardSidebarNav isAdmin={isAdmin} />
+          <DashboardSidebarNav isAdmin={isAdmin} isPermanent={isPermanent} />
         </div>
       </aside>
       <main className="scroll-contain-paint relative z-0 flex-1 min-h-0 overflow-y-auto bg-[var(--dash-bg)]">

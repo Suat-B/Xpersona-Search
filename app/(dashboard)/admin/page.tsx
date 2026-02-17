@@ -186,17 +186,28 @@ export default function AdminPage() {
 
   if (!isAdmin) {
     return (
-      <div className="agent-card p-12 text-center">
+      <div className="agent-card p-12 text-center max-w-md mx-auto">
         <h2 className="text-xl font-semibold text-[var(--text-primary)]">Access Denied</h2>
-        <p className="mt-2 text-[var(--text-secondary)]">
-          Admin access required. Set ADMIN_EMAILS in your environment to designate admins.
+        <p className="mt-2 text-[var(--text-secondary)] text-sm">
+          Admin access requires signing in with your email and password. If you use &quot;Play&quot; or &quot;Continue as guest&quot;, you are not using your permanent account.
         </p>
-        <Link
-          href="/dashboard"
-          className="mt-6 inline-flex items-center gap-2 rounded-full bg-[var(--accent-heart)]/20 px-6 py-2.5 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/30 transition-colors"
-        >
-          Back to Dashboard
-        </Link>
+        <p className="mt-3 text-[var(--text-secondary)] text-xs">
+          Your email must be listed in <code className="bg-white/10 px-1.5 py-0.5 rounded">ADMIN_EMAILS</code> (in .env.local locally, or Vercel Environment Variables for production).
+        </p>
+        <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
+          <Link
+            href="/auth/signin"
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-[var(--accent-heart)] px-6 py-2.5 text-sm font-medium text-white hover:opacity-90 transition-opacity"
+          >
+            Sign in
+          </Link>
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--border)] px-6 py-2.5 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/5 transition-colors"
+          >
+            Back to Dashboard
+          </Link>
+        </div>
       </div>
     );
   }

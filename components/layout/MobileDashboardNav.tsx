@@ -95,9 +95,10 @@ function isActive(pathname: string, href: string, exact: boolean): boolean {
 interface MobileDashboardNavProps {
   displayName: string;
   isAdmin?: boolean;
+  isPermanent?: boolean;
 }
 
-export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashboardNavProps) {
+export function MobileDashboardNav({ displayName, isAdmin = false, isPermanent = false }: MobileDashboardNavProps) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const { hasApiKey } = useAiConnectionStatus();
@@ -223,7 +224,31 @@ export function MobileDashboardNav({ displayName, isAdmin = false }: MobileDashb
                 </Link>
               )}
             </div>
-            <div className="sticky bottom-0 left-0 right-0 p-4 border-t border-[var(--dash-divider)] bg-[var(--dash-bg)] mt-auto shrink-0">
+            <div className="sticky bottom-0 left-0 right-0 p-4 border-t border-[var(--dash-divider)] bg-[var(--dash-bg)] mt-auto shrink-0 space-y-3">
+              {!isPermanent && (
+                <div className="flex gap-2">
+                  <Link
+                    href="/auth/signin"
+                    onClick={() => setOpen(false)}
+                    className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-4 py-3 text-sm font-medium text-[var(--text-primary)] hover:bg-white/5 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                    </svg>
+                    Sign in
+                  </Link>
+                  <Link
+                    href="/auth/signup"
+                    onClick={() => setOpen(false)}
+                    className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[var(--accent-heart)] px-4 py-3 text-sm font-medium text-white hover:opacity-90 transition-opacity"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                    </svg>
+                    Sign up
+                  </Link>
+                </div>
+              )}
               <p className="text-xs text-[var(--dash-text-secondary)] truncate">
                 Logged in as {displayName}
               </p>
