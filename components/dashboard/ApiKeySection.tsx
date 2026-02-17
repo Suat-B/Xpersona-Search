@@ -27,10 +27,7 @@ async function fetchMe(): Promise<{ ok: boolean; data: Record<string, unknown> }
 function applyMeResult(resp: Record<string, unknown>): string | null {
   const inner = resp?.data as { apiKeyPrefix?: string } | undefined;
   const p = inner?.apiKeyPrefix ?? null;
-  if (typeof p === "string" && p.length >= 11 && p.startsWith("xp_")) {
-    fetch("/api/me/mark-key-viewed", { method: "POST", credentials: "include" }).catch(() => {});
-  }
-  return p ?? null;
+  return typeof p === "string" && p.length >= 11 && p.startsWith("xp_") ? p : null;
 }
 
 export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
