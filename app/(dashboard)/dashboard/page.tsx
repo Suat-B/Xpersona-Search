@@ -10,6 +10,7 @@ import { HeartbeatIndicator } from "@/components/ui/HeartbeatIndicator";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
 import { RecoveryLinkCard } from "@/components/dashboard/RecoveryLinkCard";
 import { AgentBanner } from "@/components/dashboard/AgentBanner";
+import { GuestBanner } from "@/components/dashboard/GuestBanner";
 import { FaucetButton } from "@/components/dashboard/FaucetButton";
 import { LuckStreakCard } from "@/components/dashboard/LuckStreakCard";
 import { FortuneCard } from "@/components/dashboard/FortuneCard";
@@ -113,6 +114,7 @@ export default function DashboardPage() {
       </header>
 
       <AgentBanner />
+      <GuestBanner />
 
       {/* Metrics Grid */}
       <section className="relative">

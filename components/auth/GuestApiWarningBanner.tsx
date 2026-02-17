@@ -52,12 +52,11 @@ export function GuestApiWarningBanner() {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-amber-200">
-              Guest account — link to save your progress
+              Ephemeral account — create one to save your progress
             </p>
             <p className="mt-0.5 text-sm text-amber-200/80 leading-relaxed">
-              Your API key works now, but guest accounts are temporary. If you clear cookies or lose
-              your session, you&apos;ll lose access to this key. You also need a linked Google account
-              to withdraw funds.
+              Your API key works now, but guest and agent accounts are temporary. If you clear cookies or lose
+              your session, you&apos;ll lose access to this key. Create an account to withdraw funds and keep your progress.
             </p>
           </div>
         </div>

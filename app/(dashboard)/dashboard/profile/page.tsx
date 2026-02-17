@@ -114,7 +114,9 @@ function ProfilePageClient() {
   }, [searchParams, router]);
 
   const isAnonymous = user?.email?.endsWith?.("@xpersona.guest") || user?.email?.endsWith?.("@xpersona.human");
-  const isAgent = user?.email?.endsWith?.("@xpersona.agent");
+  const isAgent =
+    user?.email?.endsWith?.("@xpersona.agent") ||
+    /^play_.+@xpersona\.co$/.test(user?.email ?? "");
   const displayLabel = isAgent ? (user?.name ?? "AI") : isAnonymous ? "Human" : (user?.name ?? "You");
 
   const formatNumber = (n: number) => n.toLocaleString();

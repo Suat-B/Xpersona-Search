@@ -10,6 +10,7 @@ type UserData = {
   email: string | null;
   name: string | null;
   image?: string | null;
+  accountType?: string | null;
 };
 
 function SettingsPageClient() {
@@ -33,18 +34,15 @@ function SettingsPageClient() {
             email: data.data.email ?? null,
             name: data.data.name ?? null,
             image: data.data.image ?? null,
+            accountType: data.data.accountType ?? null,
           });
         }
       })
       .finally(() => setLoading(false));
   }, []);
 
-  const isGuest =
-    user?.email?.endsWith?.("@xpersona.guest") ||
-    user?.email?.endsWith?.("@xpersona.human");
-  const isAgent =
-    user?.email?.endsWith?.("@xpersona.agent") ||
-    /^play_.+@xpersona\.co$/.test(user?.email ?? "");
+  const isEphemeral = user?.accountType === "agent" || user?.accountType === "human";
+  const linkHref = user?.accountType === "agent" ? "/auth/signup?link=agent" : "/auth/signup?link=guest";
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -83,26 +81,15 @@ function SettingsPageClient() {
                 {user.email || "—"}
               </p>
             </div>
-            {isGuest && (
+            {isEphemeral && (
               <div className="space-y-2">
                 <p className="text-xs text-amber-400">
-                  Guest account — create an account to save your progress.
+                  {user?.accountType === "agent"
+                    ? "Agent/play account — create an account to persist your API key."
+                    : "Guest account — create an account to save your progress."}
                 </p>
                 <Link
-                  href="/auth/signup?link=guest"
-                  className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-4 py-2 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
-                >
-                  Create account
-                </Link>
-              </div>
-            )}
-            {isAgent && (
-              <div className="space-y-2">
-                <p className="text-xs text-amber-400">
-                  Agent/play account — create an account to persist your API key.
-                </p>
-                <Link
-                  href="/auth/signup?link=agent"
+                  href={linkHref}
                   className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-4 py-2 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
                 >
                   Create account

@@ -4,22 +4,22 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 export function AgentBanner() {
-  const [isAgent, setIsAgent] = useState<boolean | null>(null);
+  const [accountType, setAccountType] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/me", { credentials: "include" })
       .then((res) => res.json())
       .then((data) => {
-        const email = data?.success ? data?.data?.email : null;
-        const isAgentAccount =
-          email?.endsWith?.("@xpersona.agent") ||
-          /^play_.+@xpersona\.co$/.test(email ?? "");
-        setIsAgent(isAgentAccount);
+        if (data?.success && data?.data) {
+          setAccountType(data.data.accountType ?? null);
+        } else {
+          setAccountType(null);
+        }
       })
-      .catch(() => setIsAgent(false));
+      .catch(() => setAccountType(null));
   }, []);
 
-  if (!isAgent) return null;
+  if (accountType !== "agent") return null;
 
   return (
     <div

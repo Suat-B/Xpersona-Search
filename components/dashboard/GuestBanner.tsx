@@ -4,21 +4,22 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 export function GuestBanner() {
-  const [isGuest, setIsGuest] = useState(false);
+  const [accountType, setAccountType] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/me", { credentials: "include" })
       .then((res) => res.json())
       .then((data) => {
         if (data?.success && data?.data) {
-          const email = data.data.email ?? "";
-          setIsGuest(email.endsWith("@xpersona.guest") || email.endsWith("@xpersona.human"));
+          setAccountType(data.data.accountType ?? null);
+        } else {
+          setAccountType(null);
         }
       })
-      .catch(() => {});
+      .catch(() => setAccountType(null));
   }, []);
 
-  if (!isGuest) return null;
+  if (accountType !== "human") return null;
 
   return (
     <div
