@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AdvancedStrategyBuilder } from "./AdvancedStrategyBuilder";
 import { saveStrategyRunPayload } from "@/lib/strategy-run-payload";
 import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
 
-type AdvancedStrategyRow = {
+export const ADVANCED_STRATEGY_EDIT_EVENT = "xpersona-advanced-strategy-edit";
+
+export type AdvancedStrategyRow = {
   id: string;
   name: string;
   description?: string;
@@ -20,35 +22,36 @@ type AdvancedStrategyRow = {
   createdAt: string;
 };
 
+export function openAdvancedBuilderForEdit(strategy: AdvancedStrategyRow) {
+  window.dispatchEvent(
+    new CustomEvent(ADVANCED_STRATEGY_EDIT_EVENT, { detail: strategy })
+  );
+}
+
 export function AdvancedStrategiesSection() {
   const router = useRouter();
-  const [strategies, setStrategies] = useState<AdvancedStrategyRow[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<AdvancedDiceStrategy | undefined>(undefined);
 
-  const fetchStrategies = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/me/advanced-strategies", { credentials: "include" });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.success && Array.isArray(data.data?.strategies)) {
-        setStrategies(data.data.strategies);
-      } else {
-        setError(data.error ?? "Failed to load strategies");
-      }
-    } catch {
-      setError("Failed to load strategies");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    fetchStrategies();
-  }, [fetchStrategies]);
+    const handler = (e: CustomEvent<AdvancedStrategyRow>) => {
+      const s = e.detail;
+      if (!s?.id) return;
+      setEditingStrategy({
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        baseConfig: s.baseConfig,
+        rules: s.rules ?? [],
+        executionMode: (s.executionMode as AdvancedDiceStrategy["executionMode"]) ?? "sequential",
+      });
+      setBuilderOpen(true);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+    window.addEventListener(ADVANCED_STRATEGY_EDIT_EVENT, handler as EventListener);
+    return () => window.removeEventListener(ADVANCED_STRATEGY_EDIT_EVENT, handler as EventListener);
+  }, []);
 
   const handleSave = async (strategy: AdvancedDiceStrategy) => {
     try {
@@ -68,7 +71,7 @@ export function AdvancedStrategiesSection() {
       if (data.success) {
         setBuilderOpen(false);
         setEditingStrategy(undefined);
-        fetchStrategies();
+        window.dispatchEvent(new Event("advanced-strategies-updated"));
       } else {
         setError(data.error ?? "Failed to save strategy");
       }
@@ -86,43 +89,6 @@ export function AdvancedStrategiesSection() {
       isAdvanced: true,
     });
     router.push("/games/dice?run=advanced");
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this advanced strategy?")) return;
-    try {
-      const res = await fetch(`/api/me/advanced-strategies/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      const data = await res.json();
-      if (data.success) {
-        setStrategies((prev) => prev.filter((s) => s.id !== id));
-      } else {
-        setError(data.error ?? "Delete failed");
-      }
-    } catch {
-      setError("Delete failed");
-    }
-  };
-
-  const handleEdit = (strategy: AdvancedStrategyRow) => {
-    setEditingStrategy({
-      id: strategy.id,
-      name: strategy.name,
-      description: strategy.description,
-      baseConfig: strategy.baseConfig,
-      rules: strategy.rules,
-      executionMode: strategy.executionMode as any,
-    });
-    setBuilderOpen(true);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const handleCreateNew = () => {
-    setEditingStrategy(undefined);
-    setBuilderOpen(true);
-    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   return (
@@ -195,101 +161,6 @@ export function AdvancedStrategiesSection() {
                 setEditingStrategy(undefined);
               }}
             />
-          </div>
-        )}
-      </div>
-
-      {/* My Advanced Strategies */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-[var(--text-primary)]">My Advanced Strategies</h3>
-            <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-              {loading ? "Loading..." : `${strategies.length} saved strategy${strategies.length !== 1 ? "ies" : "y"}`}
-            </p>
-          </div>
-          {!builderOpen && (
-            <button
-              type="button"
-              onClick={handleCreateNew}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-violet-500 text-white hover:bg-violet-500/90 transition-colors"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Create New
-            </button>
-          )}
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 py-8 text-sm text-[var(--text-secondary)]">
-            <div className="w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
-            Loading strategies...
-          </div>
-        ) : strategies.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--bg-matte)]/30 p-8 text-center">
-            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-[var(--bg-card)] flex items-center justify-center">
-              <svg className="w-6 h-6 text-[var(--text-secondary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-              </svg>
-            </div>
-            <p className="text-sm text-[var(--text-secondary)] mb-1">No advanced strategies yet</p>
-            <p className="text-xs text-[var(--text-secondary)]/70">Create your first rule-based strategy</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {strategies.map((strategy) => (
-              <div
-                key={strategy.id}
-                className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 hover:border-violet-500/30 transition-colors group"
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <p className="font-medium text-[var(--text-primary)] truncate">{strategy.name}</p>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-400 border border-violet-500/30">
-                        {strategy.executionMode}
-                      </span>
-                    </div>
-                    <p className="text-xs text-[var(--text-secondary)]">
-                      Transaction {strategy.baseConfig.amount} @ {strategy.baseConfig.target}% {strategy.baseConfig.condition} ·{" "}
-                      {strategy.rules.length} rule{strategy.rules.length !== 1 ? "s" : ""}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <button
-                      onClick={() => handleRun(strategy as any, 50)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-green-500/40 bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Run
-                    </button>
-                    <button
-                      onClick={() => handleEdit(strategy)}
-                      className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 rounded-lg transition-colors"
-                      title="Edit strategy"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => handleDelete(strategy.id)}
-                      className="p-1.5 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                      title="Delete strategy"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
           </div>
         )}
       </div>

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { saveStrategyRunPayload } from "@/lib/strategy-run-payload";
-import { AdvancedStrategiesSection } from "./AdvancedStrategiesSection";
+import { AdvancedStrategiesSection, openAdvancedBuilderForEdit, type AdvancedStrategyRow } from "./AdvancedStrategiesSection";
 import type { DiceProgressionType } from "@/lib/strategies";
 import { DICE_PROGRESSION_TYPES } from "@/lib/strategies";
 
@@ -15,6 +15,10 @@ type StrategyRow = {
   config: Record<string, unknown>;
   createdAt: string;
 };
+
+type UnifiedStrategy =
+  | { type: "simple"; data: StrategyRow }
+  | { type: "advanced"; data: AdvancedStrategyRow };
 
 const GAMES_WITH_RUN = ["dice"] as const;
 
@@ -41,9 +45,15 @@ function getConfigValues(config: Record<string, unknown>) {
   };
 }
 
+function parseDate(d: unknown): number {
+  if (typeof d === "string") return new Date(d).getTime();
+  if (d && typeof d === "object" && "getTime" in (d as object)) return (d as Date).getTime();
+  return 0;
+}
+
 export function StrategiesSection() {
   const router = useRouter();
-  const [strategies, setStrategies] = useState<StrategyRow[]>([]);
+  const [unified, setUnified] = useState<UnifiedStrategy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<StrategyRow | null>(null);
@@ -56,15 +66,31 @@ export function StrategiesSection() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/me/strategies", { credentials: "include" });
-      const data = await res.json().catch(() => ({}));
+      const [simpleRes, advancedRes] = await Promise.all([
+        fetch("/api/me/strategies?gameType=dice", { credentials: "include" }),
+        fetch("/api/me/advanced-strategies", { credentials: "include" }),
+      ]);
       if (fetchId !== fetchIdRef.current) return;
-      if (res.ok && data.success && Array.isArray(data.data?.strategies)) {
-        setStrategies(data.data.strategies);
-        setError(null);
-      } else {
-        setError(data.error ?? "Failed to load strategies");
-      }
+      const simpleData = await simpleRes.json().catch(() => ({}));
+      const advancedData = await advancedRes.json().catch(() => ({}));
+
+      const simple: UnifiedStrategy[] = (simpleRes.ok && simpleData.success && Array.isArray(simpleData.data?.strategies))
+        ? simpleData.data.strategies
+            .filter((s: StrategyRow) => (GAMES_WITH_RUN as readonly string[]).includes(s.gameType))
+            .map((s: StrategyRow) => ({ type: "simple" as const, data: s }))
+        : [];
+      const advanced: UnifiedStrategy[] = (advancedRes.ok && advancedData.success && Array.isArray(advancedData.data?.strategies))
+        ? advancedData.data.strategies.map((s: AdvancedStrategyRow) => ({ type: "advanced" as const, data: s }))
+        : [];
+
+      const merged = [...simple, ...advanced].sort((a, b) => {
+        const timeA = a.type === "simple" ? parseDate(a.data.createdAt) : parseDate(a.data.createdAt);
+        const timeB = b.type === "simple" ? parseDate(b.data.createdAt) : parseDate(b.data.createdAt);
+        return timeB - timeA;
+      });
+      setUnified(merged);
+      if (!simpleRes.ok && !advancedRes.ok) setError(simpleData.error ?? advancedData.error ?? "Failed to load strategies");
+      else setError(null);
     } catch {
       if (fetchId !== fetchIdRef.current) return;
       setError("Failed to load strategies");
@@ -77,9 +103,14 @@ export function StrategiesSection() {
     fetchStrategies();
   }, [fetchStrategies]);
 
-  const handleRunSaved = useCallback(
+  useEffect(() => {
+    const onUpdated = () => fetchStrategies();
+    window.addEventListener("advanced-strategies-updated", onUpdated);
+    return () => window.removeEventListener("advanced-strategies-updated", onUpdated);
+  }, [fetchStrategies]);
+
+  const handleRunSimple = useCallback(
     (s: StrategyRow, maxRounds = 20) => {
-      if (!(GAMES_WITH_RUN as readonly string[]).includes(s.gameType)) return;
       setError(null);
       saveStrategyRunPayload({
         strategyId: s.id,
@@ -91,13 +122,39 @@ export function StrategiesSection() {
     [router]
   );
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this strategy?")) return;
+  const handleRunAdvanced = useCallback(
+    (s: AdvancedStrategyRow, maxRounds = 50) => {
+      setError(null);
+      saveStrategyRunPayload({
+        strategy: {
+          id: s.id,
+          name: s.name,
+          description: s.description,
+          baseConfig: s.baseConfig,
+          rules: s.rules ?? [],
+          executionMode: (s.executionMode as any) ?? "sequential",
+        },
+        strategyName: s.name,
+        maxRounds,
+        isAdvanced: true,
+      });
+      router.push("/games/dice?run=advanced");
+    },
+    [router]
+  );
+
+  const handleDelete = async (item: UnifiedStrategy) => {
+    const id = item.type === "simple" ? item.data.id : item.data.id;
+    const label = item.type === "simple" ? "strategy" : "advanced strategy";
+    if (!confirm(`Delete this ${label}?`)) return;
     try {
-      const res = await fetch(`/api/me/strategies/${id}`, { method: "DELETE" });
+      const url = item.type === "simple"
+        ? `/api/me/strategies/${id}`
+        : `/api/me/advanced-strategies/${id}`;
+      const res = await fetch(url, { method: "DELETE", credentials: "include" });
       const data = await res.json();
       if (data.success) {
-        setStrategies((prev) => prev.filter((s) => s.id !== id));
+        setUnified((prev) => prev.filter((u) => (u.type === "simple" ? u.data.id : u.data.id) !== id));
       } else {
         setError(data.error ?? "Delete failed");
       }
@@ -156,21 +213,24 @@ export function StrategiesSection() {
       });
       const data = await res.json();
       if (data.success) {
-        setStrategies((prev) =>
-          prev.map((s) =>
-            s.id === editing.id
+        setUnified((prev) =>
+          prev.map((u) =>
+            u.type === "simple" && u.data.id === editing.id
               ? {
-                  ...s,
-                  name,
-                  config: {
-                    ...s.config,
-                    amount: editForm!.amount,
-                    target: editForm!.target,
-                    condition: editForm!.condition,
-                    progressionType: editForm!.progressionType,
+                  ...u,
+                  data: {
+                    ...u.data,
+                    name,
+                    config: {
+                      ...u.data.config,
+                      amount: editForm!.amount,
+                      target: editForm!.target,
+                      condition: editForm!.condition,
+                      progressionType: editForm!.progressionType,
+                    },
                   },
                 }
-              : s
+              : u
           )
         );
         closeEditModal();
@@ -181,8 +241,6 @@ export function StrategiesSection() {
       setError("Update failed");
     }
   };
-
-  const runnable = strategies.filter((s) => (GAMES_WITH_RUN as readonly string[]).includes(s.gameType));
 
   return (
     <section data-agent="strategies-section" className="space-y-8">
@@ -201,13 +259,13 @@ export function StrategiesSection() {
         </div>
       )}
 
-      {/* My saved strategies */}
+      {/* My saved strategies — unified simple + advanced */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-lg font-semibold text-[var(--text-primary)]">My Strategies</h3>
             <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-              {loading ? "Loading..." : `${runnable.length} saved strategy${runnable.length !== 1 ? "ies" : "y"}`}
+              {loading ? "Loading..." : `${unified.length} saved strategy${unified.length !== 1 ? "ies" : "y"}`}
             </p>
           </div>
         </div>
@@ -217,7 +275,7 @@ export function StrategiesSection() {
             <div className="w-4 h-4 border-2 border-[var(--accent-heart)] border-t-transparent rounded-full animate-spin" />
             Loading strategies...
           </div>
-        ) : runnable.length === 0 ? (
+        ) : unified.length === 0 ? (
           <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--bg-matte)]/30 p-8 text-center">
             <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-[var(--bg-card)] flex items-center justify-center">
               <svg className="w-6 h-6 text-[var(--text-secondary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -225,58 +283,115 @@ export function StrategiesSection() {
               </svg>
             </div>
             <p className="text-sm text-[var(--text-secondary)] mb-1">No saved strategies yet</p>
-            <p className="text-xs text-[var(--text-secondary)]/70">Create a custom strategy or save from the dice game</p>
+            <p className="text-xs text-[var(--text-secondary)]/70">Create via Advanced Builder above or save from the dice game</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {runnable.map((s) => (
-              <GlassCard key={s.id} className="group p-4 hover:border-[var(--accent-heart)]/30 transition-colors">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <p className="font-medium text-[var(--text-primary)] truncate">{s.name}</p>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--bg-matte)] text-[var(--text-secondary)] border border-[var(--border)]">
-                        {(s.config.progressionType as string) || "flat"}
-                      </span>
+            {unified.map((item) => {
+              if (item.type === "simple") {
+                const s = item.data;
+                return (
+                  <GlassCard key={`s-${s.id}`} className="group p-4 hover:border-[var(--accent-heart)]/30 transition-colors">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="font-medium text-[var(--text-primary)] truncate">{s.name}</p>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--bg-matte)] text-[var(--text-secondary)] border border-[var(--border)]">
+                            {(s.config.progressionType as string) || "flat"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-[var(--text-secondary)]">{configSummary(s.gameType, s.config)}</p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleRunSimple(s, 20)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-green-500/40 bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Run
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleEdit(s)}
+                          className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 rounded-lg transition-colors"
+                          title="Edit strategy"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(item)}
+                          className="p-1.5 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                          title="Delete strategy"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
-                    <p className="text-xs text-[var(--text-secondary)]">{configSummary(s.gameType, s.config)}</p>
+                  </GlassCard>
+                );
+              }
+              const adv = item.data;
+              return (
+                <GlassCard key={`a-${adv.id}`} className="group p-4 hover:border-violet-500/30 transition-colors">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="font-medium text-[var(--text-primary)] truncate">{adv.name}</p>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-400 border border-violet-500/30">
+                          Advanced · {adv.executionMode}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[var(--text-secondary)]">
+                        Transaction {adv.baseConfig.amount} @ {adv.baseConfig.target}% {adv.baseConfig.condition} ·{" "}
+                        {adv.rules?.length ?? 0} rule{(adv.rules?.length ?? 0) !== 1 ? "s" : ""}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleRunAdvanced(adv, 50)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-green-500/40 bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Run
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openAdvancedBuilderForEdit(adv)}
+                        className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 rounded-lg transition-colors"
+                        title="Edit strategy"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(item)}
+                        className="p-1.5 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                        title="Delete strategy"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => handleRunSaved(s, 20)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-green-500/40 bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Run
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleEdit(s)}
-                      className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 rounded-lg transition-colors"
-                      title="Edit strategy"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                      </svg>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(s.id)}
-                      className="p-1.5 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                      title="Delete strategy"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </GlassCard>
-            ))}
+                </GlassCard>
+              );
+            })}
           </div>
         )}
       </div>
