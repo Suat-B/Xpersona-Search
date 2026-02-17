@@ -218,12 +218,9 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
               </button>
               <p className="text-sm font-semibold text-[var(--text-primary)] mb-2">Your API key &lt;3 — copied to clipboard</p>
               <pre className="mb-4 overflow-x-auto rounded-xl bg-black/40 p-4 text-xs font-mono break-all border border-white/10">{modalKey}</pre>
-              <div className="flex gap-3">
-                <button ref={copyButtonRef} type="button" onClick={copyAndClose} className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#0a84ff] px-4 py-3 text-sm font-medium text-white hover:bg-[#0a84ff]/90">
-                  Copy to Clipboard
-                </button>
-                <button type="button" onClick={closeModal} className="dash-btn px-4 py-3 text-sm font-medium transition-colors">Skip</button>
-              </div>
+              <button ref={copyButtonRef} type="button" onClick={copyAndClose} className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#0a84ff] px-4 py-3 text-sm font-medium text-white hover:bg-[#0a84ff]/90">
+                Copy to Clipboard
+              </button>
             </div>
           </div>,
           document.body
@@ -410,26 +407,17 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
                 {modalKey}
               </pre>
               
-              <div className="flex gap-3">
-                <button
-                  ref={copyButtonRef}
-                  type="button"
-                  onClick={copyAndClose}
-                  className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#0a84ff] px-4 py-3 text-sm font-medium text-white hover:bg-[#0a84ff]/90 active:scale-[0.98] transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#0a84ff] focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] shadow-lg shadow-[#0a84ff]/25"
-                >
-                  <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
-                  Copy to Clipboard
-                </button>
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="dash-btn px-4 py-3 text-sm font-medium transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20 focus:ring-offset-2 focus:ring-offset-[var(--dash-bg)]"
-                >
-                  Skip
-                </button>
-              </div>
+              <button
+                ref={copyButtonRef}
+                type="button"
+                onClick={copyAndClose}
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#0a84ff] px-4 py-3 text-sm font-medium text-white hover:bg-[#0a84ff]/90 active:scale-[0.98] transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#0a84ff] focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] shadow-lg shadow-[#0a84ff]/25"
+              >
+                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                Copy to Clipboard
+              </button>
             </div>
           </div>,
           document.body
