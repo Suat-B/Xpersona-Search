@@ -142,6 +142,8 @@ export type AuthUser = {
   /** Stable audit ID for agents (aid_xxx). Null for human/google. */
   agentId: string | null;
   accountType: string;
+  /** True if user has email+password (permanent). Used to avoid showing "create account" to logged-in users. */
+  isPermanent: boolean;
   createdAt: Date | null;
   lastFaucetAt: Date | null;
 };
@@ -155,7 +157,7 @@ export async function getAuthUser(
 ): Promise<{ user: AuthUser } | { error: string }> {
   const session = await auth();
   if (session?.user?.id) {
-    const [user] = await db
+    const [row] = await db
       .select({
         id: users.id,
         email: users.email,
@@ -167,13 +169,21 @@ export async function getAuthUser(
         apiKeyViewedAt: users.apiKeyViewedAt,
         agentId: users.agentId,
         accountType: users.accountType,
+        passwordHash: users.passwordHash,
         createdAt: users.createdAt,
         lastFaucetAt: users.lastFaucetAt,
       })
       .from(users)
       .where(eq(users.id, session.user.id))
       .limit(1);
-    if (user) return { user: user as AuthUser };
+    if (row) {
+      const { passwordHash, ...rest } = row;
+      const user: AuthUser = {
+        ...rest,
+        isPermanent: row.accountType === "email" || !!passwordHash,
+      };
+      return { user };
+    }
   }
 
   const authHeader = request.headers.get("Authorization");
@@ -181,7 +191,7 @@ export async function getAuthUser(
     const rawKey = authHeader.slice(7).trim();
     if (rawKey.length >= 32) {
       const hash = createHash("sha256").update(rawKey).digest("hex");
-      const [user] = await db
+      const [row] = await db
         .select({
           id: users.id,
           email: users.email,
@@ -193,13 +203,21 @@ export async function getAuthUser(
           apiKeyViewedAt: users.apiKeyViewedAt,
           agentId: users.agentId,
           accountType: users.accountType,
+          passwordHash: users.passwordHash,
           createdAt: users.createdAt,
           lastFaucetAt: users.lastFaucetAt,
         })
         .from(users)
         .where(eq(users.apiKeyHash, hash))
         .limit(1);
-      if (user) return { user: user as AuthUser };
+      if (row) {
+        const { passwordHash, ...rest } = row;
+        const user: AuthUser = {
+          ...rest,
+          isPermanent: row.accountType === "email" || !!passwordHash,
+        };
+        return { user };
+      }
     }
   }
 
@@ -218,7 +236,7 @@ export async function getAuthUser(
   if (agentCookie) {
     const userId = verifyAgentToken(agentCookie);
     if (userId) {
-      const [user] = await db
+      const [row] = await db
         .select({
           id: users.id,
           email: users.email,
@@ -230,20 +248,28 @@ export async function getAuthUser(
           apiKeyViewedAt: users.apiKeyViewedAt,
           agentId: users.agentId,
           accountType: users.accountType,
+          passwordHash: users.passwordHash,
           createdAt: users.createdAt,
           lastFaucetAt: users.lastFaucetAt,
         })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
-      if (user) return { user: user as AuthUser };
+      if (row) {
+        const { passwordHash, ...rest } = row;
+        const user: AuthUser = {
+          ...rest,
+          isPermanent: row.accountType === "email" || !!passwordHash,
+        };
+        return { user };
+      }
     }
   }
 
   if (guestCookie) {
     const userId = verifyGuestToken(guestCookie);
     if (userId) {
-      const [user] = await db
+      const [row] = await db
         .select({
           id: users.id,
           email: users.email,
@@ -255,13 +281,21 @@ export async function getAuthUser(
           apiKeyViewedAt: users.apiKeyViewedAt,
           agentId: users.agentId,
           accountType: users.accountType,
+          passwordHash: users.passwordHash,
           createdAt: users.createdAt,
           lastFaucetAt: users.lastFaucetAt,
         })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
-      if (user) return { user: user as AuthUser };
+      if (row) {
+        const { passwordHash, ...rest } = row;
+        const user: AuthUser = {
+          ...rest,
+          isPermanent: row.accountType === "email" || !!passwordHash,
+        };
+        return { user };
+      }
     }
   }
 

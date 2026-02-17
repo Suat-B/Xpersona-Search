@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 export function AgentBanner() {
   const [accountType, setAccountType] = useState<string | null>(null);
+  const [isPermanent, setIsPermanent] = useState<boolean | null>(null);
 
   useEffect(() => {
     fetch("/api/me", { credentials: "include" })
@@ -12,13 +13,19 @@ export function AgentBanner() {
       .then((data) => {
         if (data?.success && data?.data) {
           setAccountType(data.data.accountType ?? null);
+          setIsPermanent(data.data.isPermanent ?? false);
         } else {
           setAccountType(null);
+          setIsPermanent(null);
         }
       })
-      .catch(() => setAccountType(null));
+      .catch(() => {
+        setAccountType(null);
+        setIsPermanent(null);
+      });
   }, []);
 
+  if (isPermanent) return null;
   if (accountType !== "agent") return null;
 
   return (

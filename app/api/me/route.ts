@@ -23,6 +23,7 @@ export async function GET(request: Request) {
       apiKeyPrefix: user.apiKeyPrefix,
       apiKeyViewedAt: user.apiKeyViewedAt,
       accountType: user.accountType,
+      isPermanent: user.isPermanent,
       agentId: user.agentId,
       createdAt: user.createdAt,
       lastFaucetAt: user.lastFaucetAt,

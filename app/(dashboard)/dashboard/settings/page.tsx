@@ -11,6 +11,7 @@ type UserData = {
   name: string | null;
   image?: string | null;
   accountType?: string | null;
+  isPermanent?: boolean;
 };
 
 function SettingsPageClient() {
@@ -35,13 +36,14 @@ function SettingsPageClient() {
             name: data.data.name ?? null,
             image: data.data.image ?? null,
             accountType: data.data.accountType ?? null,
+            isPermanent: data.data.isPermanent ?? false,
           });
         }
       })
       .finally(() => setLoading(false));
   }, []);
 
-  const isEphemeral = user?.accountType === "agent" || user?.accountType === "human";
+  const isEphemeral = !user?.isPermanent && (user?.accountType === "agent" || user?.accountType === "human");
   const linkHref = user?.accountType === "agent" ? "/auth/signup?link=agent" : "/auth/signup?link=guest";
 
   return (
