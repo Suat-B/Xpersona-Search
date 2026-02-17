@@ -51,6 +51,7 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
   const nonstopAbortRef = useRef(false);
 
   const [aiBannerVisible, setAiBannerVisible] = useState(false);
+  const [isAiRolling, setIsAiRolling] = useState(false);
   const [spectatePaused, setSpectatePaused] = useState(false);
   const [liveQueueLength, setLiveQueueLength] = useState(0);
   const spectatePausedRef = useRef(false);
@@ -168,6 +169,8 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
     setLogs((prev) => [{ time: Date.now(), type, message }, ...prev].slice(0, 100));
   }, []);
 
+  const AI_ROLLING_ANTICIPATION_MS = 150;
+
   const processLivePlayQueue = useCallback(() => {
     if (liveQueueProcessingRef.current || livePlayQueueRef.current.length === 0) return;
     liveQueueProcessingRef.current = true;
@@ -180,45 +183,50 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
       if (!next) {
         liveQueueProcessingRef.current = false;
         setLastResult(null);
+        setIsAiRolling(false);
         if (aiBannerCooldownRef.current) clearTimeout(aiBannerCooldownRef.current);
         aiBannerCooldownRef.current = setTimeout(() => setAiBannerVisible(false), 800);
         if (queue.length > 0) processLivePlayQueue();
         return;
       }
-      const direction = (next.condition === "under" ? "under" : "over") as "over" | "under";
-      const pnl = next.payout - next.amount;
-      const newPosition: Position = {
-        id: next.betId ?? `pos-${Date.now()}`,
-        timestamp: Date.now(),
-        direction,
-        size: next.amount,
-        entry: next.target,
-        exit: next.result,
-        pnl,
-        status: "closed",
-      };
-      setPositions((prev) => [newPosition, ...prev]);
-      if (typeof next.balance === "number") setBalance(next.balance);
-      setSessionPnl((prev) => prev + pnl);
-      setEquityData((prev) => {
-        const lastPnl = prev[prev.length - 1]?.pnl ?? 0;
-        return [...prev, { time: Date.now(), value: next.balance ?? 0, pnl: lastPnl + pnl }];
-      });
-      setLastResult({ exit: next.result, win: next.win });
-      if (lastResultTimeoutRef.current) clearTimeout(lastResultTimeoutRef.current);
-      lastResultTimeoutRef.current = setTimeout(() => setLastResult(null), 3500);
-      addLog("fill", `AI ${direction.toUpperCase()} ${next.amount}U @ ${next.target.toFixed(2)} → ${next.result.toFixed(2)} | PnL: ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}`);
-      setCurrentSize(next.amount);
-      setCurrentTarget(next.target);
-      setCurrentDirection(direction);
-      if (next.betId) processedPlayIdsRef.current.add(next.betId);
-      window.dispatchEvent(new Event("balance-updated"));
+      setIsAiRolling(true);
+      setTimeout(() => {
+        setIsAiRolling(false);
+        const direction = (next.condition === "under" ? "under" : "over") as "over" | "under";
+        const pnl = next.payout - next.amount;
+        const newPosition: Position = {
+          id: next.betId ?? `pos-${Date.now()}`,
+          timestamp: Date.now(),
+          direction,
+          size: next.amount,
+          entry: next.target,
+          exit: next.result,
+          pnl,
+          status: "closed",
+        };
+        setPositions((prev) => [newPosition, ...prev]);
+        if (typeof next.balance === "number") setBalance(next.balance);
+        setSessionPnl((prev) => prev + pnl);
+        setEquityData((prev) => {
+          const lastPnl = prev[prev.length - 1]?.pnl ?? 0;
+          return [...prev, { time: Date.now(), value: next.balance ?? 0, pnl: lastPnl + pnl }];
+        });
+        setLastResult({ exit: next.result, win: next.win });
+        if (lastResultTimeoutRef.current) clearTimeout(lastResultTimeoutRef.current);
+        lastResultTimeoutRef.current = setTimeout(() => setLastResult(null), 3500);
+        addLog("fill", `AI ${direction.toUpperCase()} ${next.amount}U @ ${next.target.toFixed(2)} → ${next.result.toFixed(2)} | PnL: ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}`);
+        setCurrentSize(next.amount);
+        setCurrentTarget(next.target);
+        setCurrentDirection(direction);
+        if (next.betId) processedPlayIdsRef.current.add(next.betId);
+        window.dispatchEvent(new Event("balance-updated"));
 
-      const peek = queue[0];
-      const displayMs = peek
-        ? Math.max(MIN_LIVE_PLAY_DISPLAY_MS, peek.receivedAt - next.receivedAt)
-        : MIN_LIVE_PLAY_DISPLAY_MS;
-      setTimeout(playNext, displayMs);
+        const peek = queue[0];
+        const displayMs = peek
+          ? Math.max(MIN_LIVE_PLAY_DISPLAY_MS, peek.receivedAt - next.receivedAt)
+          : MIN_LIVE_PLAY_DISPLAY_MS;
+        setTimeout(playNext, displayMs);
+      }, AI_ROLLING_ANTICIPATION_MS);
     };
     playNext();
   }, [addLog]);
@@ -230,6 +238,7 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
     liveQueueProcessingRef.current = false;
     setLiveQueueLength(0);
     setLastResult(null);
+    setIsAiRolling(false);
     setAiBannerVisible(false);
     if (aiBannerCooldownRef.current) {
       clearTimeout(aiBannerCooldownRef.current);
@@ -600,7 +609,7 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
     <div className="quant-terminal min-h-screen flex flex-col overflow-hidden bg-[var(--quant-bg-primary)]">
       {aiBannerVisible && !spectatePaused && (
         <div
-          className="fixed top-0 left-0 right-0 z-[60] overflow-hidden bg-gradient-to-r from-violet-950/95 via-violet-900/90 to-violet-950/95 border-b border-violet-500/40 backdrop-blur-md shadow-[0_0_30px_rgba(139,92,246,0.15)]"
+          className="fixed top-0 left-0 right-0 z-[60] overflow-hidden bg-gradient-to-r from-violet-950/95 via-violet-900/90 to-violet-950/95 border-b border-violet-500/40 backdrop-blur-md shadow-[0_0_30px_rgba(139,92,246,0.15)] animate-ai-banner-in"
           role="status"
           aria-live="polite"
           aria-label="AI is playing"
@@ -662,6 +671,7 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
         isAutoTrading={isAutoTrading}
         onToggleAuto={() => setIsAutoTrading((prev) => !prev)}
         aiDriving={aiDriving}
+        aiRolling={isAiRolling}
       />
 
       {/* Main Content Area - NEW LAYOUT */}
@@ -669,7 +679,7 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
         
         {/* LEFT PANEL - Position Ledger */}
         <div className="w-96 flex-shrink-0 flex flex-col min-w-0" style={{ gap: "var(--quant-panel-gap)" }}>
-          <PositionLedger positions={positions} />
+          <PositionLedger positions={positions} aiModeActive={aiDriving} />
           <RiskDashboard
             maxDrawdown={stats.maxDrawdown}
             sharpe={stats.sharpe}

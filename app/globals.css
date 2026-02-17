@@ -696,6 +696,49 @@ input[type="reset"] {
   animation: slideInFromBottom 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* AI banner entrance — slide down + fade in */
+@keyframes aiBannerSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-ai-banner-in {
+  animation: aiBannerSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* AI result reveal — entrance for live play result badge */
+@keyframes aiResultReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-ai-result-in {
+  animation: aiResultReveal 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-ai-banner-in,
+  .animate-ai-result-in {
+    animation: none;
+  }
+}
+
 /* Subtle glow cycle for active elements */
 @keyframes glowPulse {
   0%, 100% {

@@ -15,9 +15,11 @@ interface Position {
 
 interface PositionLedgerProps {
   positions: Position[];
+  /** When true, AI mode is active — newest position gets entrance animation */
+  aiModeActive?: boolean;
 }
 
-export function PositionLedger({ positions }: PositionLedgerProps) {
+export function PositionLedger({ positions, aiModeActive = false }: PositionLedgerProps) {
   const [sortField, setSortField] = useState<keyof Position>("timestamp");
   const [sortDesc, setSortDesc] = useState(true);
 
@@ -81,8 +83,11 @@ export function PositionLedger({ positions }: PositionLedgerProps) {
             </tr>
           </thead>
           <tbody>
-            {sortedPositions.slice(0, 50).map((position) => (
-              <tr key={position.id} className="group">
+            {sortedPositions.slice(0, 50).map((position, i) => (
+              <tr
+                key={position.id}
+                className={`group ${i === 0 && aiModeActive ? "animate-slide-in-from-bottom" : ""}`}
+              >
                 <td className="font-mono text-[11px] whitespace-nowrap overflow-hidden text-ellipsis">{formatTime(position.timestamp)}</td>
                 <td>
                   <span

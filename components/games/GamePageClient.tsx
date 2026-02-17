@@ -226,6 +226,7 @@ export default function GamePageClient({
   const [livePlayDisplayMs, setLivePlayDisplayMs] = useState(450);
   const [showAiPlayingIndicator, setShowAiPlayingIndicator] = useState(false);
   const [aiBannerVisible, setAiBannerVisible] = useState(false);
+  const [isAiRolling, setIsAiRolling] = useState(false);
   const [liveActivityItems, setLiveActivityItems] = useState<LiveActivityItem[]>([]);
   const [liveQueueLength, setLiveQueueLength] = useState(0);
   const [spectatePaused, setSpectatePaused] = useState(false);
@@ -511,6 +512,8 @@ export default function GamePageClient({
     liveQueueProcessingRef.current = true;
     setLiveQueueLength(livePlayQueueRef.current.length);
 
+    const AI_ROLLING_ANTICIPATION_MS = 150;
+
     const playNext = () => {
       const queue = livePlayQueueRef.current;
       const next = queue.shift();
@@ -518,48 +521,54 @@ export default function GamePageClient({
       if (!next) {
         liveQueueProcessingRef.current = false;
         setLivePlay(null);
+        setIsAiRolling(false);
         setShowAiPlayingIndicator(false);
         if (aiBannerCooldownRef.current) clearTimeout(aiBannerCooldownRef.current);
         aiBannerCooldownRef.current = setTimeout(() => setAiBannerVisible(false), 800);
         if (queue.length > 0) processLivePlayQueue();
         return;
       }
-      // Apply data update in sync with visual — user sees each round 1-by-1
-      handleResult({
-        result: next.result,
-        win: next.win,
-        payout: next.payout,
-        playAmount: next.amount,
-        balance: next.balance,
-        target: next.target,
-        condition: (next.condition === "under" ? "under" : "over") as "over" | "under",
-        source: "api",
-        betId: next.betId,
-      });
-      if (next.betId) processedPlayIdsRef.current.add(next.betId);
-      const item: LiveActivityItem = {
-        id: next.betId ?? `live-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        result: next.result,
-        win: next.win,
-        payout: next.payout,
-        amount: next.amount,
-        target: next.target,
-        condition: next.condition,
-        fromApi: !!next.agentId,
-      };
-      setLiveActivityItems((prev) => [...prev, item].slice(-50));
+      // Anticipation phase: show "AI rolling..." before revealing result
+      setIsAiRolling(true);
+      setTimeout(() => {
+        setIsAiRolling(false);
+        // Apply data update in sync with visual — user sees each round 1-by-1
+        handleResult({
+          result: next.result,
+          win: next.win,
+          payout: next.payout,
+          playAmount: next.amount,
+          balance: next.balance,
+          target: next.target,
+          condition: (next.condition === "under" ? "under" : "over") as "over" | "under",
+          source: "api",
+          betId: next.betId,
+        });
+        if (next.betId) processedPlayIdsRef.current.add(next.betId);
+        const item: LiveActivityItem = {
+          id: next.betId ?? `live-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          result: next.result,
+          win: next.win,
+          payout: next.payout,
+          amount: next.amount,
+          target: next.target,
+          condition: next.condition,
+          fromApi: !!next.agentId,
+        };
+        setLiveActivityItems((prev) => [...prev, item].slice(-50));
 
-      const peek = queue[0];
-      const displayMs = peek
-        ? Math.max(MIN_LIVE_PLAY_DISPLAY_MS, peek.receivedAt - next.receivedAt)
-        : MIN_LIVE_PLAY_DISPLAY_MS;
-      setLivePlayDisplayMs(displayMs);
-      setLivePlay({ result: next.result, win: next.win, payout: next.payout });
-      setAmount(next.amount);
-      setTarget(next.target);
-      setCondition((next.condition === "under" ? "under" : "over") as "over" | "under");
-      if (next.agentId) setShowAiPlayingIndicator(true);
-      setTimeout(playNext, displayMs);
+        const peek = queue[0];
+        const displayMs = peek
+          ? Math.max(MIN_LIVE_PLAY_DISPLAY_MS, peek.receivedAt - next.receivedAt)
+          : MIN_LIVE_PLAY_DISPLAY_MS;
+        setLivePlayDisplayMs(displayMs);
+        setLivePlay({ result: next.result, win: next.win, payout: next.payout });
+        setAmount(next.amount);
+        setTarget(next.target);
+        setCondition((next.condition === "under" ? "under" : "over") as "over" | "under");
+        if (next.agentId) setShowAiPlayingIndicator(true);
+        setTimeout(playNext, displayMs);
+      }, AI_ROLLING_ANTICIPATION_MS);
     };
     playNext();
   }, [handleResult]);
@@ -571,6 +580,7 @@ export default function GamePageClient({
     liveQueueProcessingRef.current = false;
     setLiveQueueLength(0);
     setLivePlay(null);
+    setIsAiRolling(false);
     setShowAiPlayingIndicator(false);
     setAiBannerVisible(false);
     if (aiBannerCooldownRef.current) {
@@ -729,7 +739,7 @@ export default function GamePageClient({
 
       {aiBannerVisible && !spectatePaused && (
         <div
-          className="fixed top-0 left-0 right-0 z-[60] overflow-hidden bg-gradient-to-r from-violet-950/95 via-violet-900/90 to-violet-950/95 border-b border-violet-500/40 backdrop-blur-md shadow-[0_0_30px_rgba(139,92,246,0.15)]"
+          className="fixed top-0 left-0 right-0 z-[60] overflow-hidden bg-gradient-to-r from-violet-950/95 via-violet-900/90 to-violet-950/95 border-b border-violet-500/40 backdrop-blur-md shadow-[0_0_30px_rgba(139,92,246,0.15)] animate-ai-banner-in"
           role="status"
           aria-live="polite"
           aria-label="AI is playing"
@@ -969,6 +979,7 @@ export default function GamePageClient({
                   livePlay={livePlay}
                   livePlayAnimationMs={livePlayDisplayMs}
                   aiDriving={aiBannerVisible || !!livePlay}
+                  aiRolling={isAiRolling}
                   recentResults={recentResults.map((r) => ({ win: r.win }))}
                   sessionStartTime={sessionStartTime}
                   rounds={rounds}
@@ -1238,6 +1249,7 @@ export default function GamePageClient({
                       livePlay={livePlay}
                       livePlayAnimationMs={livePlayDisplayMs}
                       aiDriving={aiBannerVisible || !!livePlay}
+                      aiRolling={isAiRolling}
                       recentResults={recentResults.map((r) => ({ win: r.win }))}
                       sessionStartTime={sessionStartTime}
                       rounds={rounds}

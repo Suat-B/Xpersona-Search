@@ -16,6 +16,8 @@ interface CommandCenterProps {
   onToggleAuto: () => void;
   /** When true, AI is playing — show Watching AI in status */
   aiDriving?: boolean;
+  /** When true, AI is about to reveal a result — show AI rolling… */
+  aiRolling?: boolean;
 }
 
 export function CommandCenter({
@@ -28,6 +30,7 @@ export function CommandCenter({
   isAutoTrading,
   onToggleAuto,
   aiDriving = false,
+  aiRolling = false,
 }: CommandCenterProps) {
   const { hasApiKey: aiConnected } = useAiConnectionStatus();
   const [time, setTime] = useState(new Date());
@@ -89,7 +92,7 @@ export function CommandCenter({
         <div className="flex items-center gap-2 px-4 border-l border-[var(--quant-border)]">
           <div className={`quant-status-dot online animate-pulse ${aiDriving ? "bg-violet-400" : ""}`}></div>
           <span className={`text-[11px] font-medium ${aiDriving ? "text-violet-400" : "text-bullish"}`}>
-            {aiDriving ? "Watching AI" : "LIVE"}
+            {aiDriving ? (aiRolling ? "AI rolling…" : "Watching AI") : "LIVE"}
           </span>
           {!aiDriving && <span className="text-[10px] text-[var(--quant-neutral)]">{latency}ms</span>}
         </div>

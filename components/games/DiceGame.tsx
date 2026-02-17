@@ -52,6 +52,8 @@ export type DiceGameProps = {
   livePlayAnimationMs?: number;
   /** When true, AI/live feed is driving control values; show violet accent and LIVE badge */
   aiDriving?: boolean;
+  /** When true, AI is about to reveal a result — show "AI rolling…" indicator */
+  aiRolling?: boolean;
   strategyRun?: StrategyRunConfig | null;
   onStrategyComplete?: (sessionPnl: number, roundsPlayed: number, wins: number) => void;
   onStrategyStop?: () => void;
@@ -84,6 +86,7 @@ export function DiceGame({
   livePlay,
   livePlayAnimationMs = 450,
   aiDriving = false,
+  aiRolling = false,
   recentResults = [],
   sessionStartTime = null,
   rounds = 0,
@@ -656,10 +659,15 @@ export function DiceGame({
                       key={resultKey}
                       className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold tabular-nums ${
                         result.win ? "bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/30" : "bg-[#ff453a]/15 text-[#ff453a] border border-[#ff453a]/30"
-                      }`}
+                      } ${aiDriving ? "animate-ai-result-in ring-1 ring-violet-500/40" : ""}`}
                     >
                       <span>{result.result.toFixed(2)}</span>
                       <span>{result.win ? `+${result.payout}` : `-${amount}`} U</span>
+                      {aiDriving && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider text-violet-400 bg-violet-500/20 border border-violet-500/30 shrink-0">
+                          AI
+                        </span>
+                      )}
                     </div>
                     {!result.win && Math.abs(result.result - target) < 2.0 && (
                       <div className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/40">
@@ -680,11 +688,11 @@ export function DiceGame({
               <div className="flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-violet-500/15 border border-violet-500/30">
                 <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse shrink-0" aria-hidden />
                 <span className="text-xs font-bold uppercase tracking-widest text-violet-300">
-                  AI Pilot Active
+                  {aiRolling ? "AI rolling…" : "AI Pilot Active"}
                 </span>
               </div>
               <p className="text-[10px] text-center text-violet-400/80 font-medium">
-                You&apos;re watching · AI is playing
+                {aiRolling ? "Revealing result…" : "You&apos;re watching · AI is playing"}
               </p>
             </div>
           )}
