@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { saveStrategyRunPayload } from "@/lib/strategy-run-payload";
 import { AdvancedStrategiesSection } from "./AdvancedStrategiesSection";
+import type { DiceProgressionType } from "@/lib/strategies";
+import { DICE_PROGRESSION_TYPES } from "@/lib/strategies";
 
 type StrategyRow = {
   id: string;
@@ -24,11 +26,28 @@ function configSummary(_gameType: string, config: Record<string, unknown>): stri
   return `Transaction ${amount} @ ${cond} ${target} (${prog})`;
 }
 
+function getConfigValues(config: Record<string, unknown>) {
+  const amount = typeof config.amount === "number" ? config.amount : Number(config.amount) || 10;
+  const target = typeof config.target === "number" ? config.target : Number(config.target) || 50;
+  const condition = config.condition === "over" || config.condition === "under" ? config.condition : "over";
+  const progressionType = (config.progressionType as string) || "flat";
+  return {
+    amount: Math.min(10000, Math.max(1, amount)),
+    target: Math.min(99.99, Math.max(0, target)),
+    condition: condition as "over" | "under",
+    progressionType: DICE_PROGRESSION_TYPES.includes(progressionType as DiceProgressionType)
+      ? (progressionType as DiceProgressionType)
+      : "flat",
+  };
+}
+
 export function StrategiesSection() {
   const router = useRouter();
   const [strategies, setStrategies] = useState<StrategyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<StrategyRow | null>(null);
+  const [editForm, setEditForm] = useState<{ name: string; amount: number; target: number; condition: "over" | "under"; progressionType: DiceProgressionType } | null>(null);
 
   const fetchIdRef = useRef(0);
 
@@ -84,6 +103,82 @@ export function StrategiesSection() {
       }
     } catch {
       setError("Delete failed");
+    }
+  };
+
+  const handleEdit = useCallback((s: StrategyRow) => {
+    const vals = getConfigValues(s.config);
+    setEditing(s);
+    setEditForm({
+      name: s.name,
+      amount: vals.amount,
+      target: vals.target,
+      condition: vals.condition,
+      progressionType: vals.progressionType,
+    });
+  }, []);
+
+  const closeEditModal = useCallback(() => {
+    setEditing(null);
+    setEditForm(null);
+  }, []);
+
+  useEffect(() => {
+    if (!editing) return;
+    const onEscape = (e: KeyboardEvent) => e.key === "Escape" && closeEditModal();
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  }, [editing, closeEditModal]);
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    if (!editing || !editForm) return;
+    e.preventDefault();
+    const name = editForm.name.trim();
+    if (!name) {
+      setError("Strategy name is required");
+      return;
+    }
+    setError(null);
+    try {
+      const res = await fetch(`/api/me/strategies/${editing.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          name,
+          config: {
+            amount: editForm.amount,
+            target: editForm.target,
+            condition: editForm.condition,
+            progressionType: editForm.progressionType,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setStrategies((prev) =>
+          prev.map((s) =>
+            s.id === editing.id
+              ? {
+                  ...s,
+                  name,
+                  config: {
+                    ...s.config,
+                    amount: editForm!.amount,
+                    target: editForm!.target,
+                    condition: editForm!.condition,
+                    progressionType: editForm!.progressionType,
+                  },
+                }
+              : s
+          )
+        );
+        closeEditModal();
+      } else {
+        setError(data.error ?? data.message ?? "Update failed");
+      }
+    } catch {
+      setError("Update failed");
     }
   };
 
@@ -160,6 +255,16 @@ export function StrategiesSection() {
                     </button>
                     <button
                       type="button"
+                      onClick={() => handleEdit(s)}
+                      className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 rounded-lg transition-colors"
+                      title="Edit strategy"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleDelete(s.id)}
                       className="p-1.5 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
                       title="Delete strategy"
@@ -175,6 +280,143 @@ export function StrategiesSection() {
           </div>
         )}
       </div>
+
+      {/* Edit Strategy Modal */}
+      {editing && editForm && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm min-h-screen min-w-full"
+          style={{ top: 0, left: 0, right: 0, bottom: 0 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-strategy-title"
+          onClick={(e) => e.target === e.currentTarget && closeEditModal()}
+        >
+          <div className="w-full max-w-md rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 id="edit-strategy-title" className="text-lg font-semibold text-[var(--text-primary)]">
+                Edit Strategy
+              </h2>
+              <button
+                type="button"
+                onClick={closeEditModal}
+                className="p-2 rounded-lg text-[var(--text-tertiary)] hover:text-white hover:bg-white/10 transition-colors"
+                aria-label="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              <div>
+                <label htmlFor="edit-name" className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
+                  Strategy name
+                </label>
+                <input
+                  id="edit-name"
+                  type="text"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm((f) => (f ? { ...f, name: e.target.value } : null))}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--bg-matte)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50"
+                  placeholder="My Strategy"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="edit-amount" className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
+                    Amount
+                  </label>
+                  <input
+                    id="edit-amount"
+                    type="number"
+                    min={1}
+                    max={10000}
+                    value={editForm.amount}
+                    onChange={(e) =>
+                      setEditForm((f) =>
+                        f ? { ...f, amount: Math.min(10000, Math.max(1, Number(e.target.value) || 1)) } : null
+                      )
+                    }
+                    className="w-full px-3 py-2 rounded-lg bg-[var(--bg-matte)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="edit-target" className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
+                    Target %
+                  </label>
+                  <input
+                    id="edit-target"
+                    type="number"
+                    min={0}
+                    max={99.99}
+                    step={0.01}
+                    value={editForm.target}
+                    onChange={(e) =>
+                      setEditForm((f) =>
+                        f ? { ...f, target: Math.min(99.99, Math.max(0, Number(e.target.value) || 0)) } : null
+                      )
+                    }
+                    className="w-full px-3 py-2 rounded-lg bg-[var(--bg-matte)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50"
+                  />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="edit-condition" className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
+                  Condition
+                </label>
+                <select
+                  id="edit-condition"
+                  value={editForm.condition}
+                  onChange={(e) =>
+                    setEditForm((f) => (f ? { ...f, condition: e.target.value as "over" | "under" } : null))
+                  }
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--bg-matte)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50"
+                >
+                  <option value="over">Over</option>
+                  <option value="under">Under</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="edit-progression" className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
+                  Progression
+                </label>
+                <select
+                  id="edit-progression"
+                  value={editForm.progressionType}
+                  onChange={(e) =>
+                    setEditForm((f) =>
+                      f ? { ...f, progressionType: e.target.value as DiceProgressionType } : null
+                    )
+                  }
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--bg-matte)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50"
+                >
+                  {DICE_PROGRESSION_TYPES.map((pt) => (
+                    <option key={pt} value={pt}>
+                      {pt.charAt(0).toUpperCase() + pt.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={closeEditModal}
+                  className="flex-1 px-4 py-2 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-white/5 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2 rounded-lg bg-[var(--accent-heart)] text-white font-medium hover:opacity-90 transition-opacity"
+                >
+                  Save changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
