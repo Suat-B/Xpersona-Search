@@ -19,13 +19,6 @@ function SignUpForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const callbackUrl =
-    link === "agent"
-      ? "/dashboard/profile?link_agent=1"
-      : link === "guest"
-        ? "/dashboard/profile?link_guest=1"
-        : "/dashboard";
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -34,6 +27,7 @@ function SignUpForm() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           password,
@@ -60,7 +54,22 @@ function SignUpForm() {
         return;
       }
 
-      router.push(callbackUrl);
+      // Perform link immediately after sign-in, before any navigation.
+      // This ensures the agent/guest cookie is still present (same document, no redirect).
+      // Previously the link ran on profile page load and could fail if cookies were lost during navigation.
+      if (link === "agent" || link === "guest") {
+        const linkEndpoint = link === "agent" ? "/api/auth/link-agent" : "/api/auth/link-guest";
+        const linkRes = await fetch(linkEndpoint, {
+          method: "POST",
+          credentials: "include",
+        });
+        const linkData = await linkRes.json().catch(() => ({}));
+        if (linkData.success) {
+          window.dispatchEvent(new Event("balance-updated"));
+        }
+      }
+
+      router.push("/dashboard/profile");
       router.refresh();
     } catch {
       setError("Something went wrong. Please try again.");

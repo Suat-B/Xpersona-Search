@@ -44,7 +44,22 @@ function SignInForm() {
         return;
       }
 
-      router.push(effectiveCallback);
+      // Perform link immediately after sign-in, before any navigation.
+      // Ensures agent/guest cookie is still present (avoids redirect loop / lost merge).
+      if (link === "agent" || link === "guest") {
+        const linkEndpoint = link === "agent" ? "/api/auth/link-agent" : "/api/auth/link-guest";
+        const linkRes = await fetch(linkEndpoint, {
+          method: "POST",
+          credentials: "include",
+        });
+        const linkData = await linkRes.json().catch(() => ({}));
+        if (linkData.success) {
+          window.dispatchEvent(new Event("balance-updated"));
+        }
+      }
+
+      const redirectTo = link === "agent" || link === "guest" ? "/dashboard/profile" : effectiveCallback;
+      router.push(redirectTo);
       router.refresh();
     } catch {
       setError("Something went wrong. Please try again.");
