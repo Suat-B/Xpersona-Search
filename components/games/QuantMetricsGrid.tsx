@@ -123,7 +123,7 @@ export function QuantMetricsGrid({ metrics, recentResults, compact = false }: Qu
       {!compact && hasNegativeEdge && recentResults.length < 5 && (
         <div className="rounded-xl border border-[#0ea5e9]/20 bg-[#0ea5e9]/5 px-3 py-2.5">
           <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-            <span className="font-semibold text-[#0ea5e9]/90">House edge −{edgePct}%.</span>{" "}
+            <span className="font-semibold text-[#0ea5e9]/90">Transaction cost −{edgePct}%.</span>{" "}
             Use Kelly criterion for position sizing. Strategy builder for backtests.
           </p>
         </div>

@@ -152,7 +152,7 @@ export default function ApiDocsPage() {
           Dice rules and odds
         </h2>
         <ul className="space-y-2 text-sm text-[var(--text-secondary)]">
-          <li><strong className="text-[var(--text-primary)]">House edge:</strong> 3%</li>
+          <li><strong className="text-[var(--text-primary)]">Transaction cost:</strong> 3%</li>
           <li><strong className="text-[var(--text-primary)]">Min/max amount per round:</strong> 1 – 10000 credits</li>
           <li><strong className="text-[var(--text-primary)]">Win probability:</strong> over X → (100-X)/100; under X → X/100 (e.g. over 50 = 49% win)</li>
           <li><strong className="text-[var(--text-primary)]">Multiplier:</strong> 0.97 / winProbability (e.g. over 50 ≈ 1.98x payout)</li>

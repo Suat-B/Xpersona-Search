@@ -218,7 +218,7 @@ export function QuantTopMetricsBar({
       <span className="w-px h-3 bg-white/[0.08] shrink-0 mx-0.5" aria-hidden />
 
       {/* Edge */}
-      <div className="flex items-center gap-1 px-2 py-0.5 rounded-sm bg-red-500/10 border border-red-500/20 shrink-0" title="House edge (3%) — RTP 97%">
+      <div className="flex items-center gap-1 px-2 py-0.5 rounded-sm bg-red-500/10 border border-red-500/20 shrink-0" title="Transaction cost (3%) — RTP 97%">
         <span className="text-[10px] sm:text-[8px] text-[var(--text-tertiary)] uppercase tracking-wider">Edge</span>
         <span className="text-[11px] font-semibold text-red-400 tabular-nums">-{HOUSE_EDGE_PCT}%</span>
       </div>

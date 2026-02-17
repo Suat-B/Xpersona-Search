@@ -19,7 +19,7 @@ const FORTUNES = [
   "Session PnL is noise. Bankroll management is signal.",
   "OpenClaw AI doesn't tilt. Neither should you.",
   "Three greens in a row? Variance. Not strategy.",
-  "Free Credits giveth. The house edge taketh.",
+  "Free Credits giveth. The transaction cost taketh.",
   "Balance is a state. Withdrawable is a constraint.",
   "Each roll is independent. Your psychology is not.",
   "Strategy runs are synchronous. Life is async.",
