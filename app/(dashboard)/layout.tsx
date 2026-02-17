@@ -29,10 +29,22 @@ export default async function DashboardLayout({
   let displayName = needsGuest ? "Guest" : "User";
   let userEmail: string | null = null;
   let isAdmin = false;
-  if (hasSession && session?.user) {
-    displayName = session.user.name ?? session.user.email ?? "User";
-    userEmail = session.user.email ?? null;
-    isAdmin = isAdminEmail(session.user.email);
+  if (hasSession && session?.user?.id) {
+    try {
+      const [u] = await db
+        .select({ name: users.name, email: users.email })
+        .from(users)
+        .where(eq(users.id, session.user.id))
+        .limit(1);
+      const isAgent = u?.email?.endsWith?.("@xpersona.agent") ?? false;
+      displayName = isAgent ? "AI" : (u?.name ?? u?.email ?? "User");
+      userEmail = u?.email ?? null;
+      isAdmin = isAdminEmail(u?.email);
+    } catch {
+      displayName = session.user.name ?? session.user.email ?? "User";
+      userEmail = session.user.email ?? null;
+      isAdmin = isAdminEmail(session.user.email);
+    }
   } else if (hasGuest && userIdFromCookie) {
     try {
       const [u] = await db
