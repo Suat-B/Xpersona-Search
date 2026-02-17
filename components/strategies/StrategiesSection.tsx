@@ -4,9 +4,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { saveStrategyRunPayload } from "@/lib/strategy-run-payload";
-import { CREATIVE_DICE_STRATEGIES } from "@/lib/dice-strategies";
-import type { CreativeStrategy } from "@/lib/dice-strategies";
-import type { DiceStrategyConfig } from "@/lib/strategies";
 import { AdvancedStrategiesSection } from "./AdvancedStrategiesSection";
 
 type StrategyRow = {
@@ -25,21 +22,6 @@ function configSummary(_gameType: string, config: Record<string, unknown>): stri
   const cond = config.condition ?? "?";
   const prog = config.progressionType ?? "flat";
   return `Bet ${amount} @ ${cond} ${target} (${prog})`;
-}
-
-function riskColor(risk: string): string {
-  switch (risk) {
-    case "LOW":
-      return "text-emerald-400 bg-emerald-500/10";
-    case "MEDIUM":
-      return "text-amber-400 bg-amber-500/10";
-    case "HIGH":
-      return "text-red-400 bg-red-500/10";
-    case "CALCULATED":
-      return "text-violet-400 bg-violet-500/10";
-    default:
-      return "text-[var(--text-secondary)] bg-white/5";
-  }
 }
 
 export function StrategiesSection() {
@@ -75,15 +57,6 @@ export function StrategiesSection() {
   useEffect(() => {
     fetchStrategies();
   }, [fetchStrategies]);
-
-  const runWithConfig = useCallback(
-    (config: DiceStrategyConfig, maxRounds: number, strategyName: string) => {
-      setError(null);
-      saveStrategyRunPayload({ config, strategyName, maxRounds });
-      router.push("/games/dice?run=1");
-    },
-    [router]
-  );
 
   const handleRunSaved = useCallback(
     (s: StrategyRow, maxRounds = 20) => {
@@ -132,29 +105,6 @@ export function StrategiesSection() {
           </p>
         </div>
       )}
-
-      {/* Creative strategy grid */}
-      <div data-agent="creative-strategies">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-lg font-semibold text-[var(--text-primary)]" data-agent="header">
-              Preset Strategies
-            </h2>
-            <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-              Ready-to-use strategies with proven configurations
-            </p>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {CREATIVE_DICE_STRATEGIES.map((s) => (
-            <CreativeStrategyCard
-              key={s.id}
-              strategy={s}
-              onRun={(maxRounds) => runWithConfig(toApiConfig(s.config), maxRounds, s.name)}
-            />
-          ))}
-        </div>
-      </div>
 
       {/* My saved strategies */}
       <div>
@@ -226,61 +176,5 @@ export function StrategiesSection() {
         )}
       </div>
     </section>
-  );
-}
-
-function toApiConfig(c: CreativeStrategy["config"]): DiceStrategyConfig {
-  return {
-    amount: c.amount,
-    target: c.target,
-    condition: c.condition,
-    progressionType: c.progressionType ?? "flat",
-  };
-}
-
-function CreativeStrategyCard({
-  strategy,
-  onRun,
-}: {
-  strategy: CreativeStrategy;
-  onRun: (maxRounds: number) => void;
-}) {
-  return (
-    <div
-      className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 hover:border-[var(--accent-heart)]/40 transition-colors"
-      data-agent="strategy-card"
-      data-strategy-id={strategy.id}
-      data-config={JSON.stringify(strategy.config)}
-    >
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-lg" aria-hidden>
-          {strategy.icon}
-        </span>
-        <span className="font-semibold text-[var(--text-primary)]">{strategy.name}</span>
-        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${riskColor(strategy.risk)}`}>
-          {strategy.risk}
-        </span>
-      </div>
-      <p className="text-xs text-[var(--text-secondary)] mb-3 line-clamp-2">{strategy.desc}</p>
-      <p className="text-[10px] text-[var(--text-secondary)]/80 font-mono mb-3">
-        {strategy.config.amount} credits · {strategy.config.target}% {strategy.config.condition}
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => onRun(20)}
-          className="rounded border border-green-500/50 bg-green-500/10 px-2 py-1 text-xs text-green-400 hover:bg-green-500/20"
-        >
-          Run (20)
-        </button>
-        <button
-          type="button"
-          onClick={() => onRun(50)}
-          className="rounded border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-2 py-1 text-xs text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20"
-        >
-          Auto-run (50)
-        </button>
-      </div>
-    </div>
   );
 }
