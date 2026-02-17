@@ -27,14 +27,14 @@ export function AgentBanner() {
       role="status"
       aria-live="polite"
     >
-      Agent/play account —{" "}
+      Want to keep your API key and credits?{" "}
       <Link
         href="/auth/signup?link=agent"
         className="font-medium text-cyan-300 hover:text-cyan-200 hover:underline"
       >
-        Create account
+        Create a permanent account
       </Link>{" "}
-      to persist your API key across sign-outs.
+      to persist them across sign-outs.
     </div>
   );
 }

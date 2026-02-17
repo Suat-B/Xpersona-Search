@@ -85,14 +85,14 @@ function SettingsPageClient() {
               <div className="space-y-2">
                 <p className="text-xs text-amber-400">
                   {user?.accountType === "agent"
-                    ? "Agent/play account — create an account to persist your API key."
-                    : "Guest account — create an account to save your progress."}
+                    ? "You're using a temporary play account. Create a permanent account to keep your API key and credits."
+                    : "You're using a guest account. Create a permanent account to save your progress."}
                 </p>
                 <Link
                   href={linkHref}
                   className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-4 py-2 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
                 >
-                  Create account
+                  Create permanent account
                 </Link>
               </div>
             )}

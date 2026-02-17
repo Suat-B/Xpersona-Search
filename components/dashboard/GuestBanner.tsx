@@ -32,7 +32,7 @@ export function GuestBanner() {
         href="/auth/signup?link=guest"
         className="font-medium text-[var(--accent-heart)] hover:underline"
       >
-        Create account
+        Create permanent account
       </Link>{" "}
       or{" "}
       <Link

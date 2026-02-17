@@ -52,11 +52,11 @@ export function GuestApiWarningBanner() {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-amber-200">
-              Ephemeral account — create one to save your progress
+              You're using a temporary account
             </p>
             <p className="mt-0.5 text-sm text-amber-200/80 leading-relaxed">
-              Your API key works now, but guest and agent accounts are temporary. If you clear cookies or lose
-              your session, you&apos;ll lose access to this key. Create an account to withdraw funds and keep your progress.
+              Your API key works now, but this account is temporary. If you clear cookies or lose
+              your session, you&apos;ll lose access. Create a permanent account to withdraw funds and keep your progress.
             </p>
           </div>
         </div>
@@ -65,7 +65,7 @@ export function GuestApiWarningBanner() {
             href={linkHref}
             className="inline-flex items-center gap-2 rounded-xl bg-amber-500/20 border border-amber-500/30 px-4 py-2.5 text-sm font-medium text-amber-200 hover:bg-amber-500/25 hover:border-amber-500/40 transition-colors"
           >
-            Create account
+            Create permanent account
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
