@@ -14,6 +14,8 @@ interface CommandCenterProps {
   sharpe: number;
   isAutoTrading: boolean;
   onToggleAuto: () => void;
+  /** When true, AI is playing — show Watching AI in status */
+  aiDriving?: boolean;
 }
 
 export function CommandCenter({
@@ -25,6 +27,7 @@ export function CommandCenter({
   sharpe,
   isAutoTrading,
   onToggleAuto,
+  aiDriving = false,
 }: CommandCenterProps) {
   const { hasApiKey: aiConnected } = useAiConnectionStatus();
   const [time, setTime] = useState(new Date());
@@ -84,9 +87,11 @@ export function CommandCenter({
 
         {/* Connection Status */}
         <div className="flex items-center gap-2 px-4 border-l border-[var(--quant-border)]">
-          <div className="quant-status-dot online animate-pulse"></div>
-          <span className="text-[11px] font-medium text-bullish">LIVE</span>
-          <span className="text-[10px] text-[var(--quant-neutral)]">{latency}ms</span>
+          <div className={`quant-status-dot online animate-pulse ${aiDriving ? "bg-violet-400" : ""}`}></div>
+          <span className={`text-[11px] font-medium ${aiDriving ? "text-violet-400" : "text-bullish"}`}>
+            {aiDriving ? "Watching AI" : "LIVE"}
+          </span>
+          {!aiDriving && <span className="text-[10px] text-[var(--quant-neutral)]">{latency}ms</span>}
         </div>
       </div>
 
@@ -171,7 +176,9 @@ export function CommandCenter({
         {/* Auto-Trade Toggle */}
         <button
           onClick={onToggleAuto}
-          className={`quant-btn ${isAutoTrading ? "quant-btn-success" : ""}`}
+          disabled={aiDriving}
+          className={`quant-btn ${isAutoTrading ? "quant-btn-success" : ""} ${aiDriving ? "opacity-50 cursor-not-allowed" : ""}`}
+          title={aiDriving ? "AI is playing — stop watching to enable" : undefined}
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             {isAutoTrading ? (

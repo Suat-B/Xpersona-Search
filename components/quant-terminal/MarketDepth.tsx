@@ -8,9 +8,11 @@ interface MarketDepthProps {
   size: number;
   onExecute: () => void;
   isLoading?: boolean;
+  /** When true, AI is driving — disable Execute */
+  aiDriving?: boolean;
 }
 
-export function MarketDepth({ target, direction, size, onExecute, isLoading = false }: MarketDepthProps) {
+export function MarketDepth({ target, direction, size, onExecute, isLoading = false, aiDriving = false }: MarketDepthProps) {
   const probabilityData = useMemo(() => {
     const steps = 10; // Reduced from 20 to fit better
     const data = [];
@@ -104,10 +106,16 @@ export function MarketDepth({ target, direction, size, onExecute, isLoading = fa
           {/* Execute Button */}
           <button
             onClick={onExecute}
-            disabled={isLoading}
+            disabled={isLoading || aiDriving}
             className="w-full quant-btn quant-btn-primary h-10 text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+            title={aiDriving ? "AI is playing — watch only" : "Execute position"}
           >
-            {isLoading ? (
+            {aiDriving ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse mr-2" />
+                LIVE — AI playing
+              </>
+            ) : isLoading ? (
               <>
                 <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />

@@ -26,6 +26,8 @@ interface AlphaWorkbenchProps {
   runningStrategyId?: string | null;
   /** ID of strategy in nonstop mode (Nonstop button shows "Stop") */
   nonstopStrategyId?: string | null;
+  /** When true, AI is driving — disable Execute and inputs */
+  aiDriving?: boolean;
 }
 
 export function AlphaWorkbench({
@@ -44,6 +46,7 @@ export function AlphaWorkbench({
   onLoadToManual,
   runningStrategyId = null,
   nonstopStrategyId = null,
+  aiDriving = false,
 }: AlphaWorkbenchProps) {
   const [activeTab, setActiveTab] = useState<"manual" | "strategy">("manual");
 
@@ -96,11 +99,11 @@ export function AlphaWorkbench({
             )}
 
             {/* Direction Toggle */}
-            <div className="flex gap-2">
+            <div className={`flex gap-2 ${aiDriving ? "opacity-70 pointer-events-none" : ""}`}>
               {(["over", "under"] as const).map((dir) => (
                 <button
                   key={dir}
-                  onClick={() => onDirectionChange(dir)}
+                  onClick={() => !aiDriving && onDirectionChange(dir)}
                   className={`flex-1 py-2 px-4 rounded text-sm font-bold transition-all ${
                     currentDirection === dir
                       ? dir === "over"
@@ -115,7 +118,7 @@ export function AlphaWorkbench({
             </div>
 
             {/* Target Control */}
-            <div className="space-y-2">
+            <div className={`space-y-2 ${aiDriving ? "opacity-70 pointer-events-none" : ""}`}>
               <div className="flex justify-between items-center">
                 <label className="text-[10px] uppercase tracking-wider text-[var(--quant-neutral)]">
                   Target Threshold
@@ -128,7 +131,8 @@ export function AlphaWorkbench({
                 max="99.99"
                 step="0.01"
                 value={currentTarget}
-                onChange={(e) => onTargetChange(parseFloat(e.target.value))}
+                onChange={(e) => !aiDriving && onTargetChange(parseFloat(e.target.value))}
+                disabled={aiDriving}
                 className="w-full h-2 bg-[var(--quant-bg-card)] rounded-lg appearance-none cursor-pointer"
                 style={{
                   background: `linear-gradient(to right, var(--quant-accent) 0%, var(--quant-accent) ${currentTarget}%, var(--quant-bg-card) ${currentTarget}%, var(--quant-bg-card) 100%)`,
@@ -141,7 +145,7 @@ export function AlphaWorkbench({
             </div>
 
             {/* Size Control */}
-            <div className="space-y-2">
+            <div className={`space-y-2 ${aiDriving ? "opacity-70 pointer-events-none" : ""}`}>
               <div className="flex justify-between items-center">
                 <label className="text-[10px] uppercase tracking-wider text-[var(--quant-neutral)]">
                   Position Size
@@ -150,7 +154,8 @@ export function AlphaWorkbench({
                   <input
                     type="number"
                     value={currentSize}
-                    onChange={(e) => onSizeChange(Math.max(1, parseInt(e.target.value) || 0))}
+                    onChange={(e) => !aiDriving && onSizeChange(Math.max(1, parseInt(e.target.value) || 0))}
+                    disabled={aiDriving}
                     className="quant-input w-24 text-right"
                   />
                   <span className="text-sm text-[var(--quant-neutral)]">U</span>
@@ -160,7 +165,8 @@ export function AlphaWorkbench({
                 {quickSizes.map((size) => (
                   <button
                     key={size}
-                    onClick={() => onSizeChange(size)}
+                    onClick={() => !aiDriving && onSizeChange(size)}
+                    disabled={aiDriving}
                     className={`flex-1 py-1.5 px-2 text-[11px] rounded transition-colors ${
                       currentSize === size
                         ? "bg-[var(--quant-accent)] text-black font-bold"
