@@ -5,7 +5,7 @@
  * House edge (single source of truth):
  * - Dice: DICE_HOUSE_EDGE = 3%
  */
-export const SIGNUP_BONUS = parseInt(process.env.SIGNUP_BONUS ?? "500", 10);
+export const SIGNUP_BONUS = parseInt(process.env.SIGNUP_BONUS ?? "100", 10);
 export const FAUCET_AMOUNT = parseInt(process.env.FAUCET_AMOUNT ?? "100", 10);
 export const FAUCET_COOLDOWN_SECONDS = 3600;
 export const MIN_BET = parseInt(process.env.MIN_BET ?? "1", 10);
