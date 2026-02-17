@@ -46,6 +46,7 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
   const [isLoading, setIsLoading] = useState(false);
   const [runningStrategyId, setRunningStrategyId] = useState<string | null>(null);
   const [nonstopStrategyId, setNonstopStrategyId] = useState<string | null>(null);
+  const [isJsonRunInProgress, setIsJsonRunInProgress] = useState(false);
   const [lastResult, setLastResult] = useState<{ exit: number; win: boolean } | null>(null);
   const lastResultTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nonstopAbortRef = useRef(false);
@@ -410,7 +411,7 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
   // Run saved advanced strategy (single batch)
   const runStrategy = useCallback(
     async (strategyId: string, maxRounds: number) => {
-      if (runningStrategyId) return;
+      if (runningStrategyId || isJsonRunInProgress) return;
       setRunningStrategyId(strategyId);
       addLog("info", `Starting strategy run (${maxRounds} rounds)…`);
       try {
@@ -434,7 +435,7 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
         setRunningStrategyId(null);
       }
     },
-    [runningStrategyId, sessionPnl, addLog, runStrategyBatch]
+    [runningStrategyId, isJsonRunInProgress, sessionPnl, addLog, runStrategyBatch]
   );
 
   // Nonstop autoplay: run strategy in batches until stopped, balance depleted, or stop condition
@@ -509,6 +510,79 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
       addLog("info", `Loaded config: ${amount}U ${condition} ${target}%`);
     },
     [addLog]
+  );
+
+  // Run basic config from JSON tab (inline)
+  const runBasicConfig = useCallback(
+    async (config: { amount: number; target: number; condition: "over" | "under" }, maxRounds: number) => {
+      if (runningStrategyId || isJsonRunInProgress) return;
+      setIsJsonRunInProgress(true);
+      addLog("info", `JSON basic run (${maxRounds} rounds)…`);
+      try {
+        const res = await fetch("/api/games/dice/run-strategy", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ config, maxRounds }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.success && data.data) {
+          const { sessionPnl: stratPnl, finalBalance, roundsPlayed, stoppedReason, winRate } = data.data;
+          setBalance(finalBalance);
+          setSessionPnl((prev) => prev + stratPnl);
+          setEquityData((prev) => [...prev, { time: Date.now(), value: finalBalance, pnl: sessionPnl + stratPnl }]);
+          addLog("fill", `JSON basic: ${roundsPlayed ?? 0}r | PnL ${stratPnl >= 0 ? "+" : ""}$${stratPnl.toFixed(2)} | ${stoppedReason ?? "done"}${winRate != null ? ` | WR ${Number(winRate).toFixed(1)}%` : ""}`);
+          window.dispatchEvent(new Event("balance-updated"));
+        } else {
+          addLog("error", data.message ?? data.error ?? "Strategy run failed");
+        }
+      } catch (err) {
+        addLog("error", "Network error - check connection");
+      } finally {
+        setIsJsonRunInProgress(false);
+      }
+    },
+    [runningStrategyId, isJsonRunInProgress, sessionPnl, addLog]
+  );
+
+  // Run advanced strategy from JSON tab (inline)
+  const runAdvancedStrategyInline = useCallback(
+    async (
+      strategy: {
+        name: string;
+        baseConfig: { amount: number; target: number; condition: "over" | "under" };
+        rules: unknown[];
+      },
+      maxRounds: number
+    ) => {
+      if (runningStrategyId || isJsonRunInProgress) return;
+      setIsJsonRunInProgress(true);
+      addLog("info", `JSON advanced run: ${strategy.name} (${maxRounds} rounds)…`);
+      try {
+        const res = await fetch("/api/games/dice/run-advanced-strategy", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ strategy, maxRounds }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.success && data.data) {
+          const { sessionPnl: stratPnl, finalBalance, roundsPlayed, stoppedReason, winRate } = data.data;
+          setBalance(finalBalance);
+          setSessionPnl((prev) => prev + stratPnl);
+          setEquityData((prev) => [...prev, { time: Date.now(), value: finalBalance, pnl: sessionPnl + stratPnl }]);
+          addLog("fill", `JSON advanced: ${roundsPlayed ?? 0}r | PnL ${stratPnl >= 0 ? "+" : ""}$${stratPnl.toFixed(2)} | ${stoppedReason ?? "done"}${winRate != null ? ` | WR ${Number(winRate).toFixed(1)}%` : ""}`);
+          window.dispatchEvent(new Event("balance-updated"));
+        } else {
+          addLog("error", data.message ?? data.error ?? "Strategy run failed");
+        }
+      } catch (err) {
+        addLog("error", "Network error - check connection");
+      } finally {
+        setIsJsonRunInProgress(false);
+      }
+    },
+    [runningStrategyId, isJsonRunInProgress, sessionPnl, addLog]
   );
 
   // Keyboard shortcuts
@@ -720,6 +794,9 @@ export function QuantDiceGame({ initialBalance: serverBalance }: QuantDiceGamePr
               runningStrategyId={runningStrategyId}
               nonstopStrategyId={nonstopStrategyId}
               aiDriving={aiDriving}
+              onRunBasicConfig={runBasicConfig}
+              onRunAdvancedStrategyInline={runAdvancedStrategyInline}
+              isJsonRunInProgress={isJsonRunInProgress}
             />
           </div>
         </div>

@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { SavedStrategiesWorkbenchPanel } from "./SavedStrategiesWorkbenchPanel";
+import { JsonStrategyWorkbenchPanel } from "./JsonStrategyWorkbenchPanel";
 import type { AdvancedDiceStrategy } from "@/lib/advanced-strategy-types";
+import type { DiceStrategyConfig } from "@/lib/strategies";
 
 interface AlphaWorkbenchProps {
   currentTarget: number;
@@ -28,6 +30,12 @@ interface AlphaWorkbenchProps {
   nonstopStrategyId?: string | null;
   /** When true, AI is driving — disable Execute and inputs */
   aiDriving?: boolean;
+  /** Run basic config from JSON tab (inline) */
+  onRunBasicConfig?: (config: DiceStrategyConfig, maxRounds: number) => Promise<void>;
+  /** Run advanced strategy from JSON tab (inline) */
+  onRunAdvancedStrategyInline?: (strategy: AdvancedDiceStrategy, maxRounds: number) => Promise<void>;
+  /** True when JSON tab strategy run is in progress */
+  isJsonRunInProgress?: boolean;
 }
 
 export function AlphaWorkbench({
@@ -47,8 +55,11 @@ export function AlphaWorkbench({
   runningStrategyId = null,
   nonstopStrategyId = null,
   aiDriving = false,
+  onRunBasicConfig,
+  onRunAdvancedStrategyInline,
+  isJsonRunInProgress = false,
 }: AlphaWorkbenchProps) {
-  const [activeTab, setActiveTab] = useState<"manual" | "strategy">("manual");
+  const [activeTab, setActiveTab] = useState<"manual" | "strategy" | "json">("manual");
 
   const probability = currentDirection === "over" ? (100 - currentTarget) / 100 : currentTarget / 100;
   const multiplier = 1 / probability;
@@ -62,10 +73,10 @@ export function AlphaWorkbench({
         <div className="flex items-center gap-4">
           <span>Alpha Workbench</span>
           <div className="flex items-center gap-1">
-            {["manual", "strategy"].map((tab) => (
+            {(["manual", "strategy", "json"] as const).map((tab) => (
               <button
                 key={tab}
-                onClick={() => setActiveTab(tab as "manual" | "strategy")}
+                onClick={() => setActiveTab(tab)}
                 className={`px-2 py-0.5 text-[10px] rounded transition-colors ${
                   activeTab === tab
                     ? "bg-[var(--quant-accent)] text-black font-bold"
@@ -201,6 +212,18 @@ export function AlphaWorkbench({
               </div>
             </div>
           </div>
+        ) : activeTab === "json" ? (
+          <JsonStrategyWorkbenchPanel
+            onRunBasicConfig={onRunBasicConfig ?? (async () => {})}
+            onRunAdvancedStrategy={onRunAdvancedStrategyInline ?? (async () => {})}
+            currentConfig={{
+              amount: currentSize,
+              target: currentTarget,
+              condition: currentDirection,
+            }}
+            isRunning={isJsonRunInProgress}
+            aiDriving={aiDriving}
+          />
         ) : onRunStrategy ? (
           <SavedStrategiesWorkbenchPanel
             onRun={onRunStrategy}
