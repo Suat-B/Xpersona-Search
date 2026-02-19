@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { TradingErrorBanner } from "@/components/trading/TradingErrorBanner";
 
 interface StrategyData {
   id: string;
@@ -85,7 +86,7 @@ export default function EditStrategyPage() {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Strategy not found</h1>
-        <Link href="/trading/developer" className="text-sm text-[#30d158] hover:underline">
+        <Link href="/trading/developer" className="text-sm text-[#30d158] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 rounded">
           Back to Developer Dashboard
         </Link>
       </div>
@@ -94,6 +95,9 @@ export default function EditStrategyPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      {error && (
+        <TradingErrorBanner message={error} onDismiss={() => setError(null)} />
+      )}
       <header>
         <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Edit strategy</h1>
         <p className="mt-1 text-sm text-[var(--dash-text-secondary)]">
@@ -109,7 +113,7 @@ export default function EditStrategyPage() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={100}
-            className="w-full rounded-xl border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-4 py-3 text-[var(--text-primary)]"
+            className="w-full rounded-xl border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-4 py-3 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#30d158]/50 focus:border-[#30d158]/50"
           />
         </div>
         <div>
@@ -118,7 +122,7 @@ export default function EditStrategyPage() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
-            className="w-full rounded-xl border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-4 py-3 text-[var(--text-primary)]"
+            className="w-full rounded-xl border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-4 py-3 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#30d158]/50 focus:border-[#30d158]/50"
           />
         </div>
         <div>
@@ -132,7 +136,7 @@ export default function EditStrategyPage() {
               step={0.01}
               value={(priceMonthlyCents / 100).toFixed(2)}
               onChange={(e) => setPriceMonthlyCents(Math.round(parseFloat(e.target.value || "0") * 100))}
-              className="w-32 rounded-xl border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-4 py-3 text-[var(--text-primary)]"
+              className="w-32 rounded-xl border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-4 py-3 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#30d158]/50 focus:border-[#30d158]/50"
             />
             <span className="text-[var(--dash-text-secondary)]">/mo</span>
           </div>
@@ -143,23 +147,22 @@ export default function EditStrategyPage() {
             id="isActive"
             checked={isActive}
             onChange={(e) => setIsActive(e.target.checked)}
-            className="rounded border-[var(--dash-divider)]"
+            className="rounded border-[var(--dash-divider)] focus:ring-2 focus:ring-[#30d158]/50"
           />
           <label htmlFor="isActive" className="text-sm font-medium text-[var(--text-primary)]">
             Active (visible on marketplace)
           </label>
         </div>
-        {error && <p className="text-sm text-red-400">{error}</p>}
         <button
           type="submit"
           disabled={saving}
-          className="inline-flex items-center gap-2 rounded-full bg-[#30d158] px-6 py-3 text-sm font-semibold text-white hover:bg-[#30d158]/90 disabled:opacity-50 transition-all"
+          className="inline-flex items-center gap-2 rounded-full bg-[#30d158] px-6 py-3 text-sm font-semibold text-white hover:bg-[#30d158]/90 disabled:opacity-50 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--dash-bg)]"
         >
           {saving ? "Saving…" : "Save changes"}
         </button>
       </form>
 
-      <Link href="/trading/developer" className="text-sm text-[var(--dash-text-secondary)] hover:text-[#30d158] transition-colors">
+      <Link href="/trading/developer" className="text-sm text-[var(--dash-text-secondary)] hover:text-[#30d158] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 rounded">
         ← Back to Developer Dashboard
       </Link>
     </div>

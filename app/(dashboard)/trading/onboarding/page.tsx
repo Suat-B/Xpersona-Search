@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { TradingErrorBanner } from "@/components/trading/TradingErrorBanner";
 
 export default function OnboardingPage() {
   const searchParams = useSearchParams();
   const success = searchParams.get("success") === "1";
   const refresh = searchParams.get("refresh") === "1";
   const [mounted, setMounted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -24,6 +26,9 @@ export default function OnboardingPage() {
         </h1>
       </header>
 
+      {error && (
+        <TradingErrorBanner message={error} onDismiss={() => setError(null)} />
+      )}
       <div className="agent-card p-8 border-[var(--dash-divider)] max-w-md">
         {success ? (
           <>
@@ -38,7 +43,7 @@ export default function OnboardingPage() {
             </p>
             <Link
               href="/trading/developer"
-              className="inline-flex items-center gap-2 rounded-full bg-[#30d158] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#30d158]/90 transition-all"
+              className="inline-flex items-center gap-2 rounded-full bg-[#30d158] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#30d158]/90 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--dash-bg)]"
             >
               Go to Developer Dashboard
             </Link>
@@ -50,14 +55,16 @@ export default function OnboardingPage() {
             </p>
             <button
               onClick={() => {
+                setError(null);
                 fetch("/api/trading/developer/onboard", { method: "POST", credentials: "include" })
                   .then((r) => r.json())
                   .then((d) => {
                     if (d.success && d.data?.url) window.location.href = d.data.url;
-                    else alert("Failed to get link");
-                  });
+                    else setError(d.message ?? "Failed to get link");
+                  })
+                  .catch(() => setError("Failed to get link"));
               }}
-              className="inline-flex items-center gap-2 rounded-full bg-[#30d158] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#30d158]/90 transition-all"
+              className="inline-flex items-center gap-2 rounded-full bg-[#30d158] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#30d158]/90 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--dash-bg)]"
             >
               Continue onboarding
             </button>
@@ -69,7 +76,7 @@ export default function OnboardingPage() {
             </p>
             <Link
               href="/trading/developer"
-              className="inline-flex items-center gap-2 rounded-full border border-[var(--dash-divider)] px-5 py-2.5 text-sm font-medium text-[var(--text-primary)] hover:bg-white/5 transition-all"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--dash-divider)] px-5 py-2.5 text-sm font-medium text-[var(--text-primary)] hover:bg-white/5 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--dash-bg)]"
             >
               Developer Dashboard
             </Link>
@@ -77,7 +84,7 @@ export default function OnboardingPage() {
         )}
       </div>
 
-      <Link href="/trading" className="text-sm text-[var(--dash-text-secondary)] hover:text-[#30d158] transition-colors">
+      <Link href="/trading" className="text-sm text-[var(--dash-text-secondary)] hover:text-[#30d158] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 rounded">
         ← Back to Trading
       </Link>
     </div>

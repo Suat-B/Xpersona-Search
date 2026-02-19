@@ -12,7 +12,10 @@ export function StrategyCard({ id, name, description, priceMonthlyCents, develop
   const price = (priceMonthlyCents / 100).toFixed(2);
 
   return (
-    <Link href={`/trading/strategy/${id}`} className="group block">
+    <Link
+      href={`/trading/strategy/${id}`}
+      className="group block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--dash-bg)]"
+    >
       <div className="agent-card p-5 transition-all duration-300 group-hover:scale-[1.02] border-[var(--dash-divider)] hover:border-[#30d158]/30 h-full flex flex-col">
         <h3 className="font-semibold text-[var(--text-primary)] group-hover:text-[#30d158] transition-colors">
           {name}

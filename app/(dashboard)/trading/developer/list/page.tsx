@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { TradingErrorBanner } from "@/components/trading/TradingErrorBanner";
 
 interface AdvancedStrategy {
   id: string;
@@ -86,6 +87,9 @@ export default function ListStrategyPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      {error && (
+        <TradingErrorBanner message={error} onDismiss={() => setError(null)} />
+      )}
       <header>
         <h1 className="text-2xl font-semibold text-[var(--text-primary)]">List a strategy</h1>
         <p className="mt-1 text-sm text-[var(--dash-text-secondary)]">
@@ -101,7 +105,7 @@ export default function ListStrategyPage() {
             </p>
             <Link
               href="/dashboard/strategies"
-              className="inline-flex items-center gap-2 text-sm font-medium text-[#0ea5e9] hover:underline"
+              className="inline-flex items-center gap-2 text-sm font-medium text-[#0ea5e9] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0ea5e9]/50 rounded"
             >
               Go to Strategies
             </Link>
@@ -113,7 +117,7 @@ export default function ListStrategyPage() {
               <select
                 value={selectedId}
                 onChange={(e) => setSelectedId(e.target.value)}
-                className="w-full rounded-xl border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-4 py-3 text-[var(--text-primary)]"
+                className="w-full rounded-xl border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-4 py-3 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#30d158]/50 focus:border-[#30d158]/50"
               >
                 {strategies.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -129,7 +133,7 @@ export default function ListStrategyPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 maxLength={100}
-                className="w-full rounded-xl border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-4 py-3 text-[var(--text-primary)]"
+                className="w-full rounded-xl border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-4 py-3 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#30d158]/50 focus:border-[#30d158]/50"
                 placeholder="e.g. AlphaBreak Martingale"
               />
             </div>
@@ -139,7 +143,7 @@ export default function ListStrategyPage() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
-                className="w-full rounded-xl border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-4 py-3 text-[var(--text-primary)]"
+                className="w-full rounded-xl border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-4 py-3 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#30d158]/50 focus:border-[#30d158]/50"
                 placeholder="Brief description for the marketplace"
               />
             </div>
@@ -154,19 +158,16 @@ export default function ListStrategyPage() {
                   step={0.01}
                   value={(priceMonthlyCents / 100).toFixed(2)}
                   onChange={(e) => setPriceMonthlyCents(Math.round(parseFloat(e.target.value || "0") * 100))}
-                  className="w-32 rounded-xl border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-4 py-3 text-[var(--text-primary)]"
+                  className="w-32 rounded-xl border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-4 py-3 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#30d158]/50 focus:border-[#30d158]/50"
                 />
                 <span className="text-[var(--dash-text-secondary)]">/mo</span>
               </div>
               <p className="mt-1 text-xs text-[var(--dash-text-secondary)]">$9.99 – $999</p>
             </div>
-            {error && (
-              <p className="text-sm text-red-400">{error}</p>
-            )}
             <button
               type="submit"
               disabled={submitting}
-              className="inline-flex items-center gap-2 rounded-full bg-[#30d158] px-6 py-3 text-sm font-semibold text-white hover:bg-[#30d158]/90 disabled:opacity-50 transition-all"
+              className="inline-flex items-center gap-2 rounded-full bg-[#30d158] px-6 py-3 text-sm font-semibold text-white hover:bg-[#30d158]/90 disabled:opacity-50 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--dash-bg)]"
             >
               {submitting ? "Listing…" : "List strategy"}
             </button>
@@ -174,7 +175,7 @@ export default function ListStrategyPage() {
         )}
       </form>
 
-      <Link href="/trading/developer" className="text-sm text-[var(--dash-text-secondary)] hover:text-[#30d158] transition-colors">
+      <Link href="/trading/developer" className="text-sm text-[var(--dash-text-secondary)] hover:text-[#30d158] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 rounded">
         ← Back to Developer Dashboard
       </Link>
     </div>

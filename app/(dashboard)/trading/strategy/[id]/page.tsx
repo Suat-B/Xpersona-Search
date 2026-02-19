@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { StrategyDetailSkeleton } from "@/components/trading/StrategyDetailSkeleton";
+import { TradingErrorBanner } from "@/components/trading/TradingErrorBanner";
 
 interface StrategyDetail {
   id: string;
@@ -21,6 +23,7 @@ export default function StrategyDetailPage() {
   const [strategy, setStrategy] = useState<StrategyDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [subscribing, setSubscribing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -34,6 +37,7 @@ export default function StrategyDetailPage() {
   }, [id]);
 
   const handleSubscribe = async () => {
+    setError(null);
     setSubscribing(true);
     try {
       const res = await fetch("/api/trading/subscribe", {
@@ -47,9 +51,9 @@ export default function StrategyDetailPage() {
         window.location.href = data.data.url;
         return;
       }
-      alert(data.message ?? "Failed to start checkout");
+      setError(data.message ?? "Failed to start checkout");
     } catch {
-      alert("Failed to start checkout");
+      setError("Failed to start checkout");
     } finally {
       setSubscribing(false);
     }
@@ -57,9 +61,11 @@ export default function StrategyDetailPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Strategy</h1>
-        <p className="text-[var(--dash-text-secondary)]">Loading…</p>
+      <div className="space-y-6 animate-in fade-in duration-500">
+        <Link href="/trading" className="text-sm text-[var(--dash-text-secondary)] hover:text-[var(--trading-primary)] transition-colors mb-2 inline-block focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 focus-visible:ring-offset-2 rounded">
+          ← Back to marketplace
+        </Link>
+        <StrategyDetailSkeleton />
       </div>
     );
   }
@@ -68,7 +74,7 @@ export default function StrategyDetailPage() {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Strategy not found</h1>
-        <Link href="/trading" className="text-sm text-[#30d158] hover:underline">
+        <Link href="/trading" className="text-sm text-[#30d158] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 focus-visible:ring-offset-2 rounded">
           Back to marketplace
         </Link>
       </div>
@@ -79,8 +85,11 @@ export default function StrategyDetailPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      {error && (
+        <TradingErrorBanner message={error} onDismiss={() => setError(null)} />
+      )}
       <header>
-        <Link href="/trading" className="text-sm text-[var(--dash-text-secondary)] hover:text-[#30d158] transition-colors mb-2 inline-block">
+        <Link href="/trading" className="text-sm text-[var(--dash-text-secondary)] hover:text-[#30d158] transition-colors mb-2 inline-block focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 focus-visible:ring-offset-2 rounded">
           ← Back to marketplace
         </Link>
         <h1 className="text-2xl sm:text-3xl font-semibold text-[var(--text-primary)]">
@@ -104,7 +113,7 @@ export default function StrategyDetailPage() {
             <button
               onClick={handleSubscribe}
               disabled={subscribing}
-              className="inline-flex items-center gap-2 rounded-full bg-[#30d158] px-6 py-3 text-sm font-semibold text-white hover:bg-[#30d158]/90 disabled:opacity-50 transition-all"
+              className="inline-flex items-center gap-2 rounded-full bg-[#30d158] px-6 py-3 text-sm font-semibold text-white hover:bg-[#30d158]/90 disabled:opacity-50 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--dash-bg)]"
             >
               {subscribing ? "Redirecting…" : "Subscribe"}
             </button>

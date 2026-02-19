@@ -120,6 +120,11 @@
     --dash-text-secondary: #a0a0a0;
     --dash-btn-bg: #383838;
     --dash-radius: 10px;
+
+    /* Trading section (marketplace, developer dashboard) */
+    --trading-primary: #30d158;
+    --trading-primary-muted: rgba(48, 209, 88, 0.2);
+    --trading-border: rgba(48, 209, 88, 0.3);
   }
 }
 

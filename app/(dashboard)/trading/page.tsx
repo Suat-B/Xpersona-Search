@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { StrategyCard } from "@/components/trading/StrategyCard";
+import { StrategyCardSkeleton } from "@/components/trading/StrategyCardSkeleton";
 
 interface MarketplaceStrategy {
   id: string;
@@ -51,7 +52,7 @@ export default function TradingPage() {
           </div>
           <Link
             href="/trading/developer"
-            className="shrink-0 inline-flex items-center gap-2 rounded-full border border-[#30d158]/30 bg-[#30d158]/10 px-5 py-2.5 text-sm font-medium text-[#30d158] hover:bg-[#30d158]/20 transition-all duration-200"
+            className="shrink-0 inline-flex items-center gap-2 rounded-full border border-[#30d158]/30 bg-[#30d158]/10 px-5 py-2.5 text-sm font-medium text-[#30d158] hover:bg-[#30d158]/20 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--dash-bg)]"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
@@ -62,7 +63,11 @@ export default function TradingPage() {
       </header>
 
       {loading ? (
-        <p className="text-[var(--dash-text-secondary)]">Loading marketplace…</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <StrategyCardSkeleton key={i} />
+          ))}
+        </div>
       ) : strategies.length === 0 ? (
         <div className="agent-card p-8 border-[var(--dash-divider)]">
           <h2 className="font-semibold text-[var(--text-primary)] text-lg mb-2">No strategies yet</h2>
@@ -71,7 +76,7 @@ export default function TradingPage() {
           </p>
           <Link
             href="/trading/developer"
-            className="inline-flex items-center gap-2 rounded-full bg-[#30d158] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#30d158]/90 transition-all"
+            className="inline-flex items-center gap-2 rounded-full bg-[#30d158] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#30d158]/90 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--dash-bg)]"
           >
             List a strategy
           </Link>
@@ -92,7 +97,10 @@ export default function TradingPage() {
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4">
-        <Link href="/trading/developer" className="group block">
+        <Link
+          href="/trading/developer"
+          className="group block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--dash-bg)]"
+        >
           <div className="agent-card p-5 transition-all duration-300 group-hover:scale-[1.01] border-[var(--dash-divider)] hover:border-[#30d158]/30">
             <h3 className="font-semibold text-[var(--text-primary)] group-hover:text-[#30d158] transition-colors">
               List a strategy
@@ -102,7 +110,10 @@ export default function TradingPage() {
             </p>
           </div>
         </Link>
-        <Link href="/dashboard/strategies" className="group block">
+        <Link
+          href="/dashboard/strategies"
+          className="group block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0ea5e9]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--dash-bg)]"
+        >
           <div className="agent-card p-5 transition-all duration-300 group-hover:scale-[1.01] border-[var(--dash-divider)] hover:border-[#0ea5e9]/30">
             <h3 className="font-semibold text-[var(--text-primary)] group-hover:text-[#0ea5e9] transition-colors">
               Your strategies
