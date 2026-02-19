@@ -54,10 +54,17 @@ export async function POST(request: Request) {
       });
       accountId = account.id;
 
-      await db.insert(marketplaceDevelopers).values({
-        userId: authResult.user.id,
-        stripeAccountId: accountId,
-      });
+      if (existing) {
+        await db
+          .update(marketplaceDevelopers)
+          .set({ stripeAccountId: accountId, updatedAt: new Date() })
+          .where(eq(marketplaceDevelopers.id, existing.id));
+      } else {
+        await db.insert(marketplaceDevelopers).values({
+          userId: authResult.user.id,
+          stripeAccountId: accountId,
+        });
+      }
     }
 
     const accountLink = await stripe.accountLinks.create({
@@ -79,9 +86,26 @@ export async function POST(request: Request) {
         { status: 502 }
       );
     }
+    if (err && typeof err === "object" && "code" in err) {
+      const pgErr = err as { code?: string; message?: string };
+      if (pgErr.code === "23505") {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "DUPLICATE",
+            message: "You already have a developer account. Please refresh and try again.",
+          },
+          { status: 409 }
+        );
+      }
+    }
     console.error("[trading/developer/onboard]", err);
     return NextResponse.json(
-      { success: false, error: "INTERNAL_ERROR", message: "Onboarding failed. Please try again." },
+      {
+        success: false,
+        error: "INTERNAL_ERROR",
+        message: "Onboarding failed. Please try again.",
+      },
       { status: 500 }
     );
   }

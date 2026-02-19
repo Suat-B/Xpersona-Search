@@ -88,14 +88,15 @@ export default function DeveloperDashboardPage() {
         method: "POST",
         credentials: "include",
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (data.success && data.data?.url) {
         window.location.href = data.data.url;
         return;
       }
-      setError(data.message ?? "Failed to start onboarding");
+      const msg = data.message ?? data.error ?? "Failed to start onboarding";
+      setError(msg);
     } catch {
-      setError("Failed to start onboarding");
+      setError("Network error. Check your connection and try again.");
     } finally {
       setOnboarding(false);
     }
