@@ -3,11 +3,14 @@ import { cookies } from "next/headers";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import { HomeHero } from "@/components/home/HomeHero";
 import { HomeHub } from "@/components/home/HomeHub";
+import { HomeStrategies } from "@/components/home/HomeStrategies";
+import { HomeFlow } from "@/components/home/HomeFlow";
+import { HomeTrust } from "@/components/home/HomeTrust";
+import { HomeSignalPreview } from "@/components/home/HomeSignalPreview";
+import { HomePricing } from "@/components/home/HomePricing";
+import { HomeDeveloperCTA } from "@/components/home/HomeDeveloperCTA";
+import { Footer } from "@/components/home/Footer";
 
-/**
- * Home page (/) — marketing for unauthenticated, hub for authenticated.
- * Layout: (marketing) provides HomeMinimalHeader or DashboardChrome based on auth.
- */
 export default async function HomePage() {
   let session = null;
   try {
@@ -20,12 +23,23 @@ export default async function HomePage() {
   const isAuthenticated = !!(session?.user || userIdFromCookie);
 
   return (
-    <div className="space-y-12 sm:space-y-16">
-      {isAuthenticated ? (
-        <HomeHub />
-      ) : (
-        <HomeHero />
-      )}
+    <div className="min-h-screen flex flex-col">
+      <div className="flex-1">
+        {isAuthenticated ? (
+          <HomeHub />
+        ) : (
+          <>
+            <HomeHero />
+            <HomeStrategies />
+            <HomeFlow />
+            <HomeTrust />
+            <HomeSignalPreview />
+            <HomePricing />
+            <HomeDeveloperCTA />
+          </>
+        )}
+      </div>
+      <Footer />
     </div>
   );
 }
