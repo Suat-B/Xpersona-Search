@@ -348,6 +348,12 @@ export default function DashboardPage() {
         <div className="flex flex-col gap-6">
           {/* Nav links — single row, consistent spacing */}
           <nav className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+            <Link href="/" className="text-[var(--dash-text-secondary)] hover:text-[#0ea5e9] transition-colors">
+              Home
+            </Link>
+            <Link href="/trading" className="text-[var(--dash-text-secondary)] hover:text-[#30d158] transition-colors">
+              Trading
+            </Link>
             <Link href="/games/dice" className="text-[var(--dash-text-secondary)] hover:text-[#0ea5e9] transition-colors">
               Open Game
             </Link>

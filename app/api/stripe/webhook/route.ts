@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { db } from "@/lib/db";
-import { stripeEvents, users, deposits } from "@/lib/db/schema";
+import {
+  stripeEvents,
+  users,
+  deposits,
+  marketplaceStrategies,
+  marketplaceDevelopers,
+  marketplaceSubscriptions,
+} from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
 function getStripe() {
@@ -37,6 +44,45 @@ export async function POST(request: Request) {
     const session = event.data.object as Stripe.Checkout.Session;
     const userId = session.metadata?.userId;
     const creditsStr = session.metadata?.credits;
+    const strategyId = session.metadata?.strategyId;
+
+    if (session.mode === "subscription" && strategyId && userId) {
+      const subId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
+      if (subId) {
+        try {
+          await db.insert(marketplaceSubscriptions).values({
+            userId,
+            strategyId,
+            stripeSubscriptionId: subId,
+            status: "active",
+          });
+          const [strategy] = await db
+            .select({ developerId: marketplaceStrategies.developerId })
+            .from(marketplaceStrategies)
+            .where(eq(marketplaceStrategies.id, strategyId))
+            .limit(1);
+          if (strategy) {
+            const [dev] = await db
+              .select({ subscriberCount: marketplaceDevelopers.subscriberCount })
+              .from(marketplaceDevelopers)
+              .where(eq(marketplaceDevelopers.id, strategy.developerId))
+              .limit(1);
+            const nextCount = (dev?.subscriberCount ?? 0) + 1;
+            await db
+              .update(marketplaceDevelopers)
+              .set({ subscriberCount: nextCount, updatedAt: new Date() })
+              .where(eq(marketplaceDevelopers.id, strategy.developerId));
+          }
+        } catch (insertErr: unknown) {
+          const msg = insertErr && typeof (insertErr as Error).message === "string" ? (insertErr as Error).message : "";
+          if (!msg.includes("unique") && !msg.includes("duplicate")) {
+            console.error("[webhook] marketplace subscription insert:", insertErr);
+          }
+        }
+      }
+      return NextResponse.json({ received: true });
+    }
+
     if (!userId || !creditsStr) {
       console.error("Webhook missing metadata userId or credits", event.id);
       return NextResponse.json({ received: true });

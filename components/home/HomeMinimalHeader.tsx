@@ -26,6 +26,12 @@ export function HomeMinimalHeader() {
         </Link>
         <div className="flex items-center gap-2 sm:gap-3">
           <Link
+            href="/trading"
+            className="hidden sm:inline-flex items-center gap-2 rounded-full border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/5 hover:border-[var(--accent-heart)]/50 transition-all duration-200"
+          >
+            Trading
+          </Link>
+          <Link
             href="/auth/signin"
             className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/5 hover:border-[var(--accent-heart)]/50 transition-all duration-200"
           >

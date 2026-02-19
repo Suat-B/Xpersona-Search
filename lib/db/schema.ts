@@ -372,6 +372,70 @@ export const advancedStrategies = pgTable(
   ]
 );
 
+// Marketplace: Stripe Connect developers who list strategies for sale
+export const marketplaceDevelopers = pgTable(
+  "marketplace_developers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    stripeAccountId: varchar("stripe_account_id", { length: 255 }).unique(),
+    stripeOnboardingComplete: boolean("stripe_onboarding_complete").default(false),
+    subscriberCount: integer("subscriber_count").notNull().default(0),
+    rating: doublePrecision("rating"),
+    feeTier: varchar("fee_tier", { length: 20 }).notNull().default("newcomer"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [uniqueIndex("marketplace_developers_user_id_idx").on(table.userId)]
+);
+
+// Marketplace strategies (sellable) — developer-set price, platform takes cut
+export const marketplaceStrategies = pgTable(
+  "marketplace_strategies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    developerId: uuid("developer_id")
+      .notNull()
+      .references(() => marketplaceDevelopers.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 100 }).notNull(),
+    description: text("description"),
+    strategySnapshot: jsonb("strategy_snapshot").notNull(),
+    priceMonthlyCents: integer("price_monthly_cents").notNull(),
+    priceYearlyCents: integer("price_yearly_cents"),
+    platformFeePercent: integer("platform_fee_percent").notNull().default(20),
+    isActive: boolean("is_active").default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("marketplace_strategies_developer_id_idx").on(table.developerId),
+    index("marketplace_strategies_is_active_idx").on(table.isActive),
+  ]
+);
+
+// Subscriptions: who bought which strategy
+export const marketplaceSubscriptions = pgTable(
+  "marketplace_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    strategyId: uuid("strategy_id")
+      .notNull()
+      .references(() => marketplaceStrategies.id, { onDelete: "restrict" }),
+    stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }).unique(),
+    status: varchar("status", { length: 20 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("marketplace_subscriptions_user_id_idx").on(table.userId),
+    index("marketplace_subscriptions_strategy_id_idx").on(table.strategyId),
+  ]
+);
+
 // AI strategy harvest — captures every strategy AI agents create or run, for data/training
 export const aiStrategyHarvest = pgTable(
   "ai_strategy_harvest",
