@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { TradingErrorBanner } from "@/components/trading/TradingErrorBanner";
 
 interface AdvancedStrategy {
@@ -11,6 +12,8 @@ interface AdvancedStrategy {
 }
 
 export default function ListStrategyPage() {
+  const searchParams = useSearchParams();
+  const preselectedId = searchParams.get("selectedId");
   const [strategies, setStrategies] = useState<AdvancedStrategy[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState("");
@@ -27,7 +30,8 @@ export default function ListStrategyPage() {
         const list = res.data?.strategies ?? res.data;
         if (res.success && Array.isArray(list)) {
           setStrategies(list);
-          const first = list[0];
+          const preselected = preselectedId && list.find((s: AdvancedStrategy) => s.id === preselectedId);
+          const first = preselected ?? list[0];
           if (first) {
             setSelectedId(first.id);
             setName(first.name);
@@ -37,7 +41,7 @@ export default function ListStrategyPage() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, []);
+  }, [preselectedId]);
 
   useEffect(() => {
     const s = strategies.find((x) => x.id === selectedId);

@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 /**
- * Hub for authenticated users — Casino and Trading entry cards.
+ * Hub for authenticated users — Game and Trading entry cards.
  */
 export function HomeHub() {
   return (
@@ -22,7 +22,7 @@ export function HomeHub() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Casino */}
+        {/* Game */}
         <Link
           href="/dashboard"
           className="group block"
@@ -37,7 +37,7 @@ export function HomeHub() {
               </div>
               <div className="min-w-0 flex-1">
                 <h2 className="font-semibold text-[var(--text-primary)] text-xl group-hover:text-[#0ea5e9] transition-all">
-                  Casino
+                  Game
                 </h2>
                 <p className="mt-1.5 text-sm text-[var(--dash-text-secondary)]">
                   Play dice, manage credits, run strategies. Deposit, withdraw, connect AI.

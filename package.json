@@ -16,6 +16,7 @@
     "setup:google": "node scripts/setup-google-auth.mjs",
     "setup:stripe": "node scripts/setup-stripe.mjs",
     "seed": "tsx scripts/seed-packages.ts",
+    "seed:marketplace": "tsx scripts/seed-marketplace-strategies.ts",
     "db:backfill-agent-ids": "tsx scripts/backfill-agent-ids.ts",
     "db:backfill-deposits": "tsx scripts/backfill-deposits.ts",
     "db:add-account-type": "tsx scripts/add-account-type-column.ts",

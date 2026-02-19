@@ -406,6 +406,15 @@ export const marketplaceStrategies = pgTable(
     priceYearlyCents: integer("price_yearly_cents"),
     platformFeePercent: integer("platform_fee_percent").notNull().default(20),
     isActive: boolean("is_active").default(false),
+    sharpeRatio: doublePrecision("sharpe_ratio"),
+    maxDrawdownPercent: doublePrecision("max_drawdown_percent"),
+    winRate: doublePrecision("win_rate"),
+    tradeCount: integer("trade_count"),
+    paperTradingDays: integer("paper_trading_days"),
+    riskLabel: varchar("risk_label", { length: 20 }), // conservative | moderate | aggressive
+    liveTrackRecordDays: integer("live_track_record_days"),
+    category: varchar("category", { length: 20 }), // crypto | forex | stocks | futures | options
+    timeframe: varchar("timeframe", { length: 20 }), // scalping | day | swing
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
@@ -463,5 +472,94 @@ export const aiStrategyHarvest = pgTable(
     index("ai_strategy_harvest_agent_id_idx").on(table.agentId),
     index("ai_strategy_harvest_harvested_at_idx").on(table.harvestedAt),
     index("ai_strategy_harvest_strategy_type_idx").on(table.strategyType),
+  ]
+);
+
+// Strategy performance snapshots — for charts and historical metrics
+export const strategyPerformanceSnapshots = pgTable(
+  "strategy_performance_snapshots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    strategyId: uuid("strategy_id")
+      .notNull()
+      .references(() => marketplaceStrategies.id, { onDelete: "cascade" }),
+    sharpeRatio: doublePrecision("sharpe_ratio"),
+    maxDrawdownPercent: doublePrecision("max_drawdown_percent"),
+    winRate: doublePrecision("win_rate"),
+    tradeCount: integer("trade_count").notNull().default(0),
+    snapshotAt: timestamp("snapshot_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("strategy_performance_snapshots_strategy_id_idx").on(table.strategyId),
+  ]
+);
+
+// AI tournament sessions — spectator AI vs AI battles
+export const aiTournamentSessions = pgTable(
+  "ai_tournament_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    status: varchar("status", { length: 20 }).notNull().default("pending"), // pending | running | completed
+    winnerParticipantId: uuid("winner_participant_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [index("ai_tournament_sessions_status_idx").on(table.status)]
+);
+
+// AI tournament participants — each AI agent in a tournament
+export const aiTournamentParticipants = pgTable(
+  "ai_tournament_participants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => aiTournamentSessions.id, { onDelete: "cascade" }),
+    agentId: varchar("agent_id", { length: 20 }).notNull(),
+    strategySnapshot: jsonb("strategy_snapshot").notNull(),
+    finalPnL: doublePrecision("final_pnl"),
+    finalSharpe: doublePrecision("final_sharpe"),
+    rank: integer("rank"),
+  },
+  (table) => [
+    index("ai_tournament_participants_session_id_idx").on(table.sessionId),
+  ]
+);
+
+// User signal delivery preferences — Discord, webhook, email
+export const userSignalPreferences = pgTable(
+  "user_signal_preferences",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    discordWebhookUrl: text("discord_webhook_url"),
+    email: varchar("email", { length: 255 }),
+    webhookUrl: text("webhook_url"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [uniqueIndex("user_signal_preferences_user_id_idx").on(table.userId)]
+);
+
+// Signal delivery audit trail
+export const signalDeliveryLogs = pgTable(
+  "signal_delivery_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    strategyId: uuid("strategy_id")
+      .notNull()
+      .references(() => marketplaceStrategies.id, { onDelete: "restrict" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    channel: varchar("channel", { length: 30 }).notNull(), // discord | email | webhook
+    payload: jsonb("payload"),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("signal_delivery_logs_strategy_id_idx").on(table.strategyId),
+    index("signal_delivery_logs_user_id_idx").on(table.userId),
   ]
 );

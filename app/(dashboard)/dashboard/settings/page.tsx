@@ -5,6 +5,88 @@ import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
 
+function SignalPreferencesSection() {
+  const [discordWebhookUrl, setDiscordWebhookUrl] = useState("");
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/me/signal-preferences", { credentials: "include" })
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success && res.data) {
+          setDiscordWebhookUrl(res.data.discordWebhookUrl ?? "");
+          setWebhookUrl(res.data.webhookUrl ?? "");
+        }
+      });
+  }, []);
+
+  const handleSave = () => {
+    setSaving(true);
+    setSaved(false);
+    fetch("/api/me/signal-preferences", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        discordWebhookUrl: discordWebhookUrl.trim() || null,
+        webhookUrl: webhookUrl.trim() || null,
+      }),
+    })
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success) setSaved(true);
+      })
+      .finally(() => setSaving(false));
+  };
+
+  return (
+    <GlassCard className="p-5">
+      <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
+        Signal Delivery
+      </h2>
+      <p className="text-sm text-[var(--text-secondary)] mb-4">
+        Configure where to receive strategy signals (Discord webhook, custom webhook).
+      </p>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+            Discord Webhook URL
+          </label>
+          <input
+            type="url"
+            value={discordWebhookUrl}
+            onChange={(e) => setDiscordWebhookUrl(e.target.value)}
+            placeholder="https://discord.com/api/webhooks/..."
+            className="w-full rounded-lg border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#30d158]/50"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+            Custom Webhook URL
+          </label>
+          <input
+            type="url"
+            value={webhookUrl}
+            onChange={(e) => setWebhookUrl(e.target.value)}
+            placeholder="https://your-server.com/signals"
+            className="w-full rounded-lg border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#30d158]/50"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="rounded-full bg-[#30d158] px-4 py-2 text-sm font-medium text-white hover:bg-[#30d158]/90 disabled:opacity-50"
+        >
+          {saving ? "Saving…" : saved ? "Saved" : "Save"}
+        </button>
+      </div>
+    </GlassCard>
+  );
+}
+
 type UserData = {
   id: string;
   email: string | null;
@@ -105,6 +187,9 @@ function SettingsPageClient() {
           </p>
         )}
       </GlassCard>
+
+      {/* Signal Preferences */}
+      <SignalPreferencesSection />
 
       {/* API Key */}
       <div className="space-y-3">

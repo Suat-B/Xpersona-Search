@@ -79,6 +79,11 @@ const ICONS = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
     </svg>
   ),
+  tournament: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+    </svg>
+  ),
 } as const;
 
 const NAV_GROUPS = [
@@ -87,6 +92,7 @@ const NAV_GROUPS = [
     links: [
       { href: "/", label: "Home", icon: "home" as const, exact: true },
       { href: "/games/dice", label: "Open Game", icon: "dice" as const, exact: true },
+      { href: "/games/tournament", label: "AI Tournament", icon: "tournament" as const, exact: true },
       { href: "/dashboard", label: "Dashboard", icon: "dashboard" as const, exact: true },
       { href: "/dashboard/profile", label: "Profile", icon: "profile" as const, exact: true },
     ],
