@@ -17,8 +17,15 @@ const PRICE_MAX_CENTS = 99900; // $999
  * GET /api/trading/strategies
  * List marketplace strategies (public). Only active strategies.
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const search = searchParams.get("search")?.trim().toLowerCase() || "";
+    const category = searchParams.get("category")?.trim().toLowerCase() || "";
+    const timeframe = searchParams.get("timeframe")?.trim().toLowerCase() || "";
+    const risk = searchParams.get("risk")?.trim().toLowerCase() || "";
+    const sort = searchParams.get("sort") || "newest";
+
     const rows = await db
       .select({
         id: marketplaceStrategies.id,
@@ -27,6 +34,14 @@ export async function GET() {
         priceMonthlyCents: marketplaceStrategies.priceMonthlyCents,
         priceYearlyCents: marketplaceStrategies.priceYearlyCents,
         platformFeePercent: marketplaceStrategies.platformFeePercent,
+        sharpeRatio: marketplaceStrategies.sharpeRatio,
+        maxDrawdownPercent: marketplaceStrategies.maxDrawdownPercent,
+        winRate: marketplaceStrategies.winRate,
+        riskLabel: marketplaceStrategies.riskLabel,
+        category: marketplaceStrategies.category,
+        timeframe: marketplaceStrategies.timeframe,
+        liveTrackRecordDays: marketplaceStrategies.liveTrackRecordDays,
+        paperTradingDays: marketplaceStrategies.paperTradingDays,
         developerName: users.name,
         developerEmail: users.email,
       })
@@ -37,15 +52,48 @@ export async function GET() {
       .orderBy(desc(marketplaceStrategies.createdAt))
       .limit(100);
 
+    let filtered = rows;
+    if (search) {
+      filtered = filtered.filter(
+        (r) =>
+          r.name.toLowerCase().includes(search) ||
+          (r.description?.toLowerCase().includes(search) ?? false)
+      );
+    }
+    if (category) {
+      filtered = filtered.filter((r) => r.category?.toLowerCase() === category);
+    }
+    if (timeframe) {
+      filtered = filtered.filter((r) => r.timeframe?.toLowerCase() === timeframe);
+    }
+    if (risk) {
+      filtered = filtered.filter((r) => r.riskLabel?.toLowerCase() === risk);
+    }
+    if (sort === "sharpe") {
+      filtered = [...filtered].sort((a, b) => (b.sharpeRatio ?? 0) - (a.sharpeRatio ?? 0));
+    } else if (sort === "price_asc") {
+      filtered = [...filtered].sort((a, b) => a.priceMonthlyCents - b.priceMonthlyCents);
+    } else if (sort === "price_desc") {
+      filtered = [...filtered].sort((a, b) => b.priceMonthlyCents - a.priceMonthlyCents);
+    }
+
     return NextResponse.json({
       success: true,
-      data: rows.map((r) => ({
+      data: filtered.map((r) => ({
         id: r.id,
         name: r.name,
         description: r.description,
         priceMonthlyCents: r.priceMonthlyCents,
         priceYearlyCents: r.priceYearlyCents,
         platformFeePercent: r.platformFeePercent,
+        sharpeRatio: r.sharpeRatio,
+        maxDrawdownPercent: r.maxDrawdownPercent,
+        winRate: r.winRate,
+        riskLabel: r.riskLabel,
+        category: r.category,
+        timeframe: r.timeframe,
+        liveTrackRecordDays: r.liveTrackRecordDays,
+        paperTradingDays: r.paperTradingDays,
         developerName: r.developerName ?? "Developer",
         developerEmail: r.developerEmail ? r.developerEmail.replace(/(.{2})(.*)(@.*)/, "$1***$3") : null,
       })),
