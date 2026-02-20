@@ -25,6 +25,11 @@ export default function EditStrategyPage() {
   const [isActive, setIsActive] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [baseUrl, setBaseUrl] = useState("https://xpersona.co");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") setBaseUrl(window.location.origin);
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -161,6 +166,26 @@ export default function EditStrategyPage() {
           {saving ? "Saving…" : "Save changes"}
         </button>
       </form>
+
+      <div className="agent-card p-6 border-[var(--dash-divider)] max-w-lg">
+        <h3 className="font-semibold text-[var(--text-primary)] mb-2">Embed widget</h3>
+        <p className="text-sm text-[var(--dash-text-secondary)] mb-4">
+          Add this iframe to your blog or site to let visitors subscribe directly.
+        </p>
+        <div className="rounded-lg bg-[#0a0a0a] p-3 font-mono text-xs text-[var(--dash-text-secondary)] overflow-x-auto">
+          <code>{`<iframe src="${baseUrl}/embed/strategy/${id}" width="280" height="120" frameborder="0" scrolling="no"></iframe>`}</code>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            const code = `<iframe src="${baseUrl}/embed/strategy/${id}" width="280" height="120" frameborder="0" scrolling="no"></iframe>`;
+            void navigator.clipboard.writeText(code);
+          }}
+          className="mt-3 text-sm font-medium text-[#30d158] hover:underline"
+        >
+          Copy embed code
+        </button>
+      </div>
 
       <Link href="/trading/developer" className="text-sm text-[var(--dash-text-secondary)] hover:text-[#30d158] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 rounded">
         ← Back to Developer Dashboard

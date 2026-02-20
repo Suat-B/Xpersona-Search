@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { StrategyCard } from "@/components/trading/StrategyCard";
 import { StrategyCardSkeleton } from "@/components/trading/StrategyCardSkeleton";
+import { RiskReturnScatter } from "@/components/trading/RiskReturnScatter";
 import { cn } from "@/lib/utils";
 
 interface MarketplaceStrategy {
@@ -20,9 +21,12 @@ interface MarketplaceStrategy {
   timeframe?: string | null;
   liveTrackRecordDays?: number | null;
   paperTradingDays?: number | null;
+  healthScore?: number;
+  healthLabel?: "healthy" | "moderate" | "struggling";
+  maxDrawdownPercent?: number | null;
 }
 
-const TABS = ["browse", "featured", "developers"] as const;
+const TABS = ["browse", "featured", "map", "developers"] as const;
 type TabId = (typeof TABS)[number];
 
 const CATEGORIES = [
@@ -145,7 +149,17 @@ export default function TradingPage() {
     .sort((a, b) => (b.sharpeRatio ?? 0) - (a.sharpeRatio ?? 0))
     .slice(0, 12);
 
+  const spotlightPool = strategies
+    .filter((s) => s.sharpeRatio != null && s.sharpeRatio >= 1)
+    .sort((a, b) => (b.sharpeRatio ?? 0) - (a.sharpeRatio ?? 0))
+    .slice(0, 5);
+  const spotlightId =
+    spotlightPool.length > 0
+      ? spotlightPool[Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000)) % spotlightPool.length]?.id ?? null
+      : null;
+
   const displayStrategies = tab === "featured" ? featuredStrategies : strategies;
+  const showMap = tab === "map";
 
   const hasActiveFilters = category || timeframe || risk || search || sort !== "newest";
 
@@ -201,10 +215,21 @@ export default function TradingPage() {
           >
             {t === "browse" && "Browse all"}
             {t === "featured" && "Top Sharpe"}
+            {t === "map" && "Risk map"}
             {t === "developers" && "For developers"}
           </button>
         ))}
       </div>
+
+      {/* Risk map tab */}
+      {showMap && (
+        <div className="mb-8">
+          <RiskReturnScatter strategies={strategies} width={600} height={360} />
+          <p className="mt-4 text-xs text-[var(--dash-text-secondary)]">
+            Strategies with both Sharpe ratio and max drawdown appear on the map. Ideal quadrant: upper left (low risk, high return).
+          </p>
+        </div>
+      )}
 
       {/* Browse / Featured: search, filters, grid */}
       {(tab === "browse" || tab === "featured") && (
@@ -353,6 +378,9 @@ export default function TradingPage() {
                   category={s.category}
                   timeframe={s.timeframe}
                   liveTrackRecordDays={s.liveTrackRecordDays}
+                  healthScore={s.healthScore}
+                  healthLabel={s.healthLabel}
+                  isSpotlight={spotlightId === s.id}
                 />
               ))}
             </div>

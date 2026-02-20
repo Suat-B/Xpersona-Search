@@ -6,7 +6,8 @@ import {
   marketplaceDevelopers,
   users,
 } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ne, desc } from "drizzle-orm";
+import { computeHealthScore } from "@/lib/trading/health-score";
 
 const PRICE_MIN_CENTS = 999;
 const PRICE_MAX_CENTS = 99900;
@@ -37,7 +38,9 @@ export async function GET(
         tradeCount: marketplaceStrategies.tradeCount,
         paperTradingDays: marketplaceStrategies.paperTradingDays,
         riskLabel: marketplaceStrategies.riskLabel,
+        category: marketplaceStrategies.category,
         liveTrackRecordDays: marketplaceStrategies.liveTrackRecordDays,
+        parentStrategyId: marketplaceStrategies.parentStrategyId,
         developerName: users.name,
         developerEmail: users.email,
       })
@@ -53,6 +56,85 @@ export async function GET(
         { status: 404 }
       );
     }
+
+    let parentStrategyName: string | null = null;
+    if (row.parentStrategyId) {
+      const [parent] = await db
+        .select({ name: marketplaceStrategies.name })
+        .from(marketplaceStrategies)
+        .where(eq(marketplaceStrategies.id, row.parentStrategyId))
+        .limit(1);
+      parentStrategyName = parent?.name ?? null;
+    }
+
+    const { score: healthScore, label: healthLabel } = computeHealthScore({
+      sharpeRatio: row.sharpeRatio,
+      maxDrawdownPercent: row.maxDrawdownPercent,
+      winRate: row.winRate,
+      paperTradingDays: row.paperTradingDays,
+      liveTrackRecordDays: row.liveTrackRecordDays,
+    });
+
+    const similarRows = await db
+      .select({
+        id: marketplaceStrategies.id,
+        name: marketplaceStrategies.name,
+        priceMonthlyCents: marketplaceStrategies.priceMonthlyCents,
+        sharpeRatio: marketplaceStrategies.sharpeRatio,
+        riskLabel: marketplaceStrategies.riskLabel,
+        category: marketplaceStrategies.category,
+        timeframe: marketplaceStrategies.timeframe,
+        liveTrackRecordDays: marketplaceStrategies.liveTrackRecordDays,
+        developerName: users.name,
+      })
+      .from(marketplaceStrategies)
+      .innerJoin(marketplaceDevelopers, eq(marketplaceStrategies.developerId, marketplaceDevelopers.id))
+      .innerJoin(users, eq(marketplaceDevelopers.userId, users.id))
+      .where(
+        and(
+          eq(marketplaceStrategies.isActive, true),
+          ne(marketplaceStrategies.id, id)
+        )
+      )
+      .orderBy(desc(marketplaceStrategies.sharpeRatio), desc(marketplaceStrategies.createdAt))
+      .limit(100);
+
+    let similarFiltered = similarRows.filter((r) => {
+      if (row.category && r.category !== row.category) return false;
+      if (row.riskLabel && r.riskLabel !== row.riskLabel) return false;
+      return true;
+    });
+    if (similarFiltered.length < 4) {
+      const ids = new Set(similarFiltered.map((r) => r.id));
+      for (const r of similarRows) {
+        if (ids.size >= 4) break;
+        if (!ids.has(r.id)) {
+          similarFiltered = [...similarFiltered, r];
+          ids.add(r.id);
+        }
+      }
+    }
+    const similarMapped = similarFiltered.slice(0, 4).map((r) => {
+      const { score: s, label: l } = computeHealthScore({
+        sharpeRatio: r.sharpeRatio,
+        maxDrawdownPercent: null,
+        winRate: null,
+        paperTradingDays: null,
+        liveTrackRecordDays: r.liveTrackRecordDays,
+      });
+      return {
+        id: r.id,
+        name: r.name,
+        priceMonthlyCents: r.priceMonthlyCents,
+        sharpeRatio: r.sharpeRatio,
+        riskLabel: r.riskLabel,
+        category: r.category,
+        timeframe: r.timeframe,
+        developerName: r.developerName ?? "Developer",
+        healthScore: s,
+        healthLabel: l,
+      };
+    });
 
     return NextResponse.json({
       success: true,
@@ -72,8 +154,13 @@ export async function GET(
         paperTradingDays: row.paperTradingDays,
         riskLabel: row.riskLabel,
         liveTrackRecordDays: row.liveTrackRecordDays,
+        healthScore,
+        healthLabel,
+        parentStrategyId: row.parentStrategyId,
+        parentStrategyName: parentStrategyName,
         developerName: row.developerName ?? "Developer",
         developerEmail: row.developerEmail ? row.developerEmail.replace(/(.{2})(.*)(@.*)/, "$1***$3") : null,
+        similar: similarMapped,
       },
     });
   } catch (err) {

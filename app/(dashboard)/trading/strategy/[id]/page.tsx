@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { StrategyDetailSkeleton } from "@/components/trading/StrategyDetailSkeleton";
 import { TradingErrorBanner } from "@/components/trading/TradingErrorBanner";
+import { HealthScoreBadge } from "@/components/trading/HealthScoreBadge";
 import { CompactEquityChart } from "@/components/quant-terminal/CompactEquityChart";
 
 interface StrategyDetail {
@@ -22,7 +23,23 @@ interface StrategyDetail {
   paperTradingDays?: number | null;
   riskLabel?: string | null;
   liveTrackRecordDays?: number | null;
+  healthScore?: number;
+  healthLabel?: "healthy" | "moderate" | "struggling";
   developerName: string;
+  parentStrategyId?: string | null;
+  parentStrategyName?: string | null;
+  similar?: Array<{
+    id: string;
+    name: string;
+    priceMonthlyCents: number;
+    sharpeRatio?: number | null;
+    riskLabel?: string | null;
+    category?: string | null;
+    timeframe?: string | null;
+    developerName: string;
+    healthScore: number;
+    healthLabel: "healthy" | "moderate" | "struggling";
+  }>;
 }
 
 export default function StrategyDetailPage() {
@@ -136,6 +153,14 @@ export default function StrategyDetailPage() {
 
       <div className="agent-card p-6 border-[var(--dash-divider)]">
         <div className="flex flex-wrap items-center gap-2 mb-4">
+          {strategy.parentStrategyName && (
+            <span className="inline-flex items-center rounded-lg border border-[#0ea5e9]/40 bg-[#0ea5e9]/10 px-2.5 py-1 text-xs font-medium text-[#0ea5e9]">
+              Forked from {strategy.parentStrategyName}
+            </span>
+          )}
+          {strategy.healthScore != null && strategy.healthLabel && (
+            <HealthScoreBadge score={strategy.healthScore} label={strategy.healthLabel} />
+          )}
           {(strategy.riskLabel ?? "").length > 0 && (
             <span
               className={`inline-flex items-center rounded-lg border px-2.5 py-1 text-xs font-semibold ${
@@ -197,7 +222,12 @@ export default function StrategyDetailPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <p className="text-2xl font-bold text-[var(--text-primary)]">${priceMonthly}<span className="text-base font-normal text-[var(--dash-text-secondary)]">/mo</span></p>
-            <p className="text-xs text-[var(--dash-text-secondary)]">Platform fee: {strategy.platformFeePercent}%</p>
+            <div className="mt-2 rounded-lg border border-[var(--dash-divider)] bg-[var(--dash-bg)]/50 px-3 py-2 text-xs text-[var(--dash-text-secondary)]">
+              <p className="font-medium text-[var(--text-primary)] mb-1">Fee breakdown</p>
+              <p>You pay: <span className="text-[var(--text-primary)] font-semibold">${priceMonthly}</span></p>
+              <p>Developer receives: <span className="text-[#30d158] font-semibold">${((strategy.priceMonthlyCents * (100 - strategy.platformFeePercent)) / 10000).toFixed(2)}</span></p>
+              <p>Platform fee ({strategy.platformFeePercent}%): <span className="text-[var(--text-primary)] font-semibold">${((strategy.priceMonthlyCents * strategy.platformFeePercent) / 10000).toFixed(2)}</span></p>
+            </div>
           </div>
           {strategy.isActive ? (
             <button
@@ -212,6 +242,34 @@ export default function StrategyDetailPage() {
           )}
         </div>
       </div>
+
+      {strategy.similar && strategy.similar.length > 0 && (
+        <div className="agent-card p-6 border-[var(--dash-divider)]">
+          <h3 className="font-semibold text-[var(--text-primary)] mb-4">Strategies like this</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {strategy.similar.map((s) => (
+              <Link
+                key={s.id}
+                href={`/trading/strategy/${s.id}`}
+                className="block rounded-lg border border-[var(--dash-divider)] p-4 hover:border-[#30d158]/40 hover:bg-[#30d158]/5 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#30d158]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--dash-bg)]"
+              >
+                <p className="font-medium text-[var(--text-primary)] truncate">{s.name}</p>
+                <p className="text-xs text-[var(--dash-text-secondary)] mt-0.5">by {s.developerName}</p>
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="text-sm font-semibold text-[#30d158]">
+                    ${(s.priceMonthlyCents / 100).toFixed(2)}/mo
+                  </span>
+                  {s.sharpeRatio != null && (
+                    <span className="text-xs text-[var(--dash-text-secondary)]">
+                      Sharpe {s.sharpeRatio.toFixed(2)}
+                    </span>
+                  )}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

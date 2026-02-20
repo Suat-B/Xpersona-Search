@@ -130,6 +130,42 @@ async function seed() {
     }
   }
 
+  // Add a forked strategy (lineage demo): Kelly Pro v2 forked from Kelly Pro
+  const allStrategies = await db
+    .select({ id: marketplaceStrategies.id, name: marketplaceStrategies.name })
+    .from(marketplaceStrategies)
+    .where(eq(marketplaceStrategies.developerId, dev.id));
+  const kellyProId = allStrategies.find((r) => r.name === "Kelly Pro")?.id;
+
+  if (kellyProId) {
+    const existingFork = await db
+      .select()
+      .from(marketplaceStrategies)
+      .where(eq(marketplaceStrategies.developerId, dev.id));
+    const hasFork = existingFork.some((s) => s.parentStrategyId === kellyProId);
+    if (!hasFork) {
+      await db.insert(marketplaceStrategies).values({
+        developerId: dev.id,
+        name: "Kelly Pro v2",
+        description: "Fork of Kelly Pro with adjusted risk parameters.",
+        strategySnapshot: { type: "basic", config: {} },
+        priceMonthlyCents: 2499,
+        platformFeePercent: 20,
+        isActive: true,
+        sharpeRatio: 1.25,
+        maxDrawdownPercent: 10,
+        winRate: 52,
+        tradeCount: 200,
+        paperTradingDays: 60,
+        riskLabel: "conservative",
+        category: "crypto",
+        timeframe: "day",
+        parentStrategyId: kellyProId,
+      });
+      console.log("Seeded: Kelly Pro v2 (forked from Kelly Pro)");
+    }
+  }
+
   console.log("✅ Marketplace strategies seeded.");
 }
 

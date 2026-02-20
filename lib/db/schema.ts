@@ -415,12 +415,14 @@ export const marketplaceStrategies = pgTable(
     liveTrackRecordDays: integer("live_track_record_days"),
     category: varchar("category", { length: 20 }), // crypto | forex | stocks | futures | options
     timeframe: varchar("timeframe", { length: 20 }), // scalping | day | swing
+    parentStrategyId: uuid("parent_strategy_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
   (table) => [
     index("marketplace_strategies_developer_id_idx").on(table.developerId),
     index("marketplace_strategies_is_active_idx").on(table.isActive),
+    index("marketplace_strategies_parent_id_idx").on(table.parentStrategyId),
   ]
 );
 

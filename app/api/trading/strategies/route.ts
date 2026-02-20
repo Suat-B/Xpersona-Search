@@ -9,6 +9,7 @@ import {
 } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { calculatePlatformFeePercent } from "@/lib/trading/fee-tier";
+import { computeHealthScore } from "@/lib/trading/health-score";
 
 const PRICE_MIN_CENTS = 999; // $9.99
 const PRICE_MAX_CENTS = 99900; // $999
@@ -79,24 +80,35 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       success: true,
-      data: filtered.map((r) => ({
-        id: r.id,
-        name: r.name,
-        description: r.description,
-        priceMonthlyCents: r.priceMonthlyCents,
-        priceYearlyCents: r.priceYearlyCents,
-        platformFeePercent: r.platformFeePercent,
-        sharpeRatio: r.sharpeRatio,
-        maxDrawdownPercent: r.maxDrawdownPercent,
-        winRate: r.winRate,
-        riskLabel: r.riskLabel,
-        category: r.category,
-        timeframe: r.timeframe,
-        liveTrackRecordDays: r.liveTrackRecordDays,
-        paperTradingDays: r.paperTradingDays,
-        developerName: r.developerName ?? "Developer",
-        developerEmail: r.developerEmail ? r.developerEmail.replace(/(.{2})(.*)(@.*)/, "$1***$3") : null,
-      })),
+      data: filtered.map((r) => {
+        const { score: healthScore, label: healthLabel } = computeHealthScore({
+          sharpeRatio: r.sharpeRatio,
+          maxDrawdownPercent: r.maxDrawdownPercent,
+          winRate: r.winRate,
+          paperTradingDays: r.paperTradingDays,
+          liveTrackRecordDays: r.liveTrackRecordDays,
+        });
+        return {
+          id: r.id,
+          name: r.name,
+          description: r.description,
+          priceMonthlyCents: r.priceMonthlyCents,
+          priceYearlyCents: r.priceYearlyCents,
+          platformFeePercent: r.platformFeePercent,
+          sharpeRatio: r.sharpeRatio,
+          maxDrawdownPercent: r.maxDrawdownPercent,
+          winRate: r.winRate,
+          riskLabel: r.riskLabel,
+          category: r.category,
+          timeframe: r.timeframe,
+          liveTrackRecordDays: r.liveTrackRecordDays,
+          paperTradingDays: r.paperTradingDays,
+          healthScore,
+          healthLabel,
+          developerName: r.developerName ?? "Developer",
+          developerEmail: r.developerEmail ? r.developerEmail.replace(/(.{2})(.*)(@.*)/, "$1***$3") : null,
+        };
+      }),
     });
   } catch (err) {
     console.error("[trading/strategies GET]", err);

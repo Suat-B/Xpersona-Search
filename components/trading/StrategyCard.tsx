@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { HealthScoreBadge } from "@/components/trading/HealthScoreBadge";
+import type { HealthLabel } from "@/components/trading/HealthScoreBadge";
 
 interface StrategyCardProps {
   id: string;
@@ -14,6 +16,9 @@ interface StrategyCardProps {
   category?: string | null;
   timeframe?: string | null;
   liveTrackRecordDays?: number | null;
+  healthScore?: number;
+  healthLabel?: HealthLabel;
+  isSpotlight?: boolean;
 }
 
 const RISK_COLORS: Record<string, string> = {
@@ -33,6 +38,9 @@ export function StrategyCard({
   category,
   timeframe,
   liveTrackRecordDays,
+  healthScore,
+  healthLabel,
+  isSpotlight,
 }: StrategyCardProps) {
   const price = (priceMonthlyCents / 100).toFixed(2);
   const riskClass = riskLabel ? RISK_COLORS[riskLabel.toLowerCase()] ?? "" : "";
@@ -66,6 +74,14 @@ export function StrategyCard({
           {liveTrackRecordDays != null && liveTrackRecordDays >= 90 && (
             <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/30">
               Live 90+
+            </span>
+          )}
+          {healthScore != null && healthLabel && (
+            <HealthScoreBadge score={healthScore} label={healthLabel} showScore={false} />
+          )}
+          {isSpotlight && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[#bf5af2]/20 text-[#bf5af2] border border-[#bf5af2]/40">
+              Spotlight
             </span>
           )}
         </div>
