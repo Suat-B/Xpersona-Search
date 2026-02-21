@@ -15,6 +15,7 @@ function SignUpForm() {
   const link = searchParams?.get("link");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -22,6 +23,10 @@ function SignUpForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/auth/register", {
@@ -133,6 +138,22 @@ function SignUpForm() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="At least 8 characters"
+                required
+                minLength={8}
+                autoComplete="new-password"
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label htmlFor="confirmPassword" className={labelClass}>
+                Confirm password
+              </label>
+              <input
+                id="confirmPassword"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repeat your password"
                 required
                 minLength={8}
                 autoComplete="new-password"

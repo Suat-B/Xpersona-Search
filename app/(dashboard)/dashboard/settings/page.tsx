@@ -5,6 +5,130 @@ import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
 
+const inputClass =
+  "w-full rounded-lg border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#30d158]/50";
+
+function ChangePasswordSection() {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(false);
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    if (newPassword.length < 8) {
+      setError("New password must be at least 8 characters.");
+      return;
+    }
+    setLoading(true);
+    fetch("/api/me/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        currentPassword,
+        newPassword,
+        confirmPassword,
+      }),
+    })
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success) {
+          setSuccess(true);
+          setCurrentPassword("");
+          setNewPassword("");
+          setConfirmPassword("");
+        } else {
+          setError(res.message ?? "Failed to change password.");
+        }
+      })
+      .catch(() => setError("Something went wrong. Please try again."))
+      .finally(() => setLoading(false));
+  };
+
+  return (
+    <GlassCard className="p-5">
+      <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
+        Change password
+      </h2>
+      <p className="text-sm text-[var(--text-secondary)] mb-4">
+        Update your account password. Use a strong, unique password.
+      </p>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+            Current password
+          </label>
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            placeholder="••••••••"
+            required
+            autoComplete="current-password"
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+            New password
+          </label>
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="At least 8 characters"
+            required
+            minLength={8}
+            autoComplete="new-password"
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+            Confirm new password
+          </label>
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Repeat new password"
+            required
+            minLength={8}
+            autoComplete="new-password"
+            className={inputClass}
+          />
+        </div>
+        {error && (
+          <p className="text-sm text-[#ff453a] bg-[#ff453a]/10 border border-[#ff453a]/20 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
+        {success && (
+          <p className="text-sm text-[#30d158] bg-[#30d158]/10 border border-[#30d158]/20 rounded-lg px-3 py-2">
+            Password updated successfully.
+          </p>
+        )}
+        <button
+          type="submit"
+          disabled={loading}
+          className="rounded-full bg-[#30d158] px-4 py-2 text-sm font-medium text-white hover:bg-[#30d158]/90 disabled:opacity-50"
+        >
+          {loading ? "Updating…" : "Update password"}
+        </button>
+      </form>
+    </GlassCard>
+  );
+}
+
 function SignalPreferencesSection() {
   const [discordWebhookUrl, setDiscordWebhookUrl] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
@@ -187,6 +311,9 @@ function SettingsPageClient() {
           </p>
         )}
       </GlassCard>
+
+      {/* Change password — only for email/password accounts */}
+      {(user?.isPermanent || user?.accountType === "email") && <ChangePasswordSection />}
 
       {/* Signal Preferences */}
       <SignalPreferencesSection />
