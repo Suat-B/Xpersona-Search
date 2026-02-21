@@ -3,7 +3,11 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { createHash } from "crypto";
-import { createAgentToken, getAgentCookieName } from "@/lib/auth-utils";
+import {
+  createAgentToken,
+  getAgentCookieName,
+  getAuthCookieOptions,
+} from "@/lib/auth-utils";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -23,13 +27,7 @@ export async function GET(request: Request) {
   const token = createAgentToken(user.id);
   const baseUrl = new URL("/dashboard", request.url);
   const res = NextResponse.redirect(baseUrl, 302);
-  res.cookies.set(getAgentCookieName(), token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 7,
-    path: "/",
-  });
+  res.cookies.set(getAgentCookieName(), token, getAuthCookieOptions());
   return res;
 }
 
@@ -56,12 +54,6 @@ export async function POST(request: Request) {
   const token = createAgentToken(user.id);
   const baseUrl = new URL("/dashboard", request.url);
   const res = NextResponse.redirect(baseUrl, 302);
-  res.cookies.set(getAgentCookieName(), token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 7,
-    path: "/",
-  });
+  res.cookies.set(getAgentCookieName(), token, getAuthCookieOptions());
   return res;
 }

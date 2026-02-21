@@ -6,7 +6,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { hashApiKey, createAgentToken, getAgentCookieName } from "@/lib/auth-utils";
+import {
+  hashApiKey,
+  createAgentToken,
+  getAgentCookieName,
+  getAuthCookieOptions,
+} from "@/lib/auth-utils";
 import { generateAgentId } from "@/lib/agent-id";
 import { SIGNUP_BONUS } from "@/lib/constants";
 import { randomBytes, randomUUID } from "crypto";
@@ -57,13 +62,7 @@ export async function GET(request: Request) {
     }
 
     const res = NextResponse.redirect(new URL("/dashboard", request.url), 302);
-    res.cookies.set(getAgentCookieName(), result.token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7,
-      path: "/",
-    });
+    res.cookies.set(getAgentCookieName(), result.token, getAuthCookieOptions());
     return res;
   } catch (err) {
     console.error("[auth/play] GET error:", err);
@@ -105,13 +104,7 @@ export async function POST(request: Request) {
       },
     });
 
-    res.cookies.set(getAgentCookieName(), result.token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7,
-      path: "/",
-    });
+    res.cookies.set(getAgentCookieName(), result.token, getAuthCookieOptions());
 
     return res;
   } catch (err) {

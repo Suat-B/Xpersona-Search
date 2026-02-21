@@ -5,14 +5,17 @@ import { isAdminEmail } from "@/lib/admin";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { getService } from "@/lib/service";
 import { EnsureGuest } from "@/components/auth/EnsureGuest";
-import { DashboardChrome } from "@/components/layout/DashboardChrome";
+import { GameChrome } from "@/components/layout/GameChrome";
+import { TradingChrome } from "@/components/layout/TradingChrome";
 
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const service = await getService();
   let session: Session | null = null;
   try {
     session = await auth();
@@ -64,12 +67,14 @@ export default async function DashboardLayout({
     }
   }
 
+  const Chrome = service === "trading" ? TradingChrome : GameChrome;
+
   return (
     <>
       {needsGuest && <EnsureGuest needsGuest={true} />}
-      <DashboardChrome displayName={displayName} userEmail={userEmail} isAdmin={isAdmin} isPermanent={isPermanent}>
+      <Chrome displayName={displayName} userEmail={userEmail} isAdmin={isAdmin} isPermanent={isPermanent}>
         {children}
-      </DashboardChrome>
+      </Chrome>
     </>
   );
 }

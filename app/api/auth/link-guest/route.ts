@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { mergeGuestIntoUser } from "@/lib/merge-guest-account";
-import { verifyGuestToken, getGuestCookieName } from "@/lib/auth-utils";
+import {
+  verifyGuestToken,
+  getGuestCookieName,
+  getClearCookieOptions,
+} from "@/lib/auth-utils";
 
 /**
  * POST /api/auth/link-guest
@@ -57,13 +61,7 @@ export async function POST() {
     data: { message: "Guest account merged successfully" },
   });
 
-  res.cookies.set(getGuestCookieName(), "", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 0,
-    path: "/",
-  });
+  res.cookies.set(getGuestCookieName(), "", getClearCookieOptions());
 
   return res;
 }

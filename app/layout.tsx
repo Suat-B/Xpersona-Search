@@ -17,15 +17,19 @@ export const metadata: Metadata = {
 
 import { Outfit, Inter } from "next/font/google";
 import { AuthProvider } from "@/components/auth/AuthProvider";
+import { ServiceProvider } from "@/components/providers/ServiceProvider";
+import { getService } from "@/lib/service";
 
 const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const service = await getService();
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -39,7 +43,9 @@ export default function RootLayout({
       <body
         className={`${outfit.variable} ${inter.variable} min-h-dvh bg-[var(--bg-deep)] font-sans text-[var(--text-primary)] antialiased`}
       >
-        <AuthProvider>{children}</AuthProvider>
+        <ServiceProvider service={service}>
+          <AuthProvider>{children}</AuthProvider>
+        </ServiceProvider>
       </body>
     </html>
   );

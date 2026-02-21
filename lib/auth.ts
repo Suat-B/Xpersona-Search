@@ -10,6 +10,7 @@ import {
   verificationTokens,
 } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { getCookieDomain } from "@/lib/auth-utils";
 
 const secret =
   process.env.NEXTAUTH_SECRET ||
@@ -18,8 +19,20 @@ const secret =
     ? "xpersona-dev-secret-min-32-chars-do-not-use-in-production"
     : undefined);
 
+const cookieDomain = getCookieDomain();
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret,
+  cookies: cookieDomain
+    ? {
+        sessionToken: {
+          options: {
+            domain: cookieDomain,
+            path: "/",
+          },
+        },
+      }
+    : undefined,
   adapter: DrizzleAdapter(db, {
     usersTable: users,
     accountsTable: accounts,

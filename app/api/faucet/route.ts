@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { getAuthUser, createGuestToken, getGuestCookieName } from "@/lib/auth-utils";
+import {
+  getAuthUser,
+  createGuestToken,
+  getGuestCookieName,
+  getAuthCookieOptions,
+} from "@/lib/auth-utils";
 import { grantFaucet } from "@/lib/faucet";
 import { FAUCET_AMOUNT, SIGNUP_BONUS } from "@/lib/constants";
 import { randomUUID } from "crypto";
@@ -63,13 +68,7 @@ export async function POST(request: Request) {
           nextFaucetAt: result.nextFaucetAt.toISOString(),
         },
       });
-      res.cookies.set(getGuestCookieName(), token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 60 * 60 * 24 * 7,
-        path: "/",
-      });
+      res.cookies.set(getGuestCookieName(), token, getAuthCookieOptions());
       return res;
     } catch (e) {
       console.error("[faucet] no-auth create error:", e);

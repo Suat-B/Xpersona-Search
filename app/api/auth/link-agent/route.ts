@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { mergeAgentIntoUser } from "@/lib/merge-guest-account";
-import { verifyAgentToken, getAgentCookieName } from "@/lib/auth-utils";
+import {
+  verifyAgentToken,
+  getAgentCookieName,
+  getClearCookieOptions,
+} from "@/lib/auth-utils";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -96,13 +100,7 @@ export async function POST() {
     data: { message: "Agent account linked successfully" },
   });
 
-  res.cookies.set(getAgentCookieName(), "", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 0,
-    path: "/",
-  });
+  res.cookies.set(getAgentCookieName(), "", getClearCookieOptions());
 
   return res;
 }

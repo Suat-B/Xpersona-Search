@@ -1,8 +1,10 @@
 import { auth } from "@/lib/auth";
 import { cookies } from "next/headers";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
+import { getService } from "@/lib/service";
 import { HomeHero } from "@/components/home/HomeHero";
 import { HomeHub } from "@/components/home/HomeHub";
+import { HubLanding } from "@/components/home/HubLanding";
 import { HomeStrategies } from "@/components/home/HomeStrategies";
 import { HomeFlow } from "@/components/home/HomeFlow";
 import { HomeTrust } from "@/components/home/HomeTrust";
@@ -21,6 +23,18 @@ export default async function HomePage() {
   const cookieStore = await cookies();
   const userIdFromCookie = getAuthUserFromCookie(cookieStore);
   const isAuthenticated = !!(session?.user || userIdFromCookie);
+  const service = await getService();
+
+  if (service === "hub") {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <div className="flex-1">
+          <HubLanding />
+        </div>
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col">

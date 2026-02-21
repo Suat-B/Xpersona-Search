@@ -8,6 +8,7 @@ import {
   createAgentToken,
   getGuestCookieName,
   getAgentCookieName,
+  getAuthCookieOptions,
 } from "@/lib/auth-utils";
 
 function getBaseUrl(request: NextRequest): string {
@@ -60,13 +61,7 @@ export async function GET(request: NextRequest) {
   const cookieName = isAgent ? getAgentCookieName() : getGuestCookieName();
 
   const res = NextResponse.redirect(`${baseUrl}/dashboard`, 302);
-  res.cookies.set(cookieName, sessionToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 7,
-    path: "/",
-  });
+  res.cookies.set(cookieName, sessionToken, getAuthCookieOptions());
 
   return res;
 }

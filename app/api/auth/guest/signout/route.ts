@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { getGuestCookieName } from "@/lib/auth-utils";
+import { getGuestCookieName, getClearCookieOptions } from "@/lib/auth-utils";
 
 /**
  * GET /api/auth/guest/signout — clear guest session cookie and redirect to home.
@@ -8,12 +8,6 @@ import { getGuestCookieName } from "@/lib/auth-utils";
  */
 export function GET(request: NextRequest) {
   const res = NextResponse.redirect(new URL("/", request.nextUrl), 302);
-  res.cookies.set(getGuestCookieName(), "", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 0,
-    path: "/",
-  });
+  res.cookies.set(getGuestCookieName(), "", getClearCookieOptions());
   return res;
 }

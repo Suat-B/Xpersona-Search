@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { auth, type Session } from "@/lib/auth";
 import { cookies } from "next/headers";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
@@ -5,14 +6,20 @@ import { isAdminEmail } from "@/lib/admin";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { DashboardChrome } from "@/components/layout/DashboardChrome";
+import { getService } from "@/lib/service";
+import { getGameUrl } from "@/lib/service-urls";
+import { GameChrome } from "@/components/layout/GameChrome";
+import { TradingChrome } from "@/components/layout/TradingChrome";
 import { HomeMinimalHeader } from "@/components/home/HomeMinimalHeader";
+import { TradingMinimalHeader } from "@/components/layout/TradingMinimalHeader";
+import { HubMinimalHeader } from "@/components/layout/HubMinimalHeader";
 
 export default async function MarketingLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const service = await getService();
   let session: Session | null = null;
   try {
     session = await auth();
@@ -64,16 +71,35 @@ export default async function MarketingLayout({
       }
     }
 
+    if (service === "hub") {
+      redirect(getGameUrl("/dashboard"));
+    }
+    if (service === "game") {
+      return (
+        <GameChrome displayName={displayName} userEmail={userEmail} isAdmin={isAdmin} isPermanent={isPermanent}>
+          {children}
+        </GameChrome>
+      );
+    }
+    if (service === "trading") {
+      return (
+        <TradingChrome displayName={displayName} userEmail={userEmail} isAdmin={isAdmin} isPermanent={isPermanent}>
+          {children}
+        </TradingChrome>
+      );
+    }
     return (
-      <DashboardChrome displayName={displayName} userEmail={userEmail} isAdmin={isAdmin} isPermanent={isPermanent}>
+      <GameChrome displayName={displayName} userEmail={userEmail} isAdmin={isAdmin} isPermanent={isPermanent}>
         {children}
-      </DashboardChrome>
+      </GameChrome>
     );
   }
 
+  const MinimalHeader = service === "hub" ? HubMinimalHeader : service === "trading" ? TradingMinimalHeader : HomeMinimalHeader;
+
   return (
     <div className="flex min-h-screen w-full bg-black">
-      <HomeMinimalHeader />
+      <MinimalHeader />
       <main className="scroll-contain-paint flex-1 overflow-y-auto">
         <div className="w-full max-w-7xl mx-auto px-4 py-6 sm:p-6 md:p-8 space-y-6 min-w-0">{children}</div>
       </main>

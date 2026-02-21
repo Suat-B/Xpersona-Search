@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { hashApiKey, createAgentToken, getAgentCookieName } from "@/lib/auth-utils";
+import {
+  hashApiKey,
+  createAgentToken,
+  getAgentCookieName,
+  getAuthCookieOptions,
+} from "@/lib/auth-utils";
 import { generateAgentId } from "@/lib/agent-id";
 import { SIGNUP_BONUS } from "@/lib/constants";
 import { randomBytes, randomUUID } from "crypto";
@@ -67,13 +72,7 @@ export async function POST(request: Request) {
       },
     });
 
-    res.cookies.set(getAgentCookieName(), agentToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7,
-      path: "/",
-    });
+    res.cookies.set(getAgentCookieName(), agentToken, getAuthCookieOptions());
 
     return res;
   } catch (err) {

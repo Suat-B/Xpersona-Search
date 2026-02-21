@@ -83,6 +83,60 @@ export function getGuestCookieName(): string {
   return GUEST_COOKIE_NAME;
 }
 
+/**
+ * Cookie domain for cross-subdomain auth.
+ * Production: ".xpersona.co" so cookies work on game.xpersona.co, trading.xpersona.co.
+ * Local: undefined so cookies work on localhost, game.localhost, trading.localhost.
+ */
+export function getCookieDomain(): string | undefined {
+  const url = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "";
+  if (url.includes("xpersona.co")) return ".xpersona.co";
+  return undefined;
+}
+
+/** Base options for auth cookies (guest, agent). Include domain for cross-subdomain. */
+export function getAuthCookieOptions(overrides?: {
+  maxAge?: number;
+}): {
+  httpOnly: boolean;
+  secure: boolean;
+  sameSite: "lax";
+  maxAge: number;
+  path: string;
+  domain?: string;
+} {
+  const domain = getCookieDomain();
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 60 * 60 * 24 * 7,
+    path: "/",
+    ...(domain && { domain }),
+    ...overrides,
+  };
+}
+
+/** Options for clearing auth cookies. */
+export function getClearCookieOptions(): {
+  httpOnly: boolean;
+  secure: boolean;
+  sameSite: "lax";
+  maxAge: number;
+  path: string;
+  domain?: string;
+} {
+  const domain = getCookieDomain();
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 0,
+    path: "/",
+    ...(domain && { domain }),
+  };
+}
+
 /** Recovery link expiry: 7 days. */
 const RECOVERY_LINK_DAYS = 7;
 

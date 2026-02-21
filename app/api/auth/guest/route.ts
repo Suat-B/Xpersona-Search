@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { createGuestToken, getGuestCookieName } from "@/lib/auth-utils";
+import {
+  createGuestToken,
+  getGuestCookieName,
+  getAuthCookieOptions,
+} from "@/lib/auth-utils";
 import { SIGNUP_BONUS } from "@/lib/constants";
 import { randomUUID } from "crypto";
 
@@ -78,13 +82,7 @@ export async function POST(request: Request) {
     { status: 200 }
   );
 
-  res.cookies.set(getGuestCookieName(), token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 7,
-    path: "/",
-  });
+  res.cookies.set(getGuestCookieName(), token, getAuthCookieOptions());
 
   return res;
 }
@@ -105,13 +103,7 @@ export async function GET(request: Request) {
   const { token, baseUrl } = result;
   const res = NextResponse.redirect(`${baseUrl}/dashboard`, 302);
 
-  res.cookies.set(getGuestCookieName(), token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 7,
-    path: "/",
-  });
+  res.cookies.set(getGuestCookieName(), token, getAuthCookieOptions());
 
   return res;
 }

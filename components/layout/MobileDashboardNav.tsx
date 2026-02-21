@@ -8,6 +8,8 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
 import { HeartbeatIndicator } from "@/components/ui/HeartbeatIndicator";
+import { getTradingUrl } from "@/lib/service-urls";
+import type { Service } from "@/lib/subdomain";
 
 const ICONS = {
   dice: (
@@ -84,20 +86,20 @@ const ICONS = {
   ),
 } as const;
 
-const LINKS = [
-  { href: "/", label: "Home", icon: "home" as const, exact: true },
-  { href: "/games/dice", label: "Open Game", icon: "dice" as const, exact: true },
-  { href: "/dashboard", label: "Dashboard", icon: "dashboard" as const, exact: true },
-  { href: "/trading", label: "Trading", icon: "trading" as const, exact: false },
-  { href: "/dashboard/connect-ai", label: "Connect AI", icon: "connectAi" as const, exact: false },
-  { href: "/dashboard/profile", label: "Profile", icon: "profile" as const, exact: true },
-  { href: "/dashboard/deposit", label: "Deposit", icon: "deposit" as const, exact: true },
-  { href: "/dashboard/withdraw", label: "Withdraw", icon: "withdraw" as const, exact: true },
-  { href: "/dashboard/strategies", label: "Strategies", icon: "strategies" as const, exact: false },
-  { href: "/dashboard/api", label: "API", icon: "api" as const, exact: false },
-  { href: "/dashboard/transactions", label: "Transactions", icon: "transactions" as const, exact: false },
-  { href: "/dashboard/provably-fair", label: "Provably Fair", icon: "shield" as const, exact: false },
-  { href: "/dashboard/settings", label: "Settings", icon: "settings" as const, exact: false },
+const GAME_LINKS = [
+  { href: "/", label: "Home", icon: "home" as const, exact: true, external: false },
+  { href: "/games/dice", label: "Open Game", icon: "dice" as const, exact: true, external: false },
+  { href: "/dashboard", label: "Dashboard", icon: "dashboard" as const, exact: true, external: false },
+  { href: getTradingUrl("/"), label: "Marketplace", icon: "trading" as const, exact: false, external: true },
+  { href: "/dashboard/connect-ai", label: "Connect AI", icon: "connectAi" as const, exact: false, external: false },
+  { href: "/dashboard/profile", label: "Profile", icon: "profile" as const, exact: true, external: false },
+  { href: "/dashboard/deposit", label: "Deposit", icon: "deposit" as const, exact: true, external: false },
+  { href: "/dashboard/withdraw", label: "Withdraw", icon: "withdraw" as const, exact: true, external: false },
+  { href: "/dashboard/strategies", label: "Strategies", icon: "strategies" as const, exact: false, external: false },
+  { href: "/dashboard/api", label: "API", icon: "api" as const, exact: false, external: false },
+  { href: "/dashboard/transactions", label: "Transactions", icon: "transactions" as const, exact: false, external: false },
+  { href: "/dashboard/provably-fair", label: "Provably Fair", icon: "shield" as const, exact: false, external: false },
+  { href: "/dashboard/settings", label: "Settings", icon: "settings" as const, exact: false, external: false },
 ] as const;
 
 function isActive(pathname: string, href: string, exact: boolean): boolean {
@@ -109,9 +111,10 @@ interface MobileDashboardNavProps {
   displayName: string;
   isAdmin?: boolean;
   isPermanent?: boolean;
+  service?: Service;
 }
 
-export function MobileDashboardNav({ displayName, isAdmin = false, isPermanent: serverIsPermanent = false }: MobileDashboardNavProps) {
+export function MobileDashboardNav({ displayName, isAdmin = false, isPermanent: serverIsPermanent = false, service = "game" }: MobileDashboardNavProps) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const { hasApiKey } = useAiConnectionStatus();
@@ -188,24 +191,20 @@ export function MobileDashboardNav({ displayName, isAdmin = false, isPermanent: 
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                 </svg>
               </Link>
-              {LINKS.filter((l) => l.href !== "/games/dice").map(({ href, label, icon, exact }) => {
-                const active = isActive(pathname ?? "", href, exact);
+              {GAME_LINKS.filter((l) => l.href !== "/games/dice").map(({ href, label, icon, exact, external }) => {
+                const active = !external && isActive(pathname ?? "", href, exact);
                 const isConnectAi = href === "/dashboard/connect-ai";
                 const aiConnected = isConnectAi && hasApiKey === true;
                 const displayLabel = isConnectAi && hasApiKey === true ? "AI connected" : label;
-                return (
-                  <Link
-                    key={href}
-                    href={href}
-                    onClick={() => setOpen(false)}
-                    className={cn(
-                      "group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-all",
-                      active
-                        ? "bg-[var(--dash-nav-active)] text-white"
-                        : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white",
-                      aiConnected && "text-[#30d158]"
-                    )}
-                  >
+                const className = cn(
+                  "group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-all",
+                  active
+                    ? "bg-[var(--dash-nav-active)] text-white"
+                    : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white",
+                  aiConnected && "text-[#30d158]"
+                );
+                const content = (
+                  <>
                     <span className={cn(
                       "flex h-8 w-8 items-center justify-center rounded-lg",
                       active ? aiConnected ? "bg-[#30d158]/20 text-[#30d158]" : "text-white" : "text-[var(--dash-text-secondary)] group-hover:text-white",
@@ -216,7 +215,21 @@ export function MobileDashboardNav({ displayName, isAdmin = false, isPermanent: 
                     <span className="flex-1 flex items-center gap-2">
                       {displayLabel}
                       {aiConnected && <HeartbeatIndicator />}
+                      {external && (
+                        <svg className="w-4 h-4 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      )}
                     </span>
+                  </>
+                );
+                return external ? (
+                  <a key={href} href={href} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)} className={className}>
+                    {content}
+                  </a>
+                ) : (
+                  <Link key={href} href={href} onClick={() => setOpen(false)} className={className}>
+                    {content}
                   </Link>
                 );
               })}
