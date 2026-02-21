@@ -241,7 +241,7 @@ function RegisterForm() {
                 type="text"
                 value={promoCode}
                 onChange={(e) => setPromoCode(e.target.value)}
-                placeholder="AGENT100"
+                placeholder="AGENT100 (free, first 100)"
                 className={inputClass}
                 disabled={loading}
               />
