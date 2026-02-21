@@ -1,10 +1,11 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Footer } from "@/components/home/Footer";
 import { ANSMinimalHeader } from "@/components/home/ANSMinimalHeader";
+import { sanitizeAgentName } from "@/lib/ans-validator";
 
 const PROTOCOLS = ["A2A", "MCP", "ANP", "OpenClaw"] as const;
 
@@ -21,6 +22,7 @@ function RegisterForm() {
   const [error, setError] = useState<string | null>(null);
   const [retryAfter, setRetryAfter] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [promoCode, setPromoCode] = useState("");
   const [agentCardExpanded, setAgentCardExpanded] = useState(false);
   const [agentCard, setAgentCard] = useState({
     displayName: "",
@@ -38,10 +40,15 @@ function RegisterForm() {
   } | null>(null);
 
   useEffect(() => {
-    if (nameParam) setName(nameParam);
+    if (nameParam) setName(sanitizeAgentName(nameParam) || nameParam);
   }, [nameParam]);
 
-  const fullDomain = name.trim() ? `${name.trim().toLowerCase()}.xpersona.agent` : "";
+  const handleNameBlur = useCallback(() => {
+    const normalized = sanitizeAgentName(name);
+    if (normalized !== name) setName(normalized);
+  }, [name]);
+
+  const fullDomain = name.trim() ? `${sanitizeAgentName(name) || name.trim().toLowerCase()}.xpersona.agent` : "";
 
   const buildAgentCardPayload = () => {
     const hasAny =
@@ -72,7 +79,8 @@ function RegisterForm() {
     setError(null);
     setRetryAfter(null);
     setResult(null);
-    if (name.trim().length < 3) {
+    const normalizedName = sanitizeAgentName(name);
+    if (normalizedName.length < 3) {
       setError("Domain name must be at least 3 characters");
       return;
     }
@@ -87,8 +95,9 @@ function RegisterForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: name.trim().toLowerCase(),
+          name: normalizedName,
           email: email.trim().toLowerCase(),
+          ...(promoCode.trim() && { promoCode: promoCode.trim() }),
           ...(agentCardPayload && { agentCard: agentCardPayload }),
         }),
       });
@@ -139,6 +148,11 @@ function RegisterForm() {
         return;
       }
 
+      if (data.nextStep === "completed" && data.redirectUrl) {
+        window.location.href = data.redirectUrl;
+        return;
+      }
+
       setResult({
         nextStep: "payment_required",
         domain: data.domain,
@@ -150,22 +164,6 @@ function RegisterForm() {
     }
     setLoading(false);
   };
-
-  if (!nameParam || nameParam.length < 3) {
-    return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center px-4">
-        <p className="text-[var(--text-secondary)] mb-4">
-          Enter a domain name to get started.
-        </p>
-        <Link
-          href="/"
-          className="text-[#0ea5e9] hover:underline font-medium"
-        >
-          Search for a name
-        </Link>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center px-4 py-12">
@@ -220,13 +218,33 @@ function RegisterForm() {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                onBlur={handleNameBlur}
                 placeholder="yourname"
                 className={inputClass}
-                disabled
+                disabled={loading}
               />
               <p className="mt-1 text-xs text-[var(--text-tertiary)]">
                 .xpersona.agent
               </p>
+              {name.length > 0 && sanitizeAgentName(name).length < 3 && (
+                <p className="mt-1 text-xs text-amber-500">
+                  Enter at least 3 characters
+                </p>
+              )}
+            </div>
+            <div>
+              <label htmlFor="promo" className={labelClass}>
+                Promo code (optional)
+              </label>
+              <input
+                id="promo"
+                type="text"
+                value={promoCode}
+                onChange={(e) => setPromoCode(e.target.value)}
+                placeholder="AGENT100"
+                className={inputClass}
+                disabled={loading}
+              />
             </div>
             <div>
               <label htmlFor="email" className={labelClass}>
@@ -354,7 +372,7 @@ function RegisterForm() {
             )}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || sanitizeAgentName(name).length < 3}
               className="w-full py-3 rounded-xl bg-gradient-to-r from-[var(--accent-heart)] to-[#0662c4] text-white font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
             >
               {loading ? "Checking…" : "Claim domain"}

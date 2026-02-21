@@ -14,20 +14,36 @@ import {
 import { generateAgentKeyPair, generateDnsTxtRecord } from "@/lib/ans-crypto";
 import { createDomainRecords, createTxtRecord, isCloudflareConfigured } from "@/lib/cloudflare-ans";
 import { db } from "@/lib/db";
-import { users, ansDomains } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { users, ansDomains, ansSubscriptions } from "@/lib/db/schema";
+import { eq, sql } from "drizzle-orm";
 import { checkAnsRegisterLimit } from "@/lib/ans-rate-limit";
+
+const MAX_AGENT_CARD_NAME = 100;
+const MAX_AGENT_CARD_DESCRIPTION = 500;
+const MAX_CAPABILITY_LENGTH = 50;
+const MAX_CAPABILITIES = 10;
+const MAX_PROTOCOLS = 10;
+
+const PROMO_AGENT100 = "AGENT100";
+const PROMO_AGENT100_LIMIT = 100;
 
 const RegisterSchema = z.object({
   name: z.string().min(1).max(63),
-  email: z.string().email(),
+  email: z.string().email().max(255),
+  promoCode: z.string().max(32).optional(),
   agentCard: z
     .object({
-      name: z.string(),
-      description: z.string().optional(),
-      endpoint: z.string().url().optional(),
-      capabilities: z.array(z.string()).optional(),
-      protocols: z.array(z.enum(["A2A", "MCP", "ANP", "OpenClaw"])).optional(),
+      name: z.string().max(MAX_AGENT_CARD_NAME).optional(),
+      description: z.string().max(MAX_AGENT_CARD_DESCRIPTION).optional(),
+      endpoint: z.string().url().max(500).optional(),
+      capabilities: z
+        .array(z.string().max(MAX_CAPABILITY_LENGTH))
+        .max(MAX_CAPABILITIES)
+        .optional(),
+      protocols: z
+        .array(z.enum(["A2A", "MCP", "ANP", "OpenClaw"]))
+        .max(MAX_PROTOCOLS)
+        .optional(),
     })
     .optional(),
 });
@@ -83,7 +99,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { name, email, agentCard } = parseResult.data;
+  const { name, email, promoCode, agentCard } = parseResult.data;
 
   const validation = validateAgentName(name);
   if (!validation.valid) {
@@ -101,12 +117,14 @@ export async function POST(request: NextRequest) {
   const normalizedName = validation.normalized!;
   const fullDomain = `${normalizedName}.${ANS_TLD}`;
   const normalizedEmail = email.trim().toLowerCase();
+  const isPromoAgent100 =
+    promoCode?.trim().toUpperCase() === PROMO_AGENT100;
 
   const stripe = getStripe();
   const priceId = process.env.STRIPE_PRICE_ID_ANS_STANDARD?.trim();
   const hasMasterKey = process.env.MASTER_ENCRYPTION_KEY?.trim()?.length === 64;
 
-  if (!stripe || !priceId || !isValidAnsPriceId(priceId) || !hasMasterKey) {
+  if (!hasMasterKey) {
     return NextResponse.json(
       {
         success: false,
@@ -116,6 +134,20 @@ export async function POST(request: NextRequest) {
       },
       { status: 200 }
     );
+  }
+
+  if (!stripe || !priceId || !isValidAnsPriceId(priceId)) {
+    if (!isPromoAgent100) {
+      return NextResponse.json(
+        {
+          success: false,
+          nextStep: "coming_soon",
+          error: "Registration will open soon",
+          domain: { name: normalizedName, fullDomain, status: "PENDING_VERIFICATION" },
+        },
+        { status: 200 }
+      );
+    }
   }
 
   try {
@@ -141,6 +173,144 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { success: false, nextStep: "error", error: "Service temporarily unavailable" },
       { status: 500 }
+    );
+  }
+
+  if (isPromoAgent100) {
+    const [countRow] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(ansDomains)
+      .where(eq(ansDomains.status, "ACTIVE"));
+    const activeCount = countRow?.count ?? 0;
+    if (activeCount >= PROMO_AGENT100_LIMIT) {
+      return NextResponse.json(
+        {
+          success: false,
+          nextStep: "error",
+          error: "Promo code AGENT100 has reached its limit",
+        },
+        { status: 400 }
+      );
+    }
+
+    let promoUserId: string;
+    const [existingPromoUser] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, normalizedEmail))
+      .limit(1);
+    if (existingPromoUser) {
+      promoUserId = existingPromoUser.id;
+    } else {
+      const [inserted] = await db
+        .insert(users)
+        .values({
+          email: normalizedEmail,
+          accountType: "human",
+        })
+        .returning({ id: users.id });
+      if (!inserted) throw new Error("User insert failed");
+      promoUserId = inserted.id;
+    }
+
+    let promoKeyPair: { publicKey: string; privateKeyEncrypted: string };
+    try {
+      promoKeyPair = generateAgentKeyPair();
+    } catch (err) {
+      console.error("[ANS register] Promo crypto error:", err);
+      return NextResponse.json(
+        { success: false, nextStep: "error", error: "Service temporarily unavailable" },
+        { status: 500 }
+      );
+    }
+
+    const promoExpiresAt = new Date();
+    promoExpiresAt.setFullYear(promoExpiresAt.getFullYear() + 1);
+
+    const defaultAgentCard = {
+      name: normalizedName,
+      description: "Agent powered by Xpersona",
+      endpoint: `https://${fullDomain}`,
+      capabilities: [] as string[],
+      protocols: [] as string[],
+    };
+    const mergedAgentCard = agentCard
+      ? {
+          ...defaultAgentCard,
+          ...agentCard,
+          capabilities: agentCard.capabilities ?? defaultAgentCard.capabilities,
+          protocols: agentCard.protocols ?? defaultAgentCard.protocols,
+        }
+      : defaultAgentCard;
+
+    const [promoDomain] = await db
+      .insert(ansDomains)
+      .values({
+        name: normalizedName,
+        fullDomain,
+        ownerId: promoUserId,
+        agentCard: mergedAgentCard,
+        publicKey: promoKeyPair.publicKey,
+        privateKeyEncrypted: promoKeyPair.privateKeyEncrypted,
+        status: "ACTIVE",
+        expiresAt: promoExpiresAt,
+      })
+      .returning({ id: ansDomains.id });
+
+    if (!promoDomain) throw new Error("Promo domain insert failed");
+
+    await db.insert(ansSubscriptions).values({
+      stripeSubscriptionId: `promo:${PROMO_AGENT100}:${promoDomain.id}`,
+      userId: promoUserId,
+      domainId: promoDomain.id,
+      status: "ACTIVE",
+      currentPeriodStart: new Date(),
+      currentPeriodEnd: promoExpiresAt,
+    });
+
+    if (isCloudflareConfigured()) {
+      try {
+        await createDomainRecords(normalizedName);
+        const dnsTxt = generateDnsTxtRecord(promoKeyPair.publicKey);
+        await createTxtRecord(fullDomain, dnsTxt);
+      } catch (cfErr) {
+        console.warn("[ANS register] Promo Cloudflare DNS failed (non-fatal):", cfErr);
+      }
+    }
+
+    const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
+    const redirectUrl = `${baseUrl}/register/success?session_id=promo&domain_id=${promoDomain.id}&name=${encodeURIComponent(normalizedName)}`;
+
+    return NextResponse.json({
+      success: true,
+      nextStep: "completed",
+      domain: {
+        name: normalizedName,
+        fullDomain,
+        status: "ACTIVE",
+        expiresAt: promoExpiresAt.toISOString(),
+      },
+      redirectUrl,
+      verification: {
+        publicKey: promoKeyPair.publicKey,
+        dnsTxtRecord: generateDnsTxtRecord(promoKeyPair.publicKey),
+        instructions: [
+          "Your domain is active (AGENT100 promo).",
+          `Agent Card: ${baseUrl}/api/ans/card/${normalizedName}`,
+        ],
+      },
+    });
+  }
+
+  if (!stripe || !priceId || !isValidAnsPriceId(priceId)) {
+    return NextResponse.json(
+      {
+        success: false,
+        nextStep: "coming_soon",
+        error: "Registration will open soon",
+        domain: { name: normalizedName, fullDomain, status: "PENDING_VERIFICATION" },
+      },
+      { status: 200 }
     );
   }
 

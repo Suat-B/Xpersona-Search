@@ -28,6 +28,20 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  if (sessionId === "promo") {
+    const [domain] = await db
+      .select({ name: ansDomains.name })
+      .from(ansDomains)
+      .where(eq(ansDomains.id, domainId))
+      .limit(1);
+
+    if (!domain) {
+      return NextResponse.json({ valid: false, error: "Domain not found" });
+    }
+
+    return NextResponse.json({ valid: true, name: domain.name });
+  }
+
   const stripe = getStripe();
   if (!stripe) {
     return NextResponse.json(

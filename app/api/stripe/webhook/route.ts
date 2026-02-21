@@ -54,15 +54,23 @@ export async function POST(request: Request) {
       const subId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
       if (subId) {
         try {
-          const sub = await getStripe().subscriptions.retrieve(subId);
-          await db.insert(ansSubscriptions).values({
-            stripeSubscriptionId: subId,
-            userId,
-            domainId,
-            status: "ACTIVE",
-            currentPeriodStart: new Date((sub.current_period_start as number) * 1000),
-            currentPeriodEnd: new Date((sub.current_period_end as number) * 1000),
-          });
+          const [existing] = await db
+            .select({ id: ansSubscriptions.id })
+            .from(ansSubscriptions)
+            .where(eq(ansSubscriptions.stripeSubscriptionId, subId))
+            .limit(1);
+
+          if (!existing) {
+            const sub = await getStripe().subscriptions.retrieve(subId);
+            await db.insert(ansSubscriptions).values({
+              stripeSubscriptionId: subId,
+              userId,
+              domainId,
+              status: "ACTIVE",
+              currentPeriodStart: new Date((sub.current_period_start as number) * 1000),
+              currentPeriodEnd: new Date((sub.current_period_end as number) * 1000),
+            });
+          }
           await db
             .update(ansDomains)
             .set({ status: "ACTIVE" })
