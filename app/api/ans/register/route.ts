@@ -452,7 +452,6 @@ export async function POST(request: NextRequest) {
           domainId,
           userId,
         },
-        trial_period_days: 0,
       },
     });
   } catch (err) {
