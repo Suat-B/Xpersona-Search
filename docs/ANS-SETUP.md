@@ -153,6 +153,7 @@ This error means the `/api/ans/check` handler threw an exception. Common causes:
 
 3. **Upstash Redis (optional)**
    - If `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are set and Redis is down, rate limiting now fails open (the check proceeds). If you see `[ANS check] Rate limit check failed, failing open`, Redis is having issues but the check still runs.
+   - For local dev: `docker compose up -d` starts PostgreSQL and Redis. ANS rate limiting uses Upstash REST API in production; use an Upstash dev instance or leave unset for in-memory fallback.
 
 ---
 

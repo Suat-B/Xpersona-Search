@@ -1,5 +1,6 @@
-# Local PostgreSQL for xpersona. Start: docker compose up -d
+# Local PostgreSQL and Redis for xpersona. Start: docker compose up -d
 # .env.local DATABASE_URL should be: postgresql://postgres:postgres@localhost:5432/xpersona
+# ANS rate limiting uses Upstash Redis (REST) in production; Redis here for local stack parity.
 services:
   postgres:
     image: postgres:16-alpine
@@ -15,3 +16,9 @@ services:
       interval: 2s
       timeout: 5s
       retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"

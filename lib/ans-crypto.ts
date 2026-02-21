@@ -87,12 +87,13 @@ export function signMessage(
   privateKeyEncrypted: string,
   message: string
 ): string {
-  const privateKey = decryptPrivateKey(privateKeyEncrypted);
-  const signature = crypto.sign(
-    null,
-    Buffer.from(message, "utf8"),
-    privateKey
-  );
+  const privateKeyBuf = decryptPrivateKey(privateKeyEncrypted);
+  const keyObject = crypto.createPrivateKey({
+    key: privateKeyBuf,
+    format: "der",
+    type: "pkcs8",
+  });
+  const signature = crypto.sign(null, Buffer.from(message, "utf8"), keyObject);
   return signature.toString("base64");
 }
 
@@ -105,11 +106,16 @@ export function verifyMessage(
   signatureBase64: string
 ): boolean {
   const publicKeyBuf = Buffer.from(publicKeyBase64, "base64");
+  const keyObject = crypto.createPublicKey({
+    key: publicKeyBuf,
+    format: "der",
+    type: "spki",
+  });
   const signatureBuf = Buffer.from(signatureBase64, "base64");
   return crypto.verify(
     null,
     Buffer.from(message, "utf8"),
-    publicKeyBuf,
+    keyObject,
     signatureBuf
   );
 }

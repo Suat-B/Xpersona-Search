@@ -151,6 +151,39 @@ export async function listDnsRecords(
 }
 
 /**
+ * Update a DNS record by ID (PATCH). Useful for TXT/A record updates without delete+create.
+ */
+export async function updateDnsRecord(
+  recordId: string,
+  updates: {
+    type?: string;
+    name?: string;
+    content?: string;
+    ttl?: number;
+    proxied?: boolean;
+  }
+): Promise<void> {
+  const config = getConfig();
+  if (!config) {
+    throw new Error("Cloudflare not configured");
+  }
+  const body: Record<string, unknown> = {};
+  if (updates.type !== undefined) body.type = updates.type;
+  if (updates.name !== undefined) body.name = updates.name;
+  if (updates.content !== undefined) body.content = updates.content;
+  if (updates.ttl !== undefined) body.ttl = updates.ttl;
+  if (updates.proxied !== undefined) body.proxied = updates.proxied;
+  if (Object.keys(body).length === 0) return;
+  await request(
+    `/zones/${config.zoneId}/dns_records/${recordId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }
+  );
+}
+
+/**
  * Delete a DNS record by ID.
  */
 export async function deleteDnsRecord(recordId: string): Promise<void> {
