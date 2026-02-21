@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { auth, type Session } from "@/lib/auth";
 import { cookies } from "next/headers";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
@@ -69,8 +68,9 @@ export default async function MarketingLayout({
       }
     }
 
+    // Hub: always show ANS landing (search-first). No redirect; users reach dashboard via header.
     if (service === "hub") {
-      redirect("/dashboard");
+      return <>{children}</>;
     }
     if (service === "game") {
       return (
