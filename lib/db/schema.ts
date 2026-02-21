@@ -40,11 +40,14 @@ export const users = pgTable(
     apiKeyCreatedAt: timestamp("api_key_created_at", { withTimezone: true }),
     /** Set when user first views/copies their API key (Connect AI or API page). Used to avoid showing "AI connected" before user has seen key. */
     apiKeyViewedAt: timestamp("api_key_viewed_at", { withTimezone: true }),
+    /** Stripe customer ID for ANS and other subscription billing. */
+    stripeCustomerId: varchar("stripe_customer_id", { length: 255 }).unique(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     lastFaucetAt: timestamp("last_faucet_at", { withTimezone: true }).defaultNow(),
   },
   (table) => [
     uniqueIndex("users_google_id_idx").on(table.googleId),
+    uniqueIndex("users_stripe_customer_id_idx").on(table.stripeCustomerId),
     uniqueIndex("users_api_key_hash_idx").on(table.apiKeyHash),
     uniqueIndex("users_email_idx").on(table.email),
     uniqueIndex("users_agent_id_idx").on(table.agentId),
@@ -543,6 +546,69 @@ export const userSignalPreferences = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
   (table) => [uniqueIndex("user_signal_preferences_user_id_idx").on(table.userId)]
+);
+
+// ANS (Agent Name Service) — .xpersona.agent domains
+export const ansDomains = pgTable(
+  "ans_domains",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: varchar("name", { length: 63 }).notNull().unique(),
+    fullDomain: varchar("full_domain", { length: 255 }).notNull().unique(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    agentCard: jsonb("agent_card").$type<{
+      name?: string;
+      description?: string;
+      endpoint?: string;
+      capabilities?: string[];
+      protocols?: string[];
+    }>(),
+    agentCardVersion: varchar("agent_card_version", { length: 16 }).default("1.0"),
+    publicKey: text("public_key"),
+    /** Encrypted at rest with MASTER_ENCRYPTION_KEY. */
+    privateKeyEncrypted: text("private_key_encrypted"),
+    verified: boolean("verified").default(false),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    status: varchar("status", { length: 24 }).notNull().default("PENDING_VERIFICATION"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("ans_domains_name_idx").on(table.name),
+    index("ans_domains_owner_id_idx").on(table.ownerId),
+    index("ans_domains_status_idx").on(table.status),
+    index("ans_domains_expires_at_idx").on(table.expiresAt),
+  ]
+);
+
+// ANS subscriptions — Stripe subscription lifecycle for .agent domains
+export const ansSubscriptions = pgTable(
+  "ans_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }).notNull().unique(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    domainId: uuid("domain_id")
+      .notNull()
+      .references(() => ansDomains.id, { onDelete: "restrict" }),
+    status: varchar("status", { length: 20 }).notNull().default("ACTIVE"),
+    currentPeriodStart: timestamp("current_period_start", { withTimezone: true }).notNull(),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }).notNull(),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("ans_subscriptions_stripe_id_idx").on(table.stripeSubscriptionId),
+    index("ans_subscriptions_user_id_idx").on(table.userId),
+    index("ans_subscriptions_domain_id_idx").on(table.domainId),
+    index("ans_subscriptions_status_idx").on(table.status),
+  ]
 );
 
 // Signal delivery audit trail

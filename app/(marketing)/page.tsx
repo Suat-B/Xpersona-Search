@@ -4,7 +4,7 @@ import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import { getService } from "@/lib/service";
 import { HomeHero } from "@/components/home/HomeHero";
 import { HomeHub } from "@/components/home/HomeHub";
-import { HubLanding } from "@/components/home/HubLanding";
+import { ANSLanding } from "@/components/home/ANSLanding";
 import { HomeStrategies } from "@/components/home/HomeStrategies";
 import { HomeFlow } from "@/components/home/HomeFlow";
 import { HomeTrust } from "@/components/home/HomeTrust";
@@ -29,7 +29,7 @@ export default async function HomePage() {
     return (
       <div className="min-h-screen flex flex-col">
         <div className="flex-1">
-          <HubLanding />
+          <ANSLanding />
         </div>
         <Footer />
       </div>
