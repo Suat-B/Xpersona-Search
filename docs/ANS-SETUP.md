@@ -89,25 +89,36 @@ Ensure `STRIPE_WEBHOOK_SECRET` is set in `.env.local`.
 
 ## 4. Cloudflare DNS (Optional)
 
-If configured, the system automatically creates DNS records for new domains (*.xpersona.agent). If not configured, registration still works; users receive manual DNS instructions on the success page.
+If configured, the system automatically creates DNS records for new domains. If not configured, registration still works; users receive manual DNS instructions on the success page.
+
+### Resolvable Domain Format
+
+`.agent` is not a valid ICANN TLD. ANS uses resolvable subdomains under `agent.xpersona.co`:
+
+- **Agent Card URL:** `https://xpersona.co/agent/{name}`
+- **Verification domain:** `{name}.agent.xpersona.co`
+- **DNS TXT record:** `_agent.{name}.agent.xpersona.co` TXT `"{value}"`
+
+Users add the TXT record at `_agent.{name}.agent.xpersona.co` for DNS verification. Ensure `agent.xpersona.co` (and `*.agent.xpersona.co`) resolves in your DNS.
 
 ### Required env vars
 
 | Variable | Description |
 |----------|-------------|
 | `CLOUDFLARE_API_TOKEN` | API token with DNS edit permissions for the zone |
-| `CLOUDFLARE_ZONE_ID` | Zone ID for `xpersona.agent` |
+| `CLOUDFLARE_ZONE_ID` | Zone ID for `xpersona.co` (or the zone containing `agent.xpersona.co`) |
 | `CLOUDFLARE_ACCOUNT_ID` | Account ID |
 | `CLOUDFLARE_ORIGIN_IP` | (Optional) Origin IP for A records, defaults to `76.76.21.21` |
-| `ANS_DOMAIN` | (Optional) TLD, defaults to `xpersona.agent` |
-| `ROOT_DOMAIN` | (Optional) Root domain, e.g. `xpersona.co` |
+| `ANS_DOMAIN` | (Optional) Base domain for agent subdomains. Use `agent.xpersona.co` for resolvable domains. Defaults to `xpersona.agent` (legacy, non-resolvable). |
+| `ROOT_DOMAIN` | (Optional) Root domain, e.g. `xpersona.co` (used by `getVerificationDomain`) |
 
 ### Zone setup
 
-1. Add the `xpersona.agent` domain to Cloudflare.
-2. Create an API token with **Zone.DNS** edit rights.
-3. Copy Zone ID and Account ID from the Cloudflare dashboard.
-4. Add the variables to `.env.local`.
+1. Use the **xpersona.co** zone in Cloudflare (not a separate `xpersona.agent` zone).
+2. Set `ANS_DOMAIN=agent.xpersona.co` so TXT records are created at `_agent.{name}.agent.xpersona.co`.
+3. Create an API token with **Zone.DNS** edit rights.
+4. Copy Zone ID and Account ID from the Cloudflare dashboard.
+5. Add the variables to `.env.local`.
 
 ---
 

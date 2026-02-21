@@ -8,9 +8,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ansDomains } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { ANS_TLD } from "@/lib/ans-validator";
+import { getAgentCardUrl, getVerificationDomain } from "@/lib/ans-validator";
 
 const AGENT_CARD_CONTEXT = "https://xpersona.co/context/v1";
+const BASE_URL = process.env.NEXTAUTH_URL?.replace(/\/$/, "") || "https://xpersona.co";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -60,21 +61,22 @@ export async function GET(
       );
     }
 
-    const fullDomain = `${normalizedName}.${ANS_TLD}`;
     const agentCard = domain.agentCard ?? {};
+    const endpoint = agentCard.endpoint ?? getAgentCardUrl(BASE_URL, normalizedName);
+    const verificationDomain = getVerificationDomain(normalizedName);
 
     const card = {
       "@context": AGENT_CARD_CONTEXT,
       type: "AgentCard",
       name: agentCard.name ?? domain.name,
       description: agentCard.description ?? "",
-      endpoint: agentCard.endpoint ?? `https://${fullDomain}`,
+      endpoint,
       capabilities: agentCard.capabilities ?? [],
       protocols: agentCard.protocols ?? [],
       verification: {
         type: "DNS-TXT",
         publicKey: domain.publicKey ?? null,
-        domain: fullDomain,
+        domain: verificationDomain,
         verified: domain.verified ?? false,
       },
       metadata: {

@@ -1,12 +1,12 @@
 /**
- * ANS DNS verification — polls TXT records at _agent.{name}.xpersona.agent
+ * ANS DNS verification — polls TXT records at _agent.{name}.agent.xpersona.co
  * to set verified=true when the expected value matches.
  * Uses Node dns.promises for resolution.
  */
 
 import dns from "dns/promises";
 import { generateDnsTxtRecord } from "./ans-crypto";
-import { ANS_TLD } from "./ans-validator";
+import { getVerificationDomain } from "./ans-validator";
 
 const TXT_SUBDOMAIN = "_agent";
 
@@ -22,8 +22,8 @@ export async function verifyDomainDns(
   domainName: string,
   expectedTxt: string
 ): Promise<boolean> {
-  const fullDomain = `${domainName}.${ANS_TLD}`;
-  const txtName = `${TXT_SUBDOMAIN}.${fullDomain}`;
+  const verificationDomain = getVerificationDomain(domainName);
+  const txtName = `${TXT_SUBDOMAIN}.${verificationDomain}`;
 
   try {
     const records = await dns.resolveTxt(txtName);

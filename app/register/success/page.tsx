@@ -57,12 +57,13 @@ function SuccessContent() {
   }, [verifyState, verifiedName, nameParam]);
 
   const name = verifiedName ?? nameParam;
-  const fullDomain = name ? `${name}.xpersona.agent` : "";
+  const fullDomain = verification?.fullDomain ?? (name ? `${name}.agent.xpersona.co` : "");
   const cardUrl = verification?.cardUrl ?? (name ? `https://xpersona.co/agent/${name}` : "");
+  const txtRecordHint = name ? `_agent.${name}.agent.xpersona.co` : "_agent.{name}.agent.xpersona.co";
   const instructions = verification?.instructions ?? [
     "Your domain is active.",
     `Agent Card: ${cardUrl}`,
-    `Add TXT record _agent.${fullDomain} for DNS verification when ready.`,
+    `Add TXT record ${txtRecordHint} for DNS verification when ready.`,
   ];
 
   const copyDnsRecord = () => {

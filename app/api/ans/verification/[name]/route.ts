@@ -9,7 +9,7 @@ import { db } from "@/lib/db";
 import { ansDomains } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { generateDnsTxtRecord } from "@/lib/ans-crypto";
-import { ANS_TLD } from "@/lib/ans-validator";
+import { getVerificationDomain } from "@/lib/ans-validator";
 
 const BASE_URL = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
 
@@ -42,15 +42,15 @@ export async function GET(
       return NextResponse.json({ error: "Domain not found" }, { status: 404 });
     }
 
-    const fullDomain = `${normalizedName}.${ANS_TLD}`;
+    const verificationDomain = getVerificationDomain(normalizedName);
     const dnsTxtRecord = domain.publicKey
       ? generateDnsTxtRecord(domain.publicKey)
       : null;
-    const txtRecordName = `_agent.${fullDomain}`;
+    const txtRecordName = `_agent.${verificationDomain}`;
     const cardUrl = `${BASE_URL}/agent/${normalizedName}`;
 
     return NextResponse.json({
-      fullDomain,
+      fullDomain: verificationDomain,
       cardUrl,
       dnsTxtRecord,
       txtRecordName,

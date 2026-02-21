@@ -5,6 +5,18 @@
 
 export const ANS_TLD = "xpersona.agent";
 
+/** Resolvable Agent Card URL (xpersona.co/agent/name). */
+export function getAgentCardUrl(baseUrl: string, name: string): string {
+  const base = baseUrl.replace(/\/$/, "");
+  return `${base}/agent/${name}`;
+}
+
+/** Resolvable verification domain for DNS-TXT (name.agent.xpersona.co). */
+export function getVerificationDomain(name: string): string {
+  const root = process.env.ROOT_DOMAIN?.trim() || "xpersona.co";
+  return `${name}.agent.${root}`;
+}
+
 const RESERVED_NAMES = new Set([
   "www", "api", "admin", "mail", "ftp", "smtp", "pop", "imap",
   "ns1", "ns2", "dns", "test", "demo", "staging", "prod",

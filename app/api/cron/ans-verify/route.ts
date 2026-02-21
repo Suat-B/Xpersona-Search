@@ -1,7 +1,7 @@
 /**
  * Vercel Cron: ANS DNS verification.
  * Runs every 15 min, checks ACTIVE domains with verified=false,
- * polls _agent.{name}.xpersona.agent TXT, updates verified/verifiedAt on match.
+ * polls _agent.{name}.agent.xpersona.co TXT, updates verified/verifiedAt on match.
  * Secured by CRON_SECRET (Bearer token).
  */
 

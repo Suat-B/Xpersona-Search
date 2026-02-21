@@ -110,7 +110,8 @@ export async function createDomainRecords(
 }
 
 /**
- * Create TXT record for agent verification (e.g. _agent.kimi.xpersona.agent).
+ * Create TXT record for agent verification (e.g. _agent.kimi.agent.xpersona.co).
+ * Pass the verification domain (from getVerificationDomain) as first argument.
  */
 export async function createTxtRecord(
   fullDomain: string,

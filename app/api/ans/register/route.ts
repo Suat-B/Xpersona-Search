@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import Stripe from "stripe";
 import {
+  getVerificationDomain,
   validateAgentName,
   ANS_TLD,
 } from "@/lib/ans-validator";
@@ -272,7 +273,7 @@ export async function POST(request: NextRequest) {
       try {
         await createDomainRecords(normalizedName);
         const dnsTxt = generateDnsTxtRecord(promoKeyPair.publicKey);
-        await createTxtRecord(fullDomain, dnsTxt);
+        await createTxtRecord(getVerificationDomain(normalizedName), dnsTxt);
       } catch (cfErr) {
         console.warn("[ANS register] Promo Cloudflare DNS failed (non-fatal):", cfErr);
       }
@@ -423,7 +424,7 @@ export async function POST(request: NextRequest) {
     try {
       await createDomainRecords(normalizedName);
       const dnsTxt = generateDnsTxtRecord(keyPair.publicKey);
-      await createTxtRecord(fullDomain, dnsTxt);
+      await createTxtRecord(getVerificationDomain(normalizedName), dnsTxt);
     } catch (cfErr) {
       console.warn("[ANS register] Cloudflare DNS failed (non-fatal):", cfErr);
     }
@@ -471,7 +472,7 @@ export async function POST(request: NextRequest) {
   const instructions = [
     "1. Complete payment to activate domain",
     `2. Add this TXT record for verification:`,
-    `   _agent.${fullDomain} TXT "${dnsTxtRecord}"`,
+    `   _agent.${getVerificationDomain(normalizedName)} TXT "${dnsTxtRecord}"`,
     `3. Your Agent Card will be available at:`,
     `   https://xpersona.co/agent/${normalizedName}`,
   ];
