@@ -4,6 +4,8 @@ import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
+import { getServiceFromHost } from "@/lib/subdomain";
+import { getPostSignInRedirectPath } from "@/lib/post-sign-in-redirect";
 
 const inputClass =
   "w-full rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-3 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:border-[var(--accent-heart)]/50 transition-colors";
@@ -74,7 +76,12 @@ function SignUpForm() {
         }
       }
 
-      router.push("/dashboard/profile");
+      const service =
+        typeof window !== "undefined"
+          ? getServiceFromHost(window.location.host, searchParams ?? undefined)
+          : "hub";
+      const redirectPath = getPostSignInRedirectPath(service, null, link);
+      router.push(redirectPath);
       router.refresh();
     } catch {
       setError("Something went wrong. Please try again.");
@@ -83,7 +90,7 @@ function SignUpForm() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[var(--bg-deep)]">
+    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-white">
       <div className="w-full max-w-md agent-card rounded-2xl border border-[var(--border)] p-8 shadow-2xl shadow-black/30">
         <div className="flex flex-col gap-6">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--accent-heart)]/15 border border-[var(--accent-heart)]/25 text-[var(--accent-heart)]">
@@ -170,7 +177,7 @@ function SignUpForm() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-xl bg-[var(--accent-heart)] px-6 py-3 text-sm font-semibold text-white hover:opacity-95 transition-opacity disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)] focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+              className="w-full rounded-xl bg-[var(--accent-heart)] px-6 py-3 text-sm font-semibold text-white hover:opacity-95 transition-opacity disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)] focus:ring-offset-2 focus:ring-offset-white"
             >
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
@@ -204,7 +211,7 @@ export default function SignUpPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-[var(--bg-deep)]">
+        <div className="min-h-screen flex items-center justify-center bg-white">
           <div className="w-8 h-8 rounded-full border-2 border-[var(--accent-heart)] border-t-transparent animate-spin" />
         </div>
       }

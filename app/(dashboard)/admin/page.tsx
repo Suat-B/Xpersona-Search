@@ -196,7 +196,7 @@ export default function AdminPage() {
         </p>
         <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
           <Link
-            href="/auth/signin"
+            href="/auth/signin?callbackUrl=/admin"
             className="inline-flex items-center justify-center gap-2 rounded-full bg-[var(--accent-heart)] px-6 py-2.5 text-sm font-medium text-white hover:opacity-90 transition-opacity"
           >
             Sign in

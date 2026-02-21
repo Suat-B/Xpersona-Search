@@ -30,7 +30,7 @@ export default async function HomePage() {
   if (service === "hub") {
     return (
       <div className="min-h-screen flex flex-col">
-        <ANSMinimalHeader />
+        <ANSMinimalHeader isAuthenticated={isAuthenticated} />
         <div className="flex-1">
           <ANSLanding />
         </div>

@@ -9,13 +9,8 @@ export function TradingMinimalHeader() {
   return (
     <header className="scroll-stable-layer sticky top-0 z-20 border-b border-[var(--border)] bg-black/80 backdrop-blur-xl">
       <div className="container mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 py-4 min-w-0">
-        <Link href="/trading" className="flex items-center gap-3 group">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#30d158] to-[#248a3d] shadow-lg shadow-[#30d158]/20 group-hover:shadow-[#30d158]/40 transition-shadow">
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <span className="text-lg font-semibold tracking-tight text-[var(--text-primary)]">Xpersona</span>
+        <Link href="/trading" className="group">
+          <span className="text-lg font-bold tracking-tight text-[var(--text-primary)]">Xpersona</span>
         </Link>
         <div className="flex items-center gap-2 sm:gap-3">
           <a
@@ -25,7 +20,7 @@ export function TradingMinimalHeader() {
             Play game
           </a>
           <Link
-            href="/auth/signin"
+            href="/auth/signin?callbackUrl=/trading"
             className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/5 hover:border-[var(--accent-heart)]/50 transition-all duration-200"
           >
             <svg className="w-4 h-4 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">

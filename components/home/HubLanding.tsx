@@ -10,11 +10,8 @@ export function HubLanding() {
   return (
     <section className="relative min-h-[85vh] flex flex-col items-center justify-center px-4 py-16">
       <div className="max-w-2xl w-full text-center space-y-8">
-        <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-[var(--text-primary)]">
+        <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-[var(--text-primary)]">
           Xpersona
-          <span className="text-[var(--accent-heart)]" aria-hidden>
-            ♥
-          </span>
         </h1>
         <p className="text-lg text-[var(--text-secondary)]">
           Choose your service
@@ -64,7 +61,7 @@ export function HubLanding() {
 
         <div className="flex flex-wrap items-center justify-center gap-4 mt-12">
           <Link
-            href="/auth/signin"
+            href="/auth/signin?callbackUrl=/dashboard"
             className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] px-6 py-3 text-sm font-medium text-[var(--text-primary)] hover:bg-white/5 transition-colors"
           >
             Sign in

@@ -136,13 +136,8 @@ export function MobileDashboardNav({ displayName, isAdmin = false, isPermanent: 
       role="banner"
     >
       <div className="flex h-14 min-h-[44px] items-center justify-between px-4">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[var(--accent-heart)] to-[var(--accent-purple)]">
-            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-            </svg>
-          </div>
-          <span className="font-semibold text-[var(--text-primary)]">Xpersona</span>
+        <Link href="/dashboard">
+          <span className="font-bold text-[var(--text-primary)]">Xpersona</span>
         </Link>
 
         <button
@@ -255,7 +250,7 @@ export function MobileDashboardNav({ displayName, isAdmin = false, isPermanent: 
               {!isPermanent && (
                 <div className="flex gap-2">
                   <Link
-                    href="/auth/signin"
+                    href="/auth/signin?callbackUrl=/dashboard"
                     onClick={() => setOpen(false)}
                     className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-4 py-3 text-sm font-medium text-[var(--text-primary)] hover:bg-white/5 transition-colors"
                   >

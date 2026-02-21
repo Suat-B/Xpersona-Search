@@ -13,13 +13,13 @@ export default async function AuthErrorPage({
       ? {
           title: "Access denied",
           description: "You don't have permission to sign in with this account.",
-          primary: { label: "Try again", href: "/auth/signin" },
+          primary: { label: "Try again", href: "/auth/signin?callbackUrl=/dashboard" },
           secondary: { label: "Dashboard", href: "/dashboard" },
         }
       : {
           title: "Sign-in hiccup",
           description: "Something went wrong during sign-in. Please try again.",
-          primary: { label: "Try again", href: "/auth/signin" },
+          primary: { label: "Try again", href: "/auth/signin?callbackUrl=/dashboard" },
           secondary: { label: "Dashboard", href: "/dashboard" },
         };
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
+import { getHubUrl } from "@/lib/service-urls";
 import { ContinueAsAIButton } from "@/components/auth/ContinueAsAIButton";
 
 const SIGNAL_TICKER = [
@@ -185,7 +186,10 @@ export function HomeHero() {
           <div className="flex items-center gap-2 mb-4">
             <div className="w-2 h-2 rounded-full bg-[#30d158] animate-pulse" />
             <span className="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider">
-              AI-First · Data-Driven · Provably Fair
+              AI-First · Data-Driven · Provably Fair ·{" "}
+              <a href={getHubUrl("/")} className="text-[#0ea5e9] hover:text-[#0ea5e9]/80 hover:underline transition-colors">
+                ANS
+              </a>
             </span>
           </div>
           
@@ -225,7 +229,7 @@ export function HomeHero() {
               </svg>
             </Link>
             <Link
-              href="/auth/signin"
+              href="/auth/signin?callbackUrl=/dashboard"
               className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] px-6 py-3.5 text-sm font-medium text-[var(--text-primary)] hover:bg-white/5 hover:border-[var(--accent-heart)]/50 transition-all duration-200"
             >
               Sign in
