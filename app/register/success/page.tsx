@@ -58,7 +58,7 @@ function SuccessContent() {
 
   const name = verifiedName ?? nameParam;
   const fullDomain = name ? `${name}.xpersona.agent` : "";
-  const cardUrl = verification?.cardUrl ?? (name ? `https://xpersona.co/api/ans/card/${name}` : "");
+  const cardUrl = verification?.cardUrl ?? (name ? `https://xpersona.co/agent/${name}` : "");
   const instructions = verification?.instructions ?? [
     "Your domain is active.",
     `Agent Card: ${cardUrl}`,

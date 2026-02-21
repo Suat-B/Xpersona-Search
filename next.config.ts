@@ -3,6 +3,11 @@ import path from "path";
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(process.cwd()),
+  async rewrites() {
+    return [
+      { source: "/agent/:name", destination: "/api/ans/card/:name" },
+    ];
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: "2mb",
@@ -24,6 +29,13 @@ const nextConfig: NextConfig = {
           { key: "Access-Control-Allow-Origin", value: "*" },
           { key: "Access-Control-Allow-Methods", value: "GET, POST" },
           { key: "Access-Control-Allow-Headers", value: "Authorization, Content-Type" },
+        ],
+      },
+      {
+        source: "/agent/:path*",
+        headers: [
+          { key: "Access-Control-Allow-Origin", value: "*" },
+          { key: "Access-Control-Allow-Methods", value: "GET, OPTIONS" },
         ],
       },
     ];

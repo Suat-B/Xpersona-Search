@@ -16,7 +16,13 @@ import {
 import { checkAnsCheckLimit } from "@/lib/ans-rate-limit";
 
 export async function GET(request: NextRequest) {
-  const limitResult = await Promise.resolve(checkAnsCheckLimit(request));
+  let limitResult: { allowed: boolean; retryAfter?: number };
+  try {
+    limitResult = await Promise.resolve(checkAnsCheckLimit(request));
+  } catch (rlErr) {
+    console.warn("[ANS check] Rate limit check failed, failing open:", rlErr);
+    limitResult = { allowed: true };
+  }
   if (!limitResult.allowed) {
     return NextResponse.json(
       {
@@ -93,7 +99,7 @@ export async function GET(request: NextRequest) {
     const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
     const cardUrl =
       taken && existing!.status === "ACTIVE"
-        ? `${baseUrl}/api/ans/card/${name}`
+        ? `${baseUrl}/agent/${name}`
         : undefined;
 
     return NextResponse.json(
@@ -115,7 +121,12 @@ export async function GET(request: NextRequest) {
       }
     );
   } catch (err) {
-    console.error("[ANS check] Error:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    const code =
+      err && typeof err === "object" && "code" in err
+        ? String((err as { code?: string }).code)
+        : undefined;
+    console.error("[ANS check] Error:", msg, code ? `(code: ${code})` : "", err);
     return NextResponse.json(
       {
         success: false,

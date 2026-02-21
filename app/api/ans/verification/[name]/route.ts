@@ -47,7 +47,7 @@ export async function GET(
       ? generateDnsTxtRecord(domain.publicKey)
       : null;
     const txtRecordName = `_agent.${fullDomain}`;
-    const cardUrl = `${BASE_URL}/api/ans/card/${normalizedName}`;
+    const cardUrl = `${BASE_URL}/agent/${normalizedName}`;
 
     return NextResponse.json({
       fullDomain,

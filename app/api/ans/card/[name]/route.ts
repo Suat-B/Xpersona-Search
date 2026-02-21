@@ -1,7 +1,7 @@
 /**
  * GET /api/ans/card/[name]
  * Serves Agent Card JSON for an ANS domain. Per XPERSONA ANS.MD.
- * Alternative access: https://{name}.xpersona.agent/card.json (requires DNS + Vercel wildcard)
+ * Alternative access: https://xpersona.co/agent/[name] (rewrite in next.config)
  */
 
 import { NextRequest, NextResponse } from "next/server";

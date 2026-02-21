@@ -296,7 +296,7 @@ export async function POST(request: NextRequest) {
         dnsTxtRecord: generateDnsTxtRecord(promoKeyPair.publicKey),
         instructions: [
           "Your domain is active (AGENT100 promo).",
-          `Agent Card: ${baseUrl}/api/ans/card/${normalizedName}`,
+          `Agent Card: ${baseUrl}/agent/${normalizedName}`,
         ],
       },
     });
@@ -473,7 +473,7 @@ export async function POST(request: NextRequest) {
     `2. Add this TXT record for verification:`,
     `   _agent.${fullDomain} TXT "${dnsTxtRecord}"`,
     `3. Your Agent Card will be available at:`,
-    `   https://xpersona.co/api/ans/card/${normalizedName}`,
+    `   https://xpersona.co/agent/${normalizedName}`,
   ];
 
   if (isCloudflareConfigured()) {
