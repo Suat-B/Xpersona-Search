@@ -62,13 +62,23 @@ const TRADING_ROUTES = [
   "/auth-error",
 ] as const;
 
-/** Routes that belong to the Hub (legal, auth, etc.). */
+/**
+ * Routes allowed on Hub (xpersona.co).
+ * When subdomains (game, trading) aren't configured in Vercel, the hub serves all routes
+ * so the site works on xpersona.co alone.
+ */
 const HUB_ROUTES = [
   "/",
   "/auth",
   "/terms-of-service",
   "/privacy-policy-1",
   "/auth-error",
+  "/dashboard",
+  "/games",
+  "/trading",
+  "/docs",
+  "/embed",
+  "/admin",
 ] as const;
 
 function pathStartsWith(pathname: string, prefixes: readonly string[]): boolean {

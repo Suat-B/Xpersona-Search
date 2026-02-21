@@ -7,7 +7,6 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getService } from "@/lib/service";
-import { getGameUrl } from "@/lib/service-urls";
 import { GameChrome } from "@/components/layout/GameChrome";
 import { TradingChrome } from "@/components/layout/TradingChrome";
 import { HomeMinimalHeader } from "@/components/home/HomeMinimalHeader";
@@ -72,7 +71,7 @@ export default async function MarketingLayout({
     }
 
     if (service === "hub") {
-      redirect(getGameUrl("/dashboard"));
+      redirect("/dashboard");
     }
     if (service === "game") {
       return (
