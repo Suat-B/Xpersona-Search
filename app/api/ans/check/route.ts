@@ -16,7 +16,7 @@ import {
 import { checkAnsCheckLimit } from "@/lib/ans-rate-limit";
 
 export async function GET(request: NextRequest) {
-  const limitResult = checkAnsCheckLimit(request);
+  const limitResult = await Promise.resolve(checkAnsCheckLimit(request));
   if (!limitResult.allowed) {
     return NextResponse.json(
       {

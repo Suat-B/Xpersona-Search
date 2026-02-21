@@ -6,9 +6,16 @@ import { useSearchParams } from "next/navigation";
 import { Footer } from "@/components/home/Footer";
 import { ANSMinimalHeader } from "@/components/home/ANSMinimalHeader";
 
+type VerifyState = "verifying" | "valid" | "invalid" | null;
+
 function SuccessContent() {
   const searchParams = useSearchParams();
-  const name = searchParams?.get("name")?.trim() ?? "";
+  const sessionId = searchParams?.get("session_id")?.trim() ?? "";
+  const domainId = searchParams?.get("domain_id")?.trim() ?? "";
+  const nameParam = searchParams?.get("name")?.trim() ?? "";
+
+  const [verifyState, setVerifyState] = useState<VerifyState>(null);
+  const [verifiedName, setVerifiedName] = useState<string | null>(null);
   const [verification, setVerification] = useState<{
     fullDomain: string;
     cardUrl: string;
@@ -19,16 +26,39 @@ function SuccessContent() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (name && name.length >= 3) {
+    if (!sessionId || !domainId) {
+      setVerifyState("invalid");
+      return;
+    }
+    setVerifyState("verifying");
+    fetch(
+      `/api/ans/verify-session?session_id=${encodeURIComponent(sessionId)}&domain_id=${encodeURIComponent(domainId)}`
+    )
+      .then((r) => r.json())
+      .then((data: { valid?: boolean; name?: string }) => {
+        if (data.valid && data.name) {
+          setVerifyState("valid");
+          setVerifiedName(data.name);
+        } else {
+          setVerifyState("invalid");
+        }
+      })
+      .catch(() => setVerifyState("invalid"));
+  }, [sessionId, domainId]);
+
+  useEffect(() => {
+    const name = verifiedName ?? nameParam;
+    if (verifyState === "valid" && name && name.length >= 3) {
       fetch(`/api/ans/verification/${encodeURIComponent(name)}`)
-        .then((r) => r.ok ? r.json() : null)
+        .then((r) => (r.ok ? r.json() : null))
         .then(setVerification)
         .catch(() => setVerification(null));
     }
-  }, [name]);
+  }, [verifyState, verifiedName, nameParam]);
 
+  const name = verifiedName ?? nameParam;
   const fullDomain = name ? `${name}.xpersona.agent` : "";
-  const cardUrl = verification?.cardUrl ?? `https://xpersona.co/api/ans/card/${name}`;
+  const cardUrl = verification?.cardUrl ?? (name ? `https://xpersona.co/api/ans/card/${name}` : "");
   const instructions = verification?.instructions ?? [
     "Your domain is active.",
     `Agent Card: ${cardUrl}`,
@@ -42,15 +72,29 @@ function SuccessContent() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  if (!name || name.length < 3) {
+  if (verifyState === "verifying") {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center px-4">
-        <p className="text-[var(--text-secondary)] mb-4">Invalid success page.</p>
+        <p className="text-[var(--text-secondary)] mb-4">Verifying payment…</p>
+      </div>
+    );
+  }
+
+  if (verifyState === "invalid") {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center px-4">
+        <p className="text-[var(--text-secondary)] mb-4">
+          Invalid or expired session. Complete payment to activate your domain.
+        </p>
         <Link href="/" className="text-[#0ea5e9] hover:underline font-medium">
           Back to search
         </Link>
       </div>
     );
+  }
+
+  if (verifyState !== "valid" || !name || name.length < 3) {
+    return null;
   }
 
   return (

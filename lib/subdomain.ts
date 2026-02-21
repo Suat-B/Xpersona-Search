@@ -85,6 +85,7 @@ const HUB_ROUTES = [
   "/",
   "/auth",
   "/register",
+  "/context",
   "/terms-of-service",
   "/privacy-policy-1",
   "/auth-error",

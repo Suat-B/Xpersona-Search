@@ -43,7 +43,7 @@ function isValidAnsPriceId(id: string): boolean {
 }
 
 export async function POST(request: NextRequest) {
-  const limitResult = checkAnsRegisterLimit(request);
+  const limitResult = await Promise.resolve(checkAnsRegisterLimit(request));
   if (!limitResult.allowed) {
     return NextResponse.json(
       {

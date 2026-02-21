@@ -237,6 +237,35 @@ export function ANSLanding() {
           )}
         </div>
 
+        <div className="grid md:grid-cols-3 gap-6 mt-16 max-w-3xl mx-auto">
+          <div className="p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]/50">
+            <div className="text-2xl mb-3" aria-hidden>🔐</div>
+            <h3 className="text-base font-semibold text-[var(--text-primary)] mb-2">
+              Cryptographic Identity
+            </h3>
+            <p className="text-sm text-[var(--text-secondary)]">
+              Each agent gets an ED25519 keypair for secure verification
+            </p>
+          </div>
+          <div className="p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]/50">
+            <div className="text-2xl mb-3" aria-hidden>🌐</div>
+            <h3 className="text-base font-semibold text-[var(--text-primary)] mb-2">
+              Universal Protocol
+            </h3>
+            <p className="text-sm text-[var(--text-secondary)]">
+              Works with A2A, MCP, ANP, and OpenClaw out of the box
+            </p>
+          </div>
+          <div className="p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]/50">
+            <div className="text-2xl mb-3" aria-hidden>⚡</div>
+            <h3 className="text-base font-semibold text-[var(--text-primary)] mb-2">
+              Instant Verification
+            </h3>
+            <p className="text-sm text-[var(--text-secondary)]">
+              DNS-based verification that&apos;s tamper-proof and decentralized
+            </p>
+          </div>
+        </div>
       </div>
     </section>
   );

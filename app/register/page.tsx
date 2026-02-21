@@ -2,9 +2,11 @@
 
 import { Suspense, useState, useEffect } from "react";
 import Link from "next/link";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Footer } from "@/components/home/Footer";
 import { ANSMinimalHeader } from "@/components/home/ANSMinimalHeader";
+
+const PROTOCOLS = ["A2A", "MCP", "ANP", "OpenClaw"] as const;
 
 const inputClass =
   "w-full rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-3 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/50 focus:border-[#0ea5e9]/50";
@@ -12,13 +14,21 @@ const labelClass =
   "block text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider mb-1.5";
 
 function RegisterForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const nameParam = searchParams?.get("name")?.trim() ?? "";
   const [name, setName] = useState(nameParam);
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [retryAfter, setRetryAfter] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [agentCardExpanded, setAgentCardExpanded] = useState(false);
+  const [agentCard, setAgentCard] = useState({
+    displayName: "",
+    description: "",
+    endpoint: "",
+    capabilities: "",
+    protocols: [] as string[],
+  });
   const [result, setResult] = useState<{
     nextStep?: string;
     error?: string;
@@ -33,9 +43,34 @@ function RegisterForm() {
 
   const fullDomain = name.trim() ? `${name.trim().toLowerCase()}.xpersona.agent` : "";
 
+  const buildAgentCardPayload = () => {
+    const hasAny =
+      agentCard.displayName ||
+      agentCard.description ||
+      agentCard.endpoint ||
+      agentCard.capabilities.trim() ||
+      agentCard.protocols.length > 0;
+    if (!hasAny) return undefined;
+    const capList = agentCard.capabilities
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean);
+    const protoList = agentCard.protocols.filter((p) =>
+      PROTOCOLS.includes(p as (typeof PROTOCOLS)[number])
+    );
+    return {
+      name: agentCard.displayName || undefined,
+      description: agentCard.description || undefined,
+      endpoint: agentCard.endpoint.trim() ? agentCard.endpoint.trim() : undefined,
+      capabilities: capList.length > 0 ? capList : undefined,
+      protocols: protoList.length > 0 ? protoList : undefined,
+    };
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setRetryAfter(null);
     setResult(null);
     if (name.trim().length < 3) {
       setError("Domain name must be at least 3 characters");
@@ -47,15 +82,29 @@ function RegisterForm() {
     }
     setLoading(true);
     try {
+      const agentCardPayload = buildAgentCardPayload();
       const res = await fetch("/api/ans/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim().toLowerCase(),
           email: email.trim().toLowerCase(),
+          ...(agentCardPayload && { agentCard: agentCardPayload }),
         }),
       });
       const data = await res.json().catch(() => ({}));
+
+      const retryHeader = res.headers.get("Retry-After");
+      if (res.status === 429) {
+        const seconds = retryHeader ? parseInt(retryHeader, 10) : 60;
+        setRetryAfter(Number.isNaN(seconds) ? 60 : seconds);
+        setError(
+          (data.error ?? "Too many requests. Wait a moment.") +
+            (seconds ? ` Try again in ${seconds} seconds.` : "")
+        );
+        setLoading(false);
+        return;
+      }
 
       if (data.nextStep === "coming_soon") {
         setResult({
@@ -194,6 +243,112 @@ function RegisterForm() {
                 disabled={loading}
               />
             </div>
+
+            <div className="border border-[var(--border)] rounded-xl overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setAgentCardExpanded((e) => !e)}
+                className="w-full px-4 py-3 text-left text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] flex items-center justify-between"
+              >
+                Customize Agent Card
+                <span className="text-[var(--text-tertiary)]" aria-hidden>
+                  {agentCardExpanded ? "−" : "+"}
+                </span>
+              </button>
+              {agentCardExpanded && (
+                <div className="px-4 pb-4 pt-0 space-y-3 border-t border-[var(--border)]">
+                  <div>
+                    <label htmlFor="agent-display-name" className={labelClass}>
+                      Display name
+                    </label>
+                    <input
+                      id="agent-display-name"
+                      type="text"
+                      value={agentCard.displayName}
+                      onChange={(e) =>
+                        setAgentCard((a) => ({ ...a, displayName: e.target.value }))
+                      }
+                      placeholder="My Trading Bot"
+                      className={inputClass}
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="agent-description" className={labelClass}>
+                      Description
+                    </label>
+                    <textarea
+                      id="agent-description"
+                      value={agentCard.description}
+                      onChange={(e) =>
+                        setAgentCard((a) => ({ ...a, description: e.target.value }))
+                      }
+                      placeholder="Brief description of your agent"
+                      rows={2}
+                      className={inputClass}
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="agent-endpoint" className={labelClass}>
+                      Endpoint URL
+                    </label>
+                    <input
+                      id="agent-endpoint"
+                      type="url"
+                      value={agentCard.endpoint}
+                      onChange={(e) =>
+                        setAgentCard((a) => ({ ...a, endpoint: e.target.value }))
+                      }
+                      placeholder="https://..."
+                      className={inputClass}
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="agent-capabilities" className={labelClass}>
+                      Capabilities (comma-separated)
+                    </label>
+                    <input
+                      id="agent-capabilities"
+                      type="text"
+                      value={agentCard.capabilities}
+                      onChange={(e) =>
+                        setAgentCard((a) => ({ ...a, capabilities: e.target.value }))
+                      }
+                      placeholder="trading, analysis"
+                      className={inputClass}
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <span className={labelClass}>Protocols</span>
+                    <div className="flex flex-wrap gap-3 mt-2">
+                      {PROTOCOLS.map((p) => (
+                        <label key={p} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={agentCard.protocols.includes(p)}
+                            onChange={(e) =>
+                              setAgentCard((a) => ({
+                                ...a,
+                                protocols: e.target.checked
+                                  ? [...a.protocols, p]
+                                  : a.protocols.filter((x) => x !== p),
+                              }))
+                            }
+                            disabled={loading}
+                            className="rounded border-[var(--border)]"
+                          />
+                          {p}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {error && (
               <p className="text-sm text-red-400">{error}</p>
             )}

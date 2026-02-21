@@ -30,6 +30,8 @@
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.7.2",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.36.2",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.38.0",
