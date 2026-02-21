@@ -13,8 +13,28 @@ import {
   getSuggestions,
   ANS_TLD,
 } from "@/lib/ans-validator";
+import { checkAnsCheckLimit } from "@/lib/ans-rate-limit";
 
 export async function GET(request: NextRequest) {
+  const limitResult = checkAnsCheckLimit(request);
+  if (!limitResult.allowed) {
+    return NextResponse.json(
+      {
+        success: false,
+        state: "error" as const,
+        error: "Too many requests. Wait a moment.",
+        code: "RATE_LIMIT_EXCEEDED",
+      },
+      {
+        status: 429,
+        headers: {
+          "Cache-Control": "no-store",
+          "Retry-After": String(limitResult.retryAfter ?? 60),
+        },
+      }
+    );
+  }
+
   const url = new URL(request.url);
   const rawName = url.searchParams.get("name");
 
@@ -63,13 +83,18 @@ export async function GET(request: NextRequest) {
     const name = validation.normalized!;
     const fullDomain = `${name}.${ANS_TLD}`;
 
-    const existing = await db
-      .select({ id: ansDomains.id })
+    const [existing] = await db
+      .select({ id: ansDomains.id, status: ansDomains.status })
       .from(ansDomains)
       .where(eq(ansDomains.name, name))
       .limit(1);
 
-    const taken = existing.length > 0;
+    const taken = !!existing;
+    const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
+    const cardUrl =
+      taken && existing!.status === "ACTIVE"
+        ? `${baseUrl}/api/ans/card/${name}`
+        : undefined;
 
     return NextResponse.json(
       {
@@ -78,6 +103,7 @@ export async function GET(request: NextRequest) {
         name,
         fullDomain,
         suggestions: taken ? getSuggestions(name) : [],
+        cardUrl,
         error: null,
         code: null,
       },

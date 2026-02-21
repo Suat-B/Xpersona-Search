@@ -2,7 +2,6 @@
 
 import { useState, useCallback } from "react";
 import Link from "next/link";
-import { getGameUrl, getTradingUrl } from "@/lib/service-urls";
 import {
   trackANSSearchSubmitted,
   trackANSResultState,
@@ -227,32 +226,6 @@ export function ANSLanding() {
           )}
         </div>
 
-        <div className="flex flex-wrap items-center justify-center gap-4 mt-8 pt-8 border-t border-[var(--border)]">
-          <Link
-            href={getGameUrl("/")}
-            className="text-sm text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          >
-            Game
-          </Link>
-          <Link
-            href={getTradingUrl("/")}
-            className="text-sm text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          >
-            Marketplace
-          </Link>
-          <Link
-            href="/auth/signin"
-            className="text-sm text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          >
-            Sign in
-          </Link>
-          <Link
-            href="/auth/signup"
-            className="text-sm font-medium text-[var(--accent-heart)] hover:underline"
-          >
-            Sign up
-          </Link>
-        </div>
       </div>
     </section>
   );

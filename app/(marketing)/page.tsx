@@ -12,6 +12,7 @@ import { HomeSignalPreview } from "@/components/home/HomeSignalPreview";
 import { HomePricing } from "@/components/home/HomePricing";
 import { HomeDeveloperCTA } from "@/components/home/HomeDeveloperCTA";
 import { Footer } from "@/components/home/Footer";
+import { ANSMinimalHeader } from "@/components/home/ANSMinimalHeader";
 
 export default async function HomePage() {
   let session = null;
@@ -28,6 +29,7 @@ export default async function HomePage() {
   if (service === "hub") {
     return (
       <div className="min-h-screen flex flex-col">
+        <ANSMinimalHeader />
         <div className="flex-1">
           <ANSLanding />
         </div>

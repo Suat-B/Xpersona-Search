@@ -4,6 +4,7 @@ import {
   getServiceFromHost,
   isAllowedRoute,
   getServiceBaseUrl,
+  getAnsSubdomainFromHost,
   type Service,
 } from "@/lib/subdomain";
 
@@ -15,8 +16,19 @@ export async function middleware(req: NextRequest) {
   const url = req.nextUrl.clone();
   const searchParams = url.searchParams;
 
-  // Redirect www.xpersona.co -> xpersona.co
   const hostname = host.split(":")[0]?.toLowerCase() ?? "";
+  const pathname = url.pathname || "/";
+  const normalizedPath = pathname.replace(/\/$/, "") || "/";
+
+  // *.xpersona.agent: rewrite / and /card.json to Agent Card API
+  const ansSubdomain = getAnsSubdomainFromHost(host);
+  if (ansSubdomain && (normalizedPath === "/" || normalizedPath === "/card.json")) {
+    const rewriteUrl = req.nextUrl.clone();
+    rewriteUrl.pathname = `/api/ans/card/${ansSubdomain}`;
+    return NextResponse.rewrite(rewriteUrl);
+  }
+
+  // Redirect www.xpersona.co -> xpersona.co
   if (hostname === "www.xpersona.co") {
     url.host = "xpersona.co";
     return NextResponse.redirect(url);
@@ -25,8 +37,6 @@ export async function middleware(req: NextRequest) {
   const service = getServiceFromHost(host, searchParams);
 
   // Rewrite: trading subdomain / -> /trading (marketplace as root)
-  const pathname = url.pathname || "/";
-  const normalizedPath = pathname.replace(/\/$/, "") || "/";
 
   if (service === "trading" && (normalizedPath === "/" || normalizedPath === "")) {
     const rewriteUrl = req.nextUrl.clone();

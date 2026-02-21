@@ -2,8 +2,9 @@
 
 import { Suspense, useState, useEffect } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useRouter } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
+import { Footer } from "@/components/home/Footer";
+import { ANSMinimalHeader } from "@/components/home/ANSMinimalHeader";
 
 const inputClass =
   "w-full rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-3 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/50 focus:border-[#0ea5e9]/50";
@@ -22,6 +23,8 @@ function RegisterForm() {
     nextStep?: string;
     error?: string;
     domain?: { fullDomain?: string };
+    payment?: { url?: string };
+    verification?: { instructions?: string[] };
   } | null>(null);
 
   useEffect(() => {
@@ -82,9 +85,16 @@ function RegisterForm() {
         return;
       }
 
+      if (data.nextStep === "payment_required" && data.payment?.url) {
+        window.location.href = data.payment.url;
+        return;
+      }
+
       setResult({
         nextStep: "payment_required",
         domain: data.domain,
+        payment: data.payment,
+        verification: data.verification,
       });
     } catch {
       setError("Could not connect. Please try again.");
@@ -118,7 +128,23 @@ function RegisterForm() {
           $10/year · Human-readable identity · Cryptographic verification
         </p>
 
-        {result?.nextStep === "coming_soon" ? (
+        {result?.nextStep === "payment_required" && result.payment?.url ? (
+          <div className="p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]">
+            <p className="text-[var(--text-primary)] font-medium mb-2">
+              Redirecting to payment…
+            </p>
+            <p className="text-sm text-[var(--text-secondary)] mb-4">
+              If you are not redirected,{" "}
+              <a
+                href={result.payment.url}
+                className="text-[#0ea5e9] hover:underline font-medium"
+              >
+                click here to complete payment
+              </a>
+              .
+            </p>
+          </div>
+        ) : result?.nextStep === "coming_soon" ? (
           <div className="p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]">
             <p className="text-[var(--text-primary)] font-medium">
               Registration will open soon
@@ -194,11 +220,13 @@ function RegisterForm() {
 export default function RegisterPage() {
   return (
     <div className="min-h-screen flex flex-col">
+      <ANSMinimalHeader />
       <div className="flex-1">
         <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center">Loading…</div>}>
           <RegisterForm />
         </Suspense>
       </div>
+      <Footer />
     </div>
   );
 }

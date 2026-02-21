@@ -6,7 +6,7 @@
 export type Service = "hub" | "game" | "trading";
 
 const PROD_ROOT = "xpersona.co";
-const LOCAL_ROOT = "localhost";
+const ANS_DOMAIN = "xpersona.agent";
 
 /**
  * Determine which service the request belongs to based on host.
@@ -40,6 +40,20 @@ export function getServiceFromHost(
   if (hostname.endsWith(`.${PROD_ROOT}`)) return "hub";
 
   return "hub";
+}
+
+/**
+ * If host is *.xpersona.agent, return the subdomain (e.g. "kimi" for kimi.xpersona.agent).
+ * Otherwise return null.
+ */
+export function getAnsSubdomainFromHost(host: string): string | null {
+  const hostname = host.split(":")[0]?.toLowerCase() ?? "";
+  if (!hostname.endsWith(`.${ANS_DOMAIN}`) || hostname === ANS_DOMAIN) {
+    return null;
+  }
+  const sub = hostname.slice(0, -(ANS_DOMAIN.length + 1));
+  if (!sub || sub.includes(".")) return null;
+  return sub;
 }
 
 /** Routes that belong to the Game service. */

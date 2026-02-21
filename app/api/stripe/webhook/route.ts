@@ -8,6 +8,8 @@ import {
   marketplaceStrategies,
   marketplaceDevelopers,
   marketplaceSubscriptions,
+  ansDomains,
+  ansSubscriptions,
 } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
@@ -45,6 +47,35 @@ export async function POST(request: Request) {
     const userId = session.metadata?.userId;
     const creditsStr = session.metadata?.credits;
     const strategyId = session.metadata?.strategyId;
+    const source = session.metadata?.source;
+    const domainId = session.metadata?.domainId;
+
+    if (source === "xpersona-ans" && session.mode === "subscription" && domainId && userId) {
+      const subId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
+      if (subId) {
+        try {
+          const sub = await getStripe().subscriptions.retrieve(subId);
+          await db.insert(ansSubscriptions).values({
+            stripeSubscriptionId: subId,
+            userId,
+            domainId,
+            status: "ACTIVE",
+            currentPeriodStart: new Date((sub.current_period_start as number) * 1000),
+            currentPeriodEnd: new Date((sub.current_period_end as number) * 1000),
+          });
+          await db
+            .update(ansDomains)
+            .set({ status: "ACTIVE" })
+            .where(eq(ansDomains.id, domainId));
+        } catch (ansErr: unknown) {
+          const msg = ansErr && typeof (ansErr as Error).message === "string" ? (ansErr as Error).message : "";
+          if (!msg.includes("unique") && !msg.includes("duplicate")) {
+            console.error("[webhook] ANS subscription insert:", ansErr);
+          }
+        }
+      }
+      return NextResponse.json({ received: true });
+    }
 
     if (session.mode === "subscription" && strategyId && userId) {
       const subId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
@@ -121,5 +152,61 @@ export async function POST(request: Request) {
       });
     }
   }
+
+  if (event.type === "invoice.payment_succeeded") {
+    const invoice = event.data.object as Stripe.Invoice;
+    const subId = invoice.subscription;
+    if (typeof subId === "string" && subId) {
+      try {
+        const [sub] = await db
+          .select({
+            domainId: ansSubscriptions.domainId,
+            id: ansSubscriptions.id,
+          })
+          .from(ansSubscriptions)
+          .where(eq(ansSubscriptions.stripeSubscriptionId, subId))
+          .limit(1);
+        if (sub) {
+          const stripeSub = await getStripe().subscriptions.retrieve(subId);
+          const periodEnd = new Date((stripeSub.current_period_end as number) * 1000);
+          await db
+            .update(ansSubscriptions)
+            .set({ currentPeriodEnd: periodEnd, updatedAt: new Date() })
+            .where(eq(ansSubscriptions.id, sub.id));
+          await db
+            .update(ansDomains)
+            .set({ expiresAt: periodEnd })
+            .where(eq(ansDomains.id, sub.domainId));
+        }
+      } catch (ansErr) {
+        console.warn("[webhook] ANS invoice.payment_succeeded:", ansErr);
+      }
+    }
+  }
+
+  if (event.type === "customer.subscription.deleted") {
+    const subscription = event.data.object as Stripe.Subscription;
+    const subId = subscription.id;
+    try {
+      const [sub] = await db
+        .select({ id: ansSubscriptions.id, domainId: ansSubscriptions.domainId })
+        .from(ansSubscriptions)
+        .where(eq(ansSubscriptions.stripeSubscriptionId, subId))
+        .limit(1);
+      if (sub) {
+        await db
+          .update(ansSubscriptions)
+          .set({ status: "CANCELED", updatedAt: new Date() })
+          .where(eq(ansSubscriptions.id, sub.id));
+        await db
+          .update(ansDomains)
+          .set({ status: "EXPIRED" })
+          .where(eq(ansDomains.id, sub.domainId));
+      }
+    } catch (ansErr) {
+      console.warn("[webhook] ANS subscription.deleted:", ansErr);
+    }
+  }
+
   return NextResponse.json({ received: true });
 }
