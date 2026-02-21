@@ -3,16 +3,16 @@
 import { Suspense, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Footer } from "@/components/home/Footer";
+import { ANSMinimalFooter } from "@/components/home/ANSMinimalFooter";
 import { ANSMinimalHeader } from "@/components/home/ANSMinimalHeader";
 import { sanitizeAgentName } from "@/lib/ans-validator";
 
 const PROTOCOLS = ["A2A", "MCP", "ANP", "OpenClaw"] as const;
 
 const inputClass =
-  "w-full rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-3 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/50 focus:border-[#0ea5e9]/50";
+  "w-full rounded-xl border border-[var(--light-border)] bg-white px-4 py-3 text-[var(--light-text-primary)] placeholder-[var(--light-text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--light-accent-light)] focus:border-[var(--light-accent)] transition-all";
 const labelClass =
-  "block text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider mb-1.5";
+  "block text-xs font-medium text-[var(--light-text-secondary)] uppercase tracking-wider mb-2.5";
 
 function RegisterForm() {
   const searchParams = useSearchParams();
@@ -168,23 +168,23 @@ function RegisterForm() {
   return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
-        <h1 className="text-2xl font-bold text-[var(--text-primary)] mb-2">
+        <h1 className="text-2xl font-bold text-[var(--light-text-primary)] mb-2">
           Claim {fullDomain || "your domain"}
         </h1>
-        <p className="text-sm text-[var(--text-secondary)] mb-6">
+        <p className="text-sm text-[var(--light-text-secondary)] mb-6">
           $10/year · Human-readable identity · Cryptographic verification
         </p>
 
         {result?.nextStep === "payment_required" && result.payment?.url ? (
-          <div className="p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]">
-            <p className="text-[var(--text-primary)] font-medium mb-2">
+          <div className="p-6 rounded-2xl border border-[var(--light-border)] bg-white shadow-[var(--light-shadow-card)]">
+            <p className="text-[var(--light-text-primary)] font-medium mb-2">
               Redirecting to payment…
             </p>
-            <p className="text-sm text-[var(--text-secondary)] mb-4">
+            <p className="text-sm text-[var(--light-text-secondary)] mb-4">
               If you are not redirected,{" "}
               <a
                 href={result.payment.url}
-                className="text-[#0ea5e9] hover:underline font-medium"
+                className="text-[var(--light-accent)] hover:text-[var(--light-accent-hover)] font-medium transition-colors"
               >
                 click here to complete payment
               </a>
@@ -192,23 +192,23 @@ function RegisterForm() {
             </p>
           </div>
         ) : result?.nextStep === "coming_soon" ? (
-          <div className="p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]">
-            <p className="text-[var(--text-primary)] font-medium">
+          <div className="p-6 rounded-2xl border border-[var(--light-border)] bg-white shadow-[var(--light-shadow-card)]">
+            <p className="text-[var(--light-text-primary)] font-medium">
               Registration will open soon
             </p>
-            <p className="mt-2 text-sm text-[var(--text-secondary)]">
+            <p className="mt-2 text-sm text-[var(--light-text-secondary)]">
               We&apos;re putting the finishing touches on domain registration.
               Check back in a few days or follow us for updates.
             </p>
             <Link
               href="/"
-              className="mt-4 inline-block text-sm font-medium text-[#0ea5e9] hover:underline"
+              className="mt-4 inline-block text-sm font-medium text-[var(--light-accent)] hover:text-[var(--light-accent-hover)] transition-colors"
             >
               Back to search
             </Link>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label htmlFor="name" className={labelClass}>
                 Domain name
@@ -223,11 +223,11 @@ function RegisterForm() {
                 className={inputClass}
                 disabled={loading}
               />
-              <p className="mt-1 text-xs text-[var(--text-tertiary)]">
+              <p className="mt-1 text-xs text-[var(--light-text-tertiary)]">
                 .xpersona.agent
               </p>
               {name.length > 0 && sanitizeAgentName(name).length < 3 && (
-                <p className="mt-1 text-xs text-amber-500">
+                <p className="mt-1 text-xs text-[var(--light-warning)]">
                   Enter at least 3 characters
                 </p>
               )}
@@ -262,19 +262,19 @@ function RegisterForm() {
               />
             </div>
 
-            <div className="border border-[var(--border)] rounded-xl overflow-hidden">
+            <div className="border border-[var(--light-border)] rounded-xl overflow-hidden bg-white mt-2">
               <button
                 type="button"
                 onClick={() => setAgentCardExpanded((e) => !e)}
-                className="w-full px-4 py-3 text-left text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] flex items-center justify-between"
+                className="w-full px-4 py-4 text-left text-sm font-medium text-[var(--light-text-secondary)] hover:text-[var(--light-text-primary)] hover:bg-[var(--light-bg-hover)] flex items-center justify-between transition-colors"
               >
                 Customize Agent Card
-                <span className="text-[var(--text-tertiary)]" aria-hidden>
+                <span className="text-[var(--light-text-tertiary)]" aria-hidden>
                   {agentCardExpanded ? "−" : "+"}
                 </span>
               </button>
               {agentCardExpanded && (
-                <div className="px-4 pb-4 pt-0 space-y-3 border-t border-[var(--border)]">
+                <div className="px-4 pb-5 pt-4 space-y-5 border-t border-[var(--light-border)]">
                   <div>
                     <label htmlFor="agent-display-name" className={labelClass}>
                       Display name
@@ -286,7 +286,7 @@ function RegisterForm() {
                       onChange={(e) =>
                         setAgentCard((a) => ({ ...a, displayName: e.target.value }))
                       }
-                      placeholder="My Trading Bot"
+                      placeholder="My Sweet Bot"
                       className={inputClass}
                       disabled={loading}
                     />
@@ -341,9 +341,9 @@ function RegisterForm() {
                   </div>
                   <div>
                     <span className={labelClass}>Protocols</span>
-                    <div className="flex flex-wrap gap-3 mt-2">
+                    <div className="flex flex-wrap gap-x-6 gap-y-3 mt-2">
                       {PROTOCOLS.map((p) => (
-                        <label key={p} className="flex items-center gap-2 text-sm">
+                        <label key={p} className="flex items-center gap-3 text-sm text-[var(--light-text-secondary)] cursor-pointer">
                           <input
                             type="checkbox"
                             checked={agentCard.protocols.includes(p)}
@@ -356,7 +356,7 @@ function RegisterForm() {
                               }))
                             }
                             disabled={loading}
-                            className="rounded border-[var(--border)]"
+                            className="rounded border-[var(--light-border)] text-[var(--light-accent)] focus:ring-[var(--light-accent)]"
                           />
                           {p}
                         </label>
@@ -368,12 +368,12 @@ function RegisterForm() {
             </div>
 
             {error && (
-              <p className="text-sm text-red-400">{error}</p>
+              <p className="text-sm text-[var(--light-error)]">{error}</p>
             )}
             <button
               type="submit"
               disabled={loading || sanitizeAgentName(name).length < 3}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-[var(--accent-heart)] to-[#0662c4] text-white font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
+              className="w-full py-3 rounded-xl bg-[var(--light-accent)] text-white font-semibold hover:bg-[var(--light-accent-hover)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[var(--light-accent)] transition-all shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30"
             >
               {loading ? "Checking…" : "Claim domain"}
             </button>
@@ -381,7 +381,7 @@ function RegisterForm() {
         )}
 
         <p className="mt-6 text-center">
-          <Link href="/" className="text-sm text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
+          <Link href="/" className="text-sm text-[var(--light-text-tertiary)] hover:text-[var(--light-accent)] transition-colors">
             Cancel
           </Link>
         </p>
@@ -392,14 +392,14 @@ function RegisterForm() {
 
 export default function RegisterPage() {
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-white">
       <ANSMinimalHeader />
       <div className="flex-1">
-        <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center">Loading…</div>}>
+        <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center text-[var(--light-text-tertiary)]">Loading…</div>}>
           <RegisterForm />
         </Suspense>
       </div>
-      <Footer />
+      <ANSMinimalFooter />
     </div>
   );
 }
