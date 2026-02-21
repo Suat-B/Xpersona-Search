@@ -204,6 +204,7 @@ export function ANSLanding() {
             <button
               onClick={handleSearch}
               disabled={state === "loading" || query.trim().length < 3}
+              aria-label="Search domain availability"
               className="px-8 py-4 rounded-2xl bg-gradient-to-r from-[var(--accent-heart)] to-[#0662c4] text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity inline-flex items-center justify-center gap-2"
             >
               {state === "loading" ? (

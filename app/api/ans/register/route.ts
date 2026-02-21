@@ -15,7 +15,7 @@ import { generateAgentKeyPair, generateDnsTxtRecord } from "@/lib/ans-crypto";
 import { createDomainRecords, createTxtRecord, isCloudflareConfigured } from "@/lib/cloudflare-ans";
 import { db } from "@/lib/db";
 import { users, ansDomains, ansSubscriptions } from "@/lib/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { eq, like, sql } from "drizzle-orm";
 import { checkAnsRegisterLimit } from "@/lib/ans-rate-limit";
 
 const MAX_AGENT_CARD_NAME = 100;
@@ -179,10 +179,10 @@ export async function POST(request: NextRequest) {
   if (isPromoAgent100) {
     const [countRow] = await db
       .select({ count: sql<number>`count(*)::int` })
-      .from(ansDomains)
-      .where(eq(ansDomains.status, "ACTIVE"));
-    const activeCount = countRow?.count ?? 0;
-    if (activeCount >= PROMO_AGENT100_LIMIT) {
+      .from(ansSubscriptions)
+      .where(like(ansSubscriptions.stripeSubscriptionId, `promo:${PROMO_AGENT100}:%`));
+    const promoRedemptionCount = countRow?.count ?? 0;
+    if (promoRedemptionCount >= PROMO_AGENT100_LIMIT) {
       return NextResponse.json(
         {
           success: false,
