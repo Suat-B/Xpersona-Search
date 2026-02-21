@@ -49,14 +49,9 @@ export function DashboardChrome({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                 </svg>
               </div>
-              <div className="flex flex-col">
-                <span className="text-lg font-semibold tracking-tight text-[var(--text-primary)]">
-                  Xpersona
-                </span>
-                <span className="text-[10px] font-medium text-[var(--dash-text-secondary)] uppercase tracking-wider">
-                  AI-First Probability Game
-                </span>
-              </div>
+              <span className="text-lg font-semibold tracking-tight text-[var(--text-primary)]">
+                Xpersona
+              </span>
             </Link>
             <UserAccountMenu
               displayName={displayName}
