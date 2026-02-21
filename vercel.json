@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/ans-verify",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 12 * * *"
     }
   ]
 }
