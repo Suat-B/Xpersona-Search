@@ -147,6 +147,18 @@ function SuccessContent() {
               View Agent Card →
             </Link>
             <Link
+              href="/auth/signin"
+              className="text-sm font-medium text-[#0ea5e9] hover:underline"
+            >
+              Sign in to dashboard →
+            </Link>
+            <Link
+              href="/auth/forgot-password"
+              className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+            >
+              First time? Set a password for your account
+            </Link>
+            <Link
               href="/"
               className="text-sm text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
             >

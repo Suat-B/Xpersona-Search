@@ -159,6 +159,7 @@ This error means the `/api/ans/check` handler threw an exception. Common causes:
 
 ## See also
 
+- [STRIPE-WEBHOOK-ANS-SETUP.md](STRIPE-WEBHOOK-ANS-SETUP.md) — Step-by-step Stripe webhook setup (A–Z)
 - `npm run setup:ans` — Automated setup script
 - [XPERSONA ANS.MD](../XPERSONA%20ANS.MD) — Product spec and API contract
 - [.env.example](../.env.example) — Full env reference
