@@ -31,7 +31,10 @@ export async function GET(
 ) {
   const { name } = await params;
   if (!name || name.length < 3) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "Not found" },
+      { status: 404, headers: CORS_HEADERS }
+    );
   }
 
   const normalizedName = name.toLowerCase().trim();
@@ -44,11 +47,17 @@ export async function GET(
       .limit(1);
 
     if (!domain) {
-      return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Agent not found" },
+        { status: 404, headers: CORS_HEADERS }
+      );
     }
 
     if (domain.status !== "ACTIVE" && domain.status !== "PENDING_VERIFICATION") {
-      return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Agent not found" },
+        { status: 404, headers: CORS_HEADERS }
+      );
     }
 
     const fullDomain = `${normalizedName}.${ANS_TLD}`;
@@ -86,7 +95,7 @@ export async function GET(
     console.error("[ANS card]", err);
     return NextResponse.json(
       { error: "Service temporarily unavailable" },
-      { status: 500 }
+      { status: 500, headers: CORS_HEADERS }
     );
   }
 }

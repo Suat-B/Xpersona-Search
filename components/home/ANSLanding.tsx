@@ -16,6 +16,7 @@ interface CheckResponse {
   name: string | null;
   fullDomain: string | null;
   suggestions: string[];
+  cardUrl?: string | null;
   error?: string | null;
   code?: string | null;
 }
@@ -183,10 +184,20 @@ export function ANSLanding() {
                     setState("idle");
                     setResult(null);
                   }}
-                  className="mt-3 text-sm font-medium text-[#0ea5e9] hover:underline"
+                  className="mt-3 text-sm font-medium text-[#0ea5e9] hover:underline block"
                 >
                   Search for {suggestedName}.xpersona.agent
                 </button>
+              )}
+              {result.cardUrl && (
+                <a
+                  href={result.cardUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-block text-sm font-medium text-[#0ea5e9] hover:underline"
+                >
+                  View Agent Card →
+                </a>
               )}
             </div>
           )}

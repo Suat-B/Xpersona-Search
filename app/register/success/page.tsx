@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState, useEffect } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Footer } from "@/components/home/Footer";
@@ -9,13 +9,38 @@ import { ANSMinimalHeader } from "@/components/home/ANSMinimalHeader";
 function SuccessContent() {
   const searchParams = useSearchParams();
   const name = searchParams?.get("name")?.trim() ?? "";
+  const [verification, setVerification] = useState<{
+    fullDomain: string;
+    cardUrl: string;
+    dnsTxtRecord: string | null;
+    txtRecordName: string;
+    instructions: string[];
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (name && name.length >= 3) {
+      fetch(`/api/ans/verification/${encodeURIComponent(name)}`)
+        .then((r) => r.ok ? r.json() : null)
+        .then(setVerification)
+        .catch(() => setVerification(null));
+    }
+  }, [name]);
 
   const fullDomain = name ? `${name}.xpersona.agent` : "";
-  const instructions = [
+  const cardUrl = verification?.cardUrl ?? `https://xpersona.co/api/ans/card/${name}`;
+  const instructions = verification?.instructions ?? [
     "Your domain is active.",
-    `Agent Card: https://xpersona.co/api/ans/card/${name}`,
+    `Agent Card: ${cardUrl}`,
     `Add TXT record _agent.${fullDomain} for DNS verification when ready.`,
   ];
+
+  const copyDnsRecord = () => {
+    if (!verification?.dnsTxtRecord) return;
+    navigator.clipboard.writeText(verification.dnsTxtRecord);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   if (!name || name.length < 3) {
     return (
@@ -50,9 +75,27 @@ function SuccessContent() {
             </ul>
           </div>
 
+          {verification?.dnsTxtRecord && (
+            <div className="mt-4 p-3 rounded-lg bg-black/20 border border-[var(--border)]">
+              <p className="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-2">
+                DNS TXT record
+              </p>
+              <code className="block text-xs text-[var(--text-primary)] break-all mb-2">
+                {verification.txtRecordName} TXT &quot;{verification.dnsTxtRecord}&quot;
+              </code>
+              <button
+                type="button"
+                onClick={copyDnsRecord}
+                className="text-sm font-medium text-[#0ea5e9] hover:underline"
+              >
+                {copied ? "Copied!" : "Copy DNS record"}
+              </button>
+            </div>
+          )}
+
           <div className="mt-6 flex flex-col gap-2">
             <Link
-              href={`/api/ans/card/${name}`}
+              href={cardUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm font-medium text-[#0ea5e9] hover:underline"
