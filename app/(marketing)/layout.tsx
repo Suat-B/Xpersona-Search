@@ -11,7 +11,6 @@ import { GameChrome } from "@/components/layout/GameChrome";
 import { TradingChrome } from "@/components/layout/TradingChrome";
 import { HomeMinimalHeader } from "@/components/home/HomeMinimalHeader";
 import { TradingMinimalHeader } from "@/components/layout/TradingMinimalHeader";
-import { HubMinimalHeader } from "@/components/layout/HubMinimalHeader";
 
 export default async function MarketingLayout({
   children,
@@ -94,7 +93,12 @@ export default async function MarketingLayout({
     );
   }
 
-  const MinimalHeader = service === "hub" ? HubMinimalHeader : service === "trading" ? TradingMinimalHeader : HomeMinimalHeader;
+  // Hub page provides its own full chrome (ANSMinimalHeader + ANSLanding + footer)
+  if (service === "hub") {
+    return <>{children}</>;
+  }
+
+  const MinimalHeader = service === "trading" ? TradingMinimalHeader : HomeMinimalHeader;
 
   return (
     <div className="flex min-h-screen w-full bg-black">

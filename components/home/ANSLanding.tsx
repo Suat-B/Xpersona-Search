@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
 import {
   trackANSSearchSubmitted,
   trackANSResultState,
   trackANSClaimClicked,
 } from "@/lib/ans-analytics";
+import { sanitizeAgentName } from "@/lib/ans-validator";
 
 type ResultState = "idle" | "loading" | "available" | "taken" | "invalid" | "error";
 
@@ -21,10 +22,50 @@ interface CheckResponse {
   code?: string | null;
 }
 
+function SearchSpinner() {
+  return (
+    <svg
+      className="animate-spin h-5 w-5 text-white/90"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      aria-hidden
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+      />
+    </svg>
+  );
+}
+
 export function ANSLanding() {
   const [query, setQuery] = useState("");
   const [state, setState] = useState<ResultState>("idle");
   const [result, setResult] = useState<CheckResponse | null>(null);
+  const claimRef = useRef<HTMLAnchorElement>(null);
+
+  useEffect(() => {
+    if (state === "available" && claimRef.current) {
+      claimRef.current.focus();
+    }
+  }, [state]);
+
+  const handleInputBlur = useCallback(() => {
+    const normalized = sanitizeAgentName(query);
+    if (normalized !== query) {
+      setQuery(normalized);
+    }
+  }, [query]);
 
   const handleSearch = useCallback(async () => {
     const trimmed = query.trim();
@@ -51,6 +92,22 @@ export function ANSLanding() {
         `/api/ans/check?name=${encodeURIComponent(trimmed)}`
       );
       const data: CheckResponse = await res.json();
+
+      if (res.status === 429) {
+        const retrySeconds = parseInt(res.headers.get("Retry-After") ?? "60", 10);
+        const retryVal = Number.isNaN(retrySeconds) ? 60 : retrySeconds;
+        setState("error");
+        setResult({
+          success: false,
+          state: "error",
+          name: null,
+          fullDomain: null,
+          suggestions: [],
+          error: `Too many requests. Try again in ${retryVal}s.`,
+        });
+        trackANSResultState("error");
+        return;
+      }
 
       if (!res.ok) {
         setState("error");
@@ -112,7 +169,7 @@ export function ANSLanding() {
   const suggestedName = result?.suggestions?.[0];
 
   return (
-    <section className="relative min-h-[85vh] flex flex-col items-center justify-center px-4 py-16">
+    <section className="relative min-h-[85vh] flex flex-col items-center justify-center px-4 py-12 sm:py-16">
       <div className="max-w-2xl w-full text-center space-y-8">
         <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-[var(--text-primary)]">
           Xpersona
@@ -120,20 +177,23 @@ export function ANSLanding() {
             {" "}♥
           </span>
         </h1>
-        <p className="text-lg text-[var(--text-secondary)]">
-          Claim your .agent identity
+        <p className="text-lg text-[var(--text-secondary)] max-w-xl mx-auto">
+          The domain name system for AI agents. Human-readable. Cryptographically verified.
+          Works with OpenClaw, A2A, MCP, and ANP.
         </p>
 
-        <div className="max-w-xl mx-auto mt-8">
+        <div className="max-w-xl mx-auto mt-8" aria-live="polite" aria-atomic="true">
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="flex-1 relative flex items-center rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] focus-within:border-[#0ea5e9]/50 transition-colors">
               <input
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
+                onBlur={handleInputBlur}
                 onKeyDown={handleKeyDown}
                 placeholder="Search your .agent name"
                 aria-label="Domain name search"
+                aria-invalid={state === "invalid" ? true : undefined}
                 className="w-full px-5 py-4 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none rounded-2xl"
                 disabled={state === "loading"}
               />
@@ -144,14 +204,27 @@ export function ANSLanding() {
             <button
               onClick={handleSearch}
               disabled={state === "loading" || query.trim().length < 3}
-              className="px-8 py-4 rounded-2xl bg-gradient-to-r from-[var(--accent-heart)] to-[#0662c4] text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+              className="px-8 py-4 rounded-2xl bg-gradient-to-r from-[var(--accent-heart)] to-[#0662c4] text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity inline-flex items-center justify-center gap-2"
             >
-              {state === "loading" ? "Searching…" : "Search"}
+              {state === "loading" ? (
+                <>
+                  <SearchSpinner />
+                  <span>Searching…</span>
+                </>
+              ) : (
+                "Search"
+              )}
             </button>
           </div>
 
+          {query.length > 0 && query.trim().length < 3 && state !== "invalid" && (
+            <p className="mt-2 text-sm text-[var(--text-tertiary)] text-left">
+              Enter at least 3 characters
+            </p>
+          )}
+
           {state === "available" && result?.fullDomain && (
-            <div className="mt-6 p-6 rounded-2xl border border-[#30d158]/40 bg-[#30d158]/10">
+            <div className="mt-6 p-6 rounded-2xl border border-[#30d158]/40 bg-[#30d158]/10 animate-fade-in-up">
               <h3 className="text-lg font-semibold text-[#30d158]">
                 {result.fullDomain} is available
               </h3>
@@ -159,9 +232,10 @@ export function ANSLanding() {
                 $10/year · Instant verification
               </p>
               <Link
+                ref={claimRef}
                 href={`/register?name=${encodeURIComponent(result.name ?? "")}`}
                 onClick={() => trackANSClaimClicked(result.fullDomain ?? "")}
-                className="mt-4 inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#30d158] text-white font-semibold hover:bg-[#30d158]/90 transition-colors"
+                className="mt-4 inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#30d158] text-white font-semibold hover:bg-[#30d158]/90 transition-colors focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-[#30d158]/20 scroll-mt-24"
               >
                 Claim {result.fullDomain}
               </Link>
@@ -169,7 +243,7 @@ export function ANSLanding() {
           )}
 
           {state === "taken" && result?.fullDomain && (
-            <div className="mt-6 p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]">
+            <div className="mt-6 p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] animate-fade-in-up">
               <h3 className="text-lg font-semibold text-[var(--text-primary)]">
                 {result.fullDomain} is taken
               </h3>
@@ -203,7 +277,7 @@ export function ANSLanding() {
           )}
 
           {state === "invalid" && result?.error && (
-            <div className="mt-6 p-4 rounded-2xl border border-amber-500/40 bg-amber-500/10">
+            <div className="mt-6 p-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 animate-fade-in-up">
               <p className="text-sm text-amber-200">{result.error}</p>
               {result.suggestions?.[0] && (
                 <button
@@ -222,7 +296,7 @@ export function ANSLanding() {
           )}
 
           {state === "error" && (
-            <div className="mt-6 p-4 rounded-2xl border border-[var(--border)] bg-red-500/10">
+            <div className="mt-6 p-4 rounded-2xl border border-[var(--border)] bg-red-500/10 animate-fade-in-up">
               <p className="text-sm text-red-200">
                 {result?.error ?? "Service temporarily unavailable."}
               </p>
@@ -237,8 +311,8 @@ export function ANSLanding() {
           )}
         </div>
 
-        <div className="grid md:grid-cols-3 gap-6 mt-16 max-w-3xl mx-auto">
-          <div className="p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]/50">
+        <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mt-12 sm:mt-16 max-w-3xl mx-auto">
+          <div className="p-5 sm:p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]/50">
             <div className="text-2xl mb-3" aria-hidden>🔐</div>
             <h3 className="text-base font-semibold text-[var(--text-primary)] mb-2">
               Cryptographic Identity
@@ -247,7 +321,7 @@ export function ANSLanding() {
               Each agent gets an ED25519 keypair for secure verification
             </p>
           </div>
-          <div className="p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]/50">
+          <div className="p-5 sm:p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]/50">
             <div className="text-2xl mb-3" aria-hidden>🌐</div>
             <h3 className="text-base font-semibold text-[var(--text-primary)] mb-2">
               Universal Protocol
@@ -256,7 +330,7 @@ export function ANSLanding() {
               Works with A2A, MCP, ANP, and OpenClaw out of the box
             </p>
           </div>
-          <div className="p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]/50">
+          <div className="p-5 sm:p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]/50">
             <div className="text-2xl mb-3" aria-hidden>⚡</div>
             <h3 className="text-base font-semibold text-[var(--text-primary)] mb-2">
               Instant Verification
