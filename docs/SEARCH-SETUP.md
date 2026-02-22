@@ -64,6 +64,14 @@ For a deep initial backfill:
 npm run crawl:full
 ```
 
+For **100k-scale** population (runs for 1–4+ hours, requires GITHUB_TOKEN):
+
+```bash
+npm run crawl:100k
+```
+
+This uses aggressive limits (ClawHub 10k, HF Spaces 20k, GitHub Repos 15k, npm 5k, PyPI 5k, etc.) and `CRAWL_BROAD_MODE=1` for npm/PyPI. Expect tens of thousands of agents after completion.
+
 ---
 
 ## 4. Verify

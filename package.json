@@ -18,6 +18,7 @@
     "db:ensure-search-vectors": "node scripts/ensure-search-vectors.mjs",
     "crawl": "tsx scripts/run-crawl.ts",
     "crawl:full": "tsx scripts/run-crawl.ts 2500",
+    "crawl:100k": "tsx scripts/run-crawl.ts 100k",
     "db:studio": "drizzle-kit studio",
     "setup": "docker compose up -d && npm run db:push",
     "setup:google": "node scripts/setup-google-auth.mjs",
