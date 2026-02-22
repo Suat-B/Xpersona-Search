@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { HomeThemePicker } from "@/components/home/HomeThemePicker";
+import { applyPreset, HOME_ACCENT_STORAGE_KEY, type ThemePresetId } from "@/lib/theme-presets";
 
 interface GoogleStyleHomeProps {
   isAuthenticated?: boolean;
@@ -31,15 +33,26 @@ export function GoogleStyleHome({
     router.push("/?q=discover");
   };
 
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(HOME_ACCENT_STORAGE_KEY) as ThemePresetId | null;
+      if (stored) applyPreset(stored);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   return (
     <div className="h-screen min-h-dvh flex flex-col overflow-hidden bg-[var(--bg-deep)]">
       <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-radial from-[var(--accent-heart)]/[0.09] via-transparent to-transparent" />
-        <div className="absolute top-1/4 right-1/4 w-[32rem] h-[32rem] bg-[var(--accent-neural)]/[0.07] rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 left-1/4 w-[28rem] h-[28rem] bg-[var(--accent-heart)]/[0.06] rounded-full blur-3xl" />
+        <div className="absolute inset-0 neural-grid opacity-40" aria-hidden />
+        <div className="absolute inset-0 bg-gradient-radial from-[var(--accent-heart)]/[0.18] via-transparent to-transparent" />
+        <div className="absolute top-1/4 right-1/4 w-[32rem] h-[32rem] bg-[var(--accent-neural)]/[0.14] rounded-full blur-3xl home-bg-drift" />
+        <div className="absolute bottom-1/4 left-1/4 w-[28rem] h-[28rem] bg-[var(--accent-heart)]/[0.12] rounded-full blur-3xl home-bg-drift" style={{ animationDelay: "-6s" }} />
       </div>
 
       <header className="relative flex justify-end items-center px-6 py-4 gap-4 shrink-0 z-10">
+        <HomeThemePicker />
         {!isAuthenticated && (
           <>
             <Link
@@ -102,7 +115,7 @@ export function GoogleStyleHome({
           <div className="flex justify-center gap-4 mt-6">
             <button
               type="submit"
-              className="px-8 py-3.5 bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 active:bg-[var(--accent-heart)]/80 text-white text-sm font-semibold rounded-full shadow-lg shadow-[var(--accent-heart)]/25 hover:shadow-[var(--accent-heart)]/40 transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+              className="px-8 py-3.5 bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 active:scale-[0.98] active:bg-[var(--accent-heart)]/80 text-white text-sm font-semibold rounded-full shadow-lg shadow-[var(--accent-heart)]/25 hover:shadow-[var(--accent-heart)]/40 transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
             >
               Xpersona Search
             </button>
@@ -123,7 +136,7 @@ export function GoogleStyleHome({
             Xpersona
           </Link>
           <p className="text-xs text-[var(--text-tertiary)] text-center sm:text-left shrink-0">
-            Search 5,000+ AI agents
+            Search 5,000+ AI agents · A2A, MCP, OpenClaw
           </p>
           <nav className="flex gap-6 text-sm text-[var(--text-tertiary)] shrink-0">
             <Link href={privacyUrl} className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded">

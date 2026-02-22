@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { applyPreset, HOME_ACCENT_STORAGE_KEY } from "@/lib/theme-presets";
+import type { ThemePresetId } from "@/lib/theme-presets";
 import { useSearchParams } from "next/navigation";
 import { SearchResultSnippet } from "@/components/search/SearchResultSnippet";
 import { SearchResultsBar } from "@/components/search/SearchResultsBar";
@@ -94,10 +96,25 @@ export function SearchLanding() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProtocols, minSafety, sort]);
 
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(HOME_ACCENT_STORAGE_KEY) as ThemePresetId | null;
+      if (stored) applyPreset(stored);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const hasResults = agents.length > 0;
 
   return (
-    <section className="min-h-screen text-[var(--text-primary)] bg-[var(--bg-deep)]">
+    <section className="min-h-screen text-[var(--text-primary)] bg-[var(--bg-deep)] relative">
+      <div className="fixed inset-0 pointer-events-none z-0" aria-hidden>
+        <div className="absolute inset-0 neural-grid opacity-30" />
+        <div className="absolute inset-0 bg-gradient-radial from-[var(--accent-heart)]/[0.08] via-transparent to-transparent" />
+        <div className="absolute top-0 right-1/4 w-[24rem] h-[24rem] bg-[var(--accent-neural)]/[0.06] rounded-full blur-3xl" />
+      </div>
+      <div className="relative z-10">
       <SearchResultsBar
         query={query}
         setQuery={setQuery}
@@ -188,6 +205,7 @@ export function SearchLanding() {
             </>
           )}
         </main>
+      </div>
       </div>
     </section>
   );

@@ -1,6 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { HomeThemePicker } from "@/components/home/HomeThemePicker";
+import { applyPreset, HOME_ACCENT_STORAGE_KEY } from "@/lib/theme-presets";
+import type { ThemePresetId } from "@/lib/theme-presets";
 
 interface SearchResultsBarProps {
   query: string;
@@ -52,6 +55,15 @@ export function SearchResultsBar({
     e.preventDefault();
     onSearch();
   };
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(HOME_ACCENT_STORAGE_KEY) as ThemePresetId | null;
+      if (stored) applyPreset(stored);
+    } catch {
+      // ignore
+    }
+  }, []);
 
   return (
     <div className="sticky top-0 z-20 bg-[var(--bg-deep)]/95 backdrop-blur-sm border-b border-[var(--border)]">
@@ -106,6 +118,8 @@ export function SearchResultsBar({
               {loading ? "..." : "Search"}
             </button>
           </form>
+
+          <HomeThemePicker />
 
           {/* Tools dropdown */}
           <div className="relative flex-shrink-0">

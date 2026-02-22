@@ -1,0 +1,62 @@
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
+import { THEME_PRESETS, HOME_ACCENT_STORAGE_KEY, applyPreset, type ThemePresetId } from "@/lib/theme-presets";
+
+export function HomeThemePicker() {
+  const [activeId, setActiveId] = useState<ThemePresetId | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  const selectTheme = useCallback((id: ThemePresetId) => {
+    setActiveId(id);
+    applyPreset(id);
+    try {
+      localStorage.setItem(HOME_ACCENT_STORAGE_KEY, id);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    setMounted(true);
+    try {
+      const stored = localStorage.getItem(HOME_ACCENT_STORAGE_KEY) as ThemePresetId | null;
+      if (stored && stored in THEME_PRESETS) {
+        setActiveId(stored);
+        applyPreset(stored);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  if (!mounted) return null;
+
+  return (
+    <div
+      className="flex items-center gap-1.5"
+      role="group"
+      aria-label="Accent color theme"
+    >
+      {(Object.keys(THEME_PRESETS) as ThemePresetId[]).map((id) => {
+        const preset = THEME_PRESETS[id];
+        const isActive = activeId === id || (activeId === null && id === "blue");
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => selectTheme(id)}
+            aria-pressed={isActive}
+            aria-label={`Use ${preset.label} accent`}
+            className={`w-7 h-7 rounded-full border-2 transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] ${
+              isActive
+                ? "scale-110 border-white shadow-lg shadow-black/30"
+                : "border-white/20 hover:border-white/40 hover:scale-105"
+            }`}
+            style={{ backgroundColor: preset.accentHeart }}
+          />
+        );
+      })}
+    </div>
+  );
+}

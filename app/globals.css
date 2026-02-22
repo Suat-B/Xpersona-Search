@@ -655,10 +655,26 @@ input[type="reset"] {
 
 /* Neural Grid Pattern */
 .neural-grid {
-  background-image: 
+  background-image:
     linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
   background-size: 40px 40px;
+}
+
+/* Home page background — subtle opacity pulse for gradient orbs */
+@keyframes home-bg-drift {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+
+.home-bg-drift {
+  animation: home-bg-drift 12s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-bg-drift {
+    animation: none !important;
+  }
 }
 
 /* Focus Styles */
