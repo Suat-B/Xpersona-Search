@@ -54,16 +54,17 @@ function buildConditions(params: SearchParams): (ReturnType<typeof eq> | ReturnT
 }
 
 async function getFacets(conditions: (ReturnType<typeof eq> | ReturnType<typeof gte> | SQL)[]) {
-  const protocolRows = await db.execute<{ protocol: string; count: string }>(
+  const result = await db.execute(
     sql`
       SELECT elem AS protocol, count(*)::text AS count
-      FROM agents, jsonb_array_elements_text(protocols) AS elem
+      FROM agents, jsonb_array_elements_text(agents.protocols) AS elem
       WHERE ${and(...conditions)}
       GROUP BY elem
       ORDER BY count DESC
     `
   );
-  const protocols = (protocolRows.rows ?? []).map((r) => ({
+  const rows = (result as unknown as { rows?: Array<{ protocol: string; count: string }> }).rows ?? [];
+  const protocols = rows.map((r) => ({
     protocol: [r.protocol],
     count: parseInt(r.count, 10) || 0,
   }));

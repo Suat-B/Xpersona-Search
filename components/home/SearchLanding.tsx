@@ -19,6 +19,10 @@ interface Agent {
   githubData?: { stars?: number; forks?: number };
 }
 
+interface Facets {
+  protocols?: Array<{ protocol: string[]; count: number }>;
+}
+
 function SkeletonCard() {
   return (
     <div className="agent-card p-6 rounded-xl border border-[var(--border)] animate-pulse">
@@ -53,6 +57,7 @@ export function SearchLanding() {
   const [selectedProtocols, setSelectedProtocols] = useState<string[]>([]);
   const [minSafety, setMinSafety] = useState(0);
   const [sort, setSort] = useState("rank");
+  const [facets, setFacets] = useState<Facets | undefined>(undefined);
 
   const search = useCallback(
     async (reset = true) => {
@@ -77,6 +82,7 @@ export function SearchLanding() {
         }
         setHasMore(data.pagination?.hasMore ?? false);
         setCursor(data.pagination?.nextCursor ?? null);
+        if (data.facets) setFacets(data.facets);
       } catch (err) {
         console.error(err);
         if (reset) setAgents([]);
@@ -105,6 +111,7 @@ export function SearchLanding() {
         <div className="flex flex-col lg:flex-row gap-8">
           <aside className="lg:w-64 flex-shrink-0 order-2 lg:order-1">
             <SearchFilters
+              facets={facets}
               selectedProtocols={selectedProtocols}
               onProtocolChange={setSelectedProtocols}
               minSafety={minSafety}
