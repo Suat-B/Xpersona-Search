@@ -14,6 +14,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:ans-migrate": "node scripts/ans-db-migrate.mjs",
+    "db:ensure-agents-table": "node scripts/ensure-agents-table.mjs",
     "db:ensure-search-vectors": "node scripts/ensure-search-vectors.mjs",
     "crawl": "tsx scripts/run-crawl.ts",
     "db:studio": "drizzle-kit studio",
