@@ -19,6 +19,7 @@ import {
   calculateOverallRank,
 } from "../scoring/rank";
 import { generateSlug } from "../utils/slug";
+import { upsertAgent } from "../agent-upsert";
 
 const CONCURRENCY = 3;
 const PAGE_SIZE = 100;
@@ -202,28 +203,21 @@ export async function crawlGitHubMCP(
             nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
           };
 
-          await db
-            .insert(agents)
-            .values(agentData)
-            .onConflictDoUpdate({
-              target: agents.sourceId,
-              set: {
-                name: agentData.name,
-                slug: agentData.slug,
-                description: agentData.description,
-                homepage: agentData.homepage,
-                githubData: agentData.githubData,
-                npmData: agentData.npmData,
-                readme: agentData.readme,
-                safetyScore: agentData.safetyScore,
-                popularityScore: agentData.popularityScore,
-                freshnessScore: agentData.freshnessScore,
-                overallRank: agentData.overallRank,
-                status: agentData.status,
-                lastCrawledAt: agentData.lastCrawledAt,
-                nextCrawlAt: agentData.nextCrawlAt,
-                updatedAt: new Date(),
-              },
+            await upsertAgent(agentData, {
+              name: agentData.name,
+              slug: agentData.slug,
+              description: agentData.description,
+              homepage: agentData.homepage,
+              githubData: agentData.githubData,
+              npmData: agentData.npmData,
+              readme: agentData.readme,
+              safetyScore: agentData.safetyScore,
+              popularityScore: agentData.popularityScore,
+              freshnessScore: agentData.freshnessScore,
+              overallRank: agentData.overallRank,
+              status: agentData.status,
+              lastCrawledAt: agentData.lastCrawledAt,
+              nextCrawlAt: agentData.nextCrawlAt,
             });
 
           totalFound++;

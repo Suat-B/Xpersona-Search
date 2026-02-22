@@ -7,6 +7,7 @@ import { agents, crawlJobs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
 import { fetchFileContent } from "../utils/github";
+import { upsertAgent } from "../agent-upsert";
 
 const AWESOME_OPENCLEW_REPO = "VoltAgent/awesome-openclaw-skills";
 const MCP_SERVERS_REPO = "modelcontextprotocol/servers";
@@ -114,22 +115,16 @@ export async function crawlCuratedSeeds(
           nextCrawlAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         };
 
-        await db
-          .insert(agents)
-          .values(agentData)
-          .onConflictDoUpdate({
-            target: agents.sourceId,
-            set: {
-              name: agentData.name,
-              description: agentData.description,
-              url: agentData.url,
-              openclawData: agentData.openclawData,
-              readme: agentData.readme,
-              lastCrawledAt: agentData.lastCrawledAt,
-              nextCrawlAt: agentData.nextCrawlAt,
-              updatedAt: new Date(),
-            },
-          });
+        await upsertAgent(agentData, {
+          name: agentData.name,
+          slug: agentData.slug,
+          description: agentData.description,
+          url: agentData.url,
+          openclawData: agentData.openclawData,
+          readme: agentData.readme,
+          lastCrawledAt: agentData.lastCrawledAt,
+          nextCrawlAt: agentData.nextCrawlAt,
+        });
 
         totalFound++;
       }
@@ -196,24 +191,17 @@ export async function crawlCuratedSeeds(
           nextCrawlAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         };
 
-        await db
-          .insert(agents)
-          .values(agentData)
-          .onConflictDoUpdate({
-            target: agents.sourceId,
-            set: {
-              name: agentData.name,
-              slug: agentData.slug,
-              description: agentData.description,
-              url: agentData.url,
-              homepage: agentData.homepage,
-              openclawData: agentData.openclawData,
-              readme: agentData.readme,
-              lastCrawledAt: agentData.lastCrawledAt,
-              nextCrawlAt: agentData.nextCrawlAt,
-              updatedAt: new Date(),
-            },
-          });
+        await upsertAgent(agentData, {
+          name: agentData.name,
+          slug: agentData.slug,
+          description: agentData.description,
+          url: agentData.url,
+          homepage: agentData.homepage,
+          openclawData: agentData.openclawData,
+          readme: agentData.readme,
+          lastCrawledAt: agentData.lastCrawledAt,
+          nextCrawlAt: agentData.nextCrawlAt,
+        });
 
         totalFound++;
       }

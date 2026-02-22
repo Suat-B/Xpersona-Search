@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import { octokit, fetchFileContent } from "../utils/github";
 import { parseSkillMd } from "../parsers/skill-md";
 import { generateSlug } from "../utils/slug";
+import { upsertAgent } from "../agent-upsert";
 
 const SKILLS_REPO = "openclaw/skills";
 const CONCURRENCY = 5;
@@ -92,24 +93,17 @@ export async function crawlClawHub(
         nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       };
 
-      await db
-        .insert(agents)
-        .values(agentData)
-        .onConflictDoUpdate({
-          target: agents.sourceId,
-          set: {
-            name: agentData.name,
-            slug: agentData.slug,
-            description: agentData.description,
-            url: agentData.url,
-            homepage: agentData.homepage,
-            openclawData: agentData.openclawData,
-            readme: agentData.readme,
-            lastCrawledAt: agentData.lastCrawledAt,
-            nextCrawlAt: agentData.nextCrawlAt,
-            updatedAt: new Date(),
-          },
-        });
+      await upsertAgent(agentData, {
+        name: agentData.name,
+        slug: agentData.slug,
+        description: agentData.description,
+        url: agentData.url,
+        homepage: agentData.homepage,
+        openclawData: agentData.openclawData,
+        readme: agentData.readme,
+        lastCrawledAt: agentData.lastCrawledAt,
+        nextCrawlAt: agentData.nextCrawlAt,
+      });
 
       totalFound++;
       if (totalFound % 100 === 0) await sleep(RATE_LIMIT_DELAY_MS);

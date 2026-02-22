@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { agents, crawlJobs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
+import { upsertAgent } from "../agent-upsert";
 
 const AGENTSCAPE_API = "https://api.agentscape.cc/agents";
 
@@ -90,24 +91,18 @@ export async function crawlAgentScape(
         nextCrawlAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       };
 
-      await db
-        .insert(agents)
-        .values(agentData)
-        .onConflictDoUpdate({
-          target: agents.sourceId,
-          set: {
-            name: agentData.name,
-            description: agentData.description,
-            url: agentData.url,
-            homepage: agentData.homepage,
-            capabilities: agentData.capabilities,
-            openclawData: agentData.openclawData,
-            readme: agentData.readme,
-            lastCrawledAt: agentData.lastCrawledAt,
-            nextCrawlAt: agentData.nextCrawlAt,
-            updatedAt: new Date(),
-          },
-        });
+      await upsertAgent(agentData, {
+        name: agentData.name,
+        slug: agentData.slug,
+        description: agentData.description,
+        url: agentData.url,
+        homepage: agentData.homepage,
+        capabilities: agentData.capabilities,
+        openclawData: agentData.openclawData,
+        readme: agentData.readme,
+        lastCrawledAt: agentData.lastCrawledAt,
+        nextCrawlAt: agentData.nextCrawlAt,
+      });
 
       totalFound++;
     }

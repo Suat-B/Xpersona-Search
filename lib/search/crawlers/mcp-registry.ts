@@ -4,6 +4,7 @@
  */
 import { db } from "@/lib/db";
 import { agents, crawlJobs } from "@/lib/db/schema";
+import { upsertAgent } from "../agent-upsert";
 import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
 
@@ -130,21 +131,14 @@ export async function crawlMcpRegistry(
           nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
         };
 
-        await db
-          .insert(agents)
-          .values(agentData)
-          .onConflictDoUpdate({
-            target: agents.sourceId,
-            set: {
-              name: agentData.name,
-              slug: agentData.slug,
-              description: agentData.description,
-              url: agentData.url,
-              homepage: agentData.homepage,
-              lastCrawledAt: agentData.lastCrawledAt,
-              nextCrawlAt: agentData.nextCrawlAt,
-              updatedAt: new Date(),
-            },
+          await upsertAgent(agentData, {
+            name: agentData.name,
+            slug: agentData.slug,
+            description: agentData.description,
+            url: agentData.url,
+            homepage: agentData.homepage,
+            lastCrawledAt: agentData.lastCrawledAt,
+            nextCrawlAt: agentData.nextCrawlAt,
           });
 
         totalFound++;
