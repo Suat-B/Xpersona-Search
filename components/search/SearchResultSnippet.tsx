@@ -54,6 +54,11 @@ export function SearchResultSnippet({ agent }: Props) {
             {p}
           </span>
         ))}
+        {agent.safetyScore < 50 && (
+          <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+            Pending review
+          </span>
+        )}
         <span className="text-[var(--text-quaternary)]">·</span>
         <span>Safety {agent.safetyScore}/100</span>
         <span className="text-[var(--text-quaternary)]">·</span>

@@ -1,6 +1,7 @@
 {
   "crons": [
     { "path": "/api/cron/ans-verify", "schedule": "0 12 * * *" },
-    { "path": "/api/cron/crawl", "schedule": "0 6 * * *" }
+    { "path": "/api/cron/crawl", "schedule": "0 6 * * *" },
+    { "path": "/api/cron/crawl", "schedule": "0 */6 * * *" }
   ]
 }

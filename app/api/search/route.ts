@@ -19,15 +19,22 @@ const SearchSchema = z.object({
   minRank: z.coerce.number().min(0).max(100).optional(),
   sort: z.enum(["rank", "safety", "popularity", "freshness"]).default("rank"),
   cursor: z.string().optional(),
-  limit: z.coerce.number().min(1).max(50).default(20),
+  limit: z.coerce.number().min(1).max(100).default(30),
+  includePending: z
+    .string()
+    .optional()
+    .transform((s) => s === "1" || s === "true"),
 });
 
 type SearchParams = z.infer<typeof SearchSchema>;
 
 function buildConditions(params: SearchParams): (ReturnType<typeof eq> | ReturnType<typeof gte> | SQL)[] {
-  const conditions: (ReturnType<typeof eq> | ReturnType<typeof gte> | SQL)[] = [
-    eq(agents.status, "ACTIVE"),
-  ];
+  const conditions: (ReturnType<typeof eq> | ReturnType<typeof gte> | SQL)[] = [];
+  if (params.includePending) {
+    conditions.push(sql`${agents.status} IN ('ACTIVE', 'PENDING_REVIEW')`);
+  } else {
+    conditions.push(eq(agents.status, "ACTIVE"));
+  }
   if (params.minSafety != null) {
     conditions.push(gte(agents.safetyScore, params.minSafety));
   }

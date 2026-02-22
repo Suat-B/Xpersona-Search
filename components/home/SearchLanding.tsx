@@ -59,6 +59,7 @@ export function SearchLanding() {
         params.set("protocols", selectedProtocols.join(","));
       if (minSafety > 0) params.set("minSafety", String(minSafety));
       params.set("sort", sort);
+      params.set("limit", "30");
       if (!reset && cursor) params.set("cursor", cursor);
 
       try {

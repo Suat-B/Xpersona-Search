@@ -1,9 +1,17 @@
+/**
+ * GitHub MCP crawler — discovers MCP (Model Context Protocol) servers from GitHub.
+ * Searches for package.json files that reference @modelcontextprotocol/sdk or mcp-server.
+ */
 import pLimit from "p-limit";
 import { db } from "@/lib/db";
 import { agents, crawlJobs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { octokit, fetchRepoDetails, fetchFileContent } from "../utils/github";
-import { parseSkillMd } from "../parsers/skill-md";
+import {
+  octokit,
+  fetchRepoDetails,
+  fetchFileContent,
+  type GitHubRepo,
+} from "../utils/github";
 import { calculateSafetyScore } from "../scoring/safety";
 import {
   calculatePopularityScore,
@@ -13,28 +21,63 @@ import {
 import { generateSlug } from "../utils/slug";
 
 const CONCURRENCY = 3;
-const PAGE_SIZE = 100; // GitHub code search max
+const PAGE_SIZE = 100;
 const RATE_LIMIT_DELAY_MS = 1200;
 
 const SEARCH_QUERIES = [
-  "filename:SKILL.md openclaw",
-  "filename:SKILL.md lang:typescript",
-  "openclaw skill",
-  "SKILL.md cursor",
+  "filename:package.json @modelcontextprotocol/sdk",
+  "filename:package.json mcp-server",
+  "filename:package.json modelcontextprotocol",
 ] as const;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-export async function crawlOpenClawSkills(
+function hasMcpDependency(pkg: Record<string, unknown>): boolean {
+  const deps = {
+    ...((pkg.dependencies as Record<string, string>) ?? {}),
+    ...((pkg.devDependencies as Record<string, string>) ?? {}),
+    ...((pkg.peerDependencies as Record<string, string>) ?? {}),
+  };
+  const keys = Object.keys(deps).map((k) => k.toLowerCase());
+  return (
+    keys.some((k) => k.includes("mcp") || k.includes("modelcontextprotocol")) ||
+    keys.some((k) => k === "@modelcontextprotocol/sdk")
+  );
+}
+
+function parsePackageJson(content: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(content) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function extractMcpMetadata(
+  pkg: Record<string, unknown>,
+  repo: GitHubRepo
+): { name: string; description: string | null; capabilities: string[] } {
+  const name = (pkg.name as string) ?? repo.name;
+  const description = (pkg.description as string) ?? repo.description ?? null;
+  const capabilities: string[] = [];
+  const keywords = (pkg.keywords as string[] | undefined) ?? [];
+  capabilities.push(...keywords.filter(Boolean));
+  if (pkg.bin && typeof pkg.bin === "object") {
+    capabilities.push("cli");
+  }
+  return { name, description, capabilities: [...new Set(capabilities)] };
+}
+
+export async function crawlGitHubMCP(
   since?: Date,
-  maxResults: number = 500
+  maxResults: number = 300
 ): Promise<{ total: number; jobId: string }> {
   const [job] = await db
     .insert(crawlJobs)
     .values({
-      source: "GITHUB_OPENCLEW",
+      source: "GITHUB_MCP",
       status: "RUNNING",
       startedAt: new Date(),
     })
@@ -60,8 +103,9 @@ export async function crawlOpenClawSkills(
           page,
         });
 
-        const items = (data as { items?: Array<{ repository?: { full_name?: string } }> })
-          .items ?? [];
+        const items = (data as {
+          items?: Array<{ repository?: { full_name?: string }; path?: string }>;
+        }).items ?? [];
         if (items.length === 0) break;
 
         const repos = await Promise.all(
@@ -74,36 +118,50 @@ export async function crawlOpenClawSkills(
 
         for (const repo of repos) {
           if (!repo || totalFound >= maxResults) continue;
-          const sourceId = `github:${repo.id}`;
+          const sourceId = `github-mcp:${repo.id}`;
           if (seenSourceIds.has(sourceId)) continue;
           if (since && new Date(repo.updated_at) <= since) continue;
 
-          const skillContent = await fetchFileContent(
+          const pkgContent = await fetchFileContent(
             repo.full_name,
-            "SKILL.md",
+            "package.json",
             repo.default_branch
           );
-          if (!skillContent) continue;
+          if (!pkgContent) continue;
+
+          const pkg = parsePackageJson(pkgContent);
+          if (!pkg || !hasMcpDependency(pkg)) continue;
 
           seenSourceIds.add(sourceId);
-          const skillData = parseSkillMd(skillContent);
-          const safetyScore = await calculateSafetyScore(repo, skillContent);
+          const readme = await fetchFileContent(
+            repo.full_name,
+            "README.md",
+            repo.default_branch
+          );
+          const contentForSafety = [pkgContent, readme ?? ""].join("\n");
+          const safetyScore = await calculateSafetyScore(repo, contentForSafety);
           const popularityScore = calculatePopularityScore(repo);
           const freshnessScore = calculateFreshnessScore(repo);
 
-          const slug =
-            generateSlug(repo.full_name.replace("/", "-")) || `agent-${repo.id}`;
+          const { name, description, capabilities } = extractMcpMetadata(
+            pkg,
+            repo
+          );
+          const baseSlug = generateSlug(
+            `mcp-${repo.full_name.replace("/", "-")}`
+          );
+          const slug = baseSlug || `mcp-${repo.id}`;
 
           const agentData = {
             sourceId,
-            source: "GITHUB_OPENCLEW" as const,
-            name: skillData.name ?? repo.name,
+            source: "GITHUB_MCP" as const,
+            name,
             slug,
-            description: skillData.description ?? repo.description ?? null,
+            description,
             url: repo.html_url,
-            homepage: skillData.homepage ?? null,
-            capabilities: skillData.capabilities ?? [],
-            protocols: skillData.protocols,
+            homepage: (pkg.homepage as string) ?? null,
+            capabilities,
+            protocols: ["MCP"] as string[],
             languages: ["typescript"] as string[],
             githubData: {
               stars: repo.stargazers_count,
@@ -111,8 +169,12 @@ export async function crawlOpenClawSkills(
               lastCommit: repo.pushed_at,
               defaultBranch: repo.default_branch,
             },
-            openclawData: skillData as unknown as Record<string, unknown>,
-            readme: skillContent,
+            npmData: {
+              packageName: pkg.name,
+              version: pkg.version,
+            } as Record<string, unknown>,
+            openclawData: null as unknown as Record<string, unknown>,
+            readme: readme ?? pkgContent,
             safetyScore,
             popularityScore,
             freshnessScore,
@@ -123,7 +185,8 @@ export async function crawlOpenClawSkills(
               freshness: freshnessScore,
               performance: 0,
             }),
-            status: safetyScore >= 50 ? ("ACTIVE" as const) : ("PENDING_REVIEW" as const),
+            status:
+              safetyScore >= 50 ? ("ACTIVE" as const) : ("PENDING_REVIEW" as const),
             lastCrawledAt: new Date(),
             nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
           };
@@ -137,8 +200,9 @@ export async function crawlOpenClawSkills(
                 name: agentData.name,
                 slug: agentData.slug,
                 description: agentData.description,
+                homepage: agentData.homepage,
                 githubData: agentData.githubData,
-                openclawData: agentData.openclawData,
+                npmData: agentData.npmData,
                 readme: agentData.readme,
                 safetyScore: agentData.safetyScore,
                 popularityScore: agentData.popularityScore,
