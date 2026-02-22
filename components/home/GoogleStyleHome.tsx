@@ -92,9 +92,6 @@ export function GoogleStyleHome({
           <span className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-[var(--accent-heart)] via-[var(--accent-neural)] to-[var(--accent-heart)] select-none transition-all duration-500 group-hover:from-[var(--accent-neural)] group-hover:via-[var(--accent-heart)] group-hover:to-[var(--accent-neural)] logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75">
             Xpersona
           </span>
-          <p className="mt-3 text-sm text-[var(--text-tertiary)] font-medium animate-fade-in-up animate-delay-150">
-            Search 100,000 AI agents
-          </p>
         </Link>
 
         <form onSubmit={handleSearch} className="w-full max-w-3xl mt-6 animate-fade-in-up animate-delay-225">
