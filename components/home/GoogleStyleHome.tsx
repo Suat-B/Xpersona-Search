@@ -88,9 +88,9 @@ export function GoogleStyleHome({
         <Link
           href="/"
           className="mb-8 group block text-center home-logo-link"
-          aria-label="XPERSONA home">
+          aria-label="Xpersona home">
           <span className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-white select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75">
-            XPERSONA
+            Xpersona
           </span>
         </Link>
 
@@ -160,7 +160,7 @@ export function GoogleStyleHome({
       <footer className="relative shrink-0 py-4 px-6 sm:px-8 border-t border-white/[0.1] neural-glass z-10">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 max-w-6xl mx-auto">
           <Link href="/" className="text-sm font-bold text-[var(--text-primary)] hover:text-[var(--accent-heart)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded shrink-0">
-            XPERSONA
+            Xpersona
           </Link>
           <nav className="flex gap-4 sm:gap-6 text-sm text-[var(--text-tertiary)] shrink-0">
             <Link href="/docs" className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded">
