@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { HomeThemePicker } from "@/components/home/HomeThemePicker";
-import { HomeExploreSection } from "@/components/home/HomeExploreSection";
 import { applyPreset, HOME_ACCENT_STORAGE_KEY, type ThemePresetId } from "@/lib/theme-presets";
 
 interface GoogleStyleHomeProps {
@@ -159,8 +158,6 @@ export function GoogleStyleHome({
             </button>
           </div>
         </form>
-
-        <HomeExploreSection />
       </main>
 
       <footer className="relative shrink-0 py-4 px-6 sm:px-8 border-t border-white/[0.1] neural-glass z-10">
