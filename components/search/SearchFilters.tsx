@@ -11,6 +11,7 @@ interface Props {
 }
 
 export function SearchFilters({
+  facets,
   selectedProtocols,
   onProtocolChange,
   minSafety,
@@ -18,7 +19,12 @@ export function SearchFilters({
   sort,
   onSortChange,
 }: Props) {
-  const protocols = ["A2A", "MCP", "ANP", "OPENCLEW"];
+  const protocolList = ["A2A", "MCP", "ANP", "OPENCLEW"];
+  const protocolCounts = new Map<string, number>(
+    (facets?.protocols ?? []).flatMap((f) =>
+      (f.protocol ?? []).map((p) => [p, f.count] as const)
+    )
+  );
 
   const toggleProtocol = (p: string) => {
     if (selectedProtocols.includes(p)) {
@@ -29,29 +35,33 @@ export function SearchFilters({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="glass-panel p-4 rounded-xl border border-[var(--border)] space-y-6">
       <div>
-        <h3 className="text-sm font-semibold text-slate-300 mb-2">Protocol</h3>
+        <h3 className="text-sm font-semibold text-[var(--text-secondary)] mb-2">Protocol</h3>
         <div className="flex flex-wrap gap-2">
-          {protocols.map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => toggleProtocol(p)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                selectedProtocols.includes(p)
-                  ? "bg-blue-600 text-white"
-                  : "bg-slate-700 text-slate-400 hover:bg-slate-600"
-              }`}
-            >
-              {p}
-            </button>
-          ))}
+          {protocolList.map((p) => {
+            const count = protocolCounts.get(p);
+            return (
+              <button
+                key={p}
+                type="button"
+                onClick={() => toggleProtocol(p)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
+                  selectedProtocols.includes(p)
+                    ? "bg-[var(--accent-heart)] text-white border-[var(--accent-heart)]"
+                    : "bg-[var(--bg-elevated)] text-[var(--text-tertiary)] border-[var(--border)] hover:border-[var(--accent-heart)]/40 hover:text-[var(--text-secondary)]"
+                }`}
+              >
+                {p}
+                {count != null ? ` (${count})` : ""}
+              </button>
+            );
+          })}
         </div>
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold text-slate-300 mb-2">
+        <h3 className="text-sm font-semibold text-[var(--text-secondary)] mb-2">
           Min Safety
         </h3>
         <input
@@ -60,17 +70,17 @@ export function SearchFilters({
           max={100}
           value={minSafety}
           onChange={(e) => onSafetyChange(Number(e.target.value))}
-          className="w-full"
+          className="w-full h-2 rounded-full appearance-none cursor-pointer bg-[var(--bg-elevated)] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[var(--accent-heart)] [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:border-0"
         />
-        <p className="text-xs text-slate-400 mt-1">{minSafety}</p>
+        <p className="text-xs text-[var(--text-tertiary)] mt-1">{minSafety}</p>
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold text-slate-300 mb-2">Sort</h3>
+        <h3 className="text-sm font-semibold text-[var(--text-secondary)] mb-2">Sort</h3>
         <select
           value={sort}
           onChange={(e) => onSortChange(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white"
+          className="w-full px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-[var(--text-primary)] focus:border-[var(--accent-heart)]/60 focus:outline-none focus:ring-1 focus:ring-[var(--accent-heart)]/20 transition-colors"
         >
           <option value="rank">By Rank</option>
           <option value="safety">By Safety</option>

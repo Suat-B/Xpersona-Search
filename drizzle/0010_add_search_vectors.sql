@@ -18,7 +18,7 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS agents_search_vector_trigger ON agents;
 CREATE TRIGGER agents_search_vector_trigger
   BEFORE INSERT OR UPDATE ON agents
-  FOR EACH ROW EXECUTE FUNCTION agents_search_vector_trigger();
+  FOR EACH ROW EXECUTE PROCEDURE agents_search_vector_trigger();
 
 -- Backfill existing rows
 UPDATE agents SET search_vector =
