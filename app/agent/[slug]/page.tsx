@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { ProtocolBadge } from "@/components/search/ProtocolBadge";
+import { BackToSearchLink } from "@/components/agent/BackToSearchLink";
 import { SafetyBadge } from "@/components/search/SafetyBadge";
 
 interface Props {
@@ -28,12 +28,7 @@ export default async function AgentPage({ params }: Props) {
   return (
     <div className="min-h-screen bg-slate-900 text-white">
       <div className="max-w-4xl mx-auto px-4 py-8">
-        <Link
-          href="/"
-          className="text-blue-400 hover:text-blue-300 mb-6 inline-block"
-        >
-          ← Back to search
-        </Link>
+        <BackToSearchLink />
         <h1 className="text-4xl font-bold mb-2">{agent.name}</h1>
         <div className="flex flex-wrap gap-2 mb-4">
           {protos.map((p: string) => (
