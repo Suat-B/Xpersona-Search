@@ -23,6 +23,8 @@ interface Agent {
 
 interface Props {
   agent: Agent;
+  /** When true, render the sitelinks block. Only first result should pass true. */
+  showSitelinks?: boolean;
   /** Optional animation classes for staggered entrance */
   className?: string;
 }
@@ -44,17 +46,39 @@ function getSitelinks(agent: Agent): Sitelink[] {
   const seenHrefs = new Set<string>();
 
   const add = (link: Sitelink) => {
-    const normalized = link.href.replace(/\/$/, "").toLowerCase();
+    const normalized = link.href.replace(/\/$/, "").replace(/\.git$/, "").toLowerCase();
     if (seenHrefs.has(normalized)) return;
     seenHrefs.add(normalized);
     links.push(link);
   };
 
-  if (agent.url?.includes("github.com")) {
+  add({
+    title: "Full agent page",
+    href: `/agent/${agent.slug}`,
+    snippet: "Documentation, install commands, parameters, and examples.",
+  });
+
+  const ghBase = agent.url?.replace(/\.git$/, "").replace(/\/$/, "");
+  if (ghBase?.includes("github.com")) {
     add({
       title: "View on GitHub",
-      href: agent.url,
-      snippet: "Browse source code, issues, README, and contribution guidelines.",
+      href: ghBase,
+      snippet: "Browse source code, README, and contribution guidelines.",
+    });
+    add({
+      title: "GitHub Issues",
+      href: `${ghBase}/issues`,
+      snippet: "Report bugs and track feature requests.",
+    });
+    add({
+      title: "GitHub Releases",
+      href: `${ghBase}/releases`,
+      snippet: "Download releases and view changelog.",
+    });
+    add({
+      title: "GitHub Pull requests",
+      href: `${ghBase}/pulls`,
+      snippet: "Open pull requests and review contributions.",
     });
   }
   if (agent.source === "NPM" && (agent.npmData?.packageName ?? agent.name)) {
@@ -85,32 +109,32 @@ function getSitelinks(agent: Agent): Sitelink[] {
     add({
       title: "Hugging Face Space",
       href: agent.url,
-      snippet: "Try the live demo and explore model configs.",
+      snippet: "Live demo and model configs.",
     });
   }
   if (agent.homepage) {
     add({
       title: "Official website",
       href: agent.homepage,
-      snippet: "Project homepage, docs, and additional resources.",
+      snippet: "Project homepage and docs.",
     });
   }
-  if (agent.url && links.length === 0) {
+  if (agent.url && links.length === 1) {
     add({
       title: "View source",
       href: agent.url,
       snippet: "Original source repository or package page.",
     });
   }
-  return links.slice(0, 5);
+  return links.slice(0, 10);
 }
 
-export function SearchResultSnippet({ agent, className }: Props) {
+export function SearchResultSnippet({ agent, showSitelinks = false, className }: Props) {
   const protos = Array.isArray(agent.protocols) ? agent.protocols : [];
   const caps = Array.isArray(agent.capabilities) ? agent.capabilities : [];
   const langs = Array.isArray(agent.languages) ? agent.languages : [];
   const displayUrl = getDisplayUrl(agent.slug);
-  const sitelinks = getSitelinks(agent);
+  const sitelinks = showSitelinks ? getSitelinks(agent) : [];
 
   return (
     <article className={`py-5 border-b border-[var(--border)] last:border-b-0 group ${className ?? ""}`}>

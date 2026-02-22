@@ -238,6 +238,7 @@ export function SearchLanding() {
                     <SearchResultSnippet
                       key={agent.id}
                       agent={agent}
+                      showSitelinks={i === 0}
                       className={`animate-slide-in-from-bottom ${delay}`}
                     />
                   );
