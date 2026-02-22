@@ -37,6 +37,9 @@ export function ANSMinimalFooter({ variant = "light" }: ANSMinimalFooterProps) {
           </Link>
 
           <nav className="flex items-center gap-6" aria-label="Footer navigation">
+            <Link href={getHubUrl("/search-api")} className={navLinkClasses}>
+              API
+            </Link>
             <Link href={getHubUrl("/privacy-policy-1")} className={navLinkClasses}>
               Privacy
             </Link>

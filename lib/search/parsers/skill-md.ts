@@ -19,22 +19,33 @@ export interface SkillData {
 }
 
 export function parseSkillMd(content: string): SkillData {
-  const { data, content: body } = matter(content);
+  let data: Record<string, unknown> = {};
+  let body = content;
+
+  try {
+    const parsed = matter(content);
+    data = parsed.data ?? {};
+    body = parsed.content;
+  } catch {
+    // Malformed frontmatter (e.g. markdown in YAML) — treat full content as body
+    const dashMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+    if (dashMatch) body = dashMatch[2];
+  }
 
   const capabilities = extractCapabilities(body);
   const protocols = extractProtocols(body);
 
   return {
-    name: data?.name,
-    description: data?.description ?? extractDescription(body),
-    version: data?.version,
-    author: data?.author,
-    homepage: data?.homepage,
+    name: (data?.name as string) ?? undefined,
+    description: (data?.description as string) ?? extractDescription(body),
+    version: (data?.version as string) ?? undefined,
+    author: (data?.author as string) ?? undefined,
+    homepage: (data?.homepage as string) ?? undefined,
     capabilities,
     protocols,
-    parameters: data?.parameters ?? {},
-    dependencies: Array.isArray(data?.dependencies) ? data.dependencies : [],
-    permissions: Array.isArray(data?.permissions) ? data.permissions : [],
+    parameters: (data?.parameters as Record<string, { type: string; required?: boolean; default?: unknown; description?: string }>) ?? {},
+    dependencies: Array.isArray(data?.dependencies) ? (data.dependencies as string[]) : [],
+    permissions: Array.isArray(data?.permissions) ? (data.permissions as string[]) : [],
     examples: extractExamples(body),
     raw: content,
   };

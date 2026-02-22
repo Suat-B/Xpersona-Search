@@ -22,6 +22,7 @@ import { generateSlug } from "../utils/slug";
 
 const CONCURRENCY = 3;
 const PAGE_SIZE = 100;
+const MAX_PAGES_PER_QUERY = 10; // GitHub caps at 1000 results (10 × 100)
 const RATE_LIMIT_DELAY_MS = 1200;
 
 const SEARCH_QUERIES = [
@@ -96,18 +97,26 @@ export async function crawlGitHubMCP(
       if (totalFound >= maxResults) break;
       let page = 1;
 
-      while (totalFound < maxResults) {
-        const { data } = await octokit.rest.search.code({
-          q: searchQuery,
-          sort: "indexed",
-          order: "desc",
-          per_page: PAGE_SIZE,
-          page,
-        });
+      while (totalFound < maxResults && page <= MAX_PAGES_PER_QUERY) {
+        let data: { items?: Array<{ repository?: { full_name?: string }; path?: string }> };
+        try {
+          const res = await octokit.rest.search.code({
+            q: searchQuery,
+            sort: "indexed",
+            order: "desc",
+            per_page: PAGE_SIZE,
+            page,
+          });
+          data = res.data as { items?: Array<{ repository?: { full_name?: string }; path?: string }> };
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes("Cannot access beyond the first 1000 results") || (err as { status?: number })?.status === 422) {
+            break; // Hit GitHub's 1000-result cap, move to next query
+          }
+          throw err;
+        }
 
-        const items = (data as {
-          items?: Array<{ repository?: { full_name?: string }; path?: string }>;
-        }).items ?? [];
+        const items = data?.items ?? [];
         if (items.length === 0) break;
 
         const repos = await Promise.all(

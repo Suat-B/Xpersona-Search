@@ -149,7 +149,6 @@ export function SearchLanding() {
   return (
     <section className="min-h-screen text-[var(--text-primary)] bg-[var(--bg-deep)] relative">
       <div className="fixed inset-0 pointer-events-none z-0" aria-hidden>
-        <div className="absolute inset-0 neural-grid opacity-30" />
         <div className="absolute inset-0 bg-gradient-radial from-[var(--accent-heart)]/[0.08] via-transparent to-transparent" />
         <div className="absolute top-0 right-1/4 w-[24rem] h-[24rem] bg-[var(--accent-neural)]/[0.06] rounded-full blur-3xl" />
       </div>

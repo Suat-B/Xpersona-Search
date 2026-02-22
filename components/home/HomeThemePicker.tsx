@@ -17,8 +17,7 @@ export function HomeThemePicker() {
     }
   }, []);
 
-  useEffect(() => {
-    setMounted(true);
+  const syncFromStorage = useCallback(() => {
     try {
       const stored = localStorage.getItem(HOME_ACCENT_STORAGE_KEY) as ThemePresetId | null;
       if (stored && stored in THEME_PRESETS) {
@@ -29,6 +28,26 @@ export function HomeThemePicker() {
       // ignore
     }
   }, []);
+
+  useEffect(() => {
+    setMounted(true);
+    syncFromStorage();
+  }, [syncFromStorage]);
+
+  useEffect(() => {
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) syncFromStorage();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") syncFromStorage();
+    };
+    window.addEventListener("pageshow", onPageShow);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("pageshow", onPageShow);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [syncFromStorage]);
 
   if (!mounted) return null;
 

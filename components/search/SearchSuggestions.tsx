@@ -39,6 +39,8 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(func
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  /** True only after user has pressed ArrowDown/ArrowUp. Enter selects suggestion only when this is true. */
+  const hasUsedArrowKeysRef = useRef(false);
 
   const select = useCallback(
     (agent: SuggestionAgent) => {
@@ -54,15 +56,19 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(func
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
+          hasUsedArrowKeysRef.current = true;
           setHighlightedIndex((i) => Math.min(i + 1, suggestions.length - 1));
           break;
         case "ArrowUp":
           e.preventDefault();
+          hasUsedArrowKeysRef.current = true;
           setHighlightedIndex((i) => Math.max(i - 1, 0));
           break;
         case "Enter":
-          e.preventDefault();
-          if (suggestions[highlightedIndex]) select(suggestions[highlightedIndex]);
+          if (hasUsedArrowKeysRef.current) {
+            e.preventDefault();
+            if (suggestions[highlightedIndex]) select(suggestions[highlightedIndex]);
+          }
           break;
         case "Escape":
           e.preventDefault();
@@ -96,6 +102,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(func
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Suggest failed");
+      hasUsedArrowKeysRef.current = false;
       setSuggestions(data.suggestions ?? []);
       setHighlightedIndex(0);
     } catch (err) {
@@ -108,6 +115,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(func
 
   useEffect(() => {
     if (!visible || query.length < MIN_QUERY_LENGTH) {
+      hasUsedArrowKeysRef.current = false;
       setSuggestions([]);
       setHighlightedIndex(0);
       return;
