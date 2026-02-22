@@ -36,12 +36,19 @@ function buildConditions(params: SearchParams): (ReturnType<typeof eq> | ReturnT
   }
   if (params.protocols.length > 0) {
     conditions.push(
-      sql`${agents.protocols} ?| ${params.protocols}::text[]`
+      sql`${agents.protocols} ?| ARRAY[${sql.join(
+        params.protocols.map((p) => sql`${p}`),
+        sql`, `
+      )}]::text[]`
     );
   }
   if (params.capabilities.length > 0) {
+    const caps = params.capabilities.map((c) => c.toLowerCase());
     conditions.push(
-      sql`${agents.capabilities} ?| ${params.capabilities.map((c) => c.toLowerCase())}::text[]`
+      sql`${agents.capabilities} ?| ARRAY[${sql.join(
+        caps.map((c) => sql`${c}`),
+        sql`, `
+      )}]::text[]`
     );
   }
   const qTrim = params.q?.trim();
