@@ -151,7 +151,7 @@ export function GoogleStyleHome({
               onClick={handleLucky}
               className="px-8 py-3.5 neural-glass hover:border-white/[0.2] active:scale-[0.98] text-[var(--text-primary)] text-sm font-medium rounded-2xl border border-white/[0.1] transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
             >
-              Random Agent
+              New Agent
             </button>
           </div>
         </form>
