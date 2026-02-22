@@ -54,16 +54,26 @@ export const THEME_PRESETS: Record<ThemePresetId, ThemePreset> = {
 
 export const HOME_ACCENT_STORAGE_KEY = "xpersona-home-accent";
 
+const STYLE_ID = "xpersona-home-accent-override";
+
 export function applyPreset(presetId: ThemePresetId | null): void {
-  const root = document.documentElement;
+  if (typeof document === "undefined") return;
+
+  let el = document.getElementById(STYLE_ID);
   if (!presetId || presetId === "blue") {
-    root.style.removeProperty("--accent-heart");
-    root.style.removeProperty("--accent-neural");
+    if (el) el.remove();
+    document.documentElement.style.removeProperty("--accent-heart");
+    document.documentElement.style.removeProperty("--accent-neural");
     return;
   }
+
   const preset = THEME_PRESETS[presetId];
-  if (preset) {
-    root.style.setProperty("--accent-heart", preset.accentHeart);
-    root.style.setProperty("--accent-neural", preset.accentNeural);
+  if (!preset) return;
+
+  if (!el) {
+    el = document.createElement("style");
+    el.id = STYLE_ID;
+    document.head.appendChild(el);
   }
+  el.textContent = `:root{--accent-heart:${preset.accentHeart};--accent-neural:${preset.accentNeural}}`;
 }

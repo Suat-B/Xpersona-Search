@@ -32,9 +32,15 @@ export function HomeThemePicker() {
 
   if (!mounted) return null;
 
+  const handleSelect = (e: React.MouseEvent, id: ThemePresetId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    selectTheme(id);
+  };
+
   return (
     <div
-      className="flex items-center gap-1.5"
+      className="flex items-center gap-2 shrink-0 relative z-[1]"
       role="group"
       aria-label="Accent color theme"
     >
@@ -45,13 +51,13 @@ export function HomeThemePicker() {
           <button
             key={id}
             type="button"
-            onClick={() => selectTheme(id)}
+            onClick={(e) => handleSelect(e, id)}
             aria-pressed={isActive}
             aria-label={`Use ${preset.label} accent`}
-            className={`w-7 h-7 rounded-full border-2 transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] ${
+            className={`min-w-[36px] min-h-[36px] w-9 h-9 rounded-full border-2 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation ${
               isActive
                 ? "scale-110 border-white shadow-lg shadow-black/30"
-                : "border-white/20 hover:border-white/40 hover:scale-105"
+                : "border-white/20 hover:border-white/40 hover:scale-105 active:scale-95"
             }`}
             style={{ backgroundColor: preset.accentHeart }}
           />
