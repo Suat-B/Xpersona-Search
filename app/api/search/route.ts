@@ -169,6 +169,7 @@ export async function GET(req: NextRequest) {
         overallRank: agents.overallRank,
         githubData: agents.githubData,
         npmData: agents.npmData,
+        languages: agents.languages,
         createdAt: agents.createdAt,
       })
       .from(agents)

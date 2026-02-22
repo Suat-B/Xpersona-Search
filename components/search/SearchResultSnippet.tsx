@@ -13,11 +13,12 @@ interface Agent {
   sourceId?: string;
   capabilities: string[];
   protocols: string[];
+  languages?: string[];
   safetyScore: number;
   popularityScore: number;
   overallRank: number;
   githubData?: { stars?: number; forks?: number };
-  npmData?: { packageName?: string };
+  npmData?: { packageName?: string; version?: string };
 }
 
 interface Props {
@@ -29,7 +30,7 @@ interface Props {
 interface Sitelink {
   title: string;
   href: string;
-  snippet?: string;
+  snippet: string;
 }
 
 const DISPLAY_BASE = "xpersona.co";
@@ -43,45 +44,76 @@ function getSitelinks(agent: Agent): Sitelink[] {
   const seenHrefs = new Set<string>();
 
   const add = (link: Sitelink) => {
-    const normalized = link.href.replace(/\/$/, "");
+    const normalized = link.href.replace(/\/$/, "").toLowerCase();
     if (seenHrefs.has(normalized)) return;
     seenHrefs.add(normalized);
     links.push(link);
   };
 
   if (agent.url?.includes("github.com")) {
-    add({ title: "View on GitHub", href: agent.url, snippet: "Source code and documentation" });
+    add({
+      title: "View on GitHub",
+      href: agent.url,
+      snippet: "Browse source code, issues, README, and contribution guidelines.",
+    });
   }
   if (agent.source === "NPM" && (agent.npmData?.packageName ?? agent.name)) {
     const pkg = agent.npmData?.packageName ?? agent.name;
-    add({ title: "npm package", href: `https://www.npmjs.com/package/${encodeURIComponent(pkg)}` });
+    const ver = agent.npmData?.version ? ` — latest v${agent.npmData.version}` : "";
+    add({
+      title: "npm package",
+      href: `https://www.npmjs.com/package/${encodeURIComponent(pkg)}`,
+      snippet: `Install from npm registry${ver}.`,
+    });
   }
   if (agent.source === "PYPI") {
     const pkg = agent.sourceId?.replace(/^pypi:/, "") ?? agent.name;
-    add({ title: "View on PyPI", href: `https://pypi.org/project/${encodeURIComponent(pkg)}` });
+    add({
+      title: "View on PyPI",
+      href: `https://pypi.org/project/${encodeURIComponent(pkg)}`,
+      snippet: "Python package installable via pip.",
+    });
   }
   if (agent.source === "CLAWHUB" && agent.url) {
-    add({ title: "View on ClawHub", href: agent.url });
+    add({
+      title: "View on ClawHub",
+      href: agent.url,
+      snippet: "Official OpenClaw skill registry. Install with clawhub skill install.",
+    });
   }
   if (agent.source === "HUGGINGFACE" && agent.url) {
-    add({ title: "Hugging Face Space", href: agent.url });
+    add({
+      title: "Hugging Face Space",
+      href: agent.url,
+      snippet: "Try the live demo and explore model configs.",
+    });
   }
   if (agent.homepage) {
-    add({ title: "Official website", href: agent.homepage });
+    add({
+      title: "Official website",
+      href: agent.homepage,
+      snippet: "Project homepage, docs, and additional resources.",
+    });
   }
   if (agent.url && links.length === 0) {
-    add({ title: "View source", href: agent.url });
+    add({
+      title: "View source",
+      href: agent.url,
+      snippet: "Original source repository or package page.",
+    });
   }
   return links.slice(0, 5);
 }
 
 export function SearchResultSnippet({ agent, className }: Props) {
   const protos = Array.isArray(agent.protocols) ? agent.protocols : [];
+  const caps = Array.isArray(agent.capabilities) ? agent.capabilities : [];
+  const langs = Array.isArray(agent.languages) ? agent.languages : [];
   const displayUrl = getDisplayUrl(agent.slug);
   const sitelinks = getSitelinks(agent);
 
   return (
-    <article className={`py-4 border-b border-[var(--border)] last:border-b-0 group ${className ?? ""}`}>
+    <article className={`py-5 border-b border-[var(--border)] last:border-b-0 group ${className ?? ""}`}>
       <Link
         href={`/agent/${agent.slug}`}
         className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-heart)]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-deep)] rounded"
@@ -93,9 +125,24 @@ export function SearchResultSnippet({ agent, className }: Props) {
       <p className="text-sm text-[var(--text-tertiary)] mt-0.5 truncate">
         {displayUrl}
       </p>
-      <p className="text-[var(--text-secondary)] text-sm mt-1 line-clamp-2">
+      <p className="text-[var(--text-secondary)] text-sm mt-1.5 line-clamp-2">
         {agent.description || "No description available."}
       </p>
+
+      {caps.length > 0 && (
+        <p className="text-xs text-[var(--text-quaternary)] mt-2">
+          <span className="font-medium text-[var(--text-tertiary)]">Capabilities:</span>{" "}
+          {caps.slice(0, 5).join(", ")}{caps.length > 5 ? "..." : ""}
+        </p>
+      )}
+
+      {langs.length > 0 && (
+        <p className="text-xs text-[var(--text-quaternary)] mt-1">
+          <span className="font-medium text-[var(--text-tertiary)]">Languages:</span>{" "}
+          {langs.join(", ")}
+        </p>
+      )}
+
       <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-[var(--text-quaternary)]">
         {protos.map((p) => (
           <span
@@ -117,30 +164,16 @@ export function SearchResultSnippet({ agent, className }: Props) {
         {(agent.githubData?.stars ?? 0) > 0 && (
           <>
             <span className="text-[var(--text-quaternary)]">·</span>
-            <span>⭐ {agent.githubData?.stars}</span>
+            <span>⭐ {agent.githubData?.stars} stars</span>
           </>
         )}
       </div>
 
       {sitelinks.length > 0 && (
-        <div className="mt-3 ml-4 pl-4 border-l-2 border-[var(--border)] space-y-1.5">
+        <div className="mt-4 ml-4 pl-4 border-l-2 border-[var(--accent-heart)]/30 space-y-2.5">
           {sitelinks.map((link) => {
             const isExternal = link.href.startsWith("http");
-            const linkContent = (
-              <span className="flex items-center gap-2 min-w-0">
-                <span className="text-sm text-[var(--text-secondary)] group-hover/link:text-[var(--accent-heart)] transition-colors truncate">
-                  {link.title}
-                </span>
-                {link.snippet && (
-                  <span className="text-xs text-[var(--text-quaternary)] truncate hidden sm:inline flex-1 min-w-0">
-                    {link.snippet}
-                  </span>
-                )}
-                <span className="text-[var(--text-quaternary)] flex-shrink-0 group-hover/link:text-[var(--accent-heart)]">
-                  &gt;
-                </span>
-              </span>
-            );
+
             if (isExternal) {
               return (
                 <a
@@ -148,10 +181,20 @@ export function SearchResultSnippet({ agent, className }: Props) {
                   href={link.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex group/link block hover:underline underline-offset-1 min-w-0"
-                  aria-label={`${link.title}${link.snippet ? `: ${link.snippet}` : ""}`}
+                  className="block group/link min-w-0"
+                  aria-label={`${link.title}: ${link.snippet}`}
                 >
-                  {linkContent}
+                  <div className="flex items-start gap-2">
+                    <span className="text-sm font-medium text-[var(--text-secondary)] group-hover/link:text-[var(--accent-heart)] transition-colors flex-shrink-0">
+                      {link.title}
+                    </span>
+                    <span className="text-[var(--text-quaternary)] flex-shrink-0 group-hover/link:text-[var(--accent-heart)]">
+                      &gt;
+                    </span>
+                  </div>
+                  <p className="text-xs text-[var(--text-quaternary)] mt-0.5 group-hover/link:text-[var(--text-tertiary)] line-clamp-2">
+                    {link.snippet}
+                  </p>
                 </a>
               );
             }
@@ -159,13 +202,29 @@ export function SearchResultSnippet({ agent, className }: Props) {
               <Link
                 key={link.href}
                 href={link.href}
-                className="flex group/link block hover:underline underline-offset-1 min-w-0"
-                aria-label={link.title}
+                className="block group/link min-w-0"
+                aria-label={`${link.title}: ${link.snippet}`}
               >
-                {linkContent}
+                <div className="flex items-start gap-2">
+                  <span className="text-sm font-medium text-[var(--text-secondary)] group-hover/link:text-[var(--accent-heart)] transition-colors flex-shrink-0">
+                    {link.title}
+                  </span>
+                  <span className="text-[var(--text-quaternary)] flex-shrink-0 group-hover/link:text-[var(--accent-heart)]">
+                    &gt;
+                  </span>
+                </div>
+                <p className="text-xs text-[var(--text-quaternary)] mt-0.5 group-hover/link:text-[var(--text-tertiary)] line-clamp-2">
+                  {link.snippet}
+                </p>
               </Link>
             );
           })}
+          <Link
+            href={`/agent/${agent.slug}`}
+            className="inline-block text-xs text-[var(--text-quaternary)] hover:text-[var(--accent-heart)] mt-1 font-medium"
+          >
+            More from this agent →
+          </Link>
         </div>
       )}
     </article>
