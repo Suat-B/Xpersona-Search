@@ -1,0 +1,168 @@
+import pLimit from "p-limit";
+import { db } from "@/lib/db";
+import { agents, crawlJobs } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+import { octokit, fetchRepoDetails, fetchFileContent } from "../utils/github";
+import { parseSkillMd } from "../parsers/skill-md";
+import { calculateSafetyScore } from "../scoring/safety";
+import {
+  calculatePopularityScore,
+  calculateFreshnessScore,
+  calculateOverallRank,
+} from "../scoring/rank";
+import { generateSlug } from "../utils/slug";
+
+const CONCURRENCY = 3;
+const PAGE_SIZE = 30;
+const RATE_LIMIT_DELAY_MS = 1200;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+export async function crawlOpenClawSkills(
+  since?: Date,
+  maxResults: number = 500
+): Promise<{ total: number; jobId: string }> {
+  const [job] = await db
+    .insert(crawlJobs)
+    .values({
+      source: "GITHUB_OPENCLEW",
+      status: "RUNNING",
+      startedAt: new Date(),
+    })
+    .returning();
+
+  const jobId = job?.id ?? crypto.randomUUID();
+  const limit = pLimit(CONCURRENCY);
+
+  let totalFound = 0;
+  let page = 1;
+
+  try {
+    while (totalFound < maxResults) {
+      const { data } = await octokit.rest.search.code({
+        q: "filename:SKILL.md openclaw",
+        sort: "indexed",
+        order: "desc",
+        per_page: PAGE_SIZE,
+        page,
+      });
+
+      const items = (data as { items?: Array<{ repository?: { full_name?: string } }> })
+        .items ?? [];
+      if (items.length === 0) break;
+
+      const repos = await Promise.all(
+        items.map((item) =>
+          limit(() =>
+            fetchRepoDetails(item.repository?.full_name ?? "")
+          )
+        )
+      );
+
+      for (const repo of repos) {
+        if (!repo || totalFound >= maxResults) continue;
+        if (since && new Date(repo.updated_at) <= since) continue;
+
+        const skillContent = await fetchFileContent(
+          repo.full_name,
+          "SKILL.md",
+          repo.default_branch
+        );
+        if (!skillContent) continue;
+
+        const skillData = parseSkillMd(skillContent);
+        const safetyScore = await calculateSafetyScore(repo, skillContent);
+        const popularityScore = calculatePopularityScore(repo);
+        const freshnessScore = calculateFreshnessScore(repo);
+
+        const slug =
+          generateSlug(repo.full_name.replace("/", "-")) || `agent-${repo.id}`;
+
+        const agentData = {
+          sourceId: `github:${repo.id}`,
+          source: "GITHUB_OPENCLEW" as const,
+          name: skillData.name ?? repo.name,
+          slug,
+          description: skillData.description ?? repo.description ?? null,
+          url: repo.html_url,
+          homepage: skillData.homepage ?? null,
+          capabilities: skillData.capabilities ?? [],
+          protocols: skillData.protocols,
+          languages: ["typescript"] as string[],
+          githubData: {
+            stars: repo.stargazers_count,
+            forks: repo.forks_count,
+            lastCommit: repo.pushed_at,
+            defaultBranch: repo.default_branch,
+          },
+          openclawData: skillData as unknown as Record<string, unknown>,
+          readme: skillContent,
+          safetyScore,
+          popularityScore,
+          freshnessScore,
+          performanceScore: 0,
+          overallRank: calculateOverallRank({
+            safety: safetyScore,
+            popularity: popularityScore,
+            freshness: freshnessScore,
+            performance: 0,
+          }),
+          status: safetyScore >= 50 ? ("ACTIVE" as const) : ("PENDING_REVIEW" as const),
+          lastCrawledAt: new Date(),
+          nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        };
+
+        await db
+          .insert(agents)
+          .values(agentData)
+          .onConflictDoUpdate({
+            target: agents.sourceId,
+            set: {
+              name: agentData.name,
+              slug: agentData.slug,
+              description: agentData.description,
+              githubData: agentData.githubData,
+              openclawData: agentData.openclawData,
+              readme: agentData.readme,
+              safetyScore: agentData.safetyScore,
+              popularityScore: agentData.popularityScore,
+              freshnessScore: agentData.freshnessScore,
+              overallRank: agentData.overallRank,
+              status: agentData.status,
+              lastCrawledAt: agentData.lastCrawledAt,
+              nextCrawlAt: agentData.nextCrawlAt,
+              updatedAt: new Date(),
+            },
+          });
+
+        totalFound++;
+      }
+
+      await sleep(RATE_LIMIT_DELAY_MS);
+      page++;
+    }
+
+    await db
+      .update(crawlJobs)
+      .set({
+        status: "COMPLETED",
+        completedAt: new Date(),
+        agentsFound: totalFound,
+      })
+      .where(eq(crawlJobs.id, jobId));
+  } catch (err) {
+    await db
+      .update(crawlJobs)
+      .set({
+        status: "FAILED",
+        completedAt: new Date(),
+        error: err instanceof Error ? err.message : String(err),
+      })
+      .where(eq(crawlJobs.id, jobId));
+    throw err;
+  }
+
+  return { total: totalFound, jobId };
+}

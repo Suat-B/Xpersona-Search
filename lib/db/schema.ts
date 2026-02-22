@@ -631,3 +631,6 @@ export const signalDeliveryLogs = pgTable(
     index("signal_delivery_logs_user_id_idx").on(table.userId),
   ]
 );
+
+// Search engine (agents, crawl_jobs) - re-exported from search-schema
+export { agents, crawlJobs } from "./search-schema";

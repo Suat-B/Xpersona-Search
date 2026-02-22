@@ -4,7 +4,7 @@ import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import { getService } from "@/lib/service";
 import { HomeHero } from "@/components/home/HomeHero";
 import { HomeHub } from "@/components/home/HomeHub";
-import { ANSLanding } from "@/components/home/ANSLanding";
+import { SearchLanding } from "@/components/home/SearchLanding";
 import { HomeStrategies } from "@/components/home/HomeStrategies";
 import { HomeFlow } from "@/components/home/HomeFlow";
 import { HomeTrust } from "@/components/home/HomeTrust";
@@ -30,11 +30,11 @@ export default async function HomePage() {
   if (service === "hub") {
     return (
       <div className="min-h-screen flex flex-col">
-        <ANSMinimalHeader isAuthenticated={isAuthenticated} />
+        <ANSMinimalHeader isAuthenticated={isAuthenticated} variant="dark" />
         <div className="flex-1">
-          <ANSLanding />
+          <SearchLanding />
         </div>
-        <ANSMinimalFooter />
+        <ANSMinimalFooter variant="dark" />
       </div>
     );
   }

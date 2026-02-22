@@ -4,8 +4,12 @@ import path from "path";
 const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(process.cwd()),
   async rewrites() {
+    return [];
+  },
+  async redirects() {
     return [
-      { source: "/agent/:name", destination: "/api/ans/card/:name" },
+      { source: "/register", destination: "/", permanent: false },
+      { source: "/register/success", destination: "/", permanent: false },
     ];
   },
   experimental: {
