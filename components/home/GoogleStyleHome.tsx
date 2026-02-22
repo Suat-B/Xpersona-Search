@@ -89,7 +89,7 @@ export function GoogleStyleHome({
           href="/"
           className="mb-8 group block text-center home-logo-link"
           aria-label="Xpersona home">
-          <span className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-[var(--accent-heart)] select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75">
+          <span className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-white select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75">
             Xpersona
           </span>
         </Link>
