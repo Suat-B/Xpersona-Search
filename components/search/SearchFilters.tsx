@@ -46,7 +46,9 @@ export function SearchFilters({
                 key={p}
                 type="button"
                 onClick={() => toggleProtocol(p)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
+                aria-pressed={selectedProtocols.includes(p)}
+                aria-label={`Filter by ${p}${count != null ? `, ${count} results` : ""}`}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] ${
                   selectedProtocols.includes(p)
                     ? "bg-[var(--accent-heart)] text-white border-[var(--accent-heart)]"
                     : "bg-[var(--bg-elevated)] text-[var(--text-tertiary)] border-[var(--border)] hover:border-[var(--accent-heart)]/40 hover:text-[var(--text-secondary)]"
@@ -70,7 +72,11 @@ export function SearchFilters({
           max={100}
           value={minSafety}
           onChange={(e) => onSafetyChange(Number(e.target.value))}
-          className="w-full h-2 rounded-full appearance-none cursor-pointer bg-[var(--bg-elevated)] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[var(--accent-heart)] [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:border-0"
+          aria-label="Minimum safety score"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={minSafety}
+          className="w-full h-2 rounded-full appearance-none cursor-pointer bg-[var(--bg-elevated)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[var(--accent-heart)] [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:border-0"
         />
         <p className="text-xs text-[var(--text-tertiary)] mt-1">{minSafety}</p>
       </div>
@@ -80,7 +86,8 @@ export function SearchFilters({
         <select
           value={sort}
           onChange={(e) => onSortChange(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-[var(--text-primary)] focus:border-[var(--accent-heart)]/60 focus:outline-none focus:ring-1 focus:ring-[var(--accent-heart)]/20 transition-colors"
+          aria-label="Sort results by"
+          className="w-full px-3 py-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] focus:border-[var(--accent-heart)]/60 focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] transition-colors hover:border-[var(--border-strong)]"
         >
           <option value="rank">By Rank</option>
           <option value="safety">By Safety</option>

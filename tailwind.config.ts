@@ -8,6 +8,9 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      backgroundImage: {
+        "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
+      },
       fontFamily: {
         sans: ["var(--font-outfit)", "ui-sans-serif", "system-ui", "sans-serif"],
         body: ["var(--font-outfit)", "ui-sans-serif", "system-ui", "sans-serif"],

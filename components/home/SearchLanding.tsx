@@ -99,7 +99,7 @@ export function SearchLanding() {
   }, [selectedProtocols, minSafety, sort]);
 
   return (
-    <section className="min-h-screen text-[var(--text-primary)]">
+    <section className="min-h-screen text-[var(--text-primary)] bg-[var(--bg-deep)]">
       <SearchHero
         query={query}
         setQuery={setQuery}
@@ -107,7 +107,7 @@ export function SearchLanding() {
         loading={loading}
       />
 
-      <div className="max-w-7xl mx-auto px-4 pb-16">
+      <div className="max-w-6xl mx-auto px-4 pb-16">
         <div className="flex flex-col lg:flex-row gap-8">
           <aside className="lg:w-64 flex-shrink-0 order-2 lg:order-1">
             <SearchFilters
@@ -121,24 +121,24 @@ export function SearchLanding() {
             />
           </aside>
 
-          <main className="flex-1 min-w-0 order-1 lg:order-2">
-            <p className="mb-4 text-[var(--text-tertiary)]">
+          <main className="flex-1 min-w-0 order-1 lg:order-2" aria-label="Search results">
+            <p className="mb-4 text-[var(--text-tertiary)]" role="status" aria-live="polite">
               {agents.length} agent{agents.length === 1 ? "" : "s"} found
             </p>
 
             {loading && agents.length === 0 ? (
-              <div className="space-y-4">
+              <div className="space-y-4" aria-busy="true" aria-live="polite">
                 {[1, 2, 3, 4, 5].map((i) => (
                   <SkeletonCard key={i} />
                 ))}
               </div>
             ) : !loading && agents.length === 0 ? (
-              <div className="agent-card p-12 rounded-xl border border-[var(--border)] text-center">
+              <div
+                className="agent-card p-12 rounded-xl border border-[var(--border)] text-center"
+                role="status"
+              >
                 <p className="text-[var(--text-secondary)] text-lg mb-2">
-                  No agents found.
-                </p>
-                <p className="text-[var(--text-tertiary)] text-sm">
-                  Try different filters or search terms.
+                  No agents found. Try different filters or search terms.
                 </p>
               </div>
             ) : (
@@ -159,7 +159,9 @@ export function SearchLanding() {
                     type="button"
                     onClick={() => search(false)}
                     disabled={loading}
-                    className="mt-8 w-full py-4 glass-panel hover:border-[var(--accent-heart)]/30 rounded-xl font-medium text-[var(--text-primary)] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                    aria-busy={loading}
+                    aria-label={loading ? "Loading more" : "Load more results"}
+                    className="mt-8 w-full py-4 glass-panel hover:border-[var(--accent-heart)]/30 rounded-xl font-medium text-[var(--text-primary)] transition-all disabled:opacity-50 flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
                   >
                     {loading ? (
                       <>
