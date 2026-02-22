@@ -52,10 +52,16 @@ node scripts/ensure-search-vectors.mjs
 npm run crawl
 ```
 
-This crawls GitHub for OpenClaw skills (repos with `SKILL.md`), inserts them into `agents`, and marks them as `ACTIVE` when `safetyScore >= 50`. Default max is 1000 agents; override with:
+This runs a **full backfill** (all sources, no date filter): OpenClaw, MCP, A2A Registry, npm. Default max is 1500; override with:
 
 ```bash
-npm run crawl 200
+npm run crawl 2000
+```
+
+For a deep initial backfill:
+
+```bash
+npm run crawl:full
 ```
 
 ---
@@ -74,7 +80,7 @@ The `/api/cron/crawl` route runs multiple crawlers (OpenClaw, MCP, A2A Registry,
 - `CRON_SECRET` — generate with `openssl rand -hex 32`
 - `GITHUB_TOKEN` — required for GitHub OpenClaw and MCP crawlers
 - `CRAWL_MAX_RESULTS` — (optional) max agents per source, default 500
-- `CRAWL_SINCE_DAYS` — (optional) incremental window; 0 = full crawl, 7 = last 7 days (default)
+- `CRAWL_SINCE_DAYS` — (optional) 0 = full crawl (default), 7 = last 7 days (incremental)
 - `A2A_REGISTRY_URL` — (optional) A2A registry API base URL, default `https://api.a2a-registry.dev`
 
 Then configure a cron job to call `GET /api/cron/crawl` with `Authorization: Bearer <CRON_SECRET>`. Crons run at 6:00 UTC daily and every 6 hours.

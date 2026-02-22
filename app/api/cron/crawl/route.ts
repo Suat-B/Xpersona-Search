@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const sinceDays = parseInt(process.env.CRAWL_SINCE_DAYS ?? "7", 10);
+  const sinceDays = parseInt(process.env.CRAWL_SINCE_DAYS ?? "0", 10);
   const since =
     sinceDays <= 0
       ? undefined
