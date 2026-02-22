@@ -3,10 +3,18 @@
 import { useState, useEffect, useCallback } from "react";
 import { applyPreset, HOME_ACCENT_STORAGE_KEY } from "@/lib/theme-presets";
 import type { ThemePresetId } from "@/lib/theme-presets";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { SearchResultSnippet } from "@/components/search/SearchResultSnippet";
 import { SearchResultsBar } from "@/components/search/SearchResultsBar";
+
+/** Protocol identifiers used in API/DB. Display labels for UI. */
+const BROWSE_PROTOCOLS = [
+  { id: "MCP", label: "MCP" },
+  { id: "A2A", label: "A2A" },
+  { id: "ANP", label: "ANP" },
+  { id: "OPENCLEW", label: "OpenClaw" },
+] as const;
 
 interface Agent {
   id: string;
@@ -40,21 +48,40 @@ function SkeletonSnippet() {
   );
 }
 
+function parseProtocolsFromUrl(p: string | null): string[] {
+  if (!p) return [];
+  return p
+    .split(",")
+    .map((s) => s.trim().toUpperCase().replace(/OPENCLAW/i, "OPENCLEW"))
+    .filter(Boolean);
+}
+
 export function SearchLanding() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [total, setTotal] = useState<number>(0);
-  const [selectedProtocols, setSelectedProtocols] = useState<string[]>(() => {
-    const p = searchParams.get("protocols");
-    return p ? p.split(",").map((s) => s.trim()).filter(Boolean) : [];
-  });
+  const [selectedProtocols, setSelectedProtocols] = useState<string[]>(() =>
+    parseProtocolsFromUrl(searchParams.get("protocols"))
+  );
   const [minSafety, setMinSafety] = useState(0);
   const [sort, setSort] = useState("rank");
   const [facets, setFacets] = useState<Facets | undefined>(undefined);
+
+  const handleProtocolChange = useCallback(
+    (protocols: string[]) => {
+      setSelectedProtocols(protocols);
+      const params = new URLSearchParams(searchParams.toString());
+      if (protocols.length) params.set("protocols", protocols.join(","));
+      else params.delete("protocols");
+      router.replace(`/?${params.toString()}`, { scroll: false });
+    },
+    [searchParams, router]
+  );
 
   const search = useCallback(
     async (reset = true) => {
@@ -100,6 +127,14 @@ export function SearchLanding() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProtocols, minSafety, sort]);
 
+  // Sync state from URL when it changes (e.g. from Link navigation on Explore/Browse buttons)
+  useEffect(() => {
+    const urlQ = searchParams.get("q") ?? "";
+    const urlProtocols = parseProtocolsFromUrl(searchParams.get("protocols"));
+    setQuery(urlQ);
+    setSelectedProtocols(urlProtocols);
+  }, [searchParams]);
+
   useEffect(() => {
     try {
       const stored = localStorage.getItem(HOME_ACCENT_STORAGE_KEY) as ThemePresetId | null;
@@ -125,7 +160,7 @@ export function SearchLanding() {
         onSearch={() => search(true)}
         loading={loading}
         selectedProtocols={selectedProtocols}
-        onProtocolChange={setSelectedProtocols}
+        onProtocolChange={handleProtocolChange}
         sort={sort}
         onSortChange={setSort}
         minSafety={minSafety}
@@ -175,13 +210,13 @@ export function SearchLanding() {
                 >
                   Explore all agents
                 </Link>
-                {["MCP", "A2A", "OpenClaw"].map((proto) => (
+                {BROWSE_PROTOCOLS.map(({ id, label }) => (
                   <Link
-                    key={proto}
-                    href={`/?protocols=${proto}`}
+                    key={id}
+                    href={`/?protocols=${id}`}
                     className="inline-flex items-center px-4 py-2 rounded-lg border border-[var(--border)] hover:border-[var(--accent-heart)]/40 text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-all text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
                   >
-                    Browse {proto}
+                    Browse {label}
                   </Link>
                 ))}
               </div>
