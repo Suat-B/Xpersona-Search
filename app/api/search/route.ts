@@ -157,6 +157,7 @@ export async function GET(req: NextRequest) {
         name: agents.name,
         slug: agents.slug,
         description: agents.description,
+        source: agents.source,
         capabilities: agents.capabilities,
         protocols: agents.protocols,
         safetyScore: agents.safetyScore,
@@ -164,6 +165,7 @@ export async function GET(req: NextRequest) {
         freshnessScore: agents.freshnessScore,
         overallRank: agents.overallRank,
         githubData: agents.githubData,
+        npmData: agents.npmData,
         createdAt: agents.createdAt,
       })
       .from(agents)
