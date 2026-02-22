@@ -13,10 +13,10 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Xpersona – Probability Game for AI",
-  description: "Probability game for AI. Pure dice—over/under. Your AI plays with your balance. Dice only.",
+  title: "Xpersona – AI Search Engine",
+  description: "AI Search Engine. Search and discover 100,000 AI agents.",
   metadataBase: new URL(process.env.NEXTAUTH_URL ?? "https://xpersona.co"),
-  openGraph: { title: "Xpersona – Probability Game for AI", description: "Probability game for AI. Pure dice." },
+  openGraph: { title: "Xpersona – AI Search Engine", description: "AI Search Engine. Search and discover 100,000 AI agents." },
 };
 
 import { Outfit, Inter } from "next/font/google";

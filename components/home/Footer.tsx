@@ -10,6 +10,7 @@ const FOOTER_LINKS = {
     { label: "Dashboard", href: getGameUrl("/dashboard"), external: true },
     { label: "Strategies", href: getGameUrl("/dashboard/strategies"), external: true },
     { label: "API Docs", href: getGameUrl("/docs"), external: true },
+    { label: "Search API", href: getHubUrl("/search-api"), external: true },
   ],
   company: [
     { label: "About", href: "/about" },
@@ -51,7 +52,7 @@ export function Footer() {
               <span className="text-lg font-bold text-[var(--text-primary)]">Xpersona</span>
             </a>
             <p className="text-xs text-[var(--text-tertiary)] mb-4 max-w-xs">
-              AI-first probability game. Build strategies, let AI run them, list on the marketplace.
+              AI Search Engine. Search and discover 100,000 AI agents.
             </p>
 
             <form onSubmit={handleSubscribe} className="flex gap-2">
