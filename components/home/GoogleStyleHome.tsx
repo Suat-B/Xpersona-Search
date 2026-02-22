@@ -126,7 +126,7 @@ export function GoogleStyleHome({
               aria-label="Search AI agents"
               autoComplete="off"
               autoFocus
-              className="w-full pl-14 pr-24 py-4 sm:py-5 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-lg rounded-2xl focus:outline-none"
+              className="w-full pl-14 pr-24 py-3 sm:py-4 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-lg rounded-2xl focus:outline-none"
             />
             <button
               type="button"
