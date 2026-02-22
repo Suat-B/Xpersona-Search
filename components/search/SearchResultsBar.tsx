@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { HomeThemePicker } from "@/components/home/HomeThemePicker";
+import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { applyPreset, HOME_ACCENT_STORAGE_KEY } from "@/lib/theme-presets";
 import type { ThemePresetId } from "@/lib/theme-presets";
+import { SearchSuggestions, type SearchSuggestionsHandle, type SuggestionAgent } from "./SearchSuggestions";
 
 interface SearchResultsBarProps {
   query: string;
@@ -20,6 +21,7 @@ interface SearchResultsBarProps {
 }
 
 const PROTOCOL_LIST = ["A2A", "MCP", "ANP", "OPENCLEW"];
+const BLUR_DELAY_MS = 150;
 
 export function SearchResultsBar({
   query,
@@ -36,6 +38,44 @@ export function SearchResultsBar({
 }: SearchResultsBarProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [showTools, setShowTools] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const searchAnchorRef = useRef<HTMLDivElement>(null);
+  const suggestionsRef = useRef<SearchSuggestionsHandle>(null);
+  const router = useRouter();
+
+  const handleSuggestionSelect = (agent: SuggestionAgent) => {
+    router.push(`/agent/${agent.slug}`);
+  };
+
+  const handleFocus = () => {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = undefined;
+    }
+    setIsFocused(true);
+    if (query.length >= 2) setShowSuggestions(true);
+  };
+
+  const handleBlur = () => {
+    setIsFocused(false);
+    blurTimeoutRef.current = setTimeout(() => setShowSuggestions(false), BLUR_DELAY_MS);
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent) => {
+    if (["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(e.key)) {
+      suggestionsRef.current?.handleKeyDown(e);
+    }
+  };
+
+  useEffect(() => {
+    if (query.length >= 2 && isFocused) setShowSuggestions(true);
+    else if (query.length < 2) setShowSuggestions(false);
+  }, [query, isFocused]);
+
+  useEffect(() => () => {
+    if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+  }, []);
 
   const protocolCounts = new Map<string, number>(
     (facets?.protocols ?? []).flatMap((f) =>
@@ -72,6 +112,7 @@ export function SearchResultsBar({
         <div className="flex items-center gap-4 mb-3">
           <form onSubmit={handleSubmit} className="flex-1 flex items-center gap-2">
             <div
+              ref={searchAnchorRef}
               className={`relative flex-1 flex items-center rounded-xl border transition-all duration-200 ${
                 isFocused
                   ? "border-[var(--accent-heart)]/50 ring-2 ring-[var(--accent-heart)]/20"
@@ -100,13 +141,26 @@ export function SearchResultsBar({
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                onFocus={() => setIsFocused(true)}
-                onBlur={() => setIsFocused(false)}
+                onFocus={handleFocus}
+                onBlur={handleBlur}
+                onKeyDown={handleInputKeyDown}
                 placeholder="Search AI agents..."
                 aria-label="Search AI agents"
+                aria-autocomplete="list"
+                aria-controls="agent-suggestions-bar"
+                aria-expanded={showSuggestions}
                 autoComplete="off"
                 autoFocus
                 className="w-full pl-9 pr-4 py-2.5 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-sm rounded-xl focus:outline-none"
+              />
+              <SearchSuggestions
+                ref={suggestionsRef}
+                query={query}
+                onSelect={handleSuggestionSelect}
+                onClose={() => setShowSuggestions(false)}
+                anchorRef={searchAnchorRef}
+                visible={showSuggestions}
+                id="agent-suggestions-bar"
               />
             </div>
             <button
@@ -119,8 +173,6 @@ export function SearchResultsBar({
               {loading ? "..." : "Search"}
             </button>
           </form>
-
-          <HomeThemePicker />
 
           {/* Tools dropdown */}
           <div className="relative flex-shrink-0">

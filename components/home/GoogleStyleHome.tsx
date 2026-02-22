@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { HomeThemePicker } from "@/components/home/HomeThemePicker";
+import { SearchSuggestions, type SearchSuggestionsHandle, type SuggestionAgent } from "@/components/search/SearchSuggestions";
 import { applyPreset, HOME_ACCENT_STORAGE_KEY, type ThemePresetId } from "@/lib/theme-presets";
 
 interface GoogleStyleHomeProps {
@@ -13,6 +14,8 @@ interface GoogleStyleHomeProps {
   termsUrl?: string;
 }
 
+const BLUR_DELAY_MS = 150;
+
 export function GoogleStyleHome({
   isAuthenticated = false,
   privacyUrl = "/privacy-policy-1",
@@ -20,6 +23,10 @@ export function GoogleStyleHome({
 }: GoogleStyleHomeProps) {
   const [query, setQuery] = useState("");
   const [isFocused, setIsFocused] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const searchAnchorRef = useRef<HTMLDivElement>(null);
+  const suggestionsRef = useRef<SearchSuggestionsHandle>(null);
   const router = useRouter();
 
   const handleSearch = (e: React.FormEvent) => {
@@ -33,6 +40,35 @@ export function GoogleStyleHome({
     router.push("/?q=discover");
   };
 
+  const handleSuggestionSelect = (agent: SuggestionAgent) => {
+    router.push(`/agent/${agent.slug}`);
+  };
+
+  const handleFocus = () => {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = undefined;
+    }
+    setIsFocused(true);
+    if (query.length >= 2) setShowSuggestions(true);
+  };
+
+  const handleBlur = () => {
+    setIsFocused(false);
+    blurTimeoutRef.current = setTimeout(() => setShowSuggestions(false), BLUR_DELAY_MS);
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent) => {
+    if (["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(e.key)) {
+      suggestionsRef.current?.handleKeyDown(e);
+    }
+  };
+
+  useEffect(() => {
+    if (query.length >= 2 && isFocused) setShowSuggestions(true);
+    else if (query.length < 2) setShowSuggestions(false);
+  }, [query, isFocused]);
+
   useEffect(() => {
     try {
       const stored = localStorage.getItem(HOME_ACCENT_STORAGE_KEY) as ThemePresetId | null;
@@ -40,6 +76,10 @@ export function GoogleStyleHome({
     } catch {
       // ignore
     }
+  }, []);
+
+  useEffect(() => () => {
+    if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
   }, []);
 
   const bgImage = typeof process.env.NEXT_PUBLIC_HOME_BG_IMAGE === "string"
@@ -96,6 +136,7 @@ export function GoogleStyleHome({
 
         <form onSubmit={handleSearch} className="w-full max-w-3xl mt-6 animate-fade-in-up animate-delay-225">
           <div
+            ref={searchAnchorRef}
             className={`relative flex items-center w-full rounded-2xl neural-glass neural-glass-hover border transition-all duration-300 ${
               isFocused
                 ? "border-[var(--accent-heart)]/50 shadow-[0_0_24px_var(--border-glow)] ring-2 ring-[var(--accent-heart)]/25"
@@ -116,10 +157,14 @@ export function GoogleStyleHome({
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onFocus={() => setIsFocused(true)}
-              onBlur={() => setIsFocused(false)}
+              onFocus={handleFocus}
+              onBlur={handleBlur}
+              onKeyDown={handleInputKeyDown}
               placeholder="Search AI agents..."
               aria-label="Search AI agents"
+              aria-autocomplete="list"
+              aria-controls="agent-suggestions"
+              aria-expanded={showSuggestions}
               autoComplete="off"
               autoFocus
               className="w-full pl-14 pr-24 py-3 sm:py-4 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-lg rounded-2xl focus:outline-none"
@@ -137,6 +182,14 @@ export function GoogleStyleHome({
             >
               Browse
             </button>
+            <SearchSuggestions
+              ref={suggestionsRef}
+              query={query}
+              onSelect={handleSuggestionSelect}
+              onClose={() => setShowSuggestions(false)}
+              anchorRef={searchAnchorRef}
+              visible={showSuggestions}
+            />
           </div>
 
           <div className="flex justify-center gap-4 mt-6">
