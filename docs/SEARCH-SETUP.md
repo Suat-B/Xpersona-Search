@@ -52,7 +52,7 @@ node scripts/ensure-search-vectors.mjs
 npm run crawl
 ```
 
-This runs a **full backfill** (all sources, no date filter): OpenClaw, MCP, A2A Registry, npm. Default max is 1500; override with:
+This runs a **full backfill** (all sources, no date filter): OpenClaw, MCP, ClawHub, GitHub Repos, MCP Registry, PyPI, Curated Seeds, Hugging Face Spaces, Docker Hub, AgentScape, Replicate (if token set), A2A Registry, npm. Default max is 1500; override with:
 
 ```bash
 npm run crawl 2000
@@ -75,12 +75,18 @@ npm run crawl:full
 
 ## Production (Vercel Cron)
 
-The `/api/cron/crawl` route runs multiple crawlers (OpenClaw, MCP, A2A Registry, npm). Add to Vercel env:
+The `/api/cron/crawl` route runs multiple crawlers. Add to Vercel env:
 
 - `CRON_SECRET` — generate with `openssl rand -hex 32`
-- `GITHUB_TOKEN` — required for GitHub OpenClaw and MCP crawlers
+- `GITHUB_TOKEN` — required for GitHub OpenClaw, MCP, ClawHub, GitHub Repos crawlers
 - `CRAWL_MAX_RESULTS` — (optional) max agents per source, default 500
 - `CRAWL_SINCE_DAYS` — (optional) 0 = full crawl (default), 7 = last 7 days (incremental)
+- `CRAWL_BATCH_SIZE` — (optional) batch limit for heavy crawlers (HF Spaces), default 2000
+- `CRAWL_SOURCE_FILTER` — (optional) comma-separated sources to run only (e.g. `CLAWHUB,MCP_REGISTRY`); empty = all
+- `CRAWL_BROAD_MODE` — (optional) `1` to enable relaxed npm/PyPI filtering for volume
+- `HUGGINGFACE_TOKEN` — (optional) for higher Hugging Face API rate limits
+- `REPLICATE_API_TOKEN` — (optional) for Replicate models crawler
 - `A2A_REGISTRY_URL` — (optional) A2A registry API base URL, default `https://api.a2a-registry.dev`
+- `MCP_REGISTRY_URL` — (optional) MCP Registry API base, default `https://registry.modelcontextprotocol.io`
 
 Then configure a cron job to call `GET /api/cron/crawl` with `Authorization: Bearer <CRON_SECRET>`. Crons run at 6:00 UTC daily and every 6 hours.

@@ -28,6 +28,8 @@ const SEARCH_QUERIES = [
   "filename:package.json @modelcontextprotocol/sdk",
   "filename:package.json mcp-server",
   "filename:package.json modelcontextprotocol",
+  "filename:package.json @modelcontextprotocol",
+  "mcp server typescript",
 ] as const;
 
 function sleep(ms: number): Promise<void> {

@@ -10,7 +10,23 @@ import { generateSlug } from "../utils/slug";
 const NPM_SEARCH_URL = "https://registry.npmjs.org/-/v1/search";
 const PAGE_SIZE = 40;
 
-const SEARCH_TERMS = ["openclaw", "mcp-server", "@modelcontextprotocol"];
+const SEARCH_TERMS = [
+  "openclaw",
+  "mcp-server",
+  "@modelcontextprotocol",
+  "@anthropic-ai mcp",
+  "cursor mcp",
+  "langchain agent",
+  "agent llm",
+  "llm agent",
+  "claude api",
+  "cursor agent",
+  "chatbot",
+  "ai-assistant",
+  "llamaindex",
+  "mcp",
+  "openclaw skill",
+];
 
 interface NpmPackage {
   name: string;
@@ -31,18 +47,30 @@ interface NpmSearchResponse {
   total?: number;
 }
 
-function isRelevantPackage(pkg: NpmPackage): boolean {
+function isRelevantPackage(pkg: NpmPackage, broadMode = false): boolean {
   const name = pkg.name.toLowerCase();
   const desc = (pkg.description ?? "").toLowerCase();
   const keywords = (pkg.keywords ?? []).map((k) => String(k).toLowerCase());
 
-  if (name.includes("openclaw")) return true;
-  if (name.includes("mcp")) return true;
-  if (name.includes("modelcontextprotocol")) return true;
-  if (desc.includes("openclaw")) return true;
-  if (desc.includes("mcp") || desc.includes("model context protocol"))
+  if (name.includes("openclaw") || desc.includes("openclaw")) return true;
+  if (name.includes("mcp") || desc.includes("mcp") || desc.includes("model context protocol"))
     return true;
-  if (keywords.some((k) => k.includes("openclaw") || k.includes("mcp")))
+  if (name.includes("modelcontextprotocol")) return true;
+  if (name.includes("langchain") || desc.includes("langchain")) return true;
+  if ((name.includes("anthropic") || name.includes("cursor")) && (name.includes("mcp") || desc.includes("mcp")))
+    return true;
+  if (keywords.some((k) => k.includes("openclaw") || k.includes("mcp") || k.includes("agent")))
+    return true;
+  if (
+    broadMode &&
+    (name.includes("agent") ||
+      name.includes("mcp") ||
+      desc.includes(" ai agent") ||
+      desc.includes("llm agent") ||
+      desc.includes("chatbot") ||
+      desc.includes("ai assistant") ||
+      (desc.includes("llm") && desc.includes("agent")))
+  )
     return true;
 
   return false;
@@ -103,7 +131,8 @@ export async function crawlNpmPackages(
           const pkg = obj.package;
           if (!pkg?.name) continue;
 
-          if (!isRelevantPackage(pkg)) continue;
+          const broadMode = process.env.CRAWL_BROAD_MODE === "1";
+          if (!isRelevantPackage(pkg, broadMode)) continue;
 
           const sourceId = `npm:${pkg.name}`;
           if (seenSourceIds.has(sourceId)) continue;

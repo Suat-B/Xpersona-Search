@@ -21,6 +21,9 @@ const SEARCH_QUERIES = [
   "filename:SKILL.md lang:typescript",
   "openclaw skill",
   "SKILL.md cursor",
+  "filename:SKILL.md",
+  "clawhub skill",
+  "SKILL.md openclaw lang:python",
 ] as const;
 
 function sleep(ms: number): Promise<void> {
