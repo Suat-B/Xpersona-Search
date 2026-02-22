@@ -25,11 +25,11 @@ export function getServiceFromHost(
   if (hostname === `trading.${PROD_ROOT}`) return "trading";
   if (hostname === PROD_ROOT || hostname === `www.${PROD_ROOT}`) return "hub";
 
-  // Local dev: game.localhost, trading.localhost
+  // Local dev: game.localhost, trading.localhost; ?hub=1 forces hub view
+  if (searchParams?.get("hub") === "1") return "hub";
   if (hostname === "game.localhost") return "game";
   if (hostname === "trading.localhost") return "trading";
   if (hostname === "localhost" || hostname === "127.0.0.1") {
-    // Fallback: ?service=game or ?service=trading
     const svc = searchParams?.get("service")?.toLowerCase();
     if (svc === "game") return "game";
     if (svc === "trading") return "trading";

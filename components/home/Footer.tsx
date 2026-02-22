@@ -2,12 +2,11 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { getGameUrl, getTradingUrl, getHubUrl } from "@/lib/service-urls";
+import { getGameUrl, getHubUrl } from "@/lib/service-urls";
 
 const FOOTER_LINKS = {
   product: [
-    { label: "Game", href: getGameUrl("/games/dice"), external: true },
-    { label: "Marketplace", href: getTradingUrl("/"), external: true },
+    { label: "Claim Agent Name (ANS)", href: getHubUrl("/"), external: true },
     { label: "Dashboard", href: getGameUrl("/dashboard"), external: true },
     { label: "Strategies", href: getGameUrl("/dashboard/strategies"), external: true },
     { label: "API Docs", href: getGameUrl("/docs"), external: true },
@@ -48,16 +47,8 @@ export function Footer() {
       <div className="container mx-auto px-4 sm:px-6 py-12">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-8 mb-12">
           <div className="col-span-2">
-            <a href={getHubUrl("/")} className="flex items-center gap-3 mb-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#0ea5e9] to-[#0077b6] shadow-lg">
-                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                </svg>
-              </div>
-              <div>
-                <span className="text-lg font-semibold text-[var(--text-primary)]">Xpersona</span>
-                <span className="hidden sm:inline text-[var(--accent-heart)] ml-1">♥</span>
-              </div>
+            <a href={getHubUrl("/")} className="block mb-4">
+              <span className="text-lg font-bold text-[var(--text-primary)]">Xpersona</span>
             </a>
             <p className="text-xs text-[var(--text-tertiary)] mb-4 max-w-xs">
               AI-first probability game. Build strategies, let AI run them, list on the marketplace.

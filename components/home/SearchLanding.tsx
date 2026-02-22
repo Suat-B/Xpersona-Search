@@ -2,9 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { AgentCard } from "@/components/search/AgentCard";
-import { SearchFilters } from "@/components/search/SearchFilters";
-import { SearchHero } from "@/components/home/SearchHero";
+import { SearchResultSnippet } from "@/components/search/SearchResultSnippet";
+import { SearchResultsBar } from "@/components/search/SearchResultsBar";
 
 interface Agent {
   id: string;
@@ -23,25 +22,16 @@ interface Facets {
   protocols?: Array<{ protocol: string[]; count: number }>;
 }
 
-function SkeletonCard() {
+function SkeletonSnippet() {
   return (
-    <div className="agent-card p-6 rounded-xl border border-[var(--border)] animate-pulse">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1 min-w-0">
-          <div className="h-7 w-48 bg-[var(--text-quaternary)]/30 rounded mb-3" />
-          <div className="h-4 w-full bg-[var(--text-quaternary)]/20 rounded mb-2" />
-          <div className="h-4 w-3/4 bg-[var(--text-quaternary)]/20 rounded mb-4" />
-          <div className="flex gap-2 mb-4">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-6 w-16 bg-[var(--text-quaternary)]/20 rounded-full" />
-            ))}
-          </div>
-          <div className="flex gap-6">
-            <div className="h-4 w-20 bg-[var(--text-quaternary)]/20 rounded" />
-            <div className="h-4 w-12 bg-[var(--text-quaternary)]/20 rounded" />
-          </div>
-        </div>
-        <div className="h-10 w-20 bg-[var(--text-quaternary)]/20 rounded-lg flex-shrink-0" />
+    <div className="py-4 border-b border-[var(--border)] animate-pulse">
+      <div className="h-5 w-48 bg-[var(--text-quaternary)]/25 rounded mb-2" />
+      <div className="h-4 w-64 bg-[var(--text-quaternary)]/20 rounded mb-2" />
+      <div className="h-4 w-full bg-[var(--text-quaternary)]/20 rounded mb-1" />
+      <div className="h-4 w-4/5 bg-[var(--text-quaternary)]/20 rounded mb-2" />
+      <div className="flex gap-2 mt-2">
+        <div className="h-3 w-12 bg-[var(--text-quaternary)]/20 rounded" />
+        <div className="h-3 w-14 bg-[var(--text-quaternary)]/20 rounded" />
       </div>
     </div>
   );
@@ -54,6 +44,7 @@ export function SearchLanding() {
   const [loading, setLoading] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState<number>(0);
   const [selectedProtocols, setSelectedProtocols] = useState<string[]>([]);
   const [minSafety, setMinSafety] = useState(0);
   const [sort, setSort] = useState("rank");
@@ -77,6 +68,7 @@ export function SearchLanding() {
 
         if (reset) {
           setAgents(data.results ?? []);
+          setTotal(data.pagination?.total ?? 0);
         } else {
           setAgents((prev) => [...prev, ...(data.results ?? [])]);
         }
@@ -85,7 +77,10 @@ export function SearchLanding() {
         if (data.facets) setFacets(data.facets);
       } catch (err) {
         console.error(err);
-        if (reset) setAgents([]);
+        if (reset) {
+          setAgents([]);
+          setTotal(0);
+        }
       } finally {
         setLoading(false);
       }
@@ -98,85 +93,100 @@ export function SearchLanding() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProtocols, minSafety, sort]);
 
+  const hasResults = agents.length > 0;
+
   return (
     <section className="min-h-screen text-[var(--text-primary)] bg-[var(--bg-deep)]">
-      <SearchHero
+      <SearchResultsBar
         query={query}
         setQuery={setQuery}
         onSearch={() => search(true)}
         loading={loading}
+        selectedProtocols={selectedProtocols}
+        onProtocolChange={setSelectedProtocols}
+        sort={sort}
+        onSortChange={setSort}
+        minSafety={minSafety}
+        onSafetyChange={setMinSafety}
+        facets={facets}
       />
 
-      <div className="max-w-6xl mx-auto px-4 pb-16">
-        <div className="flex flex-col lg:flex-row gap-8">
-          <aside className="lg:w-64 flex-shrink-0 order-2 lg:order-1">
-            <SearchFilters
-              facets={facets}
-              selectedProtocols={selectedProtocols}
-              onProtocolChange={setSelectedProtocols}
-              minSafety={minSafety}
-              onSafetyChange={setMinSafety}
-              sort={sort}
-              onSortChange={setSort}
-            />
-          </aside>
+      <div className="max-w-2xl mx-auto px-4 py-6 pb-16">
+        <main aria-label="Search results">
+          {loading && !hasResults ? (
+            <div className="space-y-0" aria-busy="true" aria-live="polite">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <SkeletonSnippet key={i} />
+              ))}
+            </div>
+          ) : !hasResults ? (
+            <div
+              className="py-12 text-center"
+              role="status"
+            >
+              <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-[var(--bg-elevated)] flex items-center justify-center">
+                <svg
+                  className="w-5 h-5 text-[var(--text-tertiary)]"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
+              </div>
+              <p className="text-[var(--text-secondary)] font-medium">
+                No agents found. Try different filters or search terms.
+              </p>
+              <p className="text-[var(--text-tertiary)] text-sm mt-1">
+                Adjust your search query or filters to see more results.
+              </p>
+            </div>
+          ) : (
+            <>
+              <p
+                className="mb-4 text-sm text-[var(--text-tertiary)]"
+                role="status"
+                aria-live="polite"
+              >
+                {total > 0 ? `About ${total} agent${total === 1 ? "" : "s"}` : `${agents.length} agent${agents.length === 1 ? "" : "s"} found`}
+              </p>
 
-          <main className="flex-1 min-w-0 order-1 lg:order-2" aria-label="Search results">
-            <p className="mb-4 text-[var(--text-tertiary)]" role="status" aria-live="polite">
-              {agents.length} agent{agents.length === 1 ? "" : "s"} found
-            </p>
-
-            {loading && agents.length === 0 ? (
-              <div className="space-y-4" aria-busy="true" aria-live="polite">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <SkeletonCard key={i} />
+              <div className="divide-y-0">
+                {agents.map((agent) => (
+                  <SearchResultSnippet key={agent.id} agent={agent} />
                 ))}
               </div>
-            ) : !loading && agents.length === 0 ? (
-              <div
-                className="agent-card p-12 rounded-xl border border-[var(--border)] text-center"
-                role="status"
-              >
-                <p className="text-[var(--text-secondary)] text-lg mb-2">
-                  No agents found. Try different filters or search terms.
-                </p>
-              </div>
-            ) : (
-              <>
-                <div className="space-y-4">
-                  {agents.map((agent, i) => (
-                    <div
-                      key={agent.id}
-                      className="animate-fade-in-up"
-                      style={{ animationDelay: `${Math.min(i * 50, 300)}ms` }}
-                    >
-                      <AgentCard agent={agent} rank={i + 1} />
-                    </div>
-                  ))}
-                </div>
-                {hasMore && (
+
+              {hasMore && (
+                <div className="flex justify-center pt-8">
                   <button
                     type="button"
                     onClick={() => search(false)}
                     disabled={loading}
                     aria-busy={loading}
                     aria-label={loading ? "Loading more" : "Load more results"}
-                    className="mt-8 w-full py-4 glass-panel hover:border-[var(--accent-heart)]/30 rounded-xl font-medium text-[var(--text-primary)] transition-all disabled:opacity-50 flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+                    className="px-8 py-3 bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 disabled:opacity-50 rounded-xl font-semibold text-white transition-all flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
                   >
                     {loading ? (
                       <>
-                        <span className="inline-block w-4 h-4 border-2 border-[var(--accent-heart)] border-t-transparent rounded-full animate-spin" />
+                        <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                         Loading...
                       </>
                     ) : (
                       "Load more"
                     )}
                   </button>
-                )}
-              </>
-            )}
-          </main>
-        </div>
+                </div>
+              )}
+            </>
+          )}
+        </main>
       </div>
     </section>
   );

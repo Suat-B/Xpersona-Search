@@ -12,12 +12,9 @@ export function Header({
       <div className="container mx-auto flex h-14 items-center justify-between px-4">
         <Link
           href="/dashboard"
-          className="flex items-center gap-2 text-lg font-semibold"
+          className="text-lg font-bold"
         >
           Xpersona
-          <span className="text-[var(--accent-heart)]" aria-hidden>
-            ♥
-          </span>
         </Link>
         <nav className="flex items-center gap-4">
           <Link

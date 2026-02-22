@@ -128,9 +128,9 @@ export default function DocsPage() {
       <header className="sticky top-0 z-30 border-b border-white/5 bg-[var(--bg-deep)]/95 backdrop-blur-xl">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
           <div>
-            <h1 className="text-xl font-bold font-[family-name:var(--font-outfit)] tracking-tight">
+            <h1 className="text-xl font-extrabold font-[family-name:var(--font-outfit)] tracking-tight">
               <Link href="/" className="hover:opacity-90 transition-opacity">
-                Xpersona<span className="text-[var(--accent-heart)]">.</span>
+                Xpersona
               </Link>
               {" "}
               <span className="text-[var(--text-secondary)] font-normal">API Docs</span>

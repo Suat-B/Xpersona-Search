@@ -13,7 +13,7 @@ export function HomeHub() {
             WELCOME BACK
           </span>
         </div>
-        <h1 className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight text-gradient-primary">
+        <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight text-gradient-primary">
           Xpersona
         </h1>
         <p className="mt-2 text-sm text-[var(--dash-text-secondary)]">

@@ -65,14 +65,9 @@ export function CommandCenter({
     <header className="h-14 bg-[var(--quant-bg-surface)] border-b border-[var(--quant-border)] flex items-center justify-between px-4">
       {/* Left - Logo & Title (matches dashboard; click navigates to dashboard) */}
       <div className="flex items-center gap-4">
-        <Link href="/dashboard" className="flex items-center gap-2 group" aria-label="Back to Dashboard">
-          <div className="w-8 h-8 rounded flex items-center justify-center bg-gradient-to-br from-[#0ea5e9] to-[#0077b6] shadow-lg shadow-[#0ea5e9]/20 group-hover:shadow-[#0ea5e9]/40 transition-shadow">
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-            </svg>
-          </div>
+        <Link href="/dashboard" className="group" aria-label="Back to Dashboard">
           <div>
-            <h1 className="text-sm font-bold tracking-wider text-white font-display">Xpersona</h1>
+            <h1 className="text-sm font-extrabold tracking-wider text-white font-display">Xpersona</h1>
             <p className="text-[10px] text-[var(--quant-neutral)]">Quantitative Game</p>
           </div>
         </Link>

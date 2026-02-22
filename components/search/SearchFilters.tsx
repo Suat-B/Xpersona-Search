@@ -35,9 +35,9 @@ export function SearchFilters({
   };
 
   return (
-    <div className="glass-panel p-4 rounded-xl border border-[var(--border)] space-y-6">
+    <div className="neural-glass neural-glass-hover p-4 rounded-xl border border-[var(--border)] space-y-6">
       <div>
-        <h3 className="text-sm font-semibold text-[var(--text-secondary)] mb-2">Protocol</h3>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-2">Protocol</h3>
         <div className="flex flex-wrap gap-2">
           {protocolList.map((p) => {
             const count = protocolCounts.get(p);
@@ -48,7 +48,7 @@ export function SearchFilters({
                 onClick={() => toggleProtocol(p)}
                 aria-pressed={selectedProtocols.includes(p)}
                 aria-label={`Filter by ${p}${count != null ? `, ${count} results` : ""}`}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] ${
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 border focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] hover:-translate-y-0.5 ${
                   selectedProtocols.includes(p)
                     ? "bg-[var(--accent-heart)] text-white border-[var(--accent-heart)]"
                     : "bg-[var(--bg-elevated)] text-[var(--text-tertiary)] border-[var(--border)] hover:border-[var(--accent-heart)]/40 hover:text-[var(--text-secondary)]"
@@ -63,7 +63,7 @@ export function SearchFilters({
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold text-[var(--text-secondary)] mb-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-2">
           Min Safety
         </h3>
         <input
@@ -76,13 +76,13 @@ export function SearchFilters({
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={minSafety}
-          className="w-full h-2 rounded-full appearance-none cursor-pointer bg-[var(--bg-elevated)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[var(--accent-heart)] [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:border-0"
+          className="w-full h-2 rounded-full appearance-none cursor-pointer bg-[var(--bg-elevated)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[var(--accent-heart)] [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:border-0 [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:shadow-[var(--accent-heart)]/30"
         />
         <p className="text-xs text-[var(--text-tertiary)] mt-1">{minSafety}</p>
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold text-[var(--text-secondary)] mb-2">Sort</h3>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-2">Sort</h3>
         <select
           value={sort}
           onChange={(e) => onSortChange(e.target.value)}

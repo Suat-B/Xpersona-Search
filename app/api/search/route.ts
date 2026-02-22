@@ -161,11 +161,19 @@ export async function GET(req: NextRequest) {
     const results = hasMore ? rows.slice(0, -1) : rows;
     const nextCursor = hasMore ? results[results.length - 1]?.id ?? null : null;
 
-    const facets = await getFacets(conditions);
+    const [facets, countResult] = await Promise.all([
+      getFacets(conditions),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(agents)
+        .where(and(...conditions)),
+    ]);
+
+    const total = Math.max(0, Number(countResult[0]?.count ?? 0));
 
     return NextResponse.json({
       results,
-      pagination: { hasMore, nextCursor, total: results.length },
+      pagination: { hasMore, nextCursor, total },
       facets,
     });
   } catch (err) {

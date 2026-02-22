@@ -125,6 +125,57 @@
     --trading-primary: #30d158;
     --trading-primary-muted: rgba(48, 209, 88, 0.2);
     --trading-border: rgba(48, 209, 88, 0.3);
+
+    /* ════════════════════════════════════════════════════════════════
+       LIGHT THEME - Pure White Aesthetic (Apple/Linear style)
+       ════════════════════════════════════════════════════════════════ */
+    
+    /* Backgrounds */
+    --light-bg-primary: #ffffff;
+    --light-bg-secondary: #fafafa;
+    --light-bg-tertiary: #f5f5f5;
+    --light-bg-card: #ffffff;
+    --light-bg-hover: #f9fafb;
+    --light-bg-active: #f1f5f9;
+    
+    /* Text Colors */
+    --light-text-primary: #0f172a;
+    --light-text-secondary: #475569;
+    --light-text-tertiary: #94a3b8;
+    --light-text-quaternary: #cbd5e1;
+    
+    /* Accent - Vibrant Blue */
+    --light-accent: #2563eb;
+    --light-accent-hover: #1d4ed8;
+    --light-accent-light: #dbeafe;
+    --light-accent-subtle: #eff6ff;
+    --light-accent-text: #1e40af;
+    
+    /* Semantic Colors */
+    --light-success: #16a34a;
+    --light-success-hover: #15803d;
+    --light-success-bg: #dcfce7;
+    --light-success-border: #86efac;
+    --light-warning: #ca8a04;
+    --light-warning-bg: #fef9c3;
+    --light-warning-border: #fde047;
+    --light-error: #dc2626;
+    --light-error-bg: #fee2e2;
+    --light-error-border: #fecaca;
+    
+    /* Borders */
+    --light-border: #e2e8f0;
+    --light-border-strong: #cbd5e1;
+    --light-border-focus: #2563eb;
+    
+    /* Shadows - Subtle & Refined */
+    --light-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+    --light-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    --light-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+    --light-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.03);
+    --light-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.03);
+    --light-shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+    --light-shadow-input-focus: 0 0 0 3px rgba(37, 99, 235, 0.15);
   }
 }
 
@@ -1538,3 +1589,212 @@ select option {
 /* ════════════════════════════════════════════════════════════════════
    END QUANTUM TERMINAL STYLES
    ════════════════════════════════════════════════════════════════════ */
+
+/* ════════════════════════════════════════════════════════════════════
+   LIGHT THEME - Pure White Aesthetic Components
+   ════════════════════════════════════════════════════════════════════ */
+
+.light-theme {
+  background: var(--light-bg-primary);
+  color: var(--light-text-primary);
+}
+
+/* Light Theme Card */
+.light-card {
+  background: var(--light-bg-card);
+  border: 1px solid var(--light-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--light-shadow-card);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.light-card:hover {
+  box-shadow: var(--light-shadow-card-hover);
+  transform: translateY(-1px);
+}
+
+/* Light Theme Input */
+.light-input {
+  background: var(--light-bg-primary);
+  border: 1px solid var(--light-border);
+  border-radius: var(--radius-lg);
+  color: var(--light-text-primary);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.light-input:focus {
+  outline: none;
+  border-color: var(--light-accent);
+  box-shadow: var(--light-shadow-input-focus);
+}
+
+.light-input::placeholder {
+  color: var(--light-text-tertiary);
+}
+
+/* Light Theme Button - Primary */
+.light-btn-primary {
+  background: var(--light-accent);
+  color: white;
+  border-radius: var(--radius-lg);
+  font-weight: 600;
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.light-btn-primary:hover {
+  background: var(--light-accent-hover);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+  transform: translateY(-1px);
+}
+
+.light-btn-primary:active {
+  transform: translateY(0);
+}
+
+.light-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Light Theme Button - Secondary */
+.light-btn-secondary {
+  background: var(--light-bg-primary);
+  color: var(--light-text-secondary);
+  border: 1px solid var(--light-border);
+  border-radius: var(--radius-lg);
+  font-weight: 500;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.light-btn-secondary:hover {
+  background: var(--light-bg-hover);
+  border-color: var(--light-border-strong);
+}
+
+/* Light Theme Result Cards */
+.light-result-available {
+  background: var(--light-bg-primary);
+  border: 1px solid var(--light-success-border);
+  border-left: 4px solid var(--light-success);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--light-shadow-md);
+}
+
+.light-result-taken {
+  background: var(--light-bg-primary);
+  border: 1px solid var(--light-border);
+  border-radius: var(--light-shadow-md);
+  box-shadow: var(--light-shadow-sm);
+}
+
+.light-result-invalid {
+  background: var(--light-warning-bg);
+  border: 1px solid var(--light-warning-border);
+  border-left: 4px solid var(--light-warning);
+  border-radius: var(--light-radius-lg);
+}
+
+.light-result-error {
+  background: var(--light-error-bg);
+  border: 1px solid var(--light-error-border);
+  border-left: 4px solid var(--light-error);
+  border-radius: var(--radius-lg);
+}
+
+/* Light Theme Feature Card */
+.light-feature-card {
+  background: var(--light-bg-card);
+  border: 1px solid var(--light-border);
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+  box-shadow: var(--light-shadow-card);
+  transition: all 0.2s ease;
+}
+
+.light-feature-card:hover {
+  box-shadow: var(--light-shadow-card-hover);
+  border-color: var(--light-border-strong);
+  transform: translateY(-2px);
+}
+
+/* Light Theme Header */
+.light-header {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--light-border);
+}
+
+/* Light Theme Footer */
+.light-footer {
+  background: var(--light-bg-secondary);
+  border-top: 1px solid var(--light-border);
+}
+
+/* Light Theme Link */
+.light-link {
+  color: var(--light-text-tertiary);
+  transition: color 0.15s ease;
+}
+
+.light-link:hover {
+  color: var(--light-accent);
+}
+
+/* Light Theme Link - Accent */
+.light-link-accent {
+  color: var(--light-accent);
+  font-weight: 500;
+  transition: color 0.15s ease;
+}
+
+.light-link-accent:hover {
+  color: var(--light-accent-hover);
+}
+
+/* Light Theme Text Gradient */
+.light-text-gradient {
+  background: linear-gradient(135deg, var(--light-text-primary) 0%, var(--light-text-secondary) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Light Theme Accent Gradient */
+.light-accent-gradient {
+  background: linear-gradient(135deg, var(--light-accent) 0%, #7c3aed 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Light Theme Logo Icon */
+.light-logo-icon {
+  background: linear-gradient(135deg, var(--light-accent) 0%, #7c3aed 100%);
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+}
+
+/* Light Theme Fade In Animation */
+@keyframes light-fade-in-up {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.light-animate-fade-in-up {
+  animation: light-fade-in-up 0.3s ease-out forwards;
+}
+
+/* Light Theme Selection */
+.light-theme ::selection {
+  background: var(--light-accent-light);
+  color: var(--light-text-primary);
+}

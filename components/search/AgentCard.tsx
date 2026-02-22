@@ -25,7 +25,7 @@ export function AgentCard({ agent, rank }: Props) {
   const protos = Array.isArray(agent.protocols) ? agent.protocols : [];
 
   return (
-    <article className="agent-card p-6 rounded-xl border border-[var(--border)] hover:border-[var(--accent-heart)]/40 transition-colors duration-200">
+    <article className="agent-card neural-glass-hover p-6 rounded-xl border border-[var(--border)] hover:border-[var(--accent-heart)]/40 transition-all duration-200">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-3 mb-2">
@@ -47,17 +47,19 @@ export function AgentCard({ agent, rank }: Props) {
             {caps.slice(0, 5).map((cap) => (
               <span
                 key={cap}
-                className="px-3 py-1 rounded-full bg-[var(--bg-elevated)] text-sm text-[var(--text-secondary)] border border-[var(--border)]"
+                className="px-3 py-1 rounded-lg bg-[var(--bg-elevated)] text-sm text-[var(--text-secondary)] border border-white/[0.06]"
               >
                 {cap}
               </span>
             ))}
           </div>
-          <div className="flex items-center gap-6 text-sm">
+          <div className="flex items-center gap-4 text-sm">
             <SafetyBadge score={agent.safetyScore} />
+            <span className="text-[var(--text-quaternary)]">·</span>
             <span className="text-[var(--text-tertiary)]">
               ⭐ {agent.githubData?.stars ?? 0}
             </span>
+            <span className="text-[var(--text-quaternary)]">·</span>
             <span className="text-[var(--text-tertiary)]">
               Rank: {agent.overallRank.toFixed(1)}/100
             </span>
@@ -65,7 +67,7 @@ export function AgentCard({ agent, rank }: Props) {
         </div>
         <Link
           href={`/agent/${agent.slug}`}
-          className="px-6 py-3 bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 active:bg-[var(--accent-heart)]/80 rounded-lg font-semibold flex-shrink-0 text-white transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+          className="px-6 py-3 bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 active:bg-[var(--accent-heart)]/80 rounded-lg font-semibold flex-shrink-0 text-white transition-all duration-200 shadow-md shadow-[var(--accent-heart)]/20 hover:shadow-[var(--accent-heart)]/30 focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
         >
           View
         </Link>

@@ -7,6 +7,8 @@ interface SearchHeroProps {
   setQuery: (q: string) => void;
   onSearch: () => void;
   loading: boolean;
+  /** When true, uses a reduced height for no-results / search context */
+  compact?: boolean;
 }
 
 const VALUE_PROPS = [
@@ -16,18 +18,26 @@ const VALUE_PROPS = [
   { label: "OpenClaw · A2A · MCP", icon: "⚡" },
 ];
 
-export function SearchHero({ query, setQuery, onSearch, loading }: SearchHeroProps) {
+export function SearchHero({
+  query,
+  setQuery,
+  onSearch,
+  loading,
+  compact = false,
+}: SearchHeroProps) {
   const [isFocused, setIsFocused] = useState(false);
 
   return (
     <section
-      className="relative min-h-[40vh] md:min-h-[45vh] flex flex-col items-center justify-center px-4 py-12 md:py-20 bg-[var(--bg-deep)] overflow-hidden"
+      className={`relative flex flex-col items-center justify-center px-4 bg-[var(--bg-deep)] overflow-hidden ${
+        compact ? "min-h-[28vh] py-8 md:py-12" : "min-h-[40vh] md:min-h-[45vh] py-12 md:py-20"
+      }`}
       role="search"
       aria-label="Search AI agents"
     >
       <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-radial from-[var(--accent-heart)]/[0.03] via-transparent to-transparent" />
-        <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-[var(--accent-neural)]/[0.02] rounded-full blur-3xl" />
+        <div className="absolute inset-0 bg-gradient-radial from-[var(--accent-heart)]/[0.06] via-transparent to-transparent" />
+        <div className="absolute top-1/4 right-1/4 w-[32rem] h-[32rem] bg-[var(--accent-neural)]/[0.05] rounded-full blur-3xl" />
       </div>
       <div className="relative max-w-3xl w-full mx-auto text-center">
         <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-[var(--text-primary)] leading-tight mb-2">
@@ -42,10 +52,10 @@ export function SearchHero({ query, setQuery, onSearch, loading }: SearchHeroPro
 
         <div className="flex flex-col sm:flex-row gap-3 max-w-2xl mx-auto mb-8">
           <div
-            className={`relative flex-1 flex items-center rounded-2xl bg-[rgba(255,255,255,0.03)] border transition-all duration-200 ${
+            className={`relative flex-1 flex items-center rounded-2xl neural-glass border transition-all duration-300 ${
               isFocused
-                ? "border-[var(--accent-heart)]/50 shadow-lg shadow-[var(--accent-heart)]/10 ring-2 ring-[var(--accent-heart)]/20"
-                : "border-[var(--border)] hover:border-[var(--border-strong)]"
+                ? "border-[var(--accent-heart)]/50 shadow-[0_0_24px_var(--border-glow)] ring-2 ring-[var(--accent-heart)]/25"
+                : "border-white/[0.1] hover:border-white/[0.15] shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
             }`}
           >
             <div className="absolute left-4 w-5 h-5 text-[var(--text-tertiary)] pointer-events-none" aria-hidden>
@@ -77,15 +87,15 @@ export function SearchHero({ query, setQuery, onSearch, loading }: SearchHeroPro
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6">
+        <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
           {VALUE_PROPS.map((item) => (
-            <div
+            <span
               key={item.label}
-              className="flex items-center gap-2 text-sm text-[var(--text-tertiary)]"
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/[0.08] text-xs font-medium text-[var(--text-tertiary)]"
             >
               <span className="opacity-80">{item.icon}</span>
-              <span>{item.label}</span>
-            </div>
+              {item.label}
+            </span>
           ))}
         </div>
       </div>

@@ -25,7 +25,7 @@ interface CheckResponse {
 function SearchSpinner() {
   return (
     <svg
-      className="animate-spin h-5 w-5 text-white/90"
+      className="animate-spin h-5 w-5"
       xmlns="http://www.w3.org/2000/svg"
       fill="none"
       viewBox="0 0 24 24"
@@ -44,6 +44,54 @@ function SearchSpinner() {
         fill="currentColor"
         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
       />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  );
+}
+
+function AlertIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    </svg>
+  );
+}
+
+function ShieldIcon() {
+  return (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+    </svg>
+  );
+}
+
+function GlobeIcon() {
+  return (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+    </svg>
+  );
+}
+
+function BoltIcon() {
+  return (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
     </svg>
   );
 }
@@ -169,176 +217,222 @@ export function ANSLanding() {
   const suggestedName = result?.suggestions?.[0];
 
   return (
-    <section className="relative min-h-[85vh] flex flex-col items-center justify-center px-4 py-12 sm:py-16">
-      <div className="max-w-2xl w-full text-center space-y-8">
-        <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-[var(--text-primary)]">
-          Xpersona
-          <span className="text-[var(--accent-heart)]" aria-hidden>
-            {" "}♥
-          </span>
-        </h1>
-        <p className="text-lg text-[var(--text-secondary)] max-w-xl mx-auto">
-          The domain name system for AI agents. Human-readable. Cryptographically verified.
-          Works with OpenClaw, A2A, MCP, and ANP.
-        </p>
-
-        <div className="max-w-xl mx-auto mt-8" aria-live="polite" aria-atomic="true">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="flex-1 relative flex items-center rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] focus-within:border-[#0ea5e9]/50 transition-colors">
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onBlur={handleInputBlur}
-                onKeyDown={handleKeyDown}
-                placeholder="Search your .agent name"
-                aria-label="Domain name search"
-                aria-invalid={state === "invalid" ? true : undefined}
-                className="w-full px-5 py-4 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none rounded-2xl"
-                disabled={state === "loading"}
-              />
-              <span className="absolute right-4 text-sm text-[var(--text-tertiary)] pointer-events-none">
-                .xpersona.agent
-              </span>
-            </div>
-            <button
-              onClick={handleSearch}
-              disabled={state === "loading" || query.trim().length < 3}
-              aria-label="Search domain availability"
-              className="px-8 py-4 rounded-2xl bg-gradient-to-r from-[var(--accent-heart)] to-[#0662c4] text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity inline-flex items-center justify-center gap-2"
-            >
-              {state === "loading" ? (
-                <>
-                  <SearchSpinner />
-                  <span>Searching…</span>
-                </>
-              ) : (
-                "Search"
-              )}
-            </button>
+    <section className="relative min-h-screen bg-white flex flex-col">
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-16 sm:py-24">
+        <div className="max-w-2xl w-full text-center space-y-8">
+          <div className="space-y-6">
+            <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-[var(--light-text-primary)]">
+              Xpersona
+            </h1>
+            <p className="text-lg sm:text-xl text-[var(--light-text-secondary)] max-w-xl mx-auto leading-relaxed">
+              The domain name system for AI agents. Human-readable. Cryptographically verified. Works with OpenClaw, A2A, MCP, and ANP.
+            </p>
           </div>
 
-          {query.length > 0 && query.trim().length < 3 && state !== "invalid" && (
-            <p className="mt-2 text-sm text-[var(--text-tertiary)] text-left">
-              Enter at least 3 characters
-            </p>
-          )}
-
-          {state === "available" && result?.fullDomain && (
-            <div className="mt-6 p-6 rounded-2xl border border-[#30d158]/40 bg-[#30d158]/10 animate-fade-in-up">
-              <h3 className="text-lg font-semibold text-[#30d158]">
-                {result.fullDomain} is available
-              </h3>
-              <p className="mt-1 text-sm text-[var(--text-secondary)]">
-                $10/year · Instant verification
-              </p>
-              <Link
-                ref={claimRef}
-                href={`/register?name=${encodeURIComponent(result.name ?? "")}`}
-                onClick={() => trackANSClaimClicked(result.fullDomain ?? "")}
-                className="mt-4 inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#30d158] text-white font-semibold hover:bg-[#30d158]/90 transition-colors focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-[#30d158]/20 scroll-mt-24"
-              >
-                Claim {result.fullDomain}
-              </Link>
-            </div>
-          )}
-
-          {state === "taken" && result?.fullDomain && (
-            <div className="mt-6 p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] animate-fade-in-up">
-              <h3 className="text-lg font-semibold text-[var(--text-primary)]">
-                {result.fullDomain} is taken
-              </h3>
-              <p className="mt-2 text-sm text-[var(--text-secondary)]">
-                Try: {result.suggestions?.join(", ") ?? "another name"}
-              </p>
-              {suggestedName && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuery(suggestedName);
-                    setState("idle");
-                    setResult(null);
-                  }}
-                  className="mt-3 text-sm font-medium text-[#0ea5e9] hover:underline block"
-                >
-                  Search for {suggestedName}.xpersona.agent
-                </button>
-              )}
-              {result.cardUrl && (
-                <a
-                  href={result.cardUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-3 inline-block text-sm font-medium text-[#0ea5e9] hover:underline"
-                >
-                  View Agent Card →
-                </a>
-              )}
-            </div>
-          )}
-
-          {state === "invalid" && result?.error && (
-            <div className="mt-6 p-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 animate-fade-in-up">
-              <p className="text-sm text-amber-200">{result.error}</p>
-              {result.suggestions?.[0] && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuery(result.suggestions![0]);
-                    setState("idle");
-                    setResult(null);
-                  }}
-                  className="mt-2 text-sm font-medium text-amber-300 hover:underline"
-                >
-                  Try {result.suggestions[0]}
-                </button>
-              )}
-            </div>
-          )}
-
-          {state === "error" && (
-            <div className="mt-6 p-4 rounded-2xl border border-[var(--border)] bg-red-500/10 animate-fade-in-up">
-              <p className="text-sm text-red-200">
-                {result?.error ?? "Service temporarily unavailable."}
-              </p>
+          <div className="max-w-xl mx-auto mt-8" aria-live="polite" aria-atomic="true">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onBlur={handleInputBlur}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Search your .agent name"
+                  aria-label="Domain name search"
+                  aria-invalid={state === "invalid" ? true : undefined}
+                  className="w-full h-14 px-5 pr-32 bg-white border border-[var(--light-border)] rounded-2xl text-[var(--light-text-primary)] placeholder-[var(--light-text-tertiary)] focus:outline-none focus:border-[var(--light-accent)] focus:ring-[3px] focus:ring-[var(--light-accent-light)] transition-all duration-150"
+                  disabled={state === "loading"}
+                />
+                <span className="absolute right-5 top-1/2 -translate-y-1/2 text-sm text-[var(--light-text-tertiary)] pointer-events-none select-none">
+                  .xpersona.agent
+                </span>
+              </div>
               <button
-                type="button"
                 onClick={handleSearch}
-                className="mt-2 text-sm font-medium text-red-300 hover:underline"
+                disabled={state === "loading" || query.trim().length < 3}
+                aria-label="Search domain availability"
+                className="h-14 px-8 rounded-2xl bg-[var(--light-accent)] text-white font-semibold hover:bg-[var(--light-accent-hover)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[var(--light-accent)] transition-all duration-150 inline-flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 hover:-translate-y-0.5 active:translate-y-0"
               >
-                Try again
+                {state === "loading" ? (
+                  <>
+                    <SearchSpinner />
+                    <span>Searching…</span>
+                  </>
+                ) : (
+                  "Search"
+                )}
               </button>
             </div>
-          )}
-        </div>
 
-        <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mt-12 sm:mt-16 max-w-3xl mx-auto">
-          <div className="p-5 sm:p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]/50">
-            <div className="text-2xl mb-3" aria-hidden>🔐</div>
-            <h3 className="text-base font-semibold text-[var(--text-primary)] mb-2">
-              Cryptographic Identity
-            </h3>
-            <p className="text-sm text-[var(--text-secondary)]">
-              Each agent gets an ED25519 keypair for secure verification
-            </p>
+            {query.length > 0 && query.trim().length < 3 && state !== "invalid" && (
+              <p className="mt-3 text-sm text-[var(--light-text-tertiary)] text-left pl-1">
+                Enter at least 3 characters
+              </p>
+            )}
+
+            {state === "available" && result?.fullDomain && (
+              <div className="mt-6 p-6 rounded-2xl bg-[var(--light-success-bg)] border border-[var(--light-success-border)] border-l-4 border-l-[var(--light-success)] light-animate-fade-in-up">
+                <div className="flex items-start gap-4">
+                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-[var(--light-success)] text-white flex items-center justify-center">
+                    <CheckIcon />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-lg font-semibold text-[var(--light-success)]">
+                      {result.fullDomain} is available
+                    </h3>
+                    <p className="mt-1 text-sm text-[var(--light-text-secondary)]">
+                      $10/year · Instant verification
+                    </p>
+                    <Link
+                      ref={claimRef}
+                      href={`/register?name=${encodeURIComponent(result.name ?? "")}`}
+                      onClick={() => trackANSClaimClicked(result.fullDomain ?? "")}
+                      className="mt-4 inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[var(--light-success)] text-white font-semibold hover:bg-[var(--light-success-hover)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--light-success)] focus:ring-offset-2 scroll-mt-24"
+                    >
+                      Claim {result.fullDomain}
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {state === "taken" && result?.fullDomain && (
+              <div className="mt-6 p-6 rounded-2xl bg-white border border-[var(--light-border)] shadow-[var(--light-shadow-md)] light-animate-fade-in-up">
+                <div className="flex items-start gap-4">
+                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-[var(--light-text-quaternary)] text-white flex items-center justify-center">
+                    <XIcon />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-lg font-semibold text-[var(--light-text-primary)]">
+                      {result.fullDomain} is taken
+                    </h3>
+                    <p className="mt-2 text-sm text-[var(--light-text-secondary)]">
+                      Try: {result.suggestions?.join(", ") ?? "another name"}
+                    </p>
+                    {suggestedName && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuery(suggestedName);
+                          setState("idle");
+                          setResult(null);
+                        }}
+                        className="mt-3 text-sm font-medium text-[var(--light-accent)] hover:text-[var(--light-accent-hover)] transition-colors"
+                      >
+                        Search for {suggestedName}.xpersona.agent →
+                      </button>
+                    )}
+                    {result.cardUrl && (
+                      <a
+                        href={result.cardUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3 inline-block text-sm font-medium text-[var(--light-accent)] hover:text-[var(--light-accent-hover)] transition-colors ml-4"
+                      >
+                        View Agent Card →
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {state === "invalid" && result?.error && (
+              <div className="mt-6 p-5 rounded-2xl bg-[var(--light-warning-bg)] border border-[var(--light-warning-border)] border-l-4 border-l-[var(--light-warning)] light-animate-fade-in-up">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 text-[var(--light-warning)]">
+                    <AlertIcon />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm text-[var(--light-text-primary)]">{result.error}</p>
+                    {result.suggestions?.[0] && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuery(result.suggestions![0]);
+                          setState("idle");
+                          setResult(null);
+                        }}
+                        className="mt-2 text-sm font-medium text-[var(--light-accent)] hover:text-[var(--light-accent-hover)] transition-colors"
+                      >
+                        Try {result.suggestions[0]} →
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {state === "error" && (
+              <div className="mt-6 p-5 rounded-2xl bg-[var(--light-error-bg)] border border-[var(--light-error-border)] border-l-4 border-l-[var(--light-error)] light-animate-fade-in-up">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 text-[var(--light-error)]">
+                    <XIcon />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm text-[var(--light-text-primary)]">
+                      {result?.error ?? "Service temporarily unavailable."}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleSearch}
+                      className="mt-2 text-sm font-medium text-[var(--light-accent)] hover:text-[var(--light-accent-hover)] transition-colors"
+                    >
+                      Try again →
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-          <div className="p-5 sm:p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]/50">
-            <div className="text-2xl mb-3" aria-hidden>🌐</div>
-            <h3 className="text-base font-semibold text-[var(--text-primary)] mb-2">
-              Universal Protocol
-            </h3>
-            <p className="text-sm text-[var(--text-secondary)]">
-              Works with A2A, MCP, ANP, and OpenClaw out of the box
-            </p>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mt-16 sm:mt-24 max-w-4xl mx-auto">
+            <div className="p-6 rounded-2xl bg-white border border-[var(--light-border)] shadow-[var(--light-shadow-card)] hover:shadow-[var(--light-shadow-card-hover)] hover:border-[var(--light-border-strong)] hover:-translate-y-1 transition-all duration-200">
+              <div className="w-12 h-12 rounded-xl bg-[var(--light-accent-subtle)] text-[var(--light-accent)] flex items-center justify-center mb-4">
+                <ShieldIcon />
+              </div>
+              <h3 className="text-base font-semibold text-[var(--light-text-primary)] mb-2">
+                Cryptographic Identity
+              </h3>
+              <p className="text-sm text-[var(--light-text-secondary)] leading-relaxed">
+                Each agent gets an ED25519 keypair for secure verification
+              </p>
+            </div>
+            <div className="p-6 rounded-2xl bg-white border border-[var(--light-border)] shadow-[var(--light-shadow-card)] hover:shadow-[var(--light-shadow-card-hover)] hover:border-[var(--light-border-strong)] hover:-translate-y-1 transition-all duration-200">
+              <div className="w-12 h-12 rounded-xl bg-[var(--light-accent-subtle)] text-[var(--light-accent)] flex items-center justify-center mb-4">
+                <GlobeIcon />
+              </div>
+              <h3 className="text-base font-semibold text-[var(--light-text-primary)] mb-2">
+                Universal Protocol
+              </h3>
+              <p className="text-sm text-[var(--light-text-secondary)] leading-relaxed">
+                Works with A2A, MCP, ANP, and OpenClaw out of the box
+              </p>
+            </div>
+            <div className="p-6 rounded-2xl bg-white border border-[var(--light-border)] shadow-[var(--light-shadow-card)] hover:shadow-[var(--light-shadow-card-hover)] hover:border-[var(--light-border-strong)] hover:-translate-y-1 transition-all duration-200 sm:col-span-2 lg:col-span-1">
+              <div className="w-12 h-12 rounded-xl bg-[var(--light-accent-subtle)] text-[var(--light-accent)] flex items-center justify-center mb-4">
+                <BoltIcon />
+              </div>
+              <h3 className="text-base font-semibold text-[var(--light-text-primary)] mb-2">
+                Instant Verification
+              </h3>
+              <p className="text-sm text-[var(--light-text-secondary)] leading-relaxed">
+                DNS-based verification that&apos;s tamper-proof and decentralized
+              </p>
+            </div>
           </div>
-          <div className="p-5 sm:p-6 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]/50">
-            <div className="text-2xl mb-3" aria-hidden>⚡</div>
-            <h3 className="text-base font-semibold text-[var(--text-primary)] mb-2">
-              Instant Verification
-            </h3>
-            <p className="text-sm text-[var(--text-secondary)]">
-              DNS-based verification that&apos;s tamper-proof and decentralized
+
+          <div className="mt-12 pt-8 border-t border-[var(--light-border)]">
+            <p className="text-xs text-[var(--light-text-tertiary)] uppercase tracking-wider mb-4">
+              Compatible with
             </p>
+            <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6">
+              <span className="px-4 py-2 rounded-full bg-[var(--light-bg-tertiary)] text-sm font-medium text-[var(--light-text-secondary)]">A2A</span>
+              <span className="px-4 py-2 rounded-full bg-[var(--light-bg-tertiary)] text-sm font-medium text-[var(--light-text-secondary)]">MCP</span>
+              <span className="px-4 py-2 rounded-full bg-[var(--light-bg-tertiary)] text-sm font-medium text-[var(--light-text-secondary)]">ANP</span>
+              <span className="px-4 py-2 rounded-full bg-[var(--light-bg-tertiary)] text-sm font-medium text-[var(--light-text-secondary)]">OpenClaw</span>
+            </div>
           </div>
         </div>
       </div>
