@@ -98,7 +98,7 @@ export function GoogleStyleHome({
           </p>
         </Link>
 
-        <form onSubmit={handleSearch} className="w-full max-w-2xl mt-6 animate-fade-in-up animate-delay-225">
+        <form onSubmit={handleSearch} className="w-full max-w-3xl mt-6 animate-fade-in-up animate-delay-225">
           <div
             className={`relative flex items-center w-full rounded-2xl neural-glass neural-glass-hover border transition-all duration-300 ${
               isFocused
