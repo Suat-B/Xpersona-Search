@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { applyPreset, HOME_ACCENT_STORAGE_KEY } from "@/lib/theme-presets";
 import type { ThemePresetId } from "@/lib/theme-presets";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { SearchResultSnippet } from "@/components/search/SearchResultSnippet";
 import { SearchResultsBar } from "@/components/search/SearchResultsBar";
 
@@ -47,7 +48,10 @@ export function SearchLanding() {
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [total, setTotal] = useState<number>(0);
-  const [selectedProtocols, setSelectedProtocols] = useState<string[]>([]);
+  const [selectedProtocols, setSelectedProtocols] = useState<string[]>(() => {
+    const p = searchParams.get("protocols");
+    return p ? p.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  });
   const [minSafety, setMinSafety] = useState(0);
   const [sort, setSort] = useState("rank");
   const [facets, setFacets] = useState<Facets | undefined>(undefined);
@@ -164,6 +168,23 @@ export function SearchLanding() {
               <p className="text-[var(--text-tertiary)] text-sm mt-1">
                 Adjust your search query or filters to see more results.
               </p>
+              <div className="mt-6 flex flex-wrap justify-center gap-3">
+                <Link
+                  href="/?q=discover"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg neural-glass border border-white/[0.08] hover:border-[var(--accent-heart)]/30 text-[var(--text-secondary)] hover:text-[var(--accent-heart)] transition-all text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+                >
+                  Explore all agents
+                </Link>
+                {["MCP", "A2A", "OpenClaw"].map((proto) => (
+                  <Link
+                    key={proto}
+                    href={`/?protocols=${proto}`}
+                    className="inline-flex items-center px-4 py-2 rounded-lg border border-[var(--border)] hover:border-[var(--accent-heart)]/40 text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-all text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+                  >
+                    Browse {proto}
+                  </Link>
+                ))}
+              </div>
             </div>
           ) : (
             <>
@@ -176,9 +197,16 @@ export function SearchLanding() {
               </p>
 
               <div className="divide-y-0">
-                {agents.map((agent) => (
-                  <SearchResultSnippet key={agent.id} agent={agent} />
-                ))}
+                {agents.map((agent, i) => {
+                  const delay = ["animate-delay-75", "animate-delay-150", "animate-delay-225", "animate-delay-300"][i % 4];
+                  return (
+                    <SearchResultSnippet
+                      key={agent.id}
+                      agent={agent}
+                      className={`animate-slide-in-from-bottom ${delay}`}
+                    />
+                  );
+                })}
               </div>
 
               {hasMore && (

@@ -17,6 +17,8 @@ interface Agent {
 
 interface Props {
   agent: Agent;
+  /** Optional animation classes for staggered entrance */
+  className?: string;
 }
 
 const DISPLAY_BASE = "xpersona.co";
@@ -25,12 +27,12 @@ function getDisplayUrl(slug: string): string {
   return `${DISPLAY_BASE}/agent/${slug}`;
 }
 
-export function SearchResultSnippet({ agent }: Props) {
+export function SearchResultSnippet({ agent, className }: Props) {
   const protos = Array.isArray(agent.protocols) ? agent.protocols : [];
   const displayUrl = getDisplayUrl(agent.slug);
 
   return (
-    <article className="py-4 border-b border-[var(--border)] last:border-b-0 group">
+    <article className={`py-4 border-b border-[var(--border)] last:border-b-0 group ${className ?? ""}`}>
       <Link
         href={`/agent/${agent.slug}`}
         className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-heart)]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-deep)] rounded"

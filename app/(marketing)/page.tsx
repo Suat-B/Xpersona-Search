@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; hub?: string }>;
+  searchParams: Promise<{ q?: string; hub?: string; protocols?: string }>;
 }) {
   let session = null;
   try {
@@ -36,10 +36,11 @@ export default async function HomePage({
   const service = await getService();
   const params = await searchParams;
   const hasSearchQuery = !!params?.q?.trim();
+  const hasProtocolFilter = !!params?.protocols?.trim();
   const forceHub = params?.hub === "1" || params?.hub === "true";
 
   if (service === "hub" || forceHub) {
-    if (!hasSearchQuery) {
+    if (!hasSearchQuery && !hasProtocolFilter) {
       return (
         <GoogleStyleHome
           isAuthenticated={isAuthenticated}

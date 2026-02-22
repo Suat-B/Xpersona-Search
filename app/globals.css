@@ -522,6 +522,18 @@ input[type="reset"] {
   animation: shimmer 3s infinite;
 }
 
+/* Home logo glow — uses accent variable for theme picker response */
+.logo-glow {
+  filter: drop-shadow(0 0 40px color-mix(in srgb var(--accent-heart) 25%, transparent));
+}
+
+/* Home logo pulse on hover */
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .home-logo-link:hover .home-logo-text {
+    animation: neural-pulse 3s ease-in-out infinite;
+  }
+}
+
 /* Glow Effects */
 .glow-pink {
   box-shadow: 0 0 40px var(--glow-pink), 0 0 80px rgba(10, 132, 255, 0.1);
@@ -806,8 +818,12 @@ input[type="reset"] {
 
 @media (prefers-reduced-motion: reduce) {
   .animate-ai-banner-in,
-  .animate-ai-result-in {
+  .animate-ai-result-in,
+  .animate-fade-in-up,
+  .animate-slide-in-from-bottom {
     animation: none;
+    opacity: 1;
+    transform: none;
   }
 }
 

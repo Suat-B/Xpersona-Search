@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { HomeThemePicker } from "@/components/home/HomeThemePicker";
+import { HomeExploreSection } from "@/components/home/HomeExploreSection";
 import { applyPreset, HOME_ACCENT_STORAGE_KEY, type ThemePresetId } from "@/lib/theme-presets";
 
 interface GoogleStyleHomeProps {
@@ -13,6 +14,12 @@ interface GoogleStyleHomeProps {
   termsUrl?: string;
 }
 
+const FOOTER_TAGLINES = [
+  "Search 5,000+ AI agents · A2A, MCP, OpenClaw",
+  "Applying AI towards agent discovery",
+  "Find the right agent for your workflow",
+];
+
 export function GoogleStyleHome({
   isAuthenticated = false,
   privacyUrl = "/privacy-policy-1",
@@ -20,7 +27,15 @@ export function GoogleStyleHome({
 }: GoogleStyleHomeProps) {
   const [query, setQuery] = useState("");
   const [isFocused, setIsFocused] = useState(false);
+  const [taglineIndex, setTaglineIndex] = useState(0);
   const router = useRouter();
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setTaglineIndex((i) => (i + 1) % FOOTER_TAGLINES.length);
+    }, 6000);
+    return () => clearInterval(id);
+  }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,9 +57,23 @@ export function GoogleStyleHome({
     }
   }, []);
 
+  const bgImage = typeof process.env.NEXT_PUBLIC_HOME_BG_IMAGE === "string"
+    ? process.env.NEXT_PUBLIC_HOME_BG_IMAGE.trim()
+    : null;
+
   return (
     <div className="h-screen min-h-dvh flex flex-col overflow-hidden bg-[var(--bg-deep)]">
       <div className="fixed inset-0 pointer-events-none">
+        {bgImage && (
+          <>
+            <div
+              className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+              style={{ backgroundImage: `url(${bgImage})` }}
+              aria-hidden
+            />
+            <div className="absolute inset-0 bg-black/60" aria-hidden />
+          </>
+        )}
         <div className="absolute inset-0 neural-grid opacity-40" aria-hidden />
         <div className="absolute inset-0 bg-gradient-radial from-[var(--accent-heart)]/[0.18] via-transparent to-transparent" />
         <div className="absolute top-1/4 right-1/4 w-[32rem] h-[32rem] bg-[var(--accent-neural)]/[0.14] rounded-full blur-3xl home-bg-drift" />
@@ -71,17 +100,20 @@ export function GoogleStyleHome({
         )}
       </header>
 
-      <main className="relative flex-1 flex flex-col items-center justify-center px-4 -mt-16 z-10">
-        <Link href="/" className="mb-8 group block text-center" aria-label="Xpersona home">
-          <span className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-[var(--accent-heart)] via-[var(--accent-neural)] to-[var(--accent-heart)] select-none transition-all duration-500 group-hover:from-[var(--accent-neural)] group-hover:via-[var(--accent-heart)] group-hover:to-[var(--accent-neural)] drop-shadow-[0_0_40px_rgba(10,132,255,0.2)]">
+      <main className="relative flex-1 flex flex-col items-center justify-center px-4 -mt-16 z-10 overflow-y-auto">
+        <Link
+          href="/"
+          className="mb-8 group block text-center home-logo-link"
+          aria-label="Xpersona home">
+          <span className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-[var(--accent-heart)] via-[var(--accent-neural)] to-[var(--accent-heart)] select-none transition-all duration-500 group-hover:from-[var(--accent-neural)] group-hover:via-[var(--accent-heart)] group-hover:to-[var(--accent-neural)] logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75">
             Xpersona
           </span>
-          <p className="mt-3 text-sm text-[var(--text-tertiary)] font-medium">
+          <p className="mt-3 text-sm text-[var(--text-tertiary)] font-medium animate-fade-in-up animate-delay-150">
             Search 5,000+ AI agents
           </p>
         </Link>
 
-        <form onSubmit={handleSearch} className="w-full max-w-3xl mt-6">
+        <form onSubmit={handleSearch} className="w-full max-w-3xl mt-6 animate-fade-in-up animate-delay-225">
           <div
             className={`relative flex items-center w-full rounded-2xl neural-glass neural-glass-hover border transition-all duration-300 ${
               isFocused
@@ -109,8 +141,16 @@ export function GoogleStyleHome({
               aria-label="Search AI agents"
               autoComplete="off"
               autoFocus
-              className="w-full pl-14 pr-5 py-4 sm:py-5 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-lg rounded-2xl focus:outline-none"
+              className="w-full pl-14 pr-24 py-4 sm:py-5 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-lg rounded-2xl focus:outline-none"
             />
+            <button
+              type="button"
+              onClick={() => router.push("/?q=discover")}
+              className="absolute right-2 px-3 py-2 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--accent-heart)] rounded-lg hover:bg-white/5 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+              aria-label="Browse all agents"
+            >
+              Browse
+            </button>
           </div>
 
           <div className="flex justify-center gap-4 mt-6">
@@ -129,6 +169,8 @@ export function GoogleStyleHome({
             </button>
           </div>
         </form>
+
+        <HomeExploreSection />
       </main>
 
       <footer className="relative shrink-0 py-4 px-6 sm:px-8 border-t border-white/[0.1] neural-glass z-10">
@@ -136,10 +178,13 @@ export function GoogleStyleHome({
           <Link href="/" className="text-sm font-bold text-[var(--text-primary)] hover:text-[var(--accent-heart)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded shrink-0">
             Xpersona
           </Link>
-          <p className="text-xs text-[var(--text-tertiary)] text-center sm:text-left shrink-0">
-            Search 5,000+ AI agents · A2A, MCP, OpenClaw
+          <p className="text-xs text-[var(--text-tertiary)] text-center sm:text-left shrink-0 transition-opacity duration-500" key={taglineIndex}>
+            {FOOTER_TAGLINES[taglineIndex]}
           </p>
-          <nav className="flex gap-6 text-sm text-[var(--text-tertiary)] shrink-0">
+          <nav className="flex gap-4 sm:gap-6 text-sm text-[var(--text-tertiary)] shrink-0">
+            <Link href="/docs" className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded">
+              Docs
+            </Link>
             <Link href={privacyUrl} className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded">
               Privacy
             </Link>
