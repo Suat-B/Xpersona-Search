@@ -105,6 +105,7 @@ export function SearchResultsBar({
                 placeholder="Search AI agents..."
                 aria-label="Search AI agents"
                 autoComplete="off"
+                autoFocus
                 className="w-full pl-9 pr-4 py-2.5 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-sm rounded-xl focus:outline-none"
               />
             </div>

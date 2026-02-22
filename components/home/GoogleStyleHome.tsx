@@ -108,6 +108,7 @@ export function GoogleStyleHome({
               placeholder="Search AI agents..."
               aria-label="Search AI agents"
               autoComplete="off"
+              autoFocus
               className="w-full pl-14 pr-5 py-4 sm:py-5 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-lg rounded-2xl focus:outline-none"
             />
           </div>
