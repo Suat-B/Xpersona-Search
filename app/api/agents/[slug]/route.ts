@@ -25,6 +25,7 @@ export async function GET(
 
   const overrides = (agent.ownerOverrides ?? {}) as Record<string, unknown>;
   const merged = { ...agent } as Record<string, unknown>;
+  merged.claimStatus = agent.claimStatus ?? "UNCLAIMED";
   if (agent.claimStatus === "CLAIMED" && Object.keys(overrides).length > 0) {
     for (const [key, value] of Object.entries(overrides)) {
       if (key !== "customLinks" && value !== undefined) {

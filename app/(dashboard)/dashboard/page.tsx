@@ -1,377 +1,231 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
-import { GlassCard } from "@/components/ui/GlassCard";
-import QuantMetrics from "@/components/dashboard/QuantMetrics";
-import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
-import { HeartbeatIndicator } from "@/components/ui/HeartbeatIndicator";
-import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
-import { RecoveryLinkCard } from "@/components/dashboard/RecoveryLinkCard";
-import { AgentBanner } from "@/components/dashboard/AgentBanner";
-import { GuestBanner } from "@/components/dashboard/GuestBanner";
-import { FaucetButton } from "@/components/dashboard/FaucetButton";
-import { LuckStreakCard } from "@/components/dashboard/LuckStreakCard";
-import { FortuneCard } from "@/components/dashboard/FortuneCard";
-import { MiniPnLSparkline } from "@/components/dashboard/MiniPnLSparkline";
-import { AgentReadyBadge } from "@/components/dashboard/AgentReadyBadge";
-import { ConnectAIPanel } from "@/components/dashboard/ConnectAIPanel";
-import { QuickLaunchCard } from "@/components/dashboard/QuickLaunchCard";
-import { StrategiesCountBadge } from "@/components/dashboard/StrategiesCountBadge";
-import { DataIntelligenceBadge } from "@/components/ui/DataIntelligenceBadge";
-import { CasinoRoundsWidget } from "@/components/dashboard/CasinoRoundsWidget";
-import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
+import { useEffect, useState } from "react";
 
-const GAMES = [
-  {
-    slug: "dice",
-    name: "Dice",
-    icon: "🎲",
-    desc: "Roll over or under. Pure probability.",
-    color: "from-[#0ea5e9] to-[#0077b6]",
-    glow: "",
-  },
-];
+interface ClaimedAgent {
+  id: string;
+  name: string;
+  slug: string;
+  source: string;
+  claimedAt: string | null;
+}
 
 export default function DashboardPage() {
-  const pathname = usePathname();
-  const { hasApiKey } = useAiConnectionStatus();
-  const aiConnected = hasApiKey === true;
+  const [claimedAgents, setClaimedAgents] = useState<ClaimedAgent[]>([]);
+  const [claimCount, setClaimCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch("/api/me/claimed-agents", { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          const agents = data.agents ?? [];
+          setClaimedAgents(agents.slice(0, 5));
+          setClaimCount(agents.length);
+        }
+      } catch {
+        /* network error is non-fatal */
+      }
+      setLoading(false);
+    }
+    load();
+  }, []);
 
   return (
-    <div className="space-y-5 sm:space-y-8 animate-fade-in-up">
-      {/* Hero Header */}
-      <header className="relative">
-        <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-2 h-2 rounded-full bg-[#30d158] animate-pulse" />
-              <span className="text-xs font-medium text-[var(--dash-text-secondary)] uppercase tracking-wider">READY TO PLAY</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight text-gradient-primary">
-              Dashboard
-            </h1>
-          </div>
-          
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <Link
-              href="/dashboard/connect-ai"
-              className={
-                aiConnected
-                  ? "inline-flex items-center gap-2 rounded-full border border-[#30d158]/40 bg-[#30d158]/10 px-5 py-3 text-sm font-medium text-[#30d158] hover:bg-[#30d158]/20 hover:border-[#30d158]/60 transition-all min-h-[44px]"
-                  : "inline-flex items-center gap-2 rounded-full border border-[#0ea5e9]/40 bg-[#0ea5e9]/10 px-5 py-3 text-sm font-medium text-[#0ea5e9] hover:bg-[#0ea5e9]/20 hover:border-[#0ea5e9]/60 transition-all min-h-[44px]"
-              }
-            >
-              {aiConnected ? (
-                <>
-                  <HeartbeatIndicator size="md" />
-                  <span>AI connected</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                  <span>Connect AI</span>
-                </>
-              )}
-            </Link>
-            
-            <div className="flex items-center gap-1 rounded-[var(--dash-radius)] border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] p-1 min-w-0 overflow-hidden">
-              <Link
-                href="/dashboard/deposit"
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all min-h-[44px] items-center",
-                  pathname === "/dashboard/deposit"
-                    ? "bg-[var(--dash-nav-active)] text-white"
-                    : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white"
-                )}
-              >
-                <svg className="w-4 h-4 text-[#30d158]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-                Deposit
-              </Link>
-              <div className="w-px h-4 bg-[var(--dash-divider)]" />
-              <Link
-                href="/dashboard/withdraw"
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all min-h-[44px] items-center",
-                  pathname === "/dashboard/withdraw"
-                    ? "bg-[var(--dash-nav-active)] text-white"
-                    : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white"
-                )}
-              >
-                <svg className="w-4 h-4 text-[#0ea5e9]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-                Withdraw
-              </Link>
-            </div>
-          </div>
+    <div className="space-y-8 animate-fade-in-up">
+      <header>
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-2 h-2 rounded-full bg-[var(--accent-heart)] animate-pulse" />
+          <span className="text-xs font-medium text-[var(--dash-text-secondary)] uppercase tracking-wider">Developer Hub</span>
         </div>
+        <h1 className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight text-gradient-primary">
+          Dashboard
+        </h1>
+        <p className="mt-2 text-sm text-[var(--dash-text-secondary)] max-w-lg">
+          Manage your claimed agent pages and discover new agents on Xpersona.
+        </p>
       </header>
 
-      <AgentBanner />
-      <GuestBanner />
-
-      {/* Metrics Grid */}
-      <section className="relative">
-        <QuantMetrics />
-      </section>
-
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Left Column */}
-        <div className="lg:col-span-8 space-y-5">
-          {/* Stats Row - 2x2 Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <LuckStreakCard />
-            <FortuneCard />
-            <MiniPnLSparkline />
-            <AgentReadyBadge />
-          </div>
-
-          <ConnectAIPanel />
-
-          {/* Games Section */}
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-1 h-6 rounded-full bg-[#0ea5e9]" />
-                <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-                  Games
-                </h2>
-              </div>
-              <Link 
-                href="/games" 
-                className="group flex items-center gap-1 text-sm text-[var(--dash-text-secondary)] hover:text-[#0ea5e9] transition-colors"
-              >
-                View all
-                <svg className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </Link>
+      {/* Search CTA */}
+      <Link href="/" className="group block">
+        <div className="agent-card p-6 transition-all duration-300 group-hover:scale-[1.01] group-hover:border-[var(--accent-heart)]/30">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-heart)]/10 text-[var(--accent-heart)] border border-[var(--accent-heart)]/20">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
             </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              {GAMES.map((game) => (
-                <Link
-                  href={`/games/${game.slug}`}
-                  key={game.slug}
-                  className="group block"
-                >
-                  <div className="agent-card h-full min-h-[160px] p-6 transition-all duration-500 group-hover:scale-[1.02]">
-                    <div className="absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500" 
-                      style={{ background: `linear-gradient(135deg, rgba(14,165,233,0.08) 0%, rgba(14,165,233,0.04) 100%)` }} 
-                    />
-                    
-                    <div className="relative flex items-start gap-5">
-                      <div className={`
-                        relative flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl 
-                        bg-gradient-to-br ${game.color}
-                        shadow-lg ${game.glow} group-hover:shadow-xl group-hover:scale-110 
-                        transition-all duration-500
-                      `}
-                      >
-                        <span className="text-3xl filter drop-shadow-lg">{game.icon}</span>
-                        
-                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-[#30d158] rounded-full border-2 border-[#0a0a0a]" />
-                      </div>
-                      
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-[var(--text-primary)] text-lg group-hover:text-[#0ea5e9] transition-all">
-                            {game.name}
-                          </h3>
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#30d158]/20 text-[#30d158] border border-[#30d158]/30">
-                            Live
-                          </span>
-                        </div>
-                        <p className="mt-1.5 text-sm text-[var(--dash-text-secondary)]">
-                          {game.desc}
-                        </p>
-                        
-                        <div className="mt-4 flex items-center gap-1 text-sm font-medium text-[#0ea5e9] opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-[-8px] group-hover:translate-x-0">
-                          Play Now
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                          </svg>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              ))}
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-[var(--text-primary)] group-hover:text-[var(--accent-heart)] transition-colors">
+                Search Agents
+              </h3>
+              <p className="text-sm text-[var(--text-tertiary)]">
+                Discover AI agents, MCP servers, and tools across npm, PyPI, and GitHub
+              </p>
             </div>
-          </section>
-
-          {/* Strategies Card */}
-          <div className="agent-card p-6">
-            <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-start gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#0ea5e9]/20 to-[#0ea5e9]/10 text-[#0ea5e9] border border-[#0ea5e9]/20">
-                  <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-[var(--text-primary)] text-lg">
-                      Dice Strategies
-                    </h3>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[#0ea5e9]/30">
-                      Automated
-                    </span>
-                  </div>
-                  <p className="mt-1.5 text-sm text-[var(--text-secondary)] max-w-md leading-relaxed">
-                    Run Martingale, Paroli, Kelly, and more. Same strategies work for you and your AI.
-                  </p>
-                  
-                  <div className="mt-3 flex items-center gap-4 text-xs text-[var(--text-tertiary)]">
-                    <span className="flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#30d158]" />
-                      <StrategiesCountBadge />
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#0ea5e9]" />
-                      Real-time
-                    </span>
-                  </div>
-                </div>
-              </div>
-              
-              <Link
-                href="/dashboard/strategies"
-                className="shrink-0 inline-flex items-center gap-2 rounded-full border border-[#0ea5e9]/30 bg-[#0ea5e9]/10 px-5 py-2.5 text-sm font-medium text-[#0ea5e9] hover:bg-[#0ea5e9]/20 transition-all duration-200"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                </svg>
-                Create a strategy
-              </Link>
-            </div>
-          </div>
-
-          {/* Data Intelligence Card */}
-          <div className="agent-card p-6 border-emerald-500/20 hover:border-emerald-500/30 transition-all duration-300">
-            <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-start gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/10 text-emerald-400 border border-emerald-500/20">
-                  <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-[var(--text-primary)] text-lg">
-                      Data Intelligence
-                    </h3>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                      {AI_FIRST_MESSAGING.dataIntelligence.badge}
-                    </span>
-                  </div>
-                  <p className="mt-1.5 text-sm text-[var(--text-secondary)] max-w-md leading-relaxed">
-                    Every strategy your AI runs feeds our intelligence layer. {AI_FIRST_MESSAGING.dataIntelligence.tagline}
-                  </p>
-                  
-                  <div className="mt-3">
-                    <DataIntelligenceBadge variant="compact" showCount={false} />
-                  </div>
-                </div>
-              </div>
-              
-              <Link
-                href="/games/dice"
-                className="shrink-0 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-5 py-2.5 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20 transition-all duration-200"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75c.621 0 1.125.504 1.125 1.125v18.75c0 .621-.504 1.125-1.125 1.125h-9.75c-.621 0-1.125-.504-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125z" />
-                </svg>
-                Build strategy
-              </Link>
-            </div>
+            <svg className="w-5 h-5 text-[var(--text-tertiary)] group-hover:text-[var(--accent-heart)] group-hover:translate-x-0.5 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
           </div>
         </div>
+      </Link>
 
-        {/* Right Sidebar */}
-        <aside className="lg:col-span-4 space-y-5">
-          <div className="relative">
-            <QuickLaunchCard />
+      {/* Stats Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <div className="agent-card p-6">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#30d158]/10 text-[#30d158] border border-[#30d158]/20">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--dash-text-secondary)] uppercase tracking-wider font-medium">Claimed Pages</p>
+              <p className="text-2xl font-bold text-[var(--text-primary)]">
+                {loading ? (
+                  <span className="inline-block w-8 h-7 rounded bg-white/5 animate-pulse" />
+                ) : (
+                  claimCount
+                )}
+              </p>
+            </div>
           </div>
-
-          <CasinoRoundsWidget variant="full" />
-          
-          <section id="free-credits" className="scroll-mt-6">
-            <FaucetButton />
-          </section>
-
-          <RecoveryLinkCard />
-
-          <ApiKeySection />
-          
           <Link
-            href="/dashboard/api"
-            className="group block"
+            href="/dashboard/claimed-agents"
+            className="text-sm text-[#30d158] hover:text-[#30d158]/80 font-medium transition-colors"
           >
-            <div className="agent-card p-5 transition-all duration-300 group-hover:scale-[1.02]"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-[#0ea5e9]/20 to-[#0ea5e9]/10 text-[#0ea5e9] border border-[#0ea5e9]/20 transition-colors"
-                  >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-[var(--text-primary)]">API & OpenClaw</p>
-                    <p className="text-xs text-[var(--text-tertiary)]">Documentation</p>
-                  </div>
-                </div>
-                
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.04] group-hover:bg-[#0ea5e9]/10 transition-colors"
-                >
-                  <svg className="w-5 h-5 text-[var(--text-tertiary)] group-hover:text-[#0ea5e9] group-hover:translate-x-0.5 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
+            View all claimed agents &rarr;
+          </Link>
+        </div>
+
+        <Link href="/" className="group block">
+          <div className="agent-card h-full p-6 transition-all group-hover:border-[var(--accent-heart)]/30">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--accent-heart)]/10 text-[var(--accent-heart)] border border-[var(--accent-heart)]/20">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--dash-text-secondary)] uppercase tracking-wider font-medium">Claim an Agent</p>
               </div>
             </div>
-          </Link>
-        </aside>
+            <p className="text-sm text-[var(--text-tertiary)]">
+              Search for your project and claim your page to display a verified badge and manage your listing.
+            </p>
+          </div>
+        </Link>
       </div>
 
-      {/* Footer — cohesive bottom section */}
+      {/* Recent Claimed Agents */}
+      {!loading && claimedAgents.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-1 h-6 rounded-full bg-[#30d158]" />
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+                Recently Claimed
+              </h2>
+            </div>
+            <Link
+              href="/dashboard/claimed-agents"
+              className="text-sm text-[var(--dash-text-secondary)] hover:text-[#30d158] transition-colors"
+            >
+              View all &rarr;
+            </Link>
+          </div>
+          <div className="space-y-2">
+            {claimedAgents.map((agent) => (
+              <div
+                key={agent.id}
+                className="agent-card p-4 flex items-center justify-between gap-3"
+              >
+                <div className="flex-1 min-w-0">
+                  <Link
+                    href={`/agent/${agent.slug}`}
+                    className="text-sm font-medium text-[var(--text-primary)] hover:text-[var(--accent-heart)] transition-colors truncate block"
+                  >
+                    {agent.name}
+                  </Link>
+                  <div className="flex items-center gap-3 mt-0.5 text-xs text-[var(--text-quaternary)]">
+                    <span>{agent.source}</span>
+                    {agent.claimedAt && (
+                      <span>Claimed {new Date(agent.claimedAt).toLocaleDateString()}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Link
+                    href={`/agent/${agent.slug}/manage`}
+                    className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-card)] transition-colors"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Manage
+                  </Link>
+                  <span className="inline-flex items-center gap-1 rounded-full border border-[#30d158]/30 bg-[#30d158]/10 px-2 py-0.5 text-[10px] font-medium text-[#30d158]">
+                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Verified
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Empty state for no claimed agents */}
+      {!loading && claimedAgents.length === 0 && (
+        <section className="agent-card p-10 text-center">
+          <div className="flex h-14 w-14 mx-auto items-center justify-center rounded-full bg-[var(--accent-heart)]/10 border border-[var(--accent-heart)]/20 text-[var(--accent-heart)] mb-4">
+            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">
+            No claimed pages yet
+          </h3>
+          <p className="text-sm text-[var(--text-secondary)] mb-6 max-w-md mx-auto">
+            Search for your project on Xpersona and claim your agent page to manage it and display a verified owner badge.
+          </p>
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 rounded-xl bg-[var(--accent-heart)] px-6 py-3 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            Search Agents
+          </Link>
+        </section>
+      )}
+
+      {/* Footer */}
       <footer className="mt-12 pt-6 border-t border-[var(--dash-divider)]">
         <div className="flex flex-col gap-6">
-          {/* Nav links — single row, consistent spacing */}
           <nav className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-            <Link href="/" className="text-[var(--dash-text-secondary)] hover:text-[#0ea5e9] transition-colors">
+            <Link href="/" className="text-[var(--dash-text-secondary)] hover:text-[var(--accent-heart)] transition-colors">
               Home
             </Link>
-            <Link href="/trading" className="text-[var(--dash-text-secondary)] hover:text-[#30d158] transition-colors">
-              Trading
+            <Link href="/dashboard/claimed-agents" className="text-[var(--dash-text-secondary)] hover:text-[var(--accent-heart)] transition-colors">
+              Claimed Agents
             </Link>
-            <Link href="/games/dice" className="text-[var(--dash-text-secondary)] hover:text-[#0ea5e9] transition-colors">
-              Open Game
+            <Link href="/dashboard/profile" className="text-[var(--dash-text-secondary)] hover:text-[var(--accent-heart)] transition-colors">
+              Profile
             </Link>
-            <Link href="/dashboard/strategies" className="text-[var(--dash-text-secondary)] hover:text-[#0ea5e9] transition-colors">
-              Strategies
-            </Link>
-            <Link href="/dashboard/provably-fair" className="text-[var(--dash-text-secondary)] hover:text-[#0ea5e9] transition-colors">
-              Provably Fair
-            </Link>
-            <Link href="/dashboard/api" className="text-[var(--dash-text-secondary)] hover:text-[#0ea5e9] transition-colors">
-              API Docs
+            <Link href="/dashboard/settings" className="text-[var(--dash-text-secondary)] hover:text-[var(--accent-heart)] transition-colors">
+              Settings
             </Link>
           </nav>
-
-          {/* Bottom row: branding + status */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-[var(--dash-divider)]">
             <p className="text-xs text-[var(--dash-text-secondary)] order-2 sm:order-1">
-              Data-Driven · AI-First · Provably Fair · Xpersona over/under dice
+              Xpersona &middot; AI Agent Search Engine
             </p>
             <div className="flex items-center gap-2 order-1 sm:order-2">
               <span className="w-1.5 h-1.5 rounded-full bg-[#30d158] animate-pulse shrink-0" aria-hidden />

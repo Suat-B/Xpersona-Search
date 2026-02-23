@@ -5,8 +5,6 @@ import { usePathname } from "next/navigation";
 import { GameSidebarNav } from "@/components/layout/GameSidebarNav";
 import { MobileDashboardNav } from "@/components/layout/MobileDashboardNav";
 import { UserAccountMenu } from "@/components/layout/UserAccountMenu";
-import { AIFirstBanner } from "@/components/ui/AIFirstBanner";
-import { getGameUrl } from "@/lib/service-urls";
 
 function isGamesRoute(pathname: string | null): boolean {
   return !!pathname?.startsWith("/games");
@@ -20,9 +18,6 @@ interface GameChromeProps {
   children: React.ReactNode;
 }
 
-/**
- * Game service chrome. Sidebar with game-focused nav (no internal Trading link; Marketplace is external).
- */
 export function GameChrome({
   displayName,
   userEmail = null,
@@ -64,7 +59,6 @@ export function GameChrome({
       </aside>
       <main className="scroll-contain-paint relative z-0 flex-1 min-h-0 overflow-y-auto bg-[var(--dash-bg)]">
         <div className="w-full max-w-7xl mx-auto px-4 py-4 sm:px-6 sm:py-6 md:px-8 md:py-8 space-y-6 min-w-0 sm:overflow-x-hidden">
-          <AIFirstBanner />
           {children}
         </div>
       </main>

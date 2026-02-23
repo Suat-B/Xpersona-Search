@@ -200,7 +200,7 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
       <div className="relative max-w-4xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6">
           <BackToSearchLink />
-          {(!agent.claimStatus || agent.claimStatus === "UNCLAIMED") && (
+          {(agent.claimStatus ?? "UNCLAIMED") !== "CLAIMED" && (
             <a
               href={`/agent/${agent.slug}/claim`}
               className="inline-flex items-center gap-1.5 text-sm text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-colors"

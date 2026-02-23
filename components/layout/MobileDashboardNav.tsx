@@ -6,17 +6,9 @@ import { useState, useEffect } from "react";
 import { useIsPermanent } from "@/lib/hooks/use-is-permanent";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
-import { useAiConnectionStatus } from "@/lib/hooks/use-ai-connection-status";
-import { HeartbeatIndicator } from "@/components/ui/HeartbeatIndicator";
-import { getTradingUrl } from "@/lib/service-urls";
 import type { Service } from "@/lib/subdomain";
 
 const ICONS = {
-  dice: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-    </svg>
-  ),
   home: (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -27,44 +19,9 @@ const ICONS = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
     </svg>
   ),
-  trading: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  ),
-  deposit: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-    </svg>
-  ),
-  withdraw: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-    </svg>
-  ),
-  strategies: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-    </svg>
-  ),
   shield: (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-    </svg>
-  ),
-  api: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-    </svg>
-  ),
-  connectAi: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-    </svg>
-  ),
-  transactions: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
     </svg>
   ),
   settings: (
@@ -86,20 +43,12 @@ const ICONS = {
   ),
 } as const;
 
-const GAME_LINKS = [
-  { href: "/", label: "Home", icon: "home" as const, exact: true, external: false },
-  { href: "/games/dice", label: "Open Game", icon: "dice" as const, exact: true, external: false },
-  { href: "/dashboard", label: "Dashboard", icon: "dashboard" as const, exact: true, external: false },
-  { href: getTradingUrl("/"), label: "Marketplace", icon: "trading" as const, exact: false, external: true },
-  { href: "/dashboard/connect-ai", label: "Connect AI", icon: "connectAi" as const, exact: false, external: false },
-  { href: "/dashboard/profile", label: "Profile", icon: "profile" as const, exact: true, external: false },
-  { href: "/dashboard/deposit", label: "Deposit", icon: "deposit" as const, exact: true, external: false },
-  { href: "/dashboard/withdraw", label: "Withdraw", icon: "withdraw" as const, exact: true, external: false },
-  { href: "/dashboard/strategies", label: "Strategies", icon: "strategies" as const, exact: false, external: false },
-  { href: "/dashboard/api", label: "API", icon: "api" as const, exact: false, external: false },
-  { href: "/dashboard/transactions", label: "Transactions", icon: "transactions" as const, exact: false, external: false },
-  { href: "/dashboard/provably-fair", label: "Provably Fair", icon: "shield" as const, exact: false, external: false },
-  { href: "/dashboard/settings", label: "Settings", icon: "settings" as const, exact: false, external: false },
+const MOBILE_LINKS = [
+  { href: "/", label: "Home", icon: "home" as const, exact: true },
+  { href: "/dashboard", label: "Dashboard", icon: "dashboard" as const, exact: true },
+  { href: "/dashboard/claimed-agents", label: "Claimed Agents", icon: "shield" as const, exact: false },
+  { href: "/dashboard/profile", label: "Profile", icon: "profile" as const, exact: true },
+  { href: "/dashboard/settings", label: "Settings", icon: "settings" as const, exact: false },
 ] as const;
 
 function isActive(pathname: string, href: string, exact: boolean): boolean {
@@ -114,10 +63,9 @@ interface MobileDashboardNavProps {
   service?: Service;
 }
 
-export function MobileDashboardNav({ displayName, isAdmin = false, isPermanent: serverIsPermanent = false, service = "game" }: MobileDashboardNavProps) {
+export function MobileDashboardNav({ displayName, isAdmin = false, isPermanent: serverIsPermanent = false }: MobileDashboardNavProps) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const { hasApiKey } = useAiConnectionStatus();
   const isPermanent = useIsPermanent(serverIsPermanent);
 
   useEffect(() => {
@@ -136,7 +84,7 @@ export function MobileDashboardNav({ displayName, isAdmin = false, isPermanent: 
       role="banner"
     >
       <div className="flex h-14 min-h-[44px] items-center justify-between px-4">
-        <Link href="/dashboard">
+        <Link href="/">
           <span className="font-bold text-[var(--text-primary)]">Xpersona</span>
         </Link>
 
@@ -173,58 +121,27 @@ export function MobileDashboardNav({ displayName, isAdmin = false, isPermanent: 
               aria-label="Navigation menu"
             >
             <div className="flex-1 overflow-y-auto p-4 space-y-1 pb-20">
-              <Link
-                href="/games/dice"
-                onClick={() => setOpen(false)}
-                className="flex items-center gap-3 rounded-[10px] px-3 py-3 text-sm font-semibold bg-[var(--dash-nav-active)] text-[#0ea5e9] border border-[var(--dash-divider)] mb-3"
-              >
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0ea5e9]/30">
-                  {ICONS.dice}
-                </span>
-                <span>Open Game</span>
-                <svg className="w-4 h-4 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                </svg>
-              </Link>
-              {GAME_LINKS.filter((l) => l.href !== "/games/dice").map(({ href, label, icon, exact, external }) => {
-                const active = !external && isActive(pathname ?? "", href, exact);
-                const isConnectAi = href === "/dashboard/connect-ai";
-                const aiConnected = isConnectAi && hasApiKey === true;
-                const displayLabel = isConnectAi && hasApiKey === true ? "AI connected" : label;
-                const className = cn(
-                  "group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-all",
-                  active
-                    ? "bg-[var(--dash-nav-active)] text-white"
-                    : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white",
-                  aiConnected && "text-[#30d158]"
-                );
-                const content = (
-                  <>
+              {MOBILE_LINKS.map(({ href, label, icon, exact }) => {
+                const active = isActive(pathname ?? "", href, exact);
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={() => setOpen(false)}
+                    className={cn(
+                      "group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-all",
+                      active
+                        ? "bg-[var(--dash-nav-active)] text-white"
+                        : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white"
+                    )}
+                  >
                     <span className={cn(
                       "flex h-8 w-8 items-center justify-center rounded-lg",
-                      active ? aiConnected ? "bg-[#30d158]/20 text-[#30d158]" : "text-white" : "text-[var(--dash-text-secondary)] group-hover:text-white",
-                      aiConnected && !active && "group-hover:text-[#30d158]"
+                      active ? "text-white" : "text-[var(--dash-text-secondary)] group-hover:text-white"
                     )}>
                       {ICONS[icon]}
                     </span>
-                    <span className="flex-1 flex items-center gap-2">
-                      {displayLabel}
-                      {aiConnected && <HeartbeatIndicator />}
-                      {external && (
-                        <svg className="w-4 h-4 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
-                      )}
-                    </span>
-                  </>
-                );
-                return external ? (
-                  <a key={href} href={href} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)} className={className}>
-                    {content}
-                  </a>
-                ) : (
-                  <Link key={href} href={href} onClick={() => setOpen(false)} className={className}>
-                    {content}
+                    <span className="flex-1">{label}</span>
                   </Link>
                 );
               })}
@@ -233,7 +150,7 @@ export function MobileDashboardNav({ displayName, isAdmin = false, isPermanent: 
                   href="/admin"
                   onClick={() => setOpen(false)}
                   className={cn(
-                    "flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium",
+                    "flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium mt-4 pt-4 border-t border-[var(--dash-divider)]",
                     (pathname ?? "").startsWith("/admin")
                       ? "bg-[var(--dash-nav-active)] text-amber-400"
                       : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-amber-400"
