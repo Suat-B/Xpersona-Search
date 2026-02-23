@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
 import Link from "next/link";
-import { ProtocolBadge } from "./ProtocolBadge";
 
 export interface SuggestionAgent {
   id: string;
@@ -173,29 +172,11 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(func
                 data-index={i}
                 role="option"
                 aria-selected={i === highlightedIndex}
-                className={`block px-4 py-3 hover:bg-[var(--bg-elevated)] focus:bg-[var(--bg-elevated)] focus:outline-none focus:ring-0 ${
+                className={`block px-4 py-2 hover:bg-[var(--bg-elevated)] focus:bg-[var(--bg-elevated)] focus:outline-none focus:ring-0 text-[var(--text-primary)] truncate ${
                   i === highlightedIndex ? "bg-[var(--bg-elevated)]" : ""
                 }`}
               >
-                <div className="flex items-start gap-3">
-                  <div className="flex-1 min-w-0">
-                    <span className="font-semibold text-[var(--text-primary)] block truncate">
-                      {agent.name}
-                    </span>
-                    {agent.description && (
-                      <span className="text-sm text-[var(--text-tertiary)] line-clamp-2 mt-0.5 block">
-                        {agent.description}
-                      </span>
-                    )}
-                    {agent.protocols.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {agent.protocols.slice(0, 4).map((p) => (
-                          <ProtocolBadge key={p} protocol={p} />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                {agent.name}
               </Link>
             </li>
           ))
