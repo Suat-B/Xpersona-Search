@@ -1,11 +1,13 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { ProtocolBadge } from "@/components/search/ProtocolBadge";
 import { BackToSearchLink } from "@/components/agent/BackToSearchLink";
 import { SafetyBadge } from "@/components/search/SafetyBadge";
 import { SourceBadge } from "@/components/agent/SourceBadge";
 import { InstallCommand } from "@/components/agent/InstallCommand";
 import { SkillMarkdown } from "./SkillMarkdown";
+import { AgentHomepageEmbed } from "./AgentHomepageEmbed";
 
 interface OpenClawData {
   parameters?: Record<
@@ -139,6 +141,24 @@ function getPopularityLabel(agent: Agent): string {
 }
 
 export function AgentPageClient({ agent }: AgentPageClientProps) {
+  const searchParams = useSearchParams();
+  const forceDetails = searchParams.get("view") === "details";
+
+  if (agent.homepage && !forceDetails) {
+    return (
+      <AgentHomepageEmbed
+        agent={{
+          name: agent.name,
+          slug: agent.slug,
+          homepage: agent.homepage,
+          description: agent.description,
+          source: agent.source,
+          url: agent.url,
+        }}
+      />
+    );
+  }
+
   const caps = Array.isArray(agent.capabilities) ? agent.capabilities : [];
   const protos = Array.isArray(agent.protocols) ? agent.protocols : [];
   const langs = Array.isArray(agent.languages) ? agent.languages : [];

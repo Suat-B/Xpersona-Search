@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { AgentPageClient } from "@/components/agent/AgentPageClient";
 import type { Metadata } from "next";
@@ -41,5 +42,9 @@ export default async function AgentPage({ params }: Props) {
   if (!res.ok) notFound();
   const agent = await res.json();
 
-  return <AgentPageClient agent={agent} />;
+  return (
+    <Suspense>
+      <AgentPageClient agent={agent} />
+    </Suspense>
+  );
 }
