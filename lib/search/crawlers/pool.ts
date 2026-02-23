@@ -47,17 +47,23 @@ async function runTask(task: CrawlTask): Promise<CrawlResult> {
   }
 }
 
-async function runBucketSequential(tasks: CrawlTask[]): Promise<CrawlResult[]> {
+async function runBucketSequential(
+  tasks: CrawlTask[],
+  onProgress?: (r: CrawlResult) => void
+): Promise<CrawlResult[]> {
   const results: CrawlResult[] = [];
   for (const task of tasks) {
-    results.push(await runTask(task));
+    const r = await runTask(task);
+    results.push(r);
+    onProgress?.(r);
   }
   return results;
 }
 
 async function runBucketConcurrent(
   tasks: CrawlTask[],
-  concurrency: number
+  concurrency: number,
+  onProgress?: (r: CrawlResult) => void
 ): Promise<CrawlResult[]> {
   const results: CrawlResult[] = [];
   const executing = new Set<Promise<void>>();
@@ -65,6 +71,7 @@ async function runBucketConcurrent(
   for (const task of tasks) {
     const p = runTask(task).then((r) => {
       results.push(r);
+      onProgress?.(r);
     });
     executing.add(p);
     p.finally(() => executing.delete(p));
@@ -96,15 +103,10 @@ export async function runCrawlPool(
 
     const promise =
       concurrency <= 1
-        ? runBucketSequential(bucketTasks)
-        : runBucketConcurrent(bucketTasks, concurrency);
+        ? runBucketSequential(bucketTasks, onProgress)
+        : runBucketConcurrent(bucketTasks, concurrency, onProgress);
 
-    bucketPromises.push(
-      promise.then((results) => {
-        if (onProgress) results.forEach(onProgress);
-        return results;
-      })
-    );
+    bucketPromises.push(promise);
   }
 
   const allResults = await Promise.allSettled(bucketPromises);

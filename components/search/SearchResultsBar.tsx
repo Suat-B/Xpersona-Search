@@ -41,6 +41,7 @@ export function SearchResultsBar({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const searchAnchorRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<SearchSuggestionsHandle>(null);
   const router = useRouter();
 
@@ -51,6 +52,13 @@ export function SearchResultsBar({
   const handleQuerySelect = (text: string) => {
     setQuery(text);
     addRecentSearch(text.trim());
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = undefined;
+    }
+    setShowSuggestions(false);
+    setIsFocused(false);
+    inputRef.current?.blur();
     onSearch();
   };
 
@@ -74,17 +82,19 @@ export function SearchResultsBar({
     }
   };
 
-  useEffect(() => {
-    if (isFocused) setShowSuggestions(true);
-  }, [query, isFocused]);
-
   useEffect(() => () => {
     if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
   }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = undefined;
+    }
     setShowSuggestions(false);
+    setIsFocused(false);
+    inputRef.current?.blur();
     if (query.trim()) addRecentSearch(query.trim());
     onSearch();
   };
@@ -131,6 +141,7 @@ export function SearchResultsBar({
                 </svg>
               </div>
               <input
+                ref={inputRef}
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -143,7 +154,6 @@ export function SearchResultsBar({
                 aria-controls="agent-suggestions-bar"
                 aria-expanded={showSuggestions}
                 autoComplete="off"
-                autoFocus
                 className="w-full min-w-0 pl-9 pr-4 py-3 sm:py-2.5 min-h-[44px] bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-sm rounded-xl focus:outline-none touch-manipulation"
               />
               <SearchSuggestions

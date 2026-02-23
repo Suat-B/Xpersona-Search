@@ -7,6 +7,15 @@ const MAX_TRENDING = 8;
 const TRENDING_WINDOW_DAYS = 30;
 const MIN_COUNT = 2;
 
+const TRAILING_STOPWORDS = new Set([
+  "a", "an", "and", "be", "for", "in", "is", "it", "of", "on", "or", "the", "to",
+]);
+
+function isIncompletePhrase(text: string): boolean {
+  const last = text.trim().toLowerCase().split(/\s+/).pop() ?? "";
+  return TRAILING_STOPWORDS.has(last);
+}
+
 export async function GET() {
   try {
     const cutoff = new Date();
@@ -22,7 +31,7 @@ export async function GET() {
         sql`${searchQueries.lastSearchedAt} >= ${cutoff} AND ${searchQueries.count} >= ${MIN_COUNT}`
       )
       .orderBy(desc(searchQueries.count))
-      .limit(MAX_TRENDING);
+      .limit(MAX_TRENDING * 2);
 
     // If we don't have enough trending queries yet, supplement with top agents
     if (rows.length < 4) {
@@ -40,8 +49,12 @@ export async function GET() {
       }
     }
 
+    const filtered = rows
+      .filter((r) => !isIncompletePhrase(r.query))
+      .slice(0, MAX_TRENDING);
+
     return NextResponse.json({
-      trending: rows.map((r) => r.query),
+      trending: filtered.map((r) => r.query),
     });
   } catch (err) {
     console.error("[Search Trending] Error:", err);

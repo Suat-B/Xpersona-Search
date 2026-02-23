@@ -97,4 +97,4 @@ The `/api/cron/crawl` route runs multiple crawlers. Add to Vercel env:
 - `A2A_REGISTRY_URL` — (optional) A2A registry API base URL, default `https://api.a2a-registry.dev`
 - `MCP_REGISTRY_URL` — (optional) MCP Registry API base, default `https://registry.modelcontextprotocol.io`
 
-Then configure a cron job to call `GET /api/cron/crawl` with `Authorization: Bearer <CRON_SECRET>`. Crons run at 6:00 UTC daily and every 6 hours.
+Then configure a cron job to call `GET /api/cron/crawl` with `Authorization: Bearer <CRON_SECRET>`. On Vercel Hobby plan, crons can run at most once per day—use `0 6 * * *` (6:00 UTC daily). Pro plan allows more frequent runs (e.g. every 6 hours).

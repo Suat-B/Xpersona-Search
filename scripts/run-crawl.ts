@@ -7,6 +7,7 @@
  *      npx tsx scripts/run-crawl.ts 100k  (100k-scale: aggressive limits)
  *      npx tsx scripts/run-crawl.ts 250k  (250k-scale: maximum expansion)
  *      npx tsx scripts/run-crawl.ts 100k --sources=GITHUB_MCP,CLAWHUB  (run only these)
+ *      On PowerShell, quote the list: --sources="HUGGINGFACE,DOCKER,REPLICATE"
  *      npx tsx scripts/run-crawl.ts 100k --parallel  (run all buckets in parallel)
  *
  * Requires: DATABASE_URL, GITHUB_TOKEN (for GitHub sources)
@@ -19,18 +20,28 @@ import { runCrawlPool, type CrawlTask, type CrawlResult } from "@/lib/search/cra
 
 const args = process.argv.slice(2);
 const maxArg = args.find((a) => !a.startsWith("--"));
-const sourcesArg = args.find((a) => a.startsWith("--sources="));
 const parallelMode = args.includes("--parallel");
+
+// Support both --sources=X,Y,Z and --sources X,Y,Z (PowerShell may split on =)
+const sourcesIdx = args.findIndex((a) => a === "--sources" || a.startsWith("--sources="));
+let sourcesStr: string | null = null;
+if (sourcesIdx >= 0) {
+  const arg = args[sourcesIdx];
+  if (arg.startsWith("--sources=")) {
+    sourcesStr = arg.replace("--sources=", "");
+  } else if (args[sourcesIdx + 1]) {
+    sourcesStr = args[sourcesIdx + 1];
+  }
+}
 
 const arg = maxArg ?? "1500";
 const scale250k = arg === "250k" || arg === "250000" || parseInt(arg, 10) >= 200000;
 const fullScale = scale250k || arg === "100k" || arg === "100000" || parseInt(arg, 10) >= 50000;
 const maxResults = scale250k ? 250000 : fullScale ? 100000 : parseInt(arg, 10) || 1500;
 
-const selectedSources = sourcesArg
+const selectedSources = sourcesStr
   ? new Set(
-      sourcesArg
-        .replace("--sources=", "")
+      sourcesStr
         .split(",")
         .map((s) => s.trim().toUpperCase())
         .filter(Boolean)
@@ -119,6 +130,13 @@ function shouldRun(source: string): boolean {
   return selectedSources.has(source.toUpperCase());
 }
 
+function withStartLog(source: string, fn: () => Promise<{ total: number; jobId?: string }>) {
+  return async () => {
+    log(source, "Starting...");
+    return fn();
+  };
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) {
     console.error("DATABASE_URL not set");
@@ -127,6 +145,9 @@ async function main() {
 
   const scaleLabel = scale250k ? "250k" : fullScale ? "100k" : `${maxResults}`;
   log("CRAWL", `Starting ${scaleLabel}-scale crawl (parallel=${parallelMode})\n`);
+  if (selectedSources && selectedSources.size > 0) {
+    log("CRAWL", "Sources filter: %s", [...selectedSources].join(", "));
+  }
 
   const tasks: CrawlTask[] = [];
 
@@ -135,40 +156,40 @@ async function main() {
       tasks.push({
         source: "GITHUB_OPENCLEW",
         bucket: "github",
-        fn: async () => {
+        fn: withStartLog("GITHUB_OPENCLEW", async () => {
           const { crawlOpenClawSkills } = await import("@/lib/search/crawlers/github-openclaw");
           return crawlOpenClawSkills(undefined, limits.openClaw);
-        },
+        }),
       });
     }
     if (shouldRun("GITHUB_MCP")) {
       tasks.push({
         source: "GITHUB_MCP",
         bucket: "github",
-        fn: async () => {
+        fn: withStartLog("GITHUB_MCP", async () => {
           const { crawlGitHubMCP } = await import("@/lib/search/crawlers/github-mcp");
           return crawlGitHubMCP(undefined, limits.mcp);
-        },
+        }),
       });
     }
     if (shouldRun("CLAWHUB")) {
       tasks.push({
         source: "CLAWHUB",
         bucket: "github",
-        fn: async () => {
+        fn: withStartLog("CLAWHUB", async () => {
           const { crawlClawHub } = await import("@/lib/search/crawlers/clawhub");
           return crawlClawHub(limits.clawhub);
-        },
+        }),
       });
     }
     if (shouldRun("GITHUB_REPOS")) {
       tasks.push({
         source: "GITHUB_REPOS",
         bucket: "github",
-        fn: async () => {
+        fn: withStartLog("GITHUB_REPOS", async () => {
           const { crawlGitHubRepos } = await import("@/lib/search/crawlers/github-repos");
           return crawlGitHubRepos(limits.githubRepos);
-        },
+        }),
       });
     }
   } else if (shouldRun("GITHUB_OPENCLEW") || shouldRun("GITHUB_MCP") || shouldRun("CLAWHUB") || shouldRun("GITHUB_REPOS")) {
@@ -179,150 +200,150 @@ async function main() {
     tasks.push({
       source: "MCP_REGISTRY",
       bucket: "registry",
-      fn: async () => {
+      fn: withStartLog("MCP_REGISTRY", async () => {
         const { crawlMcpRegistry } = await import("@/lib/search/crawlers/mcp-registry");
         return crawlMcpRegistry(limits.mcpRegistry);
-      },
+      }),
     });
   }
   if (shouldRun("A2A_REGISTRY")) {
     tasks.push({
       source: "A2A_REGISTRY",
       bucket: "registry",
-      fn: async () => {
+      fn: withStartLog("A2A_REGISTRY", async () => {
         const { crawlA2ARegistry } = await import("@/lib/search/crawlers/a2a-registry");
         return crawlA2ARegistry(limits.a2a);
-      },
+      }),
     });
   }
   if (shouldRun("AGENTSCAPE")) {
     tasks.push({
       source: "AGENTSCAPE",
       bucket: "registry",
-      fn: async () => {
+      fn: withStartLog("AGENTSCAPE", async () => {
         const { crawlAgentScape } = await import("@/lib/search/crawlers/agentscape");
         return crawlAgentScape(limits.agentscape);
-      },
+      }),
     });
   }
   if (shouldRun("PYPI")) {
     tasks.push({
       source: "PYPI",
       bucket: "package",
-      fn: async () => {
+      fn: withStartLog("PYPI", async () => {
         const { crawlPypiPackages } = await import("@/lib/search/crawlers/pypi");
         return crawlPypiPackages(limits.pypi);
-      },
+      }),
     });
   }
   if (shouldRun("NPM")) {
     tasks.push({
       source: "NPM",
       bucket: "package",
-      fn: async () => {
+      fn: withStartLog("NPM", async () => {
         const { crawlNpmPackages } = await import("@/lib/search/crawlers/npm");
         return crawlNpmPackages(limits.npm);
-      },
+      }),
     });
   }
   if (shouldRun("CURATED_SEEDS")) {
     tasks.push({
       source: "CURATED_SEEDS",
       bucket: "github",
-      fn: async () => {
+      fn: withStartLog("CURATED_SEEDS", async () => {
         const { crawlCuratedSeeds } = await import("@/lib/search/crawlers/curated-seeds");
         return crawlCuratedSeeds(limits.curated);
-      },
+      }),
     });
   }
   if (shouldRun("HUGGINGFACE")) {
     tasks.push({
       source: "HUGGINGFACE",
       bucket: "platform",
-      fn: async () => {
+      fn: withStartLog("HUGGINGFACE", async () => {
         const { crawlHuggingFaceSpaces } = await import("@/lib/search/crawlers/huggingface-spaces");
         return crawlHuggingFaceSpaces(limits.huggingface);
-      },
+      }),
     });
   }
   if (shouldRun("DOCKER")) {
     tasks.push({
       source: "DOCKER",
       bucket: "platform",
-      fn: async () => {
+      fn: withStartLog("DOCKER", async () => {
         const { crawlDockerHub } = await import("@/lib/search/crawlers/docker-hub");
         return crawlDockerHub(limits.docker);
-      },
+      }),
     });
   }
   if (shouldRun("REPLICATE")) {
     tasks.push({
       source: "REPLICATE",
       bucket: "platform",
-      fn: async () => {
+      fn: withStartLog("REPLICATE", async () => {
         const { crawlReplicate } = await import("@/lib/search/crawlers/replicate");
         return crawlReplicate(limits.replicate);
-      },
+      }),
     });
   }
   if (shouldRun("AWESOME_LISTS")) {
     tasks.push({
       source: "AWESOME_LISTS",
       bucket: "github",
-      fn: async () => {
+      fn: withStartLog("AWESOME_LISTS", async () => {
         const { crawlAwesomeLists } = await import("@/lib/search/crawlers/awesome-lists");
         return crawlAwesomeLists(limits.awesomeLists);
-      },
+      }),
     });
   }
   if (shouldRun("SMITHERY")) {
     tasks.push({
       source: "SMITHERY",
       bucket: "registry",
-      fn: async () => {
+      fn: withStartLog("SMITHERY", async () => {
         const { crawlSmithery } = await import("@/lib/search/crawlers/smithery");
         return crawlSmithery(limits.smithery);
-      },
+      }),
     });
   }
   if (shouldRun("LANGCHAIN_HUB")) {
     tasks.push({
       source: "LANGCHAIN_HUB",
       bucket: "platform",
-      fn: async () => {
+      fn: withStartLog("LANGCHAIN_HUB", async () => {
         const { crawlLangChainHub } = await import("@/lib/search/crawlers/langchain-hub");
         return crawlLangChainHub(limits.langchainHub);
-      },
+      }),
     });
   }
   if (shouldRun("CREWAI")) {
     tasks.push({
       source: "CREWAI",
       bucket: "github",
-      fn: async () => {
+      fn: withStartLog("CREWAI", async () => {
         const { crawlCrewAI } = await import("@/lib/search/crawlers/crewai");
         return crawlCrewAI(limits.crewai);
-      },
+      }),
     });
   }
   if (shouldRun("VERCEL_TEMPLATES")) {
     tasks.push({
       source: "VERCEL_TEMPLATES",
       bucket: "platform",
-      fn: async () => {
+      fn: withStartLog("VERCEL_TEMPLATES", async () => {
         const { crawlVercelTemplates } = await import("@/lib/search/crawlers/vercel-templates");
         return crawlVercelTemplates(limits.vercelTemplates);
-      },
+      }),
     });
   }
   if (shouldRun("OLLAMA")) {
     tasks.push({
       source: "OLLAMA",
       bucket: "platform",
-      fn: async () => {
+      fn: withStartLog("OLLAMA", async () => {
         const { crawlOllama } = await import("@/lib/search/crawlers/ollama");
         return crawlOllama(limits.ollama);
-      },
+      }),
     });
   }
 

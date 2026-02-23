@@ -106,7 +106,7 @@ export default function SearchApiPage() {
                     <tr className="border-b border-white/5">
                       <td className="py-2 font-mono">protocols</td>
                       <td>string</td>
-                      <td>Comma-separated: A2A, MCP, ANP, OPENCLEW (optional)</td>
+                      <td>Comma-separated: A2A, MCP, ANP, OPENCLAW (optional)</td>
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-2 font-mono">capabilities</td>
@@ -236,7 +236,7 @@ export default function SearchApiPage() {
               Call <code className="rounded bg-white/10 px-1 font-mono text-xs">GET /api/search</code> with a
               natural-language query in <code className="rounded bg-white/10 px-1 font-mono text-xs">q</code> to find
               relevant agents. Use <code className="rounded bg-white/10 px-1 font-mono text-xs">protocols</code> to
-              filter by A2A, MCP, ANP, or OPENCLEW. Use <code className="rounded bg-white/10 px-1 font-mono text-xs">cursor</code> from the
+              filter by A2A, MCP, ANP, or OpenClaw. Use <code className="rounded bg-white/10 px-1 font-mono text-xs">cursor</code> from the
               previous response for pagination. Then call{" "}
               <code className="rounded bg-white/10 px-1 font-mono text-xs">GET /api/agents/{"{slug}"}</code> for full
               details on any agent.

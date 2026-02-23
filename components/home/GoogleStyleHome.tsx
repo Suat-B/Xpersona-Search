@@ -74,10 +74,6 @@ export function GoogleStyleHome({
   };
 
   useEffect(() => {
-    if (isFocused) setShowSuggestions(true);
-  }, [query, isFocused]);
-
-  useEffect(() => {
     try {
       const stored = localStorage.getItem(HOME_ACCENT_STORAGE_KEY) as ThemePresetId | null;
       if (stored) applyPreset(stored);
@@ -113,6 +109,9 @@ export function GoogleStyleHome({
       </div>
 
       <header className="relative flex justify-end items-center px-4 sm:px-6 py-3 sm:py-4 gap-3 sm:gap-4 shrink-0 z-20 safe-area-inset-top">
+        <div className="hidden sm:flex">
+          <HomeThemePicker />
+        </div>
         {!isAuthenticated && (
           <>
             <Link
@@ -174,21 +173,8 @@ export function GoogleStyleHome({
               aria-expanded={showSuggestions}
               autoComplete="off"
               autoFocus
-              className="w-full pl-11 sm:pl-14 pr-20 sm:pr-24 py-3.5 sm:py-4 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-lg rounded-xl sm:rounded-2xl focus:outline-none min-h-[48px] touch-manipulation"
+              className="w-full pl-11 sm:pl-14 pr-4 py-3.5 sm:py-4 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-lg rounded-xl sm:rounded-2xl focus:outline-none min-h-[48px] touch-manipulation"
             />
-            <button
-              type="button"
-              onClick={() => {
-                const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
-                params.set("browse", "1");
-                params.delete("q");
-                router.push(`/?${params.toString()}`);
-              }}
-              className="absolute right-2 px-2.5 sm:px-3 py-2 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--accent-heart)] rounded-lg hover:bg-white/5 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation min-h-[36px] flex items-center"
-              aria-label="Browse all agents"
-            >
-              Browse
-            </button>
             <SearchSuggestions
               ref={suggestionsRef}
               query={query}
@@ -224,7 +210,6 @@ export function GoogleStyleHome({
             Xpersona
           </Link>
           <div className="flex flex-wrap items-center justify-center sm:justify-end gap-3 sm:gap-6">
-            <HomeThemePicker />
             <nav className="flex flex-wrap gap-3 sm:gap-6 text-sm text-[var(--text-tertiary)] shrink-0">
               <Link href="/search-api" className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-2 min-h-[44px] flex items-center touch-manipulation">
                 API

@@ -309,8 +309,8 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
 
     /* ---- react to query changes ---- */
     useEffect(() => {
+      hasUsedArrowKeysRef.current = false;
       if (!visible) {
-        hasUsedArrowKeysRef.current = false;
         setItems([]);
         setHighlightedIndex(0);
         return;

@@ -34,6 +34,17 @@ const DESC_TRUNCATE = 80;
 const MAX_QUERY_SUGGESTIONS = 8;
 const MAX_AGENT_SUGGESTIONS = 3;
 
+/** Stopwords: never suggest these as standalone completions (substrings of queries). */
+const STOPWORDS = new Set([
+  "a", "an", "and", "be", "for", "in", "is", "it", "of", "on", "or", "the", "to",
+]);
+
+/** Incomplete phrases like "figma for" or "trading for" - ends with stopword, no completion. */
+function isIncompletePhrase(text: string): boolean {
+  const last = text.trim().toLowerCase().split(/\s+/).pop() ?? "";
+  return STOPWORDS.has(last);
+}
+
 export async function GET(req: NextRequest) {
   let params: SuggestParams;
   try {
@@ -136,6 +147,9 @@ export async function GET(req: NextRequest) {
     const addSuggestion = (text: string) => {
       const key = text.toLowerCase().trim();
       if (key.length < 2 || seen.has(key) || key === qLower) return;
+      if (STOPWORDS.has(key)) return;
+      if (isIncompletePhrase(text)) return;
+      if (qLower.includes(key) && key.length < 8) return;
       seen.add(key);
       querySuggestions.push(text.trim());
     };
@@ -152,16 +166,16 @@ export async function GET(req: NextRequest) {
       addSuggestion(row.name);
     }
 
-    // Tier 3: Matching capabilities that contain query tokens
+    // Tier 3: Capabilities that extend/complete the query (exclude substrings already in query)
     const capSet = new Set<string>();
     for (const r of matchingRows) {
       const caps = Array.isArray(r.capabilities) ? r.capabilities : [];
       for (const c of caps) {
         if (typeof c === "string" && c.length >= 2) {
           const normalized = c.toLowerCase().trim();
-          if (normalized.includes(qLower) || qLower.includes(normalized)) {
-            capSet.add(c.trim());
-          }
+          if (STOPWORDS.has(normalized)) continue;
+          if (qLower.includes(normalized)) continue;
+          if (normalized.includes(qLower)) capSet.add(c.trim());
         }
       }
     }

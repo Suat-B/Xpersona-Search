@@ -76,13 +76,20 @@ export async function crawlA2ARegistry(
         list = (await res.json()) as A2AListResponse;
       } catch (err) {
         if (totalFound === 0) {
-          console.warn("[A2A Crawl] Registry fetch failed:", err);
+          const msg = err instanceof Error ? err.message : String(err);
+          const is404 = msg.includes("404") || msg.includes("Not Found");
+          if (is404) {
+            console.warn("[A2A Crawl] Registry unavailable (404), skipping.");
+          } else {
+            console.warn("[A2A Crawl] Registry fetch failed:", msg);
+          }
           await db
             .update(crawlJobs)
             .set({
-              status: "FAILED",
+              status: "COMPLETED",
               completedAt: new Date(),
-              error: err instanceof Error ? err.message : String(err),
+              agentsFound: 0,
+              ...(is404 ? {} : { error: msg }),
             })
             .where(eq(crawlJobs.id, jobId));
           return { total: 0, jobId };
