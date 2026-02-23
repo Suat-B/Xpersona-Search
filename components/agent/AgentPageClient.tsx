@@ -161,6 +161,7 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
           description: agent.description,
           source: agent.source,
           url: agent.url,
+          claimStatus: agent.claimStatus,
         }}
       />
     );
