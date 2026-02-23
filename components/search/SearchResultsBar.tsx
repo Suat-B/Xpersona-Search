@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { applyPreset, HOME_ACCENT_STORAGE_KEY } from "@/lib/theme-presets";
 import type { ThemePresetId } from "@/lib/theme-presets";
 import { SearchSuggestions, type SearchSuggestionsHandle, type SuggestionAgent } from "./SearchSuggestions";
+import { addRecentSearch } from "@/lib/search-history";
 
 interface SearchResultsBarProps {
   query: string;
@@ -47,13 +48,19 @@ export function SearchResultsBar({
     router.push(`/agent/${agent.slug}`);
   };
 
+  const handleQuerySelect = (text: string) => {
+    setQuery(text);
+    addRecentSearch(text.trim());
+    onSearch();
+  };
+
   const handleFocus = () => {
     if (blurTimeoutRef.current) {
       clearTimeout(blurTimeoutRef.current);
       blurTimeoutRef.current = undefined;
     }
     setIsFocused(true);
-    if (query.length >= 2) setShowSuggestions(true);
+    setShowSuggestions(true);
   };
 
   const handleBlur = () => {
@@ -68,8 +75,8 @@ export function SearchResultsBar({
   };
 
   useEffect(() => {
-    if (query.length >= 2 && isFocused) setShowSuggestions(true);
-    else if (query.length < 2) setShowSuggestions(false);
+    if (isFocused) setShowSuggestions(true);
+    else setShowSuggestions(false);
   }, [query, isFocused]);
 
   useEffect(() => () => {
@@ -78,6 +85,7 @@ export function SearchResultsBar({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (query.trim()) addRecentSearch(query.trim());
     onSearch();
   };
 
@@ -142,6 +150,7 @@ export function SearchResultsBar({
                 ref={suggestionsRef}
                 query={query}
                 onSelect={handleSuggestionSelect}
+                onQuerySelect={handleQuerySelect}
                 onClose={() => setShowSuggestions(false)}
                 anchorRef={searchAnchorRef}
                 visible={showSuggestions}

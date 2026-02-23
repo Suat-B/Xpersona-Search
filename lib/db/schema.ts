@@ -632,5 +632,22 @@ export const signalDeliveryLogs = pgTable(
   ]
 );
 
+// Aggregated search queries for trending/popular suggestions
+export const searchQueries = pgTable(
+  "search_queries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    query: varchar("query", { length: 255 }).notNull(),
+    normalizedQuery: varchar("normalized_query", { length: 255 }).notNull(),
+    count: integer("count").notNull().default(1),
+    lastSearchedAt: timestamp("last_searched_at", { withTimezone: true }).defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("search_queries_normalized_idx").on(table.normalizedQuery),
+    index("search_queries_count_idx").on(table.count),
+  ]
+);
+
 // Search engine (agents, crawl_jobs, crawl_frontier) - re-exported from search-schema
 export { agents, crawlFrontier, crawlJobs } from "./search-schema";

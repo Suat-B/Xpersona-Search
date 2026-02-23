@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { ZodError } from "zod";
 import { db } from "@/lib/db";
-import { agents } from "@/lib/db/schema";
-import { and, eq, desc, sql, SQL } from "drizzle-orm";
+import { agents, searchQueries } from "@/lib/db/schema";
+import { and, eq, desc, sql, SQL, ilike } from "drizzle-orm";
 
 const SuggestSchema = z.object({
   q: z
@@ -16,10 +16,6 @@ const SuggestSchema = z.object({
 
 type SuggestParams = z.infer<typeof SuggestSchema>;
 
-/**
- * Build prefix tsquery for partial matching: "cry trad" -> "cry:* & trad:*"
- * Sanitizes to word chars only; returns empty if no valid tokens (fallback to ilike).
- */
 function toPrefixTsQuery(q: string): string {
   const tokens = q
     .toLowerCase()
@@ -30,42 +26,13 @@ function toPrefixTsQuery(q: string): string {
   return tokens.map((t) => `${t}:*`).join(" & ");
 }
 
-/** Escape %, _ for safe use in ILIKE patterns. */
 function escapeLike(s: string): string {
   return s.replace(/[%_\\]/g, (c) => `\\${c}`);
 }
 
 const DESC_TRUNCATE = 80;
-
-/** Display-friendly casing for known protocols. */
-function displayQuery(q: string): string {
-  const lower = q.toLowerCase();
-  if (lower === "openclaw" || lower === "openclew") return "OpenClaw";
-  if (lower === "mcp") return "MCP";
-  if (lower === "a2a") return "A2A";
-  if (lower === "anp") return "ANP";
-  return q;
-}
-
-const PREDEFINED_TERMS = [
-  "games",
-  "trading",
-  "coding",
-  "AI agents",
-  "MCP servers",
-  "agents",
-];
-
-const SUGGESTION_TEMPLATES: Array<(q: string, term: string) => string> = [
-  (q, term) => `${term} on ${q}`,
-  (q, term) => `${q} for ${term}`,
-  (q, term) => `${q} ${term}`,
-  (q, term) => `${term} with ${q}`,
-];
-
 const MAX_QUERY_SUGGESTIONS = 8;
 const MAX_AGENT_SUGGESTIONS = 3;
-const CAPABILITY_SAMPLE_LIMIT = 50;
 
 export async function GET(req: NextRequest) {
   let params: SuggestParams;
@@ -80,12 +47,41 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const baseConditions: (ReturnType<typeof eq> | SQL)[] = [
-      eq(agents.status, "ACTIVE"),
-    ];
-
-    const prefixQuery = toPrefixTsQuery(params.q);
+    const qLower = params.q.toLowerCase();
     const esc = escapeLike(params.q);
+
+    // --- Tier 1: Popular search completions from search_queries table ---
+    const popularCompletions = await db
+      .select({
+        query: searchQueries.query,
+        count: searchQueries.count,
+      })
+      .from(searchQueries)
+      .where(
+        and(
+          ilike(searchQueries.normalizedQuery, `${escapeLike(qLower)}%`),
+        )
+      )
+      .orderBy(desc(searchQueries.count))
+      .limit(MAX_QUERY_SUGGESTIONS);
+
+    // --- Tier 2: Agent name prefix completions ---
+    const nameCompletionRows = await db
+      .select({
+        name: agents.name,
+      })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.status, "ACTIVE"),
+          sql`(${agents.name} ILIKE ${esc + "%"} OR ${agents.name} ILIKE ${"% " + esc + "%"})`,
+        )
+      )
+      .orderBy(desc(agents.overallRank))
+      .limit(10);
+
+    // --- Tier 3: Capability/protocol completions matching the query ---
+    const prefixQuery = toPrefixTsQuery(params.q);
     const pattern = `%${esc}%`;
 
     const tsPart = prefixQuery.length > 0
@@ -106,9 +102,7 @@ export async function GET(req: NextRequest) {
       )
     )` as SQL;
 
-    const conditions = [...baseConditions, searchCondition];
-
-    const rows = await db
+    const matchingRows = await db
       .select({
         id: agents.id,
         name: agents.name,
@@ -118,59 +112,78 @@ export async function GET(req: NextRequest) {
         capabilities: agents.capabilities,
       })
       .from(agents)
-      .where(and(...conditions))
+      .where(and(eq(agents.status, "ACTIVE"), searchCondition))
       .orderBy(desc(agents.overallRank), desc(agents.createdAt))
-      .limit(CAPABILITY_SAMPLE_LIMIT);
+      .limit(30);
 
-    const agentSuggestions = rows.slice(0, MAX_AGENT_SUGGESTIONS).map((r) => ({
+    // Build agent suggestions (top 3)
+    const agentSuggestions = matchingRows.slice(0, MAX_AGENT_SUGGESTIONS).map((r) => ({
       id: r.id,
       name: r.name,
       slug: r.slug,
       description: r.description
         ? r.description.length > DESC_TRUNCATE
-          ? r.description.slice(0, DESC_TRUNCATE) + "…"
+          ? r.description.slice(0, DESC_TRUNCATE) + "\u2026"
           : r.description
         : null,
       protocols: Array.isArray(r.protocols) ? r.protocols : [],
     }));
 
-    const capCounts = new Map<string, number>();
-    for (const r of rows) {
+    // Build query suggestions - merge all tiers with deduplication
+    const seen = new Set<string>();
+    const querySuggestions: string[] = [];
+
+    const addSuggestion = (text: string) => {
+      const key = text.toLowerCase().trim();
+      if (key.length < 2 || seen.has(key) || key === qLower) return;
+      seen.add(key);
+      querySuggestions.push(text.trim());
+    };
+
+    // Tier 1: Popular searches first (highest signal)
+    for (const row of popularCompletions) {
+      if (querySuggestions.length >= MAX_QUERY_SUGGESTIONS) break;
+      addSuggestion(row.query);
+    }
+
+    // Tier 2: Agent names as completions
+    for (const row of nameCompletionRows) {
+      if (querySuggestions.length >= MAX_QUERY_SUGGESTIONS) break;
+      addSuggestion(row.name);
+    }
+
+    // Tier 3: Matching capabilities that contain query tokens
+    const capSet = new Set<string>();
+    for (const r of matchingRows) {
       const caps = Array.isArray(r.capabilities) ? r.capabilities : [];
       for (const c of caps) {
-        if (typeof c === "string" && c.length > 0) {
+        if (typeof c === "string" && c.length >= 2) {
           const normalized = c.toLowerCase().trim();
-          if (normalized.length >= 2 && !/[^\w\s-]/.test(normalized)) {
-            capCounts.set(normalized, (capCounts.get(normalized) ?? 0) + 1);
+          if (normalized.includes(qLower) || qLower.includes(normalized)) {
+            capSet.add(c.trim());
           }
         }
       }
     }
+    const sortedCaps = [...capSet].sort((a, b) => a.length - b.length);
+    for (const cap of sortedCaps) {
+      if (querySuggestions.length >= MAX_QUERY_SUGGESTIONS) break;
+      addSuggestion(cap);
+    }
 
-    const dbTerms = [...capCounts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([term]) => term);
-
-    const terms =
-      dbTerms.length >= 3 ? dbTerms : [...new Set([...dbTerms, ...PREDEFINED_TERMS])];
-
-    const qDisplay = displayQuery(params.q.toLowerCase());
-    const seen = new Set<string>();
-    const querySuggestions: string[] = [];
-
-    for (const term of terms) {
-      const termDisplay = term.charAt(0).toUpperCase() + term.slice(1);
-      for (const tmpl of SUGGESTION_TEMPLATES) {
-        const phrase = tmpl(qDisplay, termDisplay);
-        const key = phrase.toLowerCase();
-        if (!seen.has(key) && phrase !== qDisplay) {
-          seen.add(key);
-          querySuggestions.push(phrase);
-          if (querySuggestions.length >= MAX_QUERY_SUGGESTIONS) break;
+    // Tier 3b: Matching protocols
+    const protoSet = new Set<string>();
+    for (const r of matchingRows) {
+      const protos = Array.isArray(r.protocols) ? r.protocols : [];
+      for (const p of protos) {
+        if (typeof p === "string" && p.length >= 2) {
+          protoSet.add(p);
         }
       }
+    }
+    for (const proto of protoSet) {
       if (querySuggestions.length >= MAX_QUERY_SUGGESTIONS) break;
+      addSuggestion(`${params.q} ${proto}`);
     }
 
     return NextResponse.json({

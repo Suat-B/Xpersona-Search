@@ -6,6 +6,7 @@ import Link from "next/link";
 import { HomeThemePicker } from "@/components/home/HomeThemePicker";
 import { SearchSuggestions, type SearchSuggestionsHandle, type SuggestionAgent } from "@/components/search/SearchSuggestions";
 import { applyPreset, HOME_ACCENT_STORAGE_KEY, type ThemePresetId } from "@/lib/theme-presets";
+import { addRecentSearch } from "@/lib/search-history";
 
 interface GoogleStyleHomeProps {
   isAuthenticated?: boolean;
@@ -32,6 +33,7 @@ export function GoogleStyleHome({
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (query.trim()) {
+      addRecentSearch(query.trim());
       router.push(`/?q=${encodeURIComponent(query.trim())}`);
     }
   };
@@ -44,13 +46,19 @@ export function GoogleStyleHome({
     router.push(`/agent/${agent.slug}`);
   };
 
+  const handleQuerySelect = (text: string) => {
+    setQuery(text);
+    addRecentSearch(text.trim());
+    router.push(`/?q=${encodeURIComponent(text.trim())}`);
+  };
+
   const handleFocus = () => {
     if (blurTimeoutRef.current) {
       clearTimeout(blurTimeoutRef.current);
       blurTimeoutRef.current = undefined;
     }
     setIsFocused(true);
-    if (query.length >= 2) setShowSuggestions(true);
+    setShowSuggestions(true);
   };
 
   const handleBlur = () => {
@@ -65,8 +73,8 @@ export function GoogleStyleHome({
   };
 
   useEffect(() => {
-    if (query.length >= 2 && isFocused) setShowSuggestions(true);
-    else if (query.length < 2) setShowSuggestions(false);
+    if (isFocused) setShowSuggestions(true);
+    else setShowSuggestions(false);
   }, [query, isFocused]);
 
   useEffect(() => {
@@ -186,6 +194,7 @@ export function GoogleStyleHome({
               ref={suggestionsRef}
               query={query}
               onSelect={handleSuggestionSelect}
+              onQuerySelect={handleQuerySelect}
               onClose={() => setShowSuggestions(false)}
               anchorRef={searchAnchorRef}
               visible={showSuggestions}
@@ -216,9 +225,6 @@ export function GoogleStyleHome({
             Xpersona
           </Link>
           <nav className="flex gap-4 sm:gap-6 text-sm text-[var(--text-tertiary)] shrink-0">
-            <Link href="/docs" className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded">
-              Docs
-            </Link>
             <Link href="/search-api" className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded">
               API
             </Link>

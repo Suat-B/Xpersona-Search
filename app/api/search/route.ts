@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { ZodError } from "zod";
 import { db } from "@/lib/db";
-import { agents } from "@/lib/db/schema";
+import { agents, searchQueries } from "@/lib/db/schema";
 import { and, eq, gte, desc, sql, SQL } from "drizzle-orm";
 
 function escapeLike(s: string): string {
@@ -107,6 +107,19 @@ async function getFacets(conditions: SQL[]) {
   return { protocols };
 }
 
+function trackSearchQuery(query: string) {
+  const normalized = query.toLowerCase().trim();
+  if (normalized.length < 2 || normalized.length > 200) return;
+  db.execute(
+    sql`INSERT INTO search_queries (id, query, normalized_query, count, last_searched_at, created_at)
+        VALUES (gen_random_uuid(), ${query.trim()}, ${normalized}, 1, now(), now())
+        ON CONFLICT (normalized_query)
+        DO UPDATE SET count = search_queries.count + 1,
+                      last_searched_at = now(),
+                      query = CASE WHEN length(${query.trim()}) > 0 THEN ${query.trim()} ELSE search_queries.query END`
+  ).catch((err) => console.error("[Search Track] Error:", err));
+}
+
 export async function GET(req: NextRequest) {
   let params: SearchParams;
   try {
@@ -125,6 +138,8 @@ export async function GET(req: NextRequest) {
     const filterConditions = buildConditions(params);
     const qTrim = params.q?.trim();
     const useRelevance = !!qTrim && params.sort === "rank";
+
+    if (qTrim) trackSearchQuery(qTrim);
 
     const conditions: SQL[] = [...filterConditions];
     if (qTrim) {
