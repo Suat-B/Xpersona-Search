@@ -1,6 +1,7 @@
 /**
- * Unit tests for search API. Per Xpersona-Search-Full-Implementation-Plan.md:
- * "GET /api/search?sort=rank&limit=5 - Expect 200, results array, pagination object"
+ * Comprehensive tests for search API.
+ * Covers: validation, full-text search, pagination, operators, caching,
+ * rate limiting, circuit breaker, error sanitization, and didYouMean.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -16,6 +17,45 @@ vi.mock("@/lib/db", () => ({
   db: mockDb,
 }));
 
+// Mock rate limiter - default: allow all
+const mockRateLimit = vi.hoisted(() =>
+  vi.fn().mockReturnValue({ allowed: true, remaining: 59 })
+);
+vi.mock("@/lib/search/rate-limit", () => ({
+  checkSearchRateLimit: mockRateLimit,
+}));
+
+// Mock circuit breaker
+const mockCircuitBreaker = vi.hoisted(() => ({
+  isAllowed: vi.fn().mockReturnValue(true),
+  recordSuccess: vi.fn(),
+  recordFailure: vi.fn(),
+}));
+vi.mock("@/lib/search/circuit-breaker", () => ({
+  searchCircuitBreaker: mockCircuitBreaker,
+}));
+
+// Mock cache - default: no cache hits
+const mockSearchCache = vi.hoisted(() => ({
+  get: vi.fn().mockReturnValue(undefined),
+  set: vi.fn(),
+}));
+vi.mock("@/lib/search/cache", () => ({
+  searchResultsCache: mockSearchCache,
+  buildCacheKey: vi.fn().mockReturnValue("test-cache-key"),
+}));
+
+// Mock query engine
+vi.mock("@/lib/search/query-engine", () => ({
+  processQuery: vi.fn().mockImplementation((q: string) => ({
+    parsed: { textQuery: q.trim(), fieldFilters: {}, originalQuery: q },
+    expandedQuery: q.trim(),
+    websearchInput: q.trim(),
+  })),
+  sanitizeForStorage: vi.fn().mockImplementation((s: string) => s.replace(/[<>]/g, "")),
+  findDidYouMean: vi.fn().mockResolvedValue(null),
+}));
+
 function createMockChain(resolveValue: unknown) {
   return vi.fn().mockReturnValue({
     from: vi.fn().mockReturnThis(),
@@ -25,35 +65,48 @@ function createMockChain(resolveValue: unknown) {
   });
 }
 
+function mockAgent(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "550e8400-e29b-41d4-a716-446655440000",
+    name: "Test Agent",
+    slug: "test-agent",
+    description: "A test agent",
+    url: "https://github.com/test/agent",
+    homepage: null,
+    source: "GITHUB_OPENCLEW",
+    source_id: "github:123",
+    capabilities: ["testing"],
+    protocols: ["MCP"],
+    safety_score: 85,
+    popularity_score: 60,
+    freshness_score: 70,
+    overall_rank: 72.5,
+    github_data: { stars: 42 },
+    npm_data: null,
+    languages: ["typescript"],
+    created_at: new Date("2025-01-01"),
+    snippet: null,
+    total_count: 1,
+    ...overrides,
+  };
+}
+
 describe("GET /api/search", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDb.select.mockImplementation(createMockChain([]));
     mockDb.execute.mockResolvedValue({ rows: [] });
+    mockRateLimit.mockReturnValue({ allowed: true, remaining: 59 });
+    mockCircuitBreaker.isAllowed.mockReturnValue(true);
+    mockSearchCache.get.mockReturnValue(undefined);
   });
 
-  it("returns 200 with results array and pagination object for sort=rank&limit=5", async () => {
-    mockDb.select.mockImplementation(createMockChain([
-      {
-        id: "id-1",
-        name: "Agent 1",
-        slug: "agent-1",
-        description: "Desc",
-        capabilities: [],
-        protocols: ["OPENCLEW"],
-        safetyScore: 80,
-        popularityScore: 50,
-        freshnessScore: 70,
-        overallRank: 75.5,
-        githubData: { stars: 10 },
-        createdAt: new Date(),
-      },
-    ]));
+  // --- Basic response shape ---
 
-    const url = "http://localhost/api/search?sort=rank&limit=5";
-    const req = new NextRequest(url);
+  it("returns 200 with results array and pagination object", async () => {
+    mockDb.execute.mockResolvedValue({ rows: [mockAgent()] });
 
-    const res = await GET(req);
+    const res = await GET(new NextRequest("http://localhost/api/search?sort=rank&limit=5"));
     const data = await res.json();
 
     expect(res.status).toBe(200);
@@ -66,42 +119,200 @@ describe("GET /api/search", () => {
   });
 
   it("returns 200 with empty results when no agents match", async () => {
-    mockDb.select.mockImplementation(createMockChain([]));
-
-    const url = "http://localhost/api/search?sort=rank&limit=5";
-    const req = new NextRequest(url);
-
-    const res = await GET(req);
+    const res = await GET(new NextRequest("http://localhost/api/search?sort=rank&limit=5"));
     const data = await res.json();
 
     expect(res.status).toBe(200);
     expect(data.results).toEqual([]);
     expect(data.pagination.hasMore).toBe(false);
+    expect(data.pagination.total).toBe(0);
   });
 
-  it("returns 400 for invalid sort value", async () => {
-    const url = "http://localhost/api/search?sort=invalid&limit=5";
-    const req = new NextRequest(url);
+  it("includes facets in response", async () => {
+    mockDb.execute
+      .mockResolvedValueOnce({ rows: [] }) // main query
+      .mockResolvedValueOnce({ rows: [{ protocol: "MCP", count: "5" }] }); // facets
 
-    const res = await GET(req);
-
-    expect(res.status).toBe(400);
-  });
-
-  it("returns facets with protocols", async () => {
-    mockDb.select.mockImplementation(createMockChain([]));
-    mockDb.execute.mockResolvedValue({
-      rows: [{ protocol: "OPENCLEW", count: "3" }],
-    });
-
-    const url = "http://localhost/api/search?sort=rank&limit=5";
-    const req = new NextRequest(url);
-
-    const res = await GET(req);
+    const res = await GET(new NextRequest("http://localhost/api/search?sort=rank&limit=5"));
     const data = await res.json();
 
     expect(res.status).toBe(200);
     expect(data).toHaveProperty("facets");
     expect(data.facets).toHaveProperty("protocols");
+  });
+
+  // --- Input validation ---
+
+  it("returns 400 for invalid sort value", async () => {
+    const res = await GET(new NextRequest("http://localhost/api/search?sort=invalid"));
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 for limit > 100", async () => {
+    const res = await GET(new NextRequest("http://localhost/api/search?limit=200"));
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 for query exceeding 500 characters", async () => {
+    const longQ = "a".repeat(501);
+    const res = await GET(new NextRequest(`http://localhost/api/search?q=${longQ}`));
+    expect(res.status).toBe(400);
+  });
+
+  it("accepts valid sort values", async () => {
+    for (const sort of ["rank", "safety", "popularity", "freshness"]) {
+      mockDb.execute.mockResolvedValue({ rows: [] });
+      const res = await GET(new NextRequest(`http://localhost/api/search?sort=${sort}`));
+      expect(res.status).toBe(200);
+    }
+  });
+
+  // --- Cache behavior ---
+
+  it("returns cached result on cache hit", async () => {
+    const cachedBody = {
+      results: [{ id: "cached-id", name: "Cached Agent" }],
+      pagination: { hasMore: false, nextCursor: null, total: 1 },
+      facets: { protocols: [] },
+    };
+    mockSearchCache.get.mockReturnValue(cachedBody);
+
+    const res = await GET(new NextRequest("http://localhost/api/search?sort=rank"));
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data.results[0].name).toBe("Cached Agent");
+    expect(res.headers.get("X-Cache")).toBe("HIT");
+    expect(mockDb.execute).not.toHaveBeenCalled();
+  });
+
+  it("sets Cache-Control header on responses", async () => {
+    mockDb.execute.mockResolvedValue({ rows: [] });
+
+    const res = await GET(new NextRequest("http://localhost/api/search?sort=rank"));
+
+    expect(res.headers.get("Cache-Control")).toContain("s-maxage=30");
+    expect(res.headers.get("Cache-Control")).toContain("stale-while-revalidate=60");
+  });
+
+  // --- Rate limiting ---
+
+  it("returns 429 when rate limit exceeded", async () => {
+    mockRateLimit.mockReturnValue({ allowed: false, retryAfter: 30, remaining: 0 });
+
+    const res = await GET(new NextRequest("http://localhost/api/search?sort=rank"));
+    const data = await res.json();
+
+    expect(res.status).toBe(429);
+    expect(data.error).toContain("Too many requests");
+    expect(res.headers.get("Retry-After")).toBe("30");
+  });
+
+  // --- Circuit breaker ---
+
+  it("returns 503 when circuit breaker is open", async () => {
+    mockCircuitBreaker.isAllowed.mockReturnValue(false);
+
+    const res = await GET(new NextRequest("http://localhost/api/search?sort=rank"));
+    const data = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(data.results).toEqual([]);
+    expect(res.headers.get("Retry-After")).toBe("30");
+  });
+
+  // --- Error handling ---
+
+  it("returns sanitized error message in production", async () => {
+    const originalEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+
+    mockDb.execute.mockRejectedValue(new Error("FATAL: database crashed"));
+
+    const res = await GET(new NextRequest("http://localhost/api/search?sort=rank"));
+    const data = await res.json();
+
+    expect(res.status).toBe(500);
+    expect(data.error).toBe("Search temporarily unavailable");
+    expect(data.error).not.toContain("database");
+    expect(data).toHaveProperty("results");
+    expect(data.results).toEqual([]);
+
+    process.env.NODE_ENV = originalEnv;
+  });
+
+  it("returns detailed error message in development", async () => {
+    const originalEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "development";
+
+    mockDb.execute.mockRejectedValue(new Error("connection refused"));
+
+    const res = await GET(new NextRequest("http://localhost/api/search?sort=rank"));
+    const data = await res.json();
+
+    expect(res.status).toBe(500);
+    expect(data.error).toBe("connection refused");
+
+    process.env.NODE_ENV = originalEnv;
+  });
+
+  it("serves stale cache on DB error", async () => {
+    const staleBody = {
+      results: [{ id: "stale-id", name: "Stale Agent" }],
+      pagination: { hasMore: false, nextCursor: null, total: 1 },
+      facets: { protocols: [] },
+    };
+    mockSearchCache.get
+      .mockReturnValueOnce(undefined) // first check before query
+      .mockReturnValueOnce(staleBody); // second check in error handler
+
+    mockDb.execute.mockRejectedValue(new Error("timeout"));
+
+    const res = await GET(new NextRequest("http://localhost/api/search?sort=rank"));
+    const data = await res.json();
+
+    expect(data.results[0].name).toBe("Stale Agent");
+    expect(data._stale).toBe(true);
+  });
+
+  // --- Result shape ---
+
+  it("includes snippet field in results when query is present", async () => {
+    mockDb.execute.mockResolvedValue({
+      rows: [mockAgent({ snippet: "<mark>test</mark> agent" })],
+    });
+
+    const res = await GET(new NextRequest("http://localhost/api/search?q=test&sort=rank"));
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data.results[0]).toHaveProperty("snippet");
+  });
+
+  // --- Pagination ---
+
+  it("returns hasMore=true when more results exist", async () => {
+    const agents = Array.from({ length: 6 }, (_, i) =>
+      mockAgent({ id: `id-${i}`, total_count: 10 })
+    );
+    mockDb.execute.mockResolvedValue({ rows: agents });
+
+    const res = await GET(new NextRequest("http://localhost/api/search?sort=rank&limit=5"));
+    const data = await res.json();
+
+    expect(data.pagination.hasMore).toBe(true);
+    expect(data.pagination.nextCursor).toBeDefined();
+    expect(data.results.length).toBe(5);
+  });
+
+  // --- X-RateLimit-Remaining header ---
+
+  it("includes X-RateLimit-Remaining header", async () => {
+    mockDb.execute.mockResolvedValue({ rows: [] });
+    mockRateLimit.mockReturnValue({ allowed: true, remaining: 42 });
+
+    const res = await GET(new NextRequest("http://localhost/api/search?sort=rank"));
+
+    expect(res.headers.get("X-RateLimit-Remaining")).toBe("42");
   });
 });

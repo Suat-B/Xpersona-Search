@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import { db } from "@/lib/db";
 import { agents, searchQueries } from "@/lib/db/schema";
 import { and, eq, desc, sql, SQL, ilike } from "drizzle-orm";
+import { PROTOCOL_LABELS } from "@/components/search/ProtocolBadge";
+import { suggestCache, buildCacheKey } from "@/lib/search/cache";
+import { checkSearchRateLimit } from "@/lib/search/rate-limit";
+import { suggestCircuitBreaker } from "@/lib/search/circuit-breaker";
+import { sanitizeForStorage } from "@/lib/search/query-engine";
 
 const SuggestSchema = z.object({
   q: z
@@ -34,18 +38,33 @@ const DESC_TRUNCATE = 80;
 const MAX_QUERY_SUGGESTIONS = 8;
 const MAX_AGENT_SUGGESTIONS = 3;
 
-/** Stopwords: never suggest these as standalone completions (substrings of queries). */
 const STOPWORDS = new Set([
   "a", "an", "and", "be", "for", "in", "is", "it", "of", "on", "or", "the", "to",
 ]);
 
-/** Incomplete phrases like "figma for" or "trading for" - ends with stopword, no completion. */
 function isIncompletePhrase(text: string): boolean {
   const last = text.trim().toLowerCase().split(/\s+/).pop() ?? "";
   return STOPWORDS.has(last);
 }
 
+function sanitizeError(err: unknown): string {
+  if (process.env.NODE_ENV !== "production" && err instanceof Error) return err.message;
+  return "Suggest temporarily unavailable";
+}
+
 export async function GET(req: NextRequest) {
+  // Rate limiting
+  const rlResult = await checkSearchRateLimit(req);
+  if (!rlResult.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests. Please try again later." },
+      {
+        status: 429,
+        headers: { "Retry-After": String(rlResult.retryAfter ?? 60) },
+      }
+    );
+  }
+
   let params: SuggestParams;
   try {
     params = SuggestSchema.parse(Object.fromEntries(req.nextUrl.searchParams));
@@ -55,6 +74,27 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: msg }, { status: 400 });
     }
     throw err;
+  }
+
+  // Sanitize input
+  params = { ...params, q: sanitizeForStorage(params.q) };
+
+  // Cache check
+  const cacheKey = buildCacheKey({ endpoint: "suggest", q: params.q, limit: params.limit });
+  const cached = suggestCache.get(cacheKey);
+  if (cached) {
+    const response = NextResponse.json(cached);
+    response.headers.set("Cache-Control", "public, s-maxage=30, stale-while-revalidate=60");
+    response.headers.set("X-Cache", "HIT");
+    return response;
+  }
+
+  // Circuit breaker
+  if (!suggestCircuitBreaker.isAllowed()) {
+    return NextResponse.json(
+      { querySuggestions: [], agentSuggestions: [] },
+      { status: 503, headers: { "Retry-After": "15" } }
+    );
   }
 
   try {
@@ -78,9 +118,7 @@ export async function GET(req: NextRequest) {
 
     // --- Tier 2: Agent name prefix completions ---
     const nameCompletionRows = await db
-      .select({
-        name: agents.name,
-      })
+      .select({ name: agents.name })
       .from(agents)
       .where(
         and(
@@ -91,7 +129,7 @@ export async function GET(req: NextRequest) {
       .orderBy(desc(agents.overallRank))
       .limit(10);
 
-    // --- Tier 3: Capability/protocol completions matching the query ---
+    // --- Tier 3: Capability/protocol completions ---
     const prefixQuery = toPrefixTsQuery(params.q);
     const pattern = `%${esc}%`;
 
@@ -127,7 +165,6 @@ export async function GET(req: NextRequest) {
       .orderBy(desc(agents.overallRank), desc(agents.createdAt))
       .limit(30);
 
-    // Build agent suggestions (top 3)
     const agentSuggestions = matchingRows.slice(0, MAX_AGENT_SUGGESTIONS).map((r) => ({
       id: r.id,
       name: r.name,
@@ -140,7 +177,6 @@ export async function GET(req: NextRequest) {
       protocols: Array.isArray(r.protocols) ? r.protocols : [],
     }));
 
-    // Build query suggestions - merge all tiers with deduplication
     const seen = new Set<string>();
     const querySuggestions: string[] = [];
 
@@ -154,19 +190,16 @@ export async function GET(req: NextRequest) {
       querySuggestions.push(text.trim());
     };
 
-    // Tier 1: Popular searches first (highest signal)
     for (const row of popularCompletions) {
       if (querySuggestions.length >= MAX_QUERY_SUGGESTIONS) break;
       addSuggestion(row.query);
     }
 
-    // Tier 2: Agent names as completions
     for (const row of nameCompletionRows) {
       if (querySuggestions.length >= MAX_QUERY_SUGGESTIONS) break;
       addSuggestion(row.name);
     }
 
-    // Tier 3: Capabilities that extend/complete the query (exclude substrings already in query)
     const capSet = new Set<string>();
     for (const r of matchingRows) {
       const caps = Array.isArray(r.capabilities) ? r.capabilities : [];
@@ -185,7 +218,6 @@ export async function GET(req: NextRequest) {
       addSuggestion(cap);
     }
 
-    // Tier 3b: Matching protocols
     const protoSet = new Set<string>();
     for (const r of matchingRows) {
       const protos = Array.isArray(r.protocols) ? r.protocols : [];
@@ -197,17 +229,36 @@ export async function GET(req: NextRequest) {
     }
     for (const proto of protoSet) {
       if (querySuggestions.length >= MAX_QUERY_SUGGESTIONS) break;
-      addSuggestion(`${params.q} ${proto}`);
+      const label = PROTOCOL_LABELS[proto] ?? proto;
+      addSuggestion(`${params.q} ${label}`);
     }
 
-    return NextResponse.json({
+    suggestCircuitBreaker.recordSuccess();
+
+    const responseBody = {
       querySuggestions: querySuggestions.slice(0, MAX_QUERY_SUGGESTIONS),
       agentSuggestions,
-    });
+    };
+
+    suggestCache.set(cacheKey, responseBody);
+
+    const response = NextResponse.json(responseBody);
+    response.headers.set("Cache-Control", "public, s-maxage=30, stale-while-revalidate=60");
+    response.headers.set("X-Cache", "MISS");
+    return response;
   } catch (err) {
     console.error("[Search Suggest] Error:", err);
+    suggestCircuitBreaker.recordFailure();
+
+    const stale = suggestCache.get(cacheKey);
+    if (stale) {
+      const response = NextResponse.json(stale);
+      response.headers.set("X-Cache", "STALE");
+      return response;
+    }
+
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Suggest failed" },
+      { error: sanitizeError(err), querySuggestions: [], agentSuggestions: [] },
       { status: 500 }
     );
   }

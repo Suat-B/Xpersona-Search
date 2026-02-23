@@ -151,3 +151,22 @@ export const crawlJobs = pgTable(
     index("crawl_jobs_created_at_idx").on(table.createdAt),
   ]
 );
+
+/** Click tracking for learning-to-rank CTR signals */
+export const searchClicks = pgTable(
+  "search_clicks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    queryHash: varchar("query_hash", { length: 32 }).notNull(),
+    agentId: uuid("agent_id").notNull(),
+    position: integer("position").notNull().default(0),
+    userId: uuid("user_id"),
+    clickedAt: timestamp("clicked_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("search_clicks_query_hash_idx").on(table.queryHash),
+    index("search_clicks_agent_id_idx").on(table.agentId),
+    index("search_clicks_clicked_at_idx").on(table.clickedAt),
+    index("search_clicks_agent_date_idx").on(table.agentId, table.clickedAt),
+  ]
+);
