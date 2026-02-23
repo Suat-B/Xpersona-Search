@@ -91,7 +91,7 @@ export function GoogleStyleHome({
     : null;
 
   return (
-    <div className="h-screen min-h-dvh flex flex-col overflow-x-hidden overflow-hidden bg-[var(--bg-deep)]">
+    <div className="min-h-dvh flex flex-col overflow-x-hidden bg-[var(--bg-deep)]">
       <div className="fixed inset-0 pointer-events-none">
         {bgImage && (
           <>
@@ -130,7 +130,7 @@ export function GoogleStyleHome({
         )}
       </header>
 
-      <main className="relative flex-1 flex flex-col items-center justify-center px-4 sm:px-6 -mt-16 sm:-mt-24 md:-mt-28 z-10 overflow-y-auto py-6 sm:py-0">
+      <main className="relative z-10 flex flex-1 flex-col items-center justify-start px-4 py-5 sm:px-6 sm:py-0 sm:justify-center sm:-mt-24 md:-mt-28 overflow-y-auto overscroll-contain">
         <Link
           href="/"
           className="mb-6 sm:mb-8 group block text-center home-logo-link"

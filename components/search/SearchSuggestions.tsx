@@ -514,7 +514,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
     return (
       <div
         id={id}
-        className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-xl overflow-hidden max-h-[min(420px,60vh)] overflow-y-auto"
+        className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-xl overflow-hidden max-h-[min(52vh,360px)] sm:max-h-[min(420px,60vh)] overflow-y-auto overscroll-contain"
         role="listbox"
         aria-expanded={visible}
         aria-label="Search suggestions"
