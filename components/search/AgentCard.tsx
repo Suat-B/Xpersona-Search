@@ -75,8 +75,6 @@ export function AgentCard({ agent, rank }: Props) {
             <SafetyBadge score={agent.safetyScore} />
             <span className="text-[var(--text-quaternary)]">·</span>
             <span className="text-[var(--text-tertiary)]">{popularityLabel}</span>
-            <span className="text-[var(--text-quaternary)]">·</span>
-            <span className="text-[var(--text-tertiary)]">Rank: {agent.overallRank.toFixed(1)}/100</span>
           </div>
         </div>
         <Link

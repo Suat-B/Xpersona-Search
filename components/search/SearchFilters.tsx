@@ -1,9 +1,6 @@
 "use client";
 
 interface Props {
-  facets?: { protocols?: Array<{ protocol: string[]; count: number }> };
-  selectedProtocols: string[];
-  onProtocolChange: (p: string[]) => void;
   minSafety: number;
   onSafetyChange: (n: number) => void;
   sort: string;
@@ -11,57 +8,13 @@ interface Props {
 }
 
 export function SearchFilters({
-  facets,
-  selectedProtocols,
-  onProtocolChange,
   minSafety,
   onSafetyChange,
   sort,
   onSortChange,
 }: Props) {
-  const protocolList = ["A2A", "MCP", "ANP", "OPENCLEW"];
-  const protocolCounts = new Map<string, number>(
-    (facets?.protocols ?? []).flatMap((f) =>
-      (f.protocol ?? []).map((p) => [p, f.count] as const)
-    )
-  );
-
-  const toggleProtocol = (p: string) => {
-    if (selectedProtocols.includes(p)) {
-      onProtocolChange(selectedProtocols.filter((x) => x !== p));
-    } else {
-      onProtocolChange([...selectedProtocols, p]);
-    }
-  };
-
   return (
     <div className="neural-glass neural-glass-hover p-4 rounded-xl border border-[var(--border)] space-y-6">
-      <div>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-2">Protocol</h3>
-        <div className="flex flex-wrap gap-2">
-          {protocolList.map((p) => {
-            const count = protocolCounts.get(p);
-            return (
-              <button
-                key={p}
-                type="button"
-                onClick={() => toggleProtocol(p)}
-                aria-pressed={selectedProtocols.includes(p)}
-                aria-label={`Filter by ${p}${count != null ? `, ${count} results` : ""}`}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 border focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] hover:-translate-y-0.5 ${
-                  selectedProtocols.includes(p)
-                    ? "bg-[var(--accent-heart)] text-white border-[var(--accent-heart)]"
-                    : "bg-[var(--bg-elevated)] text-[var(--text-tertiary)] border-[var(--border)] hover:border-[var(--accent-heart)]/40 hover:text-[var(--text-secondary)]"
-                }`}
-              >
-                {p}
-                {count != null ? ` (${count})` : ""}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
       <div>
         <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-2">
           Min Safety

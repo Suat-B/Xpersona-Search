@@ -36,6 +36,10 @@ export const agents = pgTable(
     protocols: jsonb("protocols").$type<string[]>().default([]),
     languages: jsonb("languages").$type<string[]>().default([]),
 
+    // Cross-source deduplication
+    canonicalAgentId: uuid("canonical_agent_id"),
+    aliases: jsonb("aliases").$type<string[]>().default([]),
+
     // Source-specific data
     githubData: jsonb("github_data").$type<{
       stars?: number;
@@ -73,6 +77,25 @@ export const agents = pgTable(
     uniqueIndex("agents_slug_idx").on(table.slug),
     index("agents_status_idx").on(table.status),
     index("agents_overall_rank_idx").on(table.overallRank),
+  ]
+);
+
+/** Search engine: URL frontier for recursive discovery */
+export const crawlFrontier = pgTable(
+  "crawl_frontier",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    url: varchar("url", { length: 2048 }).notNull().unique(),
+    discoveredFrom: uuid("discovered_from"),
+    priority: integer("priority").notNull().default(0),
+    status: varchar("status", { length: 20 }).notNull().default("PENDING"),
+    attempts: integer("attempts").notNull().default(0),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("crawl_frontier_status_idx").on(table.status),
+    index("crawl_frontier_priority_idx").on(table.priority),
   ]
 );
 

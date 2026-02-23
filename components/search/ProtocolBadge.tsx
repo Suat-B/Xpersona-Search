@@ -10,11 +10,21 @@ const COLORS: Record<string, string> = {
   CUSTOM: "bg-[var(--text-quaternary)]/20 text-[var(--text-tertiary)] border-[var(--border)]",
 };
 
+/** Display label for protocol IDs (e.g. OPENCLEW → OpenClaw). Use for filters, badges, etc. */
+export const PROTOCOL_LABELS: Record<string, string> = {
+  OPENCLEW: "OpenClaw",
+  A2A: "A2A",
+  MCP: "MCP",
+  ANP: "ANP",
+  CUSTOM: "Custom",
+};
+
 export function ProtocolBadge({ protocol }: Props) {
   const cls = COLORS[protocol] ?? "bg-[var(--bg-elevated)] text-[var(--text-tertiary)] border-[var(--border)]";
+  const label = PROTOCOL_LABELS[protocol] ?? protocol;
   return (
     <span className={`px-2 py-0.5 rounded text-xs font-medium border ${cls}`}>
-      {protocol}
+      {label}
     </span>
   );
 }

@@ -5,7 +5,9 @@
  *
  * Run: npx tsx scripts/run-crawl.ts [maxResults]
  *      npx tsx scripts/run-crawl.ts 100k  (100k-scale: aggressive limits)
+ *      npx tsx scripts/run-crawl.ts 250k  (250k-scale: maximum expansion)
  *      npx tsx scripts/run-crawl.ts 100k --sources=GITHUB_MCP,CLAWHUB  (run only these)
+ *      npx tsx scripts/run-crawl.ts 100k --parallel  (run all buckets in parallel)
  *
  * Requires: DATABASE_URL, GITHUB_TOKEN (for GitHub sources)
  */
@@ -13,13 +15,17 @@ import { config } from "dotenv";
 
 config({ path: ".env.local" });
 
+import { runCrawlPool, type CrawlTask, type CrawlResult } from "@/lib/search/crawlers/pool";
+
 const args = process.argv.slice(2);
 const maxArg = args.find((a) => !a.startsWith("--"));
 const sourcesArg = args.find((a) => a.startsWith("--sources="));
+const parallelMode = args.includes("--parallel");
 
 const arg = maxArg ?? "1500";
-const fullScale = arg === "100k" || arg === "100000" || parseInt(arg, 10) >= 50000;
-const maxResults = fullScale ? 100000 : parseInt(arg, 10) || 1500;
+const scale250k = arg === "250k" || arg === "250000" || parseInt(arg, 10) >= 200000;
+const fullScale = scale250k || arg === "100k" || arg === "100000" || parseInt(arg, 10) >= 50000;
+const maxResults = scale250k ? 250000 : fullScale ? 100000 : parseInt(arg, 10) || 1500;
 
 const selectedSources = sourcesArg
   ? new Set(
@@ -35,58 +41,77 @@ if (fullScale) {
   process.env.CRAWL_BROAD_MODE = "1";
 }
 
-const limits = fullScale
+const limits = scale250k
   ? {
-      openClaw: 2000,
-      mcp: 800,
-      clawhub: 10000,
-      githubRepos: 15000,
-      mcpRegistry: 1000,
-      a2a: 500,
-      pypi: 5000,
-      npm: 5000,
+      openClaw: 5000,
+      mcp: 2000,
+      clawhub: 15000,
+      githubRepos: 30000,
+      mcpRegistry: 2000,
+      a2a: 1000,
+      pypi: 15000,
+      npm: 15000,
       curated: 5000,
-      huggingface: 20000,
-      docker: 2000,
-      agentscape: 500,
-      replicate: 3000,
+      huggingface: 50000,
+      docker: 5000,
+      agentscape: 1000,
+      replicate: 5000,
+      awesomeLists: 10000,
+      smithery: 5000,
+      langchainHub: 5000,
+      crewai: 3000,
+      vercelTemplates: 2000,
+      ollama: 3000,
     }
-  : {
-      openClaw: maxResults,
-      mcp: 400,
-      clawhub: 5000,
-      githubRepos: 2000,
-      mcpRegistry: 500,
-      a2a: 200,
-      pypi: 500,
-      npm: 250,
-      curated: 2000,
-      huggingface: 2000,
-      docker: 300,
-      agentscape: 200,
-      replicate: 500,
-    };
+  : fullScale
+    ? {
+        openClaw: 2000,
+        mcp: 800,
+        clawhub: 10000,
+        githubRepos: 15000,
+        mcpRegistry: 1000,
+        a2a: 500,
+        pypi: 5000,
+        npm: 5000,
+        curated: 5000,
+        huggingface: 20000,
+        docker: 2000,
+        agentscape: 500,
+        replicate: 3000,
+        awesomeLists: 5000,
+        smithery: 2000,
+        langchainHub: 2000,
+        crewai: 1000,
+        vercelTemplates: 1000,
+        ollama: 1000,
+      }
+    : {
+        openClaw: maxResults,
+        mcp: 400,
+        clawhub: 5000,
+        githubRepos: 2000,
+        mcpRegistry: 500,
+        a2a: 200,
+        pypi: 500,
+        npm: 250,
+        curated: 2000,
+        huggingface: 2000,
+        docker: 300,
+        agentscape: 200,
+        replicate: 500,
+        awesomeLists: 2000,
+        smithery: 500,
+        langchainHub: 500,
+        crewai: 300,
+        vercelTemplates: 200,
+        ollama: 500,
+      };
 
 function log(source: string, msg: string, ...rest: unknown[]) {
   const ts = new Date().toISOString();
   let out = msg;
   for (const v of rest) out = out.replace(/%[sd]/, String(v));
   console.log(`[${ts}] [${source}]`, out);
-}
-
-type CrawlResult = { source: string; total: number; error?: string };
-
-async function runCrawler(
-  source: string,
-  fn: () => Promise<{ total: number }>
-): Promise<CrawlResult> {
-  try {
-    const r = await fn();
-    return { source, total: r.total };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { source, total: 0, error: msg };
-  }
 }
 
 function shouldRun(source: string): boolean {
@@ -100,121 +125,219 @@ async function main() {
     process.exit(1);
   }
 
-  const results: CrawlResult[] = [];
+  const scaleLabel = scale250k ? "250k" : fullScale ? "100k" : `${maxResults}`;
+  log("CRAWL", `Starting ${scaleLabel}-scale crawl (parallel=${parallelMode})\n`);
 
-  if (fullScale) log("CRAWL", "100k-scale CRAWL_BROAD_MODE=1, aggressive limits\n");
+  const tasks: CrawlTask[] = [];
 
   if (process.env.GITHUB_TOKEN) {
     if (shouldRun("GITHUB_OPENCLEW")) {
-      const { crawlOpenClawSkills } = await import("@/lib/search/crawlers/github-openclaw");
-      log("GITHUB_OPENCLEW", "Starting (max=%d)...", limits.openClaw);
-      const r = await runCrawler("GITHUB_OPENCLEW", () =>
-        crawlOpenClawSkills(undefined, limits.openClaw)
-      );
-      results.push(r);
-      if (r.error) log("GITHUB_OPENCLEW", "Failed:", r.error);
-      else log("GITHUB_OPENCLEW", "Crawled %d", r.total);
+      tasks.push({
+        source: "GITHUB_OPENCLEW",
+        bucket: "github",
+        fn: async () => {
+          const { crawlOpenClawSkills } = await import("@/lib/search/crawlers/github-openclaw");
+          return crawlOpenClawSkills(undefined, limits.openClaw);
+        },
+      });
     }
     if (shouldRun("GITHUB_MCP")) {
-      const { crawlGitHubMCP } = await import("@/lib/search/crawlers/github-mcp");
-      log("GITHUB_MCP", "Starting (max=%d)...", limits.mcp);
-      const r = await runCrawler("GITHUB_MCP", () => crawlGitHubMCP(undefined, limits.mcp));
-      results.push(r);
-      if (r.error) log("GITHUB_MCP", "Failed:", r.error);
-      else log("GITHUB_MCP", "Crawled %d", r.total);
+      tasks.push({
+        source: "GITHUB_MCP",
+        bucket: "github",
+        fn: async () => {
+          const { crawlGitHubMCP } = await import("@/lib/search/crawlers/github-mcp");
+          return crawlGitHubMCP(undefined, limits.mcp);
+        },
+      });
     }
     if (shouldRun("CLAWHUB")) {
-      const { crawlClawHub } = await import("@/lib/search/crawlers/clawhub");
-      log("CLAWHUB", "Starting (max=%d)...", limits.clawhub);
-      const r = await runCrawler("CLAWHUB", () => crawlClawHub(limits.clawhub));
-      results.push(r);
-      if (r.error) log("CLAWHUB", "Failed:", r.error);
-      else log("CLAWHUB", "Crawled %d", r.total);
+      tasks.push({
+        source: "CLAWHUB",
+        bucket: "github",
+        fn: async () => {
+          const { crawlClawHub } = await import("@/lib/search/crawlers/clawhub");
+          return crawlClawHub(limits.clawhub);
+        },
+      });
     }
     if (shouldRun("GITHUB_REPOS")) {
-      const { crawlGitHubRepos } = await import("@/lib/search/crawlers/github-repos");
-      log("GITHUB_REPOS", "Starting (max=%d)...", limits.githubRepos);
-      const r = await runCrawler("GITHUB_REPOS", () => crawlGitHubRepos(limits.githubRepos));
-      results.push(r);
-      if (r.error) log("GITHUB_REPOS", "Failed:", r.error);
-      else log("GITHUB_REPOS", "Crawled %d", r.total);
+      tasks.push({
+        source: "GITHUB_REPOS",
+        bucket: "github",
+        fn: async () => {
+          const { crawlGitHubRepos } = await import("@/lib/search/crawlers/github-repos");
+          return crawlGitHubRepos(limits.githubRepos);
+        },
+      });
     }
   } else if (shouldRun("GITHUB_OPENCLEW") || shouldRun("GITHUB_MCP") || shouldRun("CLAWHUB") || shouldRun("GITHUB_REPOS")) {
     log("CRAWL", "GITHUB_TOKEN not set — skipping GitHub crawlers");
   }
 
   if (shouldRun("MCP_REGISTRY")) {
-    const { crawlMcpRegistry } = await import("@/lib/search/crawlers/mcp-registry");
-    log("MCP_REGISTRY", "Starting (max=%d)...", limits.mcpRegistry);
-    const r = await runCrawler("MCP_REGISTRY", () => crawlMcpRegistry(limits.mcpRegistry));
-    results.push(r);
-    if (r.error) log("MCP_REGISTRY", "Failed:", r.error);
-    else log("MCP_REGISTRY", "Crawled %d", r.total);
+    tasks.push({
+      source: "MCP_REGISTRY",
+      bucket: "registry",
+      fn: async () => {
+        const { crawlMcpRegistry } = await import("@/lib/search/crawlers/mcp-registry");
+        return crawlMcpRegistry(limits.mcpRegistry);
+      },
+    });
   }
   if (shouldRun("A2A_REGISTRY")) {
-    const { crawlA2ARegistry } = await import("@/lib/search/crawlers/a2a-registry");
-    log("A2A_REGISTRY", "Starting (max=%d)...", limits.a2a);
-    const r = await runCrawler("A2A_REGISTRY", () => crawlA2ARegistry(limits.a2a));
-    results.push(r);
-    if (r.error) log("A2A_REGISTRY", "Failed:", r.error);
-    else log("A2A_REGISTRY", "Crawled %d", r.total);
-  }
-  if (shouldRun("PYPI")) {
-    const { crawlPypiPackages } = await import("@/lib/search/crawlers/pypi");
-    log("PYPI", "Starting (max=%d)...", limits.pypi);
-    const r = await runCrawler("PYPI", () => crawlPypiPackages(limits.pypi));
-    results.push(r);
-    if (r.error) log("PYPI", "Failed:", r.error);
-    else log("PYPI", "Crawled %d", r.total);
-  }
-  if (shouldRun("NPM")) {
-    const { crawlNpmPackages } = await import("@/lib/search/crawlers/npm");
-    log("NPM", "Starting (max=%d)...", limits.npm);
-    const r = await runCrawler("NPM", () => crawlNpmPackages(limits.npm));
-    results.push(r);
-    if (r.error) log("NPM", "Failed:", r.error);
-    else log("NPM", "Crawled %d", r.total);
-  }
-  if (shouldRun("CURATED_SEEDS")) {
-    const { crawlCuratedSeeds } = await import("@/lib/search/crawlers/curated-seeds");
-    log("CURATED_SEEDS", "Starting (max=%d)...", limits.curated);
-    const r = await runCrawler("CURATED_SEEDS", () => crawlCuratedSeeds(limits.curated));
-    results.push(r);
-    if (r.error) log("CURATED_SEEDS", "Failed:", r.error);
-    else log("CURATED_SEEDS", "Crawled %d", r.total);
-  }
-  if (shouldRun("HUGGINGFACE")) {
-    const { crawlHuggingFaceSpaces } = await import("@/lib/search/crawlers/huggingface-spaces");
-    log("HUGGINGFACE", "Starting (max=%d)...", limits.huggingface);
-    const r = await runCrawler("HUGGINGFACE", () => crawlHuggingFaceSpaces(limits.huggingface));
-    results.push(r);
-    if (r.error) log("HUGGINGFACE", "Failed:", r.error);
-    else log("HUGGINGFACE", "Crawled %d", r.total);
-  }
-  if (shouldRun("DOCKER")) {
-    const { crawlDockerHub } = await import("@/lib/search/crawlers/docker-hub");
-    log("DOCKER", "Starting (max=%d)...", limits.docker);
-    const r = await runCrawler("DOCKER", () => crawlDockerHub(limits.docker));
-    results.push(r);
-    if (r.error) log("DOCKER", "Failed:", r.error);
-    else log("DOCKER", "Crawled %d", r.total);
+    tasks.push({
+      source: "A2A_REGISTRY",
+      bucket: "registry",
+      fn: async () => {
+        const { crawlA2ARegistry } = await import("@/lib/search/crawlers/a2a-registry");
+        return crawlA2ARegistry(limits.a2a);
+      },
+    });
   }
   if (shouldRun("AGENTSCAPE")) {
-    const { crawlAgentScape } = await import("@/lib/search/crawlers/agentscape");
-    log("AGENTSCAPE", "Starting (max=%d)...", limits.agentscape);
-    const r = await runCrawler("AGENTSCAPE", () => crawlAgentScape(limits.agentscape));
-    results.push(r);
-    if (r.error) log("AGENTSCAPE", "Failed:", r.error);
-    else log("AGENTSCAPE", "Crawled %d", r.total);
+    tasks.push({
+      source: "AGENTSCAPE",
+      bucket: "registry",
+      fn: async () => {
+        const { crawlAgentScape } = await import("@/lib/search/crawlers/agentscape");
+        return crawlAgentScape(limits.agentscape);
+      },
+    });
+  }
+  if (shouldRun("PYPI")) {
+    tasks.push({
+      source: "PYPI",
+      bucket: "package",
+      fn: async () => {
+        const { crawlPypiPackages } = await import("@/lib/search/crawlers/pypi");
+        return crawlPypiPackages(limits.pypi);
+      },
+    });
+  }
+  if (shouldRun("NPM")) {
+    tasks.push({
+      source: "NPM",
+      bucket: "package",
+      fn: async () => {
+        const { crawlNpmPackages } = await import("@/lib/search/crawlers/npm");
+        return crawlNpmPackages(limits.npm);
+      },
+    });
+  }
+  if (shouldRun("CURATED_SEEDS")) {
+    tasks.push({
+      source: "CURATED_SEEDS",
+      bucket: "github",
+      fn: async () => {
+        const { crawlCuratedSeeds } = await import("@/lib/search/crawlers/curated-seeds");
+        return crawlCuratedSeeds(limits.curated);
+      },
+    });
+  }
+  if (shouldRun("HUGGINGFACE")) {
+    tasks.push({
+      source: "HUGGINGFACE",
+      bucket: "platform",
+      fn: async () => {
+        const { crawlHuggingFaceSpaces } = await import("@/lib/search/crawlers/huggingface-spaces");
+        return crawlHuggingFaceSpaces(limits.huggingface);
+      },
+    });
+  }
+  if (shouldRun("DOCKER")) {
+    tasks.push({
+      source: "DOCKER",
+      bucket: "platform",
+      fn: async () => {
+        const { crawlDockerHub } = await import("@/lib/search/crawlers/docker-hub");
+        return crawlDockerHub(limits.docker);
+      },
+    });
   }
   if (shouldRun("REPLICATE")) {
-    const { crawlReplicate } = await import("@/lib/search/crawlers/replicate");
-    log("REPLICATE", "Starting (max=%d)...", limits.replicate);
-    const r = await runCrawler("REPLICATE", () => crawlReplicate(limits.replicate));
-    if (r.total > 0 || r.error) results.push(r);
-    if (r.error) log("REPLICATE", "Failed:", r.error);
-    else if (process.env.REPLICATE_API_TOKEN) log("REPLICATE", "Crawled %d", r.total);
+    tasks.push({
+      source: "REPLICATE",
+      bucket: "platform",
+      fn: async () => {
+        const { crawlReplicate } = await import("@/lib/search/crawlers/replicate");
+        return crawlReplicate(limits.replicate);
+      },
+    });
   }
+  if (shouldRun("AWESOME_LISTS")) {
+    tasks.push({
+      source: "AWESOME_LISTS",
+      bucket: "github",
+      fn: async () => {
+        const { crawlAwesomeLists } = await import("@/lib/search/crawlers/awesome-lists");
+        return crawlAwesomeLists(limits.awesomeLists);
+      },
+    });
+  }
+  if (shouldRun("SMITHERY")) {
+    tasks.push({
+      source: "SMITHERY",
+      bucket: "registry",
+      fn: async () => {
+        const { crawlSmithery } = await import("@/lib/search/crawlers/smithery");
+        return crawlSmithery(limits.smithery);
+      },
+    });
+  }
+  if (shouldRun("LANGCHAIN_HUB")) {
+    tasks.push({
+      source: "LANGCHAIN_HUB",
+      bucket: "platform",
+      fn: async () => {
+        const { crawlLangChainHub } = await import("@/lib/search/crawlers/langchain-hub");
+        return crawlLangChainHub(limits.langchainHub);
+      },
+    });
+  }
+  if (shouldRun("CREWAI")) {
+    tasks.push({
+      source: "CREWAI",
+      bucket: "github",
+      fn: async () => {
+        const { crawlCrewAI } = await import("@/lib/search/crawlers/crewai");
+        return crawlCrewAI(limits.crewai);
+      },
+    });
+  }
+  if (shouldRun("VERCEL_TEMPLATES")) {
+    tasks.push({
+      source: "VERCEL_TEMPLATES",
+      bucket: "platform",
+      fn: async () => {
+        const { crawlVercelTemplates } = await import("@/lib/search/crawlers/vercel-templates");
+        return crawlVercelTemplates(limits.vercelTemplates);
+      },
+    });
+  }
+  if (shouldRun("OLLAMA")) {
+    tasks.push({
+      source: "OLLAMA",
+      bucket: "platform",
+      fn: async () => {
+        const { crawlOllama } = await import("@/lib/search/crawlers/ollama");
+        return crawlOllama(limits.ollama);
+      },
+    });
+  }
+
+  if (tasks.length === 0) {
+    log("CRAWL", "No crawlers selected — nothing to do");
+    process.exit(0);
+  }
+
+  log("CRAWL", "Running %d crawlers across %d buckets...", tasks.length,
+    new Set(tasks.map((t) => t.bucket)).size);
+
+  const results = await runCrawlPool(tasks, (r) => {
+    if (r.error) log(r.source, "FAILED (%dms): %s", r.durationMs, r.error);
+    else log(r.source, "OK — %d agents (%dms)", r.total, r.durationMs);
+  });
 
   const total = results.reduce((s, r) => s + r.total, 0);
   const succeeded = results.filter((r) => !r.error);
@@ -222,11 +345,12 @@ async function main() {
 
   log("CRAWL", "\n--- Summary ---");
   log("CRAWL", "Total agents: %d", total);
+  log("CRAWL", "Succeeded: %d / %d sources", succeeded.length, results.length);
   if (succeeded.length > 0) {
-    succeeded.forEach((r) => log("CRAWL", "  OK %s: %d", r.source, r.total));
+    succeeded.forEach((r) => log("CRAWL", "  OK %s: %d (%dms)", r.source, r.total, r.durationMs));
   }
   if (failed.length > 0) {
-    failed.forEach((r) => log("CRAWL", "  FAIL %s: %s", r.source, r.error));
+    failed.forEach((r) => log("CRAWL", "  FAIL %s: %s (%dms)", r.source, r.error, r.durationMs));
   }
 
   if (succeeded.length === 0 && failed.length > 0) {

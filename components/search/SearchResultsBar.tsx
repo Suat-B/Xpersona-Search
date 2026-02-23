@@ -20,7 +20,6 @@ interface SearchResultsBarProps {
   facets?: { protocols?: Array<{ protocol: string[]; count: number }> };
 }
 
-const PROTOCOL_LIST = ["A2A", "MCP", "ANP", "OPENCLEW"];
 const BLUR_DELAY_MS = 150;
 
 export function SearchResultsBar({
@@ -76,20 +75,6 @@ export function SearchResultsBar({
   useEffect(() => () => {
     if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
   }, []);
-
-  const protocolCounts = new Map<string, number>(
-    (facets?.protocols ?? []).flatMap((f) =>
-      (f.protocol ?? []).map((p) => [p, f.count] as const)
-    )
-  );
-
-  const toggleProtocol = (p: string) => {
-    if (selectedProtocols.includes(p)) {
-      onProtocolChange(selectedProtocols.filter((x) => x !== p));
-    } else {
-      onProtocolChange([...selectedProtocols, p]);
-    }
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -244,42 +229,6 @@ export function SearchResultsBar({
           </div>
         </div>
 
-        {/* Protocol filter pills */}
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => onProtocolChange([])}
-            aria-pressed={selectedProtocols.length === 0}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] ${
-              selectedProtocols.length === 0
-                ? "bg-[var(--accent-heart)] text-white border-[var(--accent-heart)]"
-                : "bg-transparent text-[var(--text-tertiary)] border-[var(--border)] hover:border-[var(--accent-heart)]/40 hover:text-[var(--text-secondary)]"
-            }`}
-          >
-            All
-          </button>
-          {PROTOCOL_LIST.map((p) => {
-            const count = protocolCounts.get(p);
-            const isSelected = selectedProtocols.includes(p);
-            return (
-              <button
-                key={p}
-                type="button"
-                onClick={() => toggleProtocol(p)}
-                aria-pressed={isSelected}
-                aria-label={`Filter by ${p}${count != null ? `, ${count} results` : ""}`}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] ${
-                  isSelected
-                    ? "bg-[var(--accent-heart)] text-white border-[var(--accent-heart)]"
-                    : "bg-transparent text-[var(--text-tertiary)] border-[var(--border)] hover:border-[var(--accent-heart)]/40 hover:text-[var(--text-secondary)]"
-                }`}
-              >
-                {p}
-                {count != null ? ` (${count})` : ""}
-              </button>
-            );
-          })}
-        </div>
       </div>
     </div>
   );

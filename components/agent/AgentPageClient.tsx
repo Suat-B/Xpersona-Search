@@ -192,9 +192,6 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
           <div className="flex flex-wrap items-center gap-6 mb-6 text-sm">
             <SafetyBadge score={agent.safetyScore} />
             {popularityLabel && <span className="text-[var(--text-tertiary)]">{popularityLabel}</span>}
-            <span className="text-[var(--text-tertiary)]">
-              Rank {agent.overallRank?.toFixed(1) ?? 0}/100
-            </span>
           </div>
           {caps.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-6">
