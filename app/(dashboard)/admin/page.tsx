@@ -118,7 +118,11 @@ export default function AdminPage() {
     total: number;
   } | null>(null);
   const [claimsFilter, setClaimsFilter] = useState<string>("PENDING");
+  const [claimsMethodFilter, setClaimsMethodFilter] = useState<string>("ALL");
   const [claimActionLoading, setClaimActionLoading] = useState<string | null>(null);
+  const [claimActionModal, setClaimActionModal] = useState<{ id: string; action: "approve" | "reject" } | null>(null);
+  const [claimReviewNote, setClaimReviewNote] = useState("");
+  const [claimActionError, setClaimActionError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -257,13 +261,14 @@ export default function AdminPage() {
     { id: "claims", label: "Claims" },
   ];
 
-  async function handleClaimAction(claimId: string, action: "approve" | "reject") {
+  async function handleClaimAction(claimId: string, action: "approve" | "reject", note: string) {
     setClaimActionLoading(claimId);
+    setClaimActionError(null);
     try {
       const res = await fetch(`/api/admin/claims/${claimId}/${action}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ note: note.trim() || undefined }),
       });
       if (res.ok) {
         setClaimsData((prev) =>
@@ -275,9 +280,15 @@ export default function AdminPage() {
               }
             : prev
         );
+        setClaimActionModal(null);
+        setClaimReviewNote("");
+      } else {
+        const body = await res.json().catch(() => null);
+        const msg = body?.error ?? `Failed to ${action} claim (HTTP ${res.status})`;
+        setClaimActionError(msg);
       }
     } catch {
-      setError(`Failed to ${action} claim`);
+      setClaimActionError(`Network error: failed to ${action} claim`);
     }
     setClaimActionLoading(null);
   }
@@ -573,7 +584,8 @@ export default function AdminPage() {
 
       {tab === "claims" && (
         <div className="space-y-4">
-          <div className="flex gap-2">
+          {/* Status filter row */}
+          <div className="flex flex-wrap gap-2">
             {["PENDING", "APPROVED", "REJECTED", "EXPIRED"].map((s) => (
               <button
                 key={s}
@@ -588,13 +600,102 @@ export default function AdminPage() {
                 {s}
               </button>
             ))}
+
+            <span className="mx-1 self-center text-[var(--border)]">|</span>
+
+            {/* Method filter */}
+            {["ALL", "MANUAL_REVIEW", "DNS_TXT", "META_TAG", "GITHUB_FILE", "NPM_KEYWORD", "PYPI_KEYWORD", "EMAIL_MATCH"].map((m) => (
+              <button
+                key={m}
+                onClick={() => setClaimsMethodFilter(m)}
+                className={cn(
+                  "rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
+                  claimsMethodFilter === m
+                    ? "bg-purple-500/20 text-purple-400"
+                    : "text-[var(--text-secondary)] hover:bg-white/[0.04]"
+                )}
+              >
+                {m === "ALL" ? "All Methods" : m.replace(/_/g, " ")}
+              </button>
+            ))}
           </div>
+
+          {/* Inline action error feedback */}
+          {claimActionError && (
+            <div className="flex items-center gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="flex-1">{claimActionError}</span>
+              <button onClick={() => setClaimActionError(null)} className="text-red-400 hover:text-red-300">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
+
+          {/* Review note modal */}
+          {claimActionModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+              <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)] p-6 shadow-2xl">
+                <h3 className="text-lg font-semibold text-[var(--text-primary)]">
+                  {claimActionModal.action === "approve" ? "Approve" : "Reject"} Claim
+                </h3>
+                <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                  Optionally add a review note explaining your decision.
+                </p>
+                <textarea
+                  value={claimReviewNote}
+                  onChange={(e) => setClaimReviewNote(e.target.value)}
+                  placeholder="Review note (optional)..."
+                  rows={3}
+                  className="mt-4 w-full rounded-lg border border-[var(--border)] bg-black/20 px-4 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent-heart)]/50 resize-none"
+                />
+
+                {claimActionError && (
+                  <p className="mt-2 text-xs text-red-400">{claimActionError}</p>
+                )}
+
+                <div className="mt-4 flex justify-end gap-3">
+                  <button
+                    onClick={() => {
+                      setClaimActionModal(null);
+                      setClaimReviewNote("");
+                      setClaimActionError(null);
+                    }}
+                    className="rounded-lg px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/[0.04] transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleClaimAction(claimActionModal.id, claimActionModal.action, claimReviewNote)}
+                    disabled={claimActionLoading === claimActionModal.id}
+                    className={cn(
+                      "rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50",
+                      claimActionModal.action === "approve"
+                        ? "bg-[#30d158]/20 text-[#30d158] hover:bg-[#30d158]/30"
+                        : "bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                    )}
+                  >
+                    {claimActionLoading === claimActionModal.id
+                      ? "Processing..."
+                      : claimActionModal.action === "approve"
+                        ? "Confirm Approve"
+                        : "Confirm Reject"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {claimsData ? (
             <GlassCard className="overflow-hidden p-0">
               <div className="px-6 py-4 border-b border-[var(--border)]">
                 <h3 className="font-semibold text-[var(--text-primary)]">
-                  Claims ({claimsData.total})
+                  Claims ({claimsMethodFilter === "ALL"
+                    ? claimsData.total
+                    : claimsData.claims.filter((c) => c.verificationMethod === claimsMethodFilter).length})
                 </h3>
               </div>
               <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
@@ -610,70 +711,102 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {claimsData.claims.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="px-6 py-8 text-center text-[var(--text-secondary)]">
-                          No {claimsFilter.toLowerCase()} claims.
-                        </td>
-                      </tr>
-                    ) : (
-                      claimsData.claims.map((c) => (
-                        <tr key={c.id} className="border-b border-[var(--border)] hover:bg-white/[0.02]">
-                          <td className="px-6 py-3">
-                            <div>
-                              <span className="text-[var(--text-primary)] font-medium">
-                                {c.agentName ?? "Unknown"}
-                              </span>
-                              <p className="text-xs text-[var(--text-quaternary)]">
-                                {c.agentSource}
-                              </p>
-                            </div>
-                          </td>
-                          <td className="px-6 py-3 truncate max-w-[180px]" title={c.userEmail ?? ""}>
-                            {c.userEmail ?? c.userName ?? c.userId.slice(0, 8)}
-                          </td>
-                          <td className="px-6 py-3 text-xs font-mono">
-                            {c.verificationMethod}
-                          </td>
-                          <td className="px-6 py-3">
-                            <span
-                              className={cn(
-                                "font-medium px-2 py-0.5 rounded text-xs",
-                                c.status === "PENDING" && "bg-amber-500/20 text-amber-400",
-                                c.status === "APPROVED" && "bg-[#30d158]/20 text-[#30d158]",
-                                c.status === "REJECTED" && "bg-red-500/20 text-red-400",
-                                c.status === "EXPIRED" && "bg-gray-500/20 text-gray-400"
-                              )}
-                            >
-                              {c.status}
-                            </span>
-                          </td>
-                          <td className="px-6 py-3 text-xs text-[var(--text-tertiary)]">
-                            {new Date(c.createdAt).toLocaleDateString()}
-                          </td>
-                          <td className="px-6 py-3">
-                            {c.status === "PENDING" && (
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => handleClaimAction(c.id, "approve")}
-                                  disabled={claimActionLoading === c.id}
-                                  className="rounded px-3 py-1 text-xs font-medium bg-[#30d158]/20 text-[#30d158] hover:bg-[#30d158]/30 transition-colors disabled:opacity-50"
-                                >
-                                  Approve
-                                </button>
-                                <button
-                                  onClick={() => handleClaimAction(c.id, "reject")}
-                                  disabled={claimActionLoading === c.id}
-                                  className="rounded px-3 py-1 text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-50"
-                                >
-                                  Reject
-                                </button>
+                    {(() => {
+                      const filtered = claimsMethodFilter === "ALL"
+                        ? claimsData.claims
+                        : claimsData.claims.filter((c) => c.verificationMethod === claimsMethodFilter);
+                      if (filtered.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan={6} className="px-6 py-8 text-center text-[var(--text-secondary)]">
+                              No {claimsFilter.toLowerCase()} claims
+                              {claimsMethodFilter !== "ALL" ? ` with method ${claimsMethodFilter.replace(/_/g, " ")}` : ""}.
+                            </td>
+                          </tr>
+                        );
+                      }
+                      return filtered.map((c) => {
+                        const notes = (c.verificationData as Record<string, unknown>)?.notes as string | undefined;
+                        return (
+                          <tr key={c.id} className="border-b border-[var(--border)] hover:bg-white/[0.02] group">
+                            <td className="px-6 py-3" colSpan={1}>
+                              <div>
+                                <span className="text-[var(--text-primary)] font-medium">
+                                  {c.agentName ?? "Unknown"}
+                                </span>
+                                <p className="text-xs text-[var(--text-quaternary)]">
+                                  {c.agentSource}
+                                </p>
+                                {/* Evidence notes */}
+                                {notes && (
+                                  <div className="mt-2 max-w-xs rounded border-l-2 border-purple-500/50 bg-purple-500/5 px-3 py-2">
+                                    <p className="text-[10px] font-medium uppercase tracking-wider text-purple-400/80 mb-0.5">Evidence</p>
+                                    <p className="text-xs text-[var(--text-secondary)] whitespace-pre-wrap break-words">{notes}</p>
+                                  </div>
+                                )}
+                                {/* Review note */}
+                                {c.reviewNote && (
+                                  <div className="mt-2 max-w-xs rounded border-l-2 border-amber-500/50 bg-amber-500/5 px-3 py-2">
+                                    <p className="text-[10px] font-medium uppercase tracking-wider text-amber-400/80 mb-0.5">Admin Note</p>
+                                    <p className="text-xs text-[var(--text-secondary)] whitespace-pre-wrap break-words">{c.reviewNote}</p>
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </td>
-                        </tr>
-                      ))
-                    )}
+                            </td>
+                            <td className="px-6 py-3 truncate max-w-[180px] align-top" title={c.userEmail ?? ""}>
+                              {c.userEmail ?? c.userName ?? c.userId.slice(0, 8)}
+                            </td>
+                            <td className="px-6 py-3 text-xs font-mono align-top">
+                              {c.verificationMethod.replace(/_/g, " ")}
+                            </td>
+                            <td className="px-6 py-3 align-top">
+                              <span
+                                className={cn(
+                                  "font-medium px-2 py-0.5 rounded text-xs",
+                                  c.status === "PENDING" && "bg-amber-500/20 text-amber-400",
+                                  c.status === "APPROVED" && "bg-[#30d158]/20 text-[#30d158]",
+                                  c.status === "REJECTED" && "bg-red-500/20 text-red-400",
+                                  c.status === "EXPIRED" && "bg-gray-500/20 text-gray-400"
+                                )}
+                              >
+                                {c.status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-3 text-xs text-[var(--text-tertiary)] align-top">
+                              {new Date(c.createdAt).toLocaleDateString()}
+                            </td>
+                            <td className="px-6 py-3 align-top">
+                              {c.status === "PENDING" && (
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => {
+                                      setClaimActionModal({ id: c.id, action: "approve" });
+                                      setClaimReviewNote("");
+                                      setClaimActionError(null);
+                                    }}
+                                    disabled={claimActionLoading === c.id}
+                                    className="rounded px-3 py-1 text-xs font-medium bg-[#30d158]/20 text-[#30d158] hover:bg-[#30d158]/30 transition-colors disabled:opacity-50"
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setClaimActionModal({ id: c.id, action: "reject" });
+                                      setClaimReviewNote("");
+                                      setClaimActionError(null);
+                                    }}
+                                    disabled={claimActionLoading === c.id}
+                                    className="rounded px-3 py-1 text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-50"
+                                  >
+                                    Reject
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
                   </tbody>
                 </table>
               </div>
