@@ -76,17 +76,8 @@ export function AgentHomepageEmbed({ agent }: AgentEmbedProps) {
     <div className="h-screen flex flex-col bg-[var(--bg-deep)] overflow-hidden">
       {/* Top bar */}
       <header className="relative z-50 flex h-14 shrink-0 items-center gap-3 border-b border-[var(--border)] bg-[var(--bg-deep)]/95 backdrop-blur-md px-4">
-        {/* Left: logo + back */}
+        {/* Left: back to search */}
         <div className="flex items-center gap-3 min-w-0">
-          <Link
-            href="/"
-            className="text-lg font-black tracking-tight text-white select-none logo-glow shrink-0"
-          >
-            Xpersona
-          </Link>
-
-          <div className="h-5 w-px bg-[var(--border)] shrink-0 hidden sm:block" />
-
           <a
             href="/?q=discover"
             onClick={handleBack}
@@ -107,8 +98,8 @@ export function AgentHomepageEmbed({ agent }: AgentEmbedProps) {
           </span>
         </div>
 
-        {/* Right: open in new tab */}
-        <div className="flex items-center gap-2 shrink-0 ml-auto">
+        {/* Right: open in new tab + logo */}
+        <div className="flex items-center gap-3 shrink-0 ml-auto">
           <a
             href={agent.homepage}
             target="_blank"
@@ -120,6 +111,15 @@ export function AgentHomepageEmbed({ agent }: AgentEmbedProps) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
             </svg>
           </a>
+
+          <div className="h-5 w-px bg-[var(--border)] shrink-0 hidden sm:block" />
+
+          <Link
+            href="/"
+            className="text-lg font-black tracking-tight text-white select-none logo-glow shrink-0"
+          >
+            Xpersona
+          </Link>
         </div>
       </header>
 
