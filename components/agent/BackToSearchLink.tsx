@@ -20,7 +20,7 @@ export function BackToSearchLink() {
     <a
       href={SEARCH_FALLBACK}
       onClick={handleClick}
-      className="text-[var(--accent-heart)] hover:text-[var(--accent-heart)]/90 mb-6 inline-block text-sm font-medium transition-colors"
+      className="text-[var(--accent-heart)] hover:text-[var(--accent-heart)]/90 inline-block text-sm font-medium transition-colors"
     >
       ← Back to search
     </a>
