@@ -42,7 +42,24 @@ type OverviewData = {
   };
 };
 
-type Tab = "overview" | "games" | "users" | "withdrawals";
+type Tab = "overview" | "games" | "users" | "withdrawals" | "claims";
+
+type ClaimRow = {
+  id: string;
+  agentId: string;
+  userId: string;
+  status: string;
+  verificationMethod: string;
+  verificationData: Record<string, unknown> | null;
+  reviewNote: string | null;
+  expiresAt: string;
+  createdAt: string;
+  agentName: string | null;
+  agentSlug: string | null;
+  agentSource: string | null;
+  userName: string | null;
+  userEmail: string | null;
+};
 
 export default function AdminPage() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
@@ -96,6 +113,12 @@ export default function AdminPage() {
     }>;
     totalCount: number;
   } | null>(null);
+  const [claimsData, setClaimsData] = useState<{
+    claims: ClaimRow[];
+    total: number;
+  } | null>(null);
+  const [claimsFilter, setClaimsFilter] = useState<string>("PENDING");
+  const [claimActionLoading, setClaimActionLoading] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -163,6 +186,20 @@ export default function AdminPage() {
   }, [isAdmin, tab]);
 
   useEffect(() => {
+    if (!isAdmin || tab !== "claims") return;
+    async function fetchClaims() {
+      try {
+        const res = await fetch(`/api/admin/claims?status=${claimsFilter}&limit=100`);
+        const json = await res.json();
+        setClaimsData({ claims: json.claims ?? [], total: json.total ?? 0 });
+      } catch {
+        setError("Failed to load claims");
+      }
+    }
+    fetchClaims();
+  }, [isAdmin, tab, claimsFilter]);
+
+  useEffect(() => {
     if (!isAdmin || tab !== "withdrawals") return;
     async function fetchWithdrawals() {
       try {
@@ -217,7 +254,33 @@ export default function AdminPage() {
     { id: "games", label: "All Games" },
     { id: "users", label: "Users" },
     { id: "withdrawals", label: "Withdrawals" },
+    { id: "claims", label: "Claims" },
   ];
+
+  async function handleClaimAction(claimId: string, action: "approve" | "reject") {
+    setClaimActionLoading(claimId);
+    try {
+      const res = await fetch(`/api/admin/claims/${claimId}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (res.ok) {
+        setClaimsData((prev) =>
+          prev
+            ? {
+                ...prev,
+                claims: prev.claims.filter((c) => c.id !== claimId),
+                total: prev.total - 1,
+              }
+            : prev
+        );
+      }
+    } catch {
+      setError(`Failed to ${action} claim`);
+    }
+    setClaimActionLoading(null);
+  }
 
   return (
     <div className="space-y-8 animate-fade-in-up">
@@ -506,6 +569,121 @@ export default function AdminPage() {
             </table>
           </div>
         </GlassCard>
+      )}
+
+      {tab === "claims" && (
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            {["PENDING", "APPROVED", "REJECTED", "EXPIRED"].map((s) => (
+              <button
+                key={s}
+                onClick={() => setClaimsFilter(s)}
+                className={cn(
+                  "rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
+                  claimsFilter === s
+                    ? "bg-[var(--accent-heart)]/20 text-[var(--accent-heart)]"
+                    : "text-[var(--text-secondary)] hover:bg-white/[0.04]"
+                )}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+
+          {claimsData ? (
+            <GlassCard className="overflow-hidden p-0">
+              <div className="px-6 py-4 border-b border-[var(--border)]">
+                <h3 className="font-semibold text-[var(--text-primary)]">
+                  Claims ({claimsData.total})
+                </h3>
+              </div>
+              <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-[var(--text-secondary)] uppercase bg-white/[0.03] sticky top-0">
+                    <tr>
+                      <th className="px-6 py-3">Agent</th>
+                      <th className="px-6 py-3">Claimant</th>
+                      <th className="px-6 py-3">Method</th>
+                      <th className="px-6 py-3">Status</th>
+                      <th className="px-6 py-3">Created</th>
+                      <th className="px-6 py-3">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {claimsData.claims.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-8 text-center text-[var(--text-secondary)]">
+                          No {claimsFilter.toLowerCase()} claims.
+                        </td>
+                      </tr>
+                    ) : (
+                      claimsData.claims.map((c) => (
+                        <tr key={c.id} className="border-b border-[var(--border)] hover:bg-white/[0.02]">
+                          <td className="px-6 py-3">
+                            <div>
+                              <span className="text-[var(--text-primary)] font-medium">
+                                {c.agentName ?? "Unknown"}
+                              </span>
+                              <p className="text-xs text-[var(--text-quaternary)]">
+                                {c.agentSource}
+                              </p>
+                            </div>
+                          </td>
+                          <td className="px-6 py-3 truncate max-w-[180px]" title={c.userEmail ?? ""}>
+                            {c.userEmail ?? c.userName ?? c.userId.slice(0, 8)}
+                          </td>
+                          <td className="px-6 py-3 text-xs font-mono">
+                            {c.verificationMethod}
+                          </td>
+                          <td className="px-6 py-3">
+                            <span
+                              className={cn(
+                                "font-medium px-2 py-0.5 rounded text-xs",
+                                c.status === "PENDING" && "bg-amber-500/20 text-amber-400",
+                                c.status === "APPROVED" && "bg-[#30d158]/20 text-[#30d158]",
+                                c.status === "REJECTED" && "bg-red-500/20 text-red-400",
+                                c.status === "EXPIRED" && "bg-gray-500/20 text-gray-400"
+                              )}
+                            >
+                              {c.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3 text-xs text-[var(--text-tertiary)]">
+                            {new Date(c.createdAt).toLocaleDateString()}
+                          </td>
+                          <td className="px-6 py-3">
+                            {c.status === "PENDING" && (
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleClaimAction(c.id, "approve")}
+                                  disabled={claimActionLoading === c.id}
+                                  className="rounded px-3 py-1 text-xs font-medium bg-[#30d158]/20 text-[#30d158] hover:bg-[#30d158]/30 transition-colors disabled:opacity-50"
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  onClick={() => handleClaimAction(c.id, "reject")}
+                                  disabled={claimActionLoading === c.id}
+                                  className="rounded px-3 py-1 text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-50"
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </GlassCard>
+          ) : (
+            <div className="flex items-center justify-center py-16">
+              <div className="w-8 h-8 rounded-full border-2 border-[var(--accent-heart)] border-t-transparent animate-spin" />
+            </div>
+          )}
+        </div>
       )}
 
       {tab === "users" && usersData && (

@@ -8,6 +8,8 @@ import { SourceBadge } from "@/components/agent/SourceBadge";
 import { InstallCommand } from "@/components/agent/InstallCommand";
 import { SkillMarkdown } from "./SkillMarkdown";
 import { AgentHomepageEmbed } from "./AgentHomepageEmbed";
+import { ClaimBanner } from "./ClaimBanner";
+import { OwnerBadge } from "./OwnerBadge";
 
 interface OpenClawData {
   parameters?: Record<
@@ -46,6 +48,11 @@ interface Agent {
   readme?: string | null;
   codeSnippets?: string[];
   openclawData?: OpenClawData | null;
+  claimStatus?: string;
+  claimedByName?: string | null;
+  isOwner?: boolean;
+  claimedAt?: string | null;
+  customLinks?: Array<{ label: string; url: string }>;
 }
 
 interface AgentPageClientProps {
@@ -193,11 +200,22 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
       <div className="relative max-w-4xl mx-auto px-4 py-8">
         <BackToSearchLink />
 
+        <ClaimBanner
+          slug={agent.slug}
+          claimStatus={agent.claimStatus ?? "UNCLAIMED"}
+          isOwner={agent.isOwner ?? false}
+        />
+
         {/* Hero */}
         <header className="mb-12">
-          <h1 className="text-4xl md:text-5xl font-bold text-[var(--text-primary)] mb-3 tracking-tight">
-            {agent.name}
-          </h1>
+          <div className="flex items-start gap-3 mb-3 flex-wrap">
+            <h1 className="text-4xl md:text-5xl font-bold text-[var(--text-primary)] tracking-tight">
+              {agent.name}
+            </h1>
+            {agent.claimStatus === "CLAIMED" && (
+              <OwnerBadge claimedByName={agent.claimedByName} />
+            )}
+          </div>
           <div className="flex flex-wrap gap-2 mb-4">
             {agent.source && <SourceBadge source={agent.source} />}
             {protos.map((p) => (
@@ -264,6 +282,28 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
             )}
           </div>
         </header>
+
+        {/* Custom links from owner */}
+        {agent.customLinks && agent.customLinks.length > 0 && (
+          <section className="mb-8">
+            <div className="flex flex-wrap gap-2">
+              {agent.customLinks.map((link, i) => (
+                <a
+                  key={i}
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] text-sm text-[var(--text-secondary)] hover:border-[var(--accent-heart)]/40 transition-colors"
+                >
+                  {link.label}
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Install / Get section */}
         {installCmd && (

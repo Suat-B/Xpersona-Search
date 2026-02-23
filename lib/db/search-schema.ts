@@ -69,6 +69,12 @@ export const agents = pgTable(
     lastIndexedAt: timestamp("last_indexed_at", { withTimezone: true }),
     nextCrawlAt: timestamp("next_crawl_at", { withTimezone: true }),
 
+    // Claim system
+    claimedByUserId: uuid("claimed_by_user_id"),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    claimStatus: varchar("claim_status", { length: 24 }).notNull().default("UNCLAIMED"),
+    ownerOverrides: jsonb("owner_overrides").$type<Record<string, unknown>>(),
+
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
@@ -77,6 +83,33 @@ export const agents = pgTable(
     uniqueIndex("agents_slug_idx").on(table.slug),
     index("agents_status_idx").on(table.status),
     index("agents_overall_rank_idx").on(table.overallRank),
+    index("agents_claimed_by_user_id_idx").on(table.claimedByUserId),
+    index("agents_claim_status_idx").on(table.claimStatus),
+  ]
+);
+
+/** Claim audit trail: every claim attempt for an agent page */
+export const agentClaims = pgTable(
+  "agent_claims",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    status: varchar("status", { length: 24 }).notNull().default("PENDING"),
+    verificationMethod: varchar("verification_method", { length: 32 }).notNull(),
+    verificationToken: varchar("verification_token", { length: 128 }).notNull(),
+    verificationData: jsonb("verification_data").$type<Record<string, unknown>>(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    reviewedByUserId: uuid("reviewed_by_user_id"),
+    reviewNote: text("review_note"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("agent_claims_agent_id_idx").on(table.agentId),
+    index("agent_claims_user_id_idx").on(table.userId),
+    index("agent_claims_status_idx").on(table.status),
   ]
 );
 

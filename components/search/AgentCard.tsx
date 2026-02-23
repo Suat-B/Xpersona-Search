@@ -2,6 +2,7 @@ import Link from "next/link";
 import { SafetyBadge } from "./SafetyBadge";
 import { ProtocolBadge } from "./ProtocolBadge";
 import { SourceBadge } from "@/components/agent/SourceBadge";
+import { OwnerBadge } from "@/components/agent/OwnerBadge";
 
 interface Agent {
   id: string;
@@ -16,6 +17,7 @@ interface Agent {
   overallRank: number;
   githubData?: { stars?: number; forks?: number };
   npmData?: { downloads?: number };
+  claimStatus?: string;
 }
 
 interface Props {
@@ -54,6 +56,7 @@ export function AgentCard({ agent, rank }: Props) {
               {agent.name}
             </Link>
             {agent.source && <SourceBadge source={agent.source} />}
+            {agent.claimStatus === "CLAIMED" && <OwnerBadge size="sm" />}
             {protos.map((p) => (
               <ProtocolBadge key={p} protocol={p} />
             ))}
