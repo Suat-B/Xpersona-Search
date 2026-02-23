@@ -8,6 +8,7 @@ import { crawlJobs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
 import { upsertAgent } from "../agent-upsert";
+import { buildSearchableReadme } from "../utils/build-readme";
 
 const LANGCHAIN_PYPI_TERMS = [
   "langchain",
@@ -123,7 +124,13 @@ export async function crawlLangChainHub(
         protocols: ["OPENCLEW"] as string[],
         languages: ["python"] as string[],
         openclawData: { langchain: true, pypi: true } as Record<string, unknown>,
-        readme: info.summary ?? "",
+        readme: buildSearchableReadme({
+          description: info.summary,
+          capabilities: (info.keywords ?? "").split(/[,;]/).map((k) => k.trim()).filter(Boolean).slice(0, 15),
+          protocols: ["OPENCLEW"],
+          languages: ["python"],
+          extra: [name, "langchain"],
+        }),
         safetyScore: 72,
         popularityScore: 60,
         freshnessScore: 70,
@@ -175,7 +182,14 @@ export async function crawlLangChainHub(
           languages: ["typescript"] as string[],
           npmData: { packageName: pkg.name, langchain: true } as Record<string, unknown>,
           openclawData: null as unknown as Record<string, unknown>,
-          readme: pkg.description ?? "",
+          readme: buildSearchableReadme({
+            description: pkg.description,
+            capabilities: (pkg.keywords ?? []).slice(0, 15),
+            protocols: ["OPENCLEW"],
+            languages: ["typescript"],
+            keywords: pkg.keywords,
+            extra: [pkg.name, "langchain"],
+          }),
           safetyScore: 70,
           popularityScore: Math.min(100, Math.round((obj.score?.final ?? 0) / 15)),
           freshnessScore: 70,

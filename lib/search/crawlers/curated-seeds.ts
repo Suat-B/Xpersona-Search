@@ -9,6 +9,7 @@ import { generateSlug } from "../utils/slug";
 import { fetchFileContent } from "../utils/github";
 import { upsertAgent } from "../agent-upsert";
 import { calculateDynamicScores } from "../scoring/rank";
+import { buildSearchableReadme } from "../utils/build-readme";
 
 const AWESOME_OPENCLEW_REPO = "VoltAgent/awesome-openclaw-skills";
 const MCP_SERVERS_REPO = "modelcontextprotocol/servers";
@@ -105,7 +106,11 @@ export async function crawlCuratedSeeds(
           protocols: ["OPENCLEW"] as string[],
           languages: [] as string[],
           openclawData: { curated: true, category: "awesome-openclaw" } as Record<string, unknown>,
-          readme: s.description || "",
+          readme: buildSearchableReadme({
+            description: s.description,
+            protocols: ["OPENCLEW"],
+            extra: [s.name || s.slug, "openclaw", "curated"],
+          }),
           safetyScore: 85,
           popularityScore: 55,
           freshnessScore: 70,
@@ -181,7 +186,11 @@ export async function crawlCuratedSeeds(
           protocols: ["MCP"] as string[],
           languages: [] as string[],
           openclawData: { curated: true, from: "mcp-servers-readme" } as Record<string, unknown>,
-          readme: s.description || "",
+          readme: buildSearchableReadme({
+            description: s.description,
+            protocols: ["MCP"],
+            extra: [s.name, "mcp", "server", "curated"],
+          }),
           safetyScore: 70,
           popularityScore: 50,
           freshnessScore: 65,

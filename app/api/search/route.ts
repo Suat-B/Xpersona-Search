@@ -5,12 +5,23 @@ import { db } from "@/lib/db";
 import { agents } from "@/lib/db/schema";
 import { and, eq, gte, desc, sql, SQL } from "drizzle-orm";
 
+function escapeLike(s: string): string {
+  return s.replace(/[%_\\]/g, (c) => `\\${c}`);
+}
+
 const SearchSchema = z.object({
   q: z.string().optional(),
   protocols: z
     .string()
     .optional()
-    .transform((s) => (s ? s.split(",").filter(Boolean) : [])),
+    .transform((s) =>
+      s
+        ? s
+            .split(",")
+            .map((p) => p.trim().toUpperCase().replace(/^OPENCLAW$/i, "OPENCLEW"))
+            .filter(Boolean)
+        : []
+    ),
   capabilities: z
     .string()
     .optional()
@@ -28,18 +39,18 @@ const SearchSchema = z.object({
 
 type SearchParams = z.infer<typeof SearchSchema>;
 
-function buildConditions(params: SearchParams): (ReturnType<typeof eq> | ReturnType<typeof gte> | SQL)[] {
-  const conditions: (ReturnType<typeof eq> | ReturnType<typeof gte> | SQL)[] = [];
+function buildConditions(params: SearchParams): SQL[] {
+  const conditions: SQL[] = [];
   if (params.includePending) {
     conditions.push(sql`${agents.status} IN ('ACTIVE', 'PENDING_REVIEW')`);
   } else {
-    conditions.push(eq(agents.status, "ACTIVE"));
+    conditions.push(eq(agents.status, "ACTIVE") as unknown as SQL);
   }
   if (params.minSafety != null) {
-    conditions.push(gte(agents.safetyScore, params.minSafety));
+    conditions.push(gte(agents.safetyScore, params.minSafety) as unknown as SQL);
   }
   if (params.minRank != null) {
-    conditions.push(gte(agents.overallRank, params.minRank));
+    conditions.push(gte(agents.overallRank, params.minRank) as unknown as SQL);
   }
   if (params.protocols.length > 0) {
     conditions.push(
@@ -58,16 +69,27 @@ function buildConditions(params: SearchParams): (ReturnType<typeof eq> | ReturnT
       )}]::text[]`
     );
   }
-  const qTrim = params.q?.trim();
-  if (qTrim) {
-    conditions.push(
-      sql`search_vector @@ plainto_tsquery('english', ${qTrim})`
-    );
-  }
   return conditions;
 }
 
-async function getFacets(conditions: (ReturnType<typeof eq> | ReturnType<typeof gte> | SQL)[]) {
+function buildTextCondition(qTrim: string): SQL {
+  const escaped = escapeLike(qTrim);
+  const pattern = `%${escaped}%`;
+  return sql`(
+    search_vector @@ plainto_tsquery('english', ${qTrim})
+    OR ${agents.name} ILIKE ${pattern}
+    OR (${agents.description} IS NOT NULL AND ${agents.description} ILIKE ${pattern})
+    OR EXISTS (
+      SELECT 1 FROM jsonb_array_elements_text(
+        CASE WHEN jsonb_typeof(coalesce(${agents.capabilities}, '[]'::jsonb)) = 'array'
+             THEN ${agents.capabilities} ELSE '[]'::jsonb END
+      ) AS cap
+      WHERE cap ILIKE ${pattern}
+    )
+  )`;
+}
+
+async function getFacets(conditions: SQL[]) {
   const result = await db.execute(
     sql`
       SELECT elem AS protocol, count(*)::text AS count
@@ -100,16 +122,14 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const conditions = buildConditions(params);
+    const filterConditions = buildConditions(params);
+    const qTrim = params.q?.trim();
+    const useRelevance = !!qTrim && params.sort === "rank";
 
-    const orderBy =
-      params.sort === "rank"
-        ? desc(agents.overallRank)
-        : params.sort === "safety"
-          ? desc(agents.safetyScore)
-          : params.sort === "popularity"
-            ? desc(agents.popularityScore)
-            : desc(agents.freshnessScore);
+    const conditions: SQL[] = [...filterConditions];
+    if (qTrim) {
+      conditions.push(buildTextCondition(qTrim));
+    }
 
     const sortCol =
       params.sort === "rank"
@@ -124,58 +144,133 @@ export async function GET(req: NextRequest) {
     const allConditions = [...conditions];
 
     if (params.cursor) {
-      const [cursorRow] = await db
-        .select({
-          overallRank: agents.overallRank,
-          safetyScore: agents.safetyScore,
-          popularityScore: agents.popularityScore,
-          freshnessScore: agents.freshnessScore,
-          createdAt: agents.createdAt,
-        })
-        .from(agents)
-        .where(eq(agents.id, params.cursor))
-        .limit(1);
-      if (cursorRow) {
-        const cv =
-          params.sort === "rank"
-            ? cursorRow.overallRank
-            : params.sort === "safety"
-              ? cursorRow.safetyScore
-              : params.sort === "popularity"
-                ? cursorRow.popularityScore
-                : cursorRow.freshnessScore;
-        const cd = cursorRow.createdAt ?? new Date(0);
-        allConditions.push(
-          sql`(${sortCol}, ${agents.createdAt}, ${agents.id}) < (${cv}, ${cd}, ${params.cursor})`
+      if (useRelevance) {
+        const cursorRows = await db.execute(
+          sql`SELECT
+                ts_rank(search_vector, plainto_tsquery('english', ${qTrim})) AS relevance,
+                overall_rank,
+                created_at,
+                id
+              FROM agents
+              WHERE id = ${params.cursor}::uuid
+              LIMIT 1`
         );
+        const cr = (cursorRows as unknown as { rows?: Array<Record<string, unknown>> }).rows?.[0];
+        if (cr) {
+          allConditions.push(
+            sql`(
+              ts_rank(search_vector, plainto_tsquery('english', ${qTrim})),
+              ${agents.overallRank},
+              ${agents.createdAt},
+              ${agents.id}
+            ) < (
+              ${Number(cr.relevance)},
+              ${Number(cr.overall_rank)},
+              ${cr.created_at as Date ?? new Date(0)},
+              ${params.cursor}
+            )`
+          );
+        }
+      } else {
+        const [cursorRow] = await db
+          .select({
+            overallRank: agents.overallRank,
+            safetyScore: agents.safetyScore,
+            popularityScore: agents.popularityScore,
+            freshnessScore: agents.freshnessScore,
+            createdAt: agents.createdAt,
+          })
+          .from(agents)
+          .where(eq(agents.id, params.cursor))
+          .limit(1);
+        if (cursorRow) {
+          const cv =
+            params.sort === "rank"
+              ? cursorRow.overallRank
+              : params.sort === "safety"
+                ? cursorRow.safetyScore
+                : params.sort === "popularity"
+                  ? cursorRow.popularityScore
+                  : cursorRow.freshnessScore;
+          const cd = cursorRow.createdAt ?? new Date(0);
+          allConditions.push(
+            sql`(${sortCol}, ${agents.createdAt}, ${agents.id}) < (${cv}, ${cd}, ${params.cursor})`
+          );
+        }
       }
     }
 
-    const rows = await db
-      .select({
-        id: agents.id,
-        name: agents.name,
-        slug: agents.slug,
-        description: agents.description,
-        url: agents.url,
-        homepage: agents.homepage,
-        source: agents.source,
-        sourceId: agents.sourceId,
-        capabilities: agents.capabilities,
-        protocols: agents.protocols,
-        safetyScore: agents.safetyScore,
-        popularityScore: agents.popularityScore,
-        freshnessScore: agents.freshnessScore,
-        overallRank: agents.overallRank,
-        githubData: agents.githubData,
-        npmData: agents.npmData,
-        languages: agents.languages,
-        createdAt: agents.createdAt,
-      })
-      .from(agents)
-      .where(and(...allConditions))
-      .orderBy(orderBy, desc(agents.createdAt), desc(agents.id))
-      .limit(limit);
+    let rows;
+    if (useRelevance) {
+      const rawResult = await db.execute(
+        sql`SELECT
+              id, name, slug, description, url, homepage, source, source_id,
+              capabilities, protocols, safety_score, popularity_score,
+              freshness_score, overall_rank, github_data, npm_data,
+              languages, created_at,
+              ts_rank(search_vector, plainto_tsquery('english', ${qTrim})) AS relevance
+            FROM agents
+            WHERE ${and(...allConditions)}
+            ORDER BY relevance DESC, overall_rank DESC, created_at DESC, id DESC
+            LIMIT ${limit}`
+      );
+      const raw = (rawResult as unknown as { rows?: Array<Record<string, unknown>> }).rows ?? [];
+      rows = raw.map((r) => ({
+        id: r.id as string,
+        name: r.name as string,
+        slug: r.slug as string,
+        description: r.description as string | null,
+        url: r.url as string,
+        homepage: r.homepage as string | null,
+        source: r.source as string,
+        sourceId: r.source_id as string,
+        capabilities: r.capabilities as string[] | null,
+        protocols: r.protocols as string[] | null,
+        safetyScore: r.safety_score as number,
+        popularityScore: r.popularity_score as number,
+        freshnessScore: r.freshness_score as number,
+        overallRank: r.overall_rank as number,
+        githubData: r.github_data as Record<string, unknown> | null,
+        npmData: r.npm_data as Record<string, unknown> | null,
+        languages: r.languages as string[] | null,
+        createdAt: r.created_at as Date | null,
+      }));
+    } else {
+      const orderBy =
+        params.sort === "rank"
+          ? desc(agents.overallRank)
+          : params.sort === "safety"
+            ? desc(agents.safetyScore)
+            : params.sort === "popularity"
+              ? desc(agents.popularityScore)
+              : desc(agents.freshnessScore);
+
+      rows = await db
+        .select({
+          id: agents.id,
+          name: agents.name,
+          slug: agents.slug,
+          description: agents.description,
+          url: agents.url,
+          homepage: agents.homepage,
+          source: agents.source,
+          sourceId: agents.sourceId,
+          capabilities: agents.capabilities,
+          protocols: agents.protocols,
+          safetyScore: agents.safetyScore,
+          popularityScore: agents.popularityScore,
+          freshnessScore: agents.freshnessScore,
+          overallRank: agents.overallRank,
+          githubData: agents.githubData,
+          npmData: agents.npmData,
+          languages: agents.languages,
+          createdAt: agents.createdAt,
+        })
+        .from(agents)
+        .where(and(...allConditions))
+        .orderBy(orderBy, desc(agents.createdAt), desc(agents.id))
+        .limit(limit);
+    }
 
     const hasMore = rows.length > params.limit;
     const results = hasMore ? rows.slice(0, -1) : rows;

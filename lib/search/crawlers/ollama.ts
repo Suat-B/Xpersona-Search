@@ -7,6 +7,7 @@ import { crawlJobs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
 import { upsertAgent } from "../agent-upsert";
+import { buildSearchableReadme } from "../utils/build-readme";
 
 const OLLAMA_API = "https://ollama.com/api/tags";
 const OLLAMA_SEARCH_API = "https://ollama.com/api/models/search";
@@ -133,7 +134,12 @@ export async function crawlOllama(
           size: model.size,
           tags: model.tags,
         } as Record<string, unknown>,
-        readme: model.description ?? "",
+        readme: buildSearchableReadme({
+          description: model.description ?? `Ollama model: ${name}`,
+          capabilities: (model.tags ?? []).slice(0, 15),
+          tags: model.tags,
+          extra: [name],
+        }),
         safetyScore: 70,
         popularityScore,
         freshnessScore,

@@ -37,6 +37,36 @@ function escapeLike(s: string): string {
 
 const DESC_TRUNCATE = 80;
 
+/** Display-friendly casing for known protocols. */
+function displayQuery(q: string): string {
+  const lower = q.toLowerCase();
+  if (lower === "openclaw" || lower === "openclew") return "OpenClaw";
+  if (lower === "mcp") return "MCP";
+  if (lower === "a2a") return "A2A";
+  if (lower === "anp") return "ANP";
+  return q;
+}
+
+const PREDEFINED_TERMS = [
+  "games",
+  "trading",
+  "coding",
+  "AI agents",
+  "MCP servers",
+  "agents",
+];
+
+const SUGGESTION_TEMPLATES: Array<(q: string, term: string) => string> = [
+  (q, term) => `${term} on ${q}`,
+  (q, term) => `${q} for ${term}`,
+  (q, term) => `${q} ${term}`,
+  (q, term) => `${term} with ${q}`,
+];
+
+const MAX_QUERY_SUGGESTIONS = 8;
+const MAX_AGENT_SUGGESTIONS = 3;
+const CAPABILITY_SAMPLE_LIMIT = 50;
+
 export async function GET(req: NextRequest) {
   let params: SuggestParams;
   try {
@@ -55,16 +85,26 @@ export async function GET(req: NextRequest) {
     ];
 
     const prefixQuery = toPrefixTsQuery(params.q);
-    const useFullText = prefixQuery.length > 0;
-
     const esc = escapeLike(params.q);
-    const searchCondition = useFullText
-      ? (sql`search_vector @@ to_tsquery('english', ${prefixQuery})` as SQL)
-      : (sql`(
-          ${agents.name} ILIKE ${esc + "%"} OR
-          ${agents.name} ILIKE ${"% " + esc + "%"} OR
-          (${agents.description} IS NOT NULL AND ${agents.description} ILIKE ${"%" + esc + "%"})
-        )` as SQL);
+    const pattern = `%${esc}%`;
+
+    const tsPart = prefixQuery.length > 0
+      ? sql`search_vector @@ to_tsquery('english', ${prefixQuery})`
+      : sql`FALSE`;
+
+    const searchCondition = sql`(
+      ${tsPart}
+      OR ${agents.name} ILIKE ${esc + "%"}
+      OR ${agents.name} ILIKE ${"% " + esc + "%"}
+      OR (${agents.description} IS NOT NULL AND ${agents.description} ILIKE ${pattern})
+      OR EXISTS (
+        SELECT 1 FROM jsonb_array_elements_text(
+          CASE WHEN jsonb_typeof(coalesce(${agents.capabilities}, '[]'::jsonb)) = 'array'
+               THEN ${agents.capabilities} ELSE '[]'::jsonb END
+        ) AS cap
+        WHERE cap ILIKE ${pattern}
+      )
+    )` as SQL;
 
     const conditions = [...baseConditions, searchCondition];
 
@@ -75,13 +115,14 @@ export async function GET(req: NextRequest) {
         slug: agents.slug,
         description: agents.description,
         protocols: agents.protocols,
+        capabilities: agents.capabilities,
       })
       .from(agents)
       .where(and(...conditions))
       .orderBy(desc(agents.overallRank), desc(agents.createdAt))
-      .limit(params.limit);
+      .limit(CAPABILITY_SAMPLE_LIMIT);
 
-    const suggestions = rows.map((r) => ({
+    const agentSuggestions = rows.slice(0, MAX_AGENT_SUGGESTIONS).map((r) => ({
       id: r.id,
       name: r.name,
       slug: r.slug,
@@ -93,7 +134,49 @@ export async function GET(req: NextRequest) {
       protocols: Array.isArray(r.protocols) ? r.protocols : [],
     }));
 
-    return NextResponse.json({ suggestions });
+    const capCounts = new Map<string, number>();
+    for (const r of rows) {
+      const caps = Array.isArray(r.capabilities) ? r.capabilities : [];
+      for (const c of caps) {
+        if (typeof c === "string" && c.length > 0) {
+          const normalized = c.toLowerCase().trim();
+          if (normalized.length >= 2 && !/[^\w\s-]/.test(normalized)) {
+            capCounts.set(normalized, (capCounts.get(normalized) ?? 0) + 1);
+          }
+        }
+      }
+    }
+
+    const dbTerms = [...capCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([term]) => term);
+
+    const terms =
+      dbTerms.length >= 3 ? dbTerms : [...new Set([...dbTerms, ...PREDEFINED_TERMS])];
+
+    const qDisplay = displayQuery(params.q.toLowerCase());
+    const seen = new Set<string>();
+    const querySuggestions: string[] = [];
+
+    for (const term of terms) {
+      const termDisplay = term.charAt(0).toUpperCase() + term.slice(1);
+      for (const tmpl of SUGGESTION_TEMPLATES) {
+        const phrase = tmpl(qDisplay, termDisplay);
+        const key = phrase.toLowerCase();
+        if (!seen.has(key) && phrase !== qDisplay) {
+          seen.add(key);
+          querySuggestions.push(phrase);
+          if (querySuggestions.length >= MAX_QUERY_SUGGESTIONS) break;
+        }
+      }
+      if (querySuggestions.length >= MAX_QUERY_SUGGESTIONS) break;
+    }
+
+    return NextResponse.json({
+      querySuggestions: querySuggestions.slice(0, MAX_QUERY_SUGGESTIONS),
+      agentSuggestions,
+    });
   } catch (err) {
     console.error("[Search Suggest] Error:", err);
     return NextResponse.json(

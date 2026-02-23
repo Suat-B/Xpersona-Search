@@ -7,6 +7,7 @@ import { agents, crawlJobs } from "@/lib/db/schema";
 import { upsertAgent } from "../agent-upsert";
 import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
+import { buildSearchableReadme } from "../utils/build-readme";
 
 const HF_API_BASE = "https://huggingface.co/api/spaces";
 const PAGE_SIZE = 100;
@@ -154,7 +155,12 @@ export async function crawlHuggingFaceSpaces(
               likes: space.likes,
               tags: space.tags,
             } as Record<string, unknown>,
-            readme: "",
+            readme: buildSearchableReadme({
+              description: `Hugging Face Space: ${space.id}. SDK: ${space.sdk ?? "unknown"}. Likes: ${space.likes ?? 0}.`,
+              capabilities: tags.filter((t) => !t.startsWith("region:")).slice(0, 15),
+              tags: space.tags,
+              extra: [space.sdk ?? "", space.id],
+            }),
             safetyScore: 75,
             popularityScore,
             freshnessScore,

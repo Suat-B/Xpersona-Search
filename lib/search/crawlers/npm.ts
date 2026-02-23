@@ -7,6 +7,7 @@ import { agents, crawlJobs } from "@/lib/db/schema";
 import { upsertAgent } from "../agent-upsert";
 import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
+import { buildSearchableReadme } from "../utils/build-readme";
 
 const NPM_SEARCH_URL = "https://registry.npmjs.org/-/v1/search";
 const PAGE_SIZE = 250;
@@ -188,7 +189,13 @@ export async function crawlNpmPackages(
               date: pkg.date,
             } as Record<string, unknown>,
             openclawData: null as unknown as Record<string, unknown>,
-            readme: pkg.description ?? "",
+            readme: buildSearchableReadme({
+              description: pkg.description,
+              capabilities: keywords.slice(0, 15),
+              protocols: ["MCP", "OPENCLEW"],
+              languages: ["typescript"],
+              keywords,
+            }),
             safetyScore: 72,
             popularityScore,
             freshnessScore,

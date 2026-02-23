@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import { octokit, fetchRepoDetails } from "../utils/github";
 import { generateSlug } from "../utils/slug";
 import { upsertAgent } from "../agent-upsert";
+import { buildSearchableReadme } from "../utils/build-readme";
 import {
   calculatePopularityScore,
   calculateFreshnessScore,
@@ -120,7 +121,12 @@ export async function crawlVercelTemplates(
               defaultBranch: repo.default_branch,
             },
             openclawData: { vercelTemplate: true } as Record<string, unknown>,
-            readme: repo.description ?? "",
+            readme: buildSearchableReadme({
+              description: repo.description,
+              capabilities: ["vercel", "template", "nextjs"],
+              languages: ["typescript"],
+              extra: [repo.name, "vercel", "ai", "template"],
+            }),
             safetyScore,
             popularityScore,
             freshnessScore,

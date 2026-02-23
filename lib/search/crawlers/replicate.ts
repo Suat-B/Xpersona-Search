@@ -7,6 +7,7 @@ import { agents, crawlJobs } from "@/lib/db/schema";
 import { upsertAgent } from "../agent-upsert";
 import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
+import { buildSearchableReadme } from "../utils/build-readme";
 
 const REPLICATE_API = "https://api.replicate.com/v1/models";
 
@@ -102,7 +103,10 @@ export async function crawlReplicate(
             runCount: model.run_count,
             owner: model.owner,
           } as Record<string, unknown>,
-          readme: model.description ?? "",
+          readme: buildSearchableReadme({
+            description: model.description,
+            extra: [model.owner ?? "", model.name ?? ""],
+          }),
           safetyScore: 75,
           popularityScore,
           freshnessScore: 70,
