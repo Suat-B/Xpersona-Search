@@ -95,6 +95,8 @@ export function SearchLanding() {
       params.set("limit", "30");
       if (!reset && cursor) params.set("cursor", cursor);
 
+      router.replace(`/?${params.toString()}`, { scroll: false });
+
       try {
         const res = await fetch(`/api/search?${params}`);
         const data = await res.json();
@@ -167,7 +169,7 @@ export function SearchLanding() {
         facets={facets}
       />
 
-      <div className="max-w-2xl mx-auto px-4 py-6 pb-16">
+      <div className="max-w-4xl mx-auto px-3 sm:px-6 py-6 pb-20 sm:pb-16">
         <main aria-label="Search results">
           {loading && !hasResults ? (
             <div className="space-y-0" aria-busy="true" aria-live="polite">
@@ -205,7 +207,7 @@ export function SearchLanding() {
               <div className="mt-6 flex flex-wrap justify-center gap-3">
                 <Link
                   href="/?q=discover"
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg neural-glass border border-white/[0.08] hover:border-[var(--accent-heart)]/30 text-[var(--text-secondary)] hover:text-[var(--accent-heart)] transition-all text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+                  className="inline-flex items-center gap-2 px-4 py-3 min-h-[44px] rounded-lg neural-glass border border-white/[0.08] hover:border-[var(--accent-heart)]/30 text-[var(--text-secondary)] hover:text-[var(--accent-heart)] transition-all text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation"
                 >
                   Explore all agents
                 </Link>
@@ -213,7 +215,7 @@ export function SearchLanding() {
                   <Link
                     key={id}
                     href={`/?protocols=${id}`}
-                    className="inline-flex items-center px-4 py-2 rounded-lg border border-[var(--border)] hover:border-[var(--accent-heart)]/40 text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-all text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+                    className="inline-flex items-center px-4 py-3 min-h-[44px] rounded-lg border border-[var(--border)] hover:border-[var(--accent-heart)]/40 text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-all text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation"
                   >
                     Browse {label}
                   </Link>
@@ -252,7 +254,7 @@ export function SearchLanding() {
                     disabled={loading}
                     aria-busy={loading}
                     aria-label={loading ? "Loading more" : "Load more results"}
-                    className="px-8 py-3 bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 disabled:opacity-50 rounded-xl font-semibold text-white transition-all flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+                    className="w-full sm:w-auto px-8 py-3.5 min-h-[48px] bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 disabled:opacity-50 rounded-xl font-semibold text-white transition-all flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation"
                   >
                     {loading ? (
                       <>

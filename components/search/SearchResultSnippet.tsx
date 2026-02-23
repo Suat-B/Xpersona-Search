@@ -137,10 +137,10 @@ export function SearchResultSnippet({ agent, showSitelinks = false, className }:
   const sitelinks = showSitelinks ? getSitelinks(agent) : [];
 
   return (
-    <article className={`py-5 border-b border-[var(--border)] last:border-b-0 group ${className ?? ""}`}>
+    <article className={`py-4 sm:py-5 border-b border-[var(--border)] last:border-b-0 group min-w-0 ${className ?? ""}`}>
       <Link
         href={`/agent/${agent.slug}`}
-        className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-heart)]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-deep)] rounded"
+        className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-heart)]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-deep)] rounded touch-manipulation min-h-[44px]"
       >
         <h3 className="text-lg font-medium text-[var(--accent-heart)] group-hover:underline decoration-[var(--accent-heart)] underline-offset-2 truncate">
           {agent.name}
@@ -198,7 +198,7 @@ export function SearchResultSnippet({ agent, showSitelinks = false, className }:
       </div>
 
       {sitelinks.length > 0 && (
-        <div className="mt-4 ml-4 pl-4 border-l-2 border-[var(--accent-heart)]/30 space-y-2.5">
+        <div className="mt-4 ml-2 sm:ml-4 pl-3 sm:pl-4 border-l-2 border-[var(--accent-heart)]/30 space-y-2.5 overflow-hidden min-w-0">
           {sitelinks.map((link) => {
             const isExternal = link.href.startsWith("http");
 

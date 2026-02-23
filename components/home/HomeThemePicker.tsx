@@ -59,7 +59,7 @@ export function HomeThemePicker() {
 
   return (
     <div
-      className="flex items-center gap-2 shrink-0 relative z-[1]"
+      className="flex items-center gap-1.5 sm:gap-2 shrink-0 relative z-[1]"
       role="group"
       aria-label="Accent color theme"
     >
@@ -73,7 +73,7 @@ export function HomeThemePicker() {
             onClick={(e) => handleSelect(e, id)}
             aria-pressed={isActive}
             aria-label={`Use ${preset.label} accent`}
-            className={`min-w-[36px] min-h-[36px] w-9 h-9 rounded-full border-2 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation ${
+            className={`min-w-[32px] min-h-[32px] w-8 h-8 sm:min-w-[36px] sm:min-h-[36px] sm:w-9 sm:h-9 rounded-full border-2 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation ${
               isActive
                 ? "scale-110 border-white shadow-lg shadow-black/30"
                 : "border-white/20 hover:border-white/40 hover:scale-105 active:scale-95"

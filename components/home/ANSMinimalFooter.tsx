@@ -29,21 +29,21 @@ export function ANSMinimalFooter({ variant = "light" }: ANSMinimalFooterProps) {
     : "border-t border-[var(--light-border)]";
 
   return (
-    <footer className={footerClasses}>
-      <div className="container mx-auto px-4 sm:px-6 py-8">
+    <footer className={`${footerClasses} safe-area-bottom`}>
+      <div className="container mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          <Link href="/">
+          <Link href="/" className="min-h-[44px] flex items-center touch-manipulation">
             <span className={logoClasses}>Xpersona</span>
           </Link>
 
-          <nav className="flex items-center gap-6" aria-label="Footer navigation">
-            <Link href={getHubUrl("/search-api")} className={navLinkClasses}>
+          <nav className="flex flex-wrap items-center justify-center sm:justify-end gap-4 sm:gap-6" aria-label="Footer navigation">
+            <Link href={getHubUrl("/search-api")} className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
               API
             </Link>
-            <Link href={getHubUrl("/privacy-policy-1")} className={navLinkClasses}>
+            <Link href={getHubUrl("/privacy-policy-1")} className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
               Privacy
             </Link>
-            <Link href={getHubUrl("/terms-of-service")} className={navLinkClasses}>
+            <Link href={getHubUrl("/terms-of-service")} className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
               Terms
             </Link>
           </nav>

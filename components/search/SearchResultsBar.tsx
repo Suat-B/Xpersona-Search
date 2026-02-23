@@ -76,7 +76,6 @@ export function SearchResultsBar({
 
   useEffect(() => {
     if (isFocused) setShowSuggestions(true);
-    else setShowSuggestions(false);
   }, [query, isFocused]);
 
   useEffect(() => () => {
@@ -85,6 +84,7 @@ export function SearchResultsBar({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setShowSuggestions(false);
     if (query.trim()) addRecentSearch(query.trim());
     onSearch();
   };
@@ -100,10 +100,10 @@ export function SearchResultsBar({
 
   return (
     <div className="sticky top-0 z-20 bg-[var(--bg-deep)]/95 backdrop-blur-sm border-b border-[var(--border)]">
-      <div className="max-w-4xl mx-auto px-4 py-3">
+      <div className="max-w-4xl mx-auto px-3 sm:px-4 py-3">
         {/* Top row: search */}
-        <div className="flex items-center gap-4 mb-3">
-          <form onSubmit={handleSubmit} className="flex-1 flex items-center gap-2">
+        <div className="flex flex-wrap items-stretch gap-2 sm:gap-4">
+          <form onSubmit={handleSubmit} className="flex-1 min-w-0 flex items-stretch gap-2">
             <div
               ref={searchAnchorRef}
               className={`relative flex-1 flex items-center rounded-xl border transition-all duration-200 ${
@@ -144,7 +144,7 @@ export function SearchResultsBar({
                 aria-expanded={showSuggestions}
                 autoComplete="off"
                 autoFocus
-                className="w-full pl-9 pr-4 py-2.5 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-sm rounded-xl focus:outline-none"
+                className="w-full min-w-0 pl-9 pr-4 py-3 sm:py-2.5 min-h-[44px] bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-sm rounded-xl focus:outline-none touch-manipulation"
               />
               <SearchSuggestions
                 ref={suggestionsRef}
@@ -162,7 +162,7 @@ export function SearchResultsBar({
               disabled={loading}
               aria-busy={loading}
               aria-label={loading ? "Searching" : "Search"}
-              className="px-4 py-2.5 bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 disabled:opacity-50 rounded-xl text-sm font-semibold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+              className="px-4 py-2.5 min-h-[44px] flex items-center bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 disabled:opacity-50 rounded-xl text-sm font-semibold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation shrink-0"
             >
               {loading ? "..." : "Search"}
             </button>
@@ -176,7 +176,7 @@ export function SearchResultsBar({
               aria-expanded={showTools}
               aria-haspopup="true"
               aria-label="Search tools"
-              className="px-3 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)]/50 text-[var(--text-secondary)] text-sm font-medium hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+              className="px-3 py-2.5 min-h-[44px] flex items-center rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)]/50 text-[var(--text-secondary)] text-sm font-medium hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation shrink-0"
             >
               Tools
             </button>
@@ -188,7 +188,7 @@ export function SearchResultsBar({
                   onClick={() => setShowTools(false)}
                 />
                 <div
-                  className="absolute right-0 top-full mt-1 w-64 p-4 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-xl z-20 space-y-4"
+                  className="absolute right-0 top-full mt-1 w-[min(calc(100vw-2rem),16rem)] sm:w-64 p-4 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-xl z-20 space-y-4 max-h-[70vh] overflow-y-auto"
                   role="menu"
                 >
                   <div>

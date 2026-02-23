@@ -95,7 +95,7 @@ export function GoogleStyleHome({
     : null;
 
   return (
-    <div className="h-screen min-h-dvh flex flex-col overflow-hidden bg-[var(--bg-deep)]">
+    <div className="h-screen min-h-dvh flex flex-col overflow-x-hidden overflow-hidden bg-[var(--bg-deep)]">
       <div className="fixed inset-0 pointer-events-none">
         {bgImage && (
           <>
@@ -112,18 +112,18 @@ export function GoogleStyleHome({
         <div className="absolute bottom-1/4 left-1/4 w-[28rem] h-[28rem] bg-[var(--accent-heart)]/[0.12] rounded-full blur-3xl home-bg-drift" style={{ animationDelay: "-6s" }} />
       </div>
 
-      <header className="relative flex justify-end items-center px-6 py-4 gap-4 shrink-0 z-20">
+      <header className="relative flex justify-end items-center px-4 sm:px-6 py-3 sm:py-4 gap-3 sm:gap-4 shrink-0 z-20 safe-area-inset-top">
         {!isAuthenticated && (
           <>
             <Link
               href="/auth/signin?callbackUrl=/dashboard"
-              className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] rounded-full px-3 py-1.5"
+              className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] rounded-full px-3 py-2.5 min-h-[44px] flex items-center touch-manipulation"
             >
               Sign in
             </Link>
             <Link
               href="/auth/signup"
-              className="text-sm font-medium text-white bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 active:bg-[var(--accent-heart)]/80 px-5 py-2.5 rounded-full transition-all hover:shadow-lg hover:shadow-[var(--accent-heart)]/20 focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+              className="text-sm font-medium text-white bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 active:bg-[var(--accent-heart)]/80 px-5 py-2.5 rounded-full min-h-[44px] flex items-center transition-all hover:shadow-lg hover:shadow-[var(--accent-heart)]/20 focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation"
             >
               Sign up
             </Link>
@@ -131,26 +131,26 @@ export function GoogleStyleHome({
         )}
       </header>
 
-      <main className="relative flex-1 flex flex-col items-center justify-center px-4 -mt-28 z-10 overflow-y-auto">
+      <main className="relative flex-1 flex flex-col items-center justify-center px-4 sm:px-6 -mt-16 sm:-mt-24 md:-mt-28 z-10 overflow-y-auto py-6 sm:py-0">
         <Link
           href="/"
-          className="mb-8 group block text-center home-logo-link"
+          className="mb-6 sm:mb-8 group block text-center home-logo-link"
           aria-label="Xpersona home">
-          <span className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-white select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75">
+          <span className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75">
             Xpersona
           </span>
         </Link>
 
-        <form onSubmit={handleSearch} className="w-full max-w-3xl mt-6 animate-fade-in-up animate-delay-225">
+        <form onSubmit={handleSearch} className="w-full max-w-3xl mt-4 sm:mt-6 animate-fade-in-up animate-delay-225">
           <div
             ref={searchAnchorRef}
-            className={`relative flex items-center w-full rounded-2xl neural-glass neural-glass-hover border transition-all duration-300 ${
+            className={`relative flex items-center w-full rounded-xl sm:rounded-2xl neural-glass neural-glass-hover border transition-all duration-300 ${
               isFocused
                 ? "border-[var(--accent-heart)]/50 shadow-[0_0_24px_var(--border-glow)] ring-2 ring-[var(--accent-heart)]/25"
                 : "border-white/[0.1] hover:border-white/[0.15] shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
             }`}
           >
-            <div className="absolute left-5 w-5 h-5 text-[var(--text-tertiary)] pointer-events-none" aria-hidden>
+            <div className="absolute left-3 sm:left-5 w-4 h-4 sm:w-5 sm:h-5 text-[var(--text-tertiary)] pointer-events-none" aria-hidden>
               <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
@@ -174,7 +174,7 @@ export function GoogleStyleHome({
               aria-expanded={showSuggestions}
               autoComplete="off"
               autoFocus
-              className="w-full pl-14 pr-24 py-3 sm:py-4 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-lg rounded-2xl focus:outline-none"
+              className="w-full pl-11 sm:pl-14 pr-20 sm:pr-24 py-3.5 sm:py-4 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-lg rounded-xl sm:rounded-2xl focus:outline-none min-h-[48px] touch-manipulation"
             />
             <button
               type="button"
@@ -184,7 +184,7 @@ export function GoogleStyleHome({
                 params.delete("q");
                 router.push(`/?${params.toString()}`);
               }}
-              className="absolute right-2 px-3 py-2 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--accent-heart)] rounded-lg hover:bg-white/5 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+              className="absolute right-2 px-2.5 sm:px-3 py-2 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--accent-heart)] rounded-lg hover:bg-white/5 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation min-h-[36px] flex items-center"
               aria-label="Browse all agents"
             >
               Browse
@@ -200,17 +200,17 @@ export function GoogleStyleHome({
             />
           </div>
 
-          <div className="flex justify-center gap-4 mt-6">
+          <div className="flex flex-col sm:flex-row justify-center gap-3 sm:gap-4 mt-4 sm:mt-6 w-full sm:w-auto">
             <button
               type="submit"
-              className="px-8 py-3.5 bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 active:scale-[0.98] active:bg-[var(--accent-heart)]/80 text-white text-sm font-semibold rounded-2xl shadow-lg shadow-[var(--accent-heart)]/25 hover:shadow-[var(--accent-heart)]/40 transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+              className="w-full sm:w-auto px-8 py-3.5 min-h-[48px] bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 active:scale-[0.98] active:bg-[var(--accent-heart)]/80 text-white text-sm font-semibold rounded-xl sm:rounded-2xl shadow-lg shadow-[var(--accent-heart)]/25 hover:shadow-[var(--accent-heart)]/40 transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation"
             >
               Search
             </button>
             <button
               type="button"
               onClick={handleLucky}
-              className="px-8 py-3.5 neural-glass hover:border-white/[0.2] active:scale-[0.98] text-[var(--text-primary)] text-sm font-medium rounded-2xl border border-white/[0.1] transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
+              className="w-full sm:w-auto px-8 py-3.5 min-h-[48px] neural-glass hover:border-white/[0.2] active:scale-[0.98] text-[var(--text-primary)] text-sm font-medium rounded-xl sm:rounded-2xl border border-white/[0.1] transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation"
             >
               New Agent
             </button>
@@ -218,21 +218,21 @@ export function GoogleStyleHome({
         </form>
       </main>
 
-      <footer className="relative shrink-0 py-4 px-6 sm:px-8 border-t border-white/[0.1] neural-glass z-10">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 max-w-6xl mx-auto">
-          <Link href="/" className="text-sm font-bold text-[var(--text-primary)] hover:text-[var(--accent-heart)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded shrink-0">
+      <footer className="relative shrink-0 py-4 px-4 sm:px-8 border-t border-white/[0.1] neural-glass z-10 safe-area-bottom">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-4 max-w-6xl mx-auto">
+          <Link href="/" className="text-sm font-bold text-[var(--text-primary)] hover:text-[var(--accent-heart)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded shrink-0 touch-manipulation py-1 min-h-[44px] flex items-center">
             Xpersona
           </Link>
-          <div className="flex items-center gap-4 sm:gap-6">
+          <div className="flex flex-wrap items-center justify-center sm:justify-end gap-3 sm:gap-6">
             <HomeThemePicker />
-            <nav className="flex gap-4 sm:gap-6 text-sm text-[var(--text-tertiary)] shrink-0">
-              <Link href="/search-api" className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded">
+            <nav className="flex flex-wrap gap-3 sm:gap-6 text-sm text-[var(--text-tertiary)] shrink-0">
+              <Link href="/search-api" className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-2 min-h-[44px] flex items-center touch-manipulation">
                 API
               </Link>
-              <Link href={privacyUrl} className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded">
+              <Link href={privacyUrl} className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-2 min-h-[44px] flex items-center touch-manipulation">
                 Privacy
               </Link>
-              <Link href={termsUrl} className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded">
+              <Link href={termsUrl} className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-2 min-h-[44px] flex items-center touch-manipulation">
                 Terms
               </Link>
             </nav>
