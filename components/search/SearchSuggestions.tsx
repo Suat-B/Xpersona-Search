@@ -11,6 +11,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { getRecentSearches, removeRecentSearch } from "@/lib/search-history";
+import { PROTOCOL_LABELS } from "@/components/search/ProtocolBadge";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -499,7 +500,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
                       key={p}
                       className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--accent-neural)]/10 text-[var(--accent-neural)] font-medium"
                     >
-                      {p}
+                      {PROTOCOL_LABELS[p] ?? p}
                     </span>
                   ))}
                 </span>

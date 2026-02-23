@@ -191,14 +191,14 @@ export function GoogleStyleHome({
               type="submit"
               className="w-full sm:w-auto px-8 py-3.5 min-h-[48px] bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 active:scale-[0.98] active:bg-[var(--accent-heart)]/80 text-white text-sm font-semibold rounded-xl sm:rounded-2xl shadow-lg shadow-[var(--accent-heart)]/25 hover:shadow-[var(--accent-heart)]/40 transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation"
             >
-              Enter
+              Xpersona Search
             </button>
             <button
               type="button"
               onClick={handleLucky}
               className="w-full sm:w-auto px-8 py-3.5 min-h-[48px] neural-glass hover:border-white/[0.2] active:scale-[0.98] text-[var(--text-primary)] text-sm font-medium rounded-xl sm:rounded-2xl border border-white/[0.1] transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation"
             >
-              I'm feeling lucky
+              I'm Feeling Lucky
             </button>
           </div>
         </form>
@@ -216,27 +216,33 @@ export function GoogleStyleHome({
         </div>
       </main>
 
-      <footer className="relative shrink-0 py-4 px-4 sm:px-8 border-t border-white/[0.1] neural-glass z-10 safe-area-bottom">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-4 max-w-6xl mx-auto">
-          <Link href="/" className="text-sm font-bold text-[var(--text-primary)] hover:text-[var(--accent-heart)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded shrink-0 touch-manipulation py-1 min-h-[44px] flex items-center">
-            Xpersona
-          </Link>
-          <div className="flex flex-wrap items-center justify-center sm:justify-end gap-3 sm:gap-6">
-            <nav className="flex flex-wrap gap-3 sm:gap-6 text-sm text-[var(--text-tertiary)] shrink-0">
-              <Link href="/dashboard/claimed-agents" className="hover:text-[var(--accent-heart)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-2 min-h-[44px] flex items-center touch-manipulation">
-                Claim Agent
-              </Link>
-              <Link href="/search-api" className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-2 min-h-[44px] flex items-center touch-manipulation">
-                API
-              </Link>
-              <Link href={privacyUrl} className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-2 min-h-[44px] flex items-center touch-manipulation">
-                Privacy
-              </Link>
-              <Link href={termsUrl} className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-2 min-h-[44px] flex items-center touch-manipulation">
-                Terms
-              </Link>
-            </nav>
+      <footer className="relative shrink-0 w-full py-3 sm:py-3.5 px-6 sm:px-8 md:px-12 lg:px-16 bg-black/40 border-t border-white/[0.08] z-10 safe-area-bottom">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-6 w-full">
+          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 sm:gap-6 text-xs sm:text-[13px] text-[var(--text-tertiary)]">
+            <Link href="/" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+              Xpersona
+            </Link>
+            <Link href="/dashboard/claimed-agents" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+              Claim Agent
+            </Link>
+            <Link href="/search-api" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+              API
+            </Link>
+            <span className="hidden md:inline-flex items-center gap-1.5 text-[var(--text-quaternary)]">
+              <svg className="w-3.5 h-3.5 text-emerald-400/80 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path d="M12 2C8 8 6 12 6 16c0 3.3 2.7 6 6 6s6-2.7 6-6c0-4-2-8-6-14z" />
+              </svg>
+              Search AI agents, skills, and tools
+            </span>
           </div>
+          <nav className="flex flex-wrap items-center justify-center sm:justify-end gap-4 sm:gap-6 text-xs sm:text-[13px] text-[var(--text-tertiary)]">
+            <Link href={privacyUrl} className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+              Privacy
+            </Link>
+            <Link href={termsUrl} className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+              Terms
+            </Link>
+          </nav>
         </div>
       </footer>
     </div>

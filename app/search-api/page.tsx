@@ -27,7 +27,39 @@ export default function SearchApiPage() {
   const baseUrl = SEARCH_API_BASE.replace(/\/$/, "");
 
   const searchCurl = `curl "${baseUrl}/api/search?q=crypto&protocols=A2A,MCP&minSafety=50&sort=rank&limit=10"`;
+  const suggestCurl = `curl "${baseUrl}/api/search/suggest?q=trad&limit=8"`;
+  const trendingCurl = `curl "${baseUrl}/api/search/trending"`;
+  const clickCurl = `curl -X POST "${baseUrl}/api/search/click" -H "Content-Type: application/json" -d '{"query":"crypto","agentId":"uuid","position":0}'`;
   const agentCurl = `curl "${baseUrl}/api/agents/my-agent-slug"`;
+
+  const searchResponseJson = `{
+  "results": [
+    {
+      "id": "uuid",
+      "name": "Agent Name",
+      "slug": "agent-slug",
+      "description": "...",
+      "snippet": "...<mark>matching</mark> text...",
+      "capabilities": ["cap1", "cap2"],
+      "protocols": ["A2A", "MCP"],
+      "safetyScore": 85,
+      "popularityScore": 72,
+      "freshnessScore": 90,
+      "overallRank": 82.5,
+      "githubData": { "stars": 120, "forks": 15 },
+      "createdAt": "2025-01-01T00:00:00Z"
+    }
+  ],
+  "pagination": {
+    "hasMore": true,
+    "nextCursor": "uuid",
+    "total": 150
+  },
+  "facets": {
+    "protocols": [{ "protocol": ["A2A"], "count": 45 }]
+  },
+  "didYouMean": "cryptocurrency"
+}`;
 
   return (
     <main className="min-h-screen bg-[var(--bg-deep)] text-[var(--text-primary)]">
@@ -71,6 +103,15 @@ export default function SearchApiPage() {
               <strong className="text-white">Base URL:</strong>{" "}
               <code className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-xs">{baseUrl}</code>
             </p>
+            <p className="mt-3">
+              <strong className="text-white">Rate limits:</strong> 60 requests/minute (anonymous), 120/min (authenticated).
+              Returns <code className="rounded bg-white/10 px-1 font-mono text-xs">429 Too Many Requests</code> with{" "}
+              <code className="rounded bg-white/10 px-1 font-mono text-xs">Retry-After</code> when exceeded.
+            </p>
+            <p className="mt-3">
+              <strong className="text-white">Caching:</strong> Responses include{" "}
+              <code className="rounded bg-white/10 px-1 font-mono text-xs">Cache-Control: public, s-maxage=30, stale-while-revalidate=60</code>.
+            </p>
           </div>
         </section>
 
@@ -85,7 +126,11 @@ export default function SearchApiPage() {
               </div>
               <p className="text-sm font-medium text-white mb-1">Search AI agents</p>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-4">
-                Full-text search with filtering, sorting, and cursor-based pagination.
+                Full-text search with filtering, sorting, and cursor-based pagination. Supports Google-like query syntax:
+                &quot;exact phrase&quot;, <code className="rounded bg-white/10 px-1 font-mono">-exclusion</code>, OR,
+                and inline operators <code className="rounded bg-white/10 px-1 font-mono">protocol:MCP</code>,{" "}
+                <code className="rounded bg-white/10 px-1 font-mono">lang:python</code>,{" "}
+                <code className="rounded bg-white/10 px-1 font-mono">safety:&gt;80</code>.
               </p>
               <h3 className="text-xs font-semibold text-white mb-2">Query parameters</h3>
               <div className="overflow-x-auto">
@@ -101,12 +146,12 @@ export default function SearchApiPage() {
                     <tr className="border-b border-white/5">
                       <td className="py-2 font-mono">q</td>
                       <td>string</td>
-                      <td>Full-text search query (optional)</td>
+                      <td>Full-text query (max 500 chars). Supports &quot;phrases&quot;, -exclusions, OR, protocol:MCP, lang:python, safety:&gt;80</td>
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-2 font-mono">protocols</td>
                       <td>string</td>
-                      <td>Comma-separated: A2A, MCP, ANP, OPENCLAW (optional)</td>
+                      <td>Comma-separated: A2A, MCP, ANP, OPENCLEW (optional)</td>
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-2 font-mono">capabilities</td>
@@ -133,10 +178,15 @@ export default function SearchApiPage() {
                       <td>string</td>
                       <td>Pagination cursor from previous response (optional)</td>
                     </tr>
-                    <tr>
+                    <tr className="border-b border-white/5">
                       <td className="py-2 font-mono">limit</td>
                       <td>number</td>
                       <td>Results per page 1–100 (default: 30)</td>
+                    </tr>
+                    <tr>
+                      <td className="py-2 font-mono">includePending</td>
+                      <td>string</td>
+                      <td>1 or true to include PENDING_REVIEW agents (optional)</td>
                     </tr>
                   </tbody>
                 </table>
@@ -144,6 +194,72 @@ export default function SearchApiPage() {
               <div className="relative rounded-lg bg-black/50 p-3 font-mono text-[11px] overflow-x-auto mt-4">
                 <CopyButton text={searchCurl} />
                 <pre className="text-emerald-300/90 break-all">{searchCurl}</pre>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/5 bg-[var(--bg-card)] overflow-hidden mb-6">
+            <div className="border-b border-white/5 p-5">
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <span className="font-mono text-xs font-bold px-2 py-0.5 rounded text-emerald-400">GET</span>
+                <code className="text-sm font-mono text-white/90">/api/search/suggest</code>
+              </div>
+              <p className="text-sm font-medium text-white mb-1">Autocomplete suggestions</p>
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-4">
+                Returns query completions and agent suggestions. Min 2 characters in q.
+              </p>
+              <div className="overflow-x-auto mb-4">
+                <table className="w-full text-xs text-[var(--text-secondary)]">
+                  <tbody>
+                    <tr className="border-b border-white/5">
+                      <td className="py-2 font-mono">q</td>
+                      <td className="py-2">string (required, 2–100 chars)</td>
+                    </tr>
+                    <tr>
+                      <td className="py-2 font-mono">limit</td>
+                      <td className="py-2">number 1–12 (default: 8)</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div className="relative rounded-lg bg-black/50 p-3 font-mono text-[11px] overflow-x-auto">
+                <CopyButton text={suggestCurl} />
+                <pre className="text-emerald-300/90 break-all">{suggestCurl}</pre>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/5 bg-[var(--bg-card)] overflow-hidden mb-6">
+            <div className="border-b border-white/5 p-5">
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <span className="font-mono text-xs font-bold px-2 py-0.5 rounded text-emerald-400">GET</span>
+                <code className="text-sm font-mono text-white/90">/api/search/trending</code>
+              </div>
+              <p className="text-sm font-medium text-white mb-1">Trending search queries</p>
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-4">
+                Returns popular searches from the last 30 days. Falls back to top agents if insufficient data.
+              </p>
+              <div className="relative rounded-lg bg-black/50 p-3 font-mono text-[11px] overflow-x-auto">
+                <CopyButton text={trendingCurl} />
+                <pre className="text-emerald-300/90 break-all">{trendingCurl}</pre>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/5 bg-[var(--bg-card)] overflow-hidden mb-6">
+            <div className="border-b border-white/5 p-5">
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <span className="font-mono text-xs font-bold px-2 py-0.5 rounded text-amber-400">POST</span>
+                <code className="text-sm font-mono text-white/90">/api/search/click</code>
+              </div>
+              <p className="text-sm font-medium text-white mb-1">Record result click</p>
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-4">
+                Records which search result was clicked for learning-to-rank. Body:{" "}
+                <code className="rounded bg-white/10 px-1 font-mono">{"{ query, agentId, position }"}</code>.
+              </p>
+              <div className="relative rounded-lg bg-black/50 p-3 font-mono text-[11px] overflow-x-auto">
+                <CopyButton text={clickCurl} />
+                <pre className="text-emerald-300/90 break-all">{clickCurl}</pre>
               </div>
             </div>
           </div>
@@ -170,61 +286,14 @@ export default function SearchApiPage() {
           <h2 className="text-lg font-semibold text-white mb-3">Response format</h2>
           <div className="rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
             <h3 className="text-sm font-medium text-white mb-2">Search response</h3>
+            <p className="text-xs text-[var(--text-secondary)] mb-3">
+              Each result includes <code className="rounded bg-white/10 px-1 font-mono">snippet</code> (description with{" "}
+              <code className="rounded bg-white/10 px-1 font-mono">&lt;mark&gt;</code> highlighting) when a query is present.
+              <code className="rounded bg-white/10 px-1 font-mono">didYouMean</code> is returned when few or no results match (spell/similarity suggestion).
+            </p>
             <div className="relative rounded-lg bg-black/50 p-4 font-mono text-[11px] overflow-x-auto">
-              <CopyButton
-                text={`{
-  "results": [
-    {
-      "id": "uuid",
-      "name": "Agent Name",
-      "slug": "agent-slug",
-      "description": "...",
-      "capabilities": ["cap1", "cap2"],
-      "protocols": ["A2A", "MCP"],
-      "safetyScore": 85,
-      "popularityScore": 72,
-      "freshnessScore": 90,
-      "overallRank": 82.5,
-      "githubData": { "stars": 120, "forks": 15 },
-      "createdAt": "2025-01-01T00:00:00Z"
-    }
-  ],
-  "pagination": {
-    "hasMore": true,
-    "nextCursor": "uuid",
-    "total": 150
-  },
-  "facets": {
-    "protocols": [{ "protocol": ["A2A"], "count": 45 }]
-  }
-}`}
-              />
-              <pre className="text-cyan-300/90 whitespace-pre">{`{
-  "results": [
-    {
-      "id": "uuid",
-      "name": "Agent Name",
-      "slug": "agent-slug",
-      "description": "...",
-      "capabilities": ["cap1", "cap2"],
-      "protocols": ["A2A", "MCP"],
-      "safetyScore": 85,
-      "popularityScore": 72,
-      "freshnessScore": 90,
-      "overallRank": 82.5,
-      "githubData": { "stars": 120, "forks": 15 },
-      "createdAt": "2025-01-01T00:00:00Z"
-    }
-  ],
-  "pagination": {
-    "hasMore": true,
-    "nextCursor": "uuid",
-    "total": 150
-  },
-  "facets": {
-    "protocols": [{ "protocol": ["A2A"], "count": 45 }]
-  }
-}`}</pre>
+              <CopyButton text={searchResponseJson} />
+              <pre className="text-cyan-300/90 whitespace-pre">{searchResponseJson}</pre>
             </div>
           </div>
         </section>
@@ -236,10 +305,16 @@ export default function SearchApiPage() {
               Call <code className="rounded bg-white/10 px-1 font-mono text-xs">GET /api/search</code> with a
               natural-language query in <code className="rounded bg-white/10 px-1 font-mono text-xs">q</code> to find
               relevant agents. Use <code className="rounded bg-white/10 px-1 font-mono text-xs">protocols</code> to
-              filter by A2A, MCP, ANP, or OpenClaw. Use <code className="rounded bg-white/10 px-1 font-mono text-xs">cursor</code> from the
-              previous response for pagination. Then call{" "}
+              filter by A2A, MCP, ANP, or OpenClaw. For advanced queries, use inline operators{" "}
+              <code className="rounded bg-white/10 px-1 font-mono text-xs">protocol:MCP</code>,{" "}
+              <code className="rounded bg-white/10 px-1 font-mono text-xs">lang:python</code>, or{" "}
+              <code className="rounded bg-white/10 px-1 font-mono text-xs">safety:&gt;80</code> inside the query. Use{" "}
+              <code className="rounded bg-white/10 px-1 font-mono text-xs">cursor</code> from the
+              previous response for pagination. Check <code className="rounded bg-white/10 px-1 font-mono text-xs">didYouMean</code> for
+              spell-correction suggestions when results are sparse. Then call{" "}
               <code className="rounded bg-white/10 px-1 font-mono text-xs">GET /api/agents/{"{slug}"}</code> for full
-              details on any agent.
+              details on any agent. Optionally call <code className="rounded bg-white/10 px-1 font-mono text-xs">POST /api/search/click</code> when
+              a user clicks a result to improve future rankings.
             </p>
           </div>
         </section>
