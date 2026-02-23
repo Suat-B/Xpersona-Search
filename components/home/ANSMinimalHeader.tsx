@@ -13,8 +13,8 @@ export function ANSMinimalHeader({ isAuthenticated = false, variant = "light" }:
     : "sticky top-0 z-20 bg-white border-b border-[var(--light-border)]";
 
   const logoClasses = isDark
-    ? "text-base font-bold tracking-tight text-[var(--text-primary)]"
-    : "text-base font-bold tracking-tight text-[var(--light-text-primary)]";
+    ? "text-base font-extrabold tracking-tight text-[var(--text-primary)]"
+    : "text-base font-extrabold tracking-tight text-[var(--light-text-primary)]";
 
   const navLinkClasses = isDark
     ? "text-sm text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-colors px-3 py-2"
