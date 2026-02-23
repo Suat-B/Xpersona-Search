@@ -18,6 +18,14 @@ const SEARCH_TERMS = [
   "mcp server",
   "model context protocol",
   "langchain agent",
+  "llm agent",
+  "chatbot",
+  "ai assistant",
+  "autonomous agent",
+  "crewai",
+  "autogen",
+  "rag agent",
+  "mcp tool",
 ];
 
 interface DockerRepo {
@@ -114,7 +122,7 @@ export async function crawlDockerHub(
               starCount: repo.star_count,
             } as Record<string, unknown>,
             readme: repo.short_description ?? "",
-            safetyScore: 60,
+            safetyScore: 72,
             popularityScore,
             freshnessScore: 70,
             performanceScore: 0,

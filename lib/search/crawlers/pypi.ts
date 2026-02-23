@@ -27,6 +27,19 @@ const SEARCH_TERMS = [
   "openai agent",
   "langchain",
   "llamaindex",
+  "crewai",
+  "autogen agent",
+  "smolagents",
+  "phidata",
+  "autonomous agent",
+  "agent framework python",
+  "llm tool",
+  "function calling",
+  "tool use llm",
+  "rag agent",
+  "embedding agent",
+  "multi agent",
+  "agentic",
 ];
 
 /** Known PyPI packages (MCP/agent ecosystem) when search is unavailable */
@@ -106,25 +119,34 @@ function isRelevantPackage(info: PypiProject["info"], broadMode: boolean): boole
   return false;
 }
 
-async function searchPypiHtml(term: string): Promise<string[]> {
-  const url = `${PYPI_BASE}/search/?q=${encodeURIComponent(term)}`;
-  try {
-    const res = await fetch(url, {
-      headers: {
-        Accept: "text/html",
-        "User-Agent": "Xpersona-Crawler/1.0 (https://xpersona.app)",
-      },
-    });
-    if (!res.ok) return [];
-    const html = await res.text();
-    const names = new Set<string>();
-    const re = /\/project\/([a-zA-Z0-9._-]+)\//g;
-    let m;
-    while ((m = re.exec(html)) !== null) names.add(m[1]);
-    return [...names];
-  } catch {
-    return [];
+const MAX_PYPI_PAGES = 10;
+
+async function searchPypiHtml(term: string, maxPages: number = MAX_PYPI_PAGES): Promise<string[]> {
+  const names = new Set<string>();
+
+  for (let page = 1; page <= maxPages; page++) {
+    const url = `${PYPI_BASE}/search/?q=${encodeURIComponent(term)}&page=${page}`;
+    try {
+      const res = await fetch(url, {
+        headers: {
+          Accept: "text/html",
+          "User-Agent": "Xpersona-Crawler/1.0 (https://xpersona.app)",
+        },
+      });
+      if (!res.ok) break;
+      const html = await res.text();
+      const prevSize = names.size;
+      const re = /\/project\/([a-zA-Z0-9._-]+)\//g;
+      let m;
+      while ((m = re.exec(html)) !== null) names.add(m[1]);
+      if (names.size === prevSize) break;
+      await new Promise((r) => setTimeout(r, 300));
+    } catch {
+      break;
+    }
   }
+
+  return [...names];
 }
 
 async function fetchProjectJson(name: string): Promise<PypiProject | null> {
@@ -204,7 +226,7 @@ export async function crawlPypiPackages(
           classifiers: info.classifiers?.slice(0, 10),
         } as Record<string, unknown>,
         readme: info.summary ?? "",
-        safetyScore: 65,
+        safetyScore: 75,
         popularityScore: 50,
         freshnessScore: 60,
         performanceScore: 0,

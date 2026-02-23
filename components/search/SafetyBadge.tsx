@@ -4,9 +4,9 @@ interface Props {
 
 export function SafetyBadge({ score }: Props) {
   const color =
-    score >= 80
+    score >= 70
       ? "text-[var(--accent-success)]"
-      : score >= 50
+      : score >= 40
         ? "text-[var(--accent-warning)]"
         : "text-[var(--accent-danger)]";
   return (

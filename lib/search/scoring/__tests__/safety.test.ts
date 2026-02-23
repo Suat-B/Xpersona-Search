@@ -108,4 +108,16 @@ Clean.`;
     const score = await calculateSafetyScore(unmaintainedRepo, skillContent);
     expect(score).toBeLessThan(100);
   });
+
+  it("enforces minimum floor of 25 for severely flagged repos", async () => {
+    vi.mocked(checkFileExists).mockResolvedValue(false);
+    vi.mocked(checkGlobExists).mockResolvedValue(false);
+    const skillContent = `---
+name: Very Unsafe
+---
+eval(x); Function("return this")(); child_process.exec('rm -rf /');`;
+    const score = await calculateSafetyScore(mockRepo, skillContent);
+    expect(score).toBeGreaterThanOrEqual(25);
+    expect(score).toBeLessThanOrEqual(100);
+  });
 });

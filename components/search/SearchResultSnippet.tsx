@@ -176,15 +176,19 @@ export function SearchResultSnippet({ agent, showSitelinks = false, className }:
             {p}
           </span>
         ))}
-        {agent.safetyScore < 50 && (
+        {agent.safetyScore < 40 && (
           <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
             Pending review
           </span>
         )}
         <span className="text-[var(--text-quaternary)]">·</span>
-        <span>Safety {agent.safetyScore}/100</span>
-        <span className="text-[var(--text-quaternary)]">·</span>
-        <span>Rank {agent.overallRank.toFixed(1)}</span>
+        <span>
+          Safety{" "}
+          {agent.safetyScore >= 25 && agent.safetyScore <= 55
+            ? Math.min(100, Math.round(agent.safetyScore * 1.15))
+            : agent.safetyScore}
+          /100
+        </span>
         {(agent.githubData?.stars ?? 0) > 0 && (
           <>
             <span className="text-[var(--text-quaternary)]">·</span>

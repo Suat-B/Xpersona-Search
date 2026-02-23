@@ -43,6 +43,40 @@ const REPO_SEARCH_QUERIES = [
   "model context protocol in:description",
   "topic:claude",
   "topic:anthropic",
+  "topic:autogen",
+  "topic:crewai",
+  "topic:smolagents",
+  "topic:phidata",
+  "topic:swarm",
+  "topic:rag-agent",
+  "topic:code-agent",
+  "topic:web-agent",
+  "topic:coding-agent",
+  "topic:cursor-agent",
+  "topic:windsurf",
+  "topic:cline-agent",
+  "topic:agentic",
+  "topic:agent-framework",
+  "topic:ai-chatbot",
+  "topic:openai-agent",
+  "topic:gemini-agent",
+  "topic:function-calling",
+  "topic:tool-use",
+  "topic:autonomous-agent",
+  "ai agent stars:>10",
+  "mcp server stars:>5",
+  "llm agent stars:>10",
+  "chatbot stars:>50",
+  "autonomous agent stars:>5",
+  "topic:copilot",
+  "topic:gpt-agent",
+  "topic:ai-tool",
+  "topic:llm-tool",
+  "topic:agent-protocol",
+  "topic:a2a-protocol",
+  "agentic framework in:description",
+  "autonomous agent in:description",
+  "tool-calling agent in:description",
 ];
 
 function sleep(ms: number): Promise<void> {
@@ -54,17 +88,15 @@ function isLikelyAgent(repo: { description?: string | null; name?: string }): bo
   const name = (repo.name ?? "").toLowerCase();
   const combined = `${name} ${desc}`;
 
-  if (
-    combined.includes("agent") ||
-    combined.includes("mcp") ||
-    combined.includes("openclaw") ||
-    combined.includes("chatbot") ||
-    combined.includes("llm") ||
-    combined.includes("langchain") ||
-    combined.includes("model context protocol")
-  )
-    return true;
-  return false;
+  const signals = [
+    "agent", "mcp", "openclaw", "chatbot", "llm",
+    "langchain", "model context protocol", "crewai",
+    "autogen", "smolagent", "phidata", "agentic",
+    "autonomous", "tool-use", "function-calling",
+    "copilot", "assistant", "llamaindex", "rag",
+    "swarm", "multi-agent", "a2a",
+  ];
+  return signals.some((s) => combined.includes(s));
 }
 
 export async function crawlGitHubRepos(
@@ -201,7 +233,7 @@ export async function crawlGitHubRepos(
               freshness: freshnessScore,
               performance: 0,
             }),
-            status: safetyScore >= 50 ? ("ACTIVE" as const) : ("PENDING_REVIEW" as const),
+            status: safetyScore >= 40 ? ("ACTIVE" as const) : ("PENDING_REVIEW" as const),
             lastCrawledAt: new Date(),
             nextCrawlAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
           };

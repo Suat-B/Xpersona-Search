@@ -67,12 +67,14 @@ interface HfSpace {
 async function fetchSpaces(
   search: string,
   limit: number,
-  token?: string
+  token?: string,
+  offset: number = 0
 ): Promise<HfSpace[]> {
   const url = new URL(HF_API_BASE);
   url.searchParams.set("limit", String(limit));
   url.searchParams.set("sort", "likes");
   url.searchParams.set("search", search);
+  if (offset > 0) url.searchParams.set("offset", String(offset));
 
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -102,61 +104,68 @@ export async function crawlHuggingFaceSpaces(
   const seenIds = new Set<string>();
   let totalFound = 0;
 
+  const MAX_PAGES_PER_TERM = 5;
+
   try {
     for (const term of SEARCH_TERMS) {
       if (totalFound >= maxResults) break;
 
-      const spaces = await fetchSpaces(term, PAGE_SIZE, token);
-
-      for (const space of spaces) {
+      let offset = 0;
+      for (let page = 0; page < MAX_PAGES_PER_TERM; page++) {
         if (totalFound >= maxResults) break;
-        if (!space.id || space.private) continue;
-        if (seenIds.has(space.id)) continue;
-        seenIds.add(space.id);
 
-        const sourceId = `hf:${space.id}`;
-        const slug =
-          generateSlug(`hf-${space.id.replace(/\//g, "-")}`) ||
-          `hf-${totalFound}`;
-        const url = `https://huggingface.co/spaces/${space.id}`;
+        const spaces = await fetchSpaces(term, PAGE_SIZE, token, offset);
+        if (spaces.length === 0) break;
 
-        const tags = space.tags ?? [];
-        const popularityScore = Math.min(100, Math.round((space.likes ?? 0) / 100));
-        const createdAt = space.createdAt ? new Date(space.createdAt) : new Date();
-        const daysSince =
-          (Date.now() - createdAt.getTime()) / (24 * 60 * 60 * 1000);
-        const freshnessScore = Math.round(100 * Math.exp(-daysSince / 180));
+        for (const space of spaces) {
+          if (totalFound >= maxResults) break;
+          if (!space.id || space.private) continue;
+          if (seenIds.has(space.id)) continue;
+          seenIds.add(space.id);
 
-        const agentData = {
-          sourceId,
-          source: "HUGGINGFACE" as const,
-          name: space.id.split("/").pop() ?? space.id,
-          slug,
-          description: `Hugging Face Space: ${space.id}. SDK: ${space.sdk ?? "unknown"}. Likes: ${space.likes ?? 0}.`,
-          url,
-          homepage: url,
-          capabilities: tags.filter((t) => !t.startsWith("region:")).slice(0, 15),
-          protocols: [] as string[],
-          languages: [] as string[],
-          npmData: null,
-          openclawData: {
-            huggingface: true,
-            sdk: space.sdk,
-            likes: space.likes,
-            tags: space.tags,
-          } as Record<string, unknown>,
-          readme: "",
-          safetyScore: 65,
-          popularityScore,
-          freshnessScore,
-          performanceScore: 0,
-          overallRank: Math.round(
-            (65 * 0.3 + popularityScore * 0.3 + freshnessScore * 0.2) * 10
-          ) / 10,
-          status: "ACTIVE" as const,
-          lastCrawledAt: new Date(),
-          nextCrawlAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        };
+          const sourceId = `hf:${space.id}`;
+          const slug =
+            generateSlug(`hf-${space.id.replace(/\//g, "-")}`) ||
+            `hf-${totalFound}`;
+          const url = `https://huggingface.co/spaces/${space.id}`;
+
+          const tags = space.tags ?? [];
+          const popularityScore = Math.min(100, Math.round((space.likes ?? 0) / 100));
+          const createdAt = space.createdAt ? new Date(space.createdAt) : new Date();
+          const daysSince =
+            (Date.now() - createdAt.getTime()) / (24 * 60 * 60 * 1000);
+          const freshnessScore = Math.round(100 * Math.exp(-daysSince / 180));
+
+          const agentData = {
+            sourceId,
+            source: "HUGGINGFACE" as const,
+            name: space.id.split("/").pop() ?? space.id,
+            slug,
+            description: `Hugging Face Space: ${space.id}. SDK: ${space.sdk ?? "unknown"}. Likes: ${space.likes ?? 0}.`,
+            url,
+            homepage: url,
+            capabilities: tags.filter((t) => !t.startsWith("region:")).slice(0, 15),
+            protocols: [] as string[],
+            languages: [] as string[],
+            npmData: null,
+            openclawData: {
+              huggingface: true,
+              sdk: space.sdk,
+              likes: space.likes,
+              tags: space.tags,
+            } as Record<string, unknown>,
+            readme: "",
+            safetyScore: 75,
+            popularityScore,
+            freshnessScore,
+            performanceScore: 0,
+            overallRank: Math.round(
+              (65 * 0.3 + popularityScore * 0.3 + freshnessScore * 0.2) * 10
+            ) / 10,
+            status: "ACTIVE" as const,
+            lastCrawledAt: new Date(),
+            nextCrawlAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          };
 
           await upsertAgent(agentData, {
             name: agentData.name,
@@ -172,10 +181,15 @@ export async function crawlHuggingFaceSpaces(
             nextCrawlAt: agentData.nextCrawlAt,
           });
 
-        totalFound++;
+          totalFound++;
+        }
+
+        offset += PAGE_SIZE;
+        if (spaces.length < PAGE_SIZE) break;
+        await new Promise((r) => setTimeout(r, 300));
       }
 
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 200));
     }
 
     await db

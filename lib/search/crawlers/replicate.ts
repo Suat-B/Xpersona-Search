@@ -103,7 +103,7 @@ export async function crawlReplicate(
             owner: model.owner,
           } as Record<string, unknown>,
           readme: model.description ?? "",
-          safetyScore: 65,
+          safetyScore: 75,
           popularityScore,
           freshnessScore: 70,
           performanceScore: 0,

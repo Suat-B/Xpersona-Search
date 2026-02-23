@@ -101,23 +101,24 @@ export async function calculateSafetyScore(
   for (const issue of issues) {
     switch (issue.severity) {
       case "critical":
-        score -= 50;
+        score -= 35;
         break;
       case "high":
-        score -= 20;
+        score -= 12;
         break;
       case "medium":
-        score -= 10;
+        score -= 6;
         break;
       case "low":
-        score -= 5;
+        score -= 3;
         break;
     }
   }
-  if (checks.hasLicense) score = Math.min(100, score + 5);
-  if (checks.hasTests) score = Math.min(100, score + 10);
+  if (checks.hasLicense) score = Math.min(100, score + 8);
+  if (checks.hasTests) score = Math.min(100, score + 12);
   if (checks.isOriginal) score = Math.min(100, score + 5);
-  if (repo.stargazers_count > 100) score = Math.min(100, score + 10);
+  if (repo.stargazers_count > 50) score = Math.min(100, score + 8);
 
-  return Math.max(0, Math.min(100, Math.round(score)));
+  score = Math.max(25, Math.round(score));
+  return Math.min(100, score);
 }

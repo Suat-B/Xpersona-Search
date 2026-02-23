@@ -9,7 +9,7 @@ import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
 
 const NPM_SEARCH_URL = "https://registry.npmjs.org/-/v1/search";
-const PAGE_SIZE = 40;
+const PAGE_SIZE = 250;
 
 const SEARCH_TERMS = [
   "openclaw",
@@ -27,6 +27,21 @@ const SEARCH_TERMS = [
   "llamaindex",
   "mcp",
   "openclaw skill",
+  "ai agent",
+  "autonomous agent",
+  "crewai",
+  "autogen",
+  "function calling",
+  "tool use",
+  "agentic",
+  "mcp tool",
+  "mcp stdio",
+  "multi-agent",
+  "rag agent",
+  "openai assistant",
+  "claude agent",
+  "gemini agent",
+  "agent framework",
 ];
 
 interface NpmPackage {
@@ -174,7 +189,7 @@ export async function crawlNpmPackages(
             } as Record<string, unknown>,
             openclawData: null as unknown as Record<string, unknown>,
             readme: pkg.description ?? "",
-            safetyScore: 60,
+            safetyScore: 72,
             popularityScore,
             freshnessScore,
             performanceScore: 0,

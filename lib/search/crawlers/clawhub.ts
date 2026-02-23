@@ -83,7 +83,7 @@ export async function crawlClawHub(
         languages: ["typescript"] as string[],
         openclawData: skillData as unknown as Record<string, unknown>,
         readme: skillContent,
-        safetyScore: 70,
+        safetyScore: 80,
         popularityScore: 50,
         freshnessScore: 70,
         performanceScore: 0,

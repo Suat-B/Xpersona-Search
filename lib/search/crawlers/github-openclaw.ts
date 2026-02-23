@@ -26,6 +26,24 @@ const SEARCH_QUERIES = [
   "filename:SKILL.md",
   "clawhub skill",
   "SKILL.md openclaw lang:python",
+  "filename:SKILL.md lang:python",
+  "filename:SKILL.md lang:go",
+  "filename:SKILL.md lang:rust",
+  "filename:SKILL.md lang:java",
+  "filename:SKILL.md lang:javascript",
+  "filename:SKILL.md lang:ruby",
+  "filename:SKILL.md lang:csharp",
+  "filename:SKILL.md lang:swift",
+  "filename:SKILL.md lang:kotlin",
+  "topic:openclaw SKILL.md",
+  "topic:cursor-skill SKILL.md",
+  "topic:mcp-tool SKILL.md",
+  "topic:ai-skill SKILL.md",
+  '"capabilities:" filename:SKILL.md',
+  '"protocols:" filename:SKILL.md',
+  "openclaw agent",
+  "openclaw tool",
+  "cursor skill agent",
 ] as const;
 
 function sleep(ms: number): Promise<void> {
@@ -137,7 +155,7 @@ export async function crawlOpenClawSkills(
               freshness: freshnessScore,
               performance: 0,
             }),
-            status: safetyScore >= 50 ? ("ACTIVE" as const) : ("PENDING_REVIEW" as const),
+            status: safetyScore >= 40 ? ("ACTIVE" as const) : ("PENDING_REVIEW" as const),
             lastCrawledAt: new Date(),
             nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
           };

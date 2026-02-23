@@ -121,7 +121,7 @@ export async function crawlMcpRegistry(
             : undefined,
           openclawData: { mcpRegistry: true, serverName: server.name } as Record<string, unknown>,
           readme: null,
-          safetyScore: 75,
+          safetyScore: 85,
           popularityScore: 60,
           freshnessScore: 70,
           performanceScore: 0,

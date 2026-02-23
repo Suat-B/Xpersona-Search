@@ -32,6 +32,21 @@ const SEARCH_QUERIES = [
   "filename:package.json modelcontextprotocol",
   "filename:package.json @modelcontextprotocol",
   "mcp server typescript",
+  "filename:mcp.json",
+  '"mcpServers" filename:package.json',
+  "filename:pyproject.toml mcp",
+  "filename:pyproject.toml model-context-protocol",
+  "filename:setup.py mcp-server",
+  "mcp-server lang:go",
+  "mcp-server lang:rust",
+  "mcp-server lang:python",
+  "mcp-server lang:java",
+  "mcp-server lang:csharp",
+  "model context protocol server",
+  "topic:mcp-server",
+  "topic:model-context-protocol",
+  "mcp tool server",
+  "mcp stdio server",
 ] as const;
 
 function sleep(ms: number): Promise<void> {
@@ -198,7 +213,7 @@ export async function crawlGitHubMCP(
               performance: 0,
             }),
             status:
-              safetyScore >= 50 ? ("ACTIVE" as const) : ("PENDING_REVIEW" as const),
+              safetyScore >= 40 ? ("ACTIVE" as const) : ("PENDING_REVIEW" as const),
             lastCrawledAt: new Date(),
             nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
           };

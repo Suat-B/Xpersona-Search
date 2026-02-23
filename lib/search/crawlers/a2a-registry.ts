@@ -28,6 +28,8 @@ interface A2AAgentResponse {
 interface A2AListResponse {
   agents?: A2AAgentResponse[];
   count?: number;
+  nextCursor?: string;
+  next?: string;
 }
 
 function getRegistryUrl(): string | null {
@@ -55,88 +57,103 @@ export async function crawlA2ARegistry(
   const jobId = job?.id ?? crypto.randomUUID();
 
   try {
-    let list: A2AListResponse;
-    try {
-      const res = await fetch(`${baseUrl}/agents`, {
-        headers: { Accept: "application/json" },
-      });
-      if (!res.ok) {
-        throw new Error(`A2A registry returned ${res.status}`);
-      }
-      list = (await res.json()) as A2AListResponse;
-    } catch (err) {
-      console.warn("[A2A Crawl] Registry fetch failed:", err);
-      await db
-        .update(crawlJobs)
-        .set({
-          status: "FAILED",
-          completedAt: new Date(),
-          error: err instanceof Error ? err.message : String(err),
-        })
-        .where(eq(crawlJobs.id, jobId));
-      return { total: 0, jobId };
-    }
-
-    const items = list.agents ?? [];
     let totalFound = 0;
+    let cursor: string | undefined;
 
-    for (const item of items) {
-      if (totalFound >= maxResults) break;
+    do {
+      let list: A2AListResponse;
+      try {
+        const fetchUrl = new URL(`${baseUrl}/agents`);
+        fetchUrl.searchParams.set("limit", "100");
+        if (cursor) fetchUrl.searchParams.set("cursor", cursor);
 
-      const card = item.agent_card;
-      const agentId = item.agent_id;
-      if (!card?.name || !agentId) continue;
-
-      const sourceId = `a2a:${agentId}`;
-      const name = card.name;
-      const description = card.description ?? null;
-      const url = card.url ?? `https://a2a-registry.dev/agents/${agentId}`;
-      const slug = generateSlug(`a2a-${agentId}-${name}`) || `a2a-${agentId}`;
-
-      const capabilities: string[] = [];
-      for (const skill of card.skills ?? []) {
-        if (skill.id) capabilities.push(skill.id);
-        if (skill.description) capabilities.push(skill.description.slice(0, 50));
+        const res = await fetch(fetchUrl.toString(), {
+          headers: { Accept: "application/json" },
+        });
+        if (!res.ok) {
+          throw new Error(`A2A registry returned ${res.status}`);
+        }
+        list = (await res.json()) as A2AListResponse;
+      } catch (err) {
+        if (totalFound === 0) {
+          console.warn("[A2A Crawl] Registry fetch failed:", err);
+          await db
+            .update(crawlJobs)
+            .set({
+              status: "FAILED",
+              completedAt: new Date(),
+              error: err instanceof Error ? err.message : String(err),
+            })
+            .where(eq(crawlJobs.id, jobId));
+          return { total: 0, jobId };
+        }
+        break;
       }
 
-      const agentData = {
-        sourceId,
-        source: "GITHUB_A2A" as const,
-        name,
-        slug,
-        description,
-        url,
-        homepage: card.url ?? null,
-        capabilities: [...new Set(capabilities)].slice(0, 20),
-        protocols: ["A2A"] as string[],
-        languages: [] as string[],
-        agentCard: card as unknown as Record<string, unknown>,
-        githubData: null,
-        readme: description,
-        safetyScore: 70,
-        popularityScore: 50,
-        freshnessScore: 70,
-        performanceScore: 0,
-        overallRank: 63,
-        status: "ACTIVE" as const,
-        lastCrawledAt: new Date(),
-        nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      };
+      const items = list.agents ?? [];
+      cursor = list.nextCursor ?? list.next;
 
-      await upsertAgent(agentData, {
-        name: agentData.name,
-        slug: agentData.slug,
-        description: agentData.description,
-        url: agentData.url,
-        homepage: agentData.homepage,
-        agentCard: agentData.agentCard,
-        readme: agentData.readme,
-        lastCrawledAt: agentData.lastCrawledAt,
-        nextCrawlAt: agentData.nextCrawlAt,
-      });
+      for (const item of items) {
+        if (totalFound >= maxResults) break;
 
-      totalFound++;
-    }
+        const card = item.agent_card;
+        const agentId = item.agent_id;
+        if (!card?.name || !agentId) continue;
+
+        const sourceId = `a2a:${agentId}`;
+        const name = card.name;
+        const description = card.description ?? null;
+        const url = card.url ?? `https://a2a-registry.dev/agents/${agentId}`;
+        const slug = generateSlug(`a2a-${agentId}-${name}`) || `a2a-${agentId}`;
+
+        const capabilities: string[] = [];
+        for (const skill of card.skills ?? []) {
+          if (skill.id) capabilities.push(skill.id);
+          if (skill.description) capabilities.push(skill.description.slice(0, 50));
+        }
+
+        const agentData = {
+          sourceId,
+          source: "GITHUB_A2A" as const,
+          name,
+          slug,
+          description,
+          url,
+          homepage: card.url ?? null,
+          capabilities: [...new Set(capabilities)].slice(0, 20),
+          protocols: ["A2A"] as string[],
+          languages: [] as string[],
+          agentCard: card as unknown as Record<string, unknown>,
+          githubData: null,
+          readme: description,
+          safetyScore: 80,
+          popularityScore: 50,
+          freshnessScore: 70,
+          performanceScore: 0,
+          overallRank: 63,
+          status: "ACTIVE" as const,
+          lastCrawledAt: new Date(),
+          nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        };
+
+        await upsertAgent(agentData, {
+          name: agentData.name,
+          slug: agentData.slug,
+          description: agentData.description,
+          url: agentData.url,
+          homepage: agentData.homepage,
+          agentCard: agentData.agentCard,
+          readme: agentData.readme,
+          lastCrawledAt: agentData.lastCrawledAt,
+          nextCrawlAt: agentData.nextCrawlAt,
+        });
+
+        totalFound++;
+      }
+
+      if (items.length === 0) break;
+      await new Promise((r) => setTimeout(r, 300));
+    } while (cursor && totalFound < maxResults);
 
     await db
       .update(crawlJobs)

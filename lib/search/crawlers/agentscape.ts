@@ -20,19 +20,33 @@ interface AgentScapeAgent {
   openapi_url?: string;
 }
 
-async function fetchAgentScapeAgents(): Promise<AgentScapeAgent[]> {
+interface AgentScapeResponse {
+  agents?: AgentScapeAgent[];
+  results?: AgentScapeAgent[];
+  next?: string;
+  nextCursor?: string;
+  total?: number;
+}
+
+async function fetchAgentScapeAgents(cursor?: string): Promise<{ agents: AgentScapeAgent[]; next?: string }> {
   try {
-    const res = await fetch(AGENTSCAPE_API, {
+    const url = new URL(AGENTSCAPE_API);
+    url.searchParams.set("limit", "100");
+    if (cursor) url.searchParams.set("cursor", cursor);
+
+    const res = await fetch(url.toString(), {
       headers: {
         Accept: "application/json",
         "User-Agent": "Xpersona-Crawler/1.0 (https://xpersona.app)",
       },
     });
-    if (!res.ok) return [];
+    if (!res.ok) return { agents: [] };
     const data = await res.json();
-    return Array.isArray(data) ? data : data.agents ?? data.results ?? [];
+    const agents = Array.isArray(data) ? data : (data as AgentScapeResponse).agents ?? (data as AgentScapeResponse).results ?? [];
+    const next = Array.isArray(data) ? undefined : ((data as AgentScapeResponse).next ?? (data as AgentScapeResponse).nextCursor);
+    return { agents, next };
   } catch {
-    return [];
+    return { agents: [] };
   }
 }
 
@@ -52,9 +66,18 @@ export async function crawlAgentScape(
   let totalFound = 0;
 
   try {
-    const agentList = await fetchAgentScapeAgents();
+    let cursor: string | undefined;
+    const allAgents: AgentScapeAgent[] = [];
 
-    for (const agent of agentList.slice(0, maxResults)) {
+    do {
+      const result = await fetchAgentScapeAgents(cursor);
+      allAgents.push(...result.agents);
+      cursor = result.next;
+      if (result.agents.length === 0) break;
+      await new Promise((r) => setTimeout(r, 300));
+    } while (cursor && allAgents.length < maxResults);
+
+    for (const agent of allAgents.slice(0, maxResults)) {
       if (!agent.name && !agent.id) continue;
 
       const sourceId = `agentscape:${agent.id ?? agent.name ?? totalFound}`;
@@ -81,7 +104,7 @@ export async function crawlAgentScape(
           openapiUrl: agent.openapi_url,
         } as Record<string, unknown>,
         readme: agent.description ?? "",
-        safetyScore: 65,
+        safetyScore: 75,
         popularityScore: 50,
         freshnessScore: 70,
         performanceScore: 0,
