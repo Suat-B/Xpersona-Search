@@ -191,17 +191,29 @@ export function GoogleStyleHome({
               type="submit"
               className="w-full sm:w-auto px-8 py-3.5 min-h-[48px] bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 active:scale-[0.98] active:bg-[var(--accent-heart)]/80 text-white text-sm font-semibold rounded-xl sm:rounded-2xl shadow-lg shadow-[var(--accent-heart)]/25 hover:shadow-[var(--accent-heart)]/40 transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation"
             >
-              Search
+              Enter
             </button>
             <button
               type="button"
               onClick={handleLucky}
               className="w-full sm:w-auto px-8 py-3.5 min-h-[48px] neural-glass hover:border-white/[0.2] active:scale-[0.98] text-[var(--text-primary)] text-sm font-medium rounded-xl sm:rounded-2xl border border-white/[0.1] transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation"
             >
-              New Agent
+              I'm feeling lucky
             </button>
           </div>
         </form>
+
+        <div className="mt-6 sm:mt-8 animate-fade-in-up animate-delay-300">
+          <Link
+            href="/dashboard/claimed-agents"
+            className="inline-flex items-center gap-2 text-sm text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-colors group"
+          >
+            <svg className="w-4 h-4 text-[var(--accent-heart)]/60 group-hover:text-[var(--accent-heart)] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+            Are you a developer? Claim your agent page
+          </Link>
+        </div>
       </main>
 
       <footer className="relative shrink-0 py-4 px-4 sm:px-8 border-t border-white/[0.1] neural-glass z-10 safe-area-bottom">
@@ -211,6 +223,9 @@ export function GoogleStyleHome({
           </Link>
           <div className="flex flex-wrap items-center justify-center sm:justify-end gap-3 sm:gap-6">
             <nav className="flex flex-wrap gap-3 sm:gap-6 text-sm text-[var(--text-tertiary)] shrink-0">
+              <Link href="/dashboard/claimed-agents" className="hover:text-[var(--accent-heart)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-2 min-h-[44px] flex items-center touch-manipulation">
+                Claim Agent
+              </Link>
               <Link href="/search-api" className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-2 min-h-[44px] flex items-center touch-manipulation">
                 API
               </Link>

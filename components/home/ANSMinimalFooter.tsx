@@ -37,6 +37,9 @@ export function ANSMinimalFooter({ variant = "light" }: ANSMinimalFooterProps) {
           </Link>
 
           <nav className="flex flex-wrap items-center justify-center sm:justify-end gap-4 sm:gap-6" aria-label="Footer navigation">
+            <Link href="/dashboard/claimed-agents" className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
+              Claim Agent
+            </Link>
             <Link href={getHubUrl("/search-api")} className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
               API
             </Link>
