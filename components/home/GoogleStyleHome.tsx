@@ -32,6 +32,7 @@ export function GoogleStyleHome({
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    setShowSuggestions(false);
     if (query.trim()) {
       addRecentSearch(query.trim());
       router.push(`/?q=${encodeURIComponent(query.trim())}`);
@@ -74,7 +75,6 @@ export function GoogleStyleHome({
 
   useEffect(() => {
     if (isFocused) setShowSuggestions(true);
-    else setShowSuggestions(false);
   }, [query, isFocused]);
 
   useEffect(() => {
@@ -132,7 +132,7 @@ export function GoogleStyleHome({
         )}
       </header>
 
-      <main className="relative flex-1 flex flex-col items-center justify-center px-4 -mt-16 z-10 overflow-y-auto">
+      <main className="relative flex-1 flex flex-col items-center justify-center px-4 -mt-28 z-10 overflow-y-auto">
         <Link
           href="/"
           className="mb-8 group block text-center home-logo-link"
