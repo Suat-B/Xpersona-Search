@@ -113,7 +113,6 @@ export function GoogleStyleHome({
       </div>
 
       <header className="relative flex justify-end items-center px-6 py-4 gap-4 shrink-0 z-20">
-        <HomeThemePicker />
         {!isAuthenticated && (
           <>
             <Link
@@ -224,17 +223,20 @@ export function GoogleStyleHome({
           <Link href="/" className="text-sm font-bold text-[var(--text-primary)] hover:text-[var(--accent-heart)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded shrink-0">
             Xpersona
           </Link>
-          <nav className="flex gap-4 sm:gap-6 text-sm text-[var(--text-tertiary)] shrink-0">
-            <Link href="/search-api" className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded">
-              API
-            </Link>
-            <Link href={privacyUrl} className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded">
-              Privacy
-            </Link>
-            <Link href={termsUrl} className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded">
-              Terms
-            </Link>
-          </nav>
+          <div className="flex items-center gap-4 sm:gap-6">
+            <HomeThemePicker />
+            <nav className="flex gap-4 sm:gap-6 text-sm text-[var(--text-tertiary)] shrink-0">
+              <Link href="/search-api" className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded">
+                API
+              </Link>
+              <Link href={privacyUrl} className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded">
+                Privacy
+              </Link>
+              <Link href={termsUrl} className="hover:text-[var(--text-secondary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded">
+                Terms
+              </Link>
+            </nav>
+          </div>
         </div>
       </footer>
     </div>
