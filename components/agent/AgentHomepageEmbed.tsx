@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 
 interface AgentEmbedProps {
   agent: {
@@ -57,21 +56,8 @@ function FallbackCard({ agent }: AgentEmbedProps) {
 }
 
 export function AgentHomepageEmbed({ agent }: AgentEmbedProps) {
-  const router = useRouter();
   const [iframeError, setIframeError] = useState(false);
   const [iframeLoaded, setIframeLoaded] = useState(false);
-
-  const handleBack = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      if (typeof window !== "undefined" && window.history.length > 1) {
-        router.back();
-      } else {
-        router.push("/?q=discover");
-      }
-    },
-    [router],
-  );
 
   return (
     <div className="h-screen flex flex-col bg-[var(--bg-deep)] overflow-hidden">
@@ -79,9 +65,8 @@ export function AgentHomepageEmbed({ agent }: AgentEmbedProps) {
       <header className="relative z-50 flex h-14 shrink-0 items-center gap-3 border-b border-[var(--border)] bg-[var(--bg-deep)]/95 backdrop-blur-md px-4">
         {/* Left: back to search */}
         <div className="flex items-center gap-3 min-w-0">
-          <a
+          <Link
             href="/?q=discover"
-            onClick={handleBack}
             className="flex items-center gap-1.5 text-sm font-medium text-[var(--accent-heart)] hover:text-[var(--accent-heart)]/80 transition-colors shrink-0"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -89,7 +74,7 @@ export function AgentHomepageEmbed({ agent }: AgentEmbedProps) {
             </svg>
             <span className="hidden sm:inline">Back to search</span>
             <span className="sm:hidden">Back</span>
-          </a>
+          </Link>
         </div>
 
         {/* Center: agent name */}
