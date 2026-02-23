@@ -158,10 +158,13 @@ export async function GET(req: NextRequest) {
     const limit = params.limit + 1;
     const allConditions = [...conditions];
 
+    const homepagePriority = sql`CASE WHEN ${agents.homepage} IS NOT NULL AND ${agents.homepage} != '' THEN 1 ELSE 0 END`;
+
     if (params.cursor) {
       if (useRelevance) {
         const cursorRows = await db.execute(
           sql`SELECT
+                CASE WHEN homepage IS NOT NULL AND homepage != '' THEN 1 ELSE 0 END AS has_homepage,
                 ts_rank(search_vector, plainto_tsquery('english', ${qTrim})) AS relevance,
                 overall_rank,
                 created_at,
@@ -174,11 +177,13 @@ export async function GET(req: NextRequest) {
         if (cr) {
           allConditions.push(
             sql`(
+              ${homepagePriority},
               ts_rank(search_vector, plainto_tsquery('english', ${qTrim})),
               ${agents.overallRank},
               ${agents.createdAt},
               ${agents.id}
             ) < (
+              ${Number(cr.has_homepage)},
               ${Number(cr.relevance)},
               ${Number(cr.overall_rank)},
               ${cr.created_at as Date ?? new Date(0)},
@@ -189,6 +194,7 @@ export async function GET(req: NextRequest) {
       } else {
         const [cursorRow] = await db
           .select({
+            homepage: agents.homepage,
             overallRank: agents.overallRank,
             safetyScore: agents.safetyScore,
             popularityScore: agents.popularityScore,
@@ -199,6 +205,7 @@ export async function GET(req: NextRequest) {
           .where(eq(agents.id, params.cursor))
           .limit(1);
         if (cursorRow) {
+          const cursorHasHomepage = cursorRow.homepage ? 1 : 0;
           const cv =
             params.sort === "rank"
               ? cursorRow.overallRank
@@ -209,7 +216,7 @@ export async function GET(req: NextRequest) {
                   : cursorRow.freshnessScore;
           const cd = cursorRow.createdAt ?? new Date(0);
           allConditions.push(
-            sql`(${sortCol}, ${agents.createdAt}, ${agents.id}) < (${cv}, ${cd}, ${params.cursor})`
+            sql`(${homepagePriority}, ${sortCol}, ${agents.createdAt}, ${agents.id}) < (${cursorHasHomepage}, ${cv}, ${cd}, ${params.cursor})`
           );
         }
       }
@@ -226,7 +233,9 @@ export async function GET(req: NextRequest) {
               ts_rank(search_vector, plainto_tsquery('english', ${qTrim})) AS relevance
             FROM agents
             WHERE ${and(...allConditions)}
-            ORDER BY relevance DESC, overall_rank DESC, created_at DESC, id DESC
+            ORDER BY
+              CASE WHEN homepage IS NOT NULL AND homepage != '' THEN 1 ELSE 0 END DESC,
+              relevance DESC, overall_rank DESC, created_at DESC, id DESC
             LIMIT ${limit}`
       );
       const raw = (rawResult as unknown as { rows?: Array<Record<string, unknown>> }).rows ?? [];
@@ -283,7 +292,7 @@ export async function GET(req: NextRequest) {
         })
         .from(agents)
         .where(and(...allConditions))
-        .orderBy(orderBy, desc(agents.createdAt), desc(agents.id))
+        .orderBy(desc(homepagePriority), orderBy, desc(agents.createdAt), desc(agents.id))
         .limit(limit);
     }
 
