@@ -7,6 +7,7 @@ import { agents, crawlJobs } from "@/lib/db/schema";
 import { upsertAgent } from "../agent-upsert";
 import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
+import { calculateDynamicScores } from "../scoring/rank";
 
 const PYPI_BASE = "https://pypi.org";
 const PAGE_SIZE = 20;
@@ -205,13 +206,20 @@ export async function crawlPypiPackages(
       const slug =
         generateSlug(`pypi-${name.replace(/[._]/g, "-")}`) || `pypi-${totalFound}`;
 
+      const projectUrl = extractProjectUrl(info);
+      const dynamicScores = await calculateDynamicScores({
+        url: projectUrl,
+        homepage: info.home_page,
+        sourceId,
+      });
+
       const agentData = {
         sourceId,
         source: "PYPI" as const,
         name: info.name ?? name,
         slug,
         description: info.summary ?? info.description?.slice(0, 500) ?? null,
-        url: extractProjectUrl(info),
+        url: projectUrl,
         homepage: info.home_page ?? null,
         capabilities: (info.keywords ?? "")
           .split(/[,;]/)
@@ -226,11 +234,11 @@ export async function crawlPypiPackages(
           classifiers: info.classifiers?.slice(0, 10),
         } as Record<string, unknown>,
         readme: info.summary ?? "",
-        safetyScore: 75,
-        popularityScore: 50,
-        freshnessScore: 60,
+        safetyScore: dynamicScores.safetyScore,
+        popularityScore: dynamicScores.popularityScore,
+        freshnessScore: dynamicScores.freshnessScore,
         performanceScore: 0,
-        overallRank: 58,
+        overallRank: dynamicScores.overallRank,
         status: "ACTIVE" as const,
         lastCrawledAt: new Date(),
         nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
@@ -244,6 +252,10 @@ export async function crawlPypiPackages(
         homepage: agentData.homepage,
         openclawData: agentData.openclawData,
         readme: agentData.readme,
+        safetyScore: agentData.safetyScore,
+        popularityScore: agentData.popularityScore,
+        freshnessScore: agentData.freshnessScore,
+        overallRank: agentData.overallRank,
         lastCrawledAt: agentData.lastCrawledAt,
         nextCrawlAt: agentData.nextCrawlAt,
       });

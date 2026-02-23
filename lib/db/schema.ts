@@ -632,5 +632,5 @@ export const signalDeliveryLogs = pgTable(
   ]
 );
 
-// Search engine (agents, crawl_jobs) - re-exported from search-schema
-export { agents, crawlJobs } from "./search-schema";
+// Search engine (agents, crawl_jobs, crawl_frontier) - re-exported from search-schema
+export { agents, crawlFrontier, crawlJobs } from "./search-schema";

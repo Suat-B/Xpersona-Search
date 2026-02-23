@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
 import { fetchFileContent } from "../utils/github";
 import { upsertAgent } from "../agent-upsert";
+import { calculateDynamicScores } from "../scoring/rank";
 
 const AWESOME_OPENCLEW_REPO = "VoltAgent/awesome-openclaw-skills";
 const MCP_SERVERS_REPO = "modelcontextprotocol/servers";
@@ -181,7 +182,7 @@ export async function crawlCuratedSeeds(
           languages: [] as string[],
           openclawData: { curated: true, from: "mcp-servers-readme" } as Record<string, unknown>,
           readme: s.description || "",
-          safetyScore: 80,
+          safetyScore: 70,
           popularityScore: 50,
           freshnessScore: 65,
           performanceScore: 0,
@@ -191,6 +192,14 @@ export async function crawlCuratedSeeds(
           nextCrawlAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         };
 
+        const dynamicScores = await calculateDynamicScores({
+          url: s.url, homepage: s.url,
+        });
+        agentData.safetyScore = dynamicScores.safetyScore;
+        agentData.popularityScore = dynamicScores.popularityScore;
+        agentData.freshnessScore = dynamicScores.freshnessScore;
+        agentData.overallRank = dynamicScores.overallRank;
+
         await upsertAgent(agentData, {
           name: agentData.name,
           slug: agentData.slug,
@@ -199,6 +208,10 @@ export async function crawlCuratedSeeds(
           homepage: agentData.homepage,
           openclawData: agentData.openclawData,
           readme: agentData.readme,
+          safetyScore: agentData.safetyScore,
+          popularityScore: agentData.popularityScore,
+          freshnessScore: agentData.freshnessScore,
+          overallRank: agentData.overallRank,
           lastCrawledAt: agentData.lastCrawledAt,
           nextCrawlAt: agentData.nextCrawlAt,
         });

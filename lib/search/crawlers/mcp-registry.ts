@@ -7,6 +7,7 @@ import { agents, crawlJobs } from "@/lib/db/schema";
 import { upsertAgent } from "../agent-upsert";
 import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
+import { calculateDynamicScores } from "../scoring/rank";
 
 const MCP_REGISTRY_BASE =
   process.env.MCP_REGISTRY_URL ?? "https://registry.modelcontextprotocol.io";
@@ -105,27 +106,36 @@ export async function crawlMcpRegistry(
             (server.name ?? name).replace(/[/@.]/g, "-").toLowerCase()
           ) || `mcp-registry-${totalFound}`;
 
+        const serverUrl = getUrl(server);
+        const npmPkg = server.packages?.find((p) => p.registryType === "npm")?.identifier ?? null;
+
+        const dynamicScores = await calculateDynamicScores({
+          url: serverUrl,
+          homepage: server.websiteUrl,
+          npmPackage: npmPkg,
+        });
+
         const agentData = {
           sourceId,
           source: "MCP_REGISTRY" as const,
           name,
           slug,
           description: server.description ?? null,
-          url: getUrl(server),
+          url: serverUrl,
           homepage: server.websiteUrl ?? null,
           capabilities: [] as string[],
           protocols: ["MCP"] as string[],
           languages: [] as string[],
-          npmData: server.packages?.find((p) => p.registryType === "npm")
-            ? ({ identifier: server.packages[0]?.identifier } as Record<string, unknown>)
+          npmData: npmPkg
+            ? ({ identifier: npmPkg } as Record<string, unknown>)
             : undefined,
           openclawData: { mcpRegistry: true, serverName: server.name } as Record<string, unknown>,
           readme: null,
-          safetyScore: 85,
-          popularityScore: 60,
-          freshnessScore: 70,
+          safetyScore: dynamicScores.safetyScore,
+          popularityScore: dynamicScores.popularityScore,
+          freshnessScore: dynamicScores.freshnessScore,
           performanceScore: 0,
-          overallRank: 68,
+          overallRank: dynamicScores.overallRank,
           status: "ACTIVE" as const,
           lastCrawledAt: new Date(),
           nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
@@ -137,6 +147,10 @@ export async function crawlMcpRegistry(
             description: agentData.description,
             url: agentData.url,
             homepage: agentData.homepage,
+            safetyScore: agentData.safetyScore,
+            popularityScore: agentData.popularityScore,
+            freshnessScore: agentData.freshnessScore,
+            overallRank: agentData.overallRank,
             lastCrawledAt: agentData.lastCrawledAt,
             nextCrawlAt: agentData.nextCrawlAt,
           });
