@@ -3,6 +3,9 @@ import { db } from "@/lib/db";
 import { agents, agentCustomizations, users } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { getAuthUser } from "@/lib/auth-utils";
+import { resolveNativeDocs } from "@/lib/agents/native-docs";
+import { buildAgentCard } from "@/lib/agents/agent-card";
+import { extractExecutableExamples } from "@/lib/agents/executable-examples";
 
 let hasAgentCustomizationColumnsCache: boolean | null = null;
 
@@ -20,6 +23,8 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  const mode = req.nextUrl.searchParams.get("mode")?.toLowerCase();
+  const format = req.nextUrl.searchParams.get("format")?.toLowerCase();
   const { slug } = await params;
   if (!slug) {
     return NextResponse.json({ error: "Missing slug" }, { status: 400 });
@@ -150,6 +155,110 @@ export async function GET(
   merged.isOwner = isOwner;
   merged.verificationTier = (agent.verificationTier as string | null) ?? "NONE";
   merged.hasCustomPage = Boolean(agent.hasCustomPage ?? false);
+
+  const hasReadme =
+    typeof merged.readme === "string" && merged.readme.trim().length > 0;
+  const hasDescription =
+    typeof merged.description === "string" &&
+    merged.description.trim().length > 0;
+
+  if (!hasReadme && !hasDescription) {
+    try {
+      const docs = await resolveNativeDocs({
+        source: merged.source as string | null | undefined,
+        sourceId: merged.sourceId as string | null | undefined,
+        url: merged.url as string | null | undefined,
+        name: merged.name as string | null | undefined,
+        npmData: (merged.npmData as { packageName?: string | null } | null) ?? null,
+      });
+      if (docs?.readme || docs?.description) {
+        const readme = docs.readme ?? null;
+        const description = docs.description ?? null;
+        await db
+          .update(agents)
+          .set({
+            ...(readme ? { readme } : {}),
+            ...(description ? { description } : {}),
+            lastCrawledAt: new Date(),
+          })
+          .where(eq(agents.id, agent.id as string));
+
+        if (readme) merged.readme = readme;
+        if (description) merged.description = description;
+        if (docs.sourceLabel) merged.readmeSource = docs.sourceLabel;
+      }
+    } catch (err) {
+      console.warn("[agent-docs] hydration failed", err);
+    }
+  }
+
+  const baseUrl = req.nextUrl.origin;
+  const examples = extractExecutableExamples(
+    typeof merged.readme === "string" ? merged.readme : null
+  );
+  if (!merged.agentCard || typeof merged.agentCard !== "object") {
+    const card = buildAgentCard(
+      {
+        id: merged.id as string | null | undefined,
+        name: merged.name as string | null | undefined,
+        slug: merged.slug as string | null | undefined,
+        description: merged.description as string | null | undefined,
+        url: merged.url as string | null | undefined,
+        homepage: merged.homepage as string | null | undefined,
+        source: merged.source as string | null | undefined,
+        sourceId: merged.sourceId as string | null | undefined,
+        protocols: (merged.protocols as string[] | null) ?? null,
+        capabilities: (merged.capabilities as string[] | null) ?? null,
+        languages: (merged.languages as string[] | null) ?? null,
+        npmData: (merged.npmData as { packageName?: string | null } | null) ?? null,
+        readmeSource: (merged.readmeSource as string | null | undefined) ?? null,
+        examples,
+      },
+      baseUrl
+    );
+    merged.agentCard = card;
+    try {
+      await db
+        .update(agents)
+        .set({ agentCard: card, updatedAt: new Date() })
+        .where(eq(agents.id, agent.id as string));
+    } catch (err) {
+      console.warn("[agent-card] persist failed", err);
+    }
+  }
+
+  if (format === "card") {
+    return NextResponse.json(merged.agentCard ?? {});
+  }
+
+  if (mode === "agent") {
+    const agentResponse = {
+      id: merged.id,
+      name: merged.name,
+      slug: merged.slug,
+      description: merged.description,
+      url: merged.url,
+      homepage: merged.homepage,
+      source: merged.source,
+      sourceId: merged.sourceId,
+      protocols: merged.protocols,
+      capabilities: merged.capabilities,
+      languages: merged.languages,
+      safetyScore: merged.safetyScore,
+      popularityScore: merged.popularityScore,
+      freshnessScore: merged.freshnessScore,
+      overallRank: merged.overallRank,
+      claimStatus: merged.claimStatus,
+      verificationTier: merged.verificationTier,
+      readme: merged.readme,
+      readmeSource: merged.readmeSource,
+      agentCard: merged.agentCard,
+      examples,
+      updatedAt: merged.updatedAt,
+      lastCrawledAt: merged.lastCrawledAt,
+    };
+    return NextResponse.json(agentResponse);
+  }
 
   if (agent.hasCustomPage) {
     const [customization] = await db

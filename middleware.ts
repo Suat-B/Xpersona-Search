@@ -7,6 +7,8 @@ const X_REQUEST_ID_HEADER = "x-request-id";
 const INTERNAL_V1_PROXY_HEADER = "x-internal-api-proxy";
 const REMOVED_PREFIXES = ["/games", "/trading", "/casino", "/faucet", "/register", "/ans"] as const;
 const API_LEGACY_EXCEPTIONS = ["/api/v1", "/api/auth"] as const;
+const AGENT_COOKIE_NAME = "xp_agent_session";
+const AI_CONTACT_COOKIE = "xpersona_ai_contact";
 
 function isRemovedPath(pathname: string): boolean {
   const normalized = pathname.replace(/\/$/, "") || "/";
@@ -30,6 +32,13 @@ export async function middleware(req: NextRequest) {
   const url = req.nextUrl.clone();
   const hostname = host.split(":")[0]?.toLowerCase() ?? "";
   const requestId = req.headers.get(X_REQUEST_ID_HEADER)?.trim() || crypto.randomUUID();
+  const hasBearer = (() => {
+    const authHeader = req.headers.get("authorization") ?? "";
+    if (!authHeader.toLowerCase().startsWith("bearer ")) return false;
+    const token = authHeader.slice(7).trim();
+    return token.length >= 32;
+  })();
+  const hasAgentCookie = Boolean(req.cookies.get(AGENT_COOKIE_NAME)?.value);
 
   if (
     isLegacyApiPath(url.pathname) &&
@@ -86,9 +95,19 @@ export async function middleware(req: NextRequest) {
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set(X_SERVICE_HEADER, "hub");
 
-  return NextResponse.next({
+  const res = NextResponse.next({
     request: { headers: requestHeaders },
   });
+
+  if (url.pathname.startsWith("/api/") && (hasBearer || hasAgentCookie)) {
+    res.cookies.set(AI_CONTACT_COOKIE, "1", {
+      path: "/",
+      maxAge: 30,
+      sameSite: "lax",
+    });
+  }
+
+  return res;
 }
 
 export const config = {

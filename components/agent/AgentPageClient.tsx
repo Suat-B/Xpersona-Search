@@ -48,6 +48,8 @@ interface Agent {
   githubData?: { stars?: number; forks?: number };
   npmData?: NpmData | null;
   readme?: string | null;
+  readmeSource?: string | null;
+  agentCard?: Record<string, unknown> | null;
   codeSnippets?: string[];
   openclawData?: OpenClawData | null;
   claimStatus?: string;
@@ -158,6 +160,18 @@ function getPopularityLabel(agent: Agent): string {
   return "";
 }
 
+function getDocsSourceLabel(agent: Agent): string | null {
+  if (agent.readmeSource) return agent.readmeSource;
+  const source = (agent.source ?? "").toUpperCase();
+  if (source.includes("GITHUB")) return "GitHub";
+  if (source === "NPM") return "npm";
+  if (source === "PYPI") return "PyPI";
+  if (source === "HUGGINGFACE") return "Hugging Face";
+  if (source === "REPLICATE") return "Replicate";
+  if (source === "DOCKER") return "Docker Hub";
+  return null;
+}
+
 export function AgentPageClient({ agent }: AgentPageClientProps) {
   const searchParams = useSearchParams();
   const forceDetails = searchParams.get("view") === "details";
@@ -256,6 +270,16 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
   const primaryCta = getPrimaryCta(agent);
   const installCmd = getInstallCommand(agent);
   const popularityLabel = getPopularityLabel(agent);
+  const docsSourceLabel = getDocsSourceLabel(agent);
+  const agentCardJson = agent.agentCard ? JSON.stringify(agent.agentCard, null, 2) : null;
+  const agentApiBase =
+    typeof window === "undefined" ? "" : `${window.location.protocol}//${window.location.host}`;
+  const agentApiUrl = agentApiBase ? `${agentApiBase}/api/v1/agents/${agent.slug}` : "";
+  const agentModeCurl = agentApiUrl ? `curl "${agentApiUrl}?mode=agent"` : "";
+  const agentCardCurl = agentApiUrl ? `curl "${agentApiUrl}?format=card"` : "";
+  const execExamples = Array.isArray(agent.agentCard?.examples)
+    ? (agent.agentCard?.examples as Array<{ kind: string; language: string; snippet: string }>)
+    : [];
 
   const hasNpmInfo = agent.source === "NPM" && agent.npmData;
 
@@ -412,6 +436,13 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
             {agent.readme ? "Documentation" : "Overview"}
           </h2>
           <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-6 md:p-8 min-w-0 overflow-hidden">
+            {docsSourceLabel && (
+              <div className="mb-4">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-1 text-xs text-[var(--text-tertiary)]">
+                  Source: <span className="text-[var(--text-secondary)]">{docsSourceLabel}</span>
+                </span>
+              </div>
+            )}
             {agent.readme ? (
               <SkillMarkdown content={agent.readme} />
             ) : agent.description ? (
@@ -433,6 +464,88 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
             )}
           </div>
         </section>
+
+        {agentCardJson && (
+          <section className="mb-12">
+            <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+              <h2 className="text-xl font-semibold text-[var(--text-primary)]">Agent Card</h2>
+              <button
+                type="button"
+                onClick={() => navigator.clipboard.writeText(agentCardJson)}
+                className="rounded-lg px-3 py-1.5 text-xs font-medium bg-[var(--bg-elevated)] hover:bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border)] transition-colors"
+              >
+                Copy JSON
+              </button>
+            </div>
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 md:p-6 overflow-x-auto">
+              <pre className="text-xs md:text-sm text-[var(--text-secondary)] whitespace-pre">
+                {agentCardJson}
+              </pre>
+            </div>
+          </section>
+        )}
+
+        {agentApiUrl && (
+          <section className="mb-12">
+            <h2 className="text-xl font-semibold text-[var(--text-primary)] mb-4">Agent API</h2>
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 md:p-6 space-y-4">
+              <div className="relative">
+                <p className="text-xs text-[var(--text-tertiary)] mb-2">Agent-optimized payload</p>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(agentModeCurl)}
+                  className="absolute top-2 right-2 rounded-lg px-2 py-1 text-xs font-medium bg-[var(--bg-elevated)] hover:bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border)] transition-colors"
+                >
+                  Copy
+                </button>
+                <pre className="p-3 rounded-lg bg-black/50 border border-[var(--border)] font-mono text-xs text-[var(--text-secondary)] overflow-x-auto whitespace-pre">
+                  {agentModeCurl}
+                </pre>
+              </div>
+              <div className="relative">
+                <p className="text-xs text-[var(--text-tertiary)] mb-2">Raw agent card JSON</p>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(agentCardCurl)}
+                  className="absolute top-2 right-2 rounded-lg px-2 py-1 text-xs font-medium bg-[var(--bg-elevated)] hover:bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border)] transition-colors"
+                >
+                  Copy
+                </button>
+                <pre className="p-3 rounded-lg bg-black/50 border border-[var(--border)] font-mono text-xs text-[var(--text-secondary)] overflow-x-auto whitespace-pre">
+                  {agentCardCurl}
+                </pre>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {execExamples.length > 0 && (
+          <section className="mb-12">
+            <h2 className="text-xl font-semibold text-[var(--text-primary)] mb-4">
+              Executable Examples
+            </h2>
+            <div className="space-y-4">
+              {execExamples.slice(0, 5).map((ex, i) => (
+                <div
+                  key={`${ex.kind}-${i}`}
+                  className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 md:p-6"
+                >
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-xs uppercase tracking-wide text-[var(--text-tertiary)]">
+                      {ex.kind}
+                    </span>
+                    <span className="text-xs text-[var(--text-quaternary)]">
+                      {ex.language}
+                    </span>
+                  </div>
+                  <pre className="p-3 rounded-lg bg-black/50 border border-[var(--border)] font-mono text-xs text-[var(--text-secondary)] overflow-x-auto whitespace-pre">
+                    {ex.snippet}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Examples */}
         {examples && examples.length > 0 && (

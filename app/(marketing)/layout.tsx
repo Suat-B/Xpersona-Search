@@ -8,7 +8,6 @@ import { eq } from "drizzle-orm";
 import { getService } from "@/lib/service";
 import { GameChrome } from "@/components/layout/GameChrome";
 import { HomeMinimalHeader } from "@/components/home/HomeMinimalHeader";
-import { ConciergeWidget } from "@/components/concierge/ConciergeWidget";
 
 export default async function MarketingLayout({
   children,
@@ -75,7 +74,6 @@ export default async function MarketingLayout({
       return (
         <>
           {children}
-          <ConciergeWidget />
         </>
       );
     }
@@ -110,7 +108,6 @@ export default async function MarketingLayout({
     return (
       <>
         {children}
-        <ConciergeWidget />
       </>
     );
   }
@@ -121,7 +118,6 @@ export default async function MarketingLayout({
       <main className="scroll-contain-paint flex-1 min-h-0 overflow-y-auto overscroll-y-contain">
         <div className="w-full max-w-7xl mx-auto px-4 py-6 sm:p-6 md:p-8 space-y-6 min-w-0">{children}</div>
       </main>
-      <ConciergeWidget />
     </div>
   );
 }

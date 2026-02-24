@@ -3,17 +3,17 @@
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import { ConciergeDrawer } from "@/components/concierge/ConciergeDrawer";
-import { CONCIERGE_FLOW } from "@/components/concierge/conciergeFlows";
+import { HelpDrawer } from "@/components/help/HelpDrawer";
+import { HELP_FLOW } from "@/components/help/helpFlows";
 
-const STORAGE_DISMISSED = "xp_concierge_dismissed";
-const STORAGE_LAST_STEP = "xp_concierge_last_step";
+const STORAGE_DISMISSED = "xp_help_dismissed";
+const STORAGE_LAST_STEP = "xp_help_last_step";
 
-export function ConciergeWidget() {
+export function HelpWidget() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const [dismissed, setDismissed] = useState(false);
-  const [stepId, setStepId] = useState(CONCIERGE_FLOW.intro.id);
+  const [stepId, setStepId] = useState(HELP_FLOW.intro.id);
 
   const currentAgentSlug = useMemo(() => {
     if (!pathname?.startsWith("/agent/")) return null;
@@ -51,7 +51,7 @@ export function ConciergeWidget() {
         }}
         className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-[9997] rounded-full border border-white/20 bg-black/60 text-white/80 px-3 py-2 text-xs hover:text-white hover:border-white/40 transition safe-area-bottom"
       >
-        Concierge
+        Help
       </button>
     );
   }
@@ -61,14 +61,14 @@ export function ConciergeWidget() {
       <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-[9997] flex flex-col items-end gap-2 safe-area-bottom">
         <button
           onClick={() => setIsOpen(true)}
-          aria-label="Open concierge"
-          className="relative group flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full border border-white/[0.2] bg-white/[0.06] shadow-[0_0_24px_rgba(191,90,242,0.25)] hover:shadow-[0_0_32px_rgba(191,90,242,0.4)] transition concierge-bob"
+          aria-label="Open help"
+          className="relative group flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full border border-white/[0.2] bg-white/[0.06] shadow-[0_0_24px_rgba(191,90,242,0.25)] hover:shadow-[0_0_32px_rgba(191,90,242,0.4)] transition help-bob"
         >
-          <span className="absolute inset-0 rounded-full border border-[var(--accent-heart)]/50 concierge-pulse-ring" aria-hidden />
+          <span className="absolute inset-0 rounded-full border border-[var(--accent-heart)]/50 help-pulse-ring" aria-hidden />
           <div className="relative w-12 h-12 sm:w-16 sm:h-16 rounded-full overflow-hidden border border-white/[0.25] bg-[var(--bg-deep)]">
             <Image
-              src="/concierge/concierge.png"
-              alt="Concierge avatar"
+              src="/help/help.png"
+              alt="Help avatar"
               fill
               sizes="64px"
               className="object-cover"
@@ -100,7 +100,7 @@ export function ConciergeWidget() {
         </div>
       </div>
 
-      <ConciergeDrawer
+      <HelpDrawer
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
         currentAgentSlug={currentAgentSlug}

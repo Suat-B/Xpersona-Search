@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { GameSidebarNav } from "@/components/layout/GameSidebarNav";
 import { MobileDashboardNav } from "@/components/layout/MobileDashboardNav";
 import { UserAccountMenu } from "@/components/layout/UserAccountMenu";
-import { ConciergeWidget } from "@/components/concierge/ConciergeWidget";
 
 function isGamesRoute(pathname: string | null): boolean {
   return !!pathname?.startsWith("/games");
@@ -66,7 +65,6 @@ export function GameChrome({
           {children}
         </div>
       </main>
-      <ConciergeWidget />
     </div>
   );
 }

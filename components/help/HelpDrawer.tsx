@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { CONCIERGE_FLOW, type ConciergeChoice, type ConciergeStep } from "@/components/concierge/conciergeFlows";
+import { HELP_FLOW, type HelpChoice, type HelpStep } from "@/components/help/helpFlows";
 
-const STORAGE_LAST_STEP = "xp_concierge_last_step";
+const STORAGE_LAST_STEP = "xp_help_last_step";
 
-interface ConciergeDrawerProps {
+interface HelpDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   currentAgentSlug?: string | null;
@@ -14,18 +14,18 @@ interface ConciergeDrawerProps {
   stepId: string;
 }
 
-export function ConciergeDrawer({
+export function HelpDrawer({
   isOpen,
   onClose,
   currentAgentSlug,
   onStepChange,
   stepId,
-}: ConciergeDrawerProps) {
+}: HelpDrawerProps) {
   const router = useRouter();
 
-  const step: ConciergeStep = useMemo(() => {
-    if (stepId === CONCIERGE_FLOW.intro.id) return CONCIERGE_FLOW.intro;
-    return CONCIERGE_FLOW.steps[stepId] ?? CONCIERGE_FLOW.intro;
+  const step: HelpStep = useMemo(() => {
+    if (stepId === HELP_FLOW.intro.id) return HELP_FLOW.intro;
+    return HELP_FLOW.steps[stepId] ?? HELP_FLOW.intro;
   }, [stepId]);
 
   useEffect(() => {
@@ -37,9 +37,9 @@ export function ConciergeDrawer({
     }
   }, [isOpen, step.id]);
 
-  const handleChoice = (choice: ConciergeChoice) => {
+  const handleChoice = (choice: HelpChoice) => {
     if (choice.action === "RESET") {
-      onStepChange(CONCIERGE_FLOW.intro.id);
+      onStepChange(HELP_FLOW.intro.id);
       return;
     }
 
@@ -67,6 +67,12 @@ export function ConciergeDrawer({
       return;
     }
 
+    if (choice.action === "OPEN_SEARCH_API") {
+      router.push("/search-api");
+      onClose();
+      return;
+    }
+
     if (choice.action === "OPEN_CLAIM") {
       if (currentAgentSlug) {
         router.push(`/agent/${currentAgentSlug}/claim`);
@@ -85,15 +91,15 @@ export function ConciergeDrawer({
       className="fixed inset-0 z-[9998] flex justify-end"
       role="dialog"
       aria-modal="true"
-      aria-label="Xpersona Concierge"
+      aria-label="Xpersona Help"
       onClick={(e) => e.currentTarget === e.target && onClose()}
     >
       <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" aria-hidden />
       <div className="relative z-10 h-full w-full sm:max-w-[420px] bg-[var(--bg-deep)]/95 border-l border-white/[0.08] shadow-2xl animate-slide-in-from-right">
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.08]">
           <div>
-            <p className="text-sm uppercase tracking-[0.3em] text-[var(--text-tertiary)]">Concierge</p>
-            <p className="text-lg font-semibold text-white">Xpersona Guide</p>
+            <p className="text-sm uppercase tracking-[0.3em] text-[var(--text-tertiary)]">Help</p>
+            <p className="text-lg font-semibold text-white">Xpersona Help</p>
           </div>
           <button
             onClick={onClose}

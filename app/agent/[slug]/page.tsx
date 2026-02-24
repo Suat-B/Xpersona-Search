@@ -1,7 +1,6 @@
 ﻿import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { AgentPageClient } from "@/components/agent/AgentPageClient";
-import { ConciergeWidget } from "@/components/concierge/ConciergeWidget";
 import type { Metadata } from "next";
 
 interface Props {
@@ -46,7 +45,6 @@ export default async function AgentPage({ params }: Props) {
   return (
     <Suspense>
       <AgentPageClient agent={agent} />
-      <ConciergeWidget />
     </Suspense>
   );
 }

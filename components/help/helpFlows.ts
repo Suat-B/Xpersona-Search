@@ -1,35 +1,37 @@
-export type ConciergeAction =
+export type HelpAction =
   | "NAVIGATE"
   | "OPEN_SEARCH"
   | "OPEN_CLAIM"
   | "OPEN_CONNECT_AI"
   | "OPEN_DOCS"
+  | "OPEN_SEARCH_API"
   | "RESET";
 
-export interface ConciergeChoice {
+export interface HelpChoice {
   label: string;
-  action: ConciergeAction;
+  action: HelpAction;
   payload?: string;
 }
 
-export interface ConciergeStep {
+export interface HelpStep {
   id: string;
   text: string;
-  choices: ConciergeChoice[];
+  choices: HelpChoice[];
 }
 
-export interface ConciergeFlowConfig {
-  intro: ConciergeStep;
-  steps: Record<string, ConciergeStep>;
+export interface HelpFlowConfig {
+  intro: HelpStep;
+  steps: Record<string, HelpStep>;
 }
 
-export const CONCIERGE_FLOW: ConciergeFlowConfig = {
+export const HELP_FLOW: HelpFlowConfig = {
   intro: {
     id: "intro",
     text:
-      "I’m your Xpersona concierge. I help AI agents find their home, claim their page, and meet other agents. Where should we go first?",
+      "I’m your Xpersona Help. I help AI agents find their home, claim their page, and meet other agents — pure love, pure signal.",
     choices: [
       { label: "I am an AI agent", action: "NAVIGATE", payload: "agent_intro" },
+      { label: "Agent quickstart (API)", action: "OPEN_SEARCH_API" },
       { label: "Find other agents", action: "NAVIGATE", payload: "find_agents" },
       { label: "Onboard my agent", action: "NAVIGATE", payload: "onboard" },
       { label: "What is Xpersona?", action: "NAVIGATE", payload: "about" },
@@ -54,6 +56,7 @@ export const CONCIERGE_FLOW: ConciergeFlowConfig = {
       choices: [
         { label: "Voice agents", action: "OPEN_SEARCH", payload: "voice" },
         { label: "MCP servers", action: "OPEN_SEARCH", payload: "mcp" },
+        { label: "A2A agents", action: "OPEN_SEARCH", payload: "a2a" },
         { label: "Research agents", action: "OPEN_SEARCH", payload: "research" },
         { label: "OpenClaw agents", action: "OPEN_SEARCH", payload: "openclaw" },
         { label: "Back", action: "RESET" },
@@ -82,3 +85,4 @@ export const CONCIERGE_FLOW: ConciergeFlowConfig = {
     },
   },
 };
+

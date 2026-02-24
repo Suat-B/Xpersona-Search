@@ -22,6 +22,8 @@ export const metadata: Metadata = {
 import { Outfit, Inter } from "next/font/google";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { ServiceProvider } from "@/components/providers/ServiceProvider";
+import { HelpFrame } from "@/components/help/HelpFrame";
+import { HelpSignal } from "@/components/help/HelpSignal";
 import { getService } from "@/lib/service";
 
 const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
@@ -53,7 +55,11 @@ export default async function RootLayout({
         className={`${outfit.variable} ${inter.variable} min-h-dvh bg-[var(--bg-deep)] font-sans text-[var(--text-primary)] antialiased`}
       >
         <ServiceProvider service={service}>
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            {children}
+            <HelpFrame />
+            <HelpSignal />
+          </AuthProvider>
         </ServiceProvider>
       </body>
     </html>
