@@ -250,6 +250,42 @@ describe("GET /api/search/suggest", () => {
     expect(Array.isArray(data.meta.sourcesUsed)).toBe(true);
   });
 
+  it("question queries avoid protocol appends and tutorial/guide padding", async () => {
+    mockDb.select
+      .mockImplementationOnce(
+        createMockChain([
+          { query: "why is openai OpenClaw", count: 12 },
+          { query: "why is openai tutorial", count: 9 },
+          { query: "why is openai important", count: 6 },
+        ])
+      )
+      .mockImplementationOnce(createMockChain([])) // names
+      .mockImplementationOnce(createMockChain([])); // matching rows
+
+    const res = await GET(new NextRequest("http://localhost/api/search/suggest?q=why is openai"));
+    const data = await res.json();
+    const suggestions = data.querySuggestions as string[];
+
+    expect(suggestions.some((s) => s.toLowerCase().includes("openclaw"))).toBe(false);
+    expect(suggestions.some((s) => s.toLowerCase().includes("mcp"))).toBe(false);
+    expect(suggestions.some((s) => s.toLowerCase().includes("tutorial"))).toBe(false);
+    expect(suggestions.some((s) => s.toLowerCase().includes("guide"))).toBe(false);
+    expect(suggestions.some((s) => s.toLowerCase().includes("important"))).toBe(true);
+  });
+
+  it("question queries can return fewer suggestions when padded list is low", async () => {
+    mockDb.select
+      .mockImplementationOnce(createMockChain([])) // popular
+      .mockImplementationOnce(createMockChain([])) // names
+      .mockImplementationOnce(createMockChain([])); // matching rows
+
+    const res = await GET(new NextRequest("http://localhost/api/search/suggest?q=what is openai"));
+    const data = await res.json();
+    const suggestions = data.querySuggestions as string[];
+    expect(suggestions.length).toBeGreaterThanOrEqual(3);
+    expect(suggestions.length).toBeLessThanOrEqual(8);
+  });
+
   // --- Rate limiting ---
 
   it("returns 429 when rate limited", async () => {

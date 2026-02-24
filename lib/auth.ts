@@ -23,7 +23,11 @@ const cookieDomain = getCookieDomain();
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret,
+  debug: process.env.NODE_ENV === "development",
   useSecureCookies: process.env.NODE_ENV === "production",
+  session: {
+    strategy: process.env.NODE_ENV === "development" ? "jwt" : "database",
+  },
   cookies: cookieDomain
     ? {
         sessionToken: {

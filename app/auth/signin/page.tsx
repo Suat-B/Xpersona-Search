@@ -170,9 +170,6 @@ function SignInForm() {
                 <label htmlFor="password" className={authLabelClass}>
                   Password
                 </label>
-                <Link href={buildAuthHref("/auth/forgot-password")} className="text-xs font-semibold text-[var(--accent-heart)] hover:underline">
-                  Forgot password?
-                </Link>
               </div>
               <input
                 id="password"
@@ -204,6 +201,14 @@ function SignInForm() {
                 "Sign in"
               )}
             </button>
+            <div className="flex justify-center">
+              <Link
+                href={buildAuthHref("/auth/forgot-password")}
+                className="text-xs font-semibold text-[var(--accent-heart)] hover:underline"
+              >
+                Forgot password?
+              </Link>
+            </div>
           </form>
         </>
       }

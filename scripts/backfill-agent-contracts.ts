@@ -1,6 +1,6 @@
 #!/usr/bin/env npx tsx
-import * as dotenv from "dotenv";
-dotenv.config({ path: ".env.local" });
+import { config as loadEnv } from "dotenv";
+loadEnv({ path: ".env.local" });
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { db } = require("@/lib/db");
 // eslint-disable-next-line @typescript-eslint/no-var-requires

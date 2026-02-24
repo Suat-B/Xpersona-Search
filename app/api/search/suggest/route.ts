@@ -81,6 +81,45 @@ const TECHNICAL_TERMS = [
   "plugin",
 ];
 
+const QUESTION_PREFIXES = [
+  "why is",
+  "what is",
+  "how to",
+  "how do",
+  "how can",
+  "what are",
+  "who is",
+  "where is",
+  "when is",
+  "can i",
+  "should i",
+] as const;
+
+const QUESTION_TAILS = [
+  "important",
+  "popular",
+  "controversial",
+  "useful",
+  "trusted",
+  "in the news",
+  "so valuable",
+  "so powerful",
+] as const;
+
+const QUESTION_BLOCKLIST = [
+  "tutorial",
+  "guide",
+  "step by step",
+  "best practices",
+  "for beginners",
+  "mcp",
+  "openclaw",
+  "task:",
+  "requires:",
+  "forbidden:",
+  "dataregion:",
+] as const;
+
 type CandidateSource = "popular" | "name" | "capability" | "protocol";
 type CandidateSourceV2 =
   | CandidateSource
@@ -119,6 +158,17 @@ function sanitizeError(err: unknown): string {
 function isTechnicalQuery(query: string): boolean {
   const q = query.toLowerCase();
   return TECHNICAL_TERMS.some((term) => q.includes(term)) || /[._/-]/.test(q);
+}
+
+function isQuestionQuery(query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (q.endsWith("?")) return true;
+  return QUESTION_PREFIXES.some((prefix) => q.startsWith(prefix));
+}
+
+function isQuestionUnsafeSuggestion(text: string): boolean {
+  const t = text.toLowerCase();
+  return QUESTION_BLOCKLIST.some((token) => t.includes(token));
 }
 
 function hasVersionLikeTail(text: string): boolean {
@@ -303,7 +353,7 @@ export async function GET(req: NextRequest) {
 
   // Cache check
   const cacheKey = buildCacheKey({
-    v: "suggest-v2",
+    v: "suggest-v3",
     endpoint: "suggest",
     q: params.q,
     limit: params.limit,
@@ -330,9 +380,15 @@ export async function GET(req: NextRequest) {
     const qLower = params.q.toLowerCase();
     const qSkeleton = normalizeSkeleton(params.q);
     const esc = escapeLike(params.q);
-    const { minResults: minQuerySuggestions, maxResults: maxQuerySuggestions } = getSuggestBounds(params.limit);
+    const questionMode = isQuestionQuery(params.q);
+    const bounds = getSuggestBounds(params.limit);
+    const maxQuerySuggestions = bounds.maxResults;
+    const minQuerySuggestions = questionMode
+      ? Math.max(3, bounds.minResults - 2)
+      : bounds.minResults;
     const relevanceFloor = toIntEnv(process.env.SEARCH_SUGGEST_V2_RELEVANCE_FLOOR, MIN_NATURAL_SCORE);
-    const enableTemplateExpansion = process.env.SEARCH_SUGGEST_V2_ENABLE_TEMPLATE_EXPANSION !== "0";
+    const enableTemplateExpansion =
+      process.env.SEARCH_SUGGEST_V2_ENABLE_TEMPLATE_EXPANSION !== "0" && !questionMode;
     const queryIsTechnical = isTechnicalQuery(params.q) || executeSuggestMode;
     const parsedIntent = parseQueryIntent(params.q);
     const sourceUsage = new Set<string>();
@@ -431,45 +487,56 @@ export async function GET(req: NextRequest) {
 
     const candidates: SuggestionCandidateV2[] = [];
     for (const row of popularCompletions) {
+      if (questionMode) {
+        const lower = row.query.toLowerCase();
+        if (!lower.startsWith(qLower)) continue;
+        if (isQuestionUnsafeSuggestion(lower)) continue;
+      }
       addCandidate(candidates, row.query, "popular", 0.95, null, ["history"]);
     }
-    for (const row of nameCompletionRows) {
-      addCandidate(candidates, row.name, "name", 0.6, null, ["agent-name"]);
-    }
-
-    const capSet = new Set<string>();
-    for (const r of matchingRows) {
-      const caps = Array.isArray(r.capabilities) ? r.capabilities : [];
-      for (const c of caps) {
-        if (typeof c === "string" && c.length >= 2) {
-          const normalized = c.toLowerCase().trim();
-          if (STOPWORDS.has(normalized)) continue;
-          if (qLower.includes(normalized)) continue;
-          if (!normalized.includes(qLower)) continue;
-          if (!queryIsTechnical && isPackageLikeText(normalized)) continue;
-          if (!queryIsTechnical && normalized.split(/\s+/).length < MIN_NON_TECH_CAP_WORDS) continue;
-          capSet.add(c.trim());
-        }
+    if (!questionMode) {
+      for (const row of nameCompletionRows) {
+        addCandidate(candidates, row.name, "name", 0.6, null, ["agent-name"]);
       }
     }
-    const sortedCaps = [...capSet].sort((a, b) => a.length - b.length);
-    for (const cap of sortedCaps) {
-      addCandidate(candidates, cap, "capability", 0.7, null, ["capability"]);
+
+    if (!questionMode) {
+      const capSet = new Set<string>();
+      for (const r of matchingRows) {
+        const caps = Array.isArray(r.capabilities) ? r.capabilities : [];
+        for (const c of caps) {
+          if (typeof c === "string" && c.length >= 2) {
+            const normalized = c.toLowerCase().trim();
+            if (STOPWORDS.has(normalized)) continue;
+            if (qLower.includes(normalized)) continue;
+            if (!normalized.includes(qLower)) continue;
+            if (!queryIsTechnical && isPackageLikeText(normalized)) continue;
+            if (!queryIsTechnical && normalized.split(/\s+/).length < MIN_NON_TECH_CAP_WORDS) continue;
+            capSet.add(c.trim());
+          }
+        }
+      }
+      const sortedCaps = [...capSet].sort((a, b) => a.length - b.length);
+      for (const cap of sortedCaps) {
+        addCandidate(candidates, cap, "capability", 0.7, null, ["capability"]);
+      }
     }
 
     const protoSet = new Set<string>();
-    for (const r of matchingRows) {
-      const protos = Array.isArray(r.protocols) ? r.protocols : [];
-      for (const p of protos) {
-        if (typeof p === "string" && p.length >= 2) {
-          protoSet.add(p);
+    if (queryIsTechnical && !questionMode) {
+      for (const r of matchingRows) {
+        const protos = Array.isArray(r.protocols) ? r.protocols : [];
+        for (const p of protos) {
+          if (typeof p === "string" && p.length >= 2) {
+            protoSet.add(p);
+          }
         }
       }
-    }
-    for (const proto of protoSet) {
-      const externalProto = toExternalProtocolName(proto);
-      const label = PROTOCOL_LABELS[proto] ?? PROTOCOL_LABELS[externalProto] ?? externalProto;
-      addCandidate(candidates, `${params.q} ${label}`, "protocol", 0.45, "protocol-append", ["protocol"]);
+      for (const proto of protoSet) {
+        const externalProto = toExternalProtocolName(proto);
+        const label = PROTOCOL_LABELS[proto] ?? PROTOCOL_LABELS[externalProto] ?? externalProto;
+        addCandidate(candidates, `${params.q} ${label}`, "protocol", 0.45, "protocol-append", ["protocol"]);
+      }
     }
 
     const corpusEntities = new Set<string>();
@@ -490,17 +557,19 @@ export async function GET(req: NextRequest) {
     }
     const hybridEntities = [...new Set([...SUGGEST_ENTITIES, ...corpusEntities])];
     if (hybridEntities.length > 0) sourceUsage.add("entity");
-    for (const entity of hybridEntities) {
-      if (!parsedIntent.slotPreposition || !parsedIntent.stablePrefix) break;
-      if (entity === parsedIntent.mutableEntity) continue;
-      addCandidate(
-        candidates,
-        `${parsedIntent.stablePrefix} ${parsedIntent.slotPreposition} ${entity}`,
-        "entity",
-        0.8,
-        "hybrid-entity",
-        ["entity-replace"]
-      );
+    if (!questionMode) {
+      for (const entity of hybridEntities) {
+        if (!parsedIntent.slotPreposition || !parsedIntent.stablePrefix) break;
+        if (entity === parsedIntent.mutableEntity) continue;
+        addCandidate(
+          candidates,
+          `${parsedIntent.stablePrefix} ${parsedIntent.slotPreposition} ${entity}`,
+          "entity",
+          0.8,
+          "hybrid-entity",
+          ["entity-replace"]
+        );
+      }
     }
 
     if (enableTemplateExpansion) {
@@ -531,6 +600,8 @@ export async function GET(req: NextRequest) {
         if (isIncompletePhrase(c.text)) return false;
         if (qSkeleton.includes(c.key) && c.key.length < 8) return false;
         if (looksMalformed(c.text)) return false;
+        if (questionMode && !c.text.toLowerCase().startsWith(qLower)) return false;
+        if (questionMode && isQuestionUnsafeSuggestion(c.text)) return false;
         if (!queryIsTechnical && c.score < relevanceFloor) return false;
         return true;
       })
@@ -570,14 +641,18 @@ export async function GET(req: NextRequest) {
         );
       }
       if (fallbackQueue.length === 0) {
-        const suffixes = ["tutorial", "guide", "step by step", "best practices", "for beginners", "without coding"];
+        const suffixes = questionMode
+          ? QUESTION_TAILS
+          : ["tutorial", "guide", "step by step", "best practices", "for beginners", "without coding"];
         for (const suffix of suffixes) {
+          const candidateText = `${params.q} ${suffix}`.trim();
+          if (questionMode && !candidateText.toLowerCase().startsWith(qLower)) continue;
           addCandidate(
             fallbackQueue,
-            `${params.q} ${suffix}`,
+            candidateText,
             "fallback",
             0.45,
-            "hard-fill-suffix",
+            questionMode ? "question-tail" : "hard-fill-suffix",
             ["hard-fill"]
           );
         }
