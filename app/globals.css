@@ -824,6 +824,54 @@ input[type="reset"] {
   animation: aiResultReveal 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
+@keyframes conciergeBob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes conciergePulse {
+  0% {
+    transform: scale(0.98);
+    opacity: 0.6;
+  }
+  70% {
+    transform: scale(1.15);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.15);
+    opacity: 0;
+  }
+}
+
+@keyframes conciergeSlideInRight {
+  from {
+    transform: translateX(12%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.concierge-bob {
+  animation: conciergeBob 3.6s ease-in-out infinite;
+}
+
+.concierge-pulse-ring {
+  animation: conciergePulse 2.2s ease-out infinite;
+}
+
+.animate-slide-in-from-right {
+  animation: conciergeSlideInRight 0.25s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-ai-banner-in,
   .animate-ai-result-in,

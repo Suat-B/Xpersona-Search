@@ -111,7 +111,7 @@ interface SearchOverrides {
   selectedProtocols?: string[];
   minSafety?: number;
   sort?: string;
-  vertical?: "agents" | "images" | "artifacts";
+  vertical?: "agents" | "artifacts";
   intent?: "discover" | "execute";
   taskType?: string;
   maxLatencyMs?: string;
@@ -168,12 +168,8 @@ export function SearchLanding() {
   const [intent, setIntent] = useState<"discover" | "execute">(
     searchParams.get("intent") === "execute" ? "execute" : "discover"
   );
-  const [vertical, setVertical] = useState<"agents" | "images" | "artifacts">(
-    searchParams.get("vertical") === "images"
-      ? "images"
-      : searchParams.get("vertical") === "artifacts"
-        ? "artifacts"
-        : "agents"
+  const [vertical, setVertical] = useState<"agents" | "artifacts">(
+    searchParams.get("vertical") === "artifacts" ? "artifacts" : "agents"
   );
   const [taskType, setTaskType] = useState(searchParams.get("taskType") ?? "");
   const [maxLatencyMs, setMaxLatencyMs] = useState(searchParams.get("maxLatencyMs") ?? "");
@@ -184,7 +180,6 @@ export function SearchLanding() {
   const [bundle, setBundle] = useState(parseBoolFromUrl(searchParams.get("bundle")));
   const [explain, setExplain] = useState(parseBoolFromUrl(searchParams.get("explain")));
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null);
-  const [brokenMediaUrls, setBrokenMediaUrls] = useState<Set<string>>(new Set());
   const [mediaCursor, setMediaCursor] = useState<string | null>(null);
   const [recall, setRecall] = useState<"normal" | "high">(
     searchParams.get("recall") === "high" ? "high" : "normal"
@@ -195,7 +190,6 @@ export function SearchLanding() {
       .map((s) => s.trim().toUpperCase())
       .filter(Boolean)
   );
-  const isImagesVertical = vertical === "images";
 
   const handleProtocolChange = useCallback(
     (protocols: string[]) => {
@@ -250,7 +244,7 @@ export function SearchLanding() {
       if (nextExplain) params.set("explain", "1");
       if (!reset) {
         if (nextVertical === "agents" && cursor) params.set("cursor", cursor);
-        if ((nextVertical === "images" || nextVertical === "artifacts") && mediaCursor) {
+        if (nextVertical === "artifacts" && mediaCursor) {
           params.set("mediaCursor", mediaCursor);
         }
       }
@@ -266,7 +260,6 @@ export function SearchLanding() {
         if (reset) {
           setAgents(data.results ?? []);
           setMediaResults(data.mediaResults ?? []);
-          setBrokenMediaUrls(new Set());
           setTotal(data.pagination?.total ?? 0);
         } else {
           setAgents((prev) => [...prev, ...(data.results ?? [])]);
@@ -283,7 +276,7 @@ export function SearchLanding() {
         if (data.facets) setFacets(data.facets);
         setSearchMeta(data.searchMeta ?? null);
 
-        if (reset && nextVertical !== "agents") {
+        if (reset && nextVertical === "artifacts") {
           if ((data.mediaResults ?? []).length > 0) {
             setFallbackAgents([]);
           } else {
@@ -366,13 +359,7 @@ export function SearchLanding() {
     setQuery(urlQ);
     setSelectedProtocols(urlProtocols);
     setIntent(searchParams.get("intent") === "execute" ? "execute" : "discover");
-    setVertical(
-      searchParams.get("vertical") === "images"
-        ? "images"
-        : searchParams.get("vertical") === "artifacts"
-          ? "artifacts"
-          : "agents"
-    );
+    setVertical(searchParams.get("vertical") === "artifacts" ? "artifacts" : "agents");
     setTaskType(searchParams.get("taskType") ?? "");
     setMaxLatencyMs(searchParams.get("maxLatencyMs") ?? "");
     setMaxCostUsd(searchParams.get("maxCostUsd") ?? "");
@@ -509,11 +496,11 @@ export function SearchLanding() {
                     : "border-[var(--border)] text-[var(--text-tertiary)]"
                 }`}
               >
-                {v === "agents" ? "Agents" : v === "images" ? "Images" : "Artifacts"}
+                {v === "agents" ? "Agents" : "Artifacts"}
               </button>
             ))}
           </div>
-          {vertical !== "agents" && (
+          {vertical === "artifacts" && (
             <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-[var(--text-tertiary)]">Density:</span>
               <button
@@ -567,11 +554,7 @@ export function SearchLanding() {
         </div>
 
         <div
-          className={
-            isImagesVertical
-              ? "w-full max-w-[min(1800px,100vw)] mx-auto px-3 sm:px-5 lg:px-6 pb-20 sm:pb-16"
-              : "max-w-4xl mx-auto px-3 sm:px-6 pb-20 sm:pb-16"
-          }
+          className="max-w-4xl mx-auto px-3 sm:px-6 pb-20 sm:pb-16"
         >
           <main aria-label="Search results">
             {loading && !hasResults ? (
@@ -587,7 +570,7 @@ export function SearchLanding() {
                     ? "No agents found. Try different filters or search terms."
                     : "No machine-usable visual assets found for this query."}
                 </p>
-                {vertical !== "agents" && hasFallbackAgents && (
+                {vertical === "artifacts" && hasFallbackAgents && (
                   <p className="mt-2 text-xs text-[var(--text-quaternary)]">
                     Showing agent thumbnails instead.
                   </p>
@@ -610,7 +593,7 @@ export function SearchLanding() {
                     </Link>
                   ))}
                 </div>
-                {vertical !== "agents" && hasFallbackAgents && (
+                {vertical === "artifacts" && hasFallbackAgents && (
                   <div className="mt-8 columns-2 sm:columns-2 md:columns-3 lg:columns-4 gap-3 sm:gap-4 text-left">
                     {fallbackAgents.map((agent) => (
                       <article
@@ -649,7 +632,7 @@ export function SearchLanding() {
                       : `${agents.length} agent${agents.length === 1 ? "" : "s"} found`
                     : `${mediaResults.length} visual asset${mediaResults.length === 1 ? "" : "s"} found`}
                 </p>
-                {vertical !== "agents" && (
+                {vertical === "artifacts" && (
                   <p className="mb-4 text-xs text-[var(--text-quaternary)]">
                     Searching visual index with {recall} recall.
                   </p>
@@ -670,41 +653,13 @@ export function SearchLanding() {
                     })}
                   </div>
                 ) : (
-                  <div
-                    className={
-                      isImagesVertical
-                        ? "columns-2 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-3 sm:gap-4"
-                        : "space-y-3"
-                    }
-                  >
+                  <div className="space-y-3">
                     {mediaResults.map((asset) => (
                       <article
                         key={asset.id}
-                        className={
-                          isImagesVertical
-                            ? "mb-3 sm:mb-4 break-inside-avoid rounded-lg border border-white/[0.08] bg-[var(--bg-card)]/75 p-2.5 transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(0,0,0,0.25)]"
-                            : "rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-3"
-                        }
+                        className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-3"
                       >
-                        {isImagesVertical ? (
-                          <a href={asset.url} target="_blank" rel="noreferrer">
-                            {brokenMediaUrls.has(asset.url) ? (
-                              <div className="w-full min-h-24 rounded-md border border-[var(--border)] flex items-center justify-center text-xs text-[var(--text-quaternary)] px-2 py-8 text-center">
-                                Image unavailable
-                              </div>
-                            ) : (
-                              <img
-                                src={asset.url}
-                                alt={asset.title ?? asset.agentName}
-                                className="w-full h-auto rounded-md border border-[var(--border)]"
-                                onError={() =>
-                                  setBrokenMediaUrls((prev) => new Set(prev).add(asset.url))
-                                }
-                              />
-                            )}
-                          </a>
-                        ) : null}
-                        <p className={isImagesVertical ? "mt-2 text-[11px] text-[var(--text-secondary)]" : "mt-2 text-xs text-[var(--text-secondary)]"}>
+                        <p className="mt-2 text-xs text-[var(--text-secondary)]">
                           <Link href={`/agent/${asset.agentSlug}`} className="text-[var(--accent-heart)] hover:underline">
                             {asset.agentName}
                           </Link>
@@ -719,14 +674,14 @@ export function SearchLanding() {
                             </span>
                           ) : null}
                         </p>
-                        <p className={isImagesVertical ? "text-[11px] text-[var(--text-tertiary)] truncate" : "text-xs text-[var(--text-tertiary)] truncate"}>
+                        <p className="text-xs text-[var(--text-tertiary)] truncate">
                           {asset.title ?? asset.caption ?? asset.url.split("/").pop() ?? "Untitled asset"}
                         </p>
                         <a
                           href={asset.sourcePageUrl ?? asset.url}
                           target="_blank"
                           rel="noreferrer"
-                          className={isImagesVertical ? "text-[11px] text-[var(--text-quaternary)] truncate block" : "text-xs text-[var(--text-quaternary)] truncate block"}
+                          className="text-xs text-[var(--text-quaternary)] truncate block"
                         >
                           {asset.sourcePageUrl ?? asset.url}
                         </a>

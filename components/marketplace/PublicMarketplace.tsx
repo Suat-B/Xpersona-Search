@@ -191,7 +191,7 @@ export function PublicMarketplace() {
               </span>
             </h1>
             <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-xl">
-              Browse AI-driven strategies with verified performance. Sign in to subscribe or list your own.
+              Browse AI-driven strategies with verified performance. Sign in to subscribe or list your own to earn money.
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
