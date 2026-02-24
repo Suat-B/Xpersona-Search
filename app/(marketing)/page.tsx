@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; protocols?: string; browse?: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   let session = null;
   try {
@@ -27,8 +27,30 @@ export default async function HomePage({
   const hasSearchQuery = !!params?.q?.trim();
   const hasProtocolFilter = !!params?.protocols?.trim();
   const hasBrowse = params?.browse === "1" || params?.browse === "true";
+  const searchStateKeys = new Set([
+    "q",
+    "protocols",
+    "browse",
+    "minSafety",
+    "sort",
+    "limit",
+    "vertical",
+    "intent",
+    "taskType",
+    "maxLatencyMs",
+    "maxCostUsd",
+    "dataRegion",
+    "requires",
+    "forbidden",
+    "bundle",
+    "explain",
+    "cursor",
+  ]);
+  const hasSearchState = Object.entries(params ?? {}).some(
+    ([key, value]) => searchStateKeys.has(key) && typeof value === "string" && value.trim().length > 0
+  );
 
-  if (!hasSearchQuery && !hasProtocolFilter && !hasBrowse) {
+  if (!hasSearchQuery && !hasProtocolFilter && !hasBrowse && !hasSearchState) {
     return (
       <GoogleStyleHome
         isAuthenticated={isAuthenticated}

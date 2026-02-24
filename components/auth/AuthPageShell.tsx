@@ -12,14 +12,14 @@ type AuthPageShellProps = {
 };
 
 const authShellClass =
-  "relative min-h-screen overflow-hidden bg-[#f2f5fb] px-4 py-6 sm:px-6 lg:px-8";
+  "relative h-[100dvh] overflow-hidden bg-[#f2f5fb] px-4 py-3 sm:px-6 lg:px-8";
 const authContainerClass =
-  "relative mx-auto flex w-full max-w-5xl flex-col gap-5 lg:min-h-[calc(100vh-3rem)] lg:grid lg:grid-cols-12 lg:gap-8 lg:items-center";
+  "relative mx-auto flex h-full w-full max-w-5xl flex-col justify-center gap-4 lg:grid lg:grid-cols-12 lg:gap-8 lg:items-center";
 const authTrustPanelClass =
   "hidden lg:flex lg:col-span-5 lg:flex-col lg:justify-between rounded-3xl border border-[#d9e2f3] bg-white p-8 xl:p-10 shadow-[0_12px_28px_rgba(32,33,36,0.14)]";
 const authFormPanelClass = "lg:col-span-7";
 const authFormCardClass =
-  "relative rounded-3xl border border-[#dadce0] bg-white text-[#202124] p-6 shadow-[0_12px_28px_rgba(32,33,36,0.14)] sm:p-8 lg:p-10 motion-safe:animate-fade-in-up";
+  "relative rounded-3xl border border-[#dadce0] bg-white text-[#202124] p-5 shadow-[0_12px_28px_rgba(32,33,36,0.14)] sm:p-7 lg:p-9 motion-safe:animate-fade-in-up";
 
 const trustItems = [
   "Secure credential flow",

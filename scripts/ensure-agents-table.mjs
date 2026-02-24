@@ -138,10 +138,17 @@ CREATE TABLE IF NOT EXISTS "agent_media_assets" (
   "title" text,
   "caption" text,
   "alt_text" text,
+  "context_text" text,
   "license_guess" varchar(64),
+  "crawl_domain" varchar(255),
+  "discovery_method" varchar(32),
+  "url_norm_hash" varchar(64),
   "is_public" boolean DEFAULT true NOT NULL,
+  "is_dead" boolean DEFAULT false NOT NULL,
+  "dead_checked_at" timestamp with time zone,
   "quality_score" integer DEFAULT 0 NOT NULL,
   "safety_score" integer DEFAULT 0 NOT NULL,
+  "rank_score" double precision DEFAULT 0 NOT NULL,
   "crawl_status" varchar(20) DEFAULT 'DISCOVERED' NOT NULL,
   "last_verified_at" timestamp with time zone,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -161,6 +168,43 @@ CREATE INDEX IF NOT EXISTS "agent_media_assets_quality_score_idx"
   ON "agent_media_assets" ("quality_score");
 CREATE INDEX IF NOT EXISTS "agent_media_assets_is_public_idx"
   ON "agent_media_assets" ("is_public");
+CREATE INDEX IF NOT EXISTS "agent_media_assets_rank_score_idx"
+  ON "agent_media_assets" ("rank_score");
+CREATE INDEX IF NOT EXISTS "agent_media_assets_domain_source_idx"
+  ON "agent_media_assets" ("crawl_domain", "source");
+CREATE INDEX IF NOT EXISTS "agent_media_assets_asset_quality_updated_idx"
+  ON "agent_media_assets" ("asset_kind", "quality_score", "updated_at");
+CREATE UNIQUE INDEX IF NOT EXISTS "agent_media_assets_url_norm_hash_idx"
+  ON "agent_media_assets" ("url_norm_hash", "agent_id");
+`;
+
+const SQL_MEDIA_WEB_FRONTIER = `
+CREATE TABLE IF NOT EXISTS "media_web_frontier" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "url" text NOT NULL UNIQUE,
+  "domain" varchar(255) NOT NULL,
+  "source" varchar(32) NOT NULL DEFAULT 'WEB',
+  "discovered_from" text,
+  "status" varchar(20) NOT NULL DEFAULT 'PENDING',
+  "attempts" integer NOT NULL DEFAULT 0,
+  "priority" integer NOT NULL DEFAULT 0,
+  "lock_owner" varchar(64),
+  "locked_at" timestamp with time zone,
+  "next_attempt_at" timestamp with time zone,
+  "last_error" text,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+CREATE INDEX IF NOT EXISTS "media_web_frontier_status_idx"
+  ON "media_web_frontier" ("status");
+CREATE INDEX IF NOT EXISTS "media_web_frontier_domain_idx"
+  ON "media_web_frontier" ("domain");
+CREATE INDEX IF NOT EXISTS "media_web_frontier_priority_idx"
+  ON "media_web_frontier" ("priority");
+CREATE INDEX IF NOT EXISTS "media_web_frontier_next_attempt_at_idx"
+  ON "media_web_frontier" ("next_attempt_at");
+CREATE INDEX IF NOT EXISTS "media_web_frontier_lock_owner_idx"
+  ON "media_web_frontier" ("lock_owner");
 `;
 
 const SQL_SEARCH_VECTOR = `
@@ -203,6 +247,9 @@ async function main() {
 
     await client.query(SQL_MEDIA_ASSETS);
     console.log("agent_media_assets table and indexes: OK");
+
+    await client.query(SQL_MEDIA_WEB_FRONTIER);
+    console.log("media_web_frontier table and indexes: OK");
 
     await client.query(SQL_SEARCH_VECTOR);
     console.log("search_vector column, index, trigger: OK");

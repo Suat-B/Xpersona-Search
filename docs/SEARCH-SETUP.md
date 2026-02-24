@@ -149,3 +149,20 @@ Notes:
 - weights are auto-normalized
 - lexical should usually remain dominant unless engagement signals are mature
 - use sampled rank logs in production
+
+## Media Vertical (Images + Artifacts)
+
+Enable crawler media ingestion:
+
+```bash
+SEARCH_MEDIA_VERTICAL_ENABLED=1
+SEARCH_MEDIA_SOURCES=GITHUB_REPOS,GITHUB_MCP,GITHUB_OPENCLEW,PYPI,NPM,HUGGINGFACE,REPLICATE,MCP_REGISTRY,CLAWHUB,VERCEL_TEMPLATES,DOCKER
+SEARCH_MEDIA_MIN_QUALITY_SCORE=0
+SEARCH_MEDIA_ALLOWED_HOSTS=raw.githubusercontent.com,github.com,opengraph.githubassets.com,avatars.githubusercontent.com
+SEARCH_MEDIA_DENIED_HOSTS=
+```
+
+Notes:
+- `SEARCH_MEDIA_SOURCES` is optional. If omitted, all sources are eligible.
+- `SEARCH_MEDIA_MIN_QUALITY_SCORE` filters low-quality discovered assets before upsert.
+- Search API supports optional `minMediaQuality=0..100` when `vertical=images|artifacts`.

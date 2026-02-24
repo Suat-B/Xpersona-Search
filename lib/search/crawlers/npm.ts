@@ -8,6 +8,7 @@ import { upsertAgent } from "../agent-upsert";
 import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
 import { buildSearchableReadme } from "../utils/build-readme";
+import { ingestAgentMedia } from "./media-ingestion";
 
 const NPM_SEARCH_URL = "https://registry.npmjs.org/-/v1/search";
 const PAGE_SIZE = 250;
@@ -221,6 +222,15 @@ export async function crawlNpmPackages(
               overallRank: agentData.overallRank,
               lastCrawledAt: agentData.lastCrawledAt,
               nextCrawlAt: agentData.nextCrawlAt,
+            });
+            await ingestAgentMedia({
+              agentSourceId: sourceId,
+              agentUrl: url_,
+              homepageUrl: pkg.links?.homepage ?? null,
+              source: "NPM",
+              readmeOrHtml: agentData.readme,
+              isHtml: false,
+              allowHomepageFetch: true,
             });
 
           totalFound++;

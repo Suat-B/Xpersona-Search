@@ -251,6 +251,7 @@ describe("GET /api/search", () => {
           artifact_type: null,
           url: "https://raw.githubusercontent.com/x/y/main/docs/a.png",
           source_page_url: "https://github.com/x/y",
+          source: "GITHUB_REPOS",
           title: "Preview",
           caption: null,
           width: 1200,
@@ -266,6 +267,14 @@ describe("GET /api/search", () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(data.mediaResults)).toBe(true);
     expect(data.mediaResults[0].assetKind).toBe("IMAGE");
+  });
+
+  it("accepts minMediaQuality for media verticals", async () => {
+    mockDb.execute.mockResolvedValue({ rows: [] });
+    const res = await GET(
+      new NextRequest("http://localhost/api/search?vertical=images&minMediaQuality=70")
+    );
+    expect(res.status).toBe(200);
   });
 
   // --- Cache behavior ---

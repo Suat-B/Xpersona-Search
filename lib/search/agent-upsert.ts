@@ -5,7 +5,7 @@
  */
 import { db } from "@/lib/db";
 import { agentMediaAssets, agents } from "@/lib/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 type AgentInsert = typeof agents.$inferInsert;
 type ConflictSet = Partial<AgentInsert>;
@@ -82,10 +82,17 @@ export interface AgentMediaAssetUpsertInput {
   title?: string | null;
   caption?: string | null;
   altText?: string | null;
+  contextText?: string | null;
   licenseGuess?: string | null;
+  crawlDomain?: string | null;
+  discoveryMethod?: string | null;
+  urlNormHash?: string | null;
   isPublic?: boolean;
+  isDead?: boolean;
+  deadCheckedAt?: Date | null;
   qualityScore?: number;
   safetyScore?: number;
+  rankScore?: number;
   crawlStatus?: string;
 }
 
@@ -127,10 +134,17 @@ export async function upsertMediaAsset(input: AgentMediaAssetUpsertInput): Promi
       title: input.title ?? null,
       caption: input.caption ?? null,
       altText: input.altText ?? null,
+      contextText: input.contextText ?? null,
       licenseGuess: input.licenseGuess ?? null,
+      crawlDomain: input.crawlDomain ?? null,
+      discoveryMethod: input.discoveryMethod ?? null,
+      urlNormHash: input.urlNormHash ?? null,
       isPublic: input.isPublic ?? true,
+      isDead: input.isDead ?? false,
+      deadCheckedAt: input.deadCheckedAt ?? now,
       qualityScore: input.qualityScore ?? 0,
       safetyScore: input.safetyScore ?? 0,
+      rankScore: input.rankScore ?? 0,
       crawlStatus: input.crawlStatus ?? "DISCOVERED",
       lastVerifiedAt: now,
       updatedAt: now,
@@ -146,10 +160,17 @@ export async function upsertMediaAsset(input: AgentMediaAssetUpsertInput): Promi
         title: input.title ?? null,
         caption: input.caption ?? null,
         altText: input.altText ?? null,
+        contextText: input.contextText ?? null,
         licenseGuess: input.licenseGuess ?? null,
+        crawlDomain: input.crawlDomain ?? null,
+        discoveryMethod: input.discoveryMethod ?? null,
+        urlNormHash: input.urlNormHash ?? null,
         isPublic: input.isPublic ?? true,
+        isDead: input.isDead ?? false,
+        deadCheckedAt: input.deadCheckedAt ?? now,
         qualityScore: input.qualityScore ?? 0,
         safetyScore: input.safetyScore ?? 0,
+        rankScore: input.rankScore ?? 0,
         crawlStatus: input.crawlStatus ?? "DISCOVERED",
         lastVerifiedAt: now,
         updatedAt: now,
@@ -162,12 +183,62 @@ export async function upsertMediaAsset(input: AgentMediaAssetUpsertInput): Promi
     .where(and(eq(agentMediaAssets.agentId, input.agentId), eq(agentMediaAssets.isPublic, true)));
 
   const total = Number(countRow?.count ?? 0);
+  const [bestImage] = await db
+    .select({ url: agentMediaAssets.url })
+    .from(agentMediaAssets)
+    .where(
+      and(
+        eq(agentMediaAssets.agentId, input.agentId),
+        eq(agentMediaAssets.isPublic, true),
+        eq(agentMediaAssets.assetKind, "IMAGE")
+      )
+    )
+    .orderBy(
+      desc(agentMediaAssets.qualityScore),
+      desc(sql<number>`coalesce(${agentMediaAssets.width}, 0) * coalesce(${agentMediaAssets.height}, 0)`),
+      desc(agentMediaAssets.updatedAt)
+    )
+    .limit(1);
+
   const updateSet: Partial<AgentInsert> & { mediaAssetCount: number; updatedAt: Date } = {
     mediaAssetCount: total,
     updatedAt: now,
   };
-  if (input.assetKind === "IMAGE" && (input.isPublic ?? true)) {
-    updateSet.primaryImageUrl = input.url;
+  if (bestImage?.url) {
+    updateSet.primaryImageUrl = bestImage.url;
   }
   await db.update(agents).set(updateSet).where(eq(agents.id, input.agentId));
+}
+
+export async function upsertMediaAssetsBulk(
+  inputs: AgentMediaAssetUpsertInput[]
+): Promise<void> {
+  for (const input of inputs) {
+    await upsertMediaAsset(input);
+  }
+}
+
+export function computeMediaRankScore(input: {
+  qualityScore: number;
+  safetyScore: number;
+  assetKind: "IMAGE" | "ARTIFACT";
+  artifactType?: string | null;
+  parentOverallRank?: number | null;
+  freshnessDays?: number;
+  lexicalMatch?: number;
+}): number {
+  const freshnessPenalty = Math.min(20, Math.max(0, input.freshnessDays ?? 0) * 0.2);
+  const artifactBoost =
+    input.assetKind === "ARTIFACT" &&
+    ["OPENAPI", "JSON_SCHEMA", "BENCHMARK", "DIAGRAM"].includes(
+      (input.artifactType ?? "").toUpperCase()
+    )
+      ? 8
+      : 0;
+  const lexical = Math.max(0, Math.min(20, input.lexicalMatch ?? 0));
+  const parent = Math.max(0, Math.min(20, (input.parentOverallRank ?? 0) / 5));
+  return Math.max(
+    0,
+    Math.round(input.qualityScore * 0.45 + input.safetyScore * 0.25 + parent + lexical + artifactBoost - freshnessPenalty)
+  );
 }

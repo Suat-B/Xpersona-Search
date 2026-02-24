@@ -72,6 +72,7 @@ function toExternalProtocolName(protocol: unknown): string {
 
 const SearchSchema = z.object({
   q: z.string().max(500).optional(),
+  mediaCursor: z.string().optional(),
   protocols: z
     .string()
     .optional()
@@ -109,7 +110,20 @@ const SearchSchema = z.object({
     .optional()
     .transform((s) => s === "1" || s === "true"),
   vertical: z.enum(["agents", "images", "artifacts"]).default("agents"),
+  minMediaQuality: z.coerce.number().min(0).max(100).optional(),
   artifactType: z
+    .string()
+    .optional()
+    .transform((s) =>
+      s
+        ? s
+            .split(",")
+            .map((v) => v.trim().toUpperCase())
+            .filter(Boolean)
+        : []
+    ),
+  recall: z.enum(["normal", "high"]).default("normal"),
+  includeSources: z
     .string()
     .optional()
     .transform((s) =>
@@ -453,7 +467,7 @@ async function getSemanticCandidateIds(query: string): Promise<string[]> {
 
 async function runMediaVerticalQuery(params: SearchParams): Promise<{
   mediaResults: Array<Record<string, unknown>>;
-  pagination: { hasMore: boolean; nextCursor: null; total: number };
+  pagination: { hasMore: boolean; nextCursor: string | null; total: number };
   facets: { protocols: never[] };
   searchMeta: {
     fallbackApplied: boolean;
@@ -465,7 +479,24 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
   };
 }> {
   const rawQuery = params.q?.trim() ?? "";
-  const queryPattern = rawQuery ? `%${escapeLike(rawQuery)}%` : null;
+  const queryTokens = rawQuery
+    .toLowerCase()
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const mediaSynonyms: Record<string, string[]> = {
+    diagram: ["architecture", "flowchart"],
+    arch: ["architecture", "diagram"],
+    benchmark: ["performance", "latency"],
+    screenshot: ["ui", "preview"],
+    openapi: ["swagger", "api spec"],
+    schema: ["json schema", "contract"],
+  };
+  const expandedTerms = new Set<string>(queryTokens);
+  for (const t of queryTokens) {
+    (mediaSynonyms[t] ?? []).forEach((v) => expandedTerms.add(v));
+  }
+  const queryPattern = expandedTerms.size > 0 ? `%${escapeLike([...expandedTerms].join(" "))}%` : null;
   const conditions: SQL[] = [eq(agents.status, "ACTIVE") as unknown as SQL];
   if (!params.includePrivate) {
     conditions.push(eq(agents.publicSearchable, true) as unknown as SQL);
@@ -480,12 +511,27 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
     conditions.push(eq(agentMediaAssets.assetKind, "ARTIFACT") as unknown as SQL);
   }
 
+  if (params.includeSources.length > 0) {
+    conditions.push(
+      sql`${agentMediaAssets.source} = ANY(ARRAY[${sql.join(
+        params.includeSources.map((v) => sql`${v}`),
+        sql`, `
+      )}]::text[])`
+    );
+  }
+
   if (params.artifactType.length > 0) {
     conditions.push(
       sql`${agentMediaAssets.artifactType} = ANY(ARRAY[${sql.join(
         params.artifactType.map((v) => sql`${v}`),
         sql`, `
       )}]::text[])`
+    );
+  }
+
+  if (params.minMediaQuality != null) {
+    conditions.push(
+      gte(agentMediaAssets.qualityScore, params.minMediaQuality) as unknown as SQL
     );
   }
 
@@ -501,6 +547,30 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
     );
   }
 
+  const pageLimit = params.recall === "high" ? Math.min(200, params.limit * 3) : params.limit;
+  const mediaCursor = params.mediaCursor?.trim() || null;
+  if (mediaCursor) {
+    const parts = mediaCursor.split("|");
+    if (parts.length === 3) {
+      const cursorRank = Number(parts[0]);
+      const cursorUpdatedAt = new Date(parts[1]);
+      const cursorId = parts[2];
+      if (
+        Number.isFinite(cursorRank) &&
+        !Number.isNaN(cursorUpdatedAt.getTime()) &&
+        cursorId.length > 0
+      ) {
+        conditions.push(
+          sql`(
+            coalesce(${agentMediaAssets.rankScore}, 0),
+            ${agentMediaAssets.updatedAt},
+            ${agentMediaAssets.id}
+          ) < (${cursorRank}, ${cursorUpdatedAt}, ${cursorId}::uuid)`
+        );
+      }
+    }
+  }
+
   const result = await db.execute(sql`
     SELECT
       ${agentMediaAssets.id} AS id,
@@ -511,25 +581,40 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
       ${agentMediaAssets.artifactType} AS artifact_type,
       ${agentMediaAssets.url} AS url,
       ${agentMediaAssets.sourcePageUrl} AS source_page_url,
+      ${agentMediaAssets.source} AS source,
       ${agentMediaAssets.title} AS title,
       ${agentMediaAssets.caption} AS caption,
       ${agentMediaAssets.width} AS width,
       ${agentMediaAssets.height} AS height,
       ${agentMediaAssets.mimeType} AS mime_type,
       ${agentMediaAssets.qualityScore} AS quality_score,
-      ${agentMediaAssets.safetyScore} AS safety_score
+      ${agentMediaAssets.safetyScore} AS safety_score,
+      ${agentMediaAssets.rankScore} AS rank_score,
+      ${agentMediaAssets.updatedAt} AS updated_at,
+      ${agentMediaAssets.source} AS source,
+      ${agentMediaAssets.crawlDomain} AS crawl_domain,
+      ${agentMediaAssets.discoveryMethod} AS discovery_method
     FROM ${agentMediaAssets}
     INNER JOIN ${agents} ON ${agents.id} = ${agentMediaAssets.agentId}
     WHERE ${and(...conditions)}
     ORDER BY
+      ${agentMediaAssets.rankScore} DESC,
       ${agentMediaAssets.qualityScore} DESC,
       ${agents.overallRank} DESC,
-      ${agentMediaAssets.updatedAt} DESC
-    LIMIT ${params.limit + 1}
+      ${agentMediaAssets.updatedAt} DESC,
+      ${agentMediaAssets.id} DESC
+    LIMIT ${pageLimit + 1}
   `);
   const rows = (result as unknown as { rows?: Array<Record<string, unknown>> }).rows ?? [];
-  const hasMore = rows.length > params.limit;
-  const pageRows = hasMore ? rows.slice(0, params.limit) : rows;
+  const hasMore = rows.length > pageLimit;
+  const pageRows = hasMore ? rows.slice(0, pageLimit) : rows;
+  const lastRow = pageRows[pageRows.length - 1];
+  const nextCursor =
+    hasMore && lastRow
+      ? `${Number(lastRow.rank_score ?? 0)}|${new Date(lastRow.updated_at as Date).toISOString()}|${
+          lastRow.id as string
+        }`
+      : null;
   const mediaResults = pageRows.map((row) => ({
     id: row.id as string,
     agentId: row.agent_id as string,
@@ -546,11 +631,13 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
     mimeType: (row.mime_type as string | null) ?? null,
     qualityScore: Number(row.quality_score ?? 0),
     safetyScore: Number(row.safety_score ?? 0),
+    crawlDomain: (row.crawl_domain as string | null) ?? null,
+    discoveryMethod: (row.discovery_method as string | null) ?? null,
   }));
 
   return {
     mediaResults,
-    pagination: { hasMore, nextCursor: null, total: mediaResults.length },
+    pagination: { hasMore, nextCursor, total: mediaResults.length },
     facets: { protocols: [] },
     searchMeta: {
       fallbackApplied: false,
@@ -618,12 +705,16 @@ export async function GET(req: NextRequest) {
     minRank: params.minRank ?? "",
     sort: params.sort,
     cursor: params.cursor ?? "",
+    mediaCursor: params.mediaCursor ?? "",
     limit: params.limit,
     includePending: params.includePending,
     includePrivate: params.includePrivate,
     includeUnsafeMedia: params.includeUnsafeMedia,
     vertical: params.vertical,
+    minMediaQuality: params.minMediaQuality ?? "",
     artifactType: params.artifactType.join(","),
+    recall: params.recall,
+    includeSources: params.includeSources.join(","),
     debug: params.debug,
     fields: params.fields,
     intent: params.intent,

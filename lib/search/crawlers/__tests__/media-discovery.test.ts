@@ -29,4 +29,39 @@ describe("media discovery", () => {
     expect(canCrawlHomepage("http://example.com")).toBe(false);
     expect(canCrawlHomepage("https://example.com")).toBe(true);
   });
+
+  it("skips non-image mime for image extension", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        headers: new Headers({
+          "content-type": "text/html",
+          "content-length": "100",
+        }),
+      })
+    );
+    const assets = await discoverMediaAssets({
+      sourcePageUrl: "https://github.com/org/repo",
+      markdownOrHtml: "![img](./docs/screenshot.png)",
+    });
+    expect(assets.length).toBe(0);
+  });
+
+  it("demotes noisy badge assets quality", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        headers: new Headers({
+          "content-type": "image/svg+xml",
+          "content-length": "321",
+        }),
+      })
+    );
+    const assets = await discoverMediaAssets({
+      sourcePageUrl: "https://github.com/org/repo",
+      markdownOrHtml: "![build badge](https://img.shields.io/badge/build-passing-brightgreen.svg)",
+    });
+    expect(assets.length).toBe(1);
+    expect(assets[0].qualityScore).toBeLessThan(40);
+  });
 });

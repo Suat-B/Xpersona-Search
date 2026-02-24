@@ -47,6 +47,18 @@ WHERE created_at >= now() - interval '14 days'
 GROUP BY source, date_trunc('day', created_at)
 ORDER BY day DESC, source;
 
+-- Media quality and visibility coverage by source
+SELECT
+  source,
+  COUNT(*) AS total_assets,
+  COUNT(*) FILTER (WHERE is_public) AS public_assets,
+  COUNT(*) FILTER (WHERE NOT is_public) AS filtered_assets,
+  ROUND(AVG(quality_score)::numeric, 2) AS avg_quality,
+  ROUND(AVG(safety_score)::numeric, 2) AS avg_safety
+FROM agent_media_assets
+GROUP BY source
+ORDER BY total_assets DESC;
+
 -- Dead/stale media ratio
 SELECT
   source,
@@ -62,9 +74,10 @@ ORDER BY dead_ratio_pct DESC NULLS LAST;
 
 -- Artifact type distribution
 SELECT
+  source,
   COALESCE(artifact_type, 'NONE') AS artifact_type,
   COUNT(*) AS count
 FROM agent_media_assets
 WHERE asset_kind = 'ARTIFACT'
-GROUP BY COALESCE(artifact_type, 'NONE')
-ORDER BY count DESC;
+GROUP BY source, COALESCE(artifact_type, 'NONE')
+ORDER BY source, count DESC;

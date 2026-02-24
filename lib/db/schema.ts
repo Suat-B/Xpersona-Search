@@ -653,6 +653,7 @@ export const searchQueries = pgTable(
 export {
   agents,
   agentMediaAssets,
+  mediaWebFrontier,
   agentClaims,
   agentCustomizations,
   agentCustomizationVersions,

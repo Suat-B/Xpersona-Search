@@ -7,6 +7,7 @@ import { agents, crawlJobs } from "@/lib/db/schema";
 import { upsertAgent } from "../agent-upsert";
 import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
+import { ingestAgentMedia } from "./media-ingestion";
 
 const DOCKER_HUB_API = "https://hub.docker.com/v2/search/repositories";
 const PAGE_SIZE = 100;
@@ -141,6 +142,15 @@ export async function crawlDockerHub(
               popularityScore: agentData.popularityScore,
               lastCrawledAt: agentData.lastCrawledAt,
               nextCrawlAt: agentData.nextCrawlAt,
+            });
+            await ingestAgentMedia({
+              agentSourceId: sourceId,
+              agentUrl: url,
+              homepageUrl: url,
+              source: "DOCKER",
+              readmeOrHtml: repo.short_description ?? "",
+              isHtml: false,
+              allowHomepageFetch: true,
             });
 
           totalFound++;

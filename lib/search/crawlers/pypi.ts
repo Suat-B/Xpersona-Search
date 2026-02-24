@@ -8,6 +8,7 @@ import { upsertAgent } from "../agent-upsert";
 import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
 import { calculateDynamicScores } from "../scoring/rank";
+import { ingestAgentMedia } from "./media-ingestion";
 
 const PYPI_BASE = "https://pypi.org";
 const PAGE_SIZE = 20;
@@ -258,6 +259,15 @@ export async function crawlPypiPackages(
         overallRank: agentData.overallRank,
         lastCrawledAt: agentData.lastCrawledAt,
         nextCrawlAt: agentData.nextCrawlAt,
+      });
+      await ingestAgentMedia({
+        agentSourceId: sourceId,
+        agentUrl: projectUrl,
+        homepageUrl: info.home_page ?? null,
+        source: "PYPI",
+        readmeOrHtml: info.description ?? info.summary ?? "",
+        isHtml: false,
+        allowHomepageFetch: true,
       });
 
       totalFound++;

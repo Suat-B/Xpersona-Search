@@ -130,10 +130,17 @@ export const agentMediaAssets = pgTable(
     title: text("title"),
     caption: text("caption"),
     altText: text("alt_text"),
+    contextText: text("context_text"),
     licenseGuess: varchar("license_guess", { length: 64 }),
+    crawlDomain: varchar("crawl_domain", { length: 255 }),
+    discoveryMethod: varchar("discovery_method", { length: 32 }),
+    urlNormHash: varchar("url_norm_hash", { length: 64 }),
     isPublic: boolean("is_public").notNull().default(true),
+    isDead: boolean("is_dead").notNull().default(false),
+    deadCheckedAt: timestamp("dead_checked_at", { withTimezone: true }),
     qualityScore: integer("quality_score").notNull().default(0),
     safetyScore: integer("safety_score").notNull().default(0),
+    rankScore: doublePrecision("rank_score").notNull().default(0),
     crawlStatus: varchar("crawl_status", { length: 20 }).notNull().default("DISCOVERED"),
     lastVerifiedAt: timestamp("last_verified_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -146,7 +153,43 @@ export const agentMediaAssets = pgTable(
     index("agent_media_assets_asset_kind_idx").on(table.assetKind),
     index("agent_media_assets_artifact_type_idx").on(table.artifactType),
     index("agent_media_assets_quality_score_idx").on(table.qualityScore),
+    index("agent_media_assets_rank_score_idx").on(table.rankScore),
     index("agent_media_assets_is_public_idx").on(table.isPublic),
+    index("agent_media_assets_domain_source_idx").on(table.crawlDomain, table.source),
+    index("agent_media_assets_asset_quality_updated_idx").on(
+      table.assetKind,
+      table.qualityScore,
+      table.updatedAt
+    ),
+    uniqueIndex("agent_media_assets_url_norm_hash_idx").on(table.urlNormHash, table.agentId),
+  ]
+);
+
+/** Open-web frontier for large-scale media discovery beyond repo/homepage pages. */
+export const mediaWebFrontier = pgTable(
+  "media_web_frontier",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    url: text("url").notNull().unique(),
+    domain: varchar("domain", { length: 255 }).notNull(),
+    source: varchar("source", { length: 32 }).notNull().default("WEB"),
+    discoveredFrom: text("discovered_from"),
+    status: varchar("status", { length: 20 }).notNull().default("PENDING"),
+    attempts: integer("attempts").notNull().default(0),
+    priority: integer("priority").notNull().default(0),
+    lockOwner: varchar("lock_owner", { length: 64 }),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("media_web_frontier_status_idx").on(table.status),
+    index("media_web_frontier_domain_idx").on(table.domain),
+    index("media_web_frontier_priority_idx").on(table.priority),
+    index("media_web_frontier_next_attempt_at_idx").on(table.nextAttemptAt),
+    index("media_web_frontier_lock_owner_idx").on(table.lockOwner),
   ]
 );
 

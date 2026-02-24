@@ -86,6 +86,7 @@ interface MediaResult {
   artifactType: string | null;
   url: string;
   sourcePageUrl: string | null;
+  source?: string | null;
   title: string | null;
   caption: string | null;
   width: number | null;
@@ -102,6 +103,23 @@ interface SearchResponsePayload {
   facets?: Facets;
   didYouMean?: string;
   searchMeta?: SearchMeta;
+}
+
+interface SearchOverrides {
+  query?: string;
+  selectedProtocols?: string[];
+  minSafety?: number;
+  sort?: string;
+  vertical?: "agents" | "images" | "artifacts";
+  intent?: "discover" | "execute";
+  taskType?: string;
+  maxLatencyMs?: string;
+  maxCostUsd?: string;
+  dataRegion?: string;
+  requires?: string;
+  forbidden?: string;
+  bundle?: boolean;
+  explain?: boolean;
 }
 
 function SkeletonSnippet() {
@@ -162,6 +180,7 @@ export function SearchLanding() {
   const [bundle, setBundle] = useState(parseBoolFromUrl(searchParams.get("bundle")));
   const [explain, setExplain] = useState(parseBoolFromUrl(searchParams.get("explain")));
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null);
+  const [brokenMediaUrls, setBrokenMediaUrls] = useState<Set<string>>(new Set());
 
   const handleProtocolChange = useCallback(
     (protocols: string[]) => {
@@ -175,24 +194,39 @@ export function SearchLanding() {
   );
 
   const search = useCallback(
-    async (reset = true) => {
+    async (reset = true, overrides?: SearchOverrides) => {
       setLoading(true);
+      const nextQuery = overrides?.query ?? query;
+      const nextSelectedProtocols = overrides?.selectedProtocols ?? selectedProtocols;
+      const nextMinSafety = overrides?.minSafety ?? minSafety;
+      const nextSort = overrides?.sort ?? sort;
+      const nextVertical = overrides?.vertical ?? vertical;
+      const nextIntent = overrides?.intent ?? intent;
+      const nextTaskType = overrides?.taskType ?? taskType;
+      const nextMaxLatencyMs = overrides?.maxLatencyMs ?? maxLatencyMs;
+      const nextMaxCostUsd = overrides?.maxCostUsd ?? maxCostUsd;
+      const nextDataRegion = overrides?.dataRegion ?? dataRegion;
+      const nextRequires = overrides?.requires ?? requires;
+      const nextForbidden = overrides?.forbidden ?? forbidden;
+      const nextBundle = overrides?.bundle ?? bundle;
+      const nextExplain = overrides?.explain ?? explain;
+
       const params = new URLSearchParams();
-      if (query.trim()) params.set("q", query.trim());
-      if (selectedProtocols.length) params.set("protocols", selectedProtocols.join(","));
-      if (minSafety > 0) params.set("minSafety", String(minSafety));
-      params.set("sort", sort);
+      if (nextQuery.trim()) params.set("q", nextQuery.trim());
+      if (nextSelectedProtocols.length) params.set("protocols", nextSelectedProtocols.join(","));
+      if (nextMinSafety > 0) params.set("minSafety", String(nextMinSafety));
+      params.set("sort", nextSort);
       params.set("limit", "30");
-      params.set("vertical", vertical);
-      params.set("intent", intent);
-      if (taskType.trim()) params.set("taskType", taskType.trim());
-      if (maxLatencyMs.trim()) params.set("maxLatencyMs", maxLatencyMs.trim());
-      if (maxCostUsd.trim()) params.set("maxCostUsd", maxCostUsd.trim());
-      if (dataRegion && dataRegion !== "global") params.set("dataRegion", dataRegion);
-      if (requires.trim()) params.set("requires", requires);
-      if (forbidden.trim()) params.set("forbidden", forbidden);
-      if (bundle) params.set("bundle", "1");
-      if (explain) params.set("explain", "1");
+      params.set("vertical", nextVertical);
+      params.set("intent", nextIntent);
+      if (nextTaskType.trim()) params.set("taskType", nextTaskType.trim());
+      if (nextMaxLatencyMs.trim()) params.set("maxLatencyMs", nextMaxLatencyMs.trim());
+      if (nextMaxCostUsd.trim()) params.set("maxCostUsd", nextMaxCostUsd.trim());
+      if (nextDataRegion && nextDataRegion !== "global") params.set("dataRegion", nextDataRegion);
+      if (nextRequires.trim()) params.set("requires", nextRequires);
+      if (nextForbidden.trim()) params.set("forbidden", nextForbidden);
+      if (nextBundle) params.set("bundle", "1");
+      if (nextExplain) params.set("explain", "1");
       if (!reset && cursor) params.set("cursor", cursor);
 
       router.replace(`/?${params.toString()}`, { scroll: false });
@@ -206,6 +240,7 @@ export function SearchLanding() {
         if (reset) {
           setAgents(data.results ?? []);
           setMediaResults(data.mediaResults ?? []);
+          setBrokenMediaUrls(new Set());
           setTotal(data.pagination?.total ?? 0);
         } else {
           setAgents((prev) => [...prev, ...(data.results ?? [])]);
@@ -306,6 +341,40 @@ export function SearchLanding() {
 
   const hasResults = vertical === "agents" ? agents.length > 0 : mediaResults.length > 0;
 
+  const handleExploreAllAgents = useCallback(async () => {
+    setQuery("");
+    setSelectedProtocols([]);
+    setMinSafety(0);
+    setSort("rank");
+    setVertical("agents");
+    setIntent("discover");
+    setTaskType("");
+    setMaxLatencyMs("");
+    setMaxCostUsd("");
+    setDataRegion("global");
+    setRequires("");
+    setForbidden("");
+    setBundle(false);
+    setExplain(false);
+
+    await search(true, {
+      query: "",
+      selectedProtocols: [],
+      minSafety: 0,
+      sort: "rank",
+      vertical: "agents",
+      intent: "discover",
+      taskType: "",
+      maxLatencyMs: "",
+      maxCostUsd: "",
+      dataRegion: "global",
+      requires: "",
+      forbidden: "",
+      bundle: false,
+      explain: false,
+    });
+  }, [search]);
+
   return (
     <section className="min-h-screen text-[var(--text-primary)] bg-[var(--bg-deep)] relative">
       <div className="fixed inset-0 pointer-events-none z-0" aria-hidden>
@@ -316,7 +385,13 @@ export function SearchLanding() {
         <SearchResultsBar
           query={query}
           setQuery={setQuery}
-          onSearch={() => search(true)}
+          onSearch={() => {
+            if (!query.trim()) {
+              void handleExploreAllAgents();
+              return;
+            }
+            void search(true);
+          }}
           loading={loading}
           selectedProtocols={selectedProtocols}
           onProtocolChange={handleProtocolChange}
@@ -383,12 +458,13 @@ export function SearchLanding() {
                     : "No machine-usable visual assets found for this query."}
                 </p>
                 <div className="mt-6 flex flex-wrap justify-center gap-3">
-                  <Link
-                    href="/?q=discover"
+                  <button
+                    type="button"
+                    onClick={handleExploreAllAgents}
                     className="inline-flex items-center gap-2 px-4 py-3 min-h-[44px] rounded-lg neural-glass border border-white/[0.08]"
                   >
                     Explore all agents
-                  </Link>
+                  </button>
                   {BROWSE_PROTOCOLS.map(({ id, label }) => (
                     <Link
                       key={id}
@@ -430,14 +506,39 @@ export function SearchLanding() {
                       <article key={asset.id} className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-3">
                         {vertical === "images" ? (
                           <a href={asset.url} target="_blank" rel="noreferrer">
-                            <img src={asset.url} alt={asset.title ?? asset.agentName} className="w-full h-36 object-cover rounded-md border border-[var(--border)]" />
+                            {brokenMediaUrls.has(asset.url) ? (
+                              <div className="w-full h-36 rounded-md border border-[var(--border)] flex items-center justify-center text-xs text-[var(--text-quaternary)]">
+                                Image unavailable
+                              </div>
+                            ) : (
+                              <img
+                                src={asset.url}
+                                alt={asset.title ?? asset.agentName}
+                                className="w-full h-36 object-cover rounded-md border border-[var(--border)]"
+                                onError={() =>
+                                  setBrokenMediaUrls((prev) => new Set(prev).add(asset.url))
+                                }
+                              />
+                            )}
                           </a>
                         ) : null}
                         <p className="mt-2 text-xs text-[var(--text-secondary)]">
                           <Link href={`/agent/${asset.agentSlug}`} className="text-[var(--accent-heart)] hover:underline">
                             {asset.agentName}
                           </Link>
-                          {asset.artifactType ? <span className="ml-2">{asset.artifactType}</span> : null}
+                          {asset.artifactType ? (
+                            <span className="ml-2 rounded border border-[var(--border)] px-1.5 py-0.5">
+                              {asset.artifactType.replace(/_/g, " ")}
+                            </span>
+                          ) : null}
+                          {asset.source ? (
+                            <span className="ml-2 rounded border border-[var(--border)] px-1.5 py-0.5 text-[var(--text-quaternary)]">
+                              {asset.source}
+                            </span>
+                          ) : null}
+                        </p>
+                        <p className="text-xs text-[var(--text-tertiary)] truncate">
+                          {asset.title ?? asset.caption ?? asset.url.split("/").pop() ?? "Untitled asset"}
                         </p>
                         <a
                           href={asset.sourcePageUrl ?? asset.url}

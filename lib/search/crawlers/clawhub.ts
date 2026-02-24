@@ -10,6 +10,7 @@ import { octokit, fetchFileContent } from "../utils/github";
 import { parseSkillMd } from "../parsers/skill-md";
 import { generateSlug } from "../utils/slug";
 import { upsertAgent } from "../agent-upsert";
+import { ingestAgentMedia } from "./media-ingestion";
 
 const SKILLS_REPO = "openclaw/skills";
 const CONCURRENCY = 5;
@@ -103,6 +104,15 @@ export async function crawlClawHub(
         readme: agentData.readme,
         lastCrawledAt: agentData.lastCrawledAt,
         nextCrawlAt: agentData.nextCrawlAt,
+      });
+      await ingestAgentMedia({
+        agentSourceId: sourceId,
+        agentUrl: url,
+        homepageUrl: skillData.homepage ?? null,
+        source: "CLAWHUB",
+        readmeOrHtml: skillContent,
+        isHtml: false,
+        allowHomepageFetch: true,
       });
 
       totalFound++;

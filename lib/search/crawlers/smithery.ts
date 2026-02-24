@@ -7,6 +7,7 @@ import { crawlJobs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
 import { upsertAgent } from "../agent-upsert";
+import { ingestAgentMedia } from "./media-ingestion";
 
 const SMITHERY_API = "https://registry.smithery.ai/servers";
 
@@ -140,6 +141,15 @@ export async function crawlSmithery(
           overallRank: agentData.overallRank,
           lastCrawledAt: agentData.lastCrawledAt,
           nextCrawlAt: agentData.nextCrawlAt,
+        });
+        await ingestAgentMedia({
+          agentSourceId: sourceId,
+          agentUrl: url,
+          homepageUrl: server.homepage ?? null,
+          source: "MCP_REGISTRY",
+          readmeOrHtml: server.description ?? "",
+          isHtml: false,
+          allowHomepageFetch: true,
         });
 
         totalFound++;

@@ -25,6 +25,7 @@ import {
 } from "../scoring/rank";
 import { createGitHubRequestContext, fetchRepoDetails, searchCode } from "../utils/github";
 import { getRepoVisibility, shouldRecrawlSource } from "./github-agent-utils";
+import { ingestAgentMedia } from "./media-ingestion";
 
 const SOURCE = "VERCEL_TEMPLATES";
 const CONCURRENCY = 4;
@@ -147,6 +148,15 @@ async function processRepo(
     publicSearchable: agentData.publicSearchable,
     lastCrawledAt: agentData.lastCrawledAt,
     nextCrawlAt: agentData.nextCrawlAt,
+  });
+  await ingestAgentMedia({
+    agentSourceId: sourceId,
+    agentUrl: repo.html_url,
+    homepageUrl: repo.homepage ?? null,
+    source: SOURCE,
+    readmeOrHtml: agentData.readme,
+    isHtml: false,
+    allowHomepageFetch: true,
   });
   return 1;
 }

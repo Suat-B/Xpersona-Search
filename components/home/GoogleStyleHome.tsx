@@ -48,7 +48,9 @@ export function GoogleStyleHome({
     if (query.trim()) {
       addRecentSearch(query.trim());
       router.push(`/?q=${encodeURIComponent(query.trim())}`);
+      return;
     }
+    router.push("/?browse=1");
   };
 
   const handleLucky = async () => {

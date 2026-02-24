@@ -173,6 +173,20 @@ function hasGitHubAuth(): boolean {
   );
 }
 
+function getDatabaseTargetInfo(): { host: string; user: string } | null {
+  const raw = process.env.DATABASE_URL ?? "";
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    return {
+      host: parsed.hostname || "unknown",
+      user: decodeURIComponent(parsed.username || ""),
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function logGitHubReliability(results: CrawlResult[], mode: CrawlMode) {
   const githubSources = new Set([
     "GITHUB_OPENCLEW",
@@ -250,6 +264,19 @@ async function logGitHubReliability(results: CrawlResult[], mode: CrawlMode) {
 async function main() {
   if (!process.env.DATABASE_URL) {
     console.error("DATABASE_URL not set");
+    process.exit(1);
+  }
+  const dbTarget = getDatabaseTargetInfo();
+  if (!dbTarget) {
+    console.error("DATABASE_URL is invalid");
+    process.exit(1);
+  }
+  log("CRAWL", "DB target host=%s user=%s", dbTarget.host, dbTarget.user || "(empty)");
+  if (
+    dbTarget.user.toLowerCase().includes("placeholder") ||
+    dbTarget.host.toLowerCase().includes("placeholder")
+  ) {
+    console.error("DATABASE_URL appears to use placeholder credentials; aborting crawl.");
     process.exit(1);
   }
 

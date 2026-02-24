@@ -8,6 +8,7 @@ import { upsertAgent } from "../agent-upsert";
 import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
 import { buildSearchableReadme } from "../utils/build-readme";
+import { ingestAgentMedia } from "./media-ingestion";
 
 const HF_API_BASE = "https://huggingface.co/api/spaces";
 const PAGE_SIZE = 100;
@@ -185,6 +186,15 @@ export async function crawlHuggingFaceSpaces(
             overallRank: agentData.overallRank,
             lastCrawledAt: agentData.lastCrawledAt,
             nextCrawlAt: agentData.nextCrawlAt,
+          });
+          await ingestAgentMedia({
+            agentSourceId: sourceId,
+            agentUrl: url,
+            homepageUrl: url,
+            source: "HUGGINGFACE",
+            readmeOrHtml: agentData.readme,
+            isHtml: false,
+            allowHomepageFetch: true,
           });
 
           totalFound++;

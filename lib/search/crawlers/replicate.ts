@@ -8,6 +8,7 @@ import { upsertAgent } from "../agent-upsert";
 import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
 import { buildSearchableReadme } from "../utils/build-readme";
+import { ingestAgentMedia } from "./media-ingestion";
 
 const REPLICATE_API = "https://api.replicate.com/v1/models";
 
@@ -126,6 +127,15 @@ export async function crawlReplicate(
             popularityScore: agentData.popularityScore,
             lastCrawledAt: agentData.lastCrawledAt,
             nextCrawlAt: agentData.nextCrawlAt,
+          });
+          await ingestAgentMedia({
+            agentSourceId: sourceId,
+            agentUrl: url,
+            homepageUrl: url,
+            source: "REPLICATE",
+            readmeOrHtml: agentData.readme,
+            isHtml: false,
+            allowHomepageFetch: true,
           });
 
         totalFound++;
