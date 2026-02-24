@@ -1,6 +1,5 @@
 #!/usr/bin/env npx tsx
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const dotenv = require("dotenv");
+import * as dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { db } = require("@/lib/db");
@@ -55,32 +54,40 @@ function inferForbidden(agent: { readme: string | null }): string[] {
 }
 
 async function main() {
-  const rows = await db
-    .select({
-      id: agents.id,
-      source: agents.source,
-      protocols: agents.protocols,
-      languages: agents.languages,
-      readme: agents.readme,
-      url: agents.url,
-      homepage: agents.homepage,
-    })
-    .from(agents)
-    .where(sql`${agents.status} = 'ACTIVE'`);
-
+  const batchSize = Math.max(50, Number(process.env.BACKFILL_BATCH_SIZE ?? "200"));
+  const limit = Number(process.env.BACKFILL_LIMIT ?? "0");
+  let offset = 0;
   let updated = 0;
-  for (const row of rows) {
-    const authModes = inferAuthModes(row);
-    const requires = inferRequires(row);
-    const forbidden = inferForbidden(row);
+
+  while (true) {
+    const rows = await db
+      .select({
+        id: agents.id,
+        source: agents.source,
+        protocols: agents.protocols,
+        languages: agents.languages,
+        readme: agents.readme,
+        url: agents.url,
+        homepage: agents.homepage,
+      })
+      .from(agents)
+      .where(sql`${agents.status} = 'ACTIVE'`)
+      .limit(batchSize)
+      .offset(offset);
+
+    if (rows.length === 0) break;
+    for (const row of rows) {
+      const authModes = inferAuthModes(row);
+      const requires = inferRequires(row);
+      const forbidden = inferForbidden(row);
     const supportsMcp = requires.includes("mcp");
     const supportsA2a = requires.includes("a2a");
     const supportsStreaming = requires.includes("streaming");
     const inputSchemaRef = `${row.url}#input`;
     const outputSchemaRef = `${row.url}#output`;
 
-    await db
-      .insert(agentCapabilityContracts)
+      await db
+        .insert(agentCapabilityContracts)
       .values({
         agentId: row.id,
         authModes,
@@ -108,8 +115,18 @@ async function main() {
           supportsStreaming,
           updatedAt: new Date(),
         },
-      });
-    updated++;
+        });
+      updated++;
+      if (updated % 200 === 0) {
+        console.log(`[backfill-agent-contracts] processed=${updated}`);
+      }
+      if (limit > 0 && updated >= limit) {
+        console.log(`[backfill-agent-contracts] limit reached=${updated}`);
+        console.log(`[backfill-agent-contracts] updated=${updated}`);
+        return;
+      }
+    }
+    offset += rows.length;
   }
 
   console.log(`[backfill-agent-contracts] updated=${updated}`);

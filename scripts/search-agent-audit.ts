@@ -1,5 +1,4 @@
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const dotenv = require("dotenv");
+import * as dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { db } = require("@/lib/db");

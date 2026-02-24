@@ -25,6 +25,7 @@ interface Agent {
   name: string;
   slug: string;
   description: string | null;
+  primaryImageUrl?: string | null;
   capabilities: string[];
   protocols: string[];
   safetyScore: number;
@@ -153,6 +154,7 @@ export function SearchLanding() {
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
   const [agents, setAgents] = useState<Agent[]>([]);
   const [mediaResults, setMediaResults] = useState<MediaResult[]>([]);
+  const [fallbackAgents, setFallbackAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -280,6 +282,27 @@ export function SearchLanding() {
         }
         if (data.facets) setFacets(data.facets);
         setSearchMeta(data.searchMeta ?? null);
+
+        if (reset && nextVertical !== "agents") {
+          if ((data.mediaResults ?? []).length > 0) {
+            setFallbackAgents([]);
+          } else {
+            const fallbackParams = new URLSearchParams(params.toString());
+            fallbackParams.set("vertical", "agents");
+            fallbackParams.delete("mediaCursor");
+            fallbackParams.set("limit", "24");
+            const fallbackRes = await fetch(`/api/v1/search?${fallbackParams}`);
+            const fallbackPayload = await fallbackRes.json();
+            if (fallbackRes.ok) {
+              const fallbackData = unwrapClientResponse<SearchResponsePayload>(fallbackPayload);
+              setFallbackAgents(fallbackData.results ?? []);
+            } else {
+              setFallbackAgents([]);
+            }
+          }
+        } else if (nextVertical === "agents") {
+          setFallbackAgents([]);
+        }
       } catch (err) {
         console.error(err);
         if (reset) {
@@ -288,6 +311,7 @@ export function SearchLanding() {
           setTotal(0);
         }
         setSearchMeta(null);
+        setFallbackAgents([]);
       } finally {
         setLoading(false);
       }
@@ -382,6 +406,7 @@ export function SearchLanding() {
   }, []);
 
   const hasResults = vertical === "agents" ? agents.length > 0 : mediaResults.length > 0;
+  const hasFallbackAgents = fallbackAgents.length > 0;
 
   const handleExploreAllAgents = useCallback(async () => {
     setQuery("");
@@ -466,13 +491,7 @@ export function SearchLanding() {
           onExplainChange={setExplain}
         />
 
-        <div
-          className={
-            isImagesVertical
-              ? "w-full max-w-[min(1800px,100vw)] mx-auto px-3 sm:px-5 lg:px-6 py-6 pb-20 sm:pb-16"
-              : "max-w-4xl mx-auto px-3 sm:px-6 py-6 pb-20 sm:pb-16"
-          }
-        >
+        <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-6">
           <div className="mb-4 flex items-center gap-2">
             {(["agents", "images", "artifacts"] as const).map((v) => (
               <button
@@ -545,7 +564,15 @@ export function SearchLanding() {
               })}
             </div>
           )}
+        </div>
 
+        <div
+          className={
+            isImagesVertical
+              ? "w-full max-w-[min(1800px,100vw)] mx-auto px-3 sm:px-5 lg:px-6 pb-20 sm:pb-16"
+              : "max-w-4xl mx-auto px-3 sm:px-6 pb-20 sm:pb-16"
+          }
+        >
           <main aria-label="Search results">
             {loading && !hasResults ? (
               <div className="space-y-0" aria-busy="true" aria-live="polite">
@@ -560,6 +587,11 @@ export function SearchLanding() {
                     ? "No agents found. Try different filters or search terms."
                     : "No machine-usable visual assets found for this query."}
                 </p>
+                {vertical !== "agents" && hasFallbackAgents && (
+                  <p className="mt-2 text-xs text-[var(--text-quaternary)]">
+                    Showing agent thumbnails instead.
+                  </p>
+                )}
                 <div className="mt-6 flex flex-wrap justify-center gap-3">
                   <button
                     type="button"
@@ -578,6 +610,35 @@ export function SearchLanding() {
                     </Link>
                   ))}
                 </div>
+                {vertical !== "agents" && hasFallbackAgents && (
+                  <div className="mt-8 columns-2 sm:columns-2 md:columns-3 lg:columns-4 gap-3 sm:gap-4 text-left">
+                    {fallbackAgents.map((agent) => (
+                      <article
+                        key={agent.id}
+                        className="mb-3 sm:mb-4 break-inside-avoid rounded-lg border border-white/[0.08] bg-[var(--bg-card)]/75 p-2.5"
+                      >
+                        {agent.primaryImageUrl ? (
+                          <Link href={`/agent/${agent.slug}`}>
+                            <img
+                              src={agent.primaryImageUrl}
+                              alt={agent.name}
+                              className="w-full h-auto rounded-md border border-[var(--border)]"
+                            />
+                          </Link>
+                        ) : (
+                          <div className="w-full min-h-24 rounded-md border border-[var(--border)] flex items-center justify-center text-xs text-[var(--text-quaternary)] px-2 py-8 text-center">
+                            No image
+                          </div>
+                        )}
+                        <p className="mt-2 text-[11px] text-[var(--text-secondary)]">
+                          <Link href={`/agent/${agent.slug}`} className="text-[var(--accent-heart)] hover:underline">
+                            {agent.name}
+                          </Link>
+                        </p>
+                      </article>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <>

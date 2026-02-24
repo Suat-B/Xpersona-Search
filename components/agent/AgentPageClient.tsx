@@ -369,7 +369,7 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
               href={`/dashboard/jobs?agent=${encodeURIComponent(agent.slug)}&title=${encodeURIComponent(`Hire ${agent.name}`)}`}
               className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-primary)] hover:border-[var(--accent-neural)]/40 hover:bg-[var(--bg-card)] transition-colors"
             >
-              Hire for this task
+              Marketplace
             </a>
           </div>
         </header>
