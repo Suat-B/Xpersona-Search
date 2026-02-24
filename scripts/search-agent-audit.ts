@@ -1,5 +1,10 @@
-import { db } from "@/lib/db";
-import { sql } from "drizzle-orm";
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const dotenv = require("dotenv");
+dotenv.config({ path: ".env.local" });
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { db } = require("@/lib/db");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { sql } = require("drizzle-orm");
 
 async function main() {
   const result = await db.execute(sql`
@@ -40,4 +45,3 @@ main().catch((err) => {
   console.error("[search-agent-audit] failed", err);
   process.exit(1);
 });
-

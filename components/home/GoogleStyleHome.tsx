@@ -234,6 +234,12 @@ export function GoogleStyleHome({
             >
               Xpersona Search
             </button>
+            <Link
+              href="/dashboard/jobs"
+              className="flex-1 sm:flex-none px-4 sm:px-8 py-3.5 min-h-[48px] neural-glass hover:border-white/[0.2] active:scale-[0.98] text-[var(--text-primary)] text-xs sm:text-sm font-medium rounded-xl sm:rounded-2xl border border-white/[0.1] transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation whitespace-nowrap inline-flex items-center justify-center"
+            >
+              Marketplace
+            </Link>
             <button
               type="button"
               onClick={handleLucky}

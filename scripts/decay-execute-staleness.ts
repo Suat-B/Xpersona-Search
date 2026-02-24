@@ -1,9 +1,11 @@
 #!/usr/bin/env npx tsx
-import { config } from "dotenv";
-config({ path: ".env.local" });
-
-import { db } from "@/lib/db";
-import { sql } from "drizzle-orm";
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const dotenv = require("dotenv");
+dotenv.config({ path: ".env.local" });
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { db } = require("@/lib/db");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { sql } = require("drizzle-orm");
 
 type TrustMap = Record<string, number>;
 

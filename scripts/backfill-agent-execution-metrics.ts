@@ -1,10 +1,13 @@
 #!/usr/bin/env npx tsx
-import { config } from "dotenv";
-config({ path: ".env.local" });
-
-import { db } from "@/lib/db";
-import { sql } from "drizzle-orm";
-import { agentExecutionMetrics } from "@/lib/db/schema";
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const dotenv = require("dotenv");
+dotenv.config({ path: ".env.local" });
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { db } = require("@/lib/db");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { sql } = require("drizzle-orm");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { agentExecutionMetrics } = require("@/lib/db/schema");
 
 async function main() {
   const result = await db.execute(sql`

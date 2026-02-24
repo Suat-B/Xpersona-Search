@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+﻿import { db } from "@/lib/db";
 import {
   users,
   gameBets,
@@ -18,6 +18,8 @@ import {
   ansDomains,
   ansSubscriptions,
   signalDeliveryLogs,
+  economyJobs,
+  economyJobMessages,
   agents,
   agentClaims,
 } from "@/lib/db/schema";
@@ -244,6 +246,16 @@ async function handleMarketplaceDeveloperMerge(
       .set({ developerId: targetDev.id, updatedAt: new Date() })
       .where(eq(marketplaceStrategies.developerId, sourceDev.id));
 
+    await tx
+      .update(economyJobs)
+      .set({ workerDeveloperId: targetDev.id, updatedAt: new Date() })
+      .where(eq(economyJobs.workerDeveloperId, sourceDev.id));
+
+    await tx
+      .update(economyJobMessages)
+      .set({ senderDeveloperId: targetDev.id })
+      .where(eq(economyJobMessages.senderDeveloperId, sourceDev.id));
+
     const targetUpdates: {
       stripeAccountId?: string | null;
       stripeOnboardingComplete?: boolean;
@@ -433,6 +445,13 @@ async function assertNoSourceReferencesRemain(
   if (remainingClaimReviewerRows)
     remainingTables.push("agent_claims.reviewed_by_user_id");
 
+  const [remainingEconomyJobs] = await tx
+    .select({ id: economyJobs.id })
+    .from(economyJobs)
+    .where(eq(economyJobs.clientUserId, sourceUserId))
+    .limit(1);
+  if (remainingEconomyJobs) remainingTables.push("economy_jobs.client_user_id");
+
   const [remainingDevelopers] = await tx
     .select({ id: marketplaceDevelopers.id })
     .from(marketplaceDevelopers)
@@ -584,6 +603,16 @@ async function mergeEphemeralIntoTarget(
     .set({ reviewedByUserId: targetUserId, updatedAt: new Date() })
     .where(eq(agentClaims.reviewedByUserId, sourceUserId));
 
+  await tx
+    .update(economyJobs)
+    .set({ clientUserId: targetUserId, updatedAt: new Date() })
+    .where(eq(economyJobs.clientUserId, sourceUserId));
+
+  await tx
+    .update(economyJobMessages)
+    .set({ senderUserId: targetUserId })
+    .where(eq(economyJobMessages.senderUserId, sourceUserId));
+
   await mergeUserSignalPreferences(tx, sourceUserId, targetUserId);
   await handleMarketplaceDeveloperMerge(tx, sourceUserId, targetUserId);
 
@@ -638,7 +667,7 @@ export async function mergeGuestIntoUser(
   targetUserId: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (guestUserId === targetUserId) {
-    return { ok: false, error: "Same user" };
+    return { ok: true };
   }
 
   try {
@@ -664,7 +693,7 @@ export async function mergeAgentIntoUser(
   targetUserId: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (agentUserId === targetUserId) {
-    return { ok: false, error: "Same user" };
+    return { ok: true };
   }
 
   try {
