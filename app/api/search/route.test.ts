@@ -61,11 +61,22 @@ vi.mock("@/lib/search/cache", () => ({
 vi.mock("@/lib/search/query-engine", () => ({
   processQuery: vi.fn().mockImplementation((q: string) => ({
     parsed: { textQuery: q.trim(), fieldFilters: {}, originalQuery: q },
+    interpretation: {
+      originalText: q.trim(),
+      interpretedText: q.trim(),
+      removedTokens: [],
+      replacedTokens: {},
+      isNaturalLanguage: false,
+    },
+    strictExpandedQuery: q.trim(),
+    strictWebsearchInput: q.trim(),
+    interpretedQuery: q.trim(),
     expandedQuery: q.trim(),
     websearchInput: q.trim(),
   })),
   sanitizeForStorage: vi.fn().mockImplementation((s: string) => s.replace(/[<>]/g, "")),
   findDidYouMean: vi.fn().mockResolvedValue(null),
+  parseSafetyFilter: vi.fn().mockReturnValue(null),
 }));
 
 function createMockChain(resolveValue: unknown) {
@@ -131,6 +142,8 @@ describe("GET /api/search", () => {
     expect(data.pagination).toHaveProperty("hasMore");
     expect(data.pagination).toHaveProperty("nextCursor");
     expect(data.pagination).toHaveProperty("total");
+    expect(data).toHaveProperty("searchMeta");
+    expect(data.searchMeta).toHaveProperty("matchMode");
   });
 
   it("returns 200 with empty results when no agents match", async () => {
@@ -141,6 +154,7 @@ describe("GET /api/search", () => {
     expect(data.results).toEqual([]);
     expect(data.pagination.hasMore).toBe(false);
     expect(data.pagination.total).toBe(0);
+    expect(data.searchMeta).toBeDefined();
   });
 
   it("includes facets in response", async () => {
@@ -209,6 +223,11 @@ describe("GET /api/search", () => {
     expect(res.status).toBe(403);
   });
 
+  it("returns 403 for includeUnsafeMedia when requester is not admin", async () => {
+    const res = await GET(new NextRequest("http://localhost/api/search?vertical=images&includeUnsafeMedia=1"));
+    expect(res.status).toBe(403);
+  });
+
   it("allows includePrivate for admin users", async () => {
     mockGetAuthUser.mockResolvedValue({
       user: { id: "u1", email: "admin@example.com" },
@@ -218,6 +237,35 @@ describe("GET /api/search", () => {
 
     const res = await GET(new NextRequest("http://localhost/api/search?includePrivate=1"));
     expect(res.status).toBe(200);
+  });
+
+  it("returns mediaResults for vertical=images", async () => {
+    mockDb.execute.mockResolvedValue({
+      rows: [
+        {
+          id: "m1",
+          agent_id: "a1",
+          agent_slug: "test-agent",
+          agent_name: "Test Agent",
+          asset_kind: "IMAGE",
+          artifact_type: null,
+          url: "https://raw.githubusercontent.com/x/y/main/docs/a.png",
+          source_page_url: "https://github.com/x/y",
+          title: "Preview",
+          caption: null,
+          width: 1200,
+          height: 630,
+          mime_type: "image/png",
+          quality_score: 87,
+          safety_score: 80,
+        },
+      ],
+    });
+    const res = await GET(new NextRequest("http://localhost/api/search?vertical=images&limit=10"));
+    const data = await res.json();
+    expect(res.status).toBe(200);
+    expect(Array.isArray(data.mediaResults)).toBe(true);
+    expect(data.mediaResults[0].assetKind).toBe("IMAGE");
   });
 
   // --- Cache behavior ---

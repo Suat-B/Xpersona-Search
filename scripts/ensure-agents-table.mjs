@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS "agents" (
   "source" varchar(32) DEFAULT 'GITHUB_OPENCLEW' NOT NULL,
   "visibility" varchar(16) DEFAULT 'PUBLIC' NOT NULL,
   "public_searchable" boolean DEFAULT true NOT NULL,
+  "primary_image_url" text,
+  "media_asset_count" integer DEFAULT 0 NOT NULL,
   "name" varchar(255) NOT NULL,
   "slug" varchar(255) NOT NULL,
   "description" text,
@@ -67,6 +69,8 @@ CREATE INDEX IF NOT EXISTS "agents_status_idx" ON "agents" ("status");
 CREATE INDEX IF NOT EXISTS "agents_overall_rank_idx" ON "agents" ("overall_rank");
 CREATE INDEX IF NOT EXISTS "agents_visibility_idx" ON "agents" ("visibility");
 CREATE INDEX IF NOT EXISTS "agents_public_searchable_idx" ON "agents" ("public_searchable");
+CREATE INDEX IF NOT EXISTS "agents_primary_image_url_idx" ON "agents" ("primary_image_url");
+CREATE INDEX IF NOT EXISTS "agents_media_asset_count_idx" ON "agents" ("media_asset_count");
 `;
 
 const SQL_CRAWL_JOBS = `
@@ -117,6 +121,48 @@ CREATE INDEX IF NOT EXISTS "crawl_checkpoints_updated_at_idx"
   ON "crawl_checkpoints" ("updated_at");
 `;
 
+const SQL_MEDIA_ASSETS = `
+CREATE TABLE IF NOT EXISTS "agent_media_assets" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "agent_id" uuid NOT NULL,
+  "source" varchar(32) NOT NULL,
+  "asset_kind" varchar(16) NOT NULL,
+  "artifact_type" varchar(32),
+  "url" text NOT NULL,
+  "source_page_url" text,
+  "sha256" varchar(64) NOT NULL,
+  "mime_type" varchar(128),
+  "width" integer,
+  "height" integer,
+  "byte_size" integer,
+  "title" text,
+  "caption" text,
+  "alt_text" text,
+  "license_guess" varchar(64),
+  "is_public" boolean DEFAULT true NOT NULL,
+  "quality_score" integer DEFAULT 0 NOT NULL,
+  "safety_score" integer DEFAULT 0 NOT NULL,
+  "crawl_status" varchar(20) DEFAULT 'DISCOVERED' NOT NULL,
+  "last_verified_at" timestamp with time zone,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "agent_media_assets_sha_agent_idx"
+  ON "agent_media_assets" ("sha256", "agent_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "agent_media_assets_url_agent_idx"
+  ON "agent_media_assets" ("url", "agent_id");
+CREATE INDEX IF NOT EXISTS "agent_media_assets_agent_id_idx"
+  ON "agent_media_assets" ("agent_id");
+CREATE INDEX IF NOT EXISTS "agent_media_assets_asset_kind_idx"
+  ON "agent_media_assets" ("asset_kind");
+CREATE INDEX IF NOT EXISTS "agent_media_assets_artifact_type_idx"
+  ON "agent_media_assets" ("artifact_type");
+CREATE INDEX IF NOT EXISTS "agent_media_assets_quality_score_idx"
+  ON "agent_media_assets" ("quality_score");
+CREATE INDEX IF NOT EXISTS "agent_media_assets_is_public_idx"
+  ON "agent_media_assets" ("is_public");
+`;
+
 const SQL_SEARCH_VECTOR = `
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS search_vector tsvector;
 CREATE INDEX IF NOT EXISTS agents_search_vector_idx ON agents USING GIN (search_vector);
@@ -154,6 +200,9 @@ async function main() {
 
     await client.query(SQL_CRAWL_CHECKPOINTS);
     console.log("crawl_checkpoints table and indexes: OK");
+
+    await client.query(SQL_MEDIA_ASSETS);
+    console.log("agent_media_assets table and indexes: OK");
 
     await client.query(SQL_SEARCH_VECTOR);
     console.log("search_vector column, index, trigger: OK");

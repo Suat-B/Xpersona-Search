@@ -13,7 +13,6 @@ import {
   unwrapClientResponse,
 } from "@/lib/api/client-response";
 
-/** Protocol identifiers used in API/DB. Display labels for UI. */
 const BROWSE_PROTOCOLS = [
   { id: "MCP", label: "MCP" },
   { id: "A2A", label: "A2A" },
@@ -78,8 +77,27 @@ interface SearchMeta {
   fallbackReason?: string;
 }
 
+interface MediaResult {
+  id: string;
+  agentId: string;
+  agentSlug: string;
+  agentName: string;
+  assetKind: string;
+  artifactType: string | null;
+  url: string;
+  sourcePageUrl: string | null;
+  title: string | null;
+  caption: string | null;
+  width: number | null;
+  height: number | null;
+  mimeType: string | null;
+  qualityScore: number;
+  safetyScore: number;
+}
+
 interface SearchResponsePayload {
   results?: Agent[];
+  mediaResults?: MediaResult[];
   pagination?: { hasMore?: boolean; nextCursor?: string | null; total?: number };
   facets?: Facets;
   didYouMean?: string;
@@ -93,10 +111,6 @@ function SkeletonSnippet() {
       <div className="h-4 w-64 bg-[var(--text-quaternary)]/20 rounded mb-2" />
       <div className="h-4 w-full bg-[var(--text-quaternary)]/20 rounded mb-1" />
       <div className="h-4 w-4/5 bg-[var(--text-quaternary)]/20 rounded mb-2" />
-      <div className="flex gap-2 mt-2">
-        <div className="h-3 w-12 bg-[var(--text-quaternary)]/20 rounded" />
-        <div className="h-3 w-14 bg-[var(--text-quaternary)]/20 rounded" />
-      </div>
     </div>
   );
 }
@@ -118,6 +132,7 @@ export function SearchLanding() {
   const router = useRouter();
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [mediaResults, setMediaResults] = useState<MediaResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -130,6 +145,13 @@ export function SearchLanding() {
   const [facets, setFacets] = useState<Facets | undefined>(undefined);
   const [intent, setIntent] = useState<"discover" | "execute">(
     searchParams.get("intent") === "execute" ? "execute" : "discover"
+  );
+  const [vertical, setVertical] = useState<"agents" | "images" | "artifacts">(
+    searchParams.get("vertical") === "images"
+      ? "images"
+      : searchParams.get("vertical") === "artifacts"
+        ? "artifacts"
+        : "agents"
   );
   const [taskType, setTaskType] = useState(searchParams.get("taskType") ?? "");
   const [maxLatencyMs, setMaxLatencyMs] = useState(searchParams.get("maxLatencyMs") ?? "");
@@ -157,11 +179,11 @@ export function SearchLanding() {
       setLoading(true);
       const params = new URLSearchParams();
       if (query.trim()) params.set("q", query.trim());
-      if (selectedProtocols.length)
-        params.set("protocols", selectedProtocols.join(","));
+      if (selectedProtocols.length) params.set("protocols", selectedProtocols.join(","));
       if (minSafety > 0) params.set("minSafety", String(minSafety));
       params.set("sort", sort);
       params.set("limit", "30");
+      params.set("vertical", vertical);
       params.set("intent", intent);
       if (taskType.trim()) params.set("taskType", taskType.trim());
       if (maxLatencyMs.trim()) params.set("maxLatencyMs", maxLatencyMs.trim());
@@ -183,9 +205,11 @@ export function SearchLanding() {
 
         if (reset) {
           setAgents(data.results ?? []);
+          setMediaResults(data.mediaResults ?? []);
           setTotal(data.pagination?.total ?? 0);
         } else {
           setAgents((prev) => [...prev, ...(data.results ?? [])]);
+          setMediaResults((prev) => [...prev, ...(data.mediaResults ?? [])]);
         }
         setHasMore(data.pagination?.hasMore ?? false);
         setCursor(data.pagination?.nextCursor ?? null);
@@ -195,6 +219,7 @@ export function SearchLanding() {
         console.error(err);
         if (reset) {
           setAgents([]);
+          setMediaResults([]);
           setTotal(0);
         }
         setSearchMeta(null);
@@ -207,6 +232,7 @@ export function SearchLanding() {
       selectedProtocols,
       minSafety,
       sort,
+      vertical,
       cursor,
       intent,
       taskType,
@@ -217,6 +243,7 @@ export function SearchLanding() {
       forbidden,
       bundle,
       explain,
+      router,
     ]
   );
 
@@ -227,6 +254,7 @@ export function SearchLanding() {
     selectedProtocols,
     minSafety,
     sort,
+    vertical,
     intent,
     taskType,
     maxLatencyMs,
@@ -238,13 +266,19 @@ export function SearchLanding() {
     explain,
   ]);
 
-  // Sync state from URL when it changes (e.g. from Link navigation on Explore/Browse buttons)
   useEffect(() => {
     const urlQ = searchParams.get("q") ?? "";
     const urlProtocols = parseProtocolsFromUrl(searchParams.get("protocols"));
     setQuery(urlQ);
     setSelectedProtocols(urlProtocols);
     setIntent(searchParams.get("intent") === "execute" ? "execute" : "discover");
+    setVertical(
+      searchParams.get("vertical") === "images"
+        ? "images"
+        : searchParams.get("vertical") === "artifacts"
+          ? "artifacts"
+          : "agents"
+    );
     setTaskType(searchParams.get("taskType") ?? "");
     setMaxLatencyMs(searchParams.get("maxLatencyMs") ?? "");
     setMaxCostUsd(searchParams.get("maxCostUsd") ?? "");
@@ -270,7 +304,7 @@ export function SearchLanding() {
     }
   }, []);
 
-  const hasResults = agents.length > 0;
+  const hasResults = vertical === "agents" ? agents.length > 0 : mediaResults.length > 0;
 
   return (
     <section className="min-h-screen text-[var(--text-primary)] bg-[var(--bg-deep)] relative">
@@ -279,158 +313,163 @@ export function SearchLanding() {
         <div className="absolute top-0 right-1/4 w-[24rem] h-[24rem] bg-[var(--accent-neural)]/[0.06] rounded-full blur-3xl" />
       </div>
       <div className="relative z-10">
-      <SearchResultsBar
-        query={query}
-        setQuery={setQuery}
-        onSearch={() => search(true)}
-        loading={loading}
-        selectedProtocols={selectedProtocols}
-        onProtocolChange={handleProtocolChange}
-        sort={sort}
-        onSortChange={setSort}
-        minSafety={minSafety}
-        onSafetyChange={setMinSafety}
-        facets={facets}
-        intent={intent}
-        onIntentChange={setIntent}
-        taskType={taskType}
-        onTaskTypeChange={setTaskType}
-        maxLatencyMs={maxLatencyMs}
-        onMaxLatencyMsChange={setMaxLatencyMs}
-        maxCostUsd={maxCostUsd}
-        onMaxCostUsdChange={setMaxCostUsd}
-        dataRegion={dataRegion}
-        onDataRegionChange={setDataRegion}
-        requires={requires}
-        onRequiresChange={setRequires}
-        forbidden={forbidden}
-        onForbiddenChange={setForbidden}
-        bundle={bundle}
-        onBundleChange={setBundle}
-        explain={explain}
-        onExplainChange={setExplain}
-      />
+        <SearchResultsBar
+          query={query}
+          setQuery={setQuery}
+          onSearch={() => search(true)}
+          loading={loading}
+          selectedProtocols={selectedProtocols}
+          onProtocolChange={handleProtocolChange}
+          sort={sort}
+          onSortChange={setSort}
+          minSafety={minSafety}
+          onSafetyChange={setMinSafety}
+          facets={facets}
+          intent={intent}
+          onIntentChange={setIntent}
+          taskType={taskType}
+          onTaskTypeChange={setTaskType}
+          maxLatencyMs={maxLatencyMs}
+          onMaxLatencyMsChange={setMaxLatencyMs}
+          maxCostUsd={maxCostUsd}
+          onMaxCostUsdChange={setMaxCostUsd}
+          dataRegion={dataRegion}
+          onDataRegionChange={setDataRegion}
+          requires={requires}
+          onRequiresChange={setRequires}
+          forbidden={forbidden}
+          onForbiddenChange={setForbidden}
+          bundle={bundle}
+          onBundleChange={setBundle}
+          explain={explain}
+          onExplainChange={setExplain}
+        />
 
-      <div className="max-w-4xl mx-auto px-3 sm:px-6 py-6 pb-20 sm:pb-16">
-        <main aria-label="Search results">
-          {searchMeta?.fallbackApplied && (
-            <div className="mb-4 rounded-lg border border-[var(--accent-heart)]/40 bg-[var(--accent-heart)]/10 px-4 py-3 text-sm text-[var(--text-secondary)]">
-              Showing related results for{" "}
-              <span className="font-semibold text-[var(--text-primary)]">
-                {searchMeta.queryInterpreted || query}
-              </span>
-              {searchMeta.queryOriginal &&
-              searchMeta.queryOriginal !== searchMeta.queryInterpreted ? (
-                <span className="text-[var(--text-tertiary)]">
-                  {" "}
-                  (from "{searchMeta.queryOriginal}")
-                </span>
-              ) : null}
-            </div>
-          )}
-          {loading && !hasResults ? (
-            <div className="space-y-0" aria-busy="true" aria-live="polite">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <SkeletonSnippet key={i} />
-              ))}
-            </div>
-          ) : !hasResults ? (
-            <div
-              className="py-12 text-center"
-              role="status"
-            >
-              <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-[var(--bg-elevated)] flex items-center justify-center">
-                <svg
-                  className="w-5 h-5 text-[var(--text-tertiary)]"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                  />
-                </svg>
-              </div>
-              <p className="text-[var(--text-secondary)] font-medium">
-                No agents found. Try different filters or search terms.
-              </p>
-              <p className="text-[var(--text-tertiary)] text-sm mt-1">
-                Adjust your search query or filters to see more results.
-              </p>
-              <p className="text-[var(--text-tertiary)] text-sm mt-2">
-                Developer tip: claim your agent page to unlock full customization.
-              </p>
-              <div className="mt-6 flex flex-wrap justify-center gap-3">
-                <Link
-                  href="/?q=discover"
-                  className="inline-flex items-center gap-2 px-4 py-3 min-h-[44px] rounded-lg neural-glass border border-white/[0.08] hover:border-[var(--accent-heart)]/30 text-[var(--text-secondary)] hover:text-[var(--accent-heart)] transition-all text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation"
-                >
-                  Explore all agents
-                </Link>
-                {BROWSE_PROTOCOLS.map(({ id, label }) => (
-                  <Link
-                    key={id}
-                    href={`/?protocols=${id}`}
-                    className="inline-flex items-center px-4 py-3 min-h-[44px] rounded-lg border border-[var(--border)] hover:border-[var(--accent-heart)]/40 text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-all text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation"
-                  >
-                    Browse {label}
-                  </Link>
+        <div className="max-w-4xl mx-auto px-3 sm:px-6 py-6 pb-20 sm:pb-16">
+          <div className="mb-4 flex items-center gap-2">
+            {(["agents", "images", "artifacts"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => {
+                  setVertical(v);
+                  const params = new URLSearchParams(searchParams.toString());
+                  params.set("vertical", v);
+                  router.replace(`/?${params.toString()}`, { scroll: false });
+                }}
+                className={`px-3 py-1.5 rounded-lg border text-sm ${
+                  vertical === v
+                    ? "border-[var(--accent-heart)] text-[var(--accent-heart)] bg-[var(--accent-heart)]/10"
+                    : "border-[var(--border)] text-[var(--text-tertiary)]"
+                }`}
+              >
+                {v === "agents" ? "Agents" : v === "images" ? "Images" : "Artifacts"}
+              </button>
+            ))}
+          </div>
+
+          <main aria-label="Search results">
+            {loading && !hasResults ? (
+              <div className="space-y-0" aria-busy="true" aria-live="polite">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <SkeletonSnippet key={i} />
                 ))}
               </div>
-            </div>
-          ) : (
-            <>
-              <p
-                className="mb-4 text-sm text-[var(--text-tertiary)]"
-                role="status"
-                aria-live="polite"
-              >
-                {total > 0 ? `About ${total} agent${total === 1 ? "" : "s"}` : `${agents.length} agent${agents.length === 1 ? "" : "s"} found`}
-              </p>
-
-              <div className="divide-y-0">
-                {agents.map((agent, i) => {
-                  const delay = ["animate-delay-75", "animate-delay-150", "animate-delay-225", "animate-delay-300"][i % 4];
-                  return (
-                    <SearchResultSnippet
-                      key={agent.id}
-                      agent={agent}
-                      showSitelinks={i === 0}
-                      className={`animate-slide-in-from-bottom ${delay}`}
-                    />
-                  );
-                })}
-              </div>
-
-              {hasMore && (
-                <div className="flex justify-center pt-8">
-                  <button
-                    type="button"
-                    onClick={() => search(false)}
-                    disabled={loading}
-                    aria-busy={loading}
-                    aria-label={loading ? "Loading more" : "Load more results"}
-                    className="w-full sm:w-auto px-8 py-3.5 min-h-[48px] bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 disabled:opacity-50 rounded-xl font-semibold text-white transition-all flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation"
+            ) : !hasResults ? (
+              <div className="py-12 text-center" role="status">
+                <p className="text-[var(--text-secondary)] font-medium">
+                  {vertical === "agents"
+                    ? "No agents found. Try different filters or search terms."
+                    : "No machine-usable visual assets found for this query."}
+                </p>
+                <div className="mt-6 flex flex-wrap justify-center gap-3">
+                  <Link
+                    href="/?q=discover"
+                    className="inline-flex items-center gap-2 px-4 py-3 min-h-[44px] rounded-lg neural-glass border border-white/[0.08]"
                   >
-                    {loading ? (
-                      <>
-                        <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        Loading...
-                      </>
-                    ) : (
-                      "Load more"
-                    )}
-                  </button>
+                    Explore all agents
+                  </Link>
+                  {BROWSE_PROTOCOLS.map(({ id, label }) => (
+                    <Link
+                      key={id}
+                      href={`/?protocols=${id}`}
+                      className="inline-flex items-center px-4 py-3 min-h-[44px] rounded-lg border border-[var(--border)]"
+                    >
+                      Browse {label}
+                    </Link>
+                  ))}
                 </div>
-              )}
-            </>
-          )}
-        </main>
-      </div>
+              </div>
+            ) : (
+              <>
+                <p className="mb-4 text-sm text-[var(--text-tertiary)]" role="status" aria-live="polite">
+                  {vertical === "agents"
+                    ? total > 0
+                      ? `About ${total} agent${total === 1 ? "" : "s"}`
+                      : `${agents.length} agent${agents.length === 1 ? "" : "s"} found`
+                    : `${mediaResults.length} visual asset${mediaResults.length === 1 ? "" : "s"} found`}
+                </p>
+
+                {vertical === "agents" ? (
+                  <div className="divide-y-0">
+                    {agents.map((agent, i) => {
+                      const delay = ["animate-delay-75", "animate-delay-150", "animate-delay-225", "animate-delay-300"][i % 4];
+                      return (
+                        <SearchResultSnippet
+                          key={agent.id}
+                          agent={agent}
+                          showSitelinks={i === 0}
+                          className={`animate-slide-in-from-bottom ${delay}`}
+                        />
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className={vertical === "images" ? "grid grid-cols-2 md:grid-cols-3 gap-3" : "space-y-3"}>
+                    {mediaResults.map((asset) => (
+                      <article key={asset.id} className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-3">
+                        {vertical === "images" ? (
+                          <a href={asset.url} target="_blank" rel="noreferrer">
+                            <img src={asset.url} alt={asset.title ?? asset.agentName} className="w-full h-36 object-cover rounded-md border border-[var(--border)]" />
+                          </a>
+                        ) : null}
+                        <p className="mt-2 text-xs text-[var(--text-secondary)]">
+                          <Link href={`/agent/${asset.agentSlug}`} className="text-[var(--accent-heart)] hover:underline">
+                            {asset.agentName}
+                          </Link>
+                          {asset.artifactType ? <span className="ml-2">{asset.artifactType}</span> : null}
+                        </p>
+                        <a
+                          href={asset.sourcePageUrl ?? asset.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs text-[var(--text-quaternary)] truncate block"
+                        >
+                          {asset.sourcePageUrl ?? asset.url}
+                        </a>
+                      </article>
+                    ))}
+                  </div>
+                )}
+
+                {hasMore && (
+                  <div className="flex justify-center pt-8">
+                    <button
+                      type="button"
+                      onClick={() => search(false)}
+                      disabled={loading}
+                      aria-busy={loading}
+                      aria-label={loading ? "Loading more" : "Load more results"}
+                      className="w-full sm:w-auto px-8 py-3.5 min-h-[48px] bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 disabled:opacity-50 rounded-xl font-semibold text-white"
+                    >
+                      {loading ? "Loading..." : "Load more"}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </main>
+        </div>
       </div>
     </section>
   );

@@ -63,7 +63,15 @@ export default function SearchApiPage() {
     "facets": {
       "protocols": [{ "protocol": ["A2A"], "count": 45 }]
     },
-    "didYouMean": "cryptocurrency"
+    "didYouMean": "cryptocurrency",
+    "searchMeta": {
+      "fallbackApplied": true,
+      "matchMode": "semantic",
+      "queryOriginal": "i want to make a movie",
+      "queryInterpreted": "build video",
+      "filtersHonored": true,
+      "stagesTried": ["strict_lexical", "relaxed_lexical", "semantic"]
+    }
   },
   "meta": {
     "requestId": "req_123",
@@ -301,6 +309,7 @@ export default function SearchApiPage() {
               Each result includes <code className="rounded bg-white/10 px-1 font-mono">snippet</code> (description with{" "}
               <code className="rounded bg-white/10 px-1 font-mono">&lt;mark&gt;</code> highlighting) when a query is present.
               <code className="rounded bg-white/10 px-1 font-mono">didYouMean</code> is returned when few or no results match (spell/similarity suggestion).
+              <code className="rounded bg-white/10 px-1 font-mono ml-1">searchMeta</code> explains rewrite/fallback behavior and chosen match mode.
             </p>
             <div className="relative rounded-lg bg-black/50 p-4 font-mono text-[11px] overflow-x-auto">
               <CopyButton text={searchResponseJson} />

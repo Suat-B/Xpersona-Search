@@ -3,10 +3,12 @@ import { z, ZodError } from "zod";
 import { db } from "@/lib/db";
 import {
   agents,
+  agentMediaAssets,
   searchQueries,
   searchOutcomes,
   agentExecutionMetrics,
   agentCapabilityContracts,
+  agentEmbeddings,
 } from "@/lib/db/schema";
 import { and, eq, gte, lte, desc, sql, SQL } from "drizzle-orm";
 import {
@@ -27,6 +29,13 @@ import { getEngagementParams, getRankingWeights } from "@/lib/search/scoring/hyb
 import { getAuthUser } from "@/lib/auth-utils";
 import { isAdmin } from "@/lib/admin";
 import {
+  getEmbeddingProvider,
+  getSemanticCandidatesLimit,
+  isSemanticSearchEnabled,
+} from "@/lib/search/semantic/config";
+import { getOrCreateQueryEmbedding } from "@/lib/search/semantic/query-embed-cache";
+import { vectorToSqlLiteral } from "@/lib/search/semantic/provider";
+import {
   buildDelegationHints,
   buildFallbacks,
   buildQuerySignature,
@@ -42,6 +51,14 @@ let hasSearchClicksTableCache: boolean | null = null;
 let hasSearchOutcomesTableCache: boolean | null = null;
 let hasAgentExecutionMetricsTableCache: boolean | null = null;
 let hasAgentCapabilityContractsTableCache: boolean | null = null;
+let hasAgentEmbeddingsTableCache: boolean | null = null;
+
+type SearchMatchMode =
+  | "strict_lexical"
+  | "relaxed_lexical"
+  | "semantic"
+  | "filter_only_fallback"
+  | "global_fallback";
 
 function escapeLike(s: string): string {
   return s.replace(/[%_\\]/g, (c) => `\\${c}`);
@@ -87,6 +104,22 @@ const SearchSchema = z.object({
     .string()
     .optional()
     .transform((s) => s === "1" || s === "true"),
+  includeUnsafeMedia: z
+    .string()
+    .optional()
+    .transform((s) => s === "1" || s === "true"),
+  vertical: z.enum(["agents", "images", "artifacts"]).default("agents"),
+  artifactType: z
+    .string()
+    .optional()
+    .transform((s) =>
+      s
+        ? s
+            .split(",")
+            .map((v) => v.trim().toUpperCase())
+            .filter(Boolean)
+        : []
+    ),
   debug: z
     .string()
     .optional()
@@ -366,6 +399,170 @@ async function hasAgentCapabilityContractsTable() {
   return value;
 }
 
+async function hasAgentEmbeddingsTable() {
+  const value = await hasTable("agent_embeddings", hasAgentEmbeddingsTableCache);
+  hasAgentEmbeddingsTableCache = value;
+  return value;
+}
+
+function buildAgentIdInCondition(ids: string[]): SQL {
+  if (ids.length === 0) return sql`FALSE`;
+  return sql`${agents.id} IN (${sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `
+  )})`;
+}
+
+async function getSemanticCandidateIds(query: string): Promise<string[]> {
+  if (!isSemanticSearchEnabled()) return [];
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  if (!(await hasAgentEmbeddingsTable())) return [];
+
+  const provider = getEmbeddingProvider();
+  if (!provider || !provider.isAvailable()) return [];
+
+  try {
+    const queryEmbedding = await getOrCreateQueryEmbedding(
+      provider.provider,
+      provider.model,
+      trimmed,
+      async () => {
+        const vectors = await provider.embed([trimmed]);
+        return vectors[0] ?? [];
+      }
+    );
+    if (queryEmbedding.length === 0) return [];
+
+    const limit = getSemanticCandidatesLimit();
+    const result = await db.execute(
+      sql`SELECT agent_id
+          FROM ${agentEmbeddings}
+          WHERE ${agentEmbeddings.provider} = ${provider.provider}
+            AND ${agentEmbeddings.model} = ${provider.model}
+          ORDER BY ${agentEmbeddings.embedding} <=> ${vectorToSqlLiteral(queryEmbedding)}::vector
+          LIMIT ${limit}`
+    );
+    const rows = (result as unknown as { rows?: Array<{ agent_id: string }> }).rows ?? [];
+    return rows.map((row) => row.agent_id);
+  } catch (err) {
+    console.warn("[Search] semantic retrieval unavailable:", err);
+    return [];
+  }
+}
+
+async function runMediaVerticalQuery(params: SearchParams): Promise<{
+  mediaResults: Array<Record<string, unknown>>;
+  pagination: { hasMore: boolean; nextCursor: null; total: number };
+  facets: { protocols: never[] };
+  searchMeta: {
+    fallbackApplied: boolean;
+    matchMode: "strict_lexical";
+    queryOriginal: string;
+    queryInterpreted: string;
+    filtersHonored: boolean;
+    stagesTried: string[];
+  };
+}> {
+  const rawQuery = params.q?.trim() ?? "";
+  const queryPattern = rawQuery ? `%${escapeLike(rawQuery)}%` : null;
+  const conditions: SQL[] = [eq(agents.status, "ACTIVE") as unknown as SQL];
+  if (!params.includePrivate) {
+    conditions.push(eq(agents.publicSearchable, true) as unknown as SQL);
+  }
+  if (!params.includeUnsafeMedia) {
+    conditions.push(eq(agentMediaAssets.isPublic, true) as unknown as SQL);
+  }
+
+  if (params.vertical === "images") {
+    conditions.push(eq(agentMediaAssets.assetKind, "IMAGE") as unknown as SQL);
+  } else if (params.vertical === "artifacts") {
+    conditions.push(eq(agentMediaAssets.assetKind, "ARTIFACT") as unknown as SQL);
+  }
+
+  if (params.artifactType.length > 0) {
+    conditions.push(
+      sql`${agentMediaAssets.artifactType} = ANY(ARRAY[${sql.join(
+        params.artifactType.map((v) => sql`${v}`),
+        sql`, `
+      )}]::text[])`
+    );
+  }
+
+  if (queryPattern) {
+    conditions.push(
+      sql`(
+        ${agents.name} ILIKE ${queryPattern}
+        OR COALESCE(${agentMediaAssets.title}, '') ILIKE ${queryPattern}
+        OR COALESCE(${agentMediaAssets.caption}, '') ILIKE ${queryPattern}
+        OR COALESCE(${agentMediaAssets.altText}, '') ILIKE ${queryPattern}
+        OR COALESCE(${agentMediaAssets.artifactType}, '') ILIKE ${queryPattern}
+      )`
+    );
+  }
+
+  const result = await db.execute(sql`
+    SELECT
+      ${agentMediaAssets.id} AS id,
+      ${agentMediaAssets.agentId} AS agent_id,
+      ${agents.slug} AS agent_slug,
+      ${agents.name} AS agent_name,
+      ${agentMediaAssets.assetKind} AS asset_kind,
+      ${agentMediaAssets.artifactType} AS artifact_type,
+      ${agentMediaAssets.url} AS url,
+      ${agentMediaAssets.sourcePageUrl} AS source_page_url,
+      ${agentMediaAssets.title} AS title,
+      ${agentMediaAssets.caption} AS caption,
+      ${agentMediaAssets.width} AS width,
+      ${agentMediaAssets.height} AS height,
+      ${agentMediaAssets.mimeType} AS mime_type,
+      ${agentMediaAssets.qualityScore} AS quality_score,
+      ${agentMediaAssets.safetyScore} AS safety_score
+    FROM ${agentMediaAssets}
+    INNER JOIN ${agents} ON ${agents.id} = ${agentMediaAssets.agentId}
+    WHERE ${and(...conditions)}
+    ORDER BY
+      ${agentMediaAssets.qualityScore} DESC,
+      ${agents.overallRank} DESC,
+      ${agentMediaAssets.updatedAt} DESC
+    LIMIT ${params.limit + 1}
+  `);
+  const rows = (result as unknown as { rows?: Array<Record<string, unknown>> }).rows ?? [];
+  const hasMore = rows.length > params.limit;
+  const pageRows = hasMore ? rows.slice(0, params.limit) : rows;
+  const mediaResults = pageRows.map((row) => ({
+    id: row.id as string,
+    agentId: row.agent_id as string,
+    agentSlug: row.agent_slug as string,
+    agentName: row.agent_name as string,
+    assetKind: row.asset_kind as string,
+    artifactType: (row.artifact_type as string | null) ?? null,
+    url: row.url as string,
+    sourcePageUrl: (row.source_page_url as string | null) ?? null,
+    title: (row.title as string | null) ?? null,
+    caption: (row.caption as string | null) ?? null,
+    width: (row.width as number | null) ?? null,
+    height: (row.height as number | null) ?? null,
+    mimeType: (row.mime_type as string | null) ?? null,
+    qualityScore: Number(row.quality_score ?? 0),
+    safetyScore: Number(row.safety_score ?? 0),
+  }));
+
+  return {
+    mediaResults,
+    pagination: { hasMore, nextCursor: null, total: mediaResults.length },
+    facets: { protocols: [] },
+    searchMeta: {
+      fallbackApplied: false,
+      matchMode: "strict_lexical",
+      queryOriginal: rawQuery,
+      queryInterpreted: rawQuery,
+      filtersHonored: true,
+      stagesTried: ["media_vertical"],
+    },
+  };
+}
+
 export async function GET(req: NextRequest) {
   // --- Rate limiting ---
   const authProbe = await getAuthUser(req);
@@ -405,7 +602,7 @@ export async function GET(req: NextRequest) {
     throw err;
   }
 
-  if (params.includePending || params.includePrivate) {
+  if (params.includePending || params.includePrivate || params.includeUnsafeMedia) {
     if (!authUser || !isAdmin(authUser)) {
       return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
     }
@@ -413,6 +610,7 @@ export async function GET(req: NextRequest) {
 
   // --- Cache check ---
   const cacheKey = buildCacheKey({
+    algoVersion: "hybrid_v2",
     q: params.q ?? "",
     protocols: params.protocols.join(","),
     capabilities: params.capabilities.join(","),
@@ -423,6 +621,9 @@ export async function GET(req: NextRequest) {
     limit: params.limit,
     includePending: params.includePending,
     includePrivate: params.includePrivate,
+    includeUnsafeMedia: params.includeUnsafeMedia,
+    vertical: params.vertical,
+    artifactType: params.artifactType.join(","),
     debug: params.debug,
     fields: params.fields,
     intent: params.intent,
@@ -461,24 +662,44 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    if (params.vertical === "images" || params.vertical === "artifacts") {
+      const mediaResponse = await runMediaVerticalQuery(params);
+      searchResultsCache.set(cacheKey, mediaResponse);
+      const response = NextResponse.json(mediaResponse);
+      response.headers.set(
+        "Cache-Control",
+        "public, s-maxage=30, stale-while-revalidate=60"
+      );
+      response.headers.set("X-Cache", "MISS");
+      return response;
+    }
+
     // --- Query processing pipeline ---
     const rawQuery = params.q?.trim() ?? "";
-    let textQuery = rawQuery;
-    let websearchInput = rawQuery;
+    let strictTextQuery = rawQuery;
+    let interpretedTextQuery = rawQuery;
+    let strictWebsearchInput = rawQuery;
+    let interpretedWebsearchInput = rawQuery;
+    let interpretedIsNaturalLanguage = false;
     let fieldFilters: Record<string, string | undefined> = {};
 
     if (rawQuery) {
       const processed = processQuery(rawQuery);
-      textQuery = processed.parsed.textQuery;
-      websearchInput = processed.websearchInput;
+      strictTextQuery = processed.parsed.textQuery;
+      interpretedTextQuery = processed.interpretedQuery;
+      strictWebsearchInput = processed.strictWebsearchInput;
+      interpretedWebsearchInput = processed.websearchInput;
+      interpretedIsNaturalLanguage = processed.interpretation.isNaturalLanguage;
       fieldFilters = processed.parsed.fieldFilters;
     }
 
-    const useRelevance = !!textQuery && params.sort === "rank";
-    const useHybridRanking = useRelevance && isHybridRankingEnabled();
+    let textQuery = strictTextQuery;
+    let websearchInput = strictWebsearchInput;
+    let useRelevance = !!textQuery && params.sort === "rank";
+    let useHybridRanking = useRelevance && isHybridRankingEnabled();
     const rankingWeights = getRankingWeights();
     const engagement = getEngagementParams();
-    const queryHash = rawQuery ? hashQuery(textQuery || rawQuery) : "";
+    const queryHash = rawQuery ? hashQuery(strictTextQuery || rawQuery) : "";
     const includeRankingDebug =
       Boolean(params.debug) && process.env.NODE_ENV !== "production";
     const executeParams: ExecuteParams = {
@@ -493,7 +714,7 @@ export async function GET(req: NextRequest) {
       explain: Boolean(params.explain),
     };
     const querySignature = buildQuerySignature({
-      q: textQuery || rawQuery,
+      q: interpretedTextQuery || strictTextQuery || rawQuery,
       taskType: params.taskType,
       requires: params.requires,
       forbidden: params.forbidden,
@@ -501,10 +722,14 @@ export async function GET(req: NextRequest) {
     if (rawQuery) trackSearchQuery(rawQuery);
 
     const filterConditions = buildConditions(params, fieldFilters);
-    const conditions: SQL[] = [...filterConditions];
-    if (textQuery) {
-      conditions.push(buildTextCondition(textQuery, websearchInput));
-    }
+    const hasExplicitFilters =
+      params.protocols.length > 0 ||
+      params.capabilities.length > 0 ||
+      params.minSafety != null ||
+      params.minRank != null ||
+      Boolean(fieldFilters.protocol || fieldFilters.lang || fieldFilters.safety || fieldFilters.source);
+    let conditions: SQL[] = [...filterConditions];
+    if (textQuery) conditions.push(buildTextCondition(textQuery, websearchInput));
 
     const sortCol =
       params.sort === "rank"
@@ -516,17 +741,23 @@ export async function GET(req: NextRequest) {
             : agents.freshnessScore;
 
     const limit = params.limit + 1;
-    const allConditions = [...conditions];
+    let allConditions = [...conditions];
     const homepagePriority = sql`CASE WHEN ${agents.homepage} IS NOT NULL AND ${agents.homepage} != '' THEN 1 ELSE 0 END`;
 
-    // --- Cursor pagination ---
-    if (params.cursor) {
+    async function applyCursorCondition() {
+      if (!params.cursor) return;
+
       if (useRelevance) {
         const cursorRows = await db.execute(
           sql`SELECT
                 CASE WHEN homepage IS NOT NULL AND homepage != '' THEN 1 ELSE 0 END AS has_homepage,
                 (
-                  ts_rank(search_vector, websearch_to_tsquery('english', ${websearchInput}))
+                  ts_rank(
+                    search_vector,
+                    ${websearchInput.length > 0
+                      ? sql`websearch_to_tsquery('english', ${websearchInput})`
+                      : sql`plainto_tsquery('english', ${textQuery})`}
+                  )
                   + CASE WHEN lower(name) = lower(${textQuery}) THEN 0.4 ELSE 0 END
                   + CASE WHEN lower(name) LIKE lower(${`${textQuery}%`}) THEN 0.2 ELSE 0 END
                   + CASE WHEN lower(name) % lower(${textQuery}) THEN similarity(lower(name), lower(${textQuery})) * 0.12 ELSE 0 END
@@ -544,7 +775,12 @@ export async function GET(req: NextRequest) {
             sql`(
               ${homepagePriority},
               (
-                ts_rank(search_vector, websearch_to_tsquery('english', ${websearchInput}))
+                ts_rank(
+                  search_vector,
+                  ${websearchInput.length > 0
+                    ? sql`websearch_to_tsquery('english', ${websearchInput})`
+                    : sql`plainto_tsquery('english', ${textQuery})`}
+                )
                 + CASE WHEN lower(${agents.name}) = lower(${textQuery}) THEN 0.4 ELSE 0 END
                 + CASE WHEN lower(${agents.name}) LIKE lower(${`${textQuery}%`}) THEN 0.2 ELSE 0 END
                 + CASE WHEN lower(${agents.name}) % lower(${textQuery}) THEN similarity(lower(${agents.name}), lower(${textQuery})) * 0.12 ELSE 0 END
@@ -620,6 +856,10 @@ export async function GET(req: NextRequest) {
                   )`
         : sql`0::double precision`;
       const queryHashValue = queryHash;
+      const rankTsQuery =
+        websearchInput.length > 0
+          ? sql`websearch_to_tsquery('english', ${websearchInput})`
+          : sql`plainto_tsquery('english', ${textQuery})`;
 
       if (useRelevance) {
         const escapedText = escapeLike(textQuery);
@@ -633,7 +873,7 @@ export async function GET(req: NextRequest) {
                   safety_score, popularity_score, freshness_score, overall_rank, github_data, npm_data,
                   languages, created_at, ${claimCols}
                   (
-                    ts_rank(search_vector, websearch_to_tsquery('english', ${websearchInput}))
+                    ts_rank(search_vector, ${rankTsQuery})
                     + CASE WHEN lower(name) = lower(${textQuery}) THEN 0.35 ELSE 0 END
                     + CASE WHEN lower(name) LIKE lower(${prefixPattern}) THEN 0.2 ELSE 0 END
                     + CASE WHEN description IS NOT NULL AND description ILIKE ${containsPattern} THEN 0.1 ELSE 0 END
@@ -670,8 +910,7 @@ export async function GET(req: NextRequest) {
                   ) AS authority_score,
                   LEAST(1.0, GREATEST(0.0, COALESCE(freshness_score / 100.0, 0))) AS freshness_score_norm,
                   ${engagementScoreExpr} AS engagement_score,
-                  ts_headline('english', coalesce(description, ''),
-                    websearch_to_tsquery('english', ${websearchInput}),
+                  ts_headline('english', coalesce(description, ''), ${rankTsQuery},
                     'MaxWords=35, MinWords=15, StartSel=<mark>, StopSel=</mark>'
                   ) AS snippet
                 FROM agents
@@ -753,32 +992,102 @@ export async function GET(req: NextRequest) {
       return (rawResult as unknown as { rows?: Array<Record<string, unknown>> }).rows ?? [];
     }
 
-    let rows: Array<Record<string, unknown>>;
-    const tryExtendedCols = hasSearchClaimColumnsCache !== false;
-    let includeEngagementJoin = await hasSearchClicksTable();
-    try {
-      rows = await runMainQuery(tryExtendedCols, includeEngagementJoin);
-      if (tryExtendedCols) hasSearchClaimColumnsCache = true;
-    } catch (mainQueryErr) {
-      if (tryExtendedCols && isMissingSearchClaimColumnsError(mainQueryErr)) {
-        hasSearchClaimColumnsCache = false;
-        try {
-          rows = await runMainQuery(false, includeEngagementJoin);
-        } catch (fallbackErr) {
-          if (isMissingSearchClicksTableError(fallbackErr)) {
-            includeEngagementJoin = false;
-            rows = await runMainQuery(false, includeEngagementJoin);
-          } else {
-            throw fallbackErr;
-          }
-        }
-      } else if (isMissingSearchClicksTableError(mainQueryErr)) {
-        includeEngagementJoin = false;
-        rows = await runMainQuery(tryExtendedCols, includeEngagementJoin);
+    const stagesTried: SearchMatchMode[] = [];
+    const stageTimings: Array<{ mode: SearchMatchMode; durationMs: number; total: number }> = [];
+    const stageNotes: string[] = [];
+    let stageMatchMode: SearchMatchMode = "strict_lexical";
+
+    async function executeCurrentStage(mode: SearchMatchMode): Promise<Array<Record<string, unknown>>> {
+      const startedAt = Date.now();
+      stagesTried.push(mode);
+      allConditions = [...conditions];
+      await applyCursorCondition();
+
+      let stageRows: Array<Record<string, unknown>>;
+      const tryExtendedCols = hasSearchClaimColumnsCache !== false;
+      let includeEngagementJoin = await hasSearchClicksTable();
+      try {
+        stageRows = await runMainQuery(tryExtendedCols, includeEngagementJoin);
         if (tryExtendedCols) hasSearchClaimColumnsCache = true;
-      } else {
-        throw mainQueryErr;
+      } catch (mainQueryErr) {
+        if (tryExtendedCols && isMissingSearchClaimColumnsError(mainQueryErr)) {
+          hasSearchClaimColumnsCache = false;
+          try {
+            stageRows = await runMainQuery(false, includeEngagementJoin);
+          } catch (fallbackErr) {
+            if (isMissingSearchClicksTableError(fallbackErr)) {
+              includeEngagementJoin = false;
+              stageRows = await runMainQuery(false, includeEngagementJoin);
+            } else {
+              throw fallbackErr;
+            }
+          }
+        } else if (isMissingSearchClicksTableError(mainQueryErr)) {
+          includeEngagementJoin = false;
+          stageRows = await runMainQuery(tryExtendedCols, includeEngagementJoin);
+          if (tryExtendedCols) hasSearchClaimColumnsCache = true;
+        } else {
+          throw mainQueryErr;
+        }
       }
+
+      stageTimings.push({
+        mode,
+        durationMs: Date.now() - startedAt,
+        total: Number(stageRows[0]?.total_count ?? 0),
+      });
+      return stageRows;
+    }
+
+    let rows: Array<Record<string, unknown>> = [];
+
+    const runStrict = async () => {
+      stageMatchMode = "strict_lexical";
+      textQuery = strictTextQuery;
+      websearchInput = strictWebsearchInput;
+      useRelevance = !!textQuery && params.sort === "rank";
+      useHybridRanking = useRelevance && isHybridRankingEnabled();
+      conditions = [...filterConditions];
+      if (textQuery) conditions.push(buildTextCondition(textQuery, websearchInput));
+      rows = await executeCurrentStage("strict_lexical");
+    };
+
+    await runStrict();
+
+    if (rawQuery && rows.length === 0 && interpretedTextQuery && interpretedTextQuery !== strictTextQuery) {
+      stageMatchMode = "relaxed_lexical";
+      textQuery = interpretedTextQuery;
+      websearchInput = interpretedWebsearchInput;
+      useRelevance = !!textQuery && params.sort === "rank";
+      useHybridRanking = useRelevance && isHybridRankingEnabled();
+      conditions = [...filterConditions];
+      if (textQuery) conditions.push(buildTextCondition(textQuery, websearchInput));
+      rows = await executeCurrentStage("relaxed_lexical");
+    }
+
+    if (rawQuery && rows.length === 0) {
+      const semanticIds = await getSemanticCandidateIds(interpretedTextQuery || strictTextQuery || rawQuery);
+      if (semanticIds.length > 0) {
+        stageMatchMode = "semantic";
+        textQuery = interpretedTextQuery || strictTextQuery;
+        websearchInput = interpretedWebsearchInput || strictWebsearchInput;
+        useRelevance = false;
+        useHybridRanking = false;
+        conditions = [...filterConditions, buildAgentIdInCondition(semanticIds)];
+        rows = await executeCurrentStage("semantic");
+      } else {
+        stageNotes.push("semantic-unavailable-or-no-candidates");
+      }
+    }
+
+    if (rawQuery && rows.length === 0) {
+      stageMatchMode = hasExplicitFilters ? "filter_only_fallback" : "global_fallback";
+      textQuery = interpretedTextQuery || strictTextQuery;
+      websearchInput = interpretedWebsearchInput || strictWebsearchInput;
+      useRelevance = false;
+      useHybridRanking = false;
+      conditions = [...filterConditions];
+      rows = await executeCurrentStage(stageMatchMode);
     }
 
     // Extract total from window function (avoids separate count query)
@@ -1033,6 +1342,7 @@ export async function GET(req: NextRequest) {
         ...base,
         url: r.url as string,
         homepage: r.homepage as string | null,
+        primaryImageUrl: (r.primary_image_url as string | null) ?? null,
         source: r.source as string,
         sourceId: r.source_id as string,
         githubData: r.github_data as Record<string, unknown> | null,
@@ -1077,6 +1387,35 @@ export async function GET(req: NextRequest) {
     if (rawQuery && results.length < 3) {
       didYouMean = await findDidYouMean(rawQuery);
     }
+    const fallbackApplied = rawQuery.length > 0 && stageMatchMode !== "strict_lexical";
+    const fallbackReason =
+      results.length === 0 && rawQuery
+        ? hasExplicitFilters
+          ? "no-matches-with-current-filters"
+          : "no-related-results"
+        : undefined;
+    const searchMeta = {
+      fallbackApplied,
+      matchMode: stageMatchMode,
+      queryOriginal: rawQuery,
+      queryInterpreted: interpretedTextQuery || strictTextQuery || rawQuery,
+      filtersHonored: true,
+      stagesTried,
+      ...(fallbackReason
+        ? {
+            fallbackReason:
+              stageNotes.length > 0 ? `${fallbackReason}; ${stageNotes.join(",")}` : fallbackReason,
+          }
+        : {}),
+      ...(includeRankingDebug
+        ? {
+            diagnostics: {
+              stageTimings,
+              interpretedIsNaturalLanguage,
+            },
+          }
+        : {}),
+    };
 
     searchCircuitBreaker.recordSuccess();
 
@@ -1084,6 +1423,7 @@ export async function GET(req: NextRequest) {
       results,
       pagination: { hasMore, nextCursor, total: totalFromWindow },
       facets,
+      searchMeta,
       ...(constraintDiagnostics.length > 0 ? { constraintDiagnostics } : {}),
       ...(didYouMean ? { didYouMean } : {}),
     };
@@ -1098,6 +1438,10 @@ export async function GET(req: NextRequest) {
           topIds: results.slice(0, 5).map((r) => r.id),
           weights: rankingWeights,
           engagement,
+          matchMode: stageMatchMode,
+          stagesTried,
+          stageTimings,
+          fallbackApplied,
         })
       );
     }
@@ -1113,6 +1457,8 @@ export async function GET(req: NextRequest) {
     response.headers.set("X-Cache", "MISS");
     if (shouldIncludeDebugHeaders()) {
       response.headers.set("X-Search-Ranking", useHybridRanking ? "hybrid" : "lexical");
+      response.headers.set("X-Search-Match-Mode", stageMatchMode);
+      response.headers.set("X-Search-Fallback", fallbackApplied ? "1" : "0");
       response.headers.set(
         "X-Search-Weights",
         `${rankingWeights.lexical.toFixed(3)},${rankingWeights.authority.toFixed(3)},${rankingWeights.engagement.toFixed(3)},${rankingWeights.freshness.toFixed(3)}`

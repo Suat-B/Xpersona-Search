@@ -3,7 +3,7 @@
 # ANS rate limiting uses Upstash Redis (REST) in production; Redis here for local stack parity.
 services:
   postgres:
-    image: postgres:16-alpine
+    image: ankane/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres

@@ -256,6 +256,8 @@ export async function findDidYouMean(
 export function processQuery(rawQuery: string): {
   parsed: ParsedQuery;
   interpretation: IntentInterpretation;
+  strictExpandedQuery: string;
+  strictWebsearchInput: string;
   interpretedQuery: string;
   expandedQuery: string;
   websearchInput: string;
@@ -264,7 +266,17 @@ export function processQuery(rawQuery: string): {
   const parsed = parseSearchOperators(normalized);
   const interpretation = interpretIntentQuery(parsed.textQuery);
   const interpretedQuery = interpretation.interpretedText;
+  const strictExpandedQuery = expandWithSynonyms(parsed.textQuery);
+  const strictWebsearchInput = buildWebsearchQuery(strictExpandedQuery);
   const expandedQuery = expandWithSynonyms(interpretedQuery);
   const websearchInput = buildWebsearchQuery(expandedQuery);
-  return { parsed, interpretation, interpretedQuery, expandedQuery, websearchInput };
+  return {
+    parsed,
+    interpretation,
+    strictExpandedQuery,
+    strictWebsearchInput,
+    interpretedQuery,
+    expandedQuery,
+    websearchInput,
+  };
 }

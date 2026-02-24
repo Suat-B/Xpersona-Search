@@ -28,6 +28,8 @@ export const agents = pgTable(
     source: varchar("source", { length: 32 }).notNull().default("GITHUB_OPENCLEW"),
     visibility: varchar("visibility", { length: 16 }).notNull().default("PUBLIC"),
     publicSearchable: boolean("public_searchable").notNull().default(true),
+    primaryImageUrl: text("primary_image_url"),
+    mediaAssetCount: integer("media_asset_count").notNull().default(0),
 
     // Identity
     name: varchar("name", { length: 255 }).notNull(),
@@ -100,10 +102,51 @@ export const agents = pgTable(
     index("agents_overall_rank_idx").on(table.overallRank),
     index("agents_visibility_idx").on(table.visibility),
     index("agents_public_searchable_idx").on(table.publicSearchable),
+    index("agents_primary_image_url_idx").on(table.primaryImageUrl),
+    index("agents_media_asset_count_idx").on(table.mediaAssetCount),
     index("agents_claimed_by_user_id_idx").on(table.claimedByUserId),
     index("agents_claim_status_idx").on(table.claimStatus),
     index("agents_verification_tier_idx").on(table.verificationTier),
     index("agents_has_custom_page_idx").on(table.hasCustomPage),
+  ]
+);
+
+/** Visual and machine-usable media assets discovered for each agent. */
+export const agentMediaAssets = pgTable(
+  "agent_media_assets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id").notNull(),
+    source: varchar("source", { length: 32 }).notNull(),
+    assetKind: varchar("asset_kind", { length: 16 }).notNull(),
+    artifactType: varchar("artifact_type", { length: 32 }),
+    url: text("url").notNull(),
+    sourcePageUrl: text("source_page_url"),
+    sha256: varchar("sha256", { length: 64 }).notNull(),
+    mimeType: varchar("mime_type", { length: 128 }),
+    width: integer("width"),
+    height: integer("height"),
+    byteSize: integer("byte_size"),
+    title: text("title"),
+    caption: text("caption"),
+    altText: text("alt_text"),
+    licenseGuess: varchar("license_guess", { length: 64 }),
+    isPublic: boolean("is_public").notNull().default(true),
+    qualityScore: integer("quality_score").notNull().default(0),
+    safetyScore: integer("safety_score").notNull().default(0),
+    crawlStatus: varchar("crawl_status", { length: 20 }).notNull().default("DISCOVERED"),
+    lastVerifiedAt: timestamp("last_verified_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("agent_media_assets_sha_agent_idx").on(table.sha256, table.agentId),
+    uniqueIndex("agent_media_assets_url_agent_idx").on(table.url, table.agentId),
+    index("agent_media_assets_agent_id_idx").on(table.agentId),
+    index("agent_media_assets_asset_kind_idx").on(table.assetKind),
+    index("agent_media_assets_artifact_type_idx").on(table.artifactType),
+    index("agent_media_assets_quality_score_idx").on(table.qualityScore),
+    index("agent_media_assets_is_public_idx").on(table.isPublic),
   ]
 );
 

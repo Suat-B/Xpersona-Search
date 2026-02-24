@@ -652,6 +652,7 @@ export const searchQueries = pgTable(
 // Search engine tables - re-exported from search-schema
 export {
   agents,
+  agentMediaAssets,
   agentClaims,
   agentCustomizations,
   agentCustomizationVersions,

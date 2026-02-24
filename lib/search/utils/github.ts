@@ -475,6 +475,7 @@ export interface GitHubRepo {
   pushed_at: string;
   default_branch: string;
   fork: boolean;
+  homepage?: string | null;
   private?: boolean;
   visibility?: "public" | "private" | "internal" | null;
 }
@@ -506,6 +507,7 @@ export async function fetchRepoDetails(
       pushed_at: data.pushed_at ?? data.updated_at ?? "",
       default_branch: data.default_branch ?? "main",
       fork: data.fork ?? false,
+      homepage: data.homepage ?? null,
       private: data.private ?? false,
       visibility:
         (data.visibility as GitHubRepo["visibility"]) ??

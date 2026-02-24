@@ -25,7 +25,7 @@ import {
   calculateOverallRank,
 } from "../scoring/rank";
 import { generateSlug } from "../utils/slug";
-import { upsertAgent } from "../agent-upsert";
+import { getAgentBySourceId, upsertAgent, upsertMediaAsset } from "../agent-upsert";
 import {
   createGitHubRequestContext,
   fetchFileContent,
@@ -33,6 +33,7 @@ import {
   type GitHubRepo,
 } from "../utils/github";
 import { getRepoVisibility, shouldRecrawlSource } from "./github-agent-utils";
+import { discoverMediaAssets, fetchHomepageContent } from "./media-discovery";
 
 const CONCURRENCY = 4;
 const SOURCE = "GITHUB_REPOS";
@@ -271,7 +272,7 @@ async function upsertRepoAsAgent(
     slug,
     description,
     url: repo.html_url,
-    homepage: null,
+    homepage: repo.homepage ?? null,
     capabilities,
     protocols,
     languages: ["typescript"] as string[],
@@ -305,6 +306,7 @@ async function upsertRepoAsAgent(
     name: agentData.name,
     slug: agentData.slug,
     description: agentData.description,
+    homepage: agentData.homepage,
     capabilities: agentData.capabilities,
     protocols: agentData.protocols,
     githubData: agentData.githubData,
@@ -319,6 +321,68 @@ async function upsertRepoAsAgent(
     lastCrawledAt: agentData.lastCrawledAt,
     nextCrawlAt: agentData.nextCrawlAt,
   });
+
+  if (process.env.SEARCH_MEDIA_VERTICAL_ENABLED === "1") {
+    try {
+      const agent = await getAgentBySourceId(sourceId);
+      if (agent) {
+        const assets = await discoverMediaAssets({
+          sourcePageUrl: repo.html_url,
+          markdownOrHtml: readme,
+        });
+        for (const asset of assets) {
+          await upsertMediaAsset({
+            agentId: agent.id,
+            source: SOURCE,
+            assetKind: asset.assetKind,
+            artifactType: asset.artifactType,
+            url: asset.url,
+            sourcePageUrl: asset.sourcePageUrl,
+            sha256: asset.sha256,
+            mimeType: asset.mimeType,
+            byteSize: asset.byteSize,
+            title: asset.title,
+            caption: asset.caption,
+            altText: asset.altText,
+            isPublic: asset.isPublic,
+            qualityScore: asset.qualityScore,
+            safetyScore: asset.safetyScore,
+          });
+        }
+        if (agentData.homepage) {
+          const homepageContent = await fetchHomepageContent(agentData.homepage);
+          if (homepageContent) {
+            const homepageAssets = await discoverMediaAssets({
+              sourcePageUrl: agentData.homepage,
+              markdownOrHtml: homepageContent,
+              isHtml: true,
+            });
+            for (const asset of homepageAssets) {
+              await upsertMediaAsset({
+                agentId: agent.id,
+                source: "HOMEPAGE",
+                assetKind: asset.assetKind,
+                artifactType: asset.artifactType,
+                url: asset.url,
+                sourcePageUrl: asset.sourcePageUrl,
+                sha256: asset.sha256,
+                mimeType: asset.mimeType,
+                byteSize: asset.byteSize,
+                title: asset.title,
+                caption: asset.caption,
+                altText: asset.altText,
+                isPublic: asset.isPublic,
+                qualityScore: asset.qualityScore,
+                safetyScore: asset.safetyScore,
+              });
+            }
+          }
+        }
+      }
+    } catch {
+      // Keep media extraction non-fatal for crawler reliability.
+    }
+  }
 
   return true;
 }

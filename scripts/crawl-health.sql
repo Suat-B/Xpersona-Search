@@ -36,3 +36,35 @@ FROM agents
 WHERE created_at >= now() - interval '14 days'
 GROUP BY source, date_trunc('day', created_at)
 ORDER BY day DESC, source;
+
+-- Media coverage by source/day (last 14 days)
+SELECT
+  source,
+  date_trunc('day', created_at) AS day,
+  COUNT(*) AS media_assets
+FROM agent_media_assets
+WHERE created_at >= now() - interval '14 days'
+GROUP BY source, date_trunc('day', created_at)
+ORDER BY day DESC, source;
+
+-- Dead/stale media ratio
+SELECT
+  source,
+  COUNT(*) FILTER (WHERE crawl_status IN ('FAILED', 'STALE')) AS dead_assets,
+  COUNT(*) AS total_assets,
+  ROUND(
+    (COUNT(*) FILTER (WHERE crawl_status IN ('FAILED', 'STALE'))::numeric / NULLIF(COUNT(*), 0)) * 100,
+    2
+  ) AS dead_ratio_pct
+FROM agent_media_assets
+GROUP BY source
+ORDER BY dead_ratio_pct DESC NULLS LAST;
+
+-- Artifact type distribution
+SELECT
+  COALESCE(artifact_type, 'NONE') AS artifact_type,
+  COUNT(*) AS count
+FROM agent_media_assets
+WHERE asset_kind = 'ARTIFACT'
+GROUP BY COALESCE(artifact_type, 'NONE')
+ORDER BY count DESC;

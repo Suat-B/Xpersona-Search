@@ -53,6 +53,7 @@ interface Props {
   visible: boolean;
   loading?: boolean;
   id?: string;
+  mobileInline?: boolean;
 }
 
 export interface SearchSuggestionsHandle {
@@ -195,6 +196,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
       anchorRef,
       visible,
       id = "agent-suggestions",
+      mobileInline = false,
     },
     ref
   ) {
@@ -590,8 +592,10 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
     return (
       <div
         id={id}
-        className={`absolute left-0 right-0 z-50 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-xl overflow-hidden overflow-y-auto overscroll-contain ${
-          panelPlacement === "top" ? "bottom-full mb-1" : "top-full mt-1"
+        className={`left-0 right-0 z-50 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-xl overflow-hidden overflow-y-auto overscroll-contain ${
+          mobileInline
+            ? `relative mt-2 sm:absolute sm:mt-0 ${panelPlacement === "top" ? "sm:bottom-full sm:mb-1" : "sm:top-full sm:mt-1"}`
+            : `absolute ${panelPlacement === "top" ? "bottom-full mb-1" : "top-full mt-1"}`
         }`}
         style={{ maxHeight: `${panelMaxHeight}px` }}
         role="listbox"
