@@ -42,6 +42,12 @@ export function ANSMinimalFooter({ variant = "light" }: ANSMinimalFooterProps) {
             <Link href="/docs" className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
               API
             </Link>
+            <a
+              href="mailto:suat.bastug@icloud.com"
+              className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}
+            >
+              Support
+            </a>
             <Link href="/privacy-policy-1" className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
               Privacy
             </Link>

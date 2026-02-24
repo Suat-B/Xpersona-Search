@@ -41,6 +41,13 @@ export function GoogleStyleHome({
   const searchAnchorRef = useRef<HTMLDivElement>(null);
   const suggestionsRef = useRef<SearchSuggestionsHandle>(null);
   const router = useRouter();
+  const [showSupportModal, setShowSupportModal] = useState(false);
+  const [supportName, setSupportName] = useState("");
+  const [supportEmail, setSupportEmail] = useState("");
+  const [supportMessage, setSupportMessage] = useState("");
+  const supportRecipient = "Suat.Bastug@icloud.com";
+  const [supportStatus, setSupportStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [supportError, setSupportError] = useState("");
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,6 +117,45 @@ export function GoogleStyleHome({
   const handleInputKeyDown = (e: React.KeyboardEvent) => {
     if (["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(e.key)) {
       suggestionsRef.current?.handleKeyDown(e);
+    }
+  };
+
+  const openSupport = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setShowSupportModal(true);
+  };
+
+  const closeSupport = () => {
+    setShowSupportModal(false);
+    setSupportStatus("idle");
+    setSupportError("");
+  };
+
+  const submitSupport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSupportStatus("sending");
+    setSupportError("");
+    try {
+      const res = await fetch("/api/support", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: supportName.trim(),
+          email: supportEmail.trim(),
+          message: supportMessage.trim(),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.message || "Failed to send email");
+      }
+      setSupportStatus("sent");
+      setSupportName("");
+      setSupportEmail("");
+      setSupportMessage("");
+    } catch (err) {
+      setSupportStatus("error");
+      setSupportError(err instanceof Error ? err.message : "Failed to send email");
     }
   };
 
@@ -292,6 +338,13 @@ export function GoogleStyleHome({
             </span>
           </div>
           <nav className="flex flex-wrap items-center justify-center sm:justify-end gap-4 sm:gap-6 text-xs sm:text-[13px] text-[var(--text-tertiary)]">
+            <button
+              type="button"
+              onClick={openSupport}
+              className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation"
+            >
+              Support
+            </button>
             <Link href={privacyUrl} className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
               Privacy
             </Link>
@@ -301,6 +354,78 @@ export function GoogleStyleHome({
           </nav>
         </div>
       </footer>
+
+      {showSupportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/70"
+            onClick={closeSupport}
+            aria-label="Close support form"
+          />
+          <div className="relative w-full max-w-md rounded-2xl border border-white/[0.1] bg-[#0b0b0f] p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">Contact Support</h2>
+              <button
+                type="button"
+                onClick={closeSupport}
+                className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <p className="text-sm text-[var(--text-tertiary)] mb-4">
+              Send a support message directly to {supportRecipient}.
+            </p>
+            <form onSubmit={submitSupport} className="space-y-3">
+              <input
+                type="text"
+                placeholder="Your name (optional)"
+                value={supportName}
+                onChange={(e) => setSupportName(e.target.value)}
+                className="w-full rounded-lg border border-white/[0.1] bg-white/5 px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/40"
+              />
+              <input
+                type="email"
+                placeholder="Your email (optional)"
+                value={supportEmail}
+                onChange={(e) => setSupportEmail(e.target.value)}
+                className="w-full rounded-lg border border-white/[0.1] bg-white/5 px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/40"
+              />
+              <textarea
+                placeholder="How can we help?"
+                value={supportMessage}
+                onChange={(e) => setSupportMessage(e.target.value)}
+                rows={5}
+                className="w-full rounded-lg border border-white/[0.1] bg-white/5 px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/40"
+              />
+              {supportStatus === "sent" && (
+                <div className="text-sm text-emerald-400">Message sent. We will get back to you soon.</div>
+              )}
+              {supportStatus === "error" && (
+                <div className="text-sm text-rose-400">{supportError || "Failed to send email"}</div>
+              )}
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={closeSupport}
+                  className="px-4 py-2 text-sm text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={supportStatus === "sending"}
+                  className="px-4 py-2 text-sm font-semibold text-white bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 rounded-lg transition-colors"
+                >
+                  {supportStatus === "sending" ? "Sending..." : "Send Email"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

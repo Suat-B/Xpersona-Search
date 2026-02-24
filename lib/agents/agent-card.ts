@@ -14,7 +14,17 @@ export interface AgentCardInput {
   languages?: string[] | null;
   npmData?: { packageName?: string | null } | null;
   readmeSource?: string | null;
-  examples?: Array<{ kind: string; language: string; snippet: string }> | null;
+  examples?: Array<{
+    kind: string;
+    language: string;
+    snippet: string;
+    action?: {
+      method?: string;
+      url?: string;
+      headers?: Record<string, string>;
+      body?: string;
+    };
+  }> | null;
 }
 
 export interface AgentCard {
@@ -30,7 +40,17 @@ export interface AgentCard {
   languages?: string[];
   install?: { command: string; ecosystem?: string };
   metadata?: Record<string, unknown>;
-  examples?: Array<{ kind: string; language: string; snippet: string }>;
+  examples?: Array<{
+    kind: string;
+    language: string;
+    snippet: string;
+    action?: {
+      method?: string;
+      url?: string;
+      headers?: Record<string, string>;
+      body?: string;
+    };
+  }>;
 }
 
 function getInstallCommand(agent: AgentCardInput): { command: string; ecosystem?: string } | null {

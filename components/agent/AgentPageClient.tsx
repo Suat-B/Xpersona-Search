@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ProtocolBadge } from "@/components/search/ProtocolBadge";
 import { BackToSearchLink } from "@/components/agent/BackToSearchLink";
@@ -74,9 +75,41 @@ interface AgentPageClientProps {
 
 type CtaConfig = { label: string; href: string };
 
+function ensureExternalUrl(rawUrl: string | null | undefined): string {
+  const url = (rawUrl ?? "").trim();
+  if (!url) return "#";
+  const sshMatch = url.match(/^git@([^:]+):(.+?)(?:\.git)?$/i);
+  if (sshMatch) {
+    return `https://${sshMatch[1]}/${sshMatch[2]}`;
+  }
+  const sshProtoMatch = url.match(/^ssh:\/\/git@([^/]+)\/(.+?)(?:\.git)?$/i);
+  if (sshProtoMatch) {
+    return `https://${sshProtoMatch[1]}/${sshProtoMatch[2]}`;
+  }
+  if (/^git:\/\//i.test(url)) return url.replace(/^git:\/\//i, "https://");
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith("//")) return `https:${url}`;
+  return `https://${url}`;
+}
+
+function getGithubUrl(agent: Agent): string | null {
+  const candidates = [
+    agent.url,
+    (agent.agentCard as { repository?: string } | null | undefined)?.repository,
+    agent.homepage,
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (!/github\.com/i.test(candidate)) continue;
+    const normalized = ensureExternalUrl(candidate).replace(/\.git$/i, "");
+    if (normalized !== "#") return normalized;
+  }
+  return null;
+}
+
 function getPrimaryCta(agent: Agent): CtaConfig {
   const source = (agent.source ?? "GITHUB_OPENCLEW").toUpperCase();
-  const url = agent.url ?? "#";
+  const url = ensureExternalUrl(agent.url);
 
   switch (source) {
     case "NPM": {
@@ -239,10 +272,10 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
         agent={{
           name: agent.name,
           slug: agent.slug,
-          homepage: agent.homepage,
+          homepage: ensureExternalUrl(agent.homepage),
           description: agent.description,
           source: agent.source,
-          url: agent.url,
+          url: ensureExternalUrl(agent.url),
           claimStatus: agent.claimStatus,
         }}
         from={safeFrom}
@@ -272,9 +305,8 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
   const popularityLabel = getPopularityLabel(agent);
   const docsSourceLabel = getDocsSourceLabel(agent);
   const agentCardJson = agent.agentCard ? JSON.stringify(agent.agentCard, null, 2) : null;
-  const agentApiBase =
-    typeof window === "undefined" ? "" : `${window.location.protocol}//${window.location.host}`;
-  const agentApiUrl = agentApiBase ? `${agentApiBase}/api/v1/agents/${agent.slug}` : "";
+  const [agentApiUrl, setAgentApiUrl] = useState<string>("");
+  const githubUrl = getGithubUrl(agent);
   const agentModeCurl = agentApiUrl ? `curl "${agentApiUrl}?mode=agent"` : "";
   const agentCardCurl = agentApiUrl ? `curl "${agentApiUrl}?format=card"` : "";
   const execExamples = Array.isArray(agent.agentCard?.examples)
@@ -282,6 +314,11 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
     : [];
 
   const hasNpmInfo = agent.source === "NPM" && agent.npmData;
+
+  useEffect(() => {
+    const base = `${window.location.protocol}//${window.location.host}`;
+    setAgentApiUrl(`${base}/api/v1/agents/${agent.slug}`);
+  }, [agent.slug]);
 
   return (
     <div className="min-h-screen bg-[var(--bg-deep)]">
@@ -369,6 +406,12 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
               href={primaryCta.href}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={(event) => {
+                if (primaryCta.href && primaryCta.href !== "#") {
+                  event.preventDefault();
+                  window.open(primaryCta.href, "_blank", "noopener,noreferrer");
+                }
+              }}
               className="inline-flex items-center gap-2 px-6 py-3 bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 rounded-xl font-semibold text-white transition-colors shadow-lg shadow-[var(--accent-heart)]/20 hover:shadow-[var(--accent-heart)]/30"
             >
               {primaryCta.label}
@@ -376,13 +419,30 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
               </svg>
             </a>
-            {agent.homepage && (
+            {githubUrl && githubUrl !== primaryCta.href && (
               <a
-                href={agent.homepage}
+                href={githubUrl}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={(event) => {
+                  event.preventDefault();
+                  window.open(githubUrl, "_blank", "noopener,noreferrer");
+                }}
                 className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-primary)] hover:border-[var(--accent-heart)]/40 hover:bg-[var(--bg-card)] transition-colors"
               >
+                View on GitHub
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+              </a>
+            )}
+            {agent.homepage && (
+              <a
+                href={ensureExternalUrl(agent.homepage)}
+                target="_blank"
+                rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-primary)] hover:border-[var(--accent-heart)]/40 hover:bg-[var(--bg-card)] transition-colors"
+            >
                 Homepage
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -399,13 +459,13 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
         </header>
 
         {/* Custom links from owner */}
-        {agent.customLinks && agent.customLinks.length > 0 && (
+          {agent.customLinks && agent.customLinks.length > 0 && (
           <section className="mb-8">
             <div className="flex flex-wrap gap-2">
               {agent.customLinks.map((link, i) => (
                 <a
                   key={i}
-                  href={link.url}
+                  href={ensureExternalUrl(link.url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] text-sm text-[var(--text-secondary)] hover:border-[var(--accent-heart)]/40 transition-colors"

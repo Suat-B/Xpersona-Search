@@ -26,6 +26,7 @@ const FOOTER_LINKS = {
   ],
   resources: [
     { label: "Help Center", href: "/help" },
+    { label: "Support", href: "mailto:suat.bastug@icloud.com", external: true },
     { label: "Discord", href: "https://discord.gg/xpersona", external: true },
     { label: "Twitter", href: "https://twitter.com/xpersona", external: true },
     { label: "GitHub", href: "https://github.com/xpersona", external: true },

@@ -220,7 +220,10 @@ export async function GET(
     try {
       await db
         .update(agents)
-        .set({ agentCard: card, updatedAt: new Date() })
+        .set({
+          agentCard: card as Record<string, unknown>,
+          updatedAt: new Date(),
+        })
         .where(eq(agents.id, agent.id as string));
     } catch (err) {
       console.warn("[agent-card] persist failed", err);

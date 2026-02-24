@@ -17,6 +17,23 @@ interface AgentEmbedProps {
   from?: string | null;
 }
 
+function ensureExternalUrl(rawUrl: string | null | undefined): string {
+  const url = (rawUrl ?? "").trim();
+  if (!url) return "#";
+  const sshMatch = url.match(/^git@([^:]+):(.+?)(?:\.git)?$/i);
+  if (sshMatch) {
+    return `https://${sshMatch[1]}/${sshMatch[2]}`;
+  }
+  const sshProtoMatch = url.match(/^ssh:\/\/git@([^/]+)\/(.+?)(?:\.git)?$/i);
+  if (sshProtoMatch) {
+    return `https://${sshProtoMatch[1]}/${sshProtoMatch[2]}`;
+  }
+  if (/^git:\/\//i.test(url)) return url.replace(/^git:\/\//i, "https://");
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith("//")) return `https:${url}`;
+  return `https://${url}`;
+}
+
 function FallbackCard({ agent, from }: AgentEmbedProps) {
   const detailsHref = useMemo(() => {
     if (from && from.startsWith("/") && !from.startsWith("//")) {
@@ -24,6 +41,7 @@ function FallbackCard({ agent, from }: AgentEmbedProps) {
     }
     return `/agent/${agent.slug}?view=details`;
   }, [agent.slug, from]);
+  const homepageHref = ensureExternalUrl(agent.homepage);
 
   return (
     <div className="flex-1 flex items-center justify-center p-6">
@@ -41,7 +59,7 @@ function FallbackCard({ agent, from }: AgentEmbedProps) {
           This page cannot be displayed inline. Visit it directly instead.
         </p>
         <a
-          href={agent.homepage}
+          href={homepageHref}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-2 px-6 py-3 bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 rounded-xl font-semibold text-white transition-colors shadow-lg shadow-[var(--accent-heart)]/20"
@@ -69,6 +87,7 @@ export function AgentHomepageEmbed({ agent, from }: AgentEmbedProps) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const router = useRouter();
   const safeFrom = from && from.startsWith("/") && !from.startsWith("//") ? from : null;
+  const homepageHref = ensureExternalUrl(agent.homepage);
   const claimHref = safeFrom
     ? `/agent/${agent.slug}/claim?from=${encodeURIComponent(safeFrom)}`
     : `/agent/${agent.slug}/claim`;
@@ -123,7 +142,7 @@ export function AgentHomepageEmbed({ agent, from }: AgentEmbedProps) {
           <div className="h-5 w-px bg-[var(--border)] shrink-0 hidden sm:block" />
 
           <a
-            href={agent.homepage}
+            href={homepageHref}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1.5 text-xs text-[var(--text-quaternary)] hover:text-[var(--text-secondary)] transition-colors"
@@ -158,7 +177,7 @@ export function AgentHomepageEmbed({ agent, from }: AgentEmbedProps) {
             </div>
           )}
           <iframe
-            src={agent.homepage}
+            src={homepageHref}
             title={`${agent.name} homepage`}
             className="h-full w-full border-0"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
