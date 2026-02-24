@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ingestAgentMedia } from "../media-ingestion";
 
 const mockGetAgentBySourceId = vi.hoisted(() => vi.fn());
 const mockUpsertMediaAsset = vi.hoisted(() => vi.fn());
@@ -15,11 +14,11 @@ vi.mock("../media-discovery", () => ({
   discoverMediaAssets: mockDiscoverMediaAssets,
   fetchHomepageContent: mockFetchHomepageContent,
 }));
+import { ingestAgentMedia } from "../media-ingestion";
 
 describe("media-ingestion", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubEnv("SEARCH_MEDIA_VERTICAL_ENABLED", "1");
     vi.unstubAllEnvs();
     vi.stubEnv("SEARCH_MEDIA_VERTICAL_ENABLED", "1");
     mockGetAgentBySourceId.mockResolvedValue({ id: "agent-1" });

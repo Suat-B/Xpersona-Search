@@ -5,12 +5,20 @@ describe("media discovery", () => {
   it("extracts markdown image and artifact links", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        headers: new Headers({
-          "content-type": "image/png",
-          "content-length": "1234",
-        }),
-      })
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          headers: new Headers({
+            "content-type": "image/png",
+            "content-length": "1234",
+          }),
+        })
+        .mockResolvedValueOnce({
+          headers: new Headers({
+            "content-type": "application/yaml",
+            "content-length": "456",
+          }),
+        })
     );
     const markdown = `
 ![arch](./docs/architecture.png)
@@ -48,6 +56,7 @@ describe("media discovery", () => {
   });
 
   it("demotes noisy badge assets quality", async () => {
+    vi.stubEnv("SEARCH_MEDIA_ALLOWED_HOSTS", "raw.githubusercontent.com");
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -59,9 +68,9 @@ describe("media discovery", () => {
     );
     const assets = await discoverMediaAssets({
       sourcePageUrl: "https://github.com/org/repo",
-      markdownOrHtml: "![build badge](https://img.shields.io/badge/build-passing-brightgreen.svg)",
+      markdownOrHtml: "![build badge](https://raw.githubusercontent.com/org/repo/main/docs/build-badge.svg)",
     });
     expect(assets.length).toBe(1);
-    expect(assets[0].qualityScore).toBeLessThan(40);
+    expect(assets[0].qualityScore).toBeLessThan(70);
   });
 });

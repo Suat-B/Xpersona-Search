@@ -45,6 +45,7 @@ import {
   normalizeTokens,
   type ExecuteParams,
 } from "@/lib/search/execute-mode";
+import { TASK_TYPES } from "@/lib/search/taxonomy";
 
 let hasSearchClaimColumnsCache: boolean | null = null;
 let hasSearchClicksTableCache: boolean | null = null;
@@ -68,6 +69,19 @@ function toExternalProtocolName(protocol: unknown): string {
   if (typeof protocol !== "string") return "";
   if (protocol.toUpperCase() === "OPENCLEW") return "OPENCLAW";
   return protocol;
+}
+
+const CONTRACT_MAX_AGE_HOURS = Number(process.env.SEARCH_CONTRACT_MAX_AGE_HOURS ?? "168");
+const METRICS_MAX_AGE_HOURS = Number(process.env.SEARCH_METRICS_MAX_AGE_HOURS ?? "168");
+
+function isExecuteBiasEnabled(clientType: string | null): boolean {
+  if (process.env.SEARCH_EXECUTE_BIAS_ENABLED === "1") return true;
+  return clientType?.toLowerCase() === "agent";
+}
+
+function isStrictContractsEnabled(clientType: string | null): boolean {
+  if (process.env.SEARCH_STRICT_CONTRACTS_ENABLED === "1") return true;
+  return clientType?.toLowerCase() === "agent";
 }
 
 const SearchSchema = z.object({

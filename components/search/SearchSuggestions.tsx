@@ -594,7 +594,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
         id={id}
         className={`left-0 right-0 z-50 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-xl overflow-hidden overflow-y-auto overscroll-contain ${
           mobileInline
-            ? `relative mt-2 sm:absolute sm:mt-0 ${panelPlacement === "top" ? "sm:bottom-full sm:mb-1" : "sm:top-full sm:mt-1"}`
+            ? `absolute top-full mt-2 sm:mt-0 ${panelPlacement === "top" ? "sm:bottom-full sm:top-auto sm:mb-1" : "sm:top-full sm:mt-1"}`
             : `absolute ${panelPlacement === "top" ? "bottom-full mb-1" : "top-full mt-1"}`
         }`}
         style={{ maxHeight: `${panelMaxHeight}px` }}

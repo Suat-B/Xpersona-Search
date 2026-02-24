@@ -3,6 +3,8 @@ import { z, ZodError } from "zod";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth-utils";
+import { sanitizeForStorage } from "@/lib/search/query-engine";
+import { EXECUTION_PATHS, FAILURE_CODES, TASK_TYPES } from "@/lib/search/taxonomy";
 import {
   checkSearchRateLimit,
   SEARCH_ANON_RATE_LIMIT,
@@ -13,7 +15,11 @@ const OutcomeSchema = z.object({
   querySignature: z.string().length(64),
   selectedResultId: z.string().uuid(),
   outcome: z.enum(["success", "failure", "timeout"]),
-  taskType: z.string().min(1).max(32).optional().default("general"),
+  taskType: z.enum(TASK_TYPES).optional().default("general"),
+  query: z.string().min(1).max(500).optional(),
+  failureCode: z.enum(FAILURE_CODES).optional(),
+  executionPath: z.enum(EXECUTION_PATHS).optional().default("single"),
+  budgetExceeded: z.boolean().optional().default(false),
   latencyMs: z.number().int().min(0).max(300000).optional(),
   costUsd: z.number().min(0).max(10000).optional(),
 });
@@ -71,15 +77,21 @@ export async function POST(req: NextRequest) {
 
   const idem = req.headers.get("idempotency-key")?.trim();
   if (idem) {
-    const token = `${idem}:${params.querySignature}:${params.selectedResultId}:${params.outcome}:${params.taskType}`;
+    const token = `${idem}:${params.querySignature}:${params.selectedResultId}:${params.outcome}:${params.taskType}:${params.executionPath}`;
     if (seenIdempotencyKey(token)) {
       return NextResponse.json({ ok: true, deduped: true }, { status: 200 });
     }
   }
+  const querySanitized = params.query ? sanitizeForStorage(params.query).slice(0, 255) : null;
+  const queryNormalized = querySanitized ? querySanitized.toLowerCase().trim() : null;
 
   await db.execute(sql`
     INSERT INTO search_outcomes (
-      id, query_signature, agent_id, task_type, attempts, success_count, failure_count, timeout_count, last_outcome_at, created_at, updated_at
+      id, query_signature, agent_id, task_type, attempts, success_count, failure_count, timeout_count,
+      auth_failure_count, rate_limit_failure_count, tool_error_count, schema_mismatch_count,
+      budget_exceeded_count, single_path_count, delegated_path_count, bundled_path_count,
+      last_query, last_query_normalized,
+      last_outcome_at, created_at, updated_at
     ) VALUES (
       gen_random_uuid(),
       ${params.querySignature},
@@ -89,6 +101,16 @@ export async function POST(req: NextRequest) {
       ${params.outcome === "success" ? 1 : 0},
       ${params.outcome === "failure" ? 1 : 0},
       ${params.outcome === "timeout" ? 1 : 0},
+      ${params.failureCode === "auth" ? 1 : 0},
+      ${params.failureCode === "rate_limit" ? 1 : 0},
+      ${params.failureCode === "tool_error" ? 1 : 0},
+      ${params.failureCode === "schema_mismatch" ? 1 : 0},
+      ${params.budgetExceeded ? 1 : 0},
+      ${params.executionPath === "single" ? 1 : 0},
+      ${params.executionPath === "delegated" ? 1 : 0},
+      ${params.executionPath === "bundled" ? 1 : 0},
+      ${querySanitized},
+      ${queryNormalized},
       now(),
       now(),
       now()
@@ -99,6 +121,16 @@ export async function POST(req: NextRequest) {
       success_count = search_outcomes.success_count + ${params.outcome === "success" ? 1 : 0},
       failure_count = search_outcomes.failure_count + ${params.outcome === "failure" ? 1 : 0},
       timeout_count = search_outcomes.timeout_count + ${params.outcome === "timeout" ? 1 : 0},
+      auth_failure_count = search_outcomes.auth_failure_count + ${params.failureCode === "auth" ? 1 : 0},
+      rate_limit_failure_count = search_outcomes.rate_limit_failure_count + ${params.failureCode === "rate_limit" ? 1 : 0},
+      tool_error_count = search_outcomes.tool_error_count + ${params.failureCode === "tool_error" ? 1 : 0},
+      schema_mismatch_count = search_outcomes.schema_mismatch_count + ${params.failureCode === "schema_mismatch" ? 1 : 0},
+      budget_exceeded_count = search_outcomes.budget_exceeded_count + ${params.budgetExceeded ? 1 : 0},
+      single_path_count = search_outcomes.single_path_count + ${params.executionPath === "single" ? 1 : 0},
+      delegated_path_count = search_outcomes.delegated_path_count + ${params.executionPath === "delegated" ? 1 : 0},
+      bundled_path_count = search_outcomes.bundled_path_count + ${params.executionPath === "bundled" ? 1 : 0},
+      last_query = COALESCE(${querySanitized}, search_outcomes.last_query),
+      last_query_normalized = COALESCE(${queryNormalized}, search_outcomes.last_query_normalized),
       last_outcome_at = now(),
       updated_at = now()
   `);

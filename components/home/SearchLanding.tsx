@@ -120,6 +120,8 @@ interface SearchOverrides {
   forbidden?: string;
   bundle?: boolean;
   explain?: boolean;
+  recall?: "normal" | "high";
+  includeSources?: string[];
 }
 
 function SkeletonSnippet() {
@@ -181,6 +183,17 @@ export function SearchLanding() {
   const [explain, setExplain] = useState(parseBoolFromUrl(searchParams.get("explain")));
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null);
   const [brokenMediaUrls, setBrokenMediaUrls] = useState<Set<string>>(new Set());
+  const [mediaCursor, setMediaCursor] = useState<string | null>(null);
+  const [recall, setRecall] = useState<"normal" | "high">(
+    searchParams.get("recall") === "high" ? "high" : "normal"
+  );
+  const [includeSources, setIncludeSources] = useState<string[]>(
+    (searchParams.get("includeSources") ?? "")
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean)
+  );
+  const isImagesVertical = vertical === "images";
 
   const handleProtocolChange = useCallback(
     (protocols: string[]) => {
@@ -420,7 +433,13 @@ export function SearchLanding() {
           onExplainChange={setExplain}
         />
 
-        <div className="max-w-4xl mx-auto px-3 sm:px-6 py-6 pb-20 sm:pb-16">
+        <div
+          className={
+            isImagesVertical
+              ? "w-full max-w-[min(1800px,100vw)] mx-auto px-3 sm:px-5 lg:px-6 py-6 pb-20 sm:pb-16"
+              : "max-w-4xl mx-auto px-3 sm:px-6 py-6 pb-20 sm:pb-16"
+          }
+        >
           <div className="mb-4 flex items-center gap-2">
             {(["agents", "images", "artifacts"] as const).map((v) => (
               <button
@@ -501,20 +520,33 @@ export function SearchLanding() {
                     })}
                   </div>
                 ) : (
-                  <div className={vertical === "images" ? "grid grid-cols-2 md:grid-cols-3 gap-3" : "space-y-3"}>
+                  <div
+                    className={
+                      isImagesVertical
+                        ? "columns-2 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-3 sm:gap-4"
+                        : "space-y-3"
+                    }
+                  >
                     {mediaResults.map((asset) => (
-                      <article key={asset.id} className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-3">
-                        {vertical === "images" ? (
+                      <article
+                        key={asset.id}
+                        className={
+                          isImagesVertical
+                            ? "mb-3 sm:mb-4 break-inside-avoid rounded-lg border border-white/[0.08] bg-[var(--bg-card)]/75 p-2.5 transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(0,0,0,0.25)]"
+                            : "rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-3"
+                        }
+                      >
+                        {isImagesVertical ? (
                           <a href={asset.url} target="_blank" rel="noreferrer">
                             {brokenMediaUrls.has(asset.url) ? (
-                              <div className="w-full h-36 rounded-md border border-[var(--border)] flex items-center justify-center text-xs text-[var(--text-quaternary)]">
+                              <div className="w-full min-h-24 rounded-md border border-[var(--border)] flex items-center justify-center text-xs text-[var(--text-quaternary)] px-2 py-8 text-center">
                                 Image unavailable
                               </div>
                             ) : (
                               <img
                                 src={asset.url}
                                 alt={asset.title ?? asset.agentName}
-                                className="w-full h-36 object-cover rounded-md border border-[var(--border)]"
+                                className="w-full h-auto rounded-md border border-[var(--border)]"
                                 onError={() =>
                                   setBrokenMediaUrls((prev) => new Set(prev).add(asset.url))
                                 }
@@ -522,7 +554,7 @@ export function SearchLanding() {
                             )}
                           </a>
                         ) : null}
-                        <p className="mt-2 text-xs text-[var(--text-secondary)]">
+                        <p className={isImagesVertical ? "mt-2 text-[11px] text-[var(--text-secondary)]" : "mt-2 text-xs text-[var(--text-secondary)]"}>
                           <Link href={`/agent/${asset.agentSlug}`} className="text-[var(--accent-heart)] hover:underline">
                             {asset.agentName}
                           </Link>
@@ -537,14 +569,14 @@ export function SearchLanding() {
                             </span>
                           ) : null}
                         </p>
-                        <p className="text-xs text-[var(--text-tertiary)] truncate">
+                        <p className={isImagesVertical ? "text-[11px] text-[var(--text-tertiary)] truncate" : "text-xs text-[var(--text-tertiary)] truncate"}>
                           {asset.title ?? asset.caption ?? asset.url.split("/").pop() ?? "Untitled asset"}
                         </p>
                         <a
                           href={asset.sourcePageUrl ?? asset.url}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-xs text-[var(--text-quaternary)] truncate block"
+                          className={isImagesVertical ? "text-[11px] text-[var(--text-quaternary)] truncate block" : "text-xs text-[var(--text-quaternary)] truncate block"}
                         >
                           {asset.sourcePageUrl ?? asset.url}
                         </a>
