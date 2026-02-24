@@ -7,6 +7,20 @@ interface Props {
   params: Promise<{ slug: string }>;
 }
 
+type AgentResponse = Record<string, unknown> & {
+  name?: string;
+  description?: string | null;
+};
+
+function unwrapAgentPayload(payload: unknown): AgentResponse | null {
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as Record<string, unknown>;
+  if (record.success === true && record.data && typeof record.data === "object") {
+    return record.data as AgentResponse;
+  }
+  return record as AgentResponse;
+}
+
 function getBaseUrl(): string {
   return (
     process.env.NEXTAUTH_URL ??
@@ -21,13 +35,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const res = await fetch(`${baseUrl}/api/v1/agents/${slug}`, { cache: "no-store" });
   if (!res.ok) return { title: "Agent not found" };
 
-  const agent = await res.json();
+  const payload = await res.json();
+  const agent = unwrapAgentPayload(payload);
+  if (!agent) return { title: "Agent not found" };
   const description =
-    (agent.description as string)?.slice(0, 160) ??
-    `OpenClaw agent: ${agent.name}`;
+    (agent.description as string | undefined)?.slice(0, 160) ??
+    `OpenClaw agent: ${String(agent.name ?? "Agent")}`;
 
   return {
-    title: `${agent.name} | Xpersona Agent`,
+    title: `${String(agent.name ?? "Agent")} | Xpersona Agent`,
     description,
   };
 }
@@ -40,11 +56,13 @@ export default async function AgentPage({ params }: Props) {
     cache: "no-store",
   });
   if (!res.ok) notFound();
-  const agent = await res.json();
+  const payload = await res.json();
+  const agent = unwrapAgentPayload(payload);
+  if (!agent) notFound();
 
   return (
     <Suspense>
-      <AgentPageClient agent={agent} />
+      <AgentPageClient agent={agent as unknown as Parameters<typeof AgentPageClient>[0]["agent"]} />
     </Suspense>
   );
 }

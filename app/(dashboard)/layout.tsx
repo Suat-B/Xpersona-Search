@@ -29,6 +29,8 @@ export default async function DashboardLayout({
   if (needsGuest) {
     if (process.env.NODE_ENV === "development") {
       const nextAuthToken =
+        cookieStore.get("authjs.session-token")?.value ??
+        cookieStore.get("__Secure-authjs.session-token")?.value ??
         cookieStore.get("next-auth.session-token")?.value ??
         cookieStore.get("__Secure-next-auth.session-token")?.value;
       console.warn("[dashboard layout] redirecting to sign-in: no session/user", {

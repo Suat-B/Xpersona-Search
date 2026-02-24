@@ -9,6 +9,8 @@ import {
   agentExecutionMetrics,
   agentCapabilityContracts,
   agentEmbeddings,
+  agentCapabilityHandshakes,
+  agentReputationSnapshots,
 } from "@/lib/db/schema";
 import { and, eq, gte, lte, desc, sql, SQL } from "drizzle-orm";
 import {
@@ -53,6 +55,8 @@ let hasSearchOutcomesTableCache: boolean | null = null;
 let hasAgentExecutionMetricsTableCache: boolean | null = null;
 let hasAgentCapabilityContractsTableCache: boolean | null = null;
 let hasAgentEmbeddingsTableCache: boolean | null = null;
+let hasAgentHandshakeTableCache: boolean | null = null;
+let hasAgentReputationTableCache: boolean | null = null;
 
 type SearchMatchMode =
   | "strict_lexical"
@@ -433,6 +437,18 @@ async function hasAgentCapabilityContractsTable() {
 async function hasAgentEmbeddingsTable() {
   const value = await hasTable("agent_embeddings", hasAgentEmbeddingsTableCache);
   hasAgentEmbeddingsTableCache = value;
+  return value;
+}
+
+async function hasAgentHandshakeTable() {
+  const value = await hasTable("agent_capability_handshakes", hasAgentHandshakeTableCache);
+  hasAgentHandshakeTableCache = value;
+  return value;
+}
+
+async function hasAgentReputationTable() {
+  const value = await hasTable("agent_reputation_snapshots", hasAgentReputationTableCache);
+  hasAgentReputationTableCache = value;
   return value;
 }
 
@@ -1234,6 +1250,8 @@ export async function GET(req: NextRequest) {
     const contractsByAgent = new Map<string, Record<string, unknown>>();
     const metricsByAgent = new Map<string, Record<string, unknown>>();
     const outcomesByAgent = new Map<string, Record<string, unknown>>();
+    const handshakesByAgent = new Map<string, { status: string; verifiedAt: Date | null }>();
+    const reputationByAgent = new Map<string, { scoreTotal: number | null; computedAt: Date | null }>();
     const constraintDiagnostics: string[] = [];
 
     if (agentIds.length > 0) {
@@ -1291,6 +1309,34 @@ export async function GET(req: NextRequest) {
             )
           );
         for (const row of rowsResult) outcomesByAgent.set(String(row.agentId), row as unknown as Record<string, unknown>);
+      }
+      if (await hasAgentHandshakeTable()) {
+        const rowsResult = await db.execute(
+          sql`SELECT agent_id, status, verified_at
+              FROM ${agentCapabilityHandshakes}
+              WHERE ${agentCapabilityHandshakes.agentId} = ANY(${sql.raw(`ARRAY[${agentIds.map((id) => `'${id}'::uuid`).join(",")}]`)})
+              ORDER BY agent_id, verified_at DESC`
+        );
+        const rows = (rowsResult as unknown as { rows?: Array<{ agent_id: string; status: string; verified_at: Date | null }> }).rows ?? [];
+        for (const row of rows) {
+          const agentId = String(row.agent_id);
+          if (handshakesByAgent.has(agentId)) continue;
+          handshakesByAgent.set(agentId, { status: row.status, verifiedAt: row.verified_at ?? null });
+        }
+      }
+      if (await hasAgentReputationTable()) {
+        const rowsResult = await db.execute(
+          sql`SELECT agent_id, score_total, computed_at
+              FROM ${agentReputationSnapshots}
+              WHERE ${agentReputationSnapshots.agentId} = ANY(${sql.raw(`ARRAY[${agentIds.map((id) => `'${id}'::uuid`).join(",")}]`)})
+              ORDER BY agent_id, computed_at DESC`
+        );
+        const rows = (rowsResult as unknown as { rows?: Array<{ agent_id: string; score_total: number | null; computed_at: Date | null }> }).rows ?? [];
+        for (const row of rows) {
+          const agentId = String(row.agent_id);
+          if (reputationByAgent.has(agentId)) continue;
+          reputationByAgent.set(agentId, { scoreTotal: row.score_total ?? null, computedAt: row.computed_at ?? null });
+        }
       }
     }
     const nowMs = Date.now();
@@ -1492,6 +1538,10 @@ export async function GET(req: NextRequest) {
       const metricsFreshnessHours = metricsUpdatedAt
         ? Math.round((Date.now() - metricsUpdatedAt.getTime()) / (1000 * 60 * 60))
         : null;
+      const trust = buildTrustSummary(
+        handshakesByAgent.get(agentId),
+        reputationByAgent.get(agentId)
+      );
       const executionFit = {
         score: item.policyMatch.score,
         reasons: item.policyMatch.matched,
@@ -1503,6 +1553,7 @@ export async function GET(req: NextRequest) {
           ...base,
           claimStatus: (r.claim_status as string | null) ?? "UNCLAIMED",
           verificationTier: (r.verification_tier as string | null) ?? "NONE",
+          trust,
           ...(executeParams.intent === "execute"
             ? {
                 agentExecution,
@@ -1519,25 +1570,26 @@ export async function GET(req: NextRequest) {
         };
       }
 
-      return {
-        ...base,
-        url: r.url as string,
-        homepage: r.homepage as string | null,
-        primaryImageUrl: (r.primary_image_url as string | null) ?? null,
-        source: r.source as string,
-        sourceId: r.source_id as string,
-        githubData: r.github_data as Record<string, unknown> | null,
-        npmData: r.npm_data as Record<string, unknown> | null,
-        languages: r.languages as string[] | null,
-        claimStatus: (r.claim_status as string | null) ?? "UNCLAIMED",
-        verificationTier: (r.verification_tier as string | null) ?? "NONE",
-        hasCustomPage: Boolean(r.has_custom_page),
-        createdAt: r.created_at as Date | null,
-        ...(executeParams.intent === "execute"
-          ? {
-              agentExecution,
-              policyMatch: item.policyMatch,
-              executionFit,
+        return {
+          ...base,
+          url: r.url as string,
+          homepage: r.homepage as string | null,
+          primaryImageUrl: (r.primary_image_url as string | null) ?? null,
+          source: r.source as string,
+          sourceId: r.source_id as string,
+          githubData: r.github_data as Record<string, unknown> | null,
+          npmData: r.npm_data as Record<string, unknown> | null,
+          languages: r.languages as string[] | null,
+          claimStatus: (r.claim_status as string | null) ?? "UNCLAIMED",
+          verificationTier: (r.verification_tier as string | null) ?? "NONE",
+          hasCustomPage: Boolean(r.has_custom_page),
+          createdAt: r.created_at as Date | null,
+          trust,
+          ...(executeParams.intent === "execute"
+            ? {
+                agentExecution,
+                policyMatch: item.policyMatch,
+                executionFit,
               contractFreshnessHours,
               metricsFreshnessHours,
               fallbackCandidates: fallbacks ?? [],
@@ -1758,4 +1810,21 @@ function diversifyResults(
   }
 
   return [...diversified, ...deferred];
+}
+
+function buildTrustSummary(
+  handshake: { status: string; verifiedAt: Date | null } | undefined,
+  reputation: { scoreTotal: number | null; computedAt: Date | null } | undefined
+) {
+  const lastVerifiedAt = handshake?.verifiedAt ?? reputation?.computedAt ?? null;
+  const freshnessHours = lastVerifiedAt
+    ? Math.round((Date.now() - lastVerifiedAt.getTime()) / (1000 * 60 * 60))
+    : null;
+  return {
+    handshakeStatus: handshake?.status ?? "UNKNOWN",
+    lastVerifiedAt: lastVerifiedAt ? lastVerifiedAt.toISOString() : null,
+    verificationFreshnessHours: freshnessHours,
+    reputationScore: reputation?.scoreTotal ?? null,
+    receiptSupport: true,
+  };
 }

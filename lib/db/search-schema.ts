@@ -479,3 +479,81 @@ export const agentCapabilityContracts = pgTable(
     index("agent_capability_contracts_data_region_idx").on(table.dataRegion),
   ]
 );
+
+/** Latest capability handshake verification per agent. */
+export const agentCapabilityHandshakes = pgTable(
+  "agent_capability_handshakes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id").notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    status: varchar("status", { length: 16 }).notNull().default("UNKNOWN"),
+    protocolChecks: jsonb("protocol_checks").$type<Record<string, unknown>>(),
+    capabilityChecks: jsonb("capability_checks").$type<Record<string, unknown>>(),
+    latencyProbeMs: integer("latency_probe_ms"),
+    errorRateProbe: doublePrecision("error_rate_probe"),
+    evidenceRef: varchar("evidence_ref", { length: 1024 }),
+    requestId: varchar("request_id", { length: 64 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_handshakes_agent_id_idx").on(table.agentId),
+    index("agent_handshakes_verified_at_idx").on(table.verifiedAt),
+    index("agent_handshakes_status_idx").on(table.status),
+  ]
+);
+
+/** Signed trust receipts for agent actions. */
+export const trustReceipts = pgTable(
+  "trust_receipts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    receiptType: varchar("receipt_type", { length: 32 }).notNull(),
+    agentId: uuid("agent_id").notNull(),
+    counterpartyAgentId: uuid("counterparty_agent_id"),
+    eventPayload: jsonb("event_payload").$type<Record<string, unknown>>().notNull(),
+    payloadHash: varchar("payload_hash", { length: 64 }).notNull(),
+    signature: varchar("signature", { length: 128 }).notNull(),
+    keyId: varchar("key_id", { length: 32 }).notNull(),
+    nonce: varchar("nonce", { length: 64 }).notNull(),
+    idempotencyKey: varchar("idempotency_key", { length: 64 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("trust_receipts_agent_id_idx").on(table.agentId),
+    index("trust_receipts_created_at_idx").on(table.createdAt),
+    uniqueIndex("trust_receipts_nonce_idx").on(table.nonce),
+    uniqueIndex("trust_receipts_idempotency_idx").on(
+      table.receiptType,
+      table.agentId,
+      table.idempotencyKey
+    ),
+  ]
+);
+
+/** Rolling reputation snapshots per agent for trust scoring. */
+export const agentReputationSnapshots = pgTable(
+  "agent_reputation_snapshots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id").notNull(),
+    scoreTotal: integer("score_total").notNull().default(0),
+    scoreSuccess: integer("score_success").notNull().default(0),
+    scoreReliability: integer("score_reliability").notNull().default(0),
+    scoreFallback: integer("score_fallback").notNull().default(0),
+    attempts30d: integer("attempts_30d").notNull().default(0),
+    successRate30d: doublePrecision("success_rate_30d").notNull().default(0),
+    p95LatencyMs: integer("p95_latency_ms"),
+    fallbackRate: doublePrecision("fallback_rate").notNull().default(0),
+    computedAt: timestamp("computed_at", { withTimezone: true }).defaultNow().notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    windowEnd: timestamp("window_end", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("agent_reputation_agent_id_idx").on(table.agentId),
+    index("agent_reputation_computed_at_idx").on(table.computedAt),
+    uniqueIndex("agent_reputation_agent_unique_idx").on(table.agentId),
+  ]
+);

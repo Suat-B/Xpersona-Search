@@ -67,6 +67,13 @@ interface Agent {
     updatedAt?: string | null;
   } | null;
   customLinks?: Array<{ label: string; url: string }>;
+  trust?: {
+    handshakeStatus?: string;
+    lastVerifiedAt?: string | null;
+    verificationFreshnessHours?: number | null;
+    reputationScore?: number | null;
+    receiptSupport?: boolean;
+  } | null;
 }
 
 interface AgentPageClientProps {
@@ -213,6 +220,12 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
   const claimHref = safeFrom
     ? `/agent/${agent.slug}/claim?from=${encodeURIComponent(safeFrom)}`
     : `/agent/${agent.slug}/claim`;
+  const [agentApiUrl, setAgentApiUrl] = useState<string>("");
+
+  useEffect(() => {
+    const base = `${window.location.protocol}//${window.location.host}`;
+    setAgentApiUrl(`${base}/api/v1/agents/${agent.slug}`);
+  }, [agent.slug]);
 
   if (agent.hasCustomPage && agent.customPage && !forceDetails) {
     return (
@@ -305,20 +318,18 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
   const popularityLabel = getPopularityLabel(agent);
   const docsSourceLabel = getDocsSourceLabel(agent);
   const agentCardJson = agent.agentCard ? JSON.stringify(agent.agentCard, null, 2) : null;
-  const [agentApiUrl, setAgentApiUrl] = useState<string>("");
   const githubUrl = getGithubUrl(agent);
   const agentModeCurl = agentApiUrl ? `curl "${agentApiUrl}?mode=agent"` : "";
   const agentCardCurl = agentApiUrl ? `curl "${agentApiUrl}?format=card"` : "";
+  const trustCurl = agentApiUrl ? `curl "${agentApiUrl}/trust"` : "";
+  const verifyCurl = agentApiUrl
+    ? `curl -X POST "${agentApiUrl}/verify" -H "Authorization: Bearer <token>"`
+    : "";
   const execExamples = Array.isArray(agent.agentCard?.examples)
     ? (agent.agentCard?.examples as Array<{ kind: string; language: string; snippet: string }>)
     : [];
 
   const hasNpmInfo = agent.source === "NPM" && agent.npmData;
-
-  useEffect(() => {
-    const base = `${window.location.protocol}//${window.location.host}`;
-    setAgentApiUrl(`${base}/api/v1/agents/${agent.slug}`);
-  }, [agent.slug]);
 
   return (
     <div className="min-h-screen bg-[var(--bg-deep)]">
@@ -489,6 +500,40 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
             </div>
           </section>
         )}
+
+        {/* Trust */}
+        <section className="mb-12">
+          <h2 className="text-xl font-semibold text-[var(--text-primary)] mb-4">Trust</h2>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-6 space-y-4">
+            <div className="flex flex-wrap items-center gap-4 text-sm">
+              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-secondary)]">
+                Handshake: <span className="text-[var(--text-primary)]">{agent.trust?.handshakeStatus ?? "UNKNOWN"}</span>
+              </span>
+              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-secondary)]">
+                Reputation: <span className="text-[var(--text-primary)]">{agent.trust?.reputationScore ?? "—"}</span>
+              </span>
+              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-secondary)]">
+                Freshness: <span className="text-[var(--text-primary)]">
+                  {agent.trust?.verificationFreshnessHours != null ? `${agent.trust.verificationFreshnessHours}h` : "—"}
+                </span>
+              </span>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 text-xs text-[var(--text-tertiary)]">
+              <div className="relative">
+                <p className="mb-2">Fetch trust snapshot</p>
+                <pre className="p-3 rounded-lg bg-black/50 border border-[var(--border)] font-mono text-xs text-[var(--text-secondary)] overflow-x-auto whitespace-pre">
+                  {trustCurl}
+                </pre>
+              </div>
+              <div className="relative">
+                <p className="mb-2">Trigger handshake verification</p>
+                <pre className="p-3 rounded-lg bg-black/50 border border-[var(--border)] font-mono text-xs text-[var(--text-secondary)] overflow-x-auto whitespace-pre">
+                  {verifyCurl}
+                </pre>
+              </div>
+            </div>
+          </div>
+        </section>
 
         {/* Documentation */}
         <section className="mb-12">

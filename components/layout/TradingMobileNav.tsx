@@ -102,18 +102,18 @@ export function TradingMobileNav({
 
   return (
     <header
-      className="scroll-stable-layer md:hidden sticky top-0 z-[60] shrink-0 w-full border-b border-[var(--dash-divider)] bg-[var(--dash-bg)] shadow-sm"
+      className="scroll-stable-layer md:hidden sticky top-0 z-[60] shrink-0 w-full border-b border-white bg-black shadow-sm text-white"
       role="banner"
     >
       <div className="flex h-14 min-h-[44px] items-center justify-between px-4">
         <Link href="/trading">
-          <span className="font-bold text-[var(--text-primary)]">Xpersona</span>
+          <span className="font-bold text-white">Xpersona</span>
         </Link>
 
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-[var(--dash-bg-card)] text-white hover:bg-[var(--dash-nav-active)] transition-colors"
+          className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-black border border-white text-white hover:bg-white hover:text-black transition-colors"
           aria-label={open ? "Close menu" : "Open menu"}
           aria-expanded={open}
         >
@@ -134,20 +134,20 @@ export function TradingMobileNav({
         createPortal(
           <>
             <div
-              className="fixed inset-0 top-14 z-[9998] bg-black/60 backdrop-blur-sm"
+              className="fixed inset-0 top-14 z-[9998] bg-black/80"
               onClick={() => setOpen(false)}
               aria-hidden
             />
             <nav
-              className="fixed top-14 left-0 right-0 bottom-0 z-[9999] flex flex-col bg-[var(--dash-bg)] border-r border-[var(--dash-divider)] animate-in fade-in slide-in-from-top-2 duration-200"
+              className="fixed top-14 left-0 right-0 bottom-0 z-[9999] flex flex-col bg-black border-r border-white animate-in fade-in slide-in-from-top-2 duration-200 text-white"
               aria-label="Navigation menu"
             >
               <div className="flex-1 overflow-y-auto p-4 space-y-1 pb-20">
                 <a
                   href={getGameUrl("/")}
-                  className="flex items-center gap-3 rounded-[10px] px-3 py-3 text-sm font-semibold bg-[#0ea5e9]/20 text-[#0ea5e9] border border-[var(--dash-divider)] mb-3"
+                  className="flex items-center gap-3 rounded-[10px] px-3 py-3 text-sm font-semibold bg-white text-black border border-white mb-3"
                 >
-                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0ea5e9]/30">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-black text-white border border-white">
                     {ICONS.dice}
                   </span>
                   <span>Play game</span>
@@ -165,14 +165,14 @@ export function TradingMobileNav({
                       className={cn(
                         "group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-all",
                         active
-                          ? "bg-[var(--dash-nav-active)] text-white"
-                          : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white"
+                          ? "bg-white text-black"
+                          : "text-white/70 hover:bg-white hover:text-black"
                       )}
                     >
                       <span
                         className={cn(
                           "flex h-8 w-8 items-center justify-center rounded-lg",
-                          active ? "text-white" : "text-[var(--dash-text-secondary)] group-hover:text-white"
+                          active ? "text-black" : "text-white/70 group-hover:text-black"
                         )}
                       >
                         {ICONS[icon]}
@@ -188,24 +188,24 @@ export function TradingMobileNav({
                     className={cn(
                       "flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium",
                       (pathname ?? "").startsWith("/admin")
-                        ? "bg-[var(--dash-nav-active)] text-amber-400"
-                        : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-amber-400"
+                        ? "bg-white text-black"
+                        : "text-white/70 hover:bg-white hover:text-black"
                     )}
                   >
-                    <span className="flex h-8 w-8 items-center justify-center rounded-lg text-amber-400">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg text-black">
                       {ICONS.admin}
                     </span>
                     Admin
                   </Link>
                 )}
               </div>
-              <div className="sticky bottom-0 left-0 right-0 p-4 border-t border-[var(--dash-divider)] bg-[var(--dash-bg)] mt-auto shrink-0 space-y-3">
+              <div className="sticky bottom-0 left-0 right-0 p-4 border-t border-white bg-black mt-auto shrink-0 space-y-3">
                 {!isPermanent && (
                   <div className="flex gap-2">
                     <Link
                       href="/auth/signin?callbackUrl=/trading"
                       onClick={() => setOpen(false)}
-                      className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-4 py-3 text-sm font-medium text-[var(--text-primary)] hover:bg-white/5 transition-colors"
+                      className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-white px-4 py-3 text-sm font-medium text-white hover:bg-white hover:text-black transition-colors"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
@@ -215,7 +215,7 @@ export function TradingMobileNav({
                     <Link
                       href="/auth/signup"
                       onClick={() => setOpen(false)}
-                      className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[var(--accent-heart)] px-4 py-3 text-sm font-medium text-white hover:opacity-90 transition-opacity"
+                      className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-white text-black px-4 py-3 text-sm font-medium hover:bg-black hover:text-white border border-white transition-colors"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
@@ -224,7 +224,7 @@ export function TradingMobileNav({
                     </Link>
                   </div>
                 )}
-                <p className="text-xs text-[var(--dash-text-secondary)] truncate">Logged in as {displayName}</p>
+                <p className="text-xs text-white/70 truncate">Logged in as {displayName}</p>
               </div>
             </nav>
           </>,

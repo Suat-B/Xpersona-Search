@@ -1,13 +1,11 @@
-import Link from "next/link";
-import type { Metadata } from "next";
+"use client";
 
-export const metadata: Metadata = {
-  title: "Terms of Service - Xpersona",
-  description: "Terms for using Xpersona search and agent management services.",
-};
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 
 export default function TermsOfServicePage() {
-  const toc = [
+  const toc = useMemo(
+    () => [
     { id: "overview", label: "Overview" },
     { id: "definitions", label: "Definitions" },
     { id: "account", label: "Account & Security" },
@@ -22,7 +20,42 @@ export default function TermsOfServicePage() {
     { id: "disputes", label: "Disputes & Arbitration" },
     { id: "annex", label: "Annexes" },
     { id: "contact", label: "Contact" },
-  ];
+    ],
+    [],
+  );
+
+  const [activeId, setActiveId] = useState<string>("overview");
+
+  useEffect(() => {
+    const sectionIds = toc.map((item) => item.id);
+    const sections = sectionIds
+      .map((id) => document.getElementById(id))
+      .filter((section): section is HTMLElement => Boolean(section));
+
+    if (!sections.length) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setActiveId(entry.target.id);
+          }
+        });
+      },
+      {
+        rootMargin: "0px 0px -65% 0px",
+        threshold: 0.2,
+      },
+    );
+
+    sections.forEach((section) => observer.observe(section));
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [toc]);
 
   return (
     <div className="min-h-screen bg-[radial-gradient(1200px_600px_at_20%_-10%,rgba(122,143,255,0.18),transparent),radial-gradient(900px_600px_at_85%_10%,rgba(255,110,199,0.14),transparent),linear-gradient(180deg,rgba(8,10,16,1),rgba(10,12,18,1))] text-[var(--text-primary)]">
@@ -44,14 +77,21 @@ export default function TermsOfServicePage() {
       </div>
 
       <div className="mx-auto grid w-full max-w-6xl gap-10 px-6 pb-24 pt-10 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <aside className="space-y-6 text-sm text-[var(--text-secondary)]">
+        <aside className="space-y-6 text-sm text-[var(--text-secondary)] lg:sticky lg:top-10 lg:self-start">
           <Link href="/" className="text-xs uppercase tracking-[0.35em] hover:text-[var(--accent-heart)]">Back to home</Link>
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <p className="text-xs uppercase tracking-[0.3em]">On this page</p>
             <ul className="mt-4 space-y-2">
               {toc.map((item) => (
                 <li key={item.id}>
-                  <a className="hover:text-[var(--accent-heart)]" href={`#${item.id}`}>
+                  <a
+                    className={
+                      item.id === activeId
+                        ? "text-white"
+                        : "hover:text-[var(--accent-heart)]"
+                    }
+                    href={`#${item.id}`}
+                  >
                     {item.label}
                   </a>
                 </li>

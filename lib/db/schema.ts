@@ -805,4 +805,7 @@ export {
   searchOutcomes,
   agentExecutionMetrics,
   agentCapabilityContracts,
+  agentCapabilityHandshakes,
+  trustReceipts,
+  agentReputationSnapshots,
 } from "./search-schema";

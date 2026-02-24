@@ -6,6 +6,7 @@ import { getAuthUser } from "@/lib/auth-utils";
 import { resolveNativeDocs } from "@/lib/agents/native-docs";
 import { buildAgentCard } from "@/lib/agents/agent-card";
 import { extractExecutableExamples } from "@/lib/agents/executable-examples";
+import { getTrustSummary } from "@/lib/trust/summary";
 
 let hasAgentCustomizationColumnsCache: boolean | null = null;
 
@@ -155,6 +156,7 @@ export async function GET(
   merged.isOwner = isOwner;
   merged.verificationTier = (agent.verificationTier as string | null) ?? "NONE";
   merged.hasCustomPage = Boolean(agent.hasCustomPage ?? false);
+  merged.trust = await getTrustSummary(agent.id as string);
 
   const hasReadme =
     typeof merged.readme === "string" && merged.readme.trim().length > 0;
@@ -256,6 +258,7 @@ export async function GET(
       readme: merged.readme,
       readmeSource: merged.readmeSource,
       agentCard: merged.agentCard,
+      trust: merged.trust,
       examples,
       updatedAt: merged.updatedAt,
       lastCrawledAt: merged.lastCrawledAt,

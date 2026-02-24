@@ -81,10 +81,10 @@ export function TradingSidebarNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="flex-1 overflow-y-auto py-4 px-3 scrollbar-sidebar">
+    <nav className="flex-1 overflow-y-auto py-4 px-3 scrollbar-sidebar text-white">
       {TRADING_NAV_GROUPS.map((group, groupIdx) => (
-        <div key={group.label} className={groupIdx > 0 ? "mt-6 pt-4 border-t border-[var(--dash-divider)]" : ""}>
-          <p className="px-3 mb-2 text-[10px] font-semibold text-[var(--dash-text-secondary)] uppercase tracking-wider">
+        <div key={group.label} className={groupIdx > 0 ? "mt-6 pt-4 border-t border-white" : ""}>
+          <p className="px-3 mb-2 text-[10px] font-semibold text-white/70 uppercase tracking-wider">
             {group.label}
           </p>
           <div className="space-y-1">
@@ -98,20 +98,20 @@ export function TradingSidebarNav() {
                   className={cn(
                     "group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-all duration-200",
                     active
-                      ? "bg-[var(--dash-nav-active)] text-white"
-                      : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white"
+                      ? "bg-white text-black"
+                      : "text-white/70 hover:bg-white hover:text-black"
                   )}
                 >
                   <span
                     className={cn(
                       "flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200",
-                      active ? "text-white" : "text-[var(--dash-text-secondary)] group-hover:text-white"
+                      active ? "text-black" : "text-white/70 group-hover:text-black"
                     )}
                   >
                     {ICONS[icon]}
                   </span>
                   <span className="flex-1">{label}</span>
-                  {active && <div className="w-1.5 h-1.5 rounded-full bg-[#0ea5e9]" />}
+                  {active && <div className="w-1.5 h-1.5 rounded-full bg-black" />}
                 </Link>
               );
             })}
@@ -119,15 +119,15 @@ export function TradingSidebarNav() {
         </div>
       ))}
 
-      <div className="mt-6 pt-4 border-t border-[var(--dash-divider)]">
-        <p className="px-3 mb-2 text-[10px] font-semibold text-[var(--dash-text-secondary)] uppercase tracking-wider">
+      <div className="mt-6 pt-4 border-t border-white">
+        <p className="px-3 mb-2 text-[10px] font-semibold text-white/70 uppercase tracking-wider">
           Game
         </p>
         <a
           href={getGameUrl("/")}
-          className="group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white transition-all duration-200"
+          className="group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium text-white/70 hover:bg-white hover:text-black transition-all duration-200"
         >
-          <span className="flex items-center justify-center w-8 h-8 rounded-lg text-[var(--dash-text-secondary)] group-hover:text-white">
+          <span className="flex items-center justify-center w-8 h-8 rounded-lg text-white/70 group-hover:text-black">
             {ICONS.dice}
           </span>
           <span className="flex-1">Play game</span>
@@ -137,8 +137,8 @@ export function TradingSidebarNav() {
         </a>
       </div>
 
-      <div className="mt-6 pt-4 border-t border-[var(--dash-divider)]">
-        <p className="px-3 mb-2 text-[10px] font-semibold text-[var(--dash-text-secondary)] uppercase tracking-wider">
+      <div className="mt-6 pt-4 border-t border-white">
+        <p className="px-3 mb-2 text-[10px] font-semibold text-white/70 uppercase tracking-wider">
           Support
         </p>
         <div className="space-y-1">
@@ -147,16 +147,16 @@ export function TradingSidebarNav() {
             className={cn(
               "group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-all duration-200",
               (pathname ?? "").startsWith("/dashboard/transactions")
-                ? "bg-[var(--dash-nav-active)] text-white"
-                : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white"
+                ? "bg-white text-black"
+                : "text-white/70 hover:bg-white hover:text-black"
             )}
           >
             <span
               className={cn(
                 "flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200",
                 (pathname ?? "").startsWith("/dashboard/transactions")
-                  ? "text-[var(--accent-blue)]"
-                  : "text-[var(--dash-text-secondary)] group-hover:text-white"
+                  ? "text-black"
+                  : "text-white/70 group-hover:text-black"
               )}
             >
               {ICONS.transactions}
@@ -169,16 +169,16 @@ export function TradingSidebarNav() {
             className={cn(
               "group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-all duration-200 mt-1",
               (pathname ?? "").startsWith("/dashboard/settings")
-                ? "bg-[var(--dash-nav-active)] text-white"
-                : "text-[var(--dash-text-secondary)] hover:bg-[#2a2a2a] hover:text-white"
+                ? "bg-white text-black"
+                : "text-white/70 hover:bg-white hover:text-black"
             )}
           >
             <span
               className={cn(
                 "flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200",
                 (pathname ?? "").startsWith("/dashboard/settings")
-                  ? "text-[var(--accent-purple)]"
-                  : "text-[var(--dash-text-secondary)] group-hover:text-white"
+                  ? "text-black"
+                  : "text-white/70 group-hover:text-black"
               )}
             >
               {ICONS.settings}

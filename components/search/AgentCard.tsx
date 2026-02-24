@@ -24,6 +24,11 @@ interface Agent {
   claimStatus?: string;
   verificationTier?: "NONE" | "BRONZE" | "SILVER" | "GOLD";
   hasCustomPage?: boolean;
+  trust?: {
+    handshakeStatus?: string;
+    verificationFreshnessHours?: number | null;
+    reputationScore?: number | null;
+  } | null;
 }
 
 interface Props {
@@ -55,6 +60,7 @@ export function AgentCard({ agent, rank }: Props) {
   const caps = Array.isArray(agent.capabilities) ? agent.capabilities : [];
   const protos = Array.isArray(agent.protocols) ? agent.protocols : [];
   const popularityLabel = getPopularityLabel(agent);
+  const trust = agent.trust ?? null;
 
   return (
     <article className="agent-card neural-glass-hover p-6 rounded-xl border border-[var(--border)] hover:border-[var(--accent-heart)]/40 transition-all duration-200">
@@ -104,6 +110,22 @@ export function AgentCard({ agent, rank }: Props) {
             <SafetyBadge score={agent.safetyScore} />
             <span className="text-[var(--text-quaternary)]">·</span>
             <span className="text-[var(--text-tertiary)]">{popularityLabel}</span>
+            {trust?.handshakeStatus && (
+              <>
+                <span className="text-[var(--text-quaternary)]">·</span>
+                <span className="text-[var(--text-tertiary)]">
+                  Handshake {trust.handshakeStatus}
+                </span>
+              </>
+            )}
+            {trust?.reputationScore != null && (
+              <>
+                <span className="text-[var(--text-quaternary)]">·</span>
+                <span className="text-[var(--text-tertiary)]">
+                  Reputation {trust.reputationScore}
+                </span>
+              </>
+            )}
           </div>
         </div>
         <Link

@@ -46,6 +46,13 @@ interface Agent {
     freshnessScore: number;
     finalScore: number;
   };
+  trust?: {
+    handshakeStatus?: string;
+    lastVerifiedAt?: string | null;
+    verificationFreshnessHours?: number | null;
+    reputationScore?: number | null;
+    receiptSupport?: boolean;
+  } | null;
 }
 
 interface Props {
@@ -179,6 +186,8 @@ export function SearchResultSnippet({ agent, showSitelinks = false, className }:
   const successPct = agent.rankingSignals
     ? Math.round(agent.rankingSignals.successScore * 100)
     : null;
+  const trust = agent.trust ?? null;
+  const trustFreshness = trust?.verificationFreshnessHours ?? null;
 
   return (
     <article className={`py-4 sm:py-5 border-b border-[var(--border)] last:border-b-0 group min-w-0 ${className ?? ""}`}>
@@ -273,6 +282,24 @@ export function SearchResultSnippet({ agent, showSitelinks = false, className }:
           <>
             <span className="text-[var(--text-quaternary)]">·</span>
             <span>${exec.estimatedCostUsd.toFixed(3)}</span>
+          </>
+        )}
+        {trust?.handshakeStatus && (
+          <>
+            <span className="text-[var(--text-quaternary)]">·</span>
+            <span>Handshake {trust.handshakeStatus}</span>
+          </>
+        )}
+        {trust?.reputationScore != null && (
+          <>
+            <span className="text-[var(--text-quaternary)]">·</span>
+            <span>Reputation {trust.reputationScore}</span>
+          </>
+        )}
+        {trustFreshness != null && trustFreshness <= 24 && (
+          <>
+            <span className="text-[var(--text-quaternary)]">·</span>
+            <span>Fresh &lt;24h</span>
           </>
         )}
         {successPct != null && (

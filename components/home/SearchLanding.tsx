@@ -125,6 +125,14 @@ interface SearchOverrides {
   includeSources?: string[];
 }
 
+function isImageAsset(asset: MediaResult) {
+  if (asset.mimeType?.startsWith("image/")) return true;
+  const url = asset.url?.toLowerCase() ?? "";
+  return [".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif", ".svg"].some((ext) =>
+    url.includes(ext)
+  );
+}
+
 function SkeletonSnippet() {
   return (
     <div className="py-4 border-b border-[var(--border)] animate-pulse">
@@ -593,35 +601,6 @@ export function SearchLanding() {
                     </Link>
                   ))}
                 </div>
-                {vertical === "artifacts" && hasFallbackAgents && (
-                  <div className="mt-8 columns-2 sm:columns-2 md:columns-3 lg:columns-4 gap-3 sm:gap-4 text-left">
-                    {fallbackAgents.map((agent) => (
-                      <article
-                        key={agent.id}
-                        className="mb-3 sm:mb-4 break-inside-avoid rounded-lg border border-white/[0.08] bg-[var(--bg-card)]/75 p-2.5"
-                      >
-                        {agent.primaryImageUrl ? (
-                          <Link href={`/agent/${agent.slug}`}>
-                            <img
-                              src={agent.primaryImageUrl}
-                              alt={agent.name}
-                              className="w-full h-auto rounded-md border border-[var(--border)]"
-                            />
-                          </Link>
-                        ) : (
-                          <div className="w-full min-h-24 rounded-md border border-[var(--border)] flex items-center justify-center text-xs text-[var(--text-quaternary)] px-2 py-8 text-center">
-                            No image
-                          </div>
-                        )}
-                        <p className="mt-2 text-[11px] text-[var(--text-secondary)]">
-                          <Link href={`/agent/${agent.slug}`} className="text-[var(--accent-heart)] hover:underline">
-                            {agent.name}
-                          </Link>
-                        </p>
-                      </article>
-                    ))}
-                  </div>
-                )}
               </div>
             ) : (
               <>
@@ -653,40 +632,56 @@ export function SearchLanding() {
                     })}
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {mediaResults.map((asset) => (
-                      <article
-                        key={asset.id}
-                        className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-3"
-                      >
-                        <p className="mt-2 text-xs text-[var(--text-secondary)]">
-                          <Link href={`/agent/${asset.agentSlug}`} className="text-[var(--accent-heart)] hover:underline">
-                            {asset.agentName}
-                          </Link>
-                          {asset.artifactType ? (
-                            <span className="ml-2 rounded border border-[var(--border)] px-1.5 py-0.5">
-                              {asset.artifactType.replace(/_/g, " ")}
-                            </span>
-                          ) : null}
-                          {asset.source ? (
-                            <span className="ml-2 rounded border border-[var(--border)] px-1.5 py-0.5 text-[var(--text-quaternary)]">
-                              {asset.source}
-                            </span>
-                          ) : null}
-                        </p>
-                        <p className="text-xs text-[var(--text-tertiary)] truncate">
-                          {asset.title ?? asset.caption ?? asset.url.split("/").pop() ?? "Untitled asset"}
-                        </p>
-                        <a
-                          href={asset.sourcePageUrl ?? asset.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs text-[var(--text-quaternary)] truncate block"
+                  <div className="columns-1 sm:columns-2 lg:columns-3 gap-4">
+                    {mediaResults.map((asset) => {
+                      const preview = isImageAsset(asset) ? asset.url : null;
+                      return (
+                        <article
+                          key={asset.id}
+                          className="mb-4 break-inside-avoid rounded-xl border border-[var(--border)] bg-[var(--bg-card)]/80 p-3 hover:border-[var(--accent-heart)]/30 transition-colors"
                         >
-                          {asset.sourcePageUrl ?? asset.url}
-                        </a>
-                      </article>
-                    ))}
+                          {preview ? (
+                            <a href={asset.sourcePageUrl ?? asset.url} target="_blank" rel="noreferrer">
+                              <img
+                                src={preview}
+                                alt={asset.title ?? asset.caption ?? "Artifact preview"}
+                                className="w-full h-auto rounded-lg border border-[var(--border)]"
+                              />
+                            </a>
+                          ) : (
+                            <div className="w-full min-h-28 rounded-lg border border-[var(--border)] flex items-center justify-center text-xs text-[var(--text-quaternary)] px-3 py-10 text-center">
+                              No preview available
+                            </div>
+                          )}
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+                            <Link href={`/agent/${asset.agentSlug}`} className="text-[var(--accent-heart)] hover:underline">
+                              {asset.agentName}
+                            </Link>
+                            {asset.artifactType ? (
+                              <span className="rounded border border-[var(--border)] px-1.5 py-0.5">
+                                {asset.artifactType.replace(/_/g, " ")}
+                              </span>
+                            ) : null}
+                            {asset.source ? (
+                              <span className="rounded border border-[var(--border)] px-1.5 py-0.5 text-[var(--text-quaternary)]">
+                                {asset.source}
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="mt-1 text-xs text-[var(--text-tertiary)] line-clamp-2">
+                            {asset.title ?? asset.caption ?? asset.url.split("/").pop() ?? "Untitled asset"}
+                          </p>
+                          <a
+                            href={asset.sourcePageUrl ?? asset.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-1 text-[11px] text-[var(--text-quaternary)] truncate block"
+                          >
+                            {asset.sourcePageUrl ?? asset.url}
+                          </a>
+                        </article>
+                      );
+                    })}
                   </div>
                 )}
 

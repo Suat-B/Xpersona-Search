@@ -26,17 +26,17 @@ export function TradingChrome({
   children,
 }: TradingChromeProps) {
   return (
-    <div className="dashboard-theme flex h-[100dvh] min-h-dvh w-full flex-col overflow-hidden bg-[var(--dash-bg)] md:flex-row">
+    <div className="flex h-[100dvh] min-h-dvh w-full flex-col overflow-hidden bg-black text-white md:flex-row">
       <TradingMobileNav
         displayName={displayName}
         isAdmin={isAdmin}
         isPermanent={isPermanent}
       />
-      <aside className="scroll-stable-layer dashboard-sidebar hidden w-[280px] min-w-[280px] flex-col md:flex sticky top-0 h-screen border-r border-[var(--dash-divider)] overflow-x-hidden bg-[var(--dash-bg)]">
+      <aside className="scroll-stable-layer hidden w-[280px] min-w-[280px] flex-col md:flex sticky top-0 h-screen border-r border-white overflow-x-hidden bg-black">
         <div className="relative flex h-full flex-col">
-          <div className="px-6 pt-6 pb-4 border-b border-[var(--dash-divider)]">
+          <div className="px-6 pt-6 pb-4 border-b border-white">
             <Link href="/trading" className="block mb-4">
-              <span className="text-lg font-bold tracking-tight text-[var(--text-primary)]">
+              <span className="text-lg font-bold tracking-tight text-white">
                 Xpersona
               </span>
             </Link>
@@ -50,7 +50,7 @@ export function TradingChrome({
           <TradingSidebarNav />
         </div>
       </aside>
-      <main className="scroll-contain-paint relative z-0 flex-1 min-h-0 overflow-y-auto overscroll-y-contain bg-[var(--dash-bg)]">
+      <main className="scroll-contain-paint relative z-0 flex-1 min-h-0 overflow-y-auto overscroll-y-contain bg-black">
         <div className="w-full max-w-7xl mx-auto px-4 py-4 sm:px-6 sm:py-6 md:px-8 md:py-8 space-y-6 min-w-0 sm:overflow-x-hidden">
           {children}
         </div>
