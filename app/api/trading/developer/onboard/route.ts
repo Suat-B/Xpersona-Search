@@ -4,6 +4,10 @@ import { db } from "@/lib/db";
 import { marketplaceDevelopers } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import Stripe from "stripe";
+import {
+  buildPermanentAccountRequiredPayload,
+  resolveUpgradeCallbackPath,
+} from "@/lib/auth-flow";
 
 function getStripe(): Stripe | null {
   const key = process.env.STRIPE_SECRET_KEY?.trim();
@@ -20,6 +24,19 @@ export async function POST(request: Request) {
     const authResult = await getAuthUser(request as never);
     if ("error" in authResult) {
       return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+    }
+    if (!authResult.user.isPermanent) {
+      const callbackPath = resolveUpgradeCallbackPath(
+        "/trading/developer",
+        request.headers.get("referer")
+      );
+      return NextResponse.json(
+        buildPermanentAccountRequiredPayload(
+          authResult.user.accountType,
+          callbackPath
+        ),
+        { status: 403 }
+      );
     }
 
     const stripe = getStripe();

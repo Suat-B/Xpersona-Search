@@ -161,16 +161,21 @@ function getPopularityLabel(agent: Agent): string {
 export function AgentPageClient({ agent }: AgentPageClientProps) {
   const searchParams = useSearchParams();
   const forceDetails = searchParams.get("view") === "details";
+  const from = searchParams.get("from");
+  const safeFrom = from && from.startsWith("/") && !from.startsWith("//") ? from : null;
+  const claimHref = safeFrom
+    ? `/agent/${agent.slug}/claim?from=${encodeURIComponent(safeFrom)}`
+    : `/agent/${agent.slug}/claim`;
 
   if (agent.hasCustomPage && agent.customPage && !forceDetails) {
     return (
       <div className="min-h-screen bg-[var(--bg-deep)]">
         <div className="relative max-w-5xl mx-auto px-4 py-8">
           <div className="flex items-center justify-between mb-6">
-            <BackToSearchLink />
+            <BackToSearchLink from={safeFrom} />
             {agent.claimStatus !== "CLAIMED" && (
               <a
-                href={`/agent/${agent.slug}/claim`}
+                href={claimHref}
                 className="inline-flex items-center gap-1.5 text-sm text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-colors"
               >
                 Claim this agent
@@ -182,6 +187,7 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
             slug={agent.slug}
             claimStatus={agent.claimStatus ?? "UNCLAIMED"}
             isOwner={agent.isOwner ?? false}
+            claimHref={claimHref}
           />
 
           <header className="mb-6 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
@@ -225,6 +231,7 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
           url: agent.url,
           claimStatus: agent.claimStatus,
         }}
+        from={safeFrom}
       />
     );
   }
@@ -262,10 +269,10 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
 
       <div className="relative max-w-4xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6">
-          <BackToSearchLink />
+          <BackToSearchLink from={safeFrom} />
           {(agent.claimStatus ?? "UNCLAIMED") !== "CLAIMED" && (
             <a
-              href={`/agent/${agent.slug}/claim`}
+              href={claimHref}
               className="inline-flex items-center gap-1.5 text-sm text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -280,6 +287,7 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
           slug={agent.slug}
           claimStatus={agent.claimStatus ?? "UNCLAIMED"}
           isOwner={agent.isOwner ?? false}
+          claimHref={claimHref}
         />
 
         {/* Hero */}

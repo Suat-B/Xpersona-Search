@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 type MethodInfo = {
@@ -13,9 +13,23 @@ type MethodInfo = {
 
 type Step = "loading" | "methods" | "instructions" | "verifying" | "success" | "pending" | "error";
 
+type PermanentAccountRequiredResponse = {
+  error: "PERMANENT_ACCOUNT_REQUIRED";
+  upgradeUrl?: string;
+};
+
 export default function ClaimPage() {
   const { slug } = useParams<{ slug: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const from = searchParams.get("from");
+  const safeFrom = from && from.startsWith("/") && !from.startsWith("//") ? from : null;
+  const backToAgentHref = safeFrom
+    ? `/agent/${slug}?from=${encodeURIComponent(safeFrom)}`
+    : `/agent/${slug}`;
+  const claimCallbackPath = safeFrom
+    ? `/agent/${slug}/claim?from=${encodeURIComponent(safeFrom)}`
+    : `/agent/${slug}/claim`;
 
   const [step, setStep] = useState<Step>("loading");
   const [agent, setAgent] = useState<{ name: string; claimStatus: string; isOwner: boolean } | null>(null);
@@ -30,6 +44,25 @@ export default function ClaimPage() {
   const [publicKey, setPublicKey] = useState("");
   const [signature, setSignature] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const redirectToUpgradeIfNeeded = useCallback(
+    (status: number, payload: unknown): boolean => {
+      if (
+        status === 403 &&
+        payload &&
+        typeof payload === "object" &&
+        (payload as PermanentAccountRequiredResponse).error ===
+          "PERMANENT_ACCOUNT_REQUIRED" &&
+        typeof (payload as PermanentAccountRequiredResponse).upgradeUrl ===
+          "string"
+      ) {
+        router.push((payload as PermanentAccountRequiredResponse).upgradeUrl!);
+        return true;
+      }
+      return false;
+    },
+    [router]
+  );
 
   useEffect(() => {
     async function load() {
@@ -53,8 +86,11 @@ export default function ClaimPage() {
       }
 
       const statusRes = await fetch(`/api/agents/${slug}/claim`);
+      const statusData = await statusRes.json().catch(() => ({}));
+      if (redirectToUpgradeIfNeeded(statusRes.status, statusData)) {
+        return;
+      }
       if (statusRes.ok) {
-        const statusData = await statusRes.json();
         if (statusData.availableMethods) {
           setMethods(statusData.availableMethods);
         }
@@ -68,7 +104,7 @@ export default function ClaimPage() {
       setStep("methods");
     }
     load();
-  }, [slug, router]);
+  }, [slug, router, redirectToUpgradeIfNeeded]);
 
   const initiateClaim = useCallback(
     async (method: string) => {
@@ -83,10 +119,13 @@ export default function ClaimPage() {
             ...(method === "MANUAL_REVIEW" && notes ? { notes } : {}),
           }),
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
+        if (redirectToUpgradeIfNeeded(res.status, data)) {
+          return;
+        }
         if (!res.ok) {
           if (res.status === 401) {
-            router.push(`/auth/signin?callbackUrl=/agent/${slug}/claim`);
+            router.push(`/auth/signin?callbackUrl=${encodeURIComponent(claimCallbackPath)}`);
             return;
           }
           setVerifyError(data.error ?? "Failed to initiate claim");
@@ -109,7 +148,7 @@ export default function ClaimPage() {
       }
       setLoading(false);
     },
-    [slug, notes, router]
+    [slug, notes, router, redirectToUpgradeIfNeeded]
   );
 
   const verify = useCallback(async () => {
@@ -126,7 +165,14 @@ export default function ClaimPage() {
             : {}),
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (redirectToUpgradeIfNeeded(res.status, data)) {
+        return;
+      }
+      if (res.status === 401) {
+        router.push(`/auth/signin?callbackUrl=${encodeURIComponent(claimCallbackPath)}`);
+        return;
+      }
       if (data.verified) {
         setStep("success");
       } else if (data.status === "PENDING") {
@@ -138,7 +184,7 @@ export default function ClaimPage() {
       setVerifyError("Network error. Please try again.");
     }
     setLoading(false);
-  }, [slug, selectedMethod, publicKey, signature]);
+  }, [slug, selectedMethod, publicKey, signature, redirectToUpgradeIfNeeded, router]);
 
   if (step === "loading") {
     return (
@@ -160,7 +206,7 @@ export default function ClaimPage() {
           <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-2">Cannot Claim</h2>
           <p className="text-sm text-[var(--text-secondary)] mb-6">{error}</p>
           <Link
-            href={`/agent/${slug}`}
+            href={backToAgentHref}
             className="text-sm font-medium text-[var(--accent-heart)] hover:underline"
           >
             Back to agent page
@@ -194,7 +240,13 @@ export default function ClaimPage() {
               Customize Your Page
             </Link>
             <Link
-              href={`/agent/${slug}`}
+              href="/trading/developer"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--accent-heart)]/40 bg-[var(--accent-heart)]/10 px-6 py-3 text-sm font-semibold text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/15 transition-colors"
+            >
+              Open Developer Dashboard
+            </Link>
+            <Link
+              href={backToAgentHref}
               className="text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
             >
               View Your Page
@@ -222,7 +274,7 @@ export default function ClaimPage() {
             An admin will review it within 48 hours.
           </p>
           <Link
-            href={`/agent/${slug}`}
+            href={backToAgentHref}
             className="text-sm font-medium text-[var(--accent-heart)] hover:underline"
           >
             Back to agent page
@@ -236,7 +288,7 @@ export default function ClaimPage() {
     <div className="min-h-screen bg-[var(--bg-deep)]">
       <div className="max-w-2xl mx-auto px-4 py-12">
         <Link
-          href={`/agent/${slug}`}
+          href={backToAgentHref}
           className="inline-flex items-center gap-1 text-sm text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors mb-6"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -330,11 +382,14 @@ export default function ClaimPage() {
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ method: "MANUAL_REVIEW" }),
                       });
-                      if (res.status === 401) {
-                        router.push(`/auth/signin?callbackUrl=/agent/${slug}/claim`);
+                      const data = await res.json().catch(() => ({}));
+                      if (redirectToUpgradeIfNeeded(res.status, data)) {
                         return;
                       }
-                      const data = await res.json();
+                      if (res.status === 401) {
+                        router.push(`/auth/signin?callbackUrl=${encodeURIComponent(claimCallbackPath)}`);
+                        return;
+                      }
                       if (data.availableMethods) {
                         setMethods(data.availableMethods);
                         if (data.token) {
@@ -346,7 +401,7 @@ export default function ClaimPage() {
                         }
                       } else if (data.error) {
                         if (res.status === 401) {
-                          router.push(`/auth/signin?callbackUrl=/agent/${slug}/claim`);
+                          router.push(`/auth/signin?callbackUrl=${encodeURIComponent(claimCallbackPath)}`);
                         } else {
                           setVerifyError(data.error);
                         }

@@ -44,11 +44,6 @@ CREATE TABLE IF NOT EXISTS "crawl_frontier" (
   "last_attempt_at" timestamp with time zone,
   "created_at" timestamp with time zone DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS "crawl_frontier_status_idx" ON "crawl_frontier" ("status");
-CREATE INDEX IF NOT EXISTS "crawl_frontier_priority_idx" ON "crawl_frontier" ("priority");
-CREATE INDEX IF NOT EXISTS "crawl_frontier_confidence_idx" ON "crawl_frontier" ("confidence");
-CREATE INDEX IF NOT EXISTS "crawl_frontier_repo_full_name_idx" ON "crawl_frontier" ("repo_full_name");
-CREATE INDEX IF NOT EXISTS "crawl_frontier_next_attempt_at_idx" ON "crawl_frontier" ("next_attempt_at");
 
 -- Add hybrid/frontier columns for existing tables
 ALTER TABLE "crawl_frontier" ADD COLUMN IF NOT EXISTS "repo_full_name" varchar(255);
@@ -60,6 +55,13 @@ ALTER TABLE "crawl_frontier" ADD COLUMN IF NOT EXISTS "next_attempt_at" timestam
 ALTER TABLE "crawl_frontier" ADD COLUMN IF NOT EXISTS "last_error" text;
 ALTER TABLE "crawl_frontier" ADD COLUMN IF NOT EXISTS "lock_owner" varchar(64);
 ALTER TABLE "crawl_frontier" ADD COLUMN IF NOT EXISTS "locked_at" timestamp with time zone;
+
+-- Add indexes after columns are guaranteed to exist
+CREATE INDEX IF NOT EXISTS "crawl_frontier_status_idx" ON "crawl_frontier" ("status");
+CREATE INDEX IF NOT EXISTS "crawl_frontier_priority_idx" ON "crawl_frontier" ("priority");
+CREATE INDEX IF NOT EXISTS "crawl_frontier_confidence_idx" ON "crawl_frontier" ("confidence");
+CREATE INDEX IF NOT EXISTS "crawl_frontier_repo_full_name_idx" ON "crawl_frontier" ("repo_full_name");
+CREATE INDEX IF NOT EXISTS "crawl_frontier_next_attempt_at_idx" ON "crawl_frontier" ("next_attempt_at");
 
 ALTER TABLE "crawl_jobs" ADD COLUMN IF NOT EXISTS "budget_used" integer DEFAULT 0 NOT NULL;
 ALTER TABLE "crawl_jobs" ADD COLUMN IF NOT EXISTS "timeouts" integer DEFAULT 0 NOT NULL;

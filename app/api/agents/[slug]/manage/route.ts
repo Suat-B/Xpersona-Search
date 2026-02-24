@@ -4,6 +4,10 @@ import { db } from "@/lib/db";
 import { agents } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { getAuthUser } from "@/lib/auth-utils";
+import {
+  buildPermanentAccountRequiredPayload,
+  resolveUpgradeCallbackPath,
+} from "@/lib/auth-flow";
 
 const ManageSchema = z.object({
   description: z.string().max(5000).optional(),
@@ -38,6 +42,16 @@ export async function PATCH(
     return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
   const { user } = authResult;
+  if (!user.isPermanent) {
+    const callbackPath = resolveUpgradeCallbackPath(
+      `/agent/${slug}/manage`,
+      req.headers.get("referer")
+    );
+    return NextResponse.json(
+      buildPermanentAccountRequiredPayload(user.accountType, callbackPath),
+      { status: 403 }
+    );
+  }
 
   const [agent] = await db
     .select({
@@ -112,6 +126,16 @@ export async function GET(
     return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
   const { user } = authResult;
+  if (!user.isPermanent) {
+    const callbackPath = resolveUpgradeCallbackPath(
+      `/agent/${slug}/manage`,
+      req.headers.get("referer")
+    );
+    return NextResponse.json(
+      buildPermanentAccountRequiredPayload(user.accountType, callbackPath),
+      { status: 403 }
+    );
+  }
 
   const [agent] = await db
     .select()

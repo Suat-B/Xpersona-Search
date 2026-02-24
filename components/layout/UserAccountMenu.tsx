@@ -2,18 +2,22 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
+import { buildUpgradeAuthUrl } from "@/lib/auth-flow";
 
 interface UserAccountMenuProps {
   displayName: string;
   userEmail?: string | null;
   isPermanent: boolean;
+  accountType?: string | null;
 }
 
 export function UserAccountMenu({
   displayName,
   userEmail = null,
   isPermanent,
+  accountType = null,
 }: UserAccountMenuProps) {
   const [open, setOpen] = useState(false);
   const [recoveryUrl, setRecoveryUrl] = useState<string | null>(null);
@@ -21,6 +25,14 @@ export function UserAccountMenu({
   const [copied, setCopied] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
+  const currentSearchParams = useSearchParams();
+
+  const callbackPath = `${pathname || "/dashboard"}${
+    currentSearchParams?.toString() ? `?${currentSearchParams.toString()}` : ""
+  }`;
+  const createAccountHref = buildUpgradeAuthUrl("signup", accountType, callbackPath);
+  const signInHref = buildUpgradeAuthUrl("signin", accountType, callbackPath);
 
   const close = useCallback(() => {
     setOpen(false);
@@ -188,7 +200,7 @@ export function UserAccountMenu({
               ) : (
                 <>
                   <Link
-                    href="/auth/signup?link=guest"
+                    href={createAccountHref}
                     onClick={close}
                     className="flex items-center gap-2 px-4 py-2 text-sm text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/10 transition-colors"
                     role="menuitem"
@@ -199,7 +211,7 @@ export function UserAccountMenu({
                     Create permanent account
                   </Link>
                   <Link
-                    href="/auth/signin?link=guest"
+                    href={signInHref}
                     onClick={close}
                     className="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-primary)] hover:bg-white/10 transition-colors"
                     role="menuitem"

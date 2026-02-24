@@ -10,6 +10,10 @@ import {
 import { eq, and, desc } from "drizzle-orm";
 import { calculatePlatformFeePercent } from "@/lib/trading/fee-tier";
 import { computeHealthScore } from "@/lib/trading/health-score";
+import {
+  buildPermanentAccountRequiredPayload,
+  resolveUpgradeCallbackPath,
+} from "@/lib/auth-flow";
 
 const PRICE_MIN_CENTS = 999; // $9.99
 const PRICE_MAX_CENTS = 99900; // $999
@@ -128,6 +132,19 @@ export async function POST(request: Request) {
     const authResult = await getAuthUser(request as never);
     if ("error" in authResult) {
       return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+    }
+    if (!authResult.user.isPermanent) {
+      const callbackPath = resolveUpgradeCallbackPath(
+        "/trading/developer",
+        request.headers.get("referer")
+      );
+      return NextResponse.json(
+        buildPermanentAccountRequiredPayload(
+          authResult.user.accountType,
+          callbackPath
+        ),
+        { status: 403 }
+      );
     }
 
     const body = await request.json().catch(() => ({}));

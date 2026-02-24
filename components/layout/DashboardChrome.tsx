@@ -16,6 +16,7 @@ interface DashboardChromeProps {
   userEmail?: string | null;
   isAdmin?: boolean;
   isPermanent?: boolean;
+  accountType?: string | null;
   children: React.ReactNode;
 }
 
@@ -28,6 +29,7 @@ export function DashboardChrome({
   userEmail = null,
   isAdmin = false,
   isPermanent = false,
+  accountType = null,
   children,
 }: DashboardChromeProps) {
   const pathname = usePathname();
@@ -38,7 +40,7 @@ export function DashboardChrome({
   }
 
   return (
-    <div className="dashboard-theme flex min-h-screen w-full flex-col md:flex-row bg-[var(--dash-bg)]">
+    <div className="dashboard-theme flex h-[100dvh] min-h-dvh w-full flex-col overflow-hidden bg-[var(--dash-bg)] md:flex-row">
       <MobileDashboardNav displayName={displayName} isAdmin={isAdmin} isPermanent={isPermanent} />
       <aside className="scroll-stable-layer dashboard-sidebar hidden w-[280px] min-w-[280px] flex-col md:flex sticky top-0 h-screen border-r border-[var(--dash-divider)] overflow-x-hidden bg-[var(--dash-bg)]">
         <div className="relative flex h-full flex-col">
@@ -52,12 +54,13 @@ export function DashboardChrome({
               displayName={displayName}
               userEmail={userEmail}
               isPermanent={isPermanent}
+              accountType={accountType}
             />
           </div>
           <DashboardSidebarNav isAdmin={isAdmin} />
         </div>
       </aside>
-      <main className="scroll-contain-paint relative z-0 flex-1 min-h-0 overflow-y-auto bg-[var(--dash-bg)]">
+      <main className="scroll-contain-paint relative z-0 flex-1 min-h-0 overflow-y-auto overscroll-y-contain bg-[var(--dash-bg)]">
         <div className="w-full max-w-7xl mx-auto px-4 py-4 sm:px-6 sm:py-6 md:px-8 md:py-8 space-y-6 min-w-0 sm:overflow-x-hidden">
           <AIFirstBanner />
           {children}

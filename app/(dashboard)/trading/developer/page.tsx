@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { TradingErrorBanner } from "@/components/trading/TradingErrorBanner";
 import { FeeTierBadge } from "@/components/trading/FeeTierBadge";
 
@@ -22,7 +23,13 @@ interface MyStrategy {
   subscriberCount: number;
 }
 
+type PermanentAccountRequiredResponse = {
+  error: "PERMANENT_ACCOUNT_REQUIRED";
+  upgradeUrl?: string;
+};
+
 export default function DeveloperDashboardPage() {
+  const router = useRouter();
   const [account, setAccount] = useState<DeveloperAccount | null>(null);
   const [myStrategies, setMyStrategies] = useState<MyStrategy[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,27 +38,48 @@ export default function DeveloperDashboardPage() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const redirectToUpgradeIfNeeded = useCallback(
+    (status: number, payload: unknown): boolean => {
+      if (
+        status === 403 &&
+        payload &&
+        typeof payload === "object" &&
+        (payload as PermanentAccountRequiredResponse).error ===
+          "PERMANENT_ACCOUNT_REQUIRED" &&
+        typeof (payload as PermanentAccountRequiredResponse).upgradeUrl ===
+          "string"
+      ) {
+        router.push((payload as PermanentAccountRequiredResponse).upgradeUrl!);
+        return true;
+      }
+      return false;
+    },
+    [router]
+  );
+
   useEffect(() => {
     fetch("/api/trading/developer/account", { credentials: "include" })
-      .then((r) => r.json())
-      .then((res) => {
+      .then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }))
+      .then(({ status, body: res }) => {
+        if (redirectToUpgradeIfNeeded(status, res)) return;
         if (res.success && res.data) setAccount(res.data);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, []);
+  }, [redirectToUpgradeIfNeeded]);
 
   useEffect(() => {
     if (!account?.onboarded) return;
     setLoadingStrategies(true);
     fetch("/api/trading/developer/strategies", { credentials: "include" })
-      .then((r) => r.json())
-      .then((res) => {
+      .then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }))
+      .then(({ status, body: res }) => {
+        if (redirectToUpgradeIfNeeded(status, res)) return;
         if (res.success && Array.isArray(res.data)) setMyStrategies(res.data);
         setLoadingStrategies(false);
       })
       .catch(() => setLoadingStrategies(false));
-  }, [account?.onboarded]);
+  }, [account?.onboarded, redirectToUpgradeIfNeeded]);
 
   const toggleActive = async (strategy: MyStrategy) => {
     setError(null);
@@ -63,7 +91,8 @@ export default function DeveloperDashboardPage() {
         credentials: "include",
         body: JSON.stringify({ isActive: !strategy.isActive }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (redirectToUpgradeIfNeeded(res.status, data)) return;
       if (data.success) {
         setMyStrategies((prev) =>
           prev.map((s) =>
@@ -89,6 +118,7 @@ export default function DeveloperDashboardPage() {
         credentials: "include",
       });
       const data = await res.json().catch(() => ({}));
+      if (redirectToUpgradeIfNeeded(res.status, data)) return;
       if (data.success && data.data?.url) {
         window.location.href = data.data.url;
         return;

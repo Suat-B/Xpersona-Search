@@ -8,6 +8,10 @@ import { checkClaimVerifyRateLimit } from "@/lib/claim/rate-limit";
 import { runVerifier } from "@/lib/claim/verifiers";
 import type { VerificationMethod } from "@/lib/claim/verification-methods";
 import { verificationTierForMethod } from "@/lib/claim/verification-tier";
+import {
+  buildPermanentAccountRequiredPayload,
+  resolveUpgradeCallbackPath,
+} from "@/lib/auth-flow";
 
 const VerifySchema = z.object({
   method: z
@@ -39,6 +43,16 @@ export async function POST(
     return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
   const { user } = authResult;
+  if (!user.isPermanent) {
+    const callbackPath = resolveUpgradeCallbackPath(
+      `/agent/${slug}/claim`,
+      req.headers.get("referer")
+    );
+    return NextResponse.json(
+      buildPermanentAccountRequiredPayload(user.accountType, callbackPath),
+      { status: 403 }
+    );
+  }
 
   const rateLimit = checkClaimVerifyRateLimit(user.id);
   if (!rateLimit.ok) {

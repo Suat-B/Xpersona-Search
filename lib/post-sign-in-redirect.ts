@@ -7,25 +7,60 @@
 import type { Service } from "@/lib/subdomain";
 
 /** Auth routes that should never be used as callbackUrl. */
-const AUTH_ROUTES = ["/auth/signin", "/auth/signup", "/auth/forgot-password", "/auth/reset-password", "/auth-error"];
+const AUTH_ROUTES = [
+  "/auth/signin",
+  "/auth/signup",
+  "/auth/forgot-password",
+  "/auth/reset-password",
+  "/auth-error",
+];
 
 /**
  * Check if a path is a valid callback target (same-origin, not auth route).
  */
 function isValidCallbackPath(path: string): boolean {
   const normalized = path.startsWith("/") ? path : `/${path}`;
-  const withoutQuery = normalized.split("?")[0];
-  return !AUTH_ROUTES.some((r) => withoutQuery === r || withoutQuery.startsWith(`${r}/`));
+  return !AUTH_ROUTES.some(
+    (r) => normalized === r || normalized.startsWith(`${r}/`)
+  );
+}
+
+/**
+ * Parse callback into path + query (always internal path).
+ */
+function parseCallbackTarget(
+  callbackUrl: string
+): { pathname: string; pathWithQuery: string } | null {
+  const trimmed = callbackUrl.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.startsWith("/")) {
+    const [pathname] = trimmed.split("?");
+    return {
+      pathname: pathname || "/",
+      pathWithQuery: trimmed,
+    };
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    return {
+      pathname: parsed.pathname || "/",
+      pathWithQuery: `${parsed.pathname || "/"}${parsed.search}`,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Resolve post-sign-in redirect path.
  *
  * Order of precedence:
- * 1. link=agent or link=guest → /dashboard/profile (link flow)
- * 2. Valid callbackUrl provided → use it
- * 3. Trading service → /trading (marketplace as root)
- * 4. Hub or Game → /dashboard (Game dashboard)
+ * 1. Valid callbackUrl provided -> use it (preserve query)
+ * 2. link=agent or link=guest -> /dashboard/profile (link flow fallback)
+ * 3. Trading service -> /trading (marketplace as root)
+ * 4. Hub or Game -> /dashboard (Game dashboard)
  *
  * @param service - Current service (hub, game, trading)
  * @param callbackUrl - Optional callback from query params
@@ -36,25 +71,15 @@ export function getPostSignInRedirectPath(
   callbackUrl: string | null | undefined,
   link?: string | null
 ): string {
-  if (link === "agent" || link === "guest") {
-    return "/dashboard/profile";
+  if (callbackUrl) {
+    const parsed = parseCallbackTarget(callbackUrl);
+    if (parsed && isValidCallbackPath(parsed.pathname)) {
+      return parsed.pathWithQuery;
+    }
   }
 
-  if (callbackUrl) {
-    let path: string;
-    if (callbackUrl.startsWith("/")) {
-      path = callbackUrl.split("?")[0] || "/";
-    } else {
-      try {
-        const parsed = new URL(callbackUrl, "https://example.com");
-        path = parsed.pathname || "/";
-      } catch {
-        path = "/";
-      }
-    }
-    if (path && isValidCallbackPath(path)) {
-      return path;
-    }
+  if (link === "agent" || link === "guest") {
+    return "/dashboard/profile";
   }
 
   if (service === "trading") {

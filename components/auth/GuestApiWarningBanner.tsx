@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { buildUpgradeAuthUrl } from "@/lib/auth-flow";
 
 export function GuestApiWarningBanner() {
   const [accountType, setAccountType] = useState<string | null>(null);
@@ -29,8 +30,11 @@ export function GuestApiWarningBanner() {
   const isEphemeral = accountType === "agent" || accountType === "human";
   if (!isEphemeral) return null;
 
-  const linkHref =
-    accountType === "agent" ? "/auth/signup?link=agent" : "/auth/signup?link=guest";
+  const linkHref = buildUpgradeAuthUrl(
+    "signup",
+    accountType,
+    "/dashboard/api"
+  );
 
   return (
     <div

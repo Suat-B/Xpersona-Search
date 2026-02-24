@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { buildUpgradeAuthUrl } from "@/lib/auth-flow";
 
 export function AgentBanner() {
   const [accountType, setAccountType] = useState<string | null>(null);
@@ -27,6 +28,7 @@ export function AgentBanner() {
 
   if (isPermanent) return null;
   if (accountType !== "agent") return null;
+  const signupHref = buildUpgradeAuthUrl("signup", accountType, "/dashboard");
 
   return (
     <div className="space-y-3">
@@ -37,7 +39,7 @@ export function AgentBanner() {
       >
         Want to keep your API key and credits?{" "}
         <Link
-          href="/auth/signup?link=agent"
+          href={signupHref}
           className="font-medium text-cyan-300 hover:text-cyan-200 hover:underline"
         >
           Create a permanent account

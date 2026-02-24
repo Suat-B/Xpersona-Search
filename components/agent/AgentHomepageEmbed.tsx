@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 interface AgentEmbedProps {
@@ -13,9 +14,17 @@ interface AgentEmbedProps {
     url: string;
     claimStatus?: string | null;
   };
+  from?: string | null;
 }
 
-function FallbackCard({ agent }: AgentEmbedProps) {
+function FallbackCard({ agent, from }: AgentEmbedProps) {
+  const detailsHref = useMemo(() => {
+    if (from && from.startsWith("/") && !from.startsWith("//")) {
+      return `/agent/${agent.slug}?view=details&from=${encodeURIComponent(from)}`;
+    }
+    return `/agent/${agent.slug}?view=details`;
+  }, [agent.slug, from]);
+
   return (
     <div className="flex-1 flex items-center justify-center p-6">
       <div className="max-w-lg w-full rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-8 text-center shadow-lg">
@@ -44,7 +53,7 @@ function FallbackCard({ agent }: AgentEmbedProps) {
         </a>
         <div className="mt-4">
           <Link
-            href={`/agent/${agent.slug}?view=details`}
+            href={detailsHref}
             className="text-sm text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors underline underline-offset-2"
           >
             View agent details instead
@@ -55,9 +64,14 @@ function FallbackCard({ agent }: AgentEmbedProps) {
   );
 }
 
-export function AgentHomepageEmbed({ agent }: AgentEmbedProps) {
+export function AgentHomepageEmbed({ agent, from }: AgentEmbedProps) {
   const [iframeError, setIframeError] = useState(false);
   const [iframeLoaded, setIframeLoaded] = useState(false);
+  const router = useRouter();
+  const safeFrom = from && from.startsWith("/") && !from.startsWith("//") ? from : null;
+  const claimHref = safeFrom
+    ? `/agent/${agent.slug}/claim?from=${encodeURIComponent(safeFrom)}`
+    : `/agent/${agent.slug}/claim`;
 
   return (
     <div className="h-screen flex flex-col bg-[var(--bg-deep)] overflow-hidden">
@@ -65,8 +79,15 @@ export function AgentHomepageEmbed({ agent }: AgentEmbedProps) {
       <header className="relative z-50 flex h-14 shrink-0 items-center gap-3 border-b border-[var(--border)] bg-[var(--bg-deep)]/95 backdrop-blur-md px-4">
         {/* Left: back to search */}
         <div className="flex items-center gap-3 min-w-0">
-          <Link
-            href="/?q=discover"
+          <button
+            type="button"
+            onClick={() => {
+              if (safeFrom) {
+                router.push(safeFrom);
+                return;
+              }
+              router.back();
+            }}
             className="flex items-center gap-1.5 text-sm font-medium text-[var(--accent-heart)] hover:text-[var(--accent-heart)]/80 transition-colors shrink-0"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -74,7 +95,7 @@ export function AgentHomepageEmbed({ agent }: AgentEmbedProps) {
             </svg>
             <span className="hidden sm:inline">Back to search</span>
             <span className="sm:hidden">Back</span>
-          </Link>
+          </button>
         </div>
 
         {/* Center: agent name */}
@@ -88,7 +109,7 @@ export function AgentHomepageEmbed({ agent }: AgentEmbedProps) {
         <div className="flex items-center gap-3 shrink-0 ml-auto">
           {(agent.claimStatus ?? "UNCLAIMED") !== "CLAIMED" && (
             <Link
-              href={`/agent/${agent.slug}/claim`}
+              href={claimHref}
               className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-colors"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -147,7 +168,7 @@ export function AgentHomepageEmbed({ agent }: AgentEmbedProps) {
           />
         </div>
       ) : (
-        <FallbackCard agent={agent} />
+        <FallbackCard agent={agent} from={safeFrom} />
       )}
     </div>
   );

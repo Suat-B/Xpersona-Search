@@ -8,6 +8,11 @@ import { CustomAgentPage } from "@/components/agent/CustomAgentPage";
 type CustomLink = { label: string; url: string };
 type Tab = "structured" | "html" | "css" | "js" | "preview" | "publish";
 
+type PermanentAccountRequiredResponse = {
+  error: "PERMANENT_ACCOUNT_REQUIRED";
+  upgradeUrl?: string;
+};
+
 interface AgentData {
   name: string;
   slug: string;
@@ -77,6 +82,25 @@ export default function ManagePage() {
     null
   );
 
+  const redirectToUpgradeIfNeeded = useCallback(
+    (status: number, payload: unknown): boolean => {
+      if (
+        status === 403 &&
+        payload &&
+        typeof payload === "object" &&
+        (payload as PermanentAccountRequiredResponse).error ===
+          "PERMANENT_ACCOUNT_REQUIRED" &&
+        typeof (payload as PermanentAccountRequiredResponse).upgradeUrl ===
+          "string"
+      ) {
+        router.push((payload as PermanentAccountRequiredResponse).upgradeUrl!);
+        return true;
+      }
+      return false;
+    },
+    [router]
+  );
+
   useEffect(() => {
     async function load() {
       try {
@@ -84,9 +108,19 @@ export default function ManagePage() {
           fetch(`/api/agents/${slug}/manage`, { credentials: "include" }),
           fetch(`/api/agents/${slug}/customization`, { credentials: "include" }),
         ]);
+        const [manageData, customData] = await Promise.all([
+          manageRes.json().catch(() => ({})),
+          customRes.json().catch(() => ({})),
+        ]);
 
         if (manageRes.status === 401 || customRes.status === 401) {
           router.push(`/auth/signin?callbackUrl=/agent/${slug}/manage`);
+          return;
+        }
+        if (
+          redirectToUpgradeIfNeeded(manageRes.status, manageData) ||
+          redirectToUpgradeIfNeeded(customRes.status, customData)
+        ) {
           return;
         }
         if (manageRes.status === 403 || customRes.status === 403) {
@@ -100,7 +134,6 @@ export default function ManagePage() {
           return;
         }
 
-        const manageData = await manageRes.json();
         setAgent(manageData.agent);
 
         const o = (manageData.overrides ?? {}) as Overrides;
@@ -111,7 +144,6 @@ export default function ManagePage() {
         setCustomLinks(o.customLinks ?? []);
 
         if (customRes.ok) {
-          const customData = await customRes.json();
           const c = customData.customization as CustomizationPayload | null;
           if (c) {
             setCustomHtml(c.customHtml ?? "");
@@ -127,7 +159,7 @@ export default function ManagePage() {
       }
     }
     load();
-  }, [slug, router]);
+  }, [slug, router, redirectToUpgradeIfNeeded]);
 
   const saveStructured = useCallback(async () => {
     setSavingStructured(true);
@@ -153,7 +185,10 @@ export default function ManagePage() {
         credentials: "include",
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (redirectToUpgradeIfNeeded(res.status, data)) {
+        return;
+      }
       if (!res.ok) {
         setError(data.error ?? "Failed to save structured changes.");
       } else {
@@ -185,7 +220,10 @@ export default function ManagePage() {
             status,
           }),
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
+        if (redirectToUpgradeIfNeeded(res.status, data)) {
+          return;
+        }
         if (!res.ok) {
           setError(data.error ?? "Failed to save customization.");
           return;
@@ -219,7 +257,10 @@ export default function ManagePage() {
         credentials: "include",
         body: JSON.stringify({ customHtml, customCss, customJs }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (redirectToUpgradeIfNeeded(res.status, data)) {
+        return;
+      }
       if (!res.ok) {
         setError(data.error ?? "Failed to generate preview.");
         return;
@@ -303,6 +344,14 @@ export default function ManagePage() {
             <p className="text-xs text-[var(--text-tertiary)] mt-1">
               Claim verified. Build your custom agent page and publish it safely.
             </p>
+            <div className="mt-4">
+              <Link
+                href="/trading/developer"
+                className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/40 bg-[var(--accent-heart)]/10 px-3 py-1.5 text-xs font-semibold text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/15 transition-colors"
+              >
+                Open Developer Dashboard
+              </Link>
+            </div>
             <div className="mt-4 flex flex-wrap gap-2">
               {TABS.map((tab) => (
                 <button

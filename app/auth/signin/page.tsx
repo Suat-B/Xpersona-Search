@@ -10,6 +10,7 @@ import { getPostSignInRedirectPath } from "@/lib/post-sign-in-redirect";
 const inputClass =
   "w-full rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-3 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:border-[var(--accent-heart)]/50 transition-colors";
 const labelClass = "block text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider mb-1.5";
+type LinkFlow = "agent" | "guest";
 
 function SignInForm() {
   const router = useRouter();
@@ -23,6 +24,44 @@ function SignInForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const buildAuthHref = (basePath: "/auth/forgot-password" | "/auth/signup") => {
+    const params = new URLSearchParams();
+    if (link) params.set("link", link);
+    if (callbackUrl) params.set("callbackUrl", callbackUrl);
+    const query = params.toString();
+    return query ? `${basePath}?${query}` : basePath;
+  };
+
+  const attemptLinkFlow = async (
+    flow: LinkFlow
+  ): Promise<{ ok: true } | { ok: false; message: string }> => {
+    const primary =
+      flow === "agent" ? "/api/auth/link-agent" : "/api/auth/link-guest";
+    const fallback =
+      flow === "agent" ? "/api/auth/link-guest" : "/api/auth/link-agent";
+
+    for (const endpoint of [primary, fallback]) {
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          credentials: "include",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success) {
+          return { ok: true };
+        }
+      } catch {
+        // Continue to fallback endpoint
+      }
+    }
+
+    return {
+      ok: false,
+      message:
+        "We could not link your temporary account. Please try again or contact support if this keeps happening.",
+    };
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -34,18 +73,12 @@ function SignInForm() {
           : "hub";
 
       const redirectPath = getPostSignInRedirectPath(service, callbackUrl, link);
-      const effectiveCallback =
-        link === "agent"
-          ? `/dashboard/profile?link_agent=1`
-          : link === "guest"
-            ? `/dashboard/profile?link_guest=1`
-            : redirectPath;
 
       const result = await signIn("credentials", {
         email: email.trim().toLowerCase(),
         password,
         redirect: false,
-        callbackUrl: effectiveCallback,
+        callbackUrl: redirectPath,
       });
 
       if (result?.error) {
@@ -57,26 +90,16 @@ function SignInForm() {
       // Perform link immediately after sign-in, before any navigation.
       // Ensures agent/guest cookie is still present (avoids redirect loop / lost merge).
       if (link === "agent" || link === "guest") {
-        const linkEndpoint = link === "agent" ? "/api/auth/link-agent" : "/api/auth/link-guest";
-        const linkRes = await fetch(linkEndpoint, {
-          method: "POST",
-          credentials: "include",
-        });
-        const linkData = await linkRes.json().catch(() => ({}));
-        if (linkData.success) {
-          window.dispatchEvent(new Event("balance-updated"));
+        const linkResult = await attemptLinkFlow(link);
+        if (!linkResult.ok) {
+          setError(linkResult.message);
+          setLoading(false);
+          return;
         }
-      } else {
-        window.dispatchEvent(new Event("balance-updated"));
       }
+      window.dispatchEvent(new Event("balance-updated"));
 
-      const redirectTo =
-        link === "agent"
-          ? "/dashboard/profile"
-          : link === "guest"
-            ? "/dashboard/profile"
-            : redirectPath;
-      router.push(redirectTo);
+      router.push(redirectPath);
       router.refresh();
     } catch {
       setError("Something went wrong. Please try again.");
@@ -128,7 +151,7 @@ function SignInForm() {
                   Password
                 </label>
                 <Link
-                  href={link ? `/auth/forgot-password?link=${link}` : "/auth/forgot-password"}
+                  href={buildAuthHref("/auth/forgot-password")}
                   className="text-xs font-medium text-[var(--accent-heart)] hover:underline"
                 >
                   Forgot password?
@@ -173,7 +196,7 @@ function SignInForm() {
           <p className="text-sm text-[var(--text-secondary)] text-center">
             Don&apos;t have an account?{" "}
             <Link
-              href={link ? `/auth/signup?link=${link}` : "/auth/signup"}
+              href={buildAuthHref("/auth/signup")}
               className="font-medium text-[var(--accent-heart)] hover:underline"
             >
               Sign up

@@ -182,6 +182,13 @@
 html {
   scroll-behavior: smooth;
   color-scheme: dark; /* Ensures native form controls (select dropdowns etc.) use dark styling */
+  scrollbar-gutter: stable both-edges;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }
 
 /* Fixed gradient background via pseudo-element — avoids background-attachment:fixed
@@ -206,10 +213,11 @@ body::before {
     var(--bg-gradient-3);
 }
 
-/* Limit repaint scope for main scroll area — reduces scroll jank */
+/* Stable scroll root for app layouts — avoids nested-scroll flicker */
 .scroll-contain-paint {
-  contain: paint;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable both-edges;
 }
 
 /* Defer rendering of off-screen sections — improves scroll performance */

@@ -33,6 +33,7 @@ export default async function DashboardLayout({
   let userEmail: string | null = null;
   let isAdmin = false;
   let isPermanent = false;
+  let accountType: string | null = null;
   if (hasSession && session?.user?.id) {
     try {
       const [u] = await db
@@ -43,6 +44,7 @@ export default async function DashboardLayout({
       const isAgent = u?.email?.endsWith?.("@xpersona.agent") ?? false;
       displayName = isAgent ? "AI" : (u?.name ?? u?.email ?? "User");
       userEmail = u?.email ?? null;
+      accountType = u?.accountType ?? null;
       isAdmin = isAdminEmail(u?.email);
       isPermanent = u?.accountType === "email" || !!u?.passwordHash;
     } catch {
@@ -60,6 +62,7 @@ export default async function DashboardLayout({
       const isAgent = u?.email?.endsWith?.("@xpersona.agent") ?? false;
       displayName = isAgent ? "AI" : (u?.name ?? u?.email ?? "Guest");
       userEmail = u?.email ?? null;
+      accountType = u?.accountType ?? null;
       isAdmin = isAdminEmail(u?.email);
       isPermanent = u?.accountType === "email" || !!u?.passwordHash;
     } catch {
@@ -72,7 +75,13 @@ export default async function DashboardLayout({
   return (
     <>
       {needsGuest && <EnsureGuest needsGuest={true} />}
-      <Chrome displayName={displayName} userEmail={userEmail} isAdmin={isAdmin} isPermanent={isPermanent}>
+      <Chrome
+        displayName={displayName}
+        userEmail={userEmail}
+        isAdmin={isAdmin}
+        isPermanent={isPermanent}
+        accountType={accountType}
+      >
         {children}
       </Chrome>
     </>

@@ -35,6 +35,8 @@
     "db:add-password-hash": "node scripts/add-password-hash.mjs",
     "db:migrate-production": "node scripts/migrate-production.mjs",
     "db:seed-production": "node scripts/seed-production.mjs",
+    "repair:claim-integrity": "tsx scripts/repair-claim-developer-integrity.ts",
+    "repair:claim-integrity:apply": "tsx scripts/repair-claim-developer-integrity.ts --apply",
     "deploy": "node scripts/deploy.mjs",
     "setup:prod": "node scripts/setup-production.mjs"
   },

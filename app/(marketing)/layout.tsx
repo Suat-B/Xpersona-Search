@@ -34,6 +34,7 @@ export default async function MarketingLayout({
     let userEmail: string | null = null;
     let isAdmin = false;
     let isPermanent = false;
+    let accountType: string | null = null;
     if (hasSession && session?.user?.id) {
       try {
         const [u] = await db
@@ -44,6 +45,7 @@ export default async function MarketingLayout({
         const isAgent = u?.email?.endsWith?.("@xpersona.agent") ?? false;
         displayName = isAgent ? "AI" : (u?.name ?? u?.email ?? "User");
         userEmail = u?.email ?? null;
+        accountType = u?.accountType ?? null;
         isAdmin = isAdminEmail(u?.email);
         isPermanent = u?.accountType === "email" || !!u?.passwordHash;
       } catch {
@@ -61,6 +63,7 @@ export default async function MarketingLayout({
         const isAgent = u?.email?.endsWith?.("@xpersona.agent") ?? false;
         displayName = isAgent ? "AI" : (u?.name ?? u?.email ?? "Guest");
         userEmail = u?.email ?? null;
+        accountType = u?.accountType ?? null;
         isAdmin = isAdminEmail(u?.email);
         isPermanent = u?.accountType === "email" || !!u?.passwordHash;
       } catch {
@@ -74,20 +77,38 @@ export default async function MarketingLayout({
     }
     if (service === "game") {
       return (
-        <GameChrome displayName={displayName} userEmail={userEmail} isAdmin={isAdmin} isPermanent={isPermanent}>
+        <GameChrome
+          displayName={displayName}
+          userEmail={userEmail}
+          isAdmin={isAdmin}
+          isPermanent={isPermanent}
+          accountType={accountType}
+        >
           {children}
         </GameChrome>
       );
     }
     if (service === "trading") {
       return (
-        <TradingChrome displayName={displayName} userEmail={userEmail} isAdmin={isAdmin} isPermanent={isPermanent}>
+        <TradingChrome
+          displayName={displayName}
+          userEmail={userEmail}
+          isAdmin={isAdmin}
+          isPermanent={isPermanent}
+          accountType={accountType}
+        >
           {children}
         </TradingChrome>
       );
     }
     return (
-      <GameChrome displayName={displayName} userEmail={userEmail} isAdmin={isAdmin} isPermanent={isPermanent}>
+      <GameChrome
+        displayName={displayName}
+        userEmail={userEmail}
+        isAdmin={isAdmin}
+        isPermanent={isPermanent}
+        accountType={accountType}
+      >
         {children}
       </GameChrome>
     );
@@ -101,9 +122,9 @@ export default async function MarketingLayout({
   const MinimalHeader = service === "trading" ? TradingMinimalHeader : HomeMinimalHeader;
 
   return (
-    <div className="flex min-h-screen w-full bg-black">
+    <div className="flex h-[100dvh] min-h-dvh w-full flex-col overflow-hidden bg-black">
       <MinimalHeader />
-      <main className="scroll-contain-paint flex-1 overflow-y-auto">
+      <main className="scroll-contain-paint flex-1 min-h-0 overflow-y-auto overscroll-y-contain">
         <div className="w-full max-w-7xl mx-auto px-4 py-6 sm:p-6 md:p-8 space-y-6 min-w-0">{children}</div>
       </main>
     </div>

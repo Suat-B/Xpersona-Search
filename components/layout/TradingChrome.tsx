@@ -10,6 +10,7 @@ interface TradingChromeProps {
   userEmail?: string | null;
   isAdmin?: boolean;
   isPermanent?: boolean;
+  accountType?: string | null;
   children: React.ReactNode;
 }
 
@@ -21,10 +22,11 @@ export function TradingChrome({
   userEmail = null,
   isAdmin = false,
   isPermanent = false,
+  accountType = null,
   children,
 }: TradingChromeProps) {
   return (
-    <div className="dashboard-theme flex min-h-screen w-full flex-col md:flex-row bg-[var(--dash-bg)]">
+    <div className="dashboard-theme flex h-[100dvh] min-h-dvh w-full flex-col overflow-hidden bg-[var(--dash-bg)] md:flex-row">
       <TradingMobileNav
         displayName={displayName}
         isAdmin={isAdmin}
@@ -42,12 +44,13 @@ export function TradingChrome({
               displayName={displayName}
               userEmail={userEmail}
               isPermanent={isPermanent}
+              accountType={accountType}
             />
           </div>
           <TradingSidebarNav />
         </div>
       </aside>
-      <main className="scroll-contain-paint relative z-0 flex-1 min-h-0 overflow-y-auto bg-[var(--dash-bg)]">
+      <main className="scroll-contain-paint relative z-0 flex-1 min-h-0 overflow-y-auto overscroll-y-contain bg-[var(--dash-bg)]">
         <div className="w-full max-w-7xl mx-auto px-4 py-4 sm:px-6 sm:py-6 md:px-8 md:py-8 space-y-6 min-w-0 sm:overflow-x-hidden">
           {children}
         </div>

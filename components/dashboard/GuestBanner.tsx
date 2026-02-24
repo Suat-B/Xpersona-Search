@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { buildUpgradeAuthUrl } from "@/lib/auth-flow";
 
 export function GuestBanner() {
   const [accountType, setAccountType] = useState<string | null>(null);
@@ -27,6 +28,8 @@ export function GuestBanner() {
 
   if (isPermanent) return null;
   if (accountType !== "human") return null;
+  const signupHref = buildUpgradeAuthUrl("signup", accountType, "/dashboard");
+  const signinHref = buildUpgradeAuthUrl("signin", accountType, "/dashboard");
 
   return (
     <div
@@ -36,14 +39,14 @@ export function GuestBanner() {
     >
       Playing as guest.{" "}
       <Link
-        href="/auth/signup?link=guest"
+        href={signupHref}
         className="font-medium text-[var(--accent-heart)] hover:underline"
       >
         Create permanent account
       </Link>{" "}
       or{" "}
       <Link
-        href="/auth/signin?link=guest"
+        href={signinHref}
         className="font-medium text-[var(--accent-heart)] hover:underline"
       >
         Sign in

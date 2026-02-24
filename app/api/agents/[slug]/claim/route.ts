@@ -11,6 +11,10 @@ import {
   getInstructionsForMethod,
   type VerificationMethod,
 } from "@/lib/claim/verification-methods";
+import {
+  buildPermanentAccountRequiredPayload,
+  resolveUpgradeCallbackPath,
+} from "@/lib/auth-flow";
 
 const CLAIM_EXPIRY_DAYS = 7;
 
@@ -41,6 +45,16 @@ export async function POST(
     return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
   const { user } = authResult;
+  if (!user.isPermanent) {
+    const callbackPath = resolveUpgradeCallbackPath(
+      `/agent/${slug}/claim`,
+      req.headers.get("referer")
+    );
+    return NextResponse.json(
+      buildPermanentAccountRequiredPayload(user.accountType, callbackPath),
+      { status: 403 }
+    );
+  }
 
   const rateLimit = checkClaimInitRateLimit(user.id);
   if (!rateLimit.ok) {

@@ -11,5 +11,8 @@ describe("isRetryableGitHubError", () => {
   it("does not mark validation errors retryable", () => {
     expect(isRetryableGitHubError(new Error("Validation Failed"))).toBe(false);
   });
-});
 
+  it("marks API rate limit errors retryable", () => {
+    expect(isRetryableGitHubError(new Error("API rate limit exceeded"))).toBe(true);
+  });
+});

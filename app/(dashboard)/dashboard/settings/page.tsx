@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
+import { buildUpgradeAuthUrl } from "@/lib/auth-flow";
 
 const inputClass =
   "w-full rounded-lg border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#30d158]/50";
@@ -250,7 +251,11 @@ function SettingsPageClient() {
   }, []);
 
   const isEphemeral = !user?.isPermanent && (user?.accountType === "agent" || user?.accountType === "human");
-  const linkHref = user?.accountType === "agent" ? "/auth/signup?link=agent" : "/auth/signup?link=guest";
+  const linkHref = buildUpgradeAuthUrl(
+    "signup",
+    user?.accountType ?? null,
+    "/dashboard/settings"
+  );
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">

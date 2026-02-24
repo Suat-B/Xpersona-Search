@@ -6,9 +6,10 @@ interface ClaimBannerProps {
   slug: string;
   claimStatus: string;
   isOwner: boolean;
+  claimHref?: string;
 }
 
-export function ClaimBanner({ slug, claimStatus, isOwner }: ClaimBannerProps) {
+export function ClaimBanner({ slug, claimStatus, isOwner, claimHref }: ClaimBannerProps) {
   if (claimStatus === "CLAIMED" && isOwner) {
     return (
       <div className="rounded-xl border border-[#30d158]/25 bg-[#30d158]/5 px-5 py-4 mb-8">
@@ -77,7 +78,7 @@ export function ClaimBanner({ slug, claimStatus, isOwner }: ClaimBannerProps) {
           </div>
         </div>
         <Link
-          href={`/agent/${slug}/claim`}
+          href={claimHref ?? `/agent/${slug}/claim`}
           className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent-heart)] px-4 py-2 text-xs font-semibold text-white hover:opacity-90 transition-opacity shadow-sm"
         >
           Claim this page

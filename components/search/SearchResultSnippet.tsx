@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 
 interface Agent {
   id: string;
@@ -44,7 +45,7 @@ function getDisplayUrl(slug: string): string {
   return `${DISPLAY_BASE}/agent/${slug}`;
 }
 
-function getSitelinks(agent: Agent): Sitelink[] {
+function getSitelinks(agent: Agent, agentHref: string): Sitelink[] {
   const links: Sitelink[] = [];
   const seenHrefs = new Set<string>();
 
@@ -57,7 +58,7 @@ function getSitelinks(agent: Agent): Sitelink[] {
 
   add({
     title: "Full agent page",
-    href: `/agent/${agent.slug}`,
+    href: agentHref,
     snippet: "Documentation, install commands, parameters, and examples.",
   });
 
@@ -133,11 +134,17 @@ function getSitelinks(agent: Agent): Sitelink[] {
 }
 
 export function SearchResultSnippet({ agent, showSitelinks = false, className }: Props) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const currentSearch = searchParams.toString();
+  const fromPath = currentSearch ? `${pathname}?${currentSearch}` : pathname;
+  const agentHref = `/agent/${agent.slug}?from=${encodeURIComponent(fromPath)}`;
+
   const protos = Array.isArray(agent.protocols) ? agent.protocols : [];
   const caps = Array.isArray(agent.capabilities) ? agent.capabilities : [];
   const langs = Array.isArray(agent.languages) ? agent.languages : [];
   const displayUrl = getDisplayUrl(agent.slug);
-  const sitelinks = showSitelinks ? getSitelinks(agent) : [];
+  const sitelinks = showSitelinks ? getSitelinks(agent, agentHref) : [];
 
   const isClaimed = agent.claimStatus === "CLAIMED";
   const tier = agent.verificationTier ?? "NONE";
@@ -145,7 +152,7 @@ export function SearchResultSnippet({ agent, showSitelinks = false, className }:
   return (
     <article className={`py-4 sm:py-5 border-b border-[var(--border)] last:border-b-0 group min-w-0 ${className ?? ""}`}>
       <Link
-        href={`/agent/${agent.slug}`}
+        href={agentHref}
         className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-heart)]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-deep)] rounded touch-manipulation min-h-[44px]"
       >
         <h3 className="text-lg font-medium text-[var(--accent-heart)] group-hover:underline decoration-[var(--accent-heart)] underline-offset-2 truncate">
