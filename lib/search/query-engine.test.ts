@@ -5,6 +5,7 @@ import {
   parseSearchOperators,
   expandWithSynonyms,
   buildWebsearchQuery,
+  parseSafetyFilter,
   processQuery,
 } from "./query-engine";
 
@@ -99,6 +100,12 @@ describe("parseSearchOperators", () => {
     const result = parseSearchOperators("agent protocol:MCP");
     expect(result.originalQuery).toBe("agent protocol:MCP");
   });
+
+  it("parses quoted source values", () => {
+    const result = parseSearchOperators('agent source:"github openclaw"');
+    expect(result.textQuery).toBe("agent");
+    expect(result.fieldFilters.source).toBe("GITHUB OPENCLAW");
+  });
 });
 
 describe("expandWithSynonyms", () => {
@@ -129,6 +136,27 @@ describe("expandWithSynonyms", () => {
     expect(result).toContain('"artificial intelligence"');
     expect(result).toContain('"algorithmic trading"');
   });
+
+  it("keeps expansion bounded for medium-length queries", () => {
+    const result = expandWithSynonyms("ai trading bot");
+    expect(result).toContain("ai trading bot");
+    expect(result).toContain('"artificial intelligence"');
+  });
+
+  it("does not expand very long queries to avoid noisy recall", () => {
+    const result = expandWithSynonyms("ai trading bot for crypto automation");
+    expect(result).toBe("ai trading bot for crypto automation");
+  });
+
+  it("expands newly added assistant synonyms", () => {
+    const result = expandWithSynonyms("assistant");
+    expect(result).toContain('"ai assistant"');
+  });
+
+  it("does not alter advanced syntax with parentheses", () => {
+    const result = expandWithSynonyms("agent (trading OR crypto)");
+    expect(result).toBe("agent (trading OR crypto)");
+  });
 });
 
 describe("buildWebsearchQuery", () => {
@@ -155,6 +183,33 @@ describe("buildWebsearchQuery", () => {
     const result = buildWebsearchQuery("agent -deprecated");
     expect(result).toContain("-deprecated");
   });
+
+  it("returns empty for unmatched quote to avoid tsquery parse failures", () => {
+    const result = buildWebsearchQuery('"agent phrase');
+    expect(result).toBe("");
+  });
+});
+
+describe("parseSafetyFilter", () => {
+  it("parses greater-than", () => {
+    expect(parseSafetyFilter(">80")).toEqual({ operator: ">=", value: 80 });
+  });
+
+  it("parses less-than", () => {
+    expect(parseSafetyFilter("<20")).toEqual({ operator: "<=", value: 20 });
+  });
+
+  it("parses equals", () => {
+    expect(parseSafetyFilter("=55")).toEqual({ operator: "=", value: 55 });
+  });
+
+  it("parses bare number as equals", () => {
+    expect(parseSafetyFilter("42")).toEqual({ operator: "=", value: 42 });
+  });
+
+  it("rejects out-of-range values", () => {
+    expect(parseSafetyFilter("101")).toBeNull();
+  });
 });
 
 describe("processQuery", () => {
@@ -162,6 +217,7 @@ describe("processQuery", () => {
     const result = processQuery("  llm protocol:MCP  ");
     expect(result.parsed.textQuery).toBe("llm");
     expect(result.parsed.fieldFilters.protocol).toBe("MCP");
+    expect(result.interpretedQuery).toBe("llm");
     expect(result.expandedQuery).toContain("llm");
     expect(result.expandedQuery).toContain('"large language model"');
     expect(result.websearchInput.length).toBeGreaterThan(0);
@@ -170,6 +226,7 @@ describe("processQuery", () => {
   it("handles query with no operators or synonyms", () => {
     const result = processQuery("abcdefghijkl");
     expect(result.parsed.textQuery).toBe("abcdefghijkl");
+    expect(result.interpretedQuery).toBe("abcdefghijkl");
     expect(result.expandedQuery).toBe("abcdefghijkl");
     expect(result.parsed.fieldFilters).toEqual({});
   });
@@ -178,5 +235,12 @@ describe("processQuery", () => {
     const result = processQuery('<script>alert("xss")</script>');
     expect(result.parsed.textQuery).not.toContain("<");
     expect(result.parsed.textQuery).not.toContain(">");
+  });
+
+  it("interprets conversational natural-language intent", () => {
+    const result = processQuery("I want to make a movie");
+    expect(result.interpretedQuery).toContain("build");
+    expect(result.interpretedQuery).toContain("video");
+    expect(result.interpretation.isNaturalLanguage).toBe(true);
   });
 });

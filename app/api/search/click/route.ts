@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import { recordSearchClick, hashQuery } from "@/lib/search/click-tracking";
-import { checkSearchRateLimit } from "@/lib/search/rate-limit";
+import {
+  checkSearchRateLimit,
+  SEARCH_ANON_RATE_LIMIT,
+  SEARCH_AUTH_RATE_LIMIT,
+} from "@/lib/search/rate-limit";
+import { getAuthUser } from "@/lib/auth-utils";
 
 const ClickSchema = z.object({
   query: z.string().min(1).max(500),
@@ -9,12 +14,39 @@ const ClickSchema = z.object({
   position: z.number().int().min(0).max(1000),
 });
 
+const IDEMPOTENCY_WINDOW_MS = 2 * 60 * 1000;
+const idempotencyStore = new Map<string, number>();
+
+function seenIdempotencyKey(key: string): boolean {
+  const now = Date.now();
+  for (const [k, expiresAt] of idempotencyStore.entries()) {
+    if (expiresAt <= now) idempotencyStore.delete(k);
+  }
+  const expires = idempotencyStore.get(key);
+  if (expires && expires > now) return true;
+  idempotencyStore.set(key, now + IDEMPOTENCY_WINDOW_MS);
+  return false;
+}
+
 export async function POST(req: NextRequest) {
-  const rlResult = await checkSearchRateLimit(req);
+  const authProbe = await getAuthUser(req);
+  const userId = "error" in authProbe ? undefined : authProbe.user.id;
+  const isAuthenticated = Boolean(userId);
+  const rateLimitLimit = isAuthenticated
+    ? SEARCH_AUTH_RATE_LIMIT
+    : SEARCH_ANON_RATE_LIMIT;
+  const rlResult = await checkSearchRateLimit(req, isAuthenticated);
   if (!rlResult.allowed) {
     return NextResponse.json(
       { error: "Too many requests" },
-      { status: 429, headers: { "Retry-After": String(rlResult.retryAfter ?? 60) } }
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(rlResult.retryAfter ?? 60),
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Limit": String(rateLimitLimit),
+        },
+      }
     );
   }
 
@@ -37,12 +69,38 @@ export async function POST(req: NextRequest) {
   }
 
   const queryHash = hashQuery(params.query);
+  const idempotencyHeader = req.headers.get("idempotency-key")?.trim();
+  if (idempotencyHeader) {
+    const idempotencyToken = `${idempotencyHeader}:${queryHash}:${params.agentId}:${params.position}:${userId ?? "anon"}`;
+    if (seenIdempotencyKey(idempotencyToken)) {
+      return NextResponse.json(
+        { ok: true, deduped: true },
+        {
+          status: 200,
+          headers: {
+            "X-RateLimit-Remaining": String(rlResult.remaining ?? 0),
+            "X-RateLimit-Limit": String(rateLimitLimit),
+          },
+        }
+      );
+    }
+  }
 
   await recordSearchClick({
     queryHash,
     agentId: params.agentId,
     position: params.position,
+    userId,
   });
 
-  return NextResponse.json({ ok: true }, { status: 200 });
+  return NextResponse.json(
+    { ok: true },
+    {
+      status: 200,
+      headers: {
+        "X-RateLimit-Remaining": String(rlResult.remaining ?? 0),
+        "X-RateLimit-Limit": String(rateLimitLimit),
+      },
+    }
+  );
 }

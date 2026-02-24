@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -66,7 +66,7 @@ export default function ClaimPage() {
 
   useEffect(() => {
     async function load() {
-      const res = await fetch(`/api/agents/${slug}`);
+      const res = await fetch(`/api/v1/agents/${slug}`);
       if (!res.ok) {
         setError("Agent not found");
         setStep("error");
@@ -85,7 +85,7 @@ export default function ClaimPage() {
         return;
       }
 
-      const statusRes = await fetch(`/api/agents/${slug}/claim`);
+      const statusRes = await fetch(`/api/v1/agents/${slug}/claim`);
       const statusData = await statusRes.json().catch(() => ({}));
       if (redirectToUpgradeIfNeeded(statusRes.status, statusData)) {
         return;
@@ -111,7 +111,7 @@ export default function ClaimPage() {
       setLoading(true);
       setVerifyError("");
       try {
-        const res = await fetch(`/api/agents/${slug}/claim`, {
+        const res = await fetch(`/api/v1/agents/${slug}/claim`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -155,7 +155,7 @@ export default function ClaimPage() {
     setLoading(true);
     setVerifyError("");
     try {
-      const res = await fetch(`/api/agents/${slug}/claim/verify`, {
+      const res = await fetch(`/api/v1/agents/${slug}/claim/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -240,10 +240,10 @@ export default function ClaimPage() {
               Customize Your Page
             </Link>
             <Link
-              href="/trading/developer"
+              href="/dashboard"
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--accent-heart)]/40 bg-[var(--accent-heart)]/10 px-6 py-3 text-sm font-semibold text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/15 transition-colors"
             >
-              Open Developer Dashboard
+              Open Dashboard
             </Link>
             <Link
               href={backToAgentHref}
@@ -377,7 +377,7 @@ export default function ClaimPage() {
                   <button
                     onClick={async () => {
                       setLoading(true);
-                      const res = await fetch(`/api/agents/${slug}/claim`, {
+                      const res = await fetch(`/api/v1/agents/${slug}/claim`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ method: "MANUAL_REVIEW" }),
@@ -515,3 +515,4 @@ export default function ClaimPage() {
     </div>
   );
 }
+

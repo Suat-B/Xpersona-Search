@@ -1,12 +1,20 @@
 /**
- * Vercel Templates crawler — discovers AI/agent templates from the Vercel marketplace.
- * Uses GitHub search for Vercel AI SDK templates and deploy-ready agent projects.
+ * Vercel Templates crawler with resilient repo-search-first strategy.
  */
 import pLimit from "p-limit";
-import { db } from "@/lib/db";
-import { crawlJobs } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import { octokit, fetchRepoDetails, isRetryableGitHubError, withGithubTimeout } from "../utils/github";
+import { ackCandidate, leaseCandidates, requeueCandidate } from "./discovery-frontier";
+import { getCrawlMode, isHotOrWarm, type CrawlRuntimeOptions } from "./crawler-mode";
+import { runPartitionedRepoSearch } from "./github-search-runner";
+import {
+  checkpointJob,
+  clearCheckpoint,
+  completeJob,
+  failJob,
+  getCheckpoint,
+  heartbeatJob,
+  startJob,
+  toJobMetricsFromGithubContext,
+} from "./job-lifecycle";
 import { generateSlug } from "../utils/slug";
 import { upsertAgent } from "../agent-upsert";
 import { buildSearchableReadme } from "../utils/build-readme";
@@ -15,242 +23,286 @@ import {
   calculateFreshnessScore,
   calculateOverallRank,
 } from "../scoring/rank";
-import { ackCandidate, leaseCandidates, requeueCandidate } from "./discovery-frontier";
-import { getCrawlMode, isHotOrWarm, type CrawlRuntimeOptions } from "./crawler-mode";
+import { createGitHubRequestContext, fetchRepoDetails, searchCode } from "../utils/github";
+import { getRepoVisibility, shouldRecrawlSource } from "./github-agent-utils";
 
-const CONCURRENCY = 3;
-const PAGE_SIZE = 100;
-const MAX_PAGES_PER_QUERY = 5;
-const RATE_LIMIT_DELAY_MS = 1500;
-
+const SOURCE = "VERCEL_TEMPLATES";
+const CONCURRENCY = 4;
 const SEARCH_QUERIES = [
   "topic:vercel-template ai",
-  "topic:nextjs-template ai agent",
+  "topic:nextjs-template ai",
   "topic:vercel ai-sdk",
-  "filename:vercel.json ai agent",
   "topic:ai-template nextjs",
-  "vercel deploy ai agent in:description",
-  "ai chatbot template nextjs",
+  "vercel deploy ai in:description",
+  "chatbot template nextjs",
   "ai sdk template vercel",
-];
+] as const;
+const CODE_FALLBACK_QUERIES = [
+  "filename:vercel.json ai",
+  "filename:next.config.ts ai template",
+] as const;
+const CODE_FALLBACK_PAGES = 2;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
+interface RepoSearchItem {
+  id?: number;
+  full_name?: string;
+  description?: string | null;
+  name?: string;
+}
+
+function shouldContinueRun(
+  startedAtMs: number,
+  ctx: { requests: number },
+  options?: CrawlRuntimeOptions
+): boolean {
+  const withinBudget =
+    options?.githubBudget == null || ctx.requests < options.githubBudget;
+  const withinTime =
+    options?.timeBudgetMs == null || Date.now() - startedAtMs < options.timeBudgetMs;
+  return withinBudget && withinTime;
+}
+
+async function processRepo(
+  repoFullName: string,
+  githubCtx: ReturnType<typeof createGitHubRequestContext>,
+  options?: CrawlRuntimeOptions
+): Promise<number> {
+  const repo = await fetchRepoDetails(repoFullName, githubCtx);
+  if (!repo) return 0;
+  const hay = `${repo.name} ${repo.description ?? ""}`.toLowerCase();
+  if (
+    !hay.includes("vercel") &&
+    !hay.includes("nextjs") &&
+    !hay.includes("template")
+  ) {
+    return 0;
+  }
+
+  const sourceId = `vercel-template:${repo.id}`;
+  const minRecrawlHours = Number(process.env.CRAWL_MIN_RECRAWL_HOURS ?? "6");
+  if (Number.isFinite(minRecrawlHours) && minRecrawlHours > 0) {
+    const allowed = await shouldRecrawlSource(sourceId, minRecrawlHours);
+    if (!allowed) return 0;
+  }
+
+  const slug =
+    generateSlug(`vercel-${repo.full_name.replace("/", "-")}`) || `vercel-${repo.id}`;
+  const popularityScore = calculatePopularityScore(repo);
+  const freshnessScore = calculateFreshnessScore(repo);
+  const safetyScore = 68;
+  const visibility = getRepoVisibility(repo);
+  const now = new Date();
+
+  const agentData = {
+    sourceId,
+    source: "GITHUB_REPOS" as const,
+    name: repo.name,
+    slug,
+    description: repo.description ?? null,
+    url: repo.html_url,
+    homepage: null,
+    capabilities: ["vercel", "template", "nextjs"] as string[],
+    protocols: [] as string[],
+    languages: ["typescript"] as string[],
+    githubData: {
+      stars: repo.stargazers_count,
+      forks: repo.forks_count,
+      lastCommit: repo.pushed_at,
+      defaultBranch: repo.default_branch,
+    },
+    openclawData: { vercelTemplate: true } as Record<string, unknown>,
+    readme: buildSearchableReadme({
+      description: repo.description,
+      capabilities: ["vercel", "template", "nextjs"],
+      languages: ["typescript"],
+      extra: [repo.name, "vercel", "ai", "template"],
+    }),
+    safetyScore,
+    popularityScore,
+    freshnessScore,
+    performanceScore: 0,
+    overallRank: calculateOverallRank({
+      safety: safetyScore,
+      popularity: popularityScore,
+      freshness: freshnessScore,
+      performance: 0,
+    }),
+    visibility: visibility.visibility,
+    publicSearchable: visibility.publicSearchable,
+    status: "ACTIVE" as const,
+    lastCrawledAt: now,
+    nextCrawlAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+  };
+
+  await upsertAgent(agentData, {
+    name: agentData.name,
+    slug: agentData.slug,
+    description: agentData.description,
+    githubData: agentData.githubData,
+    readme: agentData.readme,
+    popularityScore: agentData.popularityScore,
+    freshnessScore: agentData.freshnessScore,
+    overallRank: agentData.overallRank,
+    visibility: agentData.visibility,
+    publicSearchable: agentData.publicSearchable,
+    lastCrawledAt: agentData.lastCrawledAt,
+    nextCrawlAt: agentData.nextCrawlAt,
+  });
+  return 1;
 }
 
 export async function crawlVercelTemplates(
   maxResults: number = 1000,
   options?: CrawlRuntimeOptions
 ): Promise<{ total: number; jobId: string }> {
-  const [job] = await db
-    .insert(crawlJobs)
-    .values({
-      source: "GITHUB_REPOS",
-      status: "RUNNING",
-      startedAt: new Date(),
-    })
-    .returning();
-
-  const jobId = job?.id ?? crypto.randomUUID();
+  const mode = getCrawlMode(options);
+  const workerId = options?.workerId ?? options?.lockOwner ?? `crawl:${process.pid}`;
+  const { jobId } = await startJob({ source: SOURCE, mode, workerId });
+  const githubCtx = createGitHubRequestContext();
   const limit = pLimit(CONCURRENCY);
   const seenIds = new Set<number>();
+  const startedAtMs = Date.now();
   let totalFound = 0;
-  const mode = getCrawlMode(options);
+  let skipped = 0;
 
   try {
     if (isHotOrWarm(options)) {
       const leased = await leaseCandidates({
-        lockOwner: options?.lockOwner ?? "VERCEL_TEMPLATES",
+        lockOwner: options?.lockOwner ?? SOURCE,
         limit: maxResults,
         minConfidence: mode === "hot" ? 80 : 50,
       });
       for (const candidate of leased) {
-        const repo = await fetchRepoDetails(candidate.repoFullName);
-        if (!repo) {
-          await requeueCandidate(candidate.id, "Repo details unavailable", 30_000);
-          continue;
-        }
-        const hay = `${repo.name} ${repo.description ?? ""}`.toLowerCase();
-        if (!hay.includes("vercel") && !hay.includes("nextjs") && !hay.includes("template")) {
-          await ackCandidate(candidate.id);
-          continue;
-        }
-
-        const sourceId = `vercel-template:${repo.id}`;
-        const slug = generateSlug(`vercel-${repo.full_name.replace("/", "-")}`) || `vercel-${totalFound}`;
-        const popularityScore = calculatePopularityScore(repo);
-        const freshnessScore = calculateFreshnessScore(repo);
-        const safetyScore = 68;
-
-        const agentData = {
-          sourceId,
-          source: "GITHUB_REPOS" as const,
-          name: repo.name,
-          slug,
-          description: repo.description ?? null,
-          url: repo.html_url,
-          homepage: null,
-          capabilities: ["vercel", "template", "nextjs"] as string[],
-          protocols: [] as string[],
-          languages: ["typescript"] as string[],
-          githubData: {
-            stars: repo.stargazers_count,
-            forks: repo.forks_count,
-            lastCommit: repo.pushed_at,
-            defaultBranch: repo.default_branch,
-          },
-          openclawData: { vercelTemplate: true } as Record<string, unknown>,
-          readme: buildSearchableReadme({
-            description: repo.description,
-            capabilities: ["vercel", "template", "nextjs"],
-            languages: ["typescript"],
-            extra: [repo.name, "vercel", "ai", "template"],
-          }),
-          safetyScore,
-          popularityScore,
-          freshnessScore,
-          performanceScore: 0,
-          overallRank: calculateOverallRank({
-            safety: safetyScore, popularity: popularityScore,
-            freshness: freshnessScore, performance: 0,
-          }),
-          status: "ACTIVE" as const,
-          lastCrawledAt: new Date(),
-          nextCrawlAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        };
-
-        await upsertAgent(agentData, {
-          name: agentData.name, slug: agentData.slug, description: agentData.description,
-          githubData: agentData.githubData, readme: agentData.readme,
-          popularityScore: agentData.popularityScore, freshnessScore: agentData.freshnessScore,
-          overallRank: agentData.overallRank,
-          lastCrawledAt: agentData.lastCrawledAt, nextCrawlAt: agentData.nextCrawlAt,
-        });
-        await ackCandidate(candidate.id);
-        totalFound++;
-      }
-    } else {
-    for (const query of SEARCH_QUERIES) {
-      if (totalFound >= maxResults) break;
-
-      const isCodeSearch = query.startsWith("filename:");
-      let page = 1;
-
-      while (totalFound < maxResults && page <= MAX_PAGES_PER_QUERY) {
-        let repoNames: string[] = [];
-
+        if (totalFound >= maxResults) break;
+        if (!shouldContinueRun(startedAtMs, githubCtx, options)) break;
         try {
-          if (isCodeSearch) {
-            const res = await withGithubTimeout(
-              () =>
-                octokit.rest.search.code({
-                  q: query, sort: "indexed", order: "desc",
-                  per_page: PAGE_SIZE, page,
-                }),
-              `search.code "${query}" page=${page}`
-            );
-            repoNames = (res.data.items ?? [])
-              .map((item: { repository?: { full_name?: string } }) => item.repository?.full_name)
-              .filter(Boolean) as string[];
-          } else {
-            const res = await withGithubTimeout(
-              () =>
-                octokit.rest.search.repos({
-                  q: query, sort: "stars", order: "desc",
-                  per_page: PAGE_SIZE, page,
-                }),
-              `search.repos "${query}" page=${page}`
-            );
-            repoNames = (res.data.items ?? [])
-              .map((item: { full_name?: string }) => item.full_name)
-              .filter(Boolean) as string[];
-          }
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (msg.includes("Cannot access beyond") || (err as { status?: number })?.status === 422) break;
-          if (isRetryableGitHubError(err)) break;
-          throw err;
+          const added = await processRepo(candidate.repoFullName, githubCtx, options);
+          totalFound += added;
+          await ackCandidate(candidate.id);
+        } catch {
+          skipped += 1;
+          await requeueCandidate(candidate.id, "Repo processing failed", 60_000);
         }
+      }
 
-        if (repoNames.length === 0) break;
+      await completeJob(jobId, {
+        agentsFound: totalFound,
+        skipped,
+        finishedReason: "completed_hot_warm",
+        ...toJobMetricsFromGithubContext(githubCtx),
+      });
+      return { total: totalFound, jobId };
+    }
 
-        for (const fullName of repoNames) {
+    const checkpoint =
+      (await getCheckpoint(SOURCE, mode)) ??
+      ({
+        emitted: 0,
+      } as Record<string, unknown>);
+
+    await runPartitionedRepoSearch<RepoSearchItem>({
+      queries: [...SEARCH_QUERIES],
+      maxResults,
+      context: githubCtx,
+      initialCursor: checkpoint,
+      shouldContinue: () => shouldContinueRun(startedAtMs, githubCtx, options),
+      onItems: async (items) => {
+        const processed = await Promise.all(
+          items.map((item) =>
+            limit(async () => {
+              if (!item.id || !item.full_name) return 0;
+              if (seenIds.has(item.id)) return 0;
+              seenIds.add(item.id);
+              if (totalFound >= maxResults) return 0;
+              try {
+                const added = await processRepo(item.full_name, githubCtx, options);
+                totalFound += added;
+                return added;
+              } catch {
+                skipped += 1;
+                return 0;
+              }
+            })
+          )
+        );
+        return processed.reduce<number>((sum, n) => sum + n, 0);
+      },
+      onCheckpoint: async (cursor) => {
+        await checkpointJob({
+          jobId,
+          source: SOURCE,
+          mode,
+          cursor: cursor as unknown as Record<string, unknown>,
+          workerId,
+          leaseMs: 15 * 60 * 1000,
+        });
+        await heartbeatJob(jobId, {
+          agentsFound: totalFound,
+          skipped,
+          ...toJobMetricsFromGithubContext(githubCtx),
+        });
+      },
+    });
+
+    if (totalFound < maxResults) {
+      for (const query of CODE_FALLBACK_QUERIES) {
+        if (!shouldContinueRun(startedAtMs, githubCtx, options)) break;
+        if (totalFound >= maxResults) break;
+        for (let page = 1; page <= CODE_FALLBACK_PAGES; page++) {
+          if (!shouldContinueRun(startedAtMs, githubCtx, options)) break;
           if (totalFound >= maxResults) break;
-
-          const repo = await limit(() => fetchRepoDetails(fullName));
-          if (!repo) continue;
-          if (seenIds.has(repo.id)) continue;
-          seenIds.add(repo.id);
-
-          const sourceId = `vercel-template:${repo.id}`;
-          const slug = generateSlug(`vercel-${repo.full_name.replace("/", "-")}`) || `vercel-${totalFound}`;
-          const popularityScore = calculatePopularityScore(repo);
-          const freshnessScore = calculateFreshnessScore(repo);
-          const safetyScore = 68;
-
-          const agentData = {
-            sourceId,
-            source: "GITHUB_REPOS" as const,
-            name: repo.name,
-            slug,
-            description: repo.description ?? null,
-            url: repo.html_url,
-            homepage: null,
-            capabilities: ["vercel", "template", "nextjs"] as string[],
-            protocols: [] as string[],
-            languages: ["typescript"] as string[],
-            githubData: {
-              stars: repo.stargazers_count,
-              forks: repo.forks_count,
-              lastCommit: repo.pushed_at,
-              defaultBranch: repo.default_branch,
-            },
-            openclawData: { vercelTemplate: true } as Record<string, unknown>,
-            readme: buildSearchableReadme({
-              description: repo.description,
-              capabilities: ["vercel", "template", "nextjs"],
-              languages: ["typescript"],
-              extra: [repo.name, "vercel", "ai", "template"],
-            }),
-            safetyScore,
-            popularityScore,
-            freshnessScore,
-            performanceScore: 0,
-            overallRank: calculateOverallRank({
-              safety: safetyScore, popularity: popularityScore,
-              freshness: freshnessScore, performance: 0,
-            }),
-            status: "ACTIVE" as const,
-            lastCrawledAt: new Date(),
-            nextCrawlAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-          };
-
-          await upsertAgent(agentData, {
-            name: agentData.name, slug: agentData.slug, description: agentData.description,
-            githubData: agentData.githubData, readme: agentData.readme,
-            popularityScore: agentData.popularityScore, freshnessScore: agentData.freshnessScore,
-            overallRank: agentData.overallRank,
-            lastCrawledAt: agentData.lastCrawledAt, nextCrawlAt: agentData.nextCrawlAt,
-          });
-          totalFound++;
+          try {
+            const res = await searchCode(
+              {
+                q: query,
+                sort: "indexed",
+                order: "desc",
+                per_page: 30,
+                page,
+              },
+              githubCtx
+            );
+            const items =
+              (res.data.items as Array<{
+                repository?: { id?: number; full_name?: string };
+              }>) ?? [];
+            if (items.length === 0) break;
+            for (const item of items) {
+              if (totalFound >= maxResults) break;
+              const repoId = item.repository?.id;
+              const fullName = item.repository?.full_name;
+              if (!repoId || !fullName) continue;
+              if (seenIds.has(repoId)) continue;
+              seenIds.add(repoId);
+              try {
+                const added = await processRepo(fullName, githubCtx, options);
+                totalFound += added;
+              } catch {
+                skipped += 1;
+              }
+            }
+          } catch {
+            break;
+          }
         }
-
-        await sleep(RATE_LIMIT_DELAY_MS);
-        page++;
-        if (repoNames.length < PAGE_SIZE) break;
       }
     }
-    }
 
-    await db
-      .update(crawlJobs)
-      .set({ status: "COMPLETED", completedAt: new Date(), agentsFound: totalFound })
-      .where(eq(crawlJobs.id, jobId));
+    await clearCheckpoint(SOURCE, mode);
+    await completeJob(jobId, {
+      agentsFound: totalFound,
+      skipped,
+      finishedReason: shouldContinueRun(startedAtMs, githubCtx, options)
+        ? "completed"
+        : "budget_or_time_cutoff",
+      ...toJobMetricsFromGithubContext(githubCtx),
+    });
   } catch (err) {
-    await db
-      .update(crawlJobs)
-      .set({ status: "FAILED", completedAt: new Date(), error: err instanceof Error ? err.message : String(err) })
-      .where(eq(crawlJobs.id, jobId));
+    await failJob(jobId, err, {
+      agentsFound: totalFound,
+      skipped,
+      ...toJobMetricsFromGithubContext(githubCtx),
+    });
     throw err;
   }
 

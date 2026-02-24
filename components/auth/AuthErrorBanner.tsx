@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -15,33 +15,33 @@ function getErrorConfig(error: string, message?: string | null) {
         title: "Session could not start",
         description: message && message !== "Something went wrong"
           ? message
-          : "We couldn't start your session. This sometimes happens — try again in a moment.",
-        cta: { label: "Try again", href: "/api/auth/play" },
+          : "We couldn't start your session. This sometimes happens â€” try again in a moment.",
+        cta: { label: "Try again", href: "/api/v1/auth/play" },
       };
     case "guest_failed":
     case "human_failed":
       return {
         title: "Session creation failed",
         description: message ?? "We couldn't create your session. Please try again.",
-        cta: { label: "Try again", href: "/api/auth/play" },
+        cta: { label: "Try again", href: "/api/v1/auth/play" },
       };
     case "recovery_expired":
       return {
         title: "Recovery link expired",
         description: "This link has expired. Generate a new one from the dashboard.",
-        cta: { label: "Start fresh as guest", href: "/api/auth/play" },
+        cta: { label: "Start fresh as guest", href: "/api/v1/auth/play" },
       };
     case "recovery_missing":
       return {
         title: "Recovery token missing",
         description: "The link may be incomplete. Please request a new recovery link.",
-        cta: { label: "Start fresh as guest", href: "/api/auth/play" },
+        cta: { label: "Start fresh as guest", href: "/api/v1/auth/play" },
       };
     case "recovery_invalid":
       return {
         title: "Recovery failed",
         description: message ?? "We couldn't recover your account. Please try again.",
-        cta: { label: "Start fresh as guest", href: "/api/auth/play" },
+        cta: { label: "Start fresh as guest", href: "/api/v1/auth/play" },
       };
     default:
       return {
@@ -104,3 +104,6 @@ export function AuthErrorBanner({ error, message }: AuthErrorBannerProps) {
     </div>
   );
 }
+
+
+

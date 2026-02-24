@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -32,13 +32,11 @@ function ProfilePageClient() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [userRes, statsRes, claimsRes] = await Promise.all([
-        fetch("/api/me", { credentials: "include" }),
-        fetch("/api/me/profile-stats", { credentials: "include" }),
-        fetch("/api/me/claimed-agents", { credentials: "include" }),
+      const [userRes, claimsRes] = await Promise.all([
+        fetch("/api/v1/me", { credentials: "include" }),
+        fetch("/api/v1/me/claimed-agents", { credentials: "include" }),
       ]);
       const userData = await userRes.json().catch(() => ({}));
-      const statsData = await statsRes.json().catch(() => ({}));
       const claimsData = await claimsRes.json().catch(() => ({}));
       if (userData.success && userData.data) {
         setUser({
@@ -48,9 +46,7 @@ function ProfilePageClient() {
           image: userData.data.image ?? null,
         });
       }
-      if (statsData.success && statsData.data) {
-        setMemberSince(statsData.data.memberSince ?? null);
-      }
+      setMemberSince(userData?.data?.createdAt ?? null);
       setClaimedAgents(claimsData.agents ?? []);
     } finally {
       setLoading(false);
@@ -64,7 +60,7 @@ function ProfilePageClient() {
   useEffect(() => {
     const linkGuest = searchParams?.get("link_guest");
     if (linkGuest !== "1") return;
-    fetch("/api/auth/link-guest", { method: "POST", credentials: "include" })
+    fetch("/api/v1/auth/link-guest", { method: "POST", credentials: "include" })
       .then(async (r) => {
         const data = await r.json().catch(() => ({}));
         if (data.success) router.replace("/dashboard/profile");
@@ -75,7 +71,7 @@ function ProfilePageClient() {
   useEffect(() => {
     const linkAgent = searchParams?.get("link_agent");
     if (linkAgent !== "1") return;
-    fetch("/api/auth/link-agent", { method: "POST", credentials: "include" })
+    fetch("/api/v1/auth/link-agent", { method: "POST", credentials: "include" })
       .then(async (r) => {
         const data = await r.json().catch(() => ({}));
         if (data.success) router.replace("/dashboard/profile");
@@ -278,3 +274,6 @@ export default function ProfilePage() {
     </Suspense>
   );
 }
+
+
+

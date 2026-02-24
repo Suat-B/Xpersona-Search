@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Safe fetch + parse. Never uses Response.json() which throws on empty body.
  * Use this instead of fetch().then(r => r.json()) to avoid "Unexpected end of JSON input".
  */
@@ -21,7 +21,7 @@ export async function safeFetchJson<T = unknown>(
 }
 
 const BALANCE_RETRY_DELAYS_MS = [0, 400, 1000, 2500, 5000];
-const BALANCE_API = "/api/me/balance";
+const BALANCE_API = "/api/v1/me/balance";
 
 type BalanceResponse = {
   success?: boolean;
@@ -64,13 +64,13 @@ export async function fetchBalanceDataWithRetry(): Promise<{
       }
       if (!RETRYABLE_STATUS.has(status)) break;
     } catch {
-      // Network error — retry on next iteration
+      // Network error â€” retry on next iteration
     }
   }
   return null;
 }
 
-const SESSION_STATS_API = "/api/me/session-stats";
+const SESSION_STATS_API = "/api/v1/me/session-stats";
 
 type SessionStatsResponse = {
   success?: boolean;
@@ -106,8 +106,11 @@ export async function fetchSessionStatsWithRetry(params?: {
       }
       if (!RETRYABLE_STATUS.has(status)) break;
     } catch {
-      // Network error — retry
+      // Network error â€” retry
     }
   }
   return null;
 }
+
+
+

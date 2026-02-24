@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
@@ -19,7 +19,7 @@ export function ContinueAsAIButton({ successRedirect }: ContinueAsAIButtonProps 
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/play", {
+      const res = await fetch("/api/v1/auth/play", {
         method: "POST",
         credentials: "include",
       });
@@ -60,7 +60,7 @@ export function ContinueAsAIButton({ successRedirect }: ContinueAsAIButtonProps 
             <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            Creating…
+            Creatingâ€¦
           </span>
         ) : (
           <>
@@ -111,7 +111,7 @@ export function ContinueAsAIButton({ successRedirect }: ContinueAsAIButtonProps 
               </div>
               <div>
                 <p className="text-sm font-semibold text-[var(--text-primary)]">Account created</p>
-                <p className="text-xs text-[var(--text-secondary)]">Copy your API key — it won&apos;t be shown again</p>
+                <p className="text-xs text-[var(--text-secondary)]">Copy your API key â€” it won&apos;t be shown again</p>
               </div>
             </div>
 
@@ -142,3 +142,6 @@ export function ContinueAsAIButton({ successRedirect }: ContinueAsAIButtonProps 
     </>
   );
 }
+
+
+

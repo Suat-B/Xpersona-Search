@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -105,8 +105,8 @@ export default function ManagePage() {
     async function load() {
       try {
         const [manageRes, customRes] = await Promise.all([
-          fetch(`/api/agents/${slug}/manage`, { credentials: "include" }),
-          fetch(`/api/agents/${slug}/customization`, { credentials: "include" }),
+          fetch(`/api/v1/agents/${slug}/manage`, { credentials: "include" }),
+          fetch(`/api/v1/agents/${slug}/customization`, { credentials: "include" }),
         ]);
         const [manageData, customData] = await Promise.all([
           manageRes.json().catch(() => ({})),
@@ -179,7 +179,7 @@ export default function ManagePage() {
     };
 
     try {
-      const res = await fetch(`/api/agents/${slug}/manage`, {
+      const res = await fetch(`/api/v1/agents/${slug}/manage`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -208,7 +208,7 @@ export default function ManagePage() {
       setSuccess("");
       setWarnings([]);
       try {
-        const res = await fetch(`/api/agents/${slug}/customization`, {
+        const res = await fetch(`/api/v1/agents/${slug}/customization`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -251,7 +251,7 @@ export default function ManagePage() {
     setError("");
     setWarnings([]);
     try {
-      const res = await fetch(`/api/agents/${slug}/customization/preview`, {
+      const res = await fetch(`/api/v1/agents/${slug}/customization/preview`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -346,10 +346,10 @@ export default function ManagePage() {
             </p>
             <div className="mt-4">
               <Link
-                href="/trading/developer"
+                href="/dashboard"
                 className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/40 bg-[var(--accent-heart)]/10 px-3 py-1.5 text-xs font-semibold text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/15 transition-colors"
               >
-                Open Developer Dashboard
+                Open Dashboard
               </Link>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
@@ -446,7 +446,7 @@ export default function ManagePage() {
                             onClick={() => removeLink(i)}
                             className="text-[var(--text-quaternary)] hover:text-[#ff453a] transition-colors"
                           >
-                            ×
+                            Ã—
                           </button>
                         </div>
                       ))}
@@ -600,3 +600,4 @@ export default function ManagePage() {
     </div>
   );
 }
+

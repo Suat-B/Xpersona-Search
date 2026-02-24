@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 
@@ -9,14 +9,14 @@ export function PackageList() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/credits/packages")
+    fetch("/api/v1/credits/packages")
       .then((r) => r.json())
       .then((data) => data.success && setPackages(data.data ?? []));
   }, []);
 
   const buy = async (packageId: string) => {
     setLoading(true);
-    const res = await fetch("/api/credits/checkout", {
+    const res = await fetch("/api/v1/credits/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ packageId }),
@@ -53,3 +53,6 @@ export function PackageList() {
     </div>
   );
 }
+
+
+

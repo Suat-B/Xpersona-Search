@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS "agents" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   "source_id" varchar(255) NOT NULL,
   "source" varchar(32) DEFAULT 'GITHUB_OPENCLEW' NOT NULL,
+  "visibility" varchar(16) DEFAULT 'PUBLIC' NOT NULL,
+  "public_searchable" boolean DEFAULT true NOT NULL,
   "name" varchar(255) NOT NULL,
   "slug" varchar(255) NOT NULL,
   "description" text,
@@ -63,6 +65,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS "agents_source_id_idx" ON "agents" ("source_id
 CREATE UNIQUE INDEX IF NOT EXISTS "agents_slug_idx" ON "agents" ("slug");
 CREATE INDEX IF NOT EXISTS "agents_status_idx" ON "agents" ("status");
 CREATE INDEX IF NOT EXISTS "agents_overall_rank_idx" ON "agents" ("overall_rank");
+CREATE INDEX IF NOT EXISTS "agents_visibility_idx" ON "agents" ("visibility");
+CREATE INDEX IF NOT EXISTS "agents_public_searchable_idx" ON "agents" ("public_searchable");
 `;
 
 const SQL_CRAWL_JOBS = `
@@ -70,15 +74,47 @@ CREATE TABLE IF NOT EXISTS "crawl_jobs" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   "source" varchar(32) NOT NULL,
   "status" varchar(20) DEFAULT 'PENDING' NOT NULL,
+  "worker_id" varchar(64),
   "started_at" timestamp with time zone,
+  "heartbeat_at" timestamp with time zone,
   "completed_at" timestamp with time zone,
+  "finished_reason" varchar(40),
   "error" text,
   "agents_found" integer DEFAULT 0 NOT NULL,
   "agents_updated" integer DEFAULT 0 NOT NULL,
+  "budget_used" integer DEFAULT 0 NOT NULL,
+  "timeouts" integer DEFAULT 0 NOT NULL,
+  "rate_limits" integer DEFAULT 0 NOT NULL,
+  "github_requests" integer DEFAULT 0 NOT NULL,
+  "retry_count" integer DEFAULT 0 NOT NULL,
+  "rate_limit_wait_ms" integer DEFAULT 0 NOT NULL,
+  "skipped" integer DEFAULT 0 NOT NULL,
+  "cursor_snapshot" jsonb,
   "created_at" timestamp with time zone DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS "crawl_jobs_status_idx" ON "crawl_jobs" ("status");
 CREATE INDEX IF NOT EXISTS "crawl_jobs_created_at_idx" ON "crawl_jobs" ("created_at");
+CREATE INDEX IF NOT EXISTS "crawl_jobs_worker_id_idx" ON "crawl_jobs" ("worker_id");
+CREATE INDEX IF NOT EXISTS "crawl_jobs_heartbeat_at_idx" ON "crawl_jobs" ("heartbeat_at");
+`;
+
+const SQL_CRAWL_CHECKPOINTS = `
+CREATE TABLE IF NOT EXISTS "crawl_checkpoints" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "source" varchar(32) NOT NULL,
+  "mode" varchar(16) DEFAULT 'backfill' NOT NULL,
+  "cursor" jsonb DEFAULT '{}'::jsonb NOT NULL,
+  "worker_id" varchar(64),
+  "lease_expires_at" timestamp with time zone,
+  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "crawl_checkpoints_source_mode_idx"
+  ON "crawl_checkpoints" ("source", "mode");
+CREATE INDEX IF NOT EXISTS "crawl_checkpoints_worker_id_idx"
+  ON "crawl_checkpoints" ("worker_id");
+CREATE INDEX IF NOT EXISTS "crawl_checkpoints_updated_at_idx"
+  ON "crawl_checkpoints" ("updated_at");
 `;
 
 const SQL_SEARCH_VECTOR = `
@@ -115,6 +151,9 @@ async function main() {
 
     await client.query(SQL_CRAWL_JOBS);
     console.log("crawl_jobs table and indexes: OK");
+
+    await client.query(SQL_CRAWL_CHECKPOINTS);
+    console.log("crawl_checkpoints table and indexes: OK");
 
     await client.query(SQL_SEARCH_VECTOR);
     console.log("search_vector column, index, trigger: OK");

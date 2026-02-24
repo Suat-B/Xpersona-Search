@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useState } from "react";
@@ -26,42 +26,50 @@ const SEARCH_API_BASE = process.env.NEXT_PUBLIC_APP_URL ?? "https://xpersona.co"
 export default function SearchApiPage() {
   const baseUrl = SEARCH_API_BASE.replace(/\/$/, "");
 
-  const searchCurl = `curl "${baseUrl}/api/search?q=crypto&protocols=A2A,MCP&minSafety=50&sort=rank&limit=10"`;
-  const suggestCurl = `curl "${baseUrl}/api/search/suggest?q=trad&limit=8"`;
-  const trendingCurl = `curl "${baseUrl}/api/search/trending"`;
-  const clickCurl = `curl -X POST "${baseUrl}/api/search/click" -H "Content-Type: application/json" -d '{"query":"crypto","agentId":"uuid","position":0}'`;
-  const agentCurl = `curl "${baseUrl}/api/agents/my-agent-slug"`;
+  const searchCurl = `curl "${baseUrl}/api/v1/search?q=crypto&protocols=A2A,MCP&minSafety=50&sort=rank&limit=10"`;
+  const suggestCurl = `curl "${baseUrl}/api/v1/search/suggest?q=trad&limit=8"`;
+  const trendingCurl = `curl "${baseUrl}/api/v1/search/trending"`;
+  const clickCurl = `curl -X POST "${baseUrl}/api/v1/search/click" -H "Content-Type: application/json" -d '{"query":"crypto","agentId":"uuid","position":0}'`;
+  const agentCurl = `curl "${baseUrl}/api/v1/agents/my-agent-slug"`;
 
   const searchResponseJson = `{
-  "results": [
-    {
-      "id": "uuid",
-      "name": "Agent Name",
-      "slug": "agent-slug",
-      "description": "...",
-      "snippet": "...<mark>matching</mark> text...",
-      "capabilities": ["cap1", "cap2"],
-      "protocols": ["A2A", "MCP"],
-      "safetyScore": 85,
-      "popularityScore": 72,
-      "freshnessScore": 90,
-      "overallRank": 82.5,
-      "claimStatus": "CLAIMED",
-      "verificationTier": "SILVER",
-      "hasCustomPage": true,
-      "githubData": { "stars": 120, "forks": 15 },
-      "createdAt": "2025-01-01T00:00:00Z"
-    }
-  ],
-  "pagination": {
-    "hasMore": true,
-    "nextCursor": "uuid",
-    "total": 150
+  "success": true,
+  "data": {
+    "results": [
+      {
+        "id": "uuid",
+        "name": "Agent Name",
+        "slug": "agent-slug",
+        "description": "...",
+        "snippet": "...<mark>matching</mark> text...",
+        "capabilities": ["cap1", "cap2"],
+        "protocols": ["A2A", "MCP"],
+        "safetyScore": 85,
+        "popularityScore": 72,
+        "freshnessScore": 90,
+        "overallRank": 82.5,
+        "claimStatus": "CLAIMED",
+        "verificationTier": "SILVER",
+        "hasCustomPage": true,
+        "githubData": { "stars": 120, "forks": 15 },
+        "createdAt": "2025-01-01T00:00:00Z"
+      }
+    ],
+    "pagination": {
+      "hasMore": true,
+      "nextCursor": "uuid",
+      "total": 150
+    },
+    "facets": {
+      "protocols": [{ "protocol": ["A2A"], "count": 45 }]
+    },
+    "didYouMean": "cryptocurrency"
   },
-  "facets": {
-    "protocols": [{ "protocol": ["A2A"], "count": 45 }]
-  },
-  "didYouMean": "cryptocurrency"
+  "meta": {
+    "requestId": "req_123",
+    "version": "v1",
+    "timestamp": "2026-02-24T00:00:00.000Z"
+  }
 }`;
 
   return (
@@ -125,7 +133,7 @@ export default function SearchApiPage() {
             <div className="border-b border-white/5 p-5">
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded text-emerald-400">GET</span>
-                <code className="text-sm font-mono text-white/90">/api/search</code>
+                <code className="text-sm font-mono text-white/90">/api/v1/search</code>
               </div>
               <p className="text-sm font-medium text-white mb-1">Search AI agents</p>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-4">
@@ -154,7 +162,7 @@ export default function SearchApiPage() {
                     <tr className="border-b border-white/5">
                       <td className="py-2 font-mono">protocols</td>
                       <td>string</td>
-                      <td>Comma-separated: A2A, MCP, ANP, OPENCLEW (optional)</td>
+                      <td>Comma-separated: A2A, MCP, ANP, OPENCLAW (optional)</td>
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-2 font-mono">capabilities</td>
@@ -163,12 +171,12 @@ export default function SearchApiPage() {
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-2 font-mono">minSafety</td>
-                      <td>number 0–100</td>
+                      <td>number 0-100</td>
                       <td>Minimum safety score (optional)</td>
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-2 font-mono">minRank</td>
-                      <td>number 0–100</td>
+                      <td>number 0-100</td>
                       <td>Minimum overall rank (optional)</td>
                     </tr>
                     <tr className="border-b border-white/5">
@@ -184,7 +192,7 @@ export default function SearchApiPage() {
                     <tr className="border-b border-white/5">
                       <td className="py-2 font-mono">limit</td>
                       <td>number</td>
-                      <td>Results per page 1–100 (default: 30)</td>
+                      <td>Results per page 1-100 (default: 30)</td>
                     </tr>
                     <tr>
                       <td className="py-2 font-mono">includePending</td>
@@ -205,7 +213,7 @@ export default function SearchApiPage() {
             <div className="border-b border-white/5 p-5">
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded text-emerald-400">GET</span>
-                <code className="text-sm font-mono text-white/90">/api/search/suggest</code>
+                <code className="text-sm font-mono text-white/90">/api/v1/search/suggest</code>
               </div>
               <p className="text-sm font-medium text-white mb-1">Autocomplete suggestions</p>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-4">
@@ -216,11 +224,11 @@ export default function SearchApiPage() {
                   <tbody>
                     <tr className="border-b border-white/5">
                       <td className="py-2 font-mono">q</td>
-                      <td className="py-2">string (required, 2–100 chars)</td>
+                      <td className="py-2">string (required, 2-100 chars)</td>
                     </tr>
                     <tr>
                       <td className="py-2 font-mono">limit</td>
-                      <td className="py-2">number 1–12 (default: 8)</td>
+                      <td className="py-2">number 1-12 (default: 8)</td>
                     </tr>
                   </tbody>
                 </table>
@@ -236,7 +244,7 @@ export default function SearchApiPage() {
             <div className="border-b border-white/5 p-5">
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded text-emerald-400">GET</span>
-                <code className="text-sm font-mono text-white/90">/api/search/trending</code>
+                <code className="text-sm font-mono text-white/90">/api/v1/search/trending</code>
               </div>
               <p className="text-sm font-medium text-white mb-1">Trending search queries</p>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-4">
@@ -253,7 +261,7 @@ export default function SearchApiPage() {
             <div className="border-b border-white/5 p-5">
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded text-amber-400">POST</span>
-                <code className="text-sm font-mono text-white/90">/api/search/click</code>
+                <code className="text-sm font-mono text-white/90">/api/v1/search/click</code>
               </div>
               <p className="text-sm font-medium text-white mb-1">Record result click</p>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-4">
@@ -271,7 +279,7 @@ export default function SearchApiPage() {
             <div className="p-5">
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded text-emerald-400">GET</span>
-                <code className="text-sm font-mono text-white/90">/api/agents/{"{slug}"}</code>
+                <code className="text-sm font-mono text-white/90">/api/v1/agents/{"{slug}"}</code>
               </div>
               <p className="text-sm font-medium text-white mb-1">Get agent by slug</p>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-4">
@@ -305,7 +313,7 @@ export default function SearchApiPage() {
           <h2 className="text-lg font-semibold text-white mb-3">For AI agents</h2>
           <div className="prose prose-invert max-w-none rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6 text-sm leading-relaxed text-[var(--text-secondary)]">
             <p>
-              Call <code className="rounded bg-white/10 px-1 font-mono text-xs">GET /api/search</code> with a
+              Call <code className="rounded bg-white/10 px-1 font-mono text-xs">GET /api/v1/search</code> with a
               natural-language query in <code className="rounded bg-white/10 px-1 font-mono text-xs">q</code> to find
               relevant agents. Use <code className="rounded bg-white/10 px-1 font-mono text-xs">protocols</code> to
               filter by A2A, MCP, ANP, or OpenClaw. For advanced queries, use inline operators{" "}
@@ -315,8 +323,8 @@ export default function SearchApiPage() {
               <code className="rounded bg-white/10 px-1 font-mono text-xs">cursor</code> from the
               previous response for pagination. Check <code className="rounded bg-white/10 px-1 font-mono text-xs">didYouMean</code> for
               spell-correction suggestions when results are sparse. Then call{" "}
-              <code className="rounded bg-white/10 px-1 font-mono text-xs">GET /api/agents/{"{slug}"}</code> for full
-              details on any agent. Optionally call <code className="rounded bg-white/10 px-1 font-mono text-xs">POST /api/search/click</code> when
+              <code className="rounded bg-white/10 px-1 font-mono text-xs">GET /api/v1/agents/{"{slug}"}</code> for full
+              details on any agent. Optionally call <code className="rounded bg-white/10 px-1 font-mono text-xs">POST /api/v1/search/click</code> when
               a user clicks a result to improve future rankings.
             </p>
           </div>
@@ -341,3 +349,5 @@ export default function SearchApiPage() {
     </main>
   );
 }
+
+

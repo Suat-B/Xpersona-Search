@@ -13,7 +13,8 @@
  * Optional env:
  *      GITHUB_REQUEST_TIMEOUT_MS=15000 (default) to fail slow GitHub calls faster
  *
- * Requires: DATABASE_URL, GITHUB_TOKEN (for GitHub sources)
+ * Requires: DATABASE_URL, and GitHub auth for GitHub sources
+ * (GITHUB_TOKEN or GitHub App env vars)
  */
 import { config } from "dotenv";
 
@@ -21,6 +22,9 @@ config({ path: ".env.local" });
 
 import { runCrawlPool, type CrawlTask, type CrawlResult } from "@/lib/search/crawlers/pool";
 import type { CrawlMode, CrawlRuntimeOptions } from "@/lib/search/crawlers/crawler-mode";
+import { db } from "@/lib/db";
+import { crawlJobs } from "@/lib/db/schema";
+import { inArray } from "drizzle-orm";
 
 const args = process.argv.slice(2);
 const maxArg = args.find((a) => !a.startsWith("--"));
@@ -33,6 +37,7 @@ const mode: CrawlMode = process.env.CRAWL_HYBRID_MODE === "0" ? "backfill" : req
 const githubBudget = budgetArg ? parseInt(budgetArg, 10) : undefined;
 const timeBudgetMs = timeBudgetArg ? parseInt(timeBudgetArg, 10) : undefined;
 const lockOwner = `run-crawl:${process.pid}`;
+const workerId = process.env.CRAWL_WORKER_ID ?? `worker:${process.pid}`;
 
 // Support both --sources=X,Y,Z and --sources X,Y,Z (PowerShell may split on =)
 const sourcesIdx = args.findIndex((a) => a === "--sources" || a.startsWith("--sources="));
@@ -159,6 +164,89 @@ function withStartLog(source: string, fn: () => Promise<{ total: number; jobId?:
   };
 }
 
+function hasGitHubAuth(): boolean {
+  if (process.env.GITHUB_TOKEN) return true;
+  return Boolean(
+    process.env.GITHUB_APP_ID &&
+      process.env.GITHUB_APP_PRIVATE_KEY &&
+      process.env.GITHUB_APP_INSTALLATION_ID
+  );
+}
+
+async function logGitHubReliability(results: CrawlResult[], mode: CrawlMode) {
+  const githubSources = new Set([
+    "GITHUB_OPENCLEW",
+    "GITHUB_MCP",
+    "GITHUB_REPOS",
+    "CLAWHUB",
+    "CURATED_SEEDS",
+    "AWESOME_LISTS",
+    "CREWAI",
+    "VERCEL_TEMPLATES",
+  ]);
+  const jobIds = results
+    .filter((r) => githubSources.has(r.source) && !!r.jobId)
+    .map((r) => r.jobId as string);
+  if (jobIds.length === 0) return;
+
+  try {
+    const rows = await db
+      .select({
+        id: crawlJobs.id,
+        githubRequests: crawlJobs.githubRequests,
+        retries: crawlJobs.retryCount,
+        rateLimits: crawlJobs.rateLimits,
+        timeouts: crawlJobs.timeouts,
+        waitMs: crawlJobs.rateLimitWaitMs,
+        skipped: crawlJobs.skipped,
+      })
+      .from(crawlJobs)
+      .where(inArray(crawlJobs.id, jobIds));
+
+    const totals = rows.reduce(
+      (acc, r) => {
+        acc.githubRequests += r.githubRequests ?? 0;
+        acc.retries += r.retries ?? 0;
+        acc.rateLimits += r.rateLimits ?? 0;
+        acc.timeouts += r.timeouts ?? 0;
+        acc.waitMs += r.waitMs ?? 0;
+        acc.skipped += r.skipped ?? 0;
+        return acc;
+      },
+      {
+        githubRequests: 0,
+        retries: 0,
+        rateLimits: 0,
+        timeouts: 0,
+        waitMs: 0,
+        skipped: 0,
+      }
+    );
+
+    log(
+      "CRAWL",
+      "GitHub requests=%d retries=%d rateLimits=%d timeouts=%d waitMs=%d skipped=%d",
+      totals.githubRequests,
+      totals.retries,
+      totals.rateLimits,
+      totals.timeouts,
+      totals.waitMs,
+      totals.skipped
+    );
+    metric("crawl.github.reliability", {
+      mode,
+      ...totals,
+      sources: rows.length,
+    });
+  } catch (err) {
+    log(
+      "CRAWL",
+      "GitHub KPI query skipped: %s",
+      err instanceof Error ? err.message : String(err)
+    );
+  }
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) {
     console.error("DATABASE_URL not set");
@@ -181,11 +269,13 @@ async function main() {
     githubBudget,
     timeBudgetMs,
     lockOwner,
+    workerId,
+    deepSafetyLimit: Number(process.env.CRAWL_DEEP_SAFETY_LIMIT_PER_JOB ?? "100"),
   };
 
   const tasks: CrawlTask[] = [];
 
-  if (process.env.GITHUB_TOKEN) {
+  if (hasGitHubAuth()) {
     if (shouldRun("GITHUB_OPENCLEW")) {
       tasks.push({
         source: "GITHUB_OPENCLEW",
@@ -226,8 +316,13 @@ async function main() {
         }),
       });
     }
-  } else if (shouldRun("GITHUB_OPENCLEW") || shouldRun("GITHUB_MCP") || shouldRun("CLAWHUB") || shouldRun("GITHUB_REPOS")) {
-    log("CRAWL", "GITHUB_TOKEN not set — skipping GitHub crawlers");
+  } else if (
+    shouldRun("GITHUB_OPENCLEW") ||
+    shouldRun("GITHUB_MCP") ||
+    shouldRun("CLAWHUB") ||
+    shouldRun("GITHUB_REPOS")
+  ) {
+    log("CRAWL", "GitHub auth not configured — skipping GitHub crawlers");
   }
 
   if (shouldRun("MCP_REGISTRY")) {
@@ -421,6 +516,8 @@ async function main() {
   if (failed.length > 0) {
     failed.forEach((r) => log("CRAWL", "  FAIL %s: %s (%dms)", r.source, r.error, r.durationMs));
   }
+
+  await logGitHubReliability(results, mode);
 
   if (succeeded.length === 0 && failed.length > 0) {
     process.exit(1);

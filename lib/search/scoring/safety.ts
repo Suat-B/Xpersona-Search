@@ -1,4 +1,4 @@
-import type { GitHubRepo } from "../utils/github";
+import type { GitHubRepo, GitHubRequestContext } from "../utils/github";
 import {
   checkFileExists,
   checkDirectoryExists,
@@ -36,33 +36,55 @@ const SUSPICIOUS_PATTERNS: Array<{
   { pattern: /process\.env\.\w+/, severity: "low" },
 ];
 
-export async function calculateSafetyScore(
+function applyIssuePenalties(
+  baseScore: number,
+  issues: SafetyIssue[],
+  checks: Record<string, boolean>
+): number {
+  let score = baseScore;
+  for (const issue of issues) {
+    switch (issue.severity) {
+      case "critical":
+        score -= 35;
+        break;
+      case "high":
+        score -= 12;
+        break;
+      case "medium":
+        score -= 6;
+        break;
+      case "low":
+        score -= 3;
+        break;
+    }
+  }
+  if (checks.hasLicense) score = Math.min(100, score + 8);
+  if (checks.hasTests) score = Math.min(100, score + 12);
+  if (checks.isOriginal) score = Math.min(100, score + 5);
+  if (checks.isMaintained) score = Math.min(100, score + 4);
+  if (checks.hasReadme) score = Math.min(100, score + 3);
+  return Math.min(100, Math.max(25, Math.round(score)));
+}
+
+function buildBaseSignals(
   repo: GitHubRepo,
   skillContent: string
-): Promise<number> {
+): { checks: Record<string, boolean>; issues: SafetyIssue[] } {
   const checks: Record<string, boolean> = {};
   const issues: SafetyIssue[] = [];
 
-  checks.hasLicense = await checkFileExists(repo.full_name, "LICENSE");
-  if (!checks.hasLicense) {
-    issues.push({
-      severity: "medium",
-      type: "missing_license",
-      message: "Repository lacks LICENSE file",
-    });
-  }
-
-  checks.hasReadme = await checkFileExists(repo.full_name, "README.md");
+  checks.hasLicense = false;
+  checks.hasReadme = false;
+  checks.hasTests = false;
+  checks.isOriginal = !repo.fork;
+  checks.isMaintained = true;
 
   if (repo.fork) {
-    checks.isOriginal = false;
     issues.push({
       severity: "low",
       type: "is_fork",
       message: "Repository is a fork",
     });
-  } else {
-    checks.isOriginal = true;
   }
 
   const lastPush = new Date(repo.pushed_at);
@@ -87,38 +109,72 @@ export async function calculateSafetyScore(
     }
   }
 
+  if (repo.stargazers_count > 50) {
+    checks.hasReadme = true; // weak positive signal for mature repos in fast mode
+  }
+
+  return { checks, issues };
+}
+
+/**
+ * Fast safety scoring mode for high-volume crawls.
+ * Avoids additional GitHub API calls and relies on repo metadata + scanned content.
+ */
+export function calculateSafetyScoreFast(
+  repo: GitHubRepo,
+  skillContent: string
+): number {
+  const { checks, issues } = buildBaseSignals(repo, skillContent);
+  let score = applyIssuePenalties(76, issues, checks);
+  if (repo.stargazers_count > 50) score = Math.min(100, score + 8);
+  return Math.max(25, Math.min(100, Math.round(score)));
+}
+
+/**
+ * Deep safety scoring mode for top candidates.
+ * Performs extra repository checks that consume additional API budget.
+ */
+export async function calculateSafetyScoreDeep(
+  repo: GitHubRepo,
+  skillContent: string,
+  context?: GitHubRequestContext
+): Promise<number> {
+  const { checks, issues } = buildBaseSignals(repo, skillContent);
+
+  checks.hasLicense = await checkFileExists(repo.full_name, "LICENSE", context);
+  if (!checks.hasLicense) {
+    issues.push({
+      severity: "medium",
+      type: "missing_license",
+      message: "Repository lacks LICENSE file",
+    });
+  }
+
+  checks.hasReadme = await checkFileExists(repo.full_name, "README.md", context);
+
   const hasTestDir =
-    (await checkDirectoryExists(repo.full_name, "test")) ||
-    (await checkDirectoryExists(repo.full_name, "__tests__")) ||
-    (await checkDirectoryExists(repo.full_name, "tests"));
-  const hasTestFiles = await checkGlobExists(
-    repo.full_name,
-    "*.test.ts"
-  );
+    (await checkDirectoryExists(repo.full_name, "test", context)) ||
+    (await checkDirectoryExists(repo.full_name, "__tests__", context)) ||
+    (await checkDirectoryExists(repo.full_name, "tests", context));
+  const hasTestFiles = await checkGlobExists(repo.full_name, "*.test.ts", context);
   checks.hasTests = hasTestDir || hasTestFiles;
 
-  let score = 100;
-  for (const issue of issues) {
-    switch (issue.severity) {
-      case "critical":
-        score -= 35;
-        break;
-      case "high":
-        score -= 12;
-        break;
-      case "medium":
-        score -= 6;
-        break;
-      case "low":
-        score -= 3;
-        break;
-    }
-  }
-  if (checks.hasLicense) score = Math.min(100, score + 8);
-  if (checks.hasTests) score = Math.min(100, score + 12);
-  if (checks.isOriginal) score = Math.min(100, score + 5);
-  if (repo.stargazers_count > 50) score = Math.min(100, score + 8);
+  let score = applyIssuePenalties(88, issues, checks);
+  if (repo.stargazers_count > 50) score = Math.min(100, score + 6);
+  return Math.max(25, Math.min(100, Math.round(score)));
+}
 
-  score = Math.max(25, Math.round(score));
-  return Math.min(100, score);
+/**
+ * Backward-compatible entrypoint.
+ * Existing callers get deep scoring unless they opt into fast mode explicitly.
+ */
+export async function calculateSafetyScore(
+  repo: GitHubRepo,
+  skillContent: string,
+  options?: { mode?: "fast" | "deep"; context?: GitHubRequestContext }
+): Promise<number> {
+  if (options?.mode === "fast") {
+    return calculateSafetyScoreFast(repo, skillContent);
+  }
+  return calculateSafetyScoreDeep(repo, skillContent, options?.context);
 }

@@ -1,10 +1,10 @@
-# Agent Search — Database Setup
+# Agent Search - Database Setup
 
-To show agents in the search results, you need to:
+To show agents in search results, you need to:
 
-1. Create the `agents` table (and `crawl_jobs`)
+1. Create the `agents` table (and crawler tables)
 2. Add the `search_vector` column for full-text search
-3. Run the crawler to populate agents from GitHub
+3. Run the crawler to populate agents from GitHub and other sources
 
 ---
 
@@ -16,14 +16,19 @@ Add to `.env.local`:
 # Required (PostgreSQL)
 DATABASE_URL=postgresql://user:password@localhost:5432/xpersona
 
-# Required for the crawler (GitHub API for finding OpenClaw SKILL.md files)
+# Required crawler auth (choose one)
 GITHUB_TOKEN=ghp_xxxxxxxxxxxx
+# GITHUB_APP_ID=123456
+# GITHUB_APP_INSTALLATION_ID=12345678
+# GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
 ```
 
-**Getting a GitHub token:**
-- Go to [GitHub Settings → Developer settings → Personal access tokens](https://github.com/settings/tokens)
+Getting a GitHub PAT:
+- Go to [GitHub Settings -> Developer settings -> Personal access tokens](https://github.com/settings/tokens)
 - Create a token (classic) with `public_repo` scope
-- Without it, the crawler hits the unauthenticated rate limit (60 req/hr); with it, 5,000 req/hr
+- Unauthenticated limit is 60 req/hour; authenticated PAT is typically 5,000 req/hour
+
+For high-scale crawling, prefer GitHub App installation auth.
 
 ---
 
@@ -33,11 +38,12 @@ Run:
 
 ```bash
 npm run db:ensure-agents-table
+npm run db:ensure-crawler-schema
 ```
 
-This creates `agents`, `crawl_jobs`, the `search_vector` column, and the trigger for full-text search.
+This ensures `agents`, `crawl_jobs`, `crawl_frontier`, `crawl_checkpoints`, and crawler resiliency columns exist.
 
-**Alternative:** If you use Drizzle migrations:
+If you use Drizzle migrations:
 
 ```bash
 npm run db:push
@@ -46,55 +52,94 @@ node scripts/ensure-search-vectors.mjs
 
 ---
 
-## 3. Run the Crawler
+## 3. Run Crawlers
+
+Basic full crawl:
 
 ```bash
 npm run crawl
 ```
 
-This runs a **full backfill** (all sources, no date filter): OpenClaw, MCP, ClawHub, GitHub Repos, MCP Registry, PyPI, Curated Seeds, Hugging Face Spaces, Docker Hub, AgentScape, Replicate (if token set), A2A Registry, npm. Default max is 1500; override with:
+This runs a full backfill (all enabled sources, no date filter). Default max is 1500; override with:
 
 ```bash
 npm run crawl 2000
 ```
 
-For a deep initial backfill:
+Deeper backfill:
 
 ```bash
 npm run crawl:full
 ```
 
-For **100k-scale** population (runs for 1–4+ hours, requires GITHUB_TOKEN):
+100k-scale population:
 
 ```bash
 npm run crawl:100k
 ```
 
-This uses aggressive limits (ClawHub 10k, HF Spaces 20k, GitHub Repos 15k, npm 5k, PyPI 5k, etc.) and `CRAWL_BROAD_MODE=1` for npm/PyPI. Expect tens of thousands of agents after completion.
+Dedicated resilient worker (recommended for GitHub-heavy crawling):
+
+```bash
+npm run crawl:worker
+```
+
+Worker behavior:
+- hot mode every 5 minutes
+- nightly deep backfill
+- stale RUNNING job reaper before cycles
 
 ---
 
 ## 4. Verify
 
 1. Visit `http://localhost:3000/?q=discover` or `http://localhost:3000/?hub=1&q=discover`
-2. You should see agent results
+2. Confirm new results appear and GitHub sources continue updating over time
 
 ---
 
 ## Production (Vercel Cron)
 
-The `/api/cron/crawl` route runs multiple crawlers. Add to Vercel env:
+The `/api/cron/crawl` route can run non-GitHub crawlers, and optionally GitHub crawlers.
 
-- `CRON_SECRET` — generate with `openssl rand -hex 32`
-- `GITHUB_TOKEN` — required for GitHub OpenClaw, MCP, ClawHub, GitHub Repos crawlers
-- `CRAWL_MAX_RESULTS` — (optional) max agents per source, default 500
-- `CRAWL_SINCE_DAYS` — (optional) 0 = full crawl (default), 7 = last 7 days (incremental)
-- `CRAWL_BATCH_SIZE` — (optional) batch limit for heavy crawlers (HF Spaces), default 2000
-- `CRAWL_SOURCE_FILTER` — (optional) comma-separated sources to run only (e.g. `CLAWHUB,MCP_REGISTRY`); empty = all
-- `CRAWL_BROAD_MODE` — (optional) `1` to enable relaxed npm/PyPI filtering for volume
-- `HUGGINGFACE_TOKEN` — (optional) for higher Hugging Face API rate limits
-- `REPLICATE_API_TOKEN` — (optional) for Replicate models crawler
-- `A2A_REGISTRY_URL` — (optional) A2A registry API base URL, default `https://api.a2a-registry.dev`
-- `MCP_REGISTRY_URL` — (optional) MCP Registry API base, default `https://registry.modelcontextprotocol.io`
+Recommended env:
+- `CRON_SECRET` - generate with `openssl rand -hex 32`
+- `CRAWL_GITHUB_IN_CRON=0` - keep GitHub crawlers disabled in serverless cron when dedicated worker is enabled
+- `GITHUB_TOKEN` or GitHub App env vars if you intentionally run GitHub sources in cron
+- `CRAWL_MAX_RESULTS` - optional per-source max, default 500
+- `CRAWL_SINCE_DAYS` - optional, `0` full crawl (default)
+- `CRAWL_BATCH_SIZE` - optional batch limit for heavy crawlers, default 2000
+- `CRAWL_SOURCE_FILTER` - optional source allowlist
+- `CRAWL_BROAD_MODE` - optional `1` for relaxed npm/PyPI filtering
+- `HUGGINGFACE_TOKEN` - optional
+- `REPLICATE_API_TOKEN` - optional
+- `A2A_REGISTRY_URL` - optional
+- `MCP_REGISTRY_URL` - optional
 
-Then configure a cron job to call `GET /api/cron/crawl` with `Authorization: Bearer <CRON_SECRET>`. On Vercel Hobby plan, crons can run at most once per day—use `0 6 * * *` (6:00 UTC daily). Pro plan allows more frequent runs (e.g. every 6 hours).
+Then configure a cron job to call `GET /api/cron/crawl` with `Authorization: Bearer <CRON_SECRET>`.
+
+---
+
+## Ranking Tuning (Optional)
+
+```bash
+SEARCH_HYBRID_RANKING=1
+SEARCH_RANK_WEIGHT_LEXICAL=0.62
+SEARCH_RANK_WEIGHT_AUTHORITY=0.22
+SEARCH_RANK_WEIGHT_ENGAGEMENT=0.12
+SEARCH_RANK_WEIGHT_FRESHNESS=0.04
+
+SEARCH_ENGAGEMENT_PRIOR_MEAN=0.06
+SEARCH_ENGAGEMENT_PRIOR_STRENGTH=20
+SEARCH_ENGAGEMENT_CONFIDENCE_IMPRESSIONS=40
+SEARCH_ENGAGEMENT_SCORE_SCALE=2.25
+
+SEARCH_RANK_LOG_MODE=sample   # off | sample | all
+SEARCH_RANK_LOG_SAMPLE_RATE=0.02
+SEARCH_DEBUG_HEADERS=0
+```
+
+Notes:
+- weights are auto-normalized
+- lexical should usually remain dominant unless engagement signals are mature
+- use sampled rank logs in production

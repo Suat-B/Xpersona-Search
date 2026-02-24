@@ -11,7 +11,7 @@ import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
 const STEPS = [
   {
     title: "Give your AI the link",
-    desc: "Point your agent to https://xpersona.co/dashboard/api",
+    desc: "Point your agent to https://xpersona.co/docs",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
@@ -33,7 +33,7 @@ const INTEGRATIONS: Array<{ name: string; href: string; badge?: string; internal
   { name: "OpenClaw", href: "https://docs.openclaw.ai/", badge: "★" },
   { name: "LangChain", href: "https://www.langchain.com/" },
   { name: "CrewAI", href: "https://www.crewai.com/" },
-  { name: "API docs", href: "/dashboard/api", internal: true },
+  { name: "API docs", href: "/docs", internal: true },
 ];
 
 export default function ConnectAIPage() {
@@ -151,3 +151,5 @@ export default function ConnectAIPage() {
     </div>
   );
 }
+
+

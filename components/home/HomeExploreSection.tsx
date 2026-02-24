@@ -1,13 +1,18 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { unwrapClientResponse } from "@/lib/api/client-response";
 
 interface Agent {
   id: string;
   name: string;
   slug: string;
   protocols: string[];
+}
+
+interface SearchPayload {
+  results?: Agent[];
 }
 
 export function HomeExploreSection() {
@@ -23,9 +28,10 @@ export function HomeExploreSection() {
     if (!mounted) return;
     let cancelled = false;
     setLoading(true);
-    fetch("/api/search?sort=popularity&limit=8")
+    fetch("/api/v1/search?sort=popularity&limit=8")
       .then((r) => r.json())
-      .then((data) => {
+      .then((payload) => {
+        const data = unwrapClientResponse<SearchPayload>(payload);
         if (!cancelled && data.results) {
           setAgents(data.results);
         }
@@ -82,3 +88,6 @@ export function HomeExploreSection() {
     </div>
   );
 }
+
+
+

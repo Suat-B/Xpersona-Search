@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -9,7 +9,7 @@ export function GuestApiWarningBanner() {
   const [isPermanent, setIsPermanent] = useState<boolean | null>(null);
 
   useEffect(() => {
-    fetch("/api/me", { credentials: "include" })
+    fetch("/api/v1/me", { credentials: "include" })
       .then((r) => r.json())
       .then((data) => {
         if (data?.success && data?.data) {
@@ -33,7 +33,7 @@ export function GuestApiWarningBanner() {
   const linkHref = buildUpgradeAuthUrl(
     "signup",
     accountType,
-    "/dashboard/api"
+    "/docs"
   );
 
   return (
@@ -91,3 +91,7 @@ export function GuestApiWarningBanner() {
     </div>
   );
 }
+
+
+
+

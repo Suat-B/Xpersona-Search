@@ -40,16 +40,25 @@ export async function GET(req: NextRequest) {
   const runSource = (name: string) =>
     sourceFilter.length === 0 || sourceFilter.includes(name.toUpperCase());
   const mode = (process.env.CRAWL_MODE ?? "backfill").toLowerCase() as CrawlMode;
+  const hasGitHubAuth = Boolean(
+    process.env.GITHUB_TOKEN ||
+      (process.env.GITHUB_APP_ID &&
+        process.env.GITHUB_APP_PRIVATE_KEY &&
+        process.env.GITHUB_APP_INSTALLATION_ID)
+  );
+  const enableGithubInCron = process.env.CRAWL_GITHUB_IN_CRON === "1";
   const runtimeOptions: CrawlRuntimeOptions = {
     mode: mode === "hot" || mode === "warm" ? mode : "backfill",
     githubBudget: parseInt(process.env.CRAWL_GITHUB_BUDGET ?? "800", 10),
     timeBudgetMs: parseInt(process.env.CRAWL_TIME_BUDGET_MS ?? "120000", 10),
     lockOwner: "cron-crawl",
+    workerId: "cron-crawl",
+    deepSafetyLimit: Number(process.env.CRAWL_DEEP_SAFETY_LIMIT_PER_JOB ?? "100"),
   };
 
   const tasks: CrawlTask[] = [];
 
-  if (process.env.GITHUB_TOKEN) {
+  if (hasGitHubAuth && enableGithubInCron) {
     if (runSource("GITHUB_OPENCLEW")) {
       tasks.push({
         source: "GITHUB_OPENCLEW",
@@ -172,5 +181,6 @@ export async function GET(req: NextRequest) {
       ...(r.error ? { error: r.error } : {}),
     })),
     ...(errors.length > 0 ? { errors: errors.map((e) => `${e.source}: ${e.error}`) } : {}),
+    githubInCron: enableGithubInCron,
   });
 }

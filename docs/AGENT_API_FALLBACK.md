@@ -1,88 +1,59 @@
-# Agent API Fallback & Resilience
+﻿# Agent API Fallback and Resilience (v1)
 
-**Purpose:** Ensure AI agents playing on xpersona have clear fallbacks when the API is unavailable or fails. Same API powers the website — agents and humans share one backend.
+Purpose: define safe fallback behavior for AI agents using Xpersona API v1.
 
----
+## Core rule
 
-## Fallback Rule: API Unavailable → Use Website UI
+If API calls fail, keep user context and provide the website path: `https://xpersona.co`.
 
-When the API fails (5xx, network error, timeout, rate limit 429), **agents should suggest the user play via the website** instead of failing silently or retrying indefinitely.
+Supported API base:
+- `https://xpersona.co/api/v1`
 
-### Ready-to-Paste System Prompt Block
+Legacy endpoints under `/api/*` are deprecated and return `410 API_VERSION_DEPRECATED`.
 
-Copy this entire block into your agent's system prompt or instructions for xpersona integration:
+## Contract
 
-```
-[ xpersona API - Agent Instructions ]
+Every v1 response includes:
+- `success`
+- `meta.requestId`
+- `meta.version` (`v1`)
+- `meta.timestamp`
 
-Auth: Every request must include Authorization: Bearer <XPERSONA_API_KEY>. Get your key at https://xpersona.co/dashboard (API section).
+Use `X-Request-Id` for support/debug correlation.
 
-Preferred endpoints:
-- "How am I doing?" → GET /api/me/session-stats (single call; avoid balance + rounds separately)
-- Play round → POST /api/games/dice/round
-- Run strategy → POST /api/games/dice/run-strategy or POST /api/games/dice/run-advanced-strategy
+## Error handling policy
 
-Error handling:
-- 401: Tell user "Invalid or missing API key. Get your key at https://xpersona.co/dashboard"
-- 429: Wait 60s, retry once. If still failing, suggest website.
-- 5xx / network timeout: Retry once after 2-5 seconds. If still failing, do NOT retry again.
+1. `401` or `403`
+- Stop retries.
+- Ask user to re-authenticate or provide a valid API key.
 
-API fallback (critical): If the API is unavailable (5xx, network error, timeout, or 429 after retry):
-1. Inform the user: "The API is temporarily unavailable. You can play directly on the website: https://xpersona.co/games/dice — same games, same balance, same provably fair results."
-2. The website provides full functionality: dice, strategies (basic + advanced), session stats, faucet, deposit/withdraw.
-3. Suggest they try the API again later.
-```
+2. `429`
+- Respect `Retry-After`.
+- Retry once.
+- If still limited, surface a concise message and ask user to retry shortly.
 
-### Shorter Prompt (minimal)
+3. `5xx`, network timeout, upstream errors
+- Retry once with exponential backoff (2-5s).
+- If still failing, suggest using the website flow temporarily.
 
-For agents with limited system prompt space, use this shorter version:
+4. `410 API_VERSION_DEPRECATED`
+- Rewrite endpoint from `/api/*` to `/api/v1/*` and retry.
 
-```
-If the xpersona API returns an error (5xx, network timeout, or rate limit 429):
-1. Do NOT retry excessively (max 1–2 retries with backoff).
-2. Inform the user: "The API is temporarily unavailable. You can play directly on the website: https://xpersona.co/games/dice — same games, same balance, same provably fair results."
-3. The website provides full functionality: dice, strategies (basic + advanced), session stats, faucet, deposit/withdraw.
-4. Suggest they try the API again later.
-```
+## Recommended fallback message
 
-### Error → Fallback Mapping
+"The API is temporarily unavailable. You can continue on https://xpersona.co while we retry in the background."
 
-| Error | Agent Action |
-|-------|--------------|
-| **401 Unauthorized** | "Invalid or missing API key. Get your key at https://xpersona.co/dashboard (API section)." |
-| **429 Rate limit** | "Rate limited. Please wait a moment. Or play on the website: https://xpersona.co/games/dice" |
-| **500 / 502 / 503** | "API temporarily unavailable. Play on the website: https://xpersona.co/games/dice" |
-| **Network timeout** | "Connection failed. Try the website: https://xpersona.co/games/dice" |
-| **INSUFFICIENT_BALANCE** | Suggest `xpersona_claim_faucet` or `xpersona_list_credit_packages` + checkout |
-| **FAUCET_COOLDOWN** | "Faucet on cooldown. Next claim at {data.nextFaucetAt}. Or deposit at https://xpersona.co/dashboard/deposit" |
+## Public endpoints to prefer
 
----
+- `GET /api/v1/search`
+- `GET /api/v1/search/suggest`
+- `GET /api/v1/search/trending`
+- `POST /api/v1/search/click`
+- `GET /api/v1/agents/{slug}`
+- `GET /api/v1/openapi/public`
 
-## Website UI Parity
+## Notes for agent implementers
 
-Everything available via API is available on the website:
-
-| Feature | API | Website |
-|---------|-----|---------|
-| Play dice round | POST /api/games/dice/round | Roll button, Target/Condition/Amount |
-| Session stats | GET /api/me/session-stats | Statistics tab |
-| Basic strategies | POST /api/games/dice/run-strategy | Simple Preset Strategies |
-| **Advanced strategies** | POST /api/games/dice/run-advanced-strategy | Strategy tab → Add rules, Run Strategy |
-| Create advanced strategy | POST /api/me/advanced-strategies | Dashboard → Strategies |
-| Simulate strategy | POST /api/me/advanced-strategies/simulate | Test Simulation button |
-| Faucet | POST /api/faucet | Dashboard faucet |
-| Balance | GET /api/me/balance | Header balance display |
-
----
-
-## Retry Guidance
-
-- **Transient 5xx:** Retry once after 2–5 seconds. If still failing → suggest website.
-- **429:** Wait `Retry-After` seconds (if provided) or 60s, then retry once.
-- **401/403:** Do not retry; user must fix API key or permissions.
-
----
-
-## Tool Discovery
-
-`GET https://xpersona.co/api/openclaw/tools` returns all available tools. Agents can call this at startup to ensure they have the latest schema.
+- `cursor` on search must be UUID.
+- Use `Idempotency-Key` on click tracking to avoid duplicates.
+- Protocol canonical name is `OPENCLAW`.

@@ -31,7 +31,7 @@ export function ConnectAIPanel() {
                 </span>
               </div>
               <p className="mt-1.5 text-sm text-[var(--text-secondary)] max-w-md leading-relaxed">
-                Give your AI the link to xpersona.co/dashboard/api. Give it your API key. Success.
+                Give your AI the link to xpersona.co/docs. Give it your API key. Success.
               </p>
               
               <div className="mt-3 flex items-center gap-4 text-xs text-[var(--text-tertiary)]">
@@ -58,3 +58,4 @@ export function ConnectAIPanel() {
     </Link>
   );
 }
+

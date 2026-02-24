@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
@@ -13,7 +13,7 @@ export function LuckStreakCard() {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch("/api/me/rounds?gameType=dice&limit=20", { credentials: "include" });
+      const res = await fetch("/api/v1/me/rounds?gameType=dice&limit=20", { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (!data.success || !Array.isArray(data.data?.plays)) return;
       const plays = data.data.plays as { outcome: string }[];
@@ -127,7 +127,7 @@ export function LuckStreakCard() {
       <div className="flex items-center justify-between gap-2 min-w-0">
         {recentTotal > 0 ? (
           <span className="text-xs text-[var(--text-tertiary)] truncate">
-            Last {recentTotal} transactions: {recentWins}W · {recentTotal - recentWins}L
+            Last {recentTotal} transactions: {recentWins}W Â· {recentTotal - recentWins}L
           </span>
         ) : (
           <span className="text-xs text-[var(--text-tertiary)]">Awaiting data...</span>
@@ -149,3 +149,6 @@ export function LuckStreakCard() {
     </div>
   );
 }
+
+
+

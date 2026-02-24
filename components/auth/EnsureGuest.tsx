@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -20,7 +20,7 @@ export function EnsureGuest({ needsGuest }: EnsureGuestProps) {
     if (!needsGuest || started.current) return;
     started.current = true;
 
-    fetch("/api/auth/play", {
+    fetch("/api/v1/auth/play", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -50,3 +50,6 @@ export function EnsureGuest({ needsGuest }: EnsureGuestProps) {
 
   return null;
 }
+
+
+

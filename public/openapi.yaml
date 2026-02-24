@@ -1,2221 +1,3401 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
-  title: Xpersona Probability Game API
-  description: |
-    **AI-first probability game API.** All authenticated endpoints require header `Authorization: Bearer <API key>`.
-    Base URL: https://xpersona.co (or XPERSONA_BASE_URL).
-    Every response is JSON with shape `{ success: boolean, data?: object, error?: string }`.
-    On success, use `data`; on 4xx/5xx, body includes `error` (e.g. INSUFFICIENT_BALANCE, VALIDATION_ERROR).
-    Optimized for programmatic and AI agent use: same endpoints power the web UI and OpenClaw/agents.
-    **AI agent guide:** GET /api/skill returns Markdown instructions for AI agents (tool usage, flows, error recovery).
-    **Schema discovery:** GET /api/discovery returns full strategy builder schema (triggers, actions, presets, game mechanics) for AI to build custom systems — no auth required.
-    **AI guidance:** Prefer GET /api/me/session-stats over /api/me/balance + /api/me/rounds for single-call stats.
-    For auto-play, loop game endpoints with a short delay (e.g. 200–500ms).
-    **Error recovery:** INSUFFICIENT_BALANCE → POST /api/faucet or GET /api/credits/packages + checkout.
-    FAUCET_COOLDOWN → wait until data.nextFaucetAt.
-    **API fallback:** If API fails (5xx, network, 429) → suggest user play via website: https://xpersona.co/games/dice (same games, same balance).
+  title: Xpersona Public API v1
   version: 1.0.0
-  contact:
-    name: Xpersona Support
-    email: support@xpersona.co
-  license:
-    name: Proprietary
+  description: Public and agent-facing endpoints.
 servers:
-  - url: http://localhost:3000
-    description: Local development
   - url: https://xpersona.co
-    description: Production server
-
-security:
-  - bearerAuth: []
-
+  - url: http://localhost:3000
 paths:
-  # ==================== AI AGENT GUIDE ====================
-  /api/skill:
-    get:
-      summary: AI agent skill / guide (Markdown)
-      description: |
-        Returns the AI agent guide as Markdown. Use this for agent onboarding: tool usage,
-        recommended flows, error recovery, OpenClaw tools. No auth required.
-      security: []
-      responses:
-        "200":
-          description: Agent guide (text/markdown)
-          content:
-            text/markdown:
-              schema:
-                type: string
-        "500":
-          description: Guide unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  # ==================== HEALTH & UTILITY ====================
-  /api/health:
-    get:
-      summary: Health check
-      description: Check API availability and status
-      security: []
-      responses:
-        "200":
-          description: API is operational
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HealthResponse'
-              example:
-                success: true
-                data:
-                  status: "healthy"
-                  timestamp: "2024-01-15T10:30:00Z"
-
-  /api/docs:
-    get:
-      summary: API documentation redirect
-      description: Redirects to the interactive API documentation at /docs
-      security: []
-      responses:
-        "302":
-          description: Redirects to /docs
-          headers:
-            Location:
-              schema:
-                type: string
-              example: "/docs"
-
-  # ==================== AI DISCOVERY (no auth) ====================
-  /api/discovery:
-    get:
-      summary: Schema discovery for AI strategy builder
-      description: |
-        **No auth required.** Returns full schema, triggers, actions, presets, game mechanics, and platform constants.
-        AI agents use this to discover all valid trigger/action types, global limits, presets, and formulas before creating advanced strategies.
-        Optional ?section=strategy_builder | game_mechanics | platform to return only that subsection.
-      security: []
-      parameters:
-        - name: section
-          in: query
-          required: false
-          schema:
-            type: string
-            enum: [strategy_builder, game_mechanics, platform, all]
-            default: all
-          description: Filter response to a subsection (all by default)
-      responses:
-        "200":
-          description: Discovery data retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  data:
-                    $ref: '#/components/schemas/DiscoveryData'
-
-  # ==================== AUTHENTICATION ====================
-  /api/auth/guest:
-    get:
-      summary: Create guest session (redirect)
-      description: Creates a guest user and redirects to dashboard. Sets guest cookie automatically.
-      security: []
-      responses:
-        "302":
-          description: Redirects to dashboard with guest cookie set
-          headers:
-            Location:
-              schema:
-                type: string
-              example: "/dashboard"
-            Set-Cookie:
-              schema:
-                type: string
-              example: "xpersona_guest_token=eyJhbGciOiJIUzI1NiIs...; Path=/; HttpOnly; SameSite=Lax"
-        "500":
-          description: Server error (missing NEXTAUTH_SECRET or DATABASE_URL)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/agents/submit:
     post:
-      summary: Create guest session (API)
-      description: Creates a guest user via API. Returns redirect URL and sets cookie in response.
-      security: []
-      responses:
-        "200":
-          description: Guest session created successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  data:
-                    type: object
-                    properties:
-                      redirectUrl:
-                        type: string
-                        example: "https://xpersona.co/dashboard"
-          headers:
-            Set-Cookie:
-              schema:
-                type: string
-              example: "xpersona_guest_token=eyJhbGciOiJIUzI1NiIs...; Path=/; HttpOnly; SameSite=Lax"
-        "500":
-          description: Server configuration error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /api/auth/link-guest:
-    post:
-      summary: Link guest account to authenticated user
-      description: Merges a guest account into the current authenticated user. Transfers credits and transaction history.
+      operationId: post_agents_submit
+      summary: POST /api/v1/agents/submit
+      description: Auto-generated operation for /api/v1/agents/submit.
+      tags:
+        - agents
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
               type: object
-              required:
-                - guestUserId
-              properties:
-                guestUserId:
-                  type: string
-                  format: uuid
-                  description: The guest user ID to merge into current account
-      responses:
-        "200":
-          description: Guest account linked successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: object
-                    properties:
-                      message:
-                        type: string
-                        example: "Guest account linked successfully"
-                      transferredCredits:
-                        type: integer
-        "400":
-          description: Invalid guest user ID or already linked
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /api/auth/agent/register:
-    post:
-      summary: Create agent user (Continue as AI)
-      description: |
-        Creates a new agent user with no auth required. Returns an API key and agentId for immediate use.
-        Used by the "Continue as AI" flow on the homepage. Sets agent session cookie for dashboard access.
-        **Important:** The API key is only shown once. Store it securely as `XPERSONA_API_KEY` or `Authorization: Bearer <key>`.
-        **agentId** is the stable audit identifier (format `aid_` + 8 alphanumeric chars). Use it to trace all financial activity for this agent.
-      security: []
-      responses:
-        "200":
-          description: Agent created successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  data:
-                    type: object
-                    properties:
-                      apiKey:
-                        type: string
-                        description: Full API key (xp_ prefix, 64 hex chars). Shown once only.
-                        example: "xp_a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
-                      apiKeyPrefix:
-                        type: string
-                        description: First 11 characters for identification
-                        example: "xp_a1b2c3d4e5"
-                      agentId:
-                        type: string
-                        description: Stable audit identifier for this agent (aid_ + 8 chars). Use to trace transactions, faucet, payments.
-                        example: "aid_x7k2m9p4"
-                      userId:
-                        type: string
-                        format: uuid
-                        description: New agent user ID
-          headers:
-            Set-Cookie:
-              schema:
-                type: string
-              description: Agent session cookie for dashboard access
-        "500":
-          description: Server configuration error (NEXTAUTH_SECRET or DATABASE_URL missing)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /api/auth/guest/signout:
-    get:
-      summary: Sign out guest session
-      description: Clears the guest cookie and redirects to home page
-      security: []
-      responses:
-        "302":
-          description: Redirects to home page with cookie cleared
-          headers:
-            Location:
-              schema:
-                type: string
-              example: "/"
-            Set-Cookie:
-              schema:
-                type: string
-              example: "xpersona_guest_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
-
-  /api/auth/{...nextauth}:
-    get:
-      summary: NextAuth.js authentication handlers
-      description: OAuth authentication endpoints (Google OAuth). Handled by NextAuth.js library.
-      parameters:
-        - name: ...nextauth
-          in: path
-          required: true
-          schema:
-            type: array
-            items:
-              type: string
-          description: NextAuth.js path segments (e.g., ['providers', 'google'])
-      security: []
-      responses:
-        "200":
-          description: OAuth flow response
-        "302":
-          description: OAuth redirect
-    post:
-      summary: NextAuth.js authentication handlers
-      description: OAuth callback and session management. Handled by NextAuth.js library.
-      parameters:
-        - name: ...nextauth
-          in: path
-          required: true
-          schema:
-            type: array
-            items:
-              type: string
-      security: []
-      responses:
-        "200":
-          description: Authentication response
-
-  /api-auth/agent:
-    get:
-      summary: Browser login with API key
-      description: |
-        Validates API key, sets agent session cookie, and redirects to /dashboard.
-        Used for browser-based agent login (e.g. open URL with api_key to access dashboard).
-        Does not return JSON — responds with 302 redirect.
-      security: []
-      parameters:
-        - name: api_key
-          in: query
-          required: true
-          schema:
-            type: string
-          description: Your API key from the dashboard
-        - name: apiKey
-          in: query
-          schema:
-            type: string
-          description: Alternative query param for API key
-      responses:
-        "302":
-          description: Valid key — redirects to /dashboard with Set-Cookie. Invalid key — redirects to /?error=invalid_key
-          headers:
-            Location:
-              schema:
-                type: string
-              description: /dashboard on success, /?error=invalid_key on failure
-            Set-Cookie:
-              schema:
-                type: string
-              description: Agent session cookie (xp_agent_session), only on success
-    post:
-      summary: Browser login with API key (POST)
-      description: Same as GET — validates API key, sets cookie, redirects to /dashboard. Body can include api_key or apiKey.
-      security: []
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                api_key:
-                  type: string
-                apiKey:
-                  type: string
-      responses:
-        "302":
-          description: Redirects to /dashboard with agent session cookie set
-          headers:
-            Location:
-              schema:
-                type: string
-                example: "/dashboard"
-
-  # ==================== USER ENDPOINTS ====================
-  /api/me:
-    get:
-      summary: Get current user profile
-      description: Returns the authenticated user's profile information
-      responses:
-        "200":
-          description: User profile retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    $ref: '#/components/schemas/User'
-        "401":
-          description: Unauthorized - invalid or missing API key
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /api/me/balance:
-    get:
-      summary: Get user balance
-      description: Returns the user's credit balance. Use before/after transactions to confirm credits.
-      responses:
-        "200":
-          description: Balance retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: object
-                    properties:
-                      balance:
-                        type: integer
-                        description: Current credit balance
-                        example: 15000
-                      withdrawableBalance:
-                        type: integer
-                        description: Balance available for withdrawal. Faucet credits are 0% withdrawable; this = credits - faucetCredits
-                        example: 12000
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /api/me/rounds:
-    get:
-      summary: Get user rounds with provably fair verification
-      description: Returns all rounds for the authenticated user with verification data for provably fair auditing. Legacy path /api/me/bets also works.
-      parameters:
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 10000
-            default: 50
-          description: Number of plays to return
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            minimum: 0
-            default: 0
-          description: Pagination offset
-        - name: gameType
-          in: query
-          schema:
-            type: string
-            enum: [dice]
-          description: Filter by game type
-      responses:
-        "200":
-          description: Plays retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: object
-                    properties:
-                      plays:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/Bet'
-                      sessionPnl:
-                        type: integer
-                        description: Total profit/loss across all returned plays
-                      roundCount:
-                        type: integer
-                        description: Number of plays in this response
-                      totalCount:
-                        type: integer
-                        description: Total number of plays matching the filter
-                      offset:
-                        type: integer
-                      limit:
-                        type: integer
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /api/me/rounds/{id}:
-    get:
-      summary: Get single round details
-      description: Fetch a single round with full provably fair verification data. Use `?reveal=1` to include the server seed. Legacy path /api/me/bets/{id} also works.
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Play ID
-        - name: reveal
-          in: query
-          schema:
-            type: integer
-            enum: [0, 1]
-            default: 0
-          description: Set to 1 to include serverSeed in verification data
-      responses:
-        "200":
-          description: Play details retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    $ref: '#/components/schemas/BetDetail'
-        "400":
-          description: Invalid play ID
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "404":
-          description: Play not found or not owned by user
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /api/me/profile-stats:
-    get:
-      summary: Get comprehensive profile statistics
-      description: Aggregate stats across all games including per-game breakdown. Returns balance, total stats, and detailed breakdown by game type.
-      responses:
-        "200":
-          description: Profile stats retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    $ref: '#/components/schemas/ProfileStats'
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /api/me/session-stats:
-    get:
-      summary: Get session statistics (AI-optimized)
-      description: |
-        Unified stats for AI agents - balance, rounds, PnL, win rate, recent transactions in a single call.
-        **AI Recommendation:** Use this instead of multiple calls to /api/me/balance + /api/me/rounds for "how am I doing?" queries.
-      parameters:
-        - name: gameType
-          in: query
-          schema:
-            type: string
-            enum: [dice]
-            default: dice
-          description: Filter stats by game type
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 100
-            default: 50
-          description: Number of recent transactions to include
-      responses:
-        "200":
-          description: Session stats retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    $ref: '#/components/schemas/SessionStats'
-              example:
-                success: true
-                data:
-                  balance: 469
-                  rounds: 42
-                  sessionPnl: -31
-                  winRate: 47.62
-                  recentPlays:
-                    - amount: 10
-                      outcome: win
-                      payout: 19
-                      pnl: 9
-                    - amount: 10
-                      outcome: loss
-                      payout: 0
-                      pnl: -10
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /api/me/live-feed:
-    get:
-      summary: Live play feed (SSE)
-      description: |
-        Server-Sent Events stream of play activity for the authenticated user.
-        When AI or API plays on your behalf (POST /api/games/dice/round, run-strategy, run-advanced-strategy),
-        plays appear in real-time. Use EventSource with credentials (cookies or Bearer token).
-        **Watch API play:** Open /games/dice in the browser while your AI places plays via API.
-      responses:
-        "200":
-          description: SSE stream of play events
-          content:
-            text/event-stream:
-              schema:
-                type: string
-                description: |
-                  Each event: data: {"type":"bet","bet":{"result":67.42,"win":true,"payout":19,"balance":469,"amount":10,"target":50,"condition":"over","betId":"uuid","agentId":"aid_xxx"}}
-                  Heartbeat: : heartbeat
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /api/me/transactions:
-    get:
-      summary: Get unified transaction history
-      description: Returns a unified activity feed combining plays and faucet grants, sorted by date.
-      parameters:
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 200
-            default: 50
-          description: Number of transactions to return
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            minimum: 0
-            default: 0
-          description: Pagination offset
-        - name: type
-          in: query
-          schema:
-            type: string
-            enum: [all, bet, faucet]
-            default: all
-          description: Filter by transaction type
-      responses:
-        "200":
-          description: Transactions retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: object
-                    properties:
-                      transactions:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/Transaction'
-                      sessionPnl:
-                        type: integer
-                      limit:
-                        type: integer
-                      offset:
-                        type: integer
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /api/me/faucet-grants:
-    get:
-      summary: Get faucet grant history
-      description: Returns a list of all faucet claims for the authenticated user.
-      parameters:
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 500
-            default: 200
-          description: Number of grants to return
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            minimum: 0
-            default: 0
-          description: Pagination offset
-      responses:
-        "200":
-          description: Faucet grants retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: object
-                    properties:
-                      grants:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/FaucetGrant'
-                      limit:
-                        type: integer
-                      offset:
-                        type: integer
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /api/me/api-key:
-    post:
-      summary: Generate new API key (agents only)
-      description: |
-        Generates a new API key for programmatic access. **AI-first:** Only agent accounts can generate API keys.
-        Returns 403 if called by a human or Google account. **Important:** The key is only shown once. Store it securely.
-      responses:
-        "200":
-          description: API key generated successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: object
-                    properties:
-                      apiKey:
-                        type: string
-                        description: The API key (shown once only)
-                        example: "xp_live_abc123xyz789"
-                      apiKeyPrefix:
-                        type: string
-                        description: First 8 characters of the key for identification
-                        example: "xp_live_a"
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /api/me/withdraw:
-    post:
-      summary: Request withdrawal
-      description: |
-        Request withdrawal of credits via Wise. Minimum withdrawal is $100 (10,000 credits).
-        **Faucet credits are 0% withdrawable** — only credits from deposits can be withdrawn.
-        Withdrawable balance = credits - faucetCredits. Server rejects if amount exceeds withdrawable.
-        Requires wise_email and full_name for Wise payout. Processing: 2–7 business days.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - amount
-                - wiseEmail
-                - fullName
-              properties:
-                amount:
-                  type: integer
-                  minimum: 1
-                  description: Amount of credits to withdraw (min 10,000)
-                wiseEmail:
-                  type: string
-                  format: email
-                  description: Email linked to the user's Wise account
-                fullName:
-                  type: string
-                  minLength: 2
-                  maxLength: 255
-                  description: Name as it appears on the Wise account
-                currency:
-                  type: string
-                  enum: [USD, EUR, GBP]
-                  default: USD
-                  description: Payout currency
-      responses:
-        "200":
-          description: Withdrawal request submitted successfully
-        "400":
-          description: Validation error or insufficient withdrawable balance
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                insufficientBalance:
-                  summary: Insufficient withdrawable balance
-                  value:
-                    success: false
-                    error: "Maximum withdrawable: 5000 credits"
-                belowMinimum:
-                  summary: Below minimum withdrawal
-                  value:
-                    success: false
-                    error: "Minimum withdrawal is $100 (10,000 credits)."
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "429":
-          description: One pending withdrawal already exists (wait for processing)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                success: false
-                error: "You already have a pending withdrawal. Please wait for it to process before requesting another."
-
-  # ==================== STRATEGY ENDPOINTS ====================
-  /api/me/strategies:
-    get:
-      summary: List saved strategies
-      description: Returns all saved betting strategies for the authenticated user.
-      parameters:
-        - name: gameType
-          in: query
-          schema:
-            type: string
-            enum: [dice]
-          description: Filter strategies by game type
-      responses:
-        "200":
-          description: Strategies retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: object
-                    properties:
-                      strategies:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/Strategy'
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-    post:
-      summary: Create new strategy
-      description: Save a named betting strategy for later use with run-strategy endpoints.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - gameType
-                - name
-                - config
-              properties:
-                gameType:
-                  type: string
-                  enum: [dice]
-                  description: Game type this strategy applies to
-                name:
-                  type: string
-                  maxLength: 100
-                  description: Strategy name
-                config:
-                  type: object
-                  description: Game-specific strategy configuration
-      responses:
-        "200":
-          description: Strategy created successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    $ref: '#/components/schemas/Strategy'
-        "400":
-          description: Validation error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /api/me/strategies/{id}:
-    get:
-      summary: Get specific strategy
-      description: Retrieve a single strategy by ID.
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Strategy ID
-      responses:
-        "200":
-          description: Strategy retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    $ref: '#/components/schemas/Strategy'
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "404":
-          description: Strategy not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-    patch:
-      summary: Update strategy
-      description: Update strategy name and/or configuration.
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Strategy ID
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name:
-                  type: string
-                  maxLength: 100
-                config:
-                  type: object
-      responses:
-        "200":
-          description: Strategy updated successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    $ref: '#/components/schemas/Strategy'
-        "400":
-          description: Validation error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "404":
-          description: Strategy not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-    delete:
-      summary: Delete strategy
-      description: Permanently delete a saved strategy.
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Strategy ID
-      responses:
-        "200":
-          description: Strategy deleted successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-                        format: uuid
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "404":
-          description: Strategy not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  # ==================== GAME ENDPOINTS - DICE ====================
-  /api/games/dice/round:
-    post:
-      summary: Play a dice round
-      description: |
-        Play a round on the dice probability game. House edge is 3%. Multiplier = 0.97/winProbability.
-        Example: Over 50 = 49% win chance, ~1.98x payout.
-        **Auto-play tip:** Call repeatedly with 200-500ms delays.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - amount
-                - target
-                - condition
-              properties:
-                amount:
-                  type: integer
-                  minimum: 1
-                  maximum: 10000
-                  description: Play amount in credits
-                target:
-                  type: number
-                  minimum: 0
-                  maximum: 100
-                  description: Target number for the transaction
-                condition:
-                  type: string
-                  enum: [over, under]
-                  description: Play on roll being over or under target
-            example:
-              amount: 10
-              target: 50
-              condition: over
-      responses:
-        "200":
-          description: Play placed successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: object
-                    properties:
-                      betId:
-                        type: string
-                        format: uuid
-                      result:
-                        type: number
-                        description: The dice roll result
-                      win:
-                        type: boolean
-                      payout:
-                        type: integer
-                      balance:
-                        type: integer
-                      verification:
-                        type: object
-                        properties:
-                          serverSeedHash:
-                            type: string
-                          clientSeed:
-                            type: string
-                          nonce:
-                            type: integer
-              example:
-                success: true
-                data:
-                  betId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-                  result: 67.42
-                  win: true
-                  payout: 19
-                  balance: 469
-                  verification:
-                    serverSeedHash: "a1b2c3..."
-                    clientSeed: ""
-                    nonce: 0
-        "400":
-          description: Play error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                insufficientBalance:
-                  value:
-                    success: false
-                    error: "INSUFFICIENT_BALANCE"
-                betTooLow:
-                  value:
-                    success: false
-                    error: "BET_TOO_LOW"
-                betTooHigh:
-                  value:
-                    success: false
-                    error: "BET_TOO_HIGH"
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /api/games/dice/run-strategy:
-    post:
-      summary: Run dice strategy (auto-play)
-      description: |
-        Execute a dice strategy for multiple rounds (max 100,000). Can use saved strategy or inline config.
-        Supports progression types: flat, martingale, paroli, dalembert, fibonacci, labouchere, oscar, kelly.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                strategyId:
-                  type: string
-                  format: uuid
-                  description: ID of saved strategy (optional, use instead of config)
-                config:
-                  type: object
-                  description: Inline strategy configuration
-                  properties:
-                    amount:
-                      type: integer
-                      minimum: 1
-                    target:
-                      type: number
-                    condition:
-                      type: string
-                      enum: [over, under]
-                    progressionType:
-                      type: string
-                      enum: [flat, martingale, paroli, dalembert, fibonacci, labouchere, oscar, kelly]
-                    maxBet:
-                      type: integer
-                    maxConsecutiveLosses:
-                      type: integer
-                    maxConsecutiveWins:
-                      type: integer
-                    unitStep:
-                      type: integer
-                    stopAfterRounds:
-                      type: integer
-                    stopIfBalanceBelow:
-                      type: integer
-                    stopIfBalanceAbove:
-                      type: integer
-                maxRounds:
-                  type: integer
-                  minimum: 1
-                  maximum: 100
-                  default: 20
-                  description: Maximum rounds to execute
+              additionalProperties: true
             examples:
-              inlineMartingale:
-                summary: Inline Martingale Strategy
-                value:
-                  config:
-                    amount: 10
-                    target: 50
-                    condition: over
-                    progressionType: martingale
-                  maxRounds: 20
-              savedStrategy:
-                summary: Using Saved Strategy
-                value:
-                  strategyId: "550e8400-e29b-41d4-a716-446655440000"
-                  maxRounds: 30
+              sample:
+                value: {}
       responses:
         "200":
-          description: Strategy executed successfully
+          description: Success
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: object
-                    properties:
-                      results:
-                        type: array
-                        items:
-                          type: object
-                      sessionPnl:
-                        type: integer
-                      finalBalance:
-                        type: integer
-                      roundsPlayed:
-                        type: integer
-                      stoppedReason:
-                        type: string
-                        enum: [completed, insufficient_balance, max_rounds_reached, stop_condition_met]
-              example:
-                success: true
-                data:
-                  results: []
-                  sessionPnl: -45
-                  finalBalance: 455
-                  roundsPlayed: 20
-                  stoppedReason: completed
-        "400":
-          description: Validation error or invalid config
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "404":
-          description: Strategy not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  # ==================== ADVANCED STRATEGIES (rule-based) ====================
-  /api/me/advanced-strategies:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/agents/{slug}:
     get:
-      summary: List advanced strategies
-      description: List all rule-based strategies (38+ trigger types, 25+ action types).
-      responses:
-        "200":
-          description: Strategies retrieved
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success: { type: boolean }
-                  data:
-                    type: object
-                    properties:
-                      strategies:
-                        type: array
-                        items: { $ref: '#/components/schemas/AdvancedStrategy' }
-        "401":
-          description: Unauthorized
-    post:
-      summary: Create advanced strategy
-      description: Create a rule-based strategy. Requires baseConfig (amount, target, condition) and rules array.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AdvancedStrategyInput'
-      responses:
-        "200":
-          description: Strategy created
-        "400":
-          description: Validation error
-        "409":
-          description: Name already exists
-        "401":
-          description: Unauthorized
-
-  /api/me/advanced-strategies/simulate:
-    post:
-      summary: Simulate advanced strategy (inline, no save)
-      description: Dry run with no real transactions. Accepts inline strategy object.
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                strategy: { $ref: '#/components/schemas/AdvancedStrategyInput' }
-                rounds: { type: integer, default: 100 }
-                startingBalance: { type: integer, default: 1000 }
-      responses:
-        "200":
-          description: Simulation results (finalBalance, profit, winRate, shouldStop, stopReason)
-        "400":
-          description: Invalid strategy
-        "401":
-          description: Unauthorized
-
-  /api/me/advanced-strategies/{id}:
-    get:
-      summary: Get advanced strategy
+      operationId: get_agents_slug
+      summary: GET /api/v1/agents/{slug}
+      description: Auto-generated operation for /api/v1/agents/{slug}.
+      tags:
+        - agents
       parameters:
-        - name: id
+        - name: slug
           in: path
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        "200":
-          description: Strategy retrieved
-        "404":
-          description: Strategy not found
-        "401":
-          description: Unauthorized
-    patch:
-      summary: Update advanced strategy
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name: { type: string }
-                baseConfig: { type: object }
-                rules: { type: array }
-                globalLimits: { type: object }
-                executionMode: { type: string, enum: [sequential, all_matching] }
-      responses:
-        "200":
-          description: Strategy updated
-        "404":
-          description: Strategy not found
-        "401":
-          description: Unauthorized
-    delete:
-      summary: Delete advanced strategy
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        "200":
-          description: Strategy deleted
-        "404":
-          description: Strategy not found
-        "401":
-          description: Unauthorized
-
-  /api/me/advanced-strategies/{id}/simulate:
-    post:
-      summary: Simulate saved advanced strategy
-      description: Dry run with no real transactions.
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                rounds: { type: integer, default: 100 }
-                startingBalance: { type: integer, default: 1000 }
-      responses:
-        "200":
-          description: Simulation results
-        "404":
-          description: Strategy not found
-        "401":
-          description: Unauthorized
-
-  /api/games/dice/run-advanced-strategy:
-    post:
-      summary: Run advanced strategy (real transactions)
-      description: Execute rule-based strategy for up to 100,000 rounds. Use strategyId or inline strategy.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                strategyId:
-                  type: string
-                  format: uuid
-                  description: ID of saved strategy
-                strategy:
-                  type: object
-                  description: Inline strategy (name, baseConfig, rules, executionMode, globalLimits)
-                maxRounds:
-                  type: integer
-                  minimum: 1
-                  maximum: 100
-                  default: 20
-      responses:
-        "200":
-          description: Strategy executed
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success: { type: boolean }
-                  data:
-                    type: object
-                    properties:
-                      results: { type: array }
-                      sessionPnl: { type: integer }
-                      finalBalance: { type: integer }
-                      roundsPlayed: { type: integer }
-                      stoppedReason: { type: string }
-                      totalWins: { type: integer }
-                      totalLosses: { type: integer }
-                      winRate: { type: number }
-        "400":
-          description: Validation error
-        "404":
-          description: Strategy not found
-        "401":
-          description: Unauthorized
-
-  # ==================== FAUCET & CREDITS ====================
-  /api/faucet:
-    post:
-      summary: Claim free credits from faucet
-      description: |
-        Claim 100 free credits. 1 hour cooldown between claims.
-        On 429, wait until data.nextFaucetAt before claiming again.
-      responses:
-        "200":
-          description: Credits claimed successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: object
-                    properties:
-                      balance:
-                        type: integer
-                      granted:
-                        type: integer
-                        example: 100
-                      nextFaucetAt:
-                        type: string
-                        format: date-time
-                        description: When you can claim again
-        "429":
-          description: Faucet cooldown active
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                success: false
-                error: "FAUCET_COOLDOWN"
-                data:
-                  nextFaucetAt: "2024-01-15T11:30:00Z"
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /api/credits/packages:
-    get:
-      summary: List available credit packages
-      description: Returns all available credit packages for purchase via Stripe.
-      security: []
-      responses:
-        "200":
-          description: Packages retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/CreditPackage'
-
-  /api/credits/checkout:
-    post:
-      summary: Create Stripe checkout session
-      description: Creates a Stripe Checkout session for purchasing credits.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - packageId
-              properties:
-                packageId:
-                  type: string
-                  format: uuid
-                  description: ID of the credit package to purchase
-      responses:
-        "200":
-          description: Checkout session created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: object
-                    properties:
-                      checkoutUrl:
-                        type: string
-                        format: uri
-                        description: URL to redirect user to Stripe Checkout
-        "400":
-          description: Invalid package ID
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  # ==================== PAYMENT WEBHOOK ====================
-  /api/stripe/webhook:
-    post:
-      summary: Stripe webhook handler
-      description: |
-        Internal endpoint for Stripe to send payment event notifications.
-        Not for direct use - Stripe calls this automatically.
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              description: Stripe event object
-      parameters:
-        - name: stripe-signature
-          in: header
           required: true
           schema:
             type: string
-          description: Stripe signature for verification
+          description: "Path parameter: slug"
       responses:
         "200":
-          description: Webhook processed successfully
-        "400":
-          description: Invalid signature or payload
-        "401":
-          description: Missing signature
-
-  # ==================== OPENCLAW / AI TOOLS ====================
-  /api/openclaw/tools:
-    get:
-      summary: List OpenClaw tools (schema discovery)
-      description: |
-        Returns the full tool schema for programmatic discovery.
-        Includes tool names, parameters, and return types for AI agents.
-      security: []
-      responses:
-        "200":
-          description: Tool schema retrieved successfully
+          description: Success
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: object
-                    properties:
-                      tools:
-                        type: object
-                        additionalProperties:
-                          type: object
-                          properties:
-                            name:
-                              type: string
-                            description:
-                              type: string
-                            parameters:
-                              type: object
-                            returns:
-                              type: object
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/agents/{slug}/claim:
+    get:
+      operationId: get_agents_slug_claim
+      summary: GET /api/v1/agents/{slug}/claim
+      description: Auto-generated operation for /api/v1/agents/{slug}/claim.
+      tags:
+        - agents
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: slug"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
     post:
-      summary: Execute OpenClaw tool
-      description: |
-        Execute an xpersona tool via OpenClaw interface. Single POST per action.
-        Requires Authorization Bearer API key (except for xpersona_auth_guest).
+      operationId: post_agents_slug_claim
+      summary: POST /api/v1/agents/{slug}/claim
+      description: Auto-generated operation for /api/v1/agents/{slug}/claim.
+      tags:
+        - agents
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: slug"
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
               type: object
-              required:
-                - tool
-                - parameters
-              properties:
-                tool:
-                  type: string
-                  description: Tool name (e.g., xpersona_get_balance, xpersona_place_dice_round)
-                  example: "xpersona_place_dice_round"
-                parameters:
-                  type: object
-                  description: Tool-specific parameters
-                  example:
-                    amount: 100
-                    target: 50
-                    condition: "over"
-                agent_token:
-                  type: string
-                  description: Optional agent context token
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
       responses:
         "200":
-          description: Tool executed successfully
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/agents/{slug}/claim/verify:
+    post:
+      operationId: post_agents_slug_claim_verify
+      summary: POST /api/v1/agents/{slug}/claim/verify
+      description: Auto-generated operation for /api/v1/agents/{slug}/claim/verify.
+      tags:
+        - agents
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: slug"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/agents/{slug}/customization:
+    get:
+      operationId: get_agents_slug_customization
+      summary: GET /api/v1/agents/{slug}/customization
+      description: Auto-generated operation for /api/v1/agents/{slug}/customization.
+      tags:
+        - agents
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: slug"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    put:
+      operationId: put_agents_slug_customization
+      summary: PUT /api/v1/agents/{slug}/customization
+      description: Auto-generated operation for /api/v1/agents/{slug}/customization.
+      tags:
+        - agents
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: slug"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/agents/{slug}/customization/preview:
+    post:
+      operationId: post_agents_slug_customization_preview
+      summary: POST /api/v1/agents/{slug}/customization/preview
+      description: Auto-generated operation for /api/v1/agents/{slug}/customization/preview.
+      tags:
+        - agents
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: slug"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/agents/{slug}/manage:
+    get:
+      operationId: get_agents_slug_manage
+      summary: GET /api/v1/agents/{slug}/manage
+      description: Auto-generated operation for /api/v1/agents/{slug}/manage.
+      tags:
+        - agents
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: slug"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patch_agents_slug_manage
+      summary: PATCH /api/v1/agents/{slug}/manage
+      description: Auto-generated operation for /api/v1/agents/{slug}/manage.
+      tags:
+        - agents
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: slug"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/auth/agent/register:
+    post:
+      operationId: post_auth_agent_register
+      summary: POST /api/v1/auth/agent/register
+      description: Auto-generated operation for /api/v1/auth/agent/register.
+      tags:
+        - auth
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/auth/forgot-password:
+    post:
+      operationId: post_auth_forgot-password
+      summary: POST /api/v1/auth/forgot-password
+      description: Auto-generated operation for /api/v1/auth/forgot-password.
+      tags:
+        - auth
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/auth/guest:
+    get:
+      operationId: get_auth_guest
+      summary: GET /api/v1/auth/guest
+      description: Auto-generated operation for /api/v1/auth/guest.
+      tags:
+        - auth
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    post:
+      operationId: post_auth_guest
+      summary: POST /api/v1/auth/guest
+      description: Auto-generated operation for /api/v1/auth/guest.
+      tags:
+        - auth
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/auth/guest/signout:
+    get:
+      operationId: get_auth_guest_signout
+      summary: GET /api/v1/auth/guest/signout
+      description: Auto-generated operation for /api/v1/auth/guest/signout.
+      tags:
+        - auth
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/auth/human:
+    get:
+      operationId: get_auth_human
+      summary: GET /api/v1/auth/human
+      description: Auto-generated operation for /api/v1/auth/human.
+      tags:
+        - auth
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    post:
+      operationId: post_auth_human
+      summary: POST /api/v1/auth/human
+      description: Auto-generated operation for /api/v1/auth/human.
+      tags:
+        - auth
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/auth/link-agent:
+    post:
+      operationId: post_auth_link-agent
+      summary: POST /api/v1/auth/link-agent
+      description: Auto-generated operation for /api/v1/auth/link-agent.
+      tags:
+        - auth
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/auth/link-guest:
+    post:
+      operationId: post_auth_link-guest
+      summary: POST /api/v1/auth/link-guest
+      description: Auto-generated operation for /api/v1/auth/link-guest.
+      tags:
+        - auth
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/auth/play:
+    get:
+      operationId: get_auth_play
+      summary: GET /api/v1/auth/play
+      description: Auto-generated operation for /api/v1/auth/play.
+      tags:
+        - auth
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    post:
+      operationId: post_auth_play
+      summary: POST /api/v1/auth/play
+      description: Auto-generated operation for /api/v1/auth/play.
+      tags:
+        - auth
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/auth/recover:
+    get:
+      operationId: get_auth_recover
+      summary: GET /api/v1/auth/recover
+      description: Auto-generated operation for /api/v1/auth/recover.
+      tags:
+        - auth
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/auth/register:
+    post:
+      operationId: post_auth_register
+      summary: POST /api/v1/auth/register
+      description: Auto-generated operation for /api/v1/auth/register.
+      tags:
+        - auth
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/auth/reset-password:
+    post:
+      operationId: post_auth_reset-password
+      summary: POST /api/v1/auth/reset-password
+      description: Auto-generated operation for /api/v1/auth/reset-password.
+      tags:
+        - auth
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/auth/{nextauth+}:
+    get:
+      operationId: get_auth_nextauth
+      summary: GET /api/v1/auth/{nextauth+}
+      description: Auto-generated operation for /api/v1/auth/{nextauth+}.
+      tags:
+        - auth
+      parameters:
+        - name: nextauth
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: nextauth"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    post:
+      operationId: post_auth_nextauth
+      summary: POST /api/v1/auth/{nextauth+}
+      description: Auto-generated operation for /api/v1/auth/{nextauth+}.
+      tags:
+        - auth
+      parameters:
+        - name: nextauth
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: nextauth"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/docs:
+    get:
+      operationId: get_docs
+      summary: GET /api/v1/docs
+      description: Auto-generated operation for /api/v1/docs.
+      tags:
+        - docs
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+  /api/v1/health:
+    get:
+      operationId: get_health
+      summary: GET /api/v1/health
+      description: Auto-generated operation for /api/v1/health.
+      tags:
+        - health
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+  /api/v1/me:
+    get:
+      operationId: get_me
+      summary: GET /api/v1/me
+      description: Auto-generated operation for /api/v1/me.
+      tags:
+        - me
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/me/advanced-strategies:
+    get:
+      operationId: get_me_advanced-strategies
+      summary: GET /api/v1/me/advanced-strategies
+      description: Auto-generated operation for /api/v1/me/advanced-strategies.
+      tags:
+        - me
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    post:
+      operationId: post_me_advanced-strategies
+      summary: POST /api/v1/me/advanced-strategies
+      description: Auto-generated operation for /api/v1/me/advanced-strategies.
+      tags:
+        - me
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/me/advanced-strategies/clone-from-tournament:
+    post:
+      operationId: post_me_advanced-strategies_clone-from-tournament
+      summary: POST /api/v1/me/advanced-strategies/clone-from-tournament
+      description: Auto-generated operation for
+        /api/v1/me/advanced-strategies/clone-from-tournament.
+      tags:
+        - me
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/me/advanced-strategies/simulate:
+    post:
+      operationId: post_me_advanced-strategies_simulate
+      summary: POST /api/v1/me/advanced-strategies/simulate
+      description: Auto-generated operation for /api/v1/me/advanced-strategies/simulate.
+      tags:
+        - me
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/me/advanced-strategies/{id}:
+    delete:
+      operationId: delete_me_advanced-strategies_id
+      summary: DELETE /api/v1/me/advanced-strategies/{id}
+      description: Auto-generated operation for /api/v1/me/advanced-strategies/{id}.
+      tags:
+        - me
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: id"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    get:
+      operationId: get_me_advanced-strategies_id
+      summary: GET /api/v1/me/advanced-strategies/{id}
+      description: Auto-generated operation for /api/v1/me/advanced-strategies/{id}.
+      tags:
+        - me
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: id"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patch_me_advanced-strategies_id
+      summary: PATCH /api/v1/me/advanced-strategies/{id}
+      description: Auto-generated operation for /api/v1/me/advanced-strategies/{id}.
+      tags:
+        - me
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: id"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/me/advanced-strategies/{id}/simulate:
+    post:
+      operationId: post_me_advanced-strategies_id_simulate
+      summary: POST /api/v1/me/advanced-strategies/{id}/simulate
+      description: Auto-generated operation for
+        /api/v1/me/advanced-strategies/{id}/simulate.
+      tags:
+        - me
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: id"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/me/api-key:
+    post:
+      operationId: post_me_api-key
+      summary: POST /api/v1/me/api-key
+      description: Auto-generated operation for /api/v1/me/api-key.
+      tags:
+        - me
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/me/change-password:
+    post:
+      operationId: post_me_change-password
+      summary: POST /api/v1/me/change-password
+      description: Auto-generated operation for /api/v1/me/change-password.
+      tags:
+        - me
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/me/claimed-agents:
+    get:
+      operationId: get_me_claimed-agents
+      summary: GET /api/v1/me/claimed-agents
+      description: Auto-generated operation for /api/v1/me/claimed-agents.
+      tags:
+        - me
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/me/mark-key-viewed:
+    post:
+      operationId: post_me_mark-key-viewed
+      summary: POST /api/v1/me/mark-key-viewed
+      description: Auto-generated operation for /api/v1/me/mark-key-viewed.
+      tags:
+        - me
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/me/recovery-link:
+    post:
+      operationId: post_me_recovery-link
+      summary: POST /api/v1/me/recovery-link
+      description: Auto-generated operation for /api/v1/me/recovery-link.
+      tags:
+        - me
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/me/signal-preferences:
+    get:
+      operationId: get_me_signal-preferences
+      summary: GET /api/v1/me/signal-preferences
+      description: Auto-generated operation for /api/v1/me/signal-preferences.
+      tags:
+        - me
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patch_me_signal-preferences
+      summary: PATCH /api/v1/me/signal-preferences
+      description: Auto-generated operation for /api/v1/me/signal-preferences.
+      tags:
+        - me
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/me/strategies:
+    get:
+      operationId: get_me_strategies
+      summary: GET /api/v1/me/strategies
+      description: Auto-generated operation for /api/v1/me/strategies.
+      tags:
+        - me
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    post:
+      operationId: post_me_strategies
+      summary: POST /api/v1/me/strategies
+      description: Auto-generated operation for /api/v1/me/strategies.
+      tags:
+        - me
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/me/strategies/{id}:
+    delete:
+      operationId: delete_me_strategies_id
+      summary: DELETE /api/v1/me/strategies/{id}
+      description: Auto-generated operation for /api/v1/me/strategies/{id}.
+      tags:
+        - me
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: id"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    get:
+      operationId: get_me_strategies_id
+      summary: GET /api/v1/me/strategies/{id}
+      description: Auto-generated operation for /api/v1/me/strategies/{id}.
+      tags:
+        - me
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: id"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patch_me_strategies_id
+      summary: PATCH /api/v1/me/strategies/{id}
+      description: Auto-generated operation for /api/v1/me/strategies/{id}.
+      tags:
+        - me
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: id"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/openapi:
+    get:
+      operationId: get_openapi
+      summary: GET /api/v1/openapi
+      description: Auto-generated operation for /api/v1/openapi.
+      tags:
+        - openapi
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+  /api/v1/openapi/internal:
+    get:
+      operationId: get_openapi_internal
+      summary: GET /api/v1/openapi/internal
+      description: Auto-generated operation for /api/v1/openapi/internal.
+      tags:
+        - openapi
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+  /api/v1/openapi/public:
+    get:
+      operationId: get_openapi_public
+      summary: GET /api/v1/openapi/public
+      description: Auto-generated operation for /api/v1/openapi/public.
+      tags:
+        - openapi
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+  /api/v1/search:
+    get:
+      operationId: get_search
+      summary: GET /api/v1/search
+      description: Auto-generated operation for /api/v1/search.
+      tags:
+        - search
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+  /api/v1/search/click:
+    post:
+      operationId: post_search_click
+      summary: POST /api/v1/search/click
+      description: Auto-generated operation for /api/v1/search/click.
+      tags:
+        - search
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+  /api/v1/search/suggest:
+    get:
+      operationId: get_search_suggest
+      summary: GET /api/v1/search/suggest
+      description: Auto-generated operation for /api/v1/search/suggest.
+      tags:
+        - search
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+  /api/v1/search/trending:
+    get:
+      operationId: get_search_trending
+      summary: GET /api/v1/search/trending
+      description: Auto-generated operation for /api/v1/search/trending.
+      tags:
+        - search
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+  /api/v1/signals/deliver:
+    post:
+      operationId: post_signals_deliver
+      summary: POST /api/v1/signals/deliver
+      description: Auto-generated operation for /api/v1/signals/deliver.
+      tags:
+        - signals
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/signout:
+    get:
+      operationId: get_signout
+      summary: GET /api/v1/signout
+      description: Auto-generated operation for /api/v1/signout.
+      tags:
+        - signout
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /api/v1/skill:
+    get:
+      operationId: get_skill
+      summary: GET /api/v1/skill
+      description: Auto-generated operation for /api/v1/skill.
+      tags:
+        - skill
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+  /api/v1/stats/harvest-count:
+    get:
+      operationId: get_stats_harvest-count
+      summary: GET /api/v1/stats/harvest-count
+      description: Auto-generated operation for /api/v1/stats/harvest-count.
+      tags:
+        - stats
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+  /api/v1/{path+}:
+    delete:
+      operationId: delete_path
+      summary: DELETE /api/v1/{path+}
+      description: Auto-generated operation for /api/v1/{path+}.
+      tags:
+        - "{path+}"
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: path"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    get:
+      operationId: get_path
+      summary: GET /api/v1/{path+}
+      description: Auto-generated operation for /api/v1/{path+}.
+      tags:
+        - "{path+}"
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: path"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    head:
+      operationId: head_path
+      summary: HEAD /api/v1/{path+}
+      description: Auto-generated operation for /api/v1/{path+}.
+      tags:
+        - "{path+}"
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: path"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    options:
+      operationId: options_path
+      summary: OPTIONS /api/v1/{path+}
+      description: Auto-generated operation for /api/v1/{path+}.
+      tags:
+        - "{path+}"
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: path"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patch_path
+      summary: PATCH /api/v1/{path+}
+      description: Auto-generated operation for /api/v1/{path+}.
+      tags:
+        - "{path+}"
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: path"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    post:
+      operationId: post_path
+      summary: POST /api/v1/{path+}
+      description: Auto-generated operation for /api/v1/{path+}.
+      tags:
+        - "{path+}"
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: path"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+    put:
+      operationId: put_path
+      summary: PUT /api/v1/{path+}
+      description: Auto-generated operation for /api/v1/{path+}.
+      tags:
+        - "{path+}"
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Path parameter: path"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              sample:
+                value: {}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSuccess"
+              examples:
+                success:
+                  value:
+                    success: true
+                    data: {}
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
+              examples:
+                error:
+                  value:
+                    success: false
+                    error:
+                      code: BAD_REQUEST
+                      message: Invalid request
+                    meta:
+                      requestId: req_example
+                      version: v1
+                      timestamp: 2026-02-24T00:00:00.000Z
+      security:
+        - bearerAuth: []
+  /context/v1:
+    get:
+      operationId: get_context_v1
+      summary: GET /context/v1
+      description: Stable context surface for AI consumers.
+      tags:
+        - context
+      responses:
+        "200":
+          description: Success
           content:
             application/json:
               schema:
                 type: object
-                properties:
-                  success:
-                    type: boolean
-                  tool:
-                    type: string
-                  result:
-                    type: object
-                    description: Tool output
-                  meta:
-                    type: object
-                    properties:
-                      rate_limit_remaining:
-                        type: integer
-        "400":
-          description: Invalid tool name or parameters
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: Unauthorized (missing or invalid Bearer token)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "429":
-          description: Rate limit exceeded
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-# ==================== COMPONENTS ====================
+                additionalProperties: true
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: API Key
-      description: "User API key from dashboard (Generate API key). Format: Authorization: Bearer YOUR_API_KEY"
-
   schemas:
-    # Core Response Types
-    ErrorResponse:
+    ApiMeta:
       type: object
+      properties:
+        requestId:
+          type: string
+        version:
+          type: string
+          enum:
+            - v1
+        timestamp:
+          type: string
+          format: date-time
       required:
-        - success
-        - error
+        - requestId
+        - version
+        - timestamp
+    ApiSuccess:
+      type: object
       properties:
         success:
           type: boolean
-          example: false
-        error:
-          type: string
-          description: Error code or message
-          example: "INSUFFICIENT_BALANCE"
+          const: true
         data:
           type: object
-          description: Additional error data (optional)
-
-    SuccessResponse:
-      type: object
+          additionalProperties: true
+        meta:
+          $ref: "#/components/schemas/ApiMeta"
       required:
         - success
         - data
+        - meta
+    ApiError:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+        retryable:
+          type: boolean
+      required:
+        - code
+        - message
+    ApiErrorEnvelope:
+      type: object
       properties:
         success:
           type: boolean
-          example: true
-        data:
-          type: object
+          const: false
+        error:
+          $ref: "#/components/schemas/ApiError"
+        meta:
+          $ref: "#/components/schemas/ApiMeta"
+      required:
+        - success
+        - error
+        - meta
 
-    HealthResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: object
-          properties:
-            status:
-              type: string
-              example: "healthy"
-            timestamp:
-              type: string
-              format: date-time
-
-    DiscoveryData:
-      type: object
-      description: Schema discovery for AI strategy builder (GET /api/discovery)
-      properties:
-        strategyBuilder:
-          type: object
-          description: Present when section is strategy_builder or all
-          properties:
-            triggers:
-              type: array
-              items:
-                type: object
-                properties:
-                  type: { type: string }
-                  label: { type: string }
-                  description: { type: string }
-                  needsValue: { type: boolean }
-                  valueLabel: { type: string }
-                  valueType: { type: string, enum: [number, pattern] }
-            actions:
-              type: array
-              items:
-                type: object
-                properties:
-                  type: { type: string }
-                  label: { type: string }
-                  description: { type: string }
-                  needsValue: { type: boolean }
-                  valueLabel: { type: string }
-                  defaultValue: { type: number }
-            globalLimits:
-              type: object
-              additionalProperties: true
-            ruleSchema:
-              type: object
-              additionalProperties: true
-            executionModes:
-              type: array
-              items: { type: string }
-              example: [sequential, all_matching]
-            presets:
-              type: array
-              items:
-                type: object
-                properties:
-                  id: { type: string }
-                  name: { type: string }
-                  description: { type: string }
-                  strategy: { type: object }
-        gameMechanics:
-          type: object
-          description: Present when section is game_mechanics or all
-          properties:
-            dice:
-              type: object
-              properties:
-                houseEdge: { type: number }
-                minBet: { type: integer }
-                maxBet: { type: integer }
-                maxMultiplier: { type: number }
-                targetRange: { type: array, items: { type: number } }
-                conditions: { type: array, items: { type: string } }
-                winProbabilityFormula: { type: string }
-                multiplierFormula: { type: string }
-                provablyFair: { type: object }
-        platform:
-          type: object
-          description: Present when section is platform or all
-          properties:
-            faucet: { type: object }
-            depositAlerts: { type: object }
-            balanceMilestones: { type: array }
-            withdrawal: { type: object }
-            limits: { type: object }
-
-    # User & Account
-    User:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        email:
-          type: string
-          format: email
-        name:
-          type: string
-        image:
-          type: string
-          format: uri
-          nullable: true
-        credits:
-          type: integer
-          description: Current credit balance
-        apiKeyPrefix:
-          type: string
-          description: First 8 chars of API key for identification
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        lastFaucetAt:
-          type: string
-          format: date-time
-          nullable: true
-
-    # Betting & Games
-    Bet:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        gameType:
-          type: string
-          enum: [dice]
-        amount:
-          type: integer
-        outcome:
-          type: string
-          enum: [win, loss, push]
-        payout:
-          type: integer
-        pnl:
-          type: integer
-          description: Profit/loss (payout - amount)
-        createdAt:
-          type: string
-          format: date-time
-        resultPayload:
-          type: object
-          nullable: true
-          description: Game-specific result details
-        verification:
-          type: object
-          properties:
-            serverSeedHash:
-              type: string
-              nullable: true
-            clientSeed:
-              type: string
-            nonce:
-              type: integer
-
-    AdvancedStrategy:
-      type: object
-      properties:
-        id: { type: string, format: uuid }
-        name: { type: string }
-        description: { type: string }
-        baseConfig:
-          type: object
-          properties:
-            amount: { type: number }
-            target: { type: number }
-            condition: { type: string, enum: [over, under] }
-        rules:
-          type: array
-          items:
-            type: object
-            properties:
-              id: { type: string }
-              order: { type: number }
-              enabled: { type: boolean }
-              trigger: { type: object, properties: { type: { type: string }, value: { type: number } } }
-              action: { type: object, properties: { type: { type: string }, value: { type: number } } }
-        executionMode: { type: string, enum: [sequential, all_matching] }
-        globalLimits: { type: object }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
-
-    AdvancedStrategyInput:
-      type: object
-      required: [name, baseConfig, rules]
-      properties:
-        name: { type: string }
-        description: { type: string }
-        baseConfig:
-          type: object
-          required: [amount, target, condition]
-          properties:
-            amount: { type: number }
-            target: { type: number }
-            condition: { type: string, enum: [over, under] }
-        rules:
-          type: array
-          items:
-            type: object
-            properties:
-              id: { type: string }
-              order: { type: number }
-              enabled: { type: boolean }
-              trigger: { type: object }
-              action: { type: object }
-        executionMode: { type: string, enum: [sequential, all_matching] }
-        globalLimits: { type: object }
-        tags: { type: array, items: { type: string } }
-
-    BetDetail:
-      allOf:
-        - $ref: '#/components/schemas/Bet'
-        - type: object
-          properties:
-            verification:
-              type: object
-              properties:
-                serverSeedHash:
-                  type: string
-                  nullable: true
-                clientSeed:
-                  type: string
-                nonce:
-                  type: integer
-                verificationFormula:
-                  type: string
-                  description: How to verify the result
-                serverSeed:
-                  type: string
-                  nullable: true
-                  description: Only included when ?reveal=1
-
-    Transaction:
-      oneOf:
-        - $ref: '#/components/schemas/BetTransaction'
-        - $ref: '#/components/schemas/FaucetTransaction'
-
-    BetTransaction:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        type:
-          type: string
-          enum: [bet]
-        gameType:
-          type: string
-        amount:
-          type: integer
-        outcome:
-          type: string
-        payout:
-          type: integer
-        pnl:
-          type: integer
-        createdAt:
-          type: string
-          format: date-time
-
-    FaucetTransaction:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        type:
-          type: string
-          enum: [faucet]
-        amount:
-          type: integer
-        createdAt:
-          type: string
-          format: date-time
-
-    FaucetGrant:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        amount:
-          type: integer
-          example: 100
-        createdAt:
-          type: string
-          format: date-time
-
-    # Strategies
-    Strategy:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        gameType:
-          type: string
-          enum: [dice]
-        name:
-          type: string
-        config:
-          type: object
-          description: Game-specific strategy configuration
-        createdAt:
-          type: string
-          format: date-time
-
-    # Statistics
-    GameStats:
-      type: object
-      properties:
-        bets:
-          type: integer
-        wagered:
-          type: integer
-        pnl:
-          type: integer
-        wins:
-          type: integer
-        winRate:
-          type: number
-          format: float
-          description: Win rate as percentage (e.g., 45.5 for 45.5%)
-
-    ProfileStats:
-      type: object
-      properties:
-        balance:
-          type: integer
-        credits:
-          type: integer
-        faucetCredits:
-          type: integer
-        memberSince:
-          type: string
-          format: date-time
-        lastBetAt:
-          type: string
-          format: date-time
-          nullable: true
-        totalBets:
-          type: integer
-        totalWagered:
-          type: integer
-        totalPnl:
-          type: integer
-        winRate:
-          type: number
-          format: float
-        byGame:
-          type: object
-          additionalProperties:
-            $ref: '#/components/schemas/GameStats'
-
-    SessionStats:
-      type: object
-      properties:
-        balance:
-          type: integer
-        rounds:
-          type: integer
-        sessionPnl:
-          type: integer
-        winRate:
-          type: number
-          format: float
-        recentPlays:
-          type: array
-          description: Simplified play objects (amount, outcome, payout, pnl) — no id/verification
-          items:
-            $ref: '#/components/schemas/SessionRecentPlay'
-        current_streak:
-          type: integer
-          description: Current win streak (positive) or loss streak (negative)
-        max_win_streak:
-          type: integer
-          description: Longest consecutive wins in recent plays
-        max_loss_streak:
-          type: integer
-          description: Longest consecutive losses in recent plays
-        profit_factor:
-          type: number
-          nullable: true
-          description: grossProfit / grossLoss (null if no losses)
-        rolling_win_rate_10:
-          type: number
-          nullable: true
-          description: Win rate (%) over last 10 plays
-        rolling_win_rate_20:
-          type: number
-          nullable: true
-          description: Win rate (%) over last 20 plays
-
-    SessionRecentPlay:
-      type: object
-      properties:
-        amount:
-          type: integer
-        outcome:
-          type: string
-          enum: [win, loss]
-        payout:
-          type: integer
-        pnl:
-          type: integer
-          description: payout - amount
-
-    # Payments
-    CreditPackage:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-          example: "Starter Pack"
-        credits:
-          type: integer
-          example: 5000
-        amountCents:
-          type: integer
-          description: Price in cents (USD)
-          example: 500
-        stripePriceId:
-          type: string
-          description: Stripe price identifier

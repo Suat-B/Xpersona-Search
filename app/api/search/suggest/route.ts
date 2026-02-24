@@ -20,6 +20,11 @@ const SuggestSchema = z.object({
 
 type SuggestParams = z.infer<typeof SuggestSchema>;
 
+function toExternalProtocolName(protocol: string): string {
+  if (protocol.toUpperCase() === "OPENCLEW") return "OPENCLAW";
+  return protocol;
+}
+
 function toPrefixTsQuery(q: string): string {
   const tokens = q
     .toLowerCase()
@@ -37,10 +42,47 @@ function escapeLike(s: string): string {
 const DESC_TRUNCATE = 80;
 const MAX_QUERY_SUGGESTIONS = 8;
 const MAX_AGENT_SUGGESTIONS = 3;
+const MAX_PROTOCOL_APPENDS = 2;
+
+const NATURAL_BONUS = 12;
+const TECHNICAL_PENALTY = 14;
+const MIN_NATURAL_SCORE = -8;
+const MIN_NON_TECH_CAP_WORDS = 2;
 
 const STOPWORDS = new Set([
   "a", "an", "and", "be", "for", "in", "is", "it", "of", "on", "or", "the", "to",
 ]);
+
+const INTENT_TERMS = [
+  "find",
+  "best",
+  "for",
+  "with",
+  "how to",
+  "compare",
+  "near me",
+  "for beginners",
+  "top",
+  "what is",
+];
+
+const TECHNICAL_TERMS = [
+  "npm",
+  "pypi",
+  "crate",
+  "pip",
+  "package",
+  "library",
+  "sdk",
+  "plugin",
+];
+
+type CandidateSource = "popular" | "name" | "capability" | "protocol";
+
+interface CandidateSuggestion {
+  text: string;
+  source: CandidateSource;
+}
 
 function isIncompletePhrase(text: string): boolean {
   const last = text.trim().toLowerCase().split(/\s+/).pop() ?? "";
@@ -50,6 +92,54 @@ function isIncompletePhrase(text: string): boolean {
 function sanitizeError(err: unknown): string {
   if (process.env.NODE_ENV !== "production" && err instanceof Error) return err.message;
   return "Suggest temporarily unavailable";
+}
+
+function isTechnicalQuery(query: string): boolean {
+  const q = query.toLowerCase();
+  return TECHNICAL_TERMS.some((term) => q.includes(term)) || /[._/-]/.test(q);
+}
+
+function hasVersionLikeTail(text: string): boolean {
+  return /\bv?\d+(\.\d+){0,2}\b/i.test(text);
+}
+
+function isPackageLikeText(text: string): boolean {
+  const t = text.toLowerCase().trim();
+  if (TECHNICAL_TERMS.some((term) => t.includes(term))) return true;
+  if (hasVersionLikeTail(t)) return true;
+  if (/^[a-z0-9]+([_-][a-z0-9]+)+$/i.test(t)) return true;
+  if (/^[a-z]+(?:[A-Z][a-z0-9]+)+$/.test(text.trim())) return true;
+  const punctCount = (t.match(/[._/@:-]/g) ?? []).length;
+  if (punctCount >= 2) return true;
+  return false;
+}
+
+function looksMalformed(text: string): boolean {
+  const t = text.trim();
+  if (t.length < 2) return true;
+  if (/[<>]/.test(t)) return true;
+  if (/^[^a-z0-9]+$/i.test(t)) return true;
+  return false;
+}
+
+function scoreNaturalness(text: string, qLower: string, queryIsTechnical: boolean): number {
+  const raw = text.trim();
+  const lower = raw.toLowerCase();
+  const words = lower.split(/\s+/).filter(Boolean);
+  let score = 0;
+
+  if (raw.length >= 8 && raw.length <= 60) score += NATURAL_BONUS;
+  if (words.length >= 2) score += NATURAL_BONUS;
+  if (lower.startsWith(qLower)) score += 10;
+  else if (lower.includes(qLower)) score += 5;
+
+  if (INTENT_TERMS.some((term) => lower.includes(term))) score += 9;
+
+  if (words.length === 1 && raw.length <= 3 && !lower.startsWith(qLower)) score -= 12;
+
+  if (isPackageLikeText(raw) && !queryIsTechnical) score -= TECHNICAL_PENALTY;
+
+  return score;
 }
 
 export async function GET(req: NextRequest) {
@@ -100,6 +190,8 @@ export async function GET(req: NextRequest) {
   try {
     const qLower = params.q.toLowerCase();
     const esc = escapeLike(params.q);
+    const maxQuerySuggestions = Math.min(params.limit, MAX_QUERY_SUGGESTIONS);
+    const queryIsTechnical = isTechnicalQuery(params.q);
 
     // --- Tier 1: Popular search completions from search_queries table ---
     const popularCompletions = await db
@@ -114,7 +206,7 @@ export async function GET(req: NextRequest) {
         )
       )
       .orderBy(desc(searchQueries.count))
-      .limit(MAX_QUERY_SUGGESTIONS);
+      .limit(maxQuerySuggestions);
 
     // --- Tier 2: Agent name prefix completions ---
     const nameCompletionRows = await db
@@ -174,30 +266,17 @@ export async function GET(req: NextRequest) {
           ? r.description.slice(0, DESC_TRUNCATE) + "\u2026"
           : r.description
         : null,
-      protocols: Array.isArray(r.protocols) ? r.protocols : [],
+      protocols: Array.isArray(r.protocols)
+        ? r.protocols.map((p) => toExternalProtocolName(String(p)))
+        : [],
     }));
 
-    const seen = new Set<string>();
-    const querySuggestions: string[] = [];
-
-    const addSuggestion = (text: string) => {
-      const key = text.toLowerCase().trim();
-      if (key.length < 2 || seen.has(key) || key === qLower) return;
-      if (STOPWORDS.has(key)) return;
-      if (isIncompletePhrase(text)) return;
-      if (qLower.includes(key) && key.length < 8) return;
-      seen.add(key);
-      querySuggestions.push(text.trim());
-    };
-
+    const candidates: CandidateSuggestion[] = [];
     for (const row of popularCompletions) {
-      if (querySuggestions.length >= MAX_QUERY_SUGGESTIONS) break;
-      addSuggestion(row.query);
+      candidates.push({ text: row.query, source: "popular" });
     }
-
     for (const row of nameCompletionRows) {
-      if (querySuggestions.length >= MAX_QUERY_SUGGESTIONS) break;
-      addSuggestion(row.name);
+      candidates.push({ text: row.name, source: "name" });
     }
 
     const capSet = new Set<string>();
@@ -208,14 +287,16 @@ export async function GET(req: NextRequest) {
           const normalized = c.toLowerCase().trim();
           if (STOPWORDS.has(normalized)) continue;
           if (qLower.includes(normalized)) continue;
-          if (normalized.includes(qLower)) capSet.add(c.trim());
+          if (!normalized.includes(qLower)) continue;
+          if (!queryIsTechnical && isPackageLikeText(normalized)) continue;
+          if (!queryIsTechnical && normalized.split(/\s+/).length < MIN_NON_TECH_CAP_WORDS) continue;
+          capSet.add(c.trim());
         }
       }
     }
     const sortedCaps = [...capSet].sort((a, b) => a.length - b.length);
     for (const cap of sortedCaps) {
-      if (querySuggestions.length >= MAX_QUERY_SUGGESTIONS) break;
-      addSuggestion(cap);
+      candidates.push({ text: cap, source: "capability" });
     }
 
     const protoSet = new Set<string>();
@@ -228,15 +309,53 @@ export async function GET(req: NextRequest) {
       }
     }
     for (const proto of protoSet) {
-      if (querySuggestions.length >= MAX_QUERY_SUGGESTIONS) break;
-      const label = PROTOCOL_LABELS[proto] ?? proto;
-      addSuggestion(`${params.q} ${label}`);
+      const externalProto = toExternalProtocolName(proto);
+      const label = PROTOCOL_LABELS[proto] ?? PROTOCOL_LABELS[externalProto] ?? externalProto;
+      candidates.push({ text: `${params.q} ${label}`, source: "protocol" });
+    }
+
+    const seen = new Set<string>();
+    const ranked = candidates
+      .map((candidate, index) => ({
+        ...candidate,
+        index,
+        key: candidate.text.toLowerCase().trim(),
+        score: scoreNaturalness(candidate.text, qLower, queryIsTechnical),
+      }))
+      .filter((c) => {
+        if (!c.key || c.key.length < 2) return false;
+        if (c.key === qLower) return false;
+        if (STOPWORDS.has(c.key)) return false;
+        if (isIncompletePhrase(c.text)) return false;
+        if (qLower.includes(c.key) && c.key.length < 8) return false;
+        if (looksMalformed(c.text)) return false;
+        if (!queryIsTechnical && c.score < MIN_NATURAL_SCORE) return false;
+        return true;
+      })
+      .sort((a, b) => b.score - a.score || a.index - b.index);
+
+    const querySuggestions: string[] = [];
+    let protocolAdded = 0;
+
+    for (const item of ranked) {
+      if (querySuggestions.length >= maxQuerySuggestions) break;
+      if (seen.has(item.key)) continue;
+      if (
+        item.source === "protocol" &&
+        !queryIsTechnical &&
+        (querySuggestions.length >= maxQuerySuggestions - 1 || protocolAdded >= MAX_PROTOCOL_APPENDS)
+      ) {
+        continue;
+      }
+      seen.add(item.key);
+      querySuggestions.push(item.text.trim());
+      if (item.source === "protocol") protocolAdded += 1;
     }
 
     suggestCircuitBreaker.recordSuccess();
 
     const responseBody = {
-      querySuggestions: querySuggestions.slice(0, MAX_QUERY_SUGGESTIONS),
+      querySuggestions: querySuggestions.slice(0, maxQuerySuggestions),
       agentSuggestions,
     };
 

@@ -19,7 +19,7 @@ export function BackToSearchLink({ from }: BackToSearchLinkProps) {
       type="button"
       onClick={() => {
         if (target) {
-          router.push(target);
+          router.push(target, { scroll: false });
           return;
         }
         router.back();

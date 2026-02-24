@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { GlassCard } from "@/components/ui/GlassCard";
 import { useEffect, useState, useRef, useCallback } from "react";
@@ -20,7 +20,7 @@ export default function LiveFeed() {
 
     const refresh = useCallback(async () => {
         try {
-            const res = await fetch("/api/me/rounds?limit=15&gameType=dice", { credentials: "include" });
+            const res = await fetch("/api/v1/me/rounds?limit=15&gameType=dice", { credentials: "include" });
             const data = await res.json();
             if (!data.success || !Array.isArray(data.data?.plays)) {
                 setFeed([]);
@@ -97,3 +97,6 @@ export default function LiveFeed() {
         </GlassCard>
     );
 }
+
+
+

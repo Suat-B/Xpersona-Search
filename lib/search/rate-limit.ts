@@ -7,8 +7,8 @@
  *   - Authenticated: 120 req/min
  */
 
-const ANON_LIMIT = 60;
-const AUTH_LIMIT = 120;
+export const SEARCH_ANON_RATE_LIMIT = 60;
+export const SEARCH_AUTH_RATE_LIMIT = 120;
 const WINDOW_SEC = 60;
 
 export interface SearchRateLimitResult {
@@ -58,7 +58,7 @@ function checkInMemory(
 ): SearchRateLimitResult {
   cleanup();
   const key = `search:${getClientIp(request)}`;
-  const limit = isAuthenticated ? AUTH_LIMIT : ANON_LIMIT;
+  const limit = isAuthenticated ? SEARCH_AUTH_RATE_LIMIT : SEARCH_ANON_RATE_LIMIT;
   const now = Date.now();
   const windowMs = WINDOW_SEC * 1000;
   const entry = searchStore.get(key);
@@ -94,7 +94,7 @@ async function checkUpstash(
     token: process.env.UPSTASH_REDIS_REST_TOKEN!,
   });
 
-  const limit = isAuthenticated ? AUTH_LIMIT : ANON_LIMIT;
+  const limit = isAuthenticated ? SEARCH_AUTH_RATE_LIMIT : SEARCH_ANON_RATE_LIMIT;
   const ratelimit = new Ratelimit({
     redis,
     limiter: Ratelimit.slidingWindow(limit, `${WINDOW_SEC} s`),

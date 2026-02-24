@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const POLL_INTERVAL_MS = 1500;
-const POLL_MAX_ATTEMPTS = 6; // ~9s total; EnsureGuest typically creates session in 1–2s
+const POLL_MAX_ATTEMPTS = 6; // ~9s total; EnsureGuest typically creates session in 1â€“2s
 
 interface ApiKeySectionProps {
   /** Compact layout for sidebar: key prefix + regenerate in a single row */
@@ -15,7 +15,7 @@ interface ApiKeySectionProps {
 }
 
 async function fetchMe(): Promise<{ ok: boolean; data: Record<string, unknown> }> {
-  const r = await fetch("/api/me", { credentials: "include" });
+  const r = await fetch("/api/v1/me", { credentials: "include" });
   const text = await r.text();
   try {
     return { ok: r.ok, data: (text ? JSON.parse(text) : {}) as Record<string, unknown> };
@@ -82,14 +82,14 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
     setGuestCreating(true);
     setError(null);
     try {
-      const r = await fetch("/api/auth/guest", { method: "POST", credentials: "include" });
+      const r = await fetch("/api/v1/auth/guest", { method: "POST", credentials: "include" });
       const json = (await r.json().catch(() => ({}))) as { success?: boolean };
       if (!r.ok || !json.success) return false;
       setError(null);
       window.dispatchEvent(new Event("balance-updated"));
       router.refresh();
       // Now we have a cookie; generate the key immediately (no second click)
-      const res = await fetch("/api/me/api-key", { method: "POST", credentials: "include" });
+      const res = await fetch("/api/v1/me/api-key", { method: "POST", credentials: "include" });
       const text = await res.text();
       let data: { success?: boolean; data?: { apiKey?: string; apiKeyPrefix?: string } };
       try {
@@ -123,7 +123,7 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
     setErrorMessage(null);
     setLoading(true);
     try {
-      const res = await fetch("/api/me/api-key", { method: "POST", credentials: "include" });
+      const res = await fetch("/api/v1/me/api-key", { method: "POST", credentials: "include" });
       const text = await res.text();
       let data: { success?: boolean; data?: { apiKey?: string; apiKeyPrefix?: string }; error?: string; message?: string };
       try {
@@ -183,7 +183,7 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
             {prefix ? (
               <>
                 <div className="w-2 h-2 rounded-full bg-[#30d158] animate-pulse flex-shrink-0" />
-                <p className="font-mono text-[11px] text-[var(--text-primary)] tabular-nums truncate">{(prefix as string).slice(0, 11)}…</p>
+                <p className="font-mono text-[11px] text-[var(--text-primary)] tabular-nums truncate">{(prefix as string).slice(0, 11)}â€¦</p>
               </>
             ) : (
               <>
@@ -197,12 +197,12 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
               disabled={loading || sessionCreating}
               className="ml-auto flex-shrink-0 px-2 py-1 text-[10px] rounded-sm border border-[#0a84ff]/40 bg-[#0a84ff]/10 text-[#0a84ff] hover:bg-[#0a84ff]/20 disabled:opacity-50 transition-colors"
             >
-              {loading ? "…" : sessionCreating ? "…" : "Generate"}
+              {loading ? "â€¦" : sessionCreating ? "â€¦" : "Generate"}
             </button>
           </div>
           {error === "auth" && (
             <div className="flex flex-wrap gap-1.5 text-[10px]">
-              <Link href="/api/auth/play" className="text-amber-400 hover:underline">Play</Link>
+              <Link href="/api/v1/auth/play" className="text-amber-400 hover:underline">Play</Link>
               <button type="button" onClick={createGuestAndRetry} disabled={guestCreating} className="text-amber-400 hover:underline disabled:opacity-50">Continue as guest</button>
             </div>
           )}
@@ -216,7 +216,7 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
               <button type="button" onClick={closeModal} className="absolute top-4 right-4 p-2 rounded-lg text-[var(--text-tertiary)] hover:text-white hover:bg-white/10 transition-colors" aria-label="Close">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
-              <p className="text-sm font-semibold text-[var(--text-primary)] mb-2">Your API key &lt;3 — copied to clipboard</p>
+              <p className="text-sm font-semibold text-[var(--text-primary)] mb-2">Your API key &lt;3 â€” copied to clipboard</p>
               <pre className="mb-4 overflow-x-auto rounded-xl bg-black/40 p-4 text-xs font-mono break-all border border-white/10">{modalKey}</pre>
               <button ref={copyButtonRef} type="button" onClick={copyAndClose} className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#0a84ff] px-4 py-3 text-sm font-medium text-white hover:bg-[#0a84ff]/90">
                 Copy to Clipboard
@@ -255,7 +255,7 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
         >
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-[#30d158] animate-pulse" />
-            <p className="font-mono text-sm text-[var(--text-primary)]">{(prefix as string).slice(0, 11)}…</p>
+            <p className="font-mono text-sm text-[var(--text-primary)]">{(prefix as string).slice(0, 11)}â€¦</p>
           </div>
           <span className="text-[10px] text-[#30d158] font-medium px-2 py-0.5 rounded-full bg-[#30d158]/10 border border-[#30d158]/20">
             Active
@@ -290,14 +290,14 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
             <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            {guestCreating ? "Setting up your key…" : "Generating…"}
+            {guestCreating ? "Setting up your keyâ€¦" : "Generatingâ€¦"}
           </span>
         ) : sessionCreating ? (
           <span className="flex items-center justify-center gap-2">
             <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            Creating session…
+            Creating sessionâ€¦
           </span>
         ) : prefix ? (
           <span className="flex items-center justify-center gap-2">
@@ -324,7 +324,7 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Link
-              href="/api/auth/play"
+              href="/api/v1/auth/play"
               className="inline-flex items-center rounded-lg bg-[var(--accent-heart)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
             >
               Play
@@ -335,7 +335,7 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
               disabled={guestCreating}
               className="inline-flex items-center rounded-lg border border-white/30 px-3 py-1.5 text-xs font-medium bg-white/5 hover:bg-white/10 disabled:opacity-50"
             >
-              {guestCreating ? "Creating…" : "Continue as guest"}
+              {guestCreating ? "Creatingâ€¦" : "Continue as guest"}
             </button>
             <Link
               href="/"
@@ -396,7 +396,7 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
                 </div>
                 <div>
                   <p id="secure-key-title" className="text-sm font-semibold text-[var(--text-primary)]">Your API key &lt;3</p>
-                  <p className="text-xs text-[#30d158]">Copied to clipboard — paste anywhere</p>
+                  <p className="text-xs text-[#30d158]">Copied to clipboard â€” paste anywhere</p>
                 </div>
               </div>
               
@@ -425,3 +425,6 @@ export function ApiKeySection({ compact = false }: ApiKeySectionProps) {
     </div>
   );
 }
+
+
+

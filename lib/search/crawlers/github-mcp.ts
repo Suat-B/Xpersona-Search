@@ -1,23 +1,22 @@
 /**
- * GitHub MCP crawler — discovers MCP (Model Context Protocol) servers from GitHub.
- * Searches for package.json files that reference @modelcontextprotocol/sdk or mcp-server.
+ * GitHub MCP crawler with partitioned repo search and resilient checkpoints.
  */
 import pLimit from "p-limit";
-import { db } from "@/lib/db";
-import { agents, crawlJobs } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import {
-  octokit,
-  fetchRepoDetails,
-  fetchFileContent,
-  withGithubTimeout,
-  isRetryableGitHubError,
-  type GitHubRepo,
-} from "../utils/github";
 import { canProceed, recordFailure, recordSuccess } from "./source-health";
 import { getCrawlMode, isHotOrWarm, type CrawlRuntimeOptions } from "./crawler-mode";
 import { ackCandidate, failCandidate, leaseCandidates, requeueCandidate } from "./discovery-frontier";
-import { calculateSafetyScore } from "../scoring/safety";
+import { runPartitionedRepoSearch } from "./github-search-runner";
+import {
+  checkpointJob,
+  clearCheckpoint,
+  completeJob,
+  failJob,
+  getCheckpoint,
+  heartbeatJob,
+  startJob,
+  toJobMetricsFromGithubContext,
+} from "./job-lifecycle";
+import { calculateSafetyScoreDeep, calculateSafetyScoreFast } from "../scoring/safety";
 import {
   calculatePopularityScore,
   calculateFreshnessScore,
@@ -25,37 +24,45 @@ import {
 } from "../scoring/rank";
 import { generateSlug } from "../utils/slug";
 import { upsertAgent } from "../agent-upsert";
+import {
+  createGitHubRequestContext,
+  fetchFileContent,
+  fetchRepoDetails,
+  searchCode,
+  type GitHubRepo,
+} from "../utils/github";
+import { getRepoVisibility, shouldRecrawlSource } from "./github-agent-utils";
 
-const CONCURRENCY = 3;
-const PAGE_SIZE = 100;
-const MAX_PAGES_PER_QUERY = 10; // GitHub caps at 1000 results (10 × 100)
-const RATE_LIMIT_DELAY_MS = 1200;
-
+const SOURCE = "GITHUB_MCP";
+const CONCURRENCY = 4;
 const SEARCH_QUERIES = [
-  "filename:package.json @modelcontextprotocol/sdk",
-  "filename:package.json mcp-server",
-  "filename:package.json modelcontextprotocol",
-  "filename:package.json @modelcontextprotocol",
-  "mcp server typescript",
-  "filename:mcp.json",
-  '"mcpServers" filename:package.json',
-  "filename:pyproject.toml mcp",
-  "filename:pyproject.toml model-context-protocol",
-  "filename:setup.py mcp-server",
-  "mcp-server lang:go",
-  "mcp-server lang:rust",
-  "mcp-server lang:python",
-  "mcp-server lang:java",
-  "mcp-server lang:csharp",
-  "model context protocol server",
   "topic:mcp-server",
   "topic:model-context-protocol",
-  "mcp tool server",
+  "model context protocol in:description",
+  "mcp server in:description",
   "mcp stdio server",
+  "tool-calling mcp in:description",
+  "topic:mcp-tool",
+  "@modelcontextprotocol/sdk in:readme",
 ] as const;
+const CODE_FALLBACK_QUERIES = [
+  "filename:package.json @modelcontextprotocol/sdk",
+  "filename:package.json mcp-server",
+  "\"mcpServers\" filename:package.json",
+] as const;
+const CODE_FALLBACK_PAGES = 2;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
+interface RepoSearchItem {
+  id?: number;
+  full_name?: string;
+  description?: string | null;
+  name?: string;
+}
+
+interface CrawlState {
+  totalFound: number;
+  skipped: number;
+  deepSafetyUsed: number;
 }
 
 function hasMcpDependency(pkg: Record<string, unknown>): boolean {
@@ -88,10 +95,140 @@ function extractMcpMetadata(
   const capabilities: string[] = [];
   const keywords = (pkg.keywords as string[] | undefined) ?? [];
   capabilities.push(...keywords.filter(Boolean));
-  if (pkg.bin && typeof pkg.bin === "object") {
-    capabilities.push("cli");
-  }
+  if (pkg.bin && typeof pkg.bin === "object") capabilities.push("cli");
   return { name, description, capabilities: [...new Set(capabilities)] };
+}
+
+function shouldContinueRun(
+  startedAtMs: number,
+  ctx: { requests: number },
+  options?: CrawlRuntimeOptions
+): boolean {
+  const withinBudget =
+    options?.githubBudget == null || ctx.requests < options.githubBudget;
+  const withinTime =
+    options?.timeBudgetMs == null || Date.now() - startedAtMs < options.timeBudgetMs;
+  return withinBudget && withinTime;
+}
+
+function getDeepSafetyLimit(options?: CrawlRuntimeOptions): number {
+  if (options?.deepSafetyLimit != null && options.deepSafetyLimit >= 0) {
+    return options.deepSafetyLimit;
+  }
+  const envLimit = Number(process.env.CRAWL_DEEP_SAFETY_LIMIT_PER_JOB ?? "100");
+  if (!Number.isFinite(envLimit) || envLimit < 0) return 100;
+  return envLimit;
+}
+
+function shouldDeepSafety(repo: GitHubRepo, state: CrawlState, options?: CrawlRuntimeOptions): boolean {
+  return state.deepSafetyUsed < getDeepSafetyLimit(options) && repo.stargazers_count >= 10;
+}
+
+async function processRepo(
+  repo: GitHubRepo,
+  state: CrawlState,
+  ctx: ReturnType<typeof createGitHubRequestContext>,
+  options?: CrawlRuntimeOptions,
+  since?: Date
+): Promise<boolean> {
+  if (since && new Date(repo.updated_at) <= since) return false;
+  const sourceId = `github-mcp:${repo.id}`;
+  const minRecrawlHours = Number(process.env.CRAWL_MIN_RECRAWL_HOURS ?? "6");
+  if (Number.isFinite(minRecrawlHours) && minRecrawlHours > 0) {
+    const allowed = await shouldRecrawlSource(sourceId, minRecrawlHours);
+    if (!allowed) return false;
+  }
+
+  const pkgContent = await fetchFileContent(
+    repo.full_name,
+    "package.json",
+    repo.default_branch,
+    ctx
+  );
+  if (!pkgContent) return false;
+  const pkg = parsePackageJson(pkgContent);
+  if (!pkg || !hasMcpDependency(pkg)) return false;
+
+  const readme = await fetchFileContent(repo.full_name, "README.md", repo.default_branch, ctx);
+  const contentForSafety = [pkgContent, readme ?? ""].join("\n");
+  const fastSafety = calculateSafetyScoreFast(repo, contentForSafety);
+  let safetyScore = fastSafety;
+  if (shouldDeepSafety(repo, state, options)) {
+    try {
+      safetyScore = await calculateSafetyScoreDeep(repo, contentForSafety, ctx);
+      state.deepSafetyUsed += 1;
+    } catch {
+      safetyScore = fastSafety;
+    }
+  }
+
+  const popularityScore = calculatePopularityScore(repo);
+  const freshnessScore = calculateFreshnessScore(repo);
+  const { name, description, capabilities } = extractMcpMetadata(pkg, repo);
+  const slug =
+    generateSlug(`mcp-${repo.full_name.replace("/", "-")}`) || `mcp-${repo.id}`;
+  const visibility = getRepoVisibility(repo);
+  const now = new Date();
+
+  const agentData = {
+    sourceId,
+    source: SOURCE,
+    name,
+    slug,
+    description,
+    url: repo.html_url,
+    homepage: (pkg.homepage as string) ?? null,
+    capabilities,
+    protocols: ["MCP"] as string[],
+    languages: ["typescript"] as string[],
+    githubData: {
+      stars: repo.stargazers_count,
+      forks: repo.forks_count,
+      lastCommit: repo.pushed_at,
+      defaultBranch: repo.default_branch,
+    },
+    npmData: {
+      packageName: pkg.name,
+      version: pkg.version,
+    } as Record<string, unknown>,
+    openclawData: null as unknown as Record<string, unknown>,
+    readme: readme ?? pkgContent,
+    safetyScore,
+    popularityScore,
+    freshnessScore,
+    performanceScore: 0,
+    overallRank: calculateOverallRank({
+      safety: safetyScore,
+      popularity: popularityScore,
+      freshness: freshnessScore,
+      performance: 0,
+    }),
+    visibility: visibility.visibility,
+    publicSearchable: visibility.publicSearchable,
+    status: safetyScore >= 40 ? ("ACTIVE" as const) : ("PENDING_REVIEW" as const),
+    lastCrawledAt: now,
+    nextCrawlAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+  };
+
+  await upsertAgent(agentData, {
+    name: agentData.name,
+    slug: agentData.slug,
+    description: agentData.description,
+    homepage: agentData.homepage,
+    githubData: agentData.githubData,
+    npmData: agentData.npmData,
+    readme: agentData.readme,
+    safetyScore: agentData.safetyScore,
+    popularityScore: agentData.popularityScore,
+    freshnessScore: agentData.freshnessScore,
+    overallRank: agentData.overallRank,
+    visibility: agentData.visibility,
+    publicSearchable: agentData.publicSearchable,
+    status: agentData.status,
+    lastCrawledAt: agentData.lastCrawledAt,
+    nextCrawlAt: agentData.nextCrawlAt,
+  });
+  return true;
 }
 
 export async function crawlGitHubMCP(
@@ -99,310 +236,188 @@ export async function crawlGitHubMCP(
   maxResults: number = 300,
   options?: CrawlRuntimeOptions
 ): Promise<{ total: number; jobId: string }> {
-  const [job] = await db
-    .insert(crawlJobs)
-    .values({
-      source: "GITHUB_MCP",
-      status: "RUNNING",
-      startedAt: new Date(),
-    })
-    .returning();
-
-  const jobId = job?.id ?? crypto.randomUUID();
-  const limit = pLimit(CONCURRENCY);
-  const seenSourceIds = new Set<string>();
-
-  let totalFound = 0;
-  const sourceHealthKey = "GITHUB_MCP";
   const mode = getCrawlMode(options);
+  const workerId = options?.workerId ?? options?.lockOwner ?? `crawl:${process.pid}`;
+  const { jobId } = await startJob({ source: SOURCE, mode, workerId });
+  const githubCtx = createGitHubRequestContext();
+  const state: CrawlState = { totalFound: 0, skipped: 0, deepSafetyUsed: 0 };
+  const seenSourceIds = new Set<string>();
+  const limit = pLimit(CONCURRENCY);
+  const startedAtMs = Date.now();
 
   try {
     if (isHotOrWarm(options)) {
-      if (!canProceed(sourceHealthKey)) {
-        await db
-          .update(crawlJobs)
-          .set({
-            status: "COMPLETED",
-            completedAt: new Date(),
-            agentsFound: 0,
-            skipped: 1,
-          })
-          .where(eq(crawlJobs.id, jobId));
+      if (!canProceed(SOURCE)) {
+        await completeJob(jobId, {
+          agentsFound: 0,
+          skipped: 1,
+          finishedReason: "source_health_open",
+          ...toJobMetricsFromGithubContext(githubCtx),
+        });
         return { total: 0, jobId };
       }
 
       const leased = await leaseCandidates({
-        lockOwner: options?.lockOwner ?? sourceHealthKey,
+        lockOwner: options?.lockOwner ?? SOURCE,
         limit: maxResults,
         minConfidence: mode === "hot" ? 80 : 50,
       });
 
       for (const candidate of leased) {
-        if (totalFound >= maxResults) break;
-        const repo = await fetchRepoDetails(candidate.repoFullName);
+        if (state.totalFound >= maxResults) break;
+        if (!shouldContinueRun(startedAtMs, githubCtx, options)) break;
+        const repo = await fetchRepoDetails(candidate.repoFullName, githubCtx);
         if (!repo) {
           await requeueCandidate(candidate.id, "Repo details unavailable", 30_000);
+          state.skipped += 1;
           continue;
         }
-        if (since && new Date(repo.updated_at) <= since) {
+        try {
+          const inserted = await processRepo(repo, state, githubCtx, options, since);
+          if (!inserted) {
+            await failCandidate(candidate.id, "MCP dependency not found");
+            state.skipped += 1;
+            continue;
+          }
+          state.totalFound += 1;
           await ackCandidate(candidate.id);
-          continue;
+        } catch {
+          state.skipped += 1;
+          await requeueCandidate(candidate.id, "Repo processing failed", 60_000);
         }
-
-        const sourceId = `github-mcp:${repo.id}`;
-        const pkgContent = await fetchFileContent(
-          repo.full_name,
-          "package.json",
-          repo.default_branch
-        );
-        if (!pkgContent) {
-          await failCandidate(candidate.id, "package.json not found");
-          continue;
-        }
-        const pkg = parsePackageJson(pkgContent);
-        if (!pkg || !hasMcpDependency(pkg)) {
-          await failCandidate(candidate.id, "MCP dependency not found");
-          continue;
-        }
-
-        const readme = await fetchFileContent(
-          repo.full_name,
-          "README.md",
-          repo.default_branch
-        );
-        const contentForSafety = [pkgContent, readme ?? ""].join("\n");
-        const safetyScore = await calculateSafetyScore(repo, contentForSafety);
-        const popularityScore = calculatePopularityScore(repo);
-        const freshnessScore = calculateFreshnessScore(repo);
-        const { name, description, capabilities } = extractMcpMetadata(pkg, repo);
-        const baseSlug = generateSlug(`mcp-${repo.full_name.replace("/", "-")}`);
-        const slug = baseSlug || `mcp-${repo.id}`;
-
-        const agentData = {
-          sourceId,
-          source: "GITHUB_MCP" as const,
-          name,
-          slug,
-          description,
-          url: repo.html_url,
-          homepage: (pkg.homepage as string) ?? null,
-          capabilities,
-          protocols: ["MCP"] as string[],
-          languages: ["typescript"] as string[],
-          githubData: {
-            stars: repo.stargazers_count,
-            forks: repo.forks_count,
-            lastCommit: repo.pushed_at,
-            defaultBranch: repo.default_branch,
-          },
-          npmData: {
-            packageName: pkg.name,
-            version: pkg.version,
-          } as Record<string, unknown>,
-          openclawData: null as unknown as Record<string, unknown>,
-          readme: readme ?? pkgContent,
-          safetyScore,
-          popularityScore,
-          freshnessScore,
-          performanceScore: 0,
-          overallRank: calculateOverallRank({
-            safety: safetyScore,
-            popularity: popularityScore,
-            freshness: freshnessScore,
-            performance: 0,
-          }),
-          status:
-            safetyScore >= 40 ? ("ACTIVE" as const) : ("PENDING_REVIEW" as const),
-          lastCrawledAt: new Date(),
-          nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        };
-
-        await upsertAgent(agentData, {
-          name: agentData.name,
-          slug: agentData.slug,
-          description: agentData.description,
-          homepage: agentData.homepage,
-          githubData: agentData.githubData,
-          npmData: agentData.npmData,
-          readme: agentData.readme,
-          safetyScore: agentData.safetyScore,
-          popularityScore: agentData.popularityScore,
-          freshnessScore: agentData.freshnessScore,
-          overallRank: agentData.overallRank,
-          status: agentData.status,
-          lastCrawledAt: agentData.lastCrawledAt,
-          nextCrawlAt: agentData.nextCrawlAt,
-        });
-
-        await ackCandidate(candidate.id);
-        totalFound++;
       }
 
-      recordSuccess(sourceHealthKey);
-    } else {
-    for (const searchQuery of SEARCH_QUERIES) {
-      if (totalFound >= maxResults) break;
-      let page = 1;
+      await completeJob(jobId, {
+        agentsFound: state.totalFound,
+        skipped: state.skipped,
+        finishedReason: "completed_hot_warm",
+        ...toJobMetricsFromGithubContext(githubCtx),
+      });
+      recordSuccess(SOURCE);
+      return { total: state.totalFound, jobId };
+    }
 
-      while (totalFound < maxResults && page <= MAX_PAGES_PER_QUERY) {
-        let data: { items?: Array<{ repository?: { full_name?: string }; path?: string }> };
-        try {
-          const res = await withGithubTimeout(
-            () =>
-              octokit.rest.search.code({
-                q: searchQuery,
-                sort: "indexed",
-                order: "desc",
-                per_page: PAGE_SIZE,
-                page,
-              }),
-            `search.code "${searchQuery}" page=${page}`
-          );
-          data = res.data as { items?: Array<{ repository?: { full_name?: string }; path?: string }> };
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (msg.includes("Cannot access beyond the first 1000 results") || (err as { status?: number })?.status === 422) {
-            break; // Hit GitHub's 1000-result cap, move to next query
-          }
-          if (isRetryableGitHubError(err)) {
-            console.warn(`[GITHUB_MCP] transient GitHub error on query "${searchQuery}" page ${page}: ${msg}`);
-            break; // Skip this query page and continue crawl
-          }
-          throw err;
-        }
+    const checkpoint =
+      (await getCheckpoint(SOURCE, mode)) ??
+      ({
+        emitted: 0,
+      } as Record<string, unknown>);
 
-        const items = data?.items ?? [];
-        if (items.length === 0) break;
-
-        const repos = await Promise.all(
+    await runPartitionedRepoSearch<RepoSearchItem>({
+      queries: [...SEARCH_QUERIES],
+      maxResults,
+      context: githubCtx,
+      initialCursor: checkpoint,
+      shouldContinue: () => shouldContinueRun(startedAtMs, githubCtx, options),
+      onItems: async (items) => {
+        const processed = await Promise.all(
           items.map((item) =>
-            limit(() =>
-              fetchRepoDetails(item.repository?.full_name ?? "")
-            )
+            limit(async () => {
+              if (!item.id || !item.full_name) return 0;
+              const sourceId = `github-mcp:${item.id}`;
+              if (seenSourceIds.has(sourceId)) return 0;
+              seenSourceIds.add(sourceId);
+              if (state.totalFound >= maxResults) return 0;
+              try {
+                const repo = await fetchRepoDetails(item.full_name, githubCtx);
+                if (!repo) return 0;
+                const inserted = await processRepo(repo, state, githubCtx, options, since);
+                if (!inserted) return 0;
+                state.totalFound += 1;
+                return 1;
+              } catch {
+                state.skipped += 1;
+                return 0;
+              }
+            })
           )
         );
+        return processed.reduce<number>((sum, n) => sum + n, 0);
+      },
+      onCheckpoint: async (cursor) => {
+        await checkpointJob({
+          jobId,
+          source: SOURCE,
+          mode,
+          cursor: cursor as unknown as Record<string, unknown>,
+          workerId,
+          leaseMs: 15 * 60 * 1000,
+        });
+        await heartbeatJob(jobId, {
+          agentsFound: state.totalFound,
+          skipped: state.skipped,
+          ...toJobMetricsFromGithubContext(githubCtx),
+        });
+      },
+    });
 
-        for (const repo of repos) {
-          if (!repo || totalFound >= maxResults) continue;
-          const sourceId = `github-mcp:${repo.id}`;
-          if (seenSourceIds.has(sourceId)) continue;
-          if (since && new Date(repo.updated_at) <= since) continue;
-
-          const pkgContent = await fetchFileContent(
-            repo.full_name,
-            "package.json",
-            repo.default_branch
-          );
-          if (!pkgContent) continue;
-
-          const pkg = parsePackageJson(pkgContent);
-          if (!pkg || !hasMcpDependency(pkg)) continue;
-
-          seenSourceIds.add(sourceId);
-          const readme = await fetchFileContent(
-            repo.full_name,
-            "README.md",
-            repo.default_branch
-          );
-          const contentForSafety = [pkgContent, readme ?? ""].join("\n");
-          const safetyScore = await calculateSafetyScore(repo, contentForSafety);
-          const popularityScore = calculatePopularityScore(repo);
-          const freshnessScore = calculateFreshnessScore(repo);
-
-          const { name, description, capabilities } = extractMcpMetadata(
-            pkg,
-            repo
-          );
-          const baseSlug = generateSlug(
-            `mcp-${repo.full_name.replace("/", "-")}`
-          );
-          const slug = baseSlug || `mcp-${repo.id}`;
-
-          const agentData = {
-            sourceId,
-            source: "GITHUB_MCP" as const,
-            name,
-            slug,
-            description,
-            url: repo.html_url,
-            homepage: (pkg.homepage as string) ?? null,
-            capabilities,
-            protocols: ["MCP"] as string[],
-            languages: ["typescript"] as string[],
-            githubData: {
-              stars: repo.stargazers_count,
-              forks: repo.forks_count,
-              lastCommit: repo.pushed_at,
-              defaultBranch: repo.default_branch,
-            },
-            npmData: {
-              packageName: pkg.name,
-              version: pkg.version,
-            } as Record<string, unknown>,
-            openclawData: null as unknown as Record<string, unknown>,
-            readme: readme ?? pkgContent,
-            safetyScore,
-            popularityScore,
-            freshnessScore,
-            performanceScore: 0,
-            overallRank: calculateOverallRank({
-              safety: safetyScore,
-              popularity: popularityScore,
-              freshness: freshnessScore,
-              performance: 0,
-            }),
-            status:
-              safetyScore >= 40 ? ("ACTIVE" as const) : ("PENDING_REVIEW" as const),
-            lastCrawledAt: new Date(),
-            nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-          };
-
-            await upsertAgent(agentData, {
-              name: agentData.name,
-              slug: agentData.slug,
-              description: agentData.description,
-              homepage: agentData.homepage,
-              githubData: agentData.githubData,
-              npmData: agentData.npmData,
-              readme: agentData.readme,
-              safetyScore: agentData.safetyScore,
-              popularityScore: agentData.popularityScore,
-              freshnessScore: agentData.freshnessScore,
-              overallRank: agentData.overallRank,
-              status: agentData.status,
-              lastCrawledAt: agentData.lastCrawledAt,
-              nextCrawlAt: agentData.nextCrawlAt,
-            });
-
-          totalFound++;
+    if (state.totalFound < maxResults) {
+      for (const query of CODE_FALLBACK_QUERIES) {
+        if (!shouldContinueRun(startedAtMs, githubCtx, options)) break;
+        if (state.totalFound >= maxResults) break;
+        for (let page = 1; page <= CODE_FALLBACK_PAGES; page++) {
+          if (!shouldContinueRun(startedAtMs, githubCtx, options)) break;
+          if (state.totalFound >= maxResults) break;
+          try {
+            const res = await searchCode(
+              {
+                q: query,
+                sort: "indexed",
+                order: "desc",
+                per_page: 30,
+                page,
+              },
+              githubCtx
+            );
+            const items =
+              (res.data.items as Array<{
+                repository?: { full_name?: string; id?: number };
+              }>) ?? [];
+            if (items.length === 0) break;
+            for (const item of items) {
+              if (state.totalFound >= maxResults) break;
+              const repoId = item.repository?.id;
+              const fullName = item.repository?.full_name;
+              if (!repoId || !fullName) continue;
+              const sourceId = `github-mcp:${repoId}`;
+              if (seenSourceIds.has(sourceId)) continue;
+              seenSourceIds.add(sourceId);
+              try {
+                const repo = await fetchRepoDetails(fullName, githubCtx);
+                if (!repo) continue;
+                const inserted = await processRepo(repo, state, githubCtx, options, since);
+                if (!inserted) continue;
+                state.totalFound += 1;
+              } catch {
+                state.skipped += 1;
+              }
+            }
+          } catch {
+            break;
+          }
         }
-
-        await sleep(RATE_LIMIT_DELAY_MS);
-        page++;
       }
     }
-    }
 
-    await db
-      .update(crawlJobs)
-      .set({
-        status: "COMPLETED",
-        completedAt: new Date(),
-        agentsFound: totalFound,
-      })
-      .where(eq(crawlJobs.id, jobId));
+    await clearCheckpoint(SOURCE, mode);
+    await completeJob(jobId, {
+      agentsFound: state.totalFound,
+      skipped: state.skipped,
+      finishedReason: shouldContinueRun(startedAtMs, githubCtx, options)
+        ? "completed"
+        : "budget_or_time_cutoff",
+      ...toJobMetricsFromGithubContext(githubCtx),
+    });
+    recordSuccess(SOURCE);
   } catch (err) {
-    recordFailure(sourceHealthKey);
-    await db
-      .update(crawlJobs)
-      .set({
-        status: "FAILED",
-        completedAt: new Date(),
-        error: err instanceof Error ? err.message : String(err),
-      })
-      .where(eq(crawlJobs.id, jobId));
+    recordFailure(SOURCE);
+    await failJob(jobId, err, {
+      agentsFound: state.totalFound,
+      skipped: state.skipped,
+      ...toJobMetricsFromGithubContext(githubCtx),
+    });
     throw err;
   }
 
-  return { total: totalFound, jobId };
+  return { total: state.totalFound, jobId };
 }

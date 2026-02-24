@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { getHubUrl } from "@/lib/service-urls";
 
 interface ANSMinimalFooterProps {
   variant?: "light" | "dark";
@@ -40,13 +39,13 @@ export function ANSMinimalFooter({ variant = "light" }: ANSMinimalFooterProps) {
             <Link href="/dashboard/claimed-agents" className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
               Claim Agent
             </Link>
-            <Link href={getHubUrl("/search-api")} className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
+            <Link href="/docs" className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
               API
             </Link>
-            <Link href={getHubUrl("/privacy-policy-1")} className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
+            <Link href="/privacy-policy-1" className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
               Privacy
             </Link>
-            <Link href={getHubUrl("/terms-of-service")} className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
+            <Link href="/terms-of-service" className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
               Terms
             </Link>
           </nav>

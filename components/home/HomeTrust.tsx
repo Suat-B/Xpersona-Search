@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useRef } from "react";
 
@@ -125,7 +125,7 @@ export function HomeTrust() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/stats")
+    fetch("/api/v1/stats")
       .then((r) => r.json())
       .then((res) => {
         if (res.success && res.data) {
@@ -154,7 +154,7 @@ export function HomeTrust() {
             </span>
           </h2>
           <p className="mt-3 text-sm text-[var(--text-secondary)] max-w-xl mx-auto">
-            Every roll, every payout, every signal — fully verifiable and auditable
+            Every roll, every payout, every signal â€” fully verifiable and auditable
           </p>
         </div>
 
@@ -247,3 +247,6 @@ export function HomeTrust() {
     </section>
   );
 }
+
+
+

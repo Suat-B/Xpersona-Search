@@ -7,6 +7,11 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { SearchResultSnippet } from "@/components/search/SearchResultSnippet";
 import { SearchResultsBar } from "@/components/search/SearchResultsBar";
+import { restoreScrollPosition } from "@/lib/search/scroll-memory";
+import {
+  extractClientErrorMessage,
+  unwrapClientResponse,
+} from "@/lib/api/client-response";
 
 /** Protocol identifiers used in API/DB. Display labels for UI. */
 const BROWSE_PROTOCOLS = [
@@ -30,10 +35,55 @@ interface Agent {
   verificationTier?: "NONE" | "BRONZE" | "SILVER" | "GOLD";
   hasCustomPage?: boolean;
   githubData?: { stars?: number; forks?: number };
+  agentExecution?: {
+    authModes: string[];
+    inputSchemaRef: string | null;
+    outputSchemaRef: string | null;
+    rateLimit: { rpm?: number; burst?: number } | null;
+    observedLatencyMsP50: number | null;
+    observedLatencyMsP95: number | null;
+    estimatedCostUsd: number | null;
+    lastVerifiedAt: string | null;
+    uptime30d: number | null;
+    execReady?: boolean;
+  };
+  policyMatch?: { score: number; blockedBy: string[]; matched: string[] };
+  fallbacks?: Array<{ id: string; slug: string; reason: string; switchWhen: string }>;
+  delegationHints?: Array<{ role: string; why: string; candidateSlugs: string[] }>;
+  rankingSignals?: {
+    successScore: number;
+    reliabilityScore: number;
+    policyScore: number;
+    freshnessScore: number;
+    finalScore: number;
+  };
 }
 
 interface Facets {
   protocols?: Array<{ protocol: string[]; count: number }>;
+}
+
+interface SearchMeta {
+  fallbackApplied: boolean;
+  matchMode:
+    | "strict_lexical"
+    | "relaxed_lexical"
+    | "semantic"
+    | "filter_only_fallback"
+    | "global_fallback";
+  queryOriginal: string;
+  queryInterpreted: string;
+  filtersHonored: boolean;
+  stagesTried: string[];
+  fallbackReason?: string;
+}
+
+interface SearchResponsePayload {
+  results?: Agent[];
+  pagination?: { hasMore?: boolean; nextCursor?: string | null; total?: number };
+  facets?: Facets;
+  didYouMean?: string;
+  searchMeta?: SearchMeta;
 }
 
 function SkeletonSnippet() {
@@ -59,6 +109,10 @@ function parseProtocolsFromUrl(p: string | null): string[] {
     .filter(Boolean);
 }
 
+function parseBoolFromUrl(value: string | null): boolean {
+  return value === "1" || value === "true";
+}
+
 export function SearchLanding() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -74,6 +128,18 @@ export function SearchLanding() {
   const [minSafety, setMinSafety] = useState(0);
   const [sort, setSort] = useState("rank");
   const [facets, setFacets] = useState<Facets | undefined>(undefined);
+  const [intent, setIntent] = useState<"discover" | "execute">(
+    searchParams.get("intent") === "execute" ? "execute" : "discover"
+  );
+  const [taskType, setTaskType] = useState(searchParams.get("taskType") ?? "");
+  const [maxLatencyMs, setMaxLatencyMs] = useState(searchParams.get("maxLatencyMs") ?? "");
+  const [maxCostUsd, setMaxCostUsd] = useState(searchParams.get("maxCostUsd") ?? "");
+  const [dataRegion, setDataRegion] = useState(searchParams.get("dataRegion") ?? "global");
+  const [requires, setRequires] = useState(searchParams.get("requires") ?? "");
+  const [forbidden, setForbidden] = useState(searchParams.get("forbidden") ?? "");
+  const [bundle, setBundle] = useState(parseBoolFromUrl(searchParams.get("bundle")));
+  const [explain, setExplain] = useState(parseBoolFromUrl(searchParams.get("explain")));
+  const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null);
 
   const handleProtocolChange = useCallback(
     (protocols: string[]) => {
@@ -96,14 +162,24 @@ export function SearchLanding() {
       if (minSafety > 0) params.set("minSafety", String(minSafety));
       params.set("sort", sort);
       params.set("limit", "30");
+      params.set("intent", intent);
+      if (taskType.trim()) params.set("taskType", taskType.trim());
+      if (maxLatencyMs.trim()) params.set("maxLatencyMs", maxLatencyMs.trim());
+      if (maxCostUsd.trim()) params.set("maxCostUsd", maxCostUsd.trim());
+      if (dataRegion && dataRegion !== "global") params.set("dataRegion", dataRegion);
+      if (requires.trim()) params.set("requires", requires);
+      if (forbidden.trim()) params.set("forbidden", forbidden);
+      if (bundle) params.set("bundle", "1");
+      if (explain) params.set("explain", "1");
       if (!reset && cursor) params.set("cursor", cursor);
 
       router.replace(`/?${params.toString()}`, { scroll: false });
 
       try {
-        const res = await fetch(`/api/search?${params}`);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Search failed");
+        const res = await fetch(`/api/v1/search?${params}`);
+        const payload = await res.json();
+        if (!res.ok) throw new Error(extractClientErrorMessage(payload, "Search failed"));
+        const data = unwrapClientResponse<SearchResponsePayload>(payload);
 
         if (reset) {
           setAgents(data.results ?? []);
@@ -114,23 +190,53 @@ export function SearchLanding() {
         setHasMore(data.pagination?.hasMore ?? false);
         setCursor(data.pagination?.nextCursor ?? null);
         if (data.facets) setFacets(data.facets);
+        setSearchMeta(data.searchMeta ?? null);
       } catch (err) {
         console.error(err);
         if (reset) {
           setAgents([]);
           setTotal(0);
         }
+        setSearchMeta(null);
       } finally {
         setLoading(false);
       }
     },
-    [query, selectedProtocols, minSafety, sort, cursor]
+    [
+      query,
+      selectedProtocols,
+      minSafety,
+      sort,
+      cursor,
+      intent,
+      taskType,
+      maxLatencyMs,
+      maxCostUsd,
+      dataRegion,
+      requires,
+      forbidden,
+      bundle,
+      explain,
+    ]
   );
 
   useEffect(() => {
     search(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProtocols, minSafety, sort]);
+  }, [
+    selectedProtocols,
+    minSafety,
+    sort,
+    intent,
+    taskType,
+    maxLatencyMs,
+    maxCostUsd,
+    dataRegion,
+    requires,
+    forbidden,
+    bundle,
+    explain,
+  ]);
 
   // Sync state from URL when it changes (e.g. from Link navigation on Explore/Browse buttons)
   useEffect(() => {
@@ -138,6 +244,21 @@ export function SearchLanding() {
     const urlProtocols = parseProtocolsFromUrl(searchParams.get("protocols"));
     setQuery(urlQ);
     setSelectedProtocols(urlProtocols);
+    setIntent(searchParams.get("intent") === "execute" ? "execute" : "discover");
+    setTaskType(searchParams.get("taskType") ?? "");
+    setMaxLatencyMs(searchParams.get("maxLatencyMs") ?? "");
+    setMaxCostUsd(searchParams.get("maxCostUsd") ?? "");
+    setDataRegion(searchParams.get("dataRegion") ?? "global");
+    setRequires(searchParams.get("requires") ?? "");
+    setForbidden(searchParams.get("forbidden") ?? "");
+    setBundle(parseBoolFromUrl(searchParams.get("bundle")));
+    setExplain(parseBoolFromUrl(searchParams.get("explain")));
+  }, [searchParams]);
+
+  useEffect(() => {
+    const currentSearch = searchParams.toString();
+    const fromPath = currentSearch ? `/?${currentSearch}` : "/";
+    restoreScrollPosition(fromPath);
   }, [searchParams]);
 
   useEffect(() => {
@@ -170,10 +291,43 @@ export function SearchLanding() {
         minSafety={minSafety}
         onSafetyChange={setMinSafety}
         facets={facets}
+        intent={intent}
+        onIntentChange={setIntent}
+        taskType={taskType}
+        onTaskTypeChange={setTaskType}
+        maxLatencyMs={maxLatencyMs}
+        onMaxLatencyMsChange={setMaxLatencyMs}
+        maxCostUsd={maxCostUsd}
+        onMaxCostUsdChange={setMaxCostUsd}
+        dataRegion={dataRegion}
+        onDataRegionChange={setDataRegion}
+        requires={requires}
+        onRequiresChange={setRequires}
+        forbidden={forbidden}
+        onForbiddenChange={setForbidden}
+        bundle={bundle}
+        onBundleChange={setBundle}
+        explain={explain}
+        onExplainChange={setExplain}
       />
 
       <div className="max-w-4xl mx-auto px-3 sm:px-6 py-6 pb-20 sm:pb-16">
         <main aria-label="Search results">
+          {searchMeta?.fallbackApplied && (
+            <div className="mb-4 rounded-lg border border-[var(--accent-heart)]/40 bg-[var(--accent-heart)]/10 px-4 py-3 text-sm text-[var(--text-secondary)]">
+              Showing related results for{" "}
+              <span className="font-semibold text-[var(--text-primary)]">
+                {searchMeta.queryInterpreted || query}
+              </span>
+              {searchMeta.queryOriginal &&
+              searchMeta.queryOriginal !== searchMeta.queryInterpreted ? (
+                <span className="text-[var(--text-tertiary)]">
+                  {" "}
+                  (from "{searchMeta.queryOriginal}")
+                </span>
+              ) : null}
+            </div>
+          )}
           {loading && !hasResults ? (
             <div className="space-y-0" aria-busy="true" aria-live="polite">
               {[1, 2, 3, 4, 5].map((i) => (

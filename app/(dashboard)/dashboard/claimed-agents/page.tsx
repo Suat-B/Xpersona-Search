@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -24,7 +24,7 @@ export default function ClaimedAgentsPage() {
 
   useEffect(() => {
     async function load() {
-      const res = await fetch("/api/me/claimed-agents", {
+      const res = await fetch("/api/v1/me/claimed-agents", {
         credentials: "include",
       });
       if (res.ok) {
@@ -154,3 +154,6 @@ export default function ClaimedAgentsPage() {
     </div>
   );
 }
+
+
+

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
@@ -30,7 +30,7 @@ function ChangePasswordSection() {
       return;
     }
     setLoading(true);
-    fetch("/api/me/change-password", {
+    fetch("/api/v1/me/change-password", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -72,7 +72,7 @@ function ChangePasswordSection() {
             type="password"
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
-            placeholder="••••••••"
+            placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
             required
             autoComplete="current-password"
             className={inputClass}
@@ -123,7 +123,7 @@ function ChangePasswordSection() {
           disabled={loading}
           className="rounded-full bg-[#30d158] px-4 py-2 text-sm font-medium text-white hover:bg-[#30d158]/90 disabled:opacity-50"
         >
-          {loading ? "Updating…" : "Update password"}
+          {loading ? "Updatingâ€¦" : "Update password"}
         </button>
       </form>
     </GlassCard>
@@ -137,7 +137,7 @@ function SignalPreferencesSection() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    fetch("/api/me/signal-preferences", { credentials: "include" })
+    fetch("/api/v1/me/signal-preferences", { credentials: "include" })
       .then((r) => r.json())
       .then((res) => {
         if (res.success && res.data) {
@@ -150,7 +150,7 @@ function SignalPreferencesSection() {
   const handleSave = () => {
     setSaving(true);
     setSaved(false);
-    fetch("/api/me/signal-preferences", {
+    fetch("/api/v1/me/signal-preferences", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -205,7 +205,7 @@ function SignalPreferencesSection() {
           disabled={saving}
           className="rounded-full bg-[#30d158] px-4 py-2 text-sm font-medium text-white hover:bg-[#30d158]/90 disabled:opacity-50"
         >
-          {saving ? "Saving…" : saved ? "Saved" : "Save"}
+          {saving ? "Savingâ€¦" : saved ? "Saved" : "Save"}
         </button>
       </div>
     </GlassCard>
@@ -226,7 +226,7 @@ function SettingsPageClient() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/me", { credentials: "include" })
+    fetch("/api/v1/me", { credentials: "include" })
       .then(async (r) => {
         const text = await r.text();
         try {
@@ -275,7 +275,7 @@ function SettingsPageClient() {
           Profile
         </h2>
         {loading ? (
-          <p className="text-sm text-[var(--text-secondary)]">Loading…</p>
+          <p className="text-sm text-[var(--text-secondary)]">Loadingâ€¦</p>
         ) : user ? (
           <div className="space-y-3">
             <div>
@@ -283,7 +283,7 @@ function SettingsPageClient() {
                 Name
               </p>
               <p className="text-sm font-medium text-[var(--text-primary)]">
-                {user.name || "—"}
+                {user.name || "â€”"}
               </p>
             </div>
             <div>
@@ -291,7 +291,7 @@ function SettingsPageClient() {
                 Email
               </p>
               <p className="text-sm font-medium text-[var(--text-primary)]">
-                {user.email || "—"}
+                {user.email || "â€”"}
               </p>
             </div>
             {isEphemeral && (
@@ -317,7 +317,7 @@ function SettingsPageClient() {
         )}
       </GlassCard>
 
-      {/* Change password — only for email/password accounts */}
+      {/* Change password â€” only for email/password accounts */}
       {(user?.isPermanent || user?.accountType === "email") && <ChangePasswordSection />}
 
       {/* Signal Preferences */}
@@ -329,24 +329,24 @@ function SettingsPageClient() {
           API Key
         </h2>
         <p className="text-sm text-[var(--text-secondary)]">
-          Give your AI the link to xpersona.co/dashboard/api and this API key.
+          Use this key for authenticated API requests.
         </p>
         <ApiKeySection />
         <Link
-          href="/dashboard/api"
+          href="/docs"
           className="inline-block text-xs font-medium text-[var(--accent-heart)] hover:underline"
         >
-          Full API docs →
+          Full API docs â†’
         </Link>
       </div>
 
-      {/* Sign out — unified route clears guest, agent, and NextAuth */}
+      {/* Sign out â€” unified route clears guest, agent, and NextAuth */}
       <GlassCard className="p-5">
         <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
           Account
         </h2>
         <Link
-          href="/api/signout"
+          href="/api/v1/signout"
           className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm font-medium text-red-400 hover:bg-red-500/20 transition-colors"
         >
           Sign out
@@ -371,3 +371,7 @@ export default function SettingsPage() {
     </Suspense>
   );
 }
+
+
+
+

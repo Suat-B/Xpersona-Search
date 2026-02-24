@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -56,8 +56,8 @@ export function AdvancedStrategiesSection() {
   const handleSave = async (strategy: AdvancedDiceStrategy) => {
     try {
       const url = strategy.id
-        ? `/api/me/advanced-strategies/${strategy.id}`
-        : "/api/me/advanced-strategies";
+        ? `/api/v1/me/advanced-strategies/${strategy.id}`
+        : "/api/v1/me/advanced-strategies";
       const method = strategy.id ? "PATCH" : "POST";
 
       const res = await fetch(url, {
@@ -167,3 +167,6 @@ export function AdvancedStrategiesSection() {
     </section>
   );
 }
+
+
+

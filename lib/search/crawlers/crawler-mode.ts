@@ -5,6 +5,8 @@ export interface CrawlRuntimeOptions {
   githubBudget?: number;
   timeBudgetMs?: number;
   lockOwner?: string;
+  workerId?: string;
+  deepSafetyLimit?: number;
 }
 
 export function getCrawlMode(options?: CrawlRuntimeOptions): CrawlMode {
@@ -15,4 +17,3 @@ export function isHotOrWarm(options?: CrawlRuntimeOptions): boolean {
   const mode = getCrawlMode(options);
   return mode === "hot" || mode === "warm";
 }
-

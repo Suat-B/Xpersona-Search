@@ -1,99 +1,99 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import {
-  getServiceFromHost,
-  isAllowedRoute,
-  getServiceBaseUrl,
-  getAnsSubdomainFromHost,
-  type Service,
-} from "@/lib/subdomain";
+import { getServiceBaseUrl } from "@/lib/subdomain";
 
 const X_SERVICE_HEADER = "x-service";
+const X_REQUEST_ID_HEADER = "x-request-id";
+const INTERNAL_V1_PROXY_HEADER = "x-internal-api-proxy";
+const REMOVED_PREFIXES = ["/games", "/trading", "/casino", "/faucet", "/register", "/ans"] as const;
+const API_LEGACY_EXCEPTIONS = ["/api/v1", "/api/auth"] as const;
 
-/** Login is not required: dashboard and games are open to all. Guest sessions are auto-created when needed. */
+function isRemovedPath(pathname: string): boolean {
+  const normalized = pathname.replace(/\/$/, "") || "/";
+  return REMOVED_PREFIXES.some((prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`));
+}
+
+function isLegacyApiPath(pathname: string): boolean {
+  if (!(pathname === "/api" || pathname.startsWith("/api/"))) return false;
+  return !API_LEGACY_EXCEPTIONS.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
+}
+
+function buildMigrationPath(pathname: string, search: string): string {
+  if (pathname === "/api") return `/api/v1${search}`;
+  return `${pathname.replace(/^\/api/, "/api/v1")}${search}`;
+}
+
 export async function middleware(req: NextRequest) {
   const host = req.headers.get("host") ?? "";
   const url = req.nextUrl.clone();
-  const searchParams = url.searchParams;
-
   const hostname = host.split(":")[0]?.toLowerCase() ?? "";
-  const pathname = url.pathname || "/";
-  const normalizedPath = pathname.replace(/\/$/, "") || "/";
+  const requestId = req.headers.get(X_REQUEST_ID_HEADER)?.trim() || crypto.randomUUID();
 
-  // *.xpersona.agent: rewrite / and /card.json to Agent Card API
-  const ansSubdomain = getAnsSubdomainFromHost(host);
-  if (ansSubdomain && (normalizedPath === "/" || normalizedPath === "/card.json")) {
-    const rewriteUrl = req.nextUrl.clone();
-    rewriteUrl.pathname = `/api/ans/card/${ansSubdomain}`;
-    return NextResponse.rewrite(rewriteUrl);
+  if (
+    isLegacyApiPath(url.pathname) &&
+    req.headers.get(INTERNAL_V1_PROXY_HEADER) !== "1"
+  ) {
+    const migration = buildMigrationPath(url.pathname, url.search);
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: "API_VERSION_DEPRECATED",
+          message: "This endpoint has moved to /api/v1.",
+          details: {
+            migration,
+            legacy: `${url.pathname}${url.search}`,
+          },
+        },
+        meta: {
+          requestId,
+          version: "v1",
+          timestamp: new Date().toISOString(),
+        },
+      },
+      {
+        status: 410,
+        headers: {
+          "X-Request-Id": requestId,
+          "X-API-Version": "v1",
+        },
+      }
+    );
   }
 
-  // Redirect www.xpersona.co -> xpersona.co
   if (hostname === "www.xpersona.co") {
     url.host = "xpersona.co";
     return NextResponse.redirect(url);
   }
 
-  const service = getServiceFromHost(host, searchParams);
-
-  // Rewrite: trading subdomain / -> /trading (marketplace as root)
-
-  if (service === "trading" && (normalizedPath === "/" || normalizedPath === "")) {
-    const rewriteUrl = req.nextUrl.clone();
-    rewriteUrl.pathname = "/trading";
-    return NextResponse.rewrite(rewriteUrl);
+  if (
+    hostname === "game.xpersona.co" ||
+    hostname === "trading.xpersona.co" ||
+    hostname === "game.localhost" ||
+    hostname === "trading.localhost"
+  ) {
+    const target = new URL(`${getServiceBaseUrl("hub")}${url.pathname}${url.search}`);
+    return NextResponse.redirect(target);
   }
 
-  // Route guarding: redirect to correct subdomain if path not allowed
-  if (!isAllowedRoute(service, normalizedPath)) {
-    const targetService = getRedirectTarget(service, normalizedPath);
-    if (targetService) {
-      const targetBase = getServiceBaseUrl(targetService);
-      const targetPath = getRedirectPath(normalizedPath, targetService);
-      const targetUrl = `${targetBase}${targetPath}${url.search}`;
-      return NextResponse.redirect(targetUrl);
-    }
+  if (isRemovedPath(url.pathname)) {
+    const target = new URL("/", req.url);
+    return NextResponse.redirect(target);
   }
 
   const requestHeaders = new Headers(req.headers);
-  requestHeaders.set(X_SERVICE_HEADER, service);
+  requestHeaders.set(X_SERVICE_HEADER, "hub");
 
   return NextResponse.next({
     request: { headers: requestHeaders },
   });
 }
 
-function getRedirectTarget(
-  currentService: Service,
-  pathname: string
-): Service | null {
-  if (pathname.startsWith("/trading")) {
-    return currentService === "game" || currentService === "hub" ? "trading" : null;
-  }
-  if (
-    pathname.startsWith("/dashboard") ||
-    pathname.startsWith("/games") ||
-    pathname.startsWith("/docs") ||
-    pathname.startsWith("/embed") ||
-    pathname.startsWith("/admin")
-  ) {
-    return currentService === "trading" || currentService === "hub" ? "game" : null;
-  }
-  return null;
-}
-
-function getRedirectPath(pathname: string, targetService: Service): string {
-  if (targetService === "trading") {
-    return pathname.startsWith("/trading") ? pathname : "/trading";
-  }
-  if (targetService === "game") {
-    return pathname;
-  }
-  return pathname || "/";
-}
-
 export const config = {
   matcher: [
     "/((?!_next/static|_next/image|favicon.ico|api|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/api/:path*",
   ],
 };

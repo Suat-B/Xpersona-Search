@@ -1,0 +1,1841 @@
+{
+  "generatedAt": "2026-02-24T16:10:35.631Z",
+  "totals": {
+    "routeFiles": 59,
+    "operations": 79,
+    "routeConsumers": 349
+  },
+  "routes": [
+    {
+      "file": "app/api/admin/agents/[slug]/customization/route.ts",
+      "path": "/api/admin/agents/{slug}/customization",
+      "methods": [
+        "PATCH"
+      ]
+    },
+    {
+      "file": "app/api/admin/agents/submissions/route.ts",
+      "path": "/api/admin/agents/submissions",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/admin/claims/route.ts",
+      "path": "/api/admin/claims",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/admin/claims/[id]/approve/route.ts",
+      "path": "/api/admin/claims/{id}/approve",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/admin/claims/[id]/reject/route.ts",
+      "path": "/api/admin/claims/{id}/reject",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/admin/custom-pages/route.ts",
+      "path": "/api/admin/custom-pages",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/admin/overview/route.ts",
+      "path": "/api/admin/overview",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/admin/users/route.ts",
+      "path": "/api/admin/users",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/agents/[slug]/route.ts",
+      "path": "/api/agents/{slug}",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/agents/[slug]/claim/route.ts",
+      "path": "/api/agents/{slug}/claim",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/agents/[slug]/claim/verify/route.ts",
+      "path": "/api/agents/{slug}/claim/verify",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/agents/[slug]/customization/route.ts",
+      "path": "/api/agents/{slug}/customization",
+      "methods": [
+        "GET",
+        "PUT"
+      ]
+    },
+    {
+      "file": "app/api/agents/[slug]/customization/preview/route.ts",
+      "path": "/api/agents/{slug}/customization/preview",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/agents/[slug]/manage/route.ts",
+      "path": "/api/agents/{slug}/manage",
+      "methods": [
+        "GET",
+        "PATCH"
+      ]
+    },
+    {
+      "file": "app/api/agents/submit/route.ts",
+      "path": "/api/agents/submit",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/auth/[...nextauth]/route.ts",
+      "path": "/api/auth/{nextauth+}",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/auth/agent/register/route.ts",
+      "path": "/api/auth/agent/register",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/auth/forgot-password/route.ts",
+      "path": "/api/auth/forgot-password",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/auth/guest/route.ts",
+      "path": "/api/auth/guest",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/auth/guest/signout/route.ts",
+      "path": "/api/auth/guest/signout",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/auth/human/route.ts",
+      "path": "/api/auth/human",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/auth/link-agent/route.ts",
+      "path": "/api/auth/link-agent",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/auth/link-guest/route.ts",
+      "path": "/api/auth/link-guest",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/auth/play/route.ts",
+      "path": "/api/auth/play",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/auth/recover/route.ts",
+      "path": "/api/auth/recover",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/auth/register/route.ts",
+      "path": "/api/auth/register",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/auth/reset-password/route.ts",
+      "path": "/api/auth/reset-password",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/cron/claim-verify/route.ts",
+      "path": "/api/cron/claim-verify",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/cron/crawl/route.ts",
+      "path": "/api/cron/crawl",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/docs/route.ts",
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/health/route.ts",
+      "path": "/api/health",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/me/route.ts",
+      "path": "/api/me",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/me/advanced-strategies/route.ts",
+      "path": "/api/me/advanced-strategies",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/me/advanced-strategies/[id]/route.ts",
+      "path": "/api/me/advanced-strategies/{id}",
+      "methods": [
+        "GET",
+        "PATCH",
+        "DELETE"
+      ]
+    },
+    {
+      "file": "app/api/me/advanced-strategies/[id]/simulate/route.ts",
+      "path": "/api/me/advanced-strategies/{id}/simulate",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/me/advanced-strategies/clone-from-tournament/route.ts",
+      "path": "/api/me/advanced-strategies/clone-from-tournament",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/me/advanced-strategies/simulate/route.ts",
+      "path": "/api/me/advanced-strategies/simulate",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/me/api-key/route.ts",
+      "path": "/api/me/api-key",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/me/change-password/route.ts",
+      "path": "/api/me/change-password",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/me/claimed-agents/route.ts",
+      "path": "/api/me/claimed-agents",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/me/mark-key-viewed/route.ts",
+      "path": "/api/me/mark-key-viewed",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/me/recovery-link/route.ts",
+      "path": "/api/me/recovery-link",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/me/signal-preferences/route.ts",
+      "path": "/api/me/signal-preferences",
+      "methods": [
+        "GET",
+        "PATCH"
+      ]
+    },
+    {
+      "file": "app/api/me/strategies/route.ts",
+      "path": "/api/me/strategies",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/me/strategies/[id]/route.ts",
+      "path": "/api/me/strategies/{id}",
+      "methods": [
+        "GET",
+        "PATCH",
+        "DELETE"
+      ]
+    },
+    {
+      "file": "app/api/openapi/route.ts",
+      "path": "/api/openapi",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/search/route.ts",
+      "path": "/api/search",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/search/click/route.ts",
+      "path": "/api/search/click",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/search/suggest/route.ts",
+      "path": "/api/search/suggest",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/search/trending/route.ts",
+      "path": "/api/search/trending",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/signals/deliver/route.ts",
+      "path": "/api/signals/deliver",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "file": "app/api/signout/route.ts",
+      "path": "/api/signout",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/skill/route.ts",
+      "path": "/api/skill",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/stats/harvest-count/route.ts",
+      "path": "/api/stats/harvest-count",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/v1/[...path]/route.ts",
+      "path": "/api/v1/{path+}",
+      "methods": [
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",
+        "HEAD"
+      ]
+    },
+    {
+      "file": "app/api/v1/docs/route.ts",
+      "path": "/api/v1/docs",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/v1/openapi/route.ts",
+      "path": "/api/v1/openapi",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/v1/openapi/internal/route.ts",
+      "path": "/api/v1/openapi/internal",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "file": "app/api/v1/openapi/public/route.ts",
+      "path": "/api/v1/openapi/public",
+      "methods": [
+        "GET"
+      ]
+    }
+  ],
+  "consumers": [
+    {
+      "file": "docs/Xpersona-Search-Full-Implementation-Plan.md",
+      "reference": "/api/agents"
+    },
+    {
+      "file": "docs/Xpersona-Search-Full-Implementation-Plan.md",
+      "reference": "/api/agents/[slug]/route.ts"
+    },
+    {
+      "file": "lib/auth-flow.test.ts",
+      "reference": "/api/agents/foo/claim"
+    },
+    {
+      "file": "docs/Xpersona-Search-Full-Implementation-Plan.md",
+      "reference": "/api/ans/card"
+    },
+    {
+      "file": "docs/Xpersona-Search-Full-Implementation-Plan.md",
+      "reference": "/api/ans/card/[name]"
+    },
+    {
+      "file": "docs/ANS-SETUP.md",
+      "reference": "/api/ans/check"
+    },
+    {
+      "file": "lib/ans-validator.ts",
+      "reference": "/api/ans/check"
+    },
+    {
+      "file": "docs/ENV_SETUP.md",
+      "reference": "/api/auth/callback/google"
+    },
+    {
+      "file": "docs/ENV_SETUP.md",
+      "reference": "/api/auth/error"
+    },
+    {
+      "file": "lib/api/request-meta.ts",
+      "reference": "/api/contracts"
+    },
+    {
+      "file": "docs/STRIPE_SETUP.md",
+      "reference": "/api/credits/checkout"
+    },
+    {
+      "file": "docs/ANS-SETUP.md",
+      "reference": "/api/cron/ans-verify"
+    },
+    {
+      "file": "docs/Xpersona-Search-Full-Implementation-Plan.md",
+      "reference": "/api/cron/ans-verify"
+    },
+    {
+      "file": "docs/SEARCH-SETUP.md",
+      "reference": "/api/cron/crawl"
+    },
+    {
+      "file": "docs/Xpersona-Search-Full-Implementation-Plan.md",
+      "reference": "/api/cron/crawl"
+    },
+    {
+      "file": "docs/Xpersona-Search-Full-Implementation-Plan.md",
+      "reference": "/api/cron/crawl/route.ts"
+    },
+    {
+      "file": "lib/discovery-builder.ts",
+      "reference": "/api/discovery"
+    },
+    {
+      "file": "docs/AI_FIRST_IMPLEMENTATION_PLAN.md",
+      "reference": "/api/games/dice/bet"
+    },
+    {
+      "file": "lib/api/handlers/dice-round.ts",
+      "reference": "/api/games/dice/bet"
+    },
+    {
+      "file": "docs/LLM_SAFETY_REFUSAL.md",
+      "reference": "/api/games/dice/round"
+    },
+    {
+      "file": "docs/PYTHON_STRATEGIES.md",
+      "reference": "/api/games/dice/round"
+    },
+    {
+      "file": "lib/api/handlers/dice-round.ts",
+      "reference": "/api/games/dice/round"
+    },
+    {
+      "file": "docs/AI_FIRST_IMPLEMENTATION_PLAN.md",
+      "reference": "/api/games/dice/run-strategy"
+    },
+    {
+      "file": "lib/hooks/use-ai-connection-status.ts",
+      "reference": "/api/me"
+    },
+    {
+      "file": "lib/hooks/use-is-permanent.ts",
+      "reference": "/api/me"
+    },
+    {
+      "file": "components/strategies/SavedAdvancedStrategiesList.tsx",
+      "reference": "/api/me/advanced-strategies"
+    },
+    {
+      "file": "docs/AI_FIRST_IMPLEMENTATION_PLAN.md",
+      "reference": "/api/me/balance"
+    },
+    {
+      "file": "lib/api/handlers/rounds.ts",
+      "reference": "/api/me/bets"
+    },
+    {
+      "file": "docs/PROVABLY_FAIR_DICE.md",
+      "reference": "/api/me/rounds"
+    },
+    {
+      "file": "lib/api/handlers/rounds.ts",
+      "reference": "/api/me/rounds"
+    },
+    {
+      "file": "docs/PROVABLY_FAIR_DICE.md",
+      "reference": "/api/me/rounds/[id]"
+    },
+    {
+      "file": "docs/AI_FIRST_IMPLEMENTATION_PLAN.md",
+      "reference": "/api/me/session-stats"
+    },
+    {
+      "file": "docs/LLM_SAFETY_REFUSAL.md",
+      "reference": "/api/me/session-stats"
+    },
+    {
+      "file": "lib/search/crawlers/ollama.ts",
+      "reference": "/api/models/search"
+    },
+    {
+      "file": "docs/AI_FIRST_IMPLEMENTATION_PLAN.md",
+      "reference": "/api/page.tsx"
+    },
+    {
+      "file": "docs/Xpersona-Search-Full-Implementation-Plan.md",
+      "reference": "/api/search"
+    },
+    {
+      "file": "docs/Xpersona-Search-Full-Implementation-Plan.md",
+      "reference": "/api/search/route.test.ts"
+    },
+    {
+      "file": "docs/Xpersona-Search-Full-Implementation-Plan.md",
+      "reference": "/api/search/route.ts"
+    },
+    {
+      "file": "lib/search/crawlers/huggingface-spaces.ts",
+      "reference": "/api/spaces"
+    },
+    {
+      "file": "docs/ANS-SETUP.md",
+      "reference": "/api/stripe/webhook"
+    },
+    {
+      "file": "docs/STRIPE_SETUP.md",
+      "reference": "/api/stripe/webhook"
+    },
+    {
+      "file": "docs/STRIPE-WEBHOOK-ANS-SETUP.md",
+      "reference": "/api/stripe/webhook"
+    },
+    {
+      "file": "docs/STRIPE-WEBHOOK-ANS-SETUP.md",
+      "reference": "/api/stripe/webhook/route.ts"
+    },
+    {
+      "file": "lib/search/crawlers/ollama.ts",
+      "reference": "/api/tags"
+    },
+    {
+      "file": "docs/AGENT_API_FALLBACK.md",
+      "reference": "/api/v1"
+    },
+    {
+      "file": "lib/ai-first-messaging.ts",
+      "reference": "/api/v1"
+    },
+    {
+      "file": "public/agent-skill.md",
+      "reference": "/api/v1"
+    },
+    {
+      "file": "skills/openclaw/xpersona/SKILL.md",
+      "reference": "/api/v1"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/{path"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/{path"
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/admin/agents/{slug}/customization"
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/admin/agents/{slug}/customization."
+    },
+    {
+      "file": "app/(dashboard)/admin/page.tsx",
+      "reference": "/api/v1/admin/agents/submissions"
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/admin/agents/submissions"
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/admin/agents/submissions."
+    },
+    {
+      "file": "app/(dashboard)/admin/page.tsx",
+      "reference": "/api/v1/admin/claims"
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/admin/claims"
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/admin/claims."
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/admin/claims/{id}/approve"
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/admin/claims/{id}/approve."
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/admin/claims/{id}/reject"
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/admin/claims/{id}/reject."
+    },
+    {
+      "file": "app/(dashboard)/admin/page.tsx",
+      "reference": "/api/v1/admin/custom-pages"
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/admin/custom-pages"
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/admin/custom-pages."
+    },
+    {
+      "file": "app/(dashboard)/admin/page.tsx",
+      "reference": "/api/v1/admin/overview"
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/admin/overview"
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/admin/overview."
+    },
+    {
+      "file": "app/(dashboard)/admin/page.tsx",
+      "reference": "/api/v1/admin/users"
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/admin/users"
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/admin/users."
+    },
+    {
+      "file": "app/agent/[slug]/claim/page.tsx",
+      "reference": "/api/v1/agents"
+    },
+    {
+      "file": "app/agent/[slug]/manage/page.tsx",
+      "reference": "/api/v1/agents"
+    },
+    {
+      "file": "app/agent/[slug]/page.tsx",
+      "reference": "/api/v1/agents"
+    },
+    {
+      "file": "app/search-api/page.tsx",
+      "reference": "/api/v1/agents/{"
+    },
+    {
+      "file": "docs/AGENT_API_FALLBACK.md",
+      "reference": "/api/v1/agents/{slug}"
+    },
+    {
+      "file": "public/agent-skill.md",
+      "reference": "/api/v1/agents/{slug}"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/agents/{slug}"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/agents/{slug}"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/agents/{slug}."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/agents/{slug}."
+    },
+    {
+      "file": "public/agent-skill.md",
+      "reference": "/api/v1/agents/{slug}/claim"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/agents/{slug}/claim"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/agents/{slug}/claim"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/agents/{slug}/claim."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/agents/{slug}/claim."
+    },
+    {
+      "file": "public/agent-skill.md",
+      "reference": "/api/v1/agents/{slug}/claim/verify"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/agents/{slug}/claim/verify"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/agents/{slug}/claim/verify"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/agents/{slug}/claim/verify."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/agents/{slug}/claim/verify."
+    },
+    {
+      "file": "public/agent-skill.md",
+      "reference": "/api/v1/agents/{slug}/customization"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/agents/{slug}/customization"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/agents/{slug}/customization"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/agents/{slug}/customization."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/agents/{slug}/customization."
+    },
+    {
+      "file": "public/agent-skill.md",
+      "reference": "/api/v1/agents/{slug}/customization/preview"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/agents/{slug}/customization/preview"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/agents/{slug}/customization/preview"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/agents/{slug}/customization/preview."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/agents/{slug}/customization/preview."
+    },
+    {
+      "file": "public/agent-skill.md",
+      "reference": "/api/v1/agents/{slug}/manage"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/agents/{slug}/manage"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/agents/{slug}/manage"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/agents/{slug}/manage."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/agents/{slug}/manage."
+    },
+    {
+      "file": "app/search-api/page.tsx",
+      "reference": "/api/v1/agents/my-agent-slug"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/agents/submit"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/agents/submit"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/agents/submit."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/agents/submit."
+    },
+    {
+      "file": "components/home/ANSLanding.tsx",
+      "reference": "/api/v1/ans/check"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/{nextauth"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/{nextauth"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/agent/register"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/agent/register"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/agent/register."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/agent/register."
+    },
+    {
+      "file": "app/auth/forgot-password/page.tsx",
+      "reference": "/api/v1/auth/forgot-password"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/forgot-password"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/forgot-password"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/forgot-password."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/forgot-password."
+    },
+    {
+      "file": "components/dashboard/ApiKeySection.tsx",
+      "reference": "/api/v1/auth/guest"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/guest"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/guest"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/guest."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/guest."
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/guest/signout"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/guest/signout"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/guest/signout."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/guest/signout."
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/human"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/human"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/human."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/human."
+    },
+    {
+      "file": "app/(dashboard)/dashboard/profile/page.tsx",
+      "reference": "/api/v1/auth/link-agent"
+    },
+    {
+      "file": "app/auth/signin/page.tsx",
+      "reference": "/api/v1/auth/link-agent"
+    },
+    {
+      "file": "app/auth/signup/page.tsx",
+      "reference": "/api/v1/auth/link-agent"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/link-agent"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/link-agent"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/link-agent."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/link-agent."
+    },
+    {
+      "file": "app/(dashboard)/dashboard/profile/page.tsx",
+      "reference": "/api/v1/auth/link-guest"
+    },
+    {
+      "file": "app/auth/signin/page.tsx",
+      "reference": "/api/v1/auth/link-guest"
+    },
+    {
+      "file": "app/auth/signup/page.tsx",
+      "reference": "/api/v1/auth/link-guest"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/link-guest"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/link-guest"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/link-guest."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/link-guest."
+    },
+    {
+      "file": "components/auth/AuthErrorBanner.tsx",
+      "reference": "/api/v1/auth/play"
+    },
+    {
+      "file": "components/auth/ContinueAsAIButton.tsx",
+      "reference": "/api/v1/auth/play"
+    },
+    {
+      "file": "components/auth/EnsureGuest.tsx",
+      "reference": "/api/v1/auth/play"
+    },
+    {
+      "file": "components/dashboard/ApiKeySection.tsx",
+      "reference": "/api/v1/auth/play"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/play"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/play"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/play."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/play."
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/recover"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/recover"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/recover."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/recover."
+    },
+    {
+      "file": "app/auth/signup/page.tsx",
+      "reference": "/api/v1/auth/register"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/register"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/register"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/register."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/register."
+    },
+    {
+      "file": "app/auth/reset-password/page.tsx",
+      "reference": "/api/v1/auth/reset-password"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/reset-password"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/reset-password"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/auth/reset-password."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/auth/reset-password."
+    },
+    {
+      "file": "components/dashboard/PackageList.tsx",
+      "reference": "/api/v1/credits/checkout"
+    },
+    {
+      "file": "components/dashboard/PackageList.tsx",
+      "reference": "/api/v1/credits/packages"
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/cron/claim-verify"
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/cron/claim-verify."
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/cron/crawl"
+    },
+    {
+      "file": "public/openapi.v1.internal.json",
+      "reference": "/api/v1/cron/crawl."
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/docs"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/docs"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/docs."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/docs."
+    },
+    {
+      "file": "components/auth/ClaimFreeCreditsButton.tsx",
+      "reference": "/api/v1/faucet"
+    },
+    {
+      "file": "components/dashboard/FaucetButton.tsx",
+      "reference": "/api/v1/faucet"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/health"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/health"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/health."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/health."
+    },
+    {
+      "file": "app/(dashboard)/admin/page.tsx",
+      "reference": "/api/v1/me"
+    },
+    {
+      "file": "app/(dashboard)/dashboard/profile/page.tsx",
+      "reference": "/api/v1/me"
+    },
+    {
+      "file": "app/(dashboard)/dashboard/settings/page.tsx",
+      "reference": "/api/v1/me"
+    },
+    {
+      "file": "components/auth/GuestApiWarningBanner.tsx",
+      "reference": "/api/v1/me"
+    },
+    {
+      "file": "components/dashboard/AgentBanner.tsx",
+      "reference": "/api/v1/me"
+    },
+    {
+      "file": "components/dashboard/ApiKeySection.tsx",
+      "reference": "/api/v1/me"
+    },
+    {
+      "file": "components/dashboard/FaucetButton.tsx",
+      "reference": "/api/v1/me"
+    },
+    {
+      "file": "components/dashboard/GuestBanner.tsx",
+      "reference": "/api/v1/me"
+    },
+    {
+      "file": "lib/hooks/use-ai-connection-status.ts",
+      "reference": "/api/v1/me"
+    },
+    {
+      "file": "lib/hooks/use-is-permanent.ts",
+      "reference": "/api/v1/me"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me."
+    },
+    {
+      "file": "components/strategies/AdvancedStrategiesSection.tsx",
+      "reference": "/api/v1/me/advanced-strategies"
+    },
+    {
+      "file": "components/strategies/SavedAdvancedStrategiesList.tsx",
+      "reference": "/api/v1/me/advanced-strategies"
+    },
+    {
+      "file": "components/strategies/StrategiesSection.tsx",
+      "reference": "/api/v1/me/advanced-strategies"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/advanced-strategies"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/advanced-strategies"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/advanced-strategies."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/advanced-strategies."
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/advanced-strategies/{id}"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/advanced-strategies/{id}"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/advanced-strategies/{id}."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/advanced-strategies/{id}."
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/advanced-strategies/{id}/simulate"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/advanced-strategies/{id}/simulate"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/advanced-strategies/{id}/simulate."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/advanced-strategies/{id}/simulate."
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/advanced-strategies/clone-from-tournament"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/advanced-strategies/clone-from-tournament"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/advanced-strategies/clone-from-tournament."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/advanced-strategies/clone-from-tournament."
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/advanced-strategies/simulate"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/advanced-strategies/simulate"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/advanced-strategies/simulate."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/advanced-strategies/simulate."
+    },
+    {
+      "file": "components/dashboard/ApiKeySection.tsx",
+      "reference": "/api/v1/me/api-key"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/api-key"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/api-key"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/api-key."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/api-key."
+    },
+    {
+      "file": "lib/safeFetch.ts",
+      "reference": "/api/v1/me/balance"
+    },
+    {
+      "file": "app/(dashboard)/dashboard/settings/page.tsx",
+      "reference": "/api/v1/me/change-password"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/change-password"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/change-password"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/change-password."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/change-password."
+    },
+    {
+      "file": "app/(dashboard)/dashboard/claimed-agents/page.tsx",
+      "reference": "/api/v1/me/claimed-agents"
+    },
+    {
+      "file": "app/(dashboard)/dashboard/page.tsx",
+      "reference": "/api/v1/me/claimed-agents"
+    },
+    {
+      "file": "app/(dashboard)/dashboard/profile/page.tsx",
+      "reference": "/api/v1/me/claimed-agents"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/claimed-agents"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/claimed-agents"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/claimed-agents."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/claimed-agents."
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/mark-key-viewed"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/mark-key-viewed"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/mark-key-viewed."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/mark-key-viewed."
+    },
+    {
+      "file": "components/dashboard/RecoveryLinkCard.tsx",
+      "reference": "/api/v1/me/recovery-link"
+    },
+    {
+      "file": "components/layout/UserAccountMenu.tsx",
+      "reference": "/api/v1/me/recovery-link"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/recovery-link"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/recovery-link"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/recovery-link."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/recovery-link."
+    },
+    {
+      "file": "components/dashboard/LiveFeed.tsx",
+      "reference": "/api/v1/me/rounds"
+    },
+    {
+      "file": "components/dashboard/LuckStreakCard.tsx",
+      "reference": "/api/v1/me/rounds"
+    },
+    {
+      "file": "components/dashboard/MiniPnLSparkline.tsx",
+      "reference": "/api/v1/me/rounds"
+    },
+    {
+      "file": "components/dashboard/ProvablyFairBetHistory.tsx",
+      "reference": "/api/v1/me/rounds"
+    },
+    {
+      "file": "components/dashboard/CasinoRoundsWidget.tsx",
+      "reference": "/api/v1/me/session-stats"
+    },
+    {
+      "file": "lib/safeFetch.ts",
+      "reference": "/api/v1/me/session-stats"
+    },
+    {
+      "file": "app/(dashboard)/dashboard/settings/page.tsx",
+      "reference": "/api/v1/me/signal-preferences"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/signal-preferences"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/signal-preferences"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/signal-preferences."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/signal-preferences."
+    },
+    {
+      "file": "components/dashboard/StrategiesCountBadge.tsx",
+      "reference": "/api/v1/me/strategies"
+    },
+    {
+      "file": "components/strategies/StrategiesSection.tsx",
+      "reference": "/api/v1/me/strategies"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/strategies"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/strategies"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/strategies."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/strategies."
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/strategies/{id}"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/strategies/{id}"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/me/strategies/{id}."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/me/strategies/{id}."
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/openapi"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/openapi"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/openapi."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/openapi."
+    },
+    {
+      "file": "public/agent-skill.md",
+      "reference": "/api/v1/openapi/internal"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/openapi/internal"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/openapi/internal"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/openapi/internal."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/openapi/internal."
+    },
+    {
+      "file": "app/docs/page.tsx",
+      "reference": "/api/v1/openapi/public"
+    },
+    {
+      "file": "docs/AGENT_API_FALLBACK.md",
+      "reference": "/api/v1/openapi/public"
+    },
+    {
+      "file": "public/agent-skill.md",
+      "reference": "/api/v1/openapi/public"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/openapi/public"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/openapi/public"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/openapi/public."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/openapi/public."
+    },
+    {
+      "file": "app/search-api/page.tsx",
+      "reference": "/api/v1/search"
+    },
+    {
+      "file": "components/home/GoogleStyleHome.tsx",
+      "reference": "/api/v1/search"
+    },
+    {
+      "file": "components/home/HomeExploreSection.tsx",
+      "reference": "/api/v1/search"
+    },
+    {
+      "file": "components/home/SearchLanding.tsx",
+      "reference": "/api/v1/search"
+    },
+    {
+      "file": "docs/AGENT_API_FALLBACK.md",
+      "reference": "/api/v1/search"
+    },
+    {
+      "file": "public/agent-skill.md",
+      "reference": "/api/v1/search"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/search"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/search"
+    },
+    {
+      "file": "skills/openclaw/xpersona/SKILL.md",
+      "reference": "/api/v1/search"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/search."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/search."
+    },
+    {
+      "file": "app/search-api/page.tsx",
+      "reference": "/api/v1/search/click"
+    },
+    {
+      "file": "docs/AGENT_API_FALLBACK.md",
+      "reference": "/api/v1/search/click"
+    },
+    {
+      "file": "public/agent-skill.md",
+      "reference": "/api/v1/search/click"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/search/click"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/search/click"
+    },
+    {
+      "file": "skills/openclaw/xpersona/SKILL.md",
+      "reference": "/api/v1/search/click"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/search/click."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/search/click."
+    },
+    {
+      "file": "app/search-api/page.tsx",
+      "reference": "/api/v1/search/suggest"
+    },
+    {
+      "file": "components/search/SearchSuggestions.tsx",
+      "reference": "/api/v1/search/suggest"
+    },
+    {
+      "file": "docs/AGENT_API_FALLBACK.md",
+      "reference": "/api/v1/search/suggest"
+    },
+    {
+      "file": "public/agent-skill.md",
+      "reference": "/api/v1/search/suggest"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/search/suggest"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/search/suggest"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/search/suggest."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/search/suggest."
+    },
+    {
+      "file": "app/search-api/page.tsx",
+      "reference": "/api/v1/search/trending"
+    },
+    {
+      "file": "components/home/GoogleStyleHome.tsx",
+      "reference": "/api/v1/search/trending"
+    },
+    {
+      "file": "components/search/SearchSuggestions.tsx",
+      "reference": "/api/v1/search/trending"
+    },
+    {
+      "file": "docs/AGENT_API_FALLBACK.md",
+      "reference": "/api/v1/search/trending"
+    },
+    {
+      "file": "public/agent-skill.md",
+      "reference": "/api/v1/search/trending"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/search/trending"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/search/trending"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/search/trending."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/search/trending."
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/signals/deliver"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/signals/deliver"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/signals/deliver."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/signals/deliver."
+    },
+    {
+      "file": "app/(dashboard)/dashboard/settings/page.tsx",
+      "reference": "/api/v1/signout"
+    },
+    {
+      "file": "components/layout/Header.tsx",
+      "reference": "/api/v1/signout"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/signout"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/signout"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/signout."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/signout."
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/skill"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/skill"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/skill."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/skill."
+    },
+    {
+      "file": "components/home/HomeTrust.tsx",
+      "reference": "/api/v1/stats"
+    },
+    {
+      "file": "components/dashboard/CasinoRoundsWidget.tsx",
+      "reference": "/api/v1/stats/casino-activity"
+    },
+    {
+      "file": "components/ui/DataIntelligenceBadge.tsx",
+      "reference": "/api/v1/stats/harvest-count"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/stats/harvest-count"
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/stats/harvest-count"
+    },
+    {
+      "file": "public/openapi.v1.public.json",
+      "reference": "/api/v1/stats/harvest-count."
+    },
+    {
+      "file": "public/openapi.yaml",
+      "reference": "/api/v1/stats/harvest-count."
+    },
+    {
+      "file": "components/home/HomeStrategies.tsx",
+      "reference": "/api/v1/trading/strategies"
+    },
+    {
+      "file": "app/(dashboard)/dashboard/settings/page.tsx",
+      "reference": "/api/webhooks/..."
+    }
+  ]
+}

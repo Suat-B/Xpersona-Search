@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { safeFetchJson } from "@/lib/safeFetch";
@@ -32,7 +32,7 @@ export function CasinoRoundsWidget({
   const fetchActivity = useCallback(async () => {
     try {
       const { ok, data } = await safeFetchJson<CasinoActivity>(
-        "/api/stats/casino-activity",
+        "/api/v1/stats/casino-activity",
         { credentials: "omit" }
       );
       if (ok && data) {
@@ -53,14 +53,14 @@ export function CasinoRoundsWidget({
       const { ok, data } = await safeFetchJson<{
         success?: boolean;
         data?: { rounds?: number };
-      }>("/api/me/session-stats?gameType=dice&limit=1", {
+      }>("/api/v1/me/session-stats?gameType=dice&limit=1", {
         credentials: "include",
       });
       if (ok && data?.success && data?.data?.rounds != null) {
         setPersonalRounds(data.data.rounds);
       }
     } catch {
-      // Guest or unauthenticated — no personal rounds
+      // Guest or unauthenticated â€” no personal rounds
     }
   }, [personalRoundsProp]);
 
@@ -107,13 +107,13 @@ export function CasinoRoundsWidget({
         </span>
         <span className="text-xs font-medium text-[#0ea5e9]">
             {loading && activity == null ? (
-              <span className="animate-pulse">—</span>
+              <span className="animate-pulse">â€”</span>
             ) : (
               <span className="tabular-nums">
                 {total.toLocaleString()}
                 {personal != null && (
                   <span className="ml-1.5 text-[var(--text-tertiary)]">
-                    · yours: {personal.toLocaleString()}
+                    Â· yours: {personal.toLocaleString()}
                   </span>
                 )}
               </span>
@@ -139,17 +139,17 @@ export function CasinoRoundsWidget({
       <div className="space-y-1">
         <div className="text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
           {loading && activity == null ? (
-            <span className="animate-pulse">—</span>
+            <span className="animate-pulse">â€”</span>
           ) : (
             total.toLocaleString()
           )}
         </div>
         <div className="text-xs text-[var(--text-tertiary)]">
           {loading && activity == null ? (
-            <span className="animate-pulse">Loading…</span>
+            <span className="animate-pulse">Loadingâ€¦</span>
           ) : (
             <>
-              {rounds24h.toLocaleString()} rounds in last 24h · {players24h}{" "}
+              {rounds24h.toLocaleString()} rounds in last 24h Â· {players24h}{" "}
               players active
             </>
           )}
@@ -167,3 +167,6 @@ export function CasinoRoundsWidget({
     </div>
   );
 }
+
+
+

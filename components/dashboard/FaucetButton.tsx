@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { safeFetchJson } from "@/lib/safeFetch";
@@ -10,7 +10,7 @@ export function FaucetButton() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const loadNextFaucetAt = useCallback(async () => {
-    const { data } = await safeFetchJson<{ success?: boolean; data?: { lastFaucetAt?: string } }>("/api/me");
+    const { data } = await safeFetchJson<{ success?: boolean; data?: { lastFaucetAt?: string } }>("/api/v1/me");
     if (data?.success && data?.data?.lastFaucetAt) {
       const lastAt = new Date(data.data.lastFaucetAt).getTime();
       const nextAt = new Date(lastAt + FAUCET_COOLDOWN_SECONDS * 1000).toISOString();
@@ -41,14 +41,14 @@ export function FaucetButton() {
         data?: { balance?: number; granted?: number; nextFaucetAt?: string };
         error?: string;
         nextFaucetAt?: string;
-      }>("/api/faucet", { method: "POST" });
+      }>("/api/v1/faucet", { method: "POST" });
 
       if (data?.success && data?.data) {
         setNextFaucetAt(data.data.nextFaucetAt ?? optimisticNext);
         window.dispatchEvent(new CustomEvent("balance-updated", { detail: { balance: data.data.balance } }));
       } else if (data?.error === "FAUCET_COOLDOWN" && data?.nextFaucetAt) {
         setNextFaucetAt(data.nextFaucetAt);
-        setMessage("Cooldown active — next claim available soon");
+        setMessage("Cooldown active â€” next claim available soon");
       } else if (status === 401) {
         setNextFaucetAt(prevNextAt);
         setMessage("Authentication required");
@@ -110,7 +110,7 @@ export function FaucetButton() {
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          Free Credits cannot be withdrawn — 0%
+          Free Credits cannot be withdrawn â€” 0%
         </p>
       </div>
 
@@ -158,3 +158,6 @@ export function FaucetButton() {
     </div>
   );
 }
+
+
+

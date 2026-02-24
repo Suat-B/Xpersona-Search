@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
@@ -47,7 +47,7 @@ export function SavedAdvancedStrategiesList({
   const fetchStrategies = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/me/advanced-strategies", { credentials: "include" });
+      const res = await fetch("/api/v1/me/advanced-strategies", { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success && Array.isArray(data.data?.strategies)) {
         setStrategies(data.data.strategies);
@@ -70,7 +70,7 @@ export function SavedAdvancedStrategiesList({
   if (loading) {
     return (
       <div className="rounded-sm terminal-pane p-3">
-        <p className="text-xs text-[var(--text-secondary)]">Loading saved strategies…</p>
+        <p className="text-xs text-[var(--text-secondary)]">Loading saved strategiesâ€¦</p>
       </div>
     );
   }
@@ -79,8 +79,8 @@ export function SavedAdvancedStrategiesList({
     return (
       <div className="rounded-sm terminal-pane border border-dashed border-white/[0.06] p-3">
         <p className="text-xs text-[var(--text-secondary)]">
-          No saved strategies yet. Create via <Link href="/dashboard/strategies" className="text-emerald-400 hover:underline">Dashboard → Strategies</Link> or{" "}
-          <code className="bg-white/10 px-1 rounded text-[10px]">POST /api/me/advanced-strategies</code> — then they appear here to load and run.
+          No saved strategies yet. Create via <Link href="/dashboard/strategies" className="text-emerald-400 hover:underline">Dashboard â†’ Strategies</Link> or{" "}
+          <code className="bg-white/10 px-1 rounded text-[10px]">POST /api/me/advanced-strategies</code> â€” then they appear here to load and run.
         </p>
       </div>
     );
@@ -99,7 +99,7 @@ export function SavedAdvancedStrategiesList({
           className="text-[10px] text-[var(--text-secondary)] hover:text-emerald-400 transition-colors"
           title="Refresh list"
         >
-          ↻
+          â†»
         </button>
       </div>
       <p className="text-[10px] text-[var(--text-tertiary)] mb-2">Load and run strategies. Same via REST API.</p>
@@ -115,7 +115,7 @@ export function SavedAdvancedStrategiesList({
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold text-[var(--text-primary)] truncate">{row.name}</p>
                 <p className="text-[10px] text-[var(--text-secondary)] font-mono tabular-nums">
-                  {rulesCount}r · {row.baseConfig.amount} {row.baseConfig.condition} {row.baseConfig.target}
+                  {rulesCount}r Â· {row.baseConfig.amount} {row.baseConfig.condition} {row.baseConfig.target}
                 </p>
               </div>
               <div className="flex items-center gap-1 shrink-0">
@@ -141,3 +141,6 @@ export function SavedAdvancedStrategiesList({
     </div>
   );
 }
+
+
+

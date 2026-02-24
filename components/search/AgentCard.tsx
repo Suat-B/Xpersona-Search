@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { saveScrollPosition } from "@/lib/search/scroll-memory";
 import { SafetyBadge } from "./SafetyBadge";
 import { ProtocolBadge } from "./ProtocolBadge";
 import { SourceBadge } from "@/components/agent/SourceBadge";
@@ -49,6 +50,7 @@ export function AgentCard({ agent, rank }: Props) {
   const currentSearch = searchParams.toString();
   const fromPath = currentSearch ? `${pathname}?${currentSearch}` : pathname;
   const agentHref = `/agent/${agent.slug}?from=${encodeURIComponent(fromPath)}`;
+  const handleAgentNavigate = () => saveScrollPosition(fromPath);
 
   const caps = Array.isArray(agent.capabilities) ? agent.capabilities : [];
   const protos = Array.isArray(agent.protocols) ? agent.protocols : [];
@@ -62,6 +64,7 @@ export function AgentCard({ agent, rank }: Props) {
             <span className="text-2xl font-bold text-[var(--text-tertiary)]" aria-hidden>#{rank}</span>
             <Link
               href={agentHref}
+              onClick={handleAgentNavigate}
               className="text-xl font-semibold text-[var(--text-primary)] hover:text-[var(--accent-heart)] truncate transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] rounded"
             >
               {agent.name}
@@ -105,6 +108,7 @@ export function AgentCard({ agent, rank }: Props) {
         </div>
         <Link
           href={agentHref}
+          onClick={handleAgentNavigate}
           className="px-6 py-3 bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 active:bg-[var(--accent-heart)]/80 rounded-lg font-semibold flex-shrink-0 text-white transition-all duration-200 shadow-md shadow-[var(--accent-heart)]/20 hover:shadow-[var(--accent-heart)]/30 focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)]"
         >
           View

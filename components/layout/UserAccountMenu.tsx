@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
@@ -83,7 +83,7 @@ export function UserAccountMenu({
     setRecoveryLoading(true);
     setRecoveryUrl(null);
     try {
-      const res = await fetch("/api/me/recovery-link", {
+      const res = await fetch("/api/v1/me/recovery-link", {
         method: "POST",
         credentials: "include",
       });
@@ -151,7 +151,7 @@ export function UserAccountMenu({
             {recoveryLoading ? (
               <div className="px-4 py-3 flex items-center gap-2 text-sm text-[var(--dash-text-secondary)]">
                 <span className="w-3 h-3 border border-[var(--accent-heart)] border-t-transparent rounded-full animate-spin" />
-                Generating recovery link…
+                Generating recovery linkâ€¦
               </div>
             ) : recoveryUrl ? (
               <div className="px-4 py-3 space-y-2">
@@ -252,3 +252,6 @@ export function UserAccountMenu({
     </>
   );
 }
+
+
+

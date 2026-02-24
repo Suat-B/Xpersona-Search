@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 
@@ -6,7 +6,7 @@ export function StrategiesCountBadge() {
   const [count, setCount] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch("/api/me/strategies?gameType=dice", { credentials: "include" })
+    fetch("/api/v1/me/strategies?gameType=dice", { credentials: "include" })
       .then((r) => r.json())
       .then((d) => {
         const strategies = d?.data?.strategies ?? [];
@@ -15,6 +15,9 @@ export function StrategiesCountBadge() {
       .catch(() => setCount(0));
   }, []);
 
-  if (count === null) return <span>…</span>;
+  if (count === null) return <span>â€¦</span>;
   return <span>{count} {count === 1 ? "Strategy" : "Strategies"}</span>;
 }
+
+
+

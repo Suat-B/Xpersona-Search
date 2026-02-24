@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 
 export function Header({
   user,
@@ -33,7 +33,7 @@ export function Header({
             {isGuest ? "Guest" : user?.email}
           </span>
           <Link
-            href="/api/signout"
+            href="/api/v1/signout"
             className="rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-[var(--bg-matte)]"
           >
             Sign out
@@ -43,3 +43,6 @@ export function Header({
     </header>
   );
 }
+
+
+

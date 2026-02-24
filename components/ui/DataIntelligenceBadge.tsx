@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { AI_FIRST_MESSAGING } from "@/lib/ai-first-messaging";
@@ -22,7 +22,7 @@ export function DataIntelligenceBadge({
 
     const fetchCount = async () => {
       try {
-        const res = await fetch("/api/stats/harvest-count");
+        const res = await fetch("/api/v1/stats/harvest-count");
         if (res.ok) {
           const data = await res.json();
           setCount(data.count);
@@ -106,3 +106,6 @@ export function DataIntelligenceBadge({
     </div>
   );
 }
+
+
+

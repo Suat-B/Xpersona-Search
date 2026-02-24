@@ -122,12 +122,103 @@ describe("GET /api/search/suggest", () => {
     expect(data.querySuggestions).toContain("testing framework");
   });
 
+  it("prioritizes natural phrases over package-like terms", async () => {
+    mockDb.select
+      .mockImplementationOnce(
+        createMockChain([
+          { query: "trad-sdk-v2", count: 50 },
+          { query: "trading agent for crypto", count: 30 },
+        ])
+      )
+      .mockImplementation(createMockChain([]));
+
+    const res = await GET(new NextRequest("http://localhost/api/search/suggest?q=trad"));
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data.querySuggestions[0]).toBe("trading agent for crypto");
+    expect(data.querySuggestions).toContain("trad-sdk-v2");
+  });
+
+  it("keeps technical suggestions for technical queries", async () => {
+    mockDb.select
+      .mockImplementationOnce(
+        createMockChain([
+          { query: "npm package manager", count: 20 },
+          { query: "npm sdk v2", count: 15 },
+        ])
+      )
+      .mockImplementation(createMockChain([]));
+
+    const res = await GET(new NextRequest("http://localhost/api/search/suggest?q=npm"));
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data.querySuggestions).toContain("npm package manager");
+    expect(data.querySuggestions).toContain("npm sdk v2");
+  });
+
+  it("deduplicates suggestions case-insensitively", async () => {
+    mockDb.select
+      .mockImplementationOnce(
+        createMockChain([
+          { query: "Trading Agent For Crypto", count: 18 },
+          { query: "trading agent for crypto", count: 12 },
+        ])
+      )
+      .mockImplementation(createMockChain([]));
+
+    const res = await GET(new NextRequest("http://localhost/api/search/suggest?q=trad"));
+    const data = await res.json();
+
+    const normalized = data.querySuggestions.map((s: string) => s.toLowerCase());
+    const occurrences = normalized.filter((s: string) => s === "trading agent for crypto").length;
+    expect(occurrences).toBe(1);
+  });
+
+  it("uses protocol appends as fallback when natural suggestions are insufficient", async () => {
+    const matchingRows = [
+      {
+        id: "1",
+        name: "Trade Helper",
+        slug: "trade-helper",
+        description: "Agent",
+        protocols: ["MCP", "A2A"],
+        capabilities: [],
+      },
+    ];
+
+    mockDb.select
+      .mockImplementationOnce(createMockChain([])) // popular
+      .mockImplementationOnce(createMockChain([])) // names
+      .mockImplementationOnce(createMockChain(matchingRows)); // matching rows
+
+    const res = await GET(new NextRequest("http://localhost/api/search/suggest?q=trad&limit=5"));
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data.querySuggestions).toContain("trad MCP");
+    expect(data.querySuggestions).toContain("trad A2A");
+    expect(data.querySuggestions.length).toBeLessThanOrEqual(5);
+  });
+
   it("respects limit parameter", async () => {
+    mockDb.select
+      .mockImplementationOnce(
+        createMockChain([
+          { query: "testing one", count: 12 },
+          { query: "testing two", count: 10 },
+          { query: "testing three", count: 8 },
+          { query: "testing four", count: 6 },
+        ])
+      )
+      .mockImplementation(createMockChain([]));
+
     const res = await GET(new NextRequest("http://localhost/api/search/suggest?q=test&limit=3"));
     const data = await res.json();
 
     expect(res.status).toBe(200);
-    expect(data.querySuggestions.length).toBeLessThanOrEqual(3);
+    expect(data.querySuggestions.length).toBe(3);
   });
 
   // --- Rate limiting ---

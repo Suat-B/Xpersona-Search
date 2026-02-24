@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 
@@ -21,7 +21,7 @@ export function useAiConnectionStatus(): { hasApiKey: boolean | null } {
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
 
   useEffect(() => {
-    fetch("/api/me", { credentials: "include", cache: "no-store" })
+    fetch("/api/v1/me", { credentials: "include", cache: "no-store" })
       .then(async (r) => {
         if (!r.ok) return { ok: false, data: null };
         try {
@@ -41,3 +41,6 @@ export function useAiConnectionStatus(): { hasApiKey: boolean | null } {
 
   return { hasApiKey };
 }
+
+
+

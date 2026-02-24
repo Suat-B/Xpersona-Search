@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { boundedEngagementScore } from "@/lib/search/scoring/hybrid-rank";
 
 /**
  * Records a search result click for learning-to-rank CTR signals.
@@ -37,6 +38,17 @@ export function hashQuery(query: string): string {
     hash = ((hash << 5) - hash + char) | 0;
   }
   return Math.abs(hash).toString(36);
+}
+
+/**
+ * Bayesian-smoothed engagement score for ranking.
+ * Returns value in [0, 1].
+ */
+export function computeEngagementScore(
+  clicks: number,
+  impressions: number
+): number {
+  return boundedEngagementScore(clicks, impressions);
 }
 
 /**

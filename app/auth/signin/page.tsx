@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
@@ -6,11 +6,22 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { getServiceFromHost } from "@/lib/subdomain";
 import { getPostSignInRedirectPath } from "@/lib/post-sign-in-redirect";
+import { AuthPageShell } from "@/components/auth/AuthPageShell";
 
-const inputClass =
-  "w-full rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-3 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:border-[var(--accent-heart)]/50 transition-colors";
-const labelClass = "block text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider mb-1.5";
+const authInputClass =
+  "w-full rounded-lg border border-[#dadce0] bg-white px-3 py-3 text-[#202124] placeholder:text-[#5f6368] transition-colors focus:border-[#1a73e8] focus:outline-none focus:ring-2 focus:ring-[#1a73e8]/20";
+const authLabelClass = "mb-1.5 block text-sm font-medium text-[#202124]";
+const authPrimaryButtonClass =
+  "w-full rounded-full bg-[#1a73e8] px-6 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#1669d6] focus:outline-none focus:ring-2 focus:ring-[#1a73e8]/50 disabled:cursor-not-allowed disabled:opacity-60";
+const authSecondaryTextClass = "text-sm text-[#5f6368]";
 type LinkFlow = "agent" | "guest";
+type LinkApiErrorCode =
+  | "NO_GUEST"
+  | "NO_AGENT"
+  | "INVALID_GUEST"
+  | "INVALID_AGENT"
+  | "AGENT_NOT_FOUND"
+  | "NOT_AGENT_ACCOUNT";
 
 function SignInForm() {
   const router = useRouter();
@@ -36,9 +47,9 @@ function SignInForm() {
     flow: LinkFlow
   ): Promise<{ ok: true } | { ok: false; message: string }> => {
     const primary =
-      flow === "agent" ? "/api/auth/link-agent" : "/api/auth/link-guest";
+      flow === "agent" ? "/api/v1/auth/link-agent" : "/api/v1/auth/link-guest";
     const fallback =
-      flow === "agent" ? "/api/auth/link-guest" : "/api/auth/link-agent";
+      flow === "agent" ? "/api/v1/auth/link-guest" : "/api/v1/auth/link-agent";
 
     for (const endpoint of [primary, fallback]) {
       try {
@@ -48,6 +59,17 @@ function SignInForm() {
         });
         const data = await res.json().catch(() => ({}));
         if (res.ok && data.success) {
+          return { ok: true };
+        }
+        const code = data?.error as LinkApiErrorCode | undefined;
+        if (
+          code === "NO_GUEST" ||
+          code === "NO_AGENT" ||
+          code === "INVALID_GUEST" ||
+          code === "INVALID_AGENT" ||
+          code === "AGENT_NOT_FOUND" ||
+          code === "NOT_AGENT_ACCOUNT"
+        ) {
           return { ok: true };
         }
       } catch {
@@ -87,8 +109,6 @@ function SignInForm() {
         return;
       }
 
-      // Perform link immediately after sign-in, before any navigation.
-      // Ensures agent/guest cookie is still present (avoids redirect loop / lost merge).
       if (link === "agent" || link === "guest") {
         const linkResult = await attemptLinkFlow(link);
         if (!linkResult.ok) {
@@ -108,30 +128,30 @@ function SignInForm() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-white">
-      <div className="w-full max-w-md agent-card rounded-2xl border border-[var(--border)] p-8 shadow-2xl shadow-black/30">
-        <div className="flex flex-col gap-6">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--accent-heart)]/15 border border-[var(--accent-heart)]/25 text-[var(--accent-heart)]">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-            </svg>
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold text-[var(--text-primary)]">Sign in</h1>
-            <p className="mt-1 text-sm text-[var(--text-secondary)]">
-              Sign in with your email and password
-            </p>
-          </div>
-
+    <AuthPageShell
+      icon={
+        <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+        </svg>
+      }
+      title="Sign in"
+      subtitle="to continue to Xpersona"
+      badgeText="Secure Access"
+      formContent={
+        <>
           {resetSuccess && (
-            <p className="text-sm text-[#30d158] bg-[#30d158]/10 border border-[#30d158]/20 rounded-xl px-4 py-2">
+            <p
+              className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700"
+              role="status"
+              aria-live="polite"
+            >
               Password reset successful. You can now sign in.
             </p>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="email" className={labelClass}>
+              <label htmlFor="email" className={authLabelClass}>
                 Email
               </label>
               <input
@@ -142,18 +162,15 @@ function SignInForm() {
                 placeholder="you@example.com"
                 required
                 autoComplete="email"
-                className={inputClass}
+                className={authInputClass}
               />
             </div>
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label htmlFor="password" className={labelClass}>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label htmlFor="password" className={authLabelClass}>
                   Password
                 </label>
-                <Link
-                  href={buildAuthHref("/auth/forgot-password")}
-                  className="text-xs font-medium text-[var(--accent-heart)] hover:underline"
-                >
+                <Link href={buildAuthHref("/auth/forgot-password")} className="text-xs font-semibold text-[var(--accent-heart)] hover:underline">
                   Forgot password?
                 </Link>
               </div>
@@ -162,49 +179,43 @@ function SignInForm() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="........"
                 required
                 autoComplete="current-password"
-                className={inputClass}
+                className={authInputClass}
               />
             </div>
 
             {error && (
-              <p className="text-sm text-[#ff453a] bg-[#ff453a]/10 border border-[#ff453a]/20 rounded-xl px-4 py-2">
+              <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700" role="alert" aria-live="polite">
                 {error}
               </p>
             )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-xl bg-[var(--accent-heart)] px-6 py-3 text-sm font-semibold text-white hover:opacity-95 transition-opacity disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)] focus:ring-offset-2 focus:ring-offset-white"
-            >
+            <button type="submit" disabled={loading} className={authPrimaryButtonClass}>
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
-                  <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="h-4 w-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
-                  Signing in…
+                  Signing in...
                 </span>
               ) : (
                 "Sign in"
               )}
             </button>
           </form>
-
-          <p className="text-sm text-[var(--text-secondary)] text-center">
-            Don&apos;t have an account?{" "}
-            <Link
-              href={buildAuthHref("/auth/signup")}
-              className="font-medium text-[var(--accent-heart)] hover:underline"
-            >
-              Sign up
-            </Link>
-          </p>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+      footerContent={
+        <p className={`${authSecondaryTextClass} text-center`}>
+          Don&apos;t have an account?{" "}
+          <Link href={buildAuthHref("/auth/signup")} className="font-semibold text-[var(--accent-heart)] hover:underline">
+            Sign up
+          </Link>
+        </p>
+      }
+    />
   );
 }
 
@@ -212,8 +223,8 @@ export default function SignInPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-white">
-          <div className="w-8 h-8 rounded-full border-2 border-[var(--accent-heart)] border-t-transparent animate-spin" />
+        <div className="min-h-screen flex items-center justify-center bg-[var(--bg-deep)]">
+          <div className="h-8 w-8 rounded-full border-2 border-[var(--accent-heart)] border-t-transparent animate-spin" />
         </div>
       }
     >
@@ -221,3 +232,6 @@ export default function SignInPage() {
     </Suspense>
   );
 }
+
+
+

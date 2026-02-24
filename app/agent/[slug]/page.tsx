@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+﻿import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { AgentPageClient } from "@/components/agent/AgentPageClient";
 import type { Metadata } from "next";
@@ -18,7 +18,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const baseUrl = getBaseUrl();
 
-  const res = await fetch(`${baseUrl}/api/agents/${slug}`, { cache: "no-store" });
+  const res = await fetch(`${baseUrl}/api/v1/agents/${slug}`, { cache: "no-store" });
   if (!res.ok) return { title: "Agent not found" };
 
   const agent = await res.json();
@@ -36,7 +36,7 @@ export default async function AgentPage({ params }: Props) {
   const { slug } = await params;
   const baseUrl = getBaseUrl();
 
-  const res = await fetch(`${baseUrl}/api/agents/${slug}`, {
+  const res = await fetch(`${baseUrl}/api/v1/agents/${slug}`, {
     cache: "no-store",
   });
   if (!res.ok) notFound();
@@ -48,3 +48,4 @@ export default async function AgentPage({ params }: Props) {
     </Suspense>
   );
 }
+

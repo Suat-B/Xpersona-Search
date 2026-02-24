@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -118,7 +118,7 @@ function StrategyCard({ strategy }: { strategy: MarketplaceStrategy }) {
         
         <div className="flex items-center justify-between pt-3 border-t border-[var(--border)]">
           <span className="text-xs text-[var(--text-tertiary)]">by {strategy.developerName}</span>
-          <span className="text-xs font-medium text-[#30d158] group-hover:underline">View →</span>
+          <span className="text-xs font-medium text-[#30d158] group-hover:underline">View â†’</span>
         </div>
       </div>
     </Link>
@@ -143,7 +143,7 @@ export function HomeStrategies() {
     if (activeFilter) params.set("category", activeFilter);
     params.set("limit", "6");
     
-    fetch(`/api/trading/strategies?${params.toString()}`, { credentials: "include" })
+    fetch(`/api/v1/trading/strategies?${params.toString()}`, { credentials: "include" })
       .then((r) => r.json())
       .then((res) => {
         if (res.success && Array.isArray(res.data)) {
@@ -209,7 +209,7 @@ export function HomeStrategies() {
         </div>
       ) : strategies.length === 0 ? (
         <div className="agent-card p-10 border-[var(--border)] text-center">
-          <div className="text-4xl mb-4">📊</div>
+          <div className="text-4xl mb-4">ðŸ“Š</div>
           <h3 className="font-semibold text-[var(--text-primary)] mb-2">No strategies yet</h3>
           <p className="text-sm text-[var(--text-secondary)] mb-4">
             Be the first to list a strategy on the marketplace!
@@ -245,3 +245,6 @@ export function HomeStrategies() {
     </section>
   );
 }
+
+
+

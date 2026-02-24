@@ -17,12 +17,24 @@ vi.mock("@/lib/db", () => ({
   db: mockDb,
 }));
 
+const mockGetAuthUser = vi.hoisted(() => vi.fn().mockResolvedValue({ error: "UNAUTHORIZED" }));
+vi.mock("@/lib/auth-utils", () => ({
+  getAuthUser: mockGetAuthUser,
+}));
+
+const mockIsAdmin = vi.hoisted(() => vi.fn().mockReturnValue(false));
+vi.mock("@/lib/admin", () => ({
+  isAdmin: mockIsAdmin,
+}));
+
 // Mock rate limiter - default: allow all
 const mockRateLimit = vi.hoisted(() =>
   vi.fn().mockReturnValue({ allowed: true, remaining: 59 })
 );
 vi.mock("@/lib/search/rate-limit", () => ({
   checkSearchRateLimit: mockRateLimit,
+  SEARCH_ANON_RATE_LIMIT: 60,
+  SEARCH_AUTH_RATE_LIMIT: 120,
 }));
 
 // Mock circuit breaker
@@ -94,11 +106,14 @@ function mockAgent(overrides: Record<string, unknown> = {}) {
 describe("GET /api/search", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllEnvs();
     mockDb.select.mockImplementation(createMockChain([]));
     mockDb.execute.mockResolvedValue({ rows: [] });
     mockRateLimit.mockReturnValue({ allowed: true, remaining: 59 });
     mockCircuitBreaker.isAllowed.mockReturnValue(true);
     mockSearchCache.get.mockReturnValue(undefined);
+    mockGetAuthUser.mockResolvedValue({ error: "UNAUTHORIZED" });
+    mockIsAdmin.mockReturnValue(false);
   });
 
   // --- Basic response shape ---
@@ -159,12 +174,50 @@ describe("GET /api/search", () => {
     expect(res.status).toBe(400);
   });
 
+  it("returns 400 for invalid cursor uuid", async () => {
+    const res = await GET(new NextRequest("http://localhost/api/search?cursor=not-a-uuid"));
+    expect(res.status).toBe(400);
+  });
+
   it("accepts valid sort values", async () => {
     for (const sort of ["rank", "safety", "popularity", "freshness"]) {
       mockDb.execute.mockResolvedValue({ rows: [] });
       const res = await GET(new NextRequest(`http://localhost/api/search?sort=${sort}`));
       expect(res.status).toBe(200);
     }
+  });
+
+  it("accepts execute-mode query params", async () => {
+    mockDb.execute.mockResolvedValue({ rows: [] });
+    const res = await GET(
+      new NextRequest(
+        "http://localhost/api/search?intent=execute&taskType=retrieval&maxLatencyMs=1500&maxCostUsd=0.2&requires=mcp,apikey&forbidden=paid-api&dataRegion=us&bundle=1&explain=1"
+      )
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 400 for invalid execute-mode params", async () => {
+    const res = await GET(
+      new NextRequest("http://localhost/api/search?intent=execute&maxLatencyMs=9999999")
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 403 for includePrivate when requester is not admin", async () => {
+    const res = await GET(new NextRequest("http://localhost/api/search?includePrivate=1"));
+    expect(res.status).toBe(403);
+  });
+
+  it("allows includePrivate for admin users", async () => {
+    mockGetAuthUser.mockResolvedValue({
+      user: { id: "u1", email: "admin@example.com" },
+    });
+    mockIsAdmin.mockReturnValue(true);
+    mockDb.execute.mockResolvedValue({ rows: [] });
+
+    const res = await GET(new NextRequest("http://localhost/api/search?includePrivate=1"));
+    expect(res.status).toBe(200);
   });
 
   // --- Cache behavior ---
@@ -224,8 +277,7 @@ describe("GET /api/search", () => {
   // --- Error handling ---
 
   it("returns sanitized error message in production", async () => {
-    const originalEnv = process.env.NODE_ENV;
-    process.env.NODE_ENV = "production";
+    vi.stubEnv("NODE_ENV", "production");
 
     mockDb.execute.mockRejectedValue(new Error("FATAL: database crashed"));
 
@@ -238,12 +290,11 @@ describe("GET /api/search", () => {
     expect(data).toHaveProperty("results");
     expect(data.results).toEqual([]);
 
-    process.env.NODE_ENV = originalEnv;
+    vi.unstubAllEnvs();
   });
 
   it("returns detailed error message in development", async () => {
-    const originalEnv = process.env.NODE_ENV;
-    process.env.NODE_ENV = "development";
+    vi.stubEnv("NODE_ENV", "development");
 
     mockDb.execute.mockRejectedValue(new Error("connection refused"));
 
@@ -253,7 +304,7 @@ describe("GET /api/search", () => {
     expect(res.status).toBe(500);
     expect(data.error).toBe("connection refused");
 
-    process.env.NODE_ENV = originalEnv;
+    vi.unstubAllEnvs();
   });
 
   it("serves stale cache on DB error", async () => {
@@ -299,6 +350,39 @@ describe("GET /api/search", () => {
     expect(data.results[0].hasCustomPage).toBe(true);
   });
 
+  it("includes rankingDebug only with debug=1 in non-production", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("SEARCH_HYBRID_RANKING", "1");
+
+    mockDb.execute.mockResolvedValue({
+      rows: [
+        mockAgent({
+          lexical_score: 0.8,
+          authority_score: 0.6,
+          engagement_score: 0.2,
+          freshness_score_norm: 0.5,
+          final_score: 0.69,
+          canonical_agent_id: null,
+        }),
+      ],
+    });
+
+    const withDebug = await GET(
+      new NextRequest("http://localhost/api/search?q=test&sort=rank&debug=1")
+    );
+    const withDebugData = await withDebug.json();
+    expect(withDebugData.results[0].rankingDebug).toBeDefined();
+
+    mockDb.execute.mockResolvedValue({
+      rows: [mockAgent({ canonical_agent_id: null })],
+    });
+    const noDebug = await GET(new NextRequest("http://localhost/api/search?q=test&sort=rank"));
+    const noDebugData = await noDebug.json();
+    expect(noDebugData.results[0].rankingDebug).toBeUndefined();
+
+    vi.unstubAllEnvs();
+  });
+
   // --- Pagination ---
 
   it("returns hasMore=true when more results exist", async () => {
@@ -324,5 +408,16 @@ describe("GET /api/search", () => {
     const res = await GET(new NextRequest("http://localhost/api/search?sort=rank"));
 
     expect(res.headers.get("X-RateLimit-Remaining")).toBe("42");
+  });
+
+  it("includes ranking headers outside production", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    mockDb.execute.mockResolvedValue({ rows: [] });
+
+    const res = await GET(new NextRequest("http://localhost/api/search?q=test&sort=rank"));
+
+    expect(res.headers.get("X-Search-Ranking")).toBeTruthy();
+    expect(res.headers.get("X-Search-Weights")).toBeTruthy();
+    vi.unstubAllEnvs();
   });
 });

@@ -139,15 +139,18 @@ export async function POST(
   const token = generateClaimToken();
   const expiresAt = new Date(Date.now() + CLAIM_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
 
-  await db.insert(agentClaims).values({
-    agentId: agent.id,
-    userId: user.id,
-    status: "PENDING",
-    verificationMethod: method,
-    verificationToken: token,
-    verificationData: notes ? { notes } : null,
-    expiresAt,
-  });
+  const [insertedClaim] = await db
+    .insert(agentClaims)
+    .values({
+      agentId: agent.id,
+      userId: user.id,
+      status: "PENDING",
+      verificationMethod: method,
+      verificationToken: token,
+      verificationData: notes ? { notes } : null,
+      expiresAt,
+    })
+    .returning({ id: agentClaims.id });
 
   if (agent.claimStatus === "UNCLAIMED") {
     await db
@@ -162,9 +165,16 @@ export async function POST(
     agent
   );
 
+  if (!insertedClaim?.id) {
+    return NextResponse.json(
+      { error: "CLAIM_CREATION_FAILED" },
+      { status: 500 }
+    );
+  }
+
   return NextResponse.json({
     success: true,
-    claimId: agent.id,
+    claimId: insertedClaim.id,
     method,
     token,
     instructions,

@@ -22,3 +22,18 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
+
+  crawler-worker:
+    image: node:22-alpine
+    restart: unless-stopped
+    working_dir: /workspace
+    command: sh -lc "npm ci && npm run crawl:worker"
+    env_file:
+      - .env.local
+    environment:
+      CRAWL_GITHUB_IN_CRON: "0"
+    volumes:
+      - ./:/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy

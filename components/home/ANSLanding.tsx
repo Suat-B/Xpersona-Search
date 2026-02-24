@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
@@ -137,7 +137,7 @@ export function ANSLanding() {
 
     try {
       const res = await fetch(
-        `/api/ans/check?name=${encodeURIComponent(trimmed)}`
+        `/api/v1/ans/check?name=${encodeURIComponent(trimmed)}`
       );
       const data: CheckResponse = await res.json();
 
@@ -257,7 +257,7 @@ export function ANSLanding() {
                 {state === "loading" ? (
                   <>
                     <SearchSpinner />
-                    <span>Searching…</span>
+                    <span>Searchingâ€¦</span>
                   </>
                 ) : (
                   "Search"
@@ -282,7 +282,7 @@ export function ANSLanding() {
                       {result.fullDomain} is available
                     </h3>
                     <p className="mt-1 text-sm text-[var(--light-text-secondary)]">
-                      $10/year · Instant verification
+                      $10/year Â· Instant verification
                     </p>
                     <Link
                       ref={claimRef}
@@ -320,7 +320,7 @@ export function ANSLanding() {
                         }}
                         className="mt-3 text-sm font-medium text-[var(--light-accent)] hover:text-[var(--light-accent-hover)] transition-colors"
                       >
-                        Search for {suggestedName}.xpersona.agent →
+                        Search for {suggestedName}.xpersona.agent â†’
                       </button>
                     )}
                     {result.cardUrl && (
@@ -330,7 +330,7 @@ export function ANSLanding() {
                         rel="noopener noreferrer"
                         className="mt-3 inline-block text-sm font-medium text-[var(--light-accent)] hover:text-[var(--light-accent-hover)] transition-colors ml-4"
                       >
-                        View Agent Card →
+                        View Agent Card â†’
                       </a>
                     )}
                   </div>
@@ -356,7 +356,7 @@ export function ANSLanding() {
                         }}
                         className="mt-2 text-sm font-medium text-[var(--light-accent)] hover:text-[var(--light-accent-hover)] transition-colors"
                       >
-                        Try {result.suggestions[0]} →
+                        Try {result.suggestions[0]} â†’
                       </button>
                     )}
                   </div>
@@ -379,7 +379,7 @@ export function ANSLanding() {
                       onClick={handleSearch}
                       className="mt-2 text-sm font-medium text-[var(--light-accent)] hover:text-[var(--light-accent-hover)] transition-colors"
                     >
-                      Try again →
+                      Try again â†’
                     </button>
                   </div>
                 </div>
@@ -439,3 +439,6 @@ export function ANSLanding() {
     </section>
   );
 }
+
+
+

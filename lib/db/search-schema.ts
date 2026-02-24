@@ -10,7 +10,14 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  customType,
 } from "drizzle-orm/pg-core";
+
+const vector1536 = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return "vector(1536)";
+  },
+});
 
 /** Search engine: crawled AI agents from GitHub, etc. */
 export const agents = pgTable(
@@ -19,6 +26,8 @@ export const agents = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     sourceId: varchar("source_id", { length: 255 }).notNull().unique(),
     source: varchar("source", { length: 32 }).notNull().default("GITHUB_OPENCLEW"),
+    visibility: varchar("visibility", { length: 16 }).notNull().default("PUBLIC"),
+    publicSearchable: boolean("public_searchable").notNull().default(true),
 
     // Identity
     name: varchar("name", { length: 255 }).notNull(),
@@ -89,6 +98,8 @@ export const agents = pgTable(
     uniqueIndex("agents_slug_idx").on(table.slug),
     index("agents_status_idx").on(table.status),
     index("agents_overall_rank_idx").on(table.overallRank),
+    index("agents_visibility_idx").on(table.visibility),
+    index("agents_public_searchable_idx").on(table.publicSearchable),
     index("agents_claimed_by_user_id_idx").on(table.claimedByUserId),
     index("agents_claim_status_idx").on(table.claimStatus),
     index("agents_verification_tier_idx").on(table.verificationTier),
@@ -209,21 +220,49 @@ export const crawlJobs = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     source: varchar("source", { length: 32 }).notNull(),
     status: varchar("status", { length: 20 }).notNull().default("PENDING"),
+    workerId: varchar("worker_id", { length: 64 }),
     startedAt: timestamp("started_at", { withTimezone: true }),
+    heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    finishedReason: varchar("finished_reason", { length: 40 }),
     error: text("error"),
     agentsFound: integer("agents_found").notNull().default(0),
     agentsUpdated: integer("agents_updated").notNull().default(0),
     budgetUsed: integer("budget_used").notNull().default(0),
     timeouts: integer("timeouts").notNull().default(0),
     rateLimits: integer("rate_limits").notNull().default(0),
+    githubRequests: integer("github_requests").notNull().default(0),
+    retryCount: integer("retry_count").notNull().default(0),
+    rateLimitWaitMs: integer("rate_limit_wait_ms").notNull().default(0),
     skipped: integer("skipped").notNull().default(0),
     cursorSnapshot: jsonb("cursor_snapshot").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   },
   (table) => [
     index("crawl_jobs_status_idx").on(table.status),
+    index("crawl_jobs_worker_id_idx").on(table.workerId),
+    index("crawl_jobs_heartbeat_at_idx").on(table.heartbeatAt),
     index("crawl_jobs_created_at_idx").on(table.createdAt),
+  ]
+);
+
+/** Durable cursor snapshots for resumable crawlers. */
+export const crawlCheckpoints = pgTable(
+  "crawl_checkpoints",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    source: varchar("source", { length: 32 }).notNull(),
+    mode: varchar("mode", { length: 16 }).notNull().default("backfill"),
+    cursor: jsonb("cursor").$type<Record<string, unknown>>().notNull().default({}),
+    workerId: varchar("worker_id", { length: 64 }),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("crawl_checkpoints_source_mode_idx").on(table.source, table.mode),
+    index("crawl_checkpoints_worker_id_idx").on(table.workerId),
+    index("crawl_checkpoints_updated_at_idx").on(table.updatedAt),
   ]
 );
 
@@ -243,5 +282,104 @@ export const searchClicks = pgTable(
     index("search_clicks_agent_id_idx").on(table.agentId),
     index("search_clicks_clicked_at_idx").on(table.clickedAt),
     index("search_clicks_agent_date_idx").on(table.agentId, table.clickedAt),
+  ]
+);
+
+/** Semantic embeddings for hybrid retrieval. */
+export const agentEmbeddings = pgTable(
+  "agent_embeddings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id").notNull(),
+    provider: varchar("provider", { length: 64 }).notNull(),
+    model: varchar("model", { length: 128 }).notNull(),
+    dimensions: integer("dimensions").notNull().default(1536),
+    embedding: vector1536("embedding").notNull(),
+    contentHash: varchar("content_hash", { length: 64 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("agent_embeddings_agent_provider_model_idx").on(
+      table.agentId,
+      table.provider,
+      table.model
+    ),
+    index("agent_embeddings_agent_id_idx").on(table.agentId),
+    index("agent_embeddings_updated_at_idx").on(table.updatedAt),
+  ]
+);
+
+/** Anonymous aggregate execution outcomes for ranking quality signals. */
+export const searchOutcomes = pgTable(
+  "search_outcomes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    querySignature: varchar("query_signature", { length: 64 }).notNull(),
+    agentId: uuid("agent_id").notNull(),
+    taskType: varchar("task_type", { length: 32 }).notNull().default("general"),
+    attempts: integer("attempts").notNull().default(0),
+    successCount: integer("success_count").notNull().default(0),
+    failureCount: integer("failure_count").notNull().default(0),
+    timeoutCount: integer("timeout_count").notNull().default(0),
+    lastOutcomeAt: timestamp("last_outcome_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("search_outcomes_signature_agent_task_idx").on(
+      table.querySignature,
+      table.agentId,
+      table.taskType
+    ),
+    index("search_outcomes_agent_id_idx").on(table.agentId),
+    index("search_outcomes_last_outcome_at_idx").on(table.lastOutcomeAt),
+  ]
+);
+
+/** Aggregated operational metrics per agent for execute-mode ranking. */
+export const agentExecutionMetrics = pgTable(
+  "agent_execution_metrics",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id").notNull().unique(),
+    observedLatencyMsP50: integer("observed_latency_ms_p50"),
+    observedLatencyMsP95: integer("observed_latency_ms_p95"),
+    estimatedCostUsd: doublePrecision("estimated_cost_usd"),
+    uptime30d: doublePrecision("uptime_30d"),
+    rateLimitRpm: integer("rate_limit_rpm"),
+    rateLimitBurst: integer("rate_limit_burst"),
+    lastVerifiedAt: timestamp("last_verified_at", { withTimezone: true }),
+    verificationSource: varchar("verification_source", { length: 40 }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("agent_execution_metrics_agent_id_idx").on(table.agentId),
+    index("agent_execution_metrics_updated_at_idx").on(table.updatedAt),
+  ]
+);
+
+/** Normalized machine-usable contract metadata for execution by AI agents. */
+export const agentCapabilityContracts = pgTable(
+  "agent_capability_contracts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id").notNull().unique(),
+    authModes: jsonb("auth_modes").$type<string[]>().notNull().default([]),
+    requires: jsonb("requires").$type<string[]>().notNull().default([]),
+    forbidden: jsonb("forbidden").$type<string[]>().notNull().default([]),
+    dataRegion: varchar("data_region", { length: 16 }),
+    inputSchemaRef: varchar("input_schema_ref", { length: 1024 }),
+    outputSchemaRef: varchar("output_schema_ref", { length: 1024 }),
+    supportsStreaming: boolean("supports_streaming").notNull().default(false),
+    supportsMcp: boolean("supports_mcp").notNull().default(false),
+    supportsA2a: boolean("supports_a2a").notNull().default(false),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("agent_capability_contracts_agent_id_idx").on(table.agentId),
+    index("agent_capability_contracts_data_region_idx").on(table.dataRegion),
   ]
 );

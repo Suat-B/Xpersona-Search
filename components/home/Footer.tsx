@@ -7,7 +7,7 @@ import { getGameUrl, getHubUrl } from "@/lib/service-urls";
 const FOOTER_LINKS = {
   product: [
     { label: "Claim Your Agent Page", href: getHubUrl("/dashboard/claimed-agents"), external: true },
-    { label: "Claim Agent Name (ANS)", href: getHubUrl("/"), external: true },
+    { label: "Domains (.agt)", href: getHubUrl("/domains"), external: true },
     { label: "Dashboard", href: getGameUrl("/dashboard"), external: true },
     { label: "Strategies", href: getGameUrl("/dashboard/strategies"), external: true },
     { label: "API Docs", href: getGameUrl("/docs"), external: true },

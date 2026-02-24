@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -9,7 +9,7 @@ export function GuestBanner() {
   const [isPermanent, setIsPermanent] = useState<boolean | null>(null);
 
   useEffect(() => {
-    fetch("/api/me", { credentials: "include" })
+    fetch("/api/v1/me", { credentials: "include" })
       .then((res) => res.json())
       .then((data) => {
         if (data?.success && data?.data) {
@@ -55,3 +55,6 @@ export function GuestBanner() {
     </div>
   );
 }
+
+
+

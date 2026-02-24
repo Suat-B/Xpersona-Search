@@ -97,7 +97,7 @@ const NAV_GROUPS = [
     label: "Tools",
     links: [
       { href: "/dashboard/strategies", label: "Strategies", icon: "strategies" as const, exact: false },
-      { href: "/dashboard/api", label: "API", icon: "api" as const, exact: false },
+      { href: "/docs", label: "API", icon: "api" as const, exact: false },
     ],
   },
 ] as const;
@@ -244,3 +244,4 @@ export function DashboardSidebarNav({ isAdmin = false }: DashboardSidebarNavProp
     </nav>
   );
 }
+

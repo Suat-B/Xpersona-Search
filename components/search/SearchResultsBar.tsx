@@ -6,6 +6,7 @@ import { applyPreset, HOME_ACCENT_STORAGE_KEY } from "@/lib/theme-presets";
 import type { ThemePresetId } from "@/lib/theme-presets";
 import { SearchSuggestions, type SearchSuggestionsHandle, type SuggestionAgent } from "./SearchSuggestions";
 import { addRecentSearch } from "@/lib/search-history";
+import { saveScrollPosition } from "@/lib/search/scroll-memory";
 
 interface SearchResultsBarProps {
   query: string;
@@ -19,6 +20,24 @@ interface SearchResultsBarProps {
   minSafety: number;
   onSafetyChange: (n: number) => void;
   facets?: { protocols?: Array<{ protocol: string[]; count: number }> };
+  intent: "discover" | "execute";
+  onIntentChange: (v: "discover" | "execute") => void;
+  taskType: string;
+  onTaskTypeChange: (v: string) => void;
+  maxLatencyMs: string;
+  onMaxLatencyMsChange: (v: string) => void;
+  maxCostUsd: string;
+  onMaxCostUsdChange: (v: string) => void;
+  dataRegion: string;
+  onDataRegionChange: (v: string) => void;
+  requires: string;
+  onRequiresChange: (v: string) => void;
+  forbidden: string;
+  onForbiddenChange: (v: string) => void;
+  bundle: boolean;
+  onBundleChange: (v: boolean) => void;
+  explain: boolean;
+  onExplainChange: (v: boolean) => void;
 }
 
 const BLUR_DELAY_MS = 150;
@@ -35,6 +54,24 @@ export function SearchResultsBar({
   minSafety,
   onSafetyChange,
   facets,
+  intent,
+  onIntentChange,
+  taskType,
+  onTaskTypeChange,
+  maxLatencyMs,
+  onMaxLatencyMsChange,
+  maxCostUsd,
+  onMaxCostUsdChange,
+  dataRegion,
+  onDataRegionChange,
+  requires,
+  onRequiresChange,
+  forbidden,
+  onForbiddenChange,
+  bundle,
+  onBundleChange,
+  explain,
+  onExplainChange,
 }: SearchResultsBarProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [showTools, setShowTools] = useState(false);
@@ -46,7 +83,10 @@ export function SearchResultsBar({
   const router = useRouter();
 
   const handleSuggestionSelect = (agent: SuggestionAgent) => {
-    router.push(`/agent/${agent.slug}`);
+    const params = new URLSearchParams(window.location.search);
+    const fromPath = params.toString() ? `/?${params.toString()}` : "/";
+    saveScrollPosition(fromPath);
+    router.push(`/agent/${agent.slug}?from=${encodeURIComponent(fromPath)}`);
   };
 
   const handleQuerySelect = (text: string) => {
@@ -203,6 +243,23 @@ export function SearchResultsBar({
                 >
                   <div>
                     <label
+                      htmlFor="search-intent"
+                      className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-2"
+                    >
+                      Mode
+                    </label>
+                    <select
+                      id="search-intent"
+                      value={intent}
+                      onChange={(e) => onIntentChange(e.target.value === "execute" ? "execute" : "discover")}
+                      className="w-full px-3 py-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] text-sm focus:border-[var(--accent-heart)]/60 focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30"
+                    >
+                      <option value="discover">Discover</option>
+                      <option value="execute">Execute</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label
                       htmlFor="search-sort"
                       className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-2"
                     >
@@ -242,6 +299,89 @@ export function SearchResultsBar({
                       className="w-full h-2 rounded-full appearance-none cursor-pointer bg-[var(--bg-elevated)] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[var(--accent-heart)] [&::-webkit-slider-thumb]:cursor-pointer"
                     />
                   </div>
+                  {intent === "execute" && (
+                    <>
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-2">
+                          Task Type
+                        </label>
+                        <input
+                          value={taskType}
+                          onChange={(e) => onTaskTypeChange(e.target.value)}
+                          placeholder="retrieval, automation..."
+                          className="w-full px-3 py-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] text-sm focus:border-[var(--accent-heart)]/60 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-2">
+                          Max Latency (ms)
+                        </label>
+                        <input
+                          value={maxLatencyMs}
+                          onChange={(e) => onMaxLatencyMsChange(e.target.value)}
+                          inputMode="numeric"
+                          placeholder="2000"
+                          className="w-full px-3 py-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] text-sm focus:border-[var(--accent-heart)]/60 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-2">
+                          Max Cost (USD)
+                        </label>
+                        <input
+                          value={maxCostUsd}
+                          onChange={(e) => onMaxCostUsdChange(e.target.value)}
+                          inputMode="decimal"
+                          placeholder="0.05"
+                          className="w-full px-3 py-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] text-sm focus:border-[var(--accent-heart)]/60 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-2">
+                          Region
+                        </label>
+                        <select
+                          value={dataRegion}
+                          onChange={(e) => onDataRegionChange(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] text-sm focus:border-[var(--accent-heart)]/60 focus:outline-none"
+                        >
+                          <option value="global">Global</option>
+                          <option value="us">US</option>
+                          <option value="eu">EU</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-2">
+                          Requires
+                        </label>
+                        <input
+                          value={requires}
+                          onChange={(e) => onRequiresChange(e.target.value)}
+                          placeholder="mcp, apiKey, streaming"
+                          className="w-full px-3 py-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] text-sm focus:border-[var(--accent-heart)]/60 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-2">
+                          Forbidden
+                        </label>
+                        <input
+                          value={forbidden}
+                          onChange={(e) => onForbiddenChange(e.target.value)}
+                          placeholder="paid-api, external-network"
+                          className="w-full px-3 py-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] text-sm focus:border-[var(--accent-heart)]/60 focus:outline-none"
+                        />
+                      </div>
+                      <label className="flex items-center justify-between gap-2 text-sm text-[var(--text-secondary)]">
+                        Include fallbacks
+                        <input type="checkbox" checked={bundle} onChange={(e) => onBundleChange(e.target.checked)} />
+                      </label>
+                      <label className="flex items-center justify-between gap-2 text-sm text-[var(--text-secondary)]">
+                        Explain ranking
+                        <input type="checkbox" checked={explain} onChange={(e) => onExplainChange(e.target.checked)} />
+                      </label>
+                    </>
+                  )}
                 </div>
               </>
             )}

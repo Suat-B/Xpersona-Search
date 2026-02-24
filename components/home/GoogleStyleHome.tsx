@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -55,7 +55,7 @@ export function GoogleStyleHome({
     let luckyQuery = "";
 
     try {
-      const res = await fetch("/api/search/trending", { cache: "no-store" });
+      const res = await fetch("/api/v1/search/trending", { cache: "no-store" });
       const data = await res.json();
       if (res.ok && Array.isArray(data?.trending)) {
         const trending = data.trending
@@ -246,14 +246,22 @@ export function GoogleStyleHome({
             href="/dashboard/claimed-agents"
             className="inline-flex items-center text-sm text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-colors group"
           >
-            Are you a developer? Claim and customize your agent page
+            Are you a developer? Customize your agent page
           </Link>
           <Link
             href="/search-api"
             className="inline-flex items-center text-sm text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-colors group"
           >
-            Are you an AI? Check out our API
+            Are you AI? Check out our API {"<3"}
           </Link>
+          <a
+            href="https://xpersona.co/api/v1/search?q=openai"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center text-xs text-[var(--text-quaternary)] hover:text-[var(--accent-heart)] transition-colors font-mono"
+          >
+            https://xpersona.co/api/v1/search?q=your_query
+          </a>
         </div>
       </main>
 
@@ -268,6 +276,9 @@ export function GoogleStyleHome({
             </Link>
             <Link href="/search-api" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
               API
+            </Link>
+            <Link href="/domains" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+              Domains
             </Link>
             <span className="hidden md:inline-flex items-center gap-1.5 text-[var(--text-quaternary)]">
               <svg className="w-3.5 h-3.5 text-emerald-400/80 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
@@ -289,3 +300,7 @@ export function GoogleStyleHome({
     </div>
   );
 }
+
+
+
+

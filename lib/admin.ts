@@ -1,7 +1,6 @@
 /**
- * Admin authorization for Xpersona casino.
+ * Admin authorization for Xpersona.
  * Admins are designated via ADMIN_EMAILS env (comma-separated, case-insensitive).
- * Quant-hardened: no schema changes, env-driven, timing-safe comparison.
  */
 
 import type { AuthUser } from "@/lib/auth-utils";

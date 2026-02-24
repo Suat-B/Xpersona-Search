@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -67,8 +67,8 @@ export function StrategiesSection() {
     setError(null);
     try {
       const [simpleRes, advancedRes] = await Promise.all([
-        fetch("/api/me/strategies?gameType=dice", { credentials: "include" }),
-        fetch("/api/me/advanced-strategies", { credentials: "include" }),
+        fetch("/api/v1/me/strategies?gameType=dice", { credentials: "include" }),
+        fetch("/api/v1/me/advanced-strategies", { credentials: "include" }),
       ]);
       if (fetchId !== fetchIdRef.current) return;
       const simpleData = await simpleRes.json().catch(() => ({}));
@@ -149,8 +149,8 @@ export function StrategiesSection() {
     if (!confirm(`Delete this ${label}?`)) return;
     try {
       const url = item.type === "simple"
-        ? `/api/me/strategies/${id}`
-        : `/api/me/advanced-strategies/${id}`;
+        ? `/api/v1/me/strategies/${id}`
+        : `/api/v1/me/advanced-strategies/${id}`;
       const res = await fetch(url, { method: "DELETE", credentials: "include" });
       const data = await res.json();
       if (data.success) {
@@ -197,7 +197,7 @@ export function StrategiesSection() {
     }
     setError(null);
     try {
-      const res = await fetch(`/api/me/strategies/${editing.id}`, {
+      const res = await fetch(`/api/v1/me/strategies/${editing.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -244,7 +244,7 @@ export function StrategiesSection() {
 
   return (
     <section data-agent="strategies-section" className="space-y-8">
-      {/* Advanced Strategy Builder — at top per UX preference */}
+      {/* Advanced Strategy Builder â€” at top per UX preference */}
       <AdvancedStrategiesSection />
 
       {/* Error display */}
@@ -259,7 +259,7 @@ export function StrategiesSection() {
         </div>
       )}
 
-      {/* My saved strategies — unified simple + advanced */}
+      {/* My saved strategies â€” unified simple + advanced */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -347,11 +347,11 @@ export function StrategiesSection() {
                       <div className="flex items-center gap-2 mb-1">
                         <p className="font-medium text-[var(--text-primary)] truncate">{adv.name}</p>
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-400 border border-violet-500/30">
-                          Advanced · {adv.executionMode}
+                          Advanced Â· {adv.executionMode}
                         </span>
                       </div>
                       <p className="text-xs text-[var(--text-secondary)]">
-                        Transaction {adv.baseConfig.amount} @ {adv.baseConfig.target}% {adv.baseConfig.condition} ·{" "}
+                        Transaction {adv.baseConfig.amount} @ {adv.baseConfig.target}% {adv.baseConfig.condition} Â·{" "}
                         {adv.rules?.length ?? 0} rule{(adv.rules?.length ?? 0) !== 1 ? "s" : ""}
                       </p>
                     </div>
@@ -535,3 +535,6 @@ export function StrategiesSection() {
     </section>
   );
 }
+
+
+

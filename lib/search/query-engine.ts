@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { interpretIntentQuery, type IntentInterpretation } from "./query-intent";
 
 /**
  * Static synonym map for AI/agent domain terminology.
@@ -30,6 +31,15 @@ const SYNONYM_MAP: Record<string, string[]> = {
   mcp: ["model context protocol"],
   a2a: ["agent to agent"],
   openclew: ["openclaw"],
+  assistant: ["ai assistant", "virtual assistant", "copilot"],
+  automation: ["workflow automation", "task automation"],
+  workflow: ["pipeline", "orchestration", "automation flow"],
+  summarize: ["summarization", "summary generation"],
+  translate: ["translation", "language translation"],
+  voice: ["speech", "audio"],
+  image: ["vision", "image generation", "computer vision"],
+  email: ["mail", "inbox automation"],
+  analytics: ["analysis", "insights", "reporting"],
 };
 
 const HTML_STRIP_RE = /[<>]/g;
@@ -45,6 +55,11 @@ export interface ParsedQuery {
     source?: string;
   };
   originalQuery: string;
+}
+
+export interface ParsedSafetyFilter {
+  operator: ">=" | "<=" | "=";
+  value: number;
 }
 
 /**
@@ -67,7 +82,7 @@ export function sanitizeForStorage(input: string): string {
 }
 
 const FIELD_OPERATOR_RE =
-  /\b(protocol|lang|language|safety|source):(\S+)/gi;
+  /\b(protocol|lang|language|safety|source):(?:"([^"]+)"|'([^']+)'|(\S+))/gi;
 
 /**
  * Parses inline field operators out of a search query string.
@@ -86,7 +101,8 @@ export function parseSearchOperators(query: string): ParsedQuery {
   const originalQuery = query;
 
   const textQuery = query
-    .replace(FIELD_OPERATOR_RE, (_, field: string, value: string) => {
+    .replace(FIELD_OPERATOR_RE, (_, field: string, q1: string, q2: string, bare: string) => {
+      const value = (q1 ?? q2 ?? bare ?? "").trim();
       const f = field.toLowerCase();
       switch (f) {
         case "protocol":
@@ -121,6 +137,10 @@ export function parseSearchOperators(query: string): ParsedQuery {
  */
 export function expandWithSynonyms(query: string): string {
   const lowerTokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+  // Keep expansion narrow for long queries to preserve precision.
+  if (lowerTokens.length > 4) return query;
+  // Respect explicit advanced syntax/phrases as-is.
+  if (/[()]/.test(query)) return query;
   const expansions: string[] = [];
 
   for (const token of lowerTokens) {
@@ -145,7 +165,7 @@ export function expandWithSynonyms(query: string): string {
 
   if (expansions.length === 0) return query;
 
-  const parts = [query, ...expansions.map((s) => `"${s}"`)];
+  const parts = [query, ...expansions.slice(0, 4).map((s) => `"${s}"`)];
   return parts.join(" OR ");
 }
 
@@ -155,12 +175,30 @@ export function expandWithSynonyms(query: string): string {
  * (empty string, only operators, etc.).
  */
 export function buildWebsearchQuery(query: string): string {
-  const cleaned = query
-    .replace(DANGEROUS_CHARS_RE, "")
-    .replace(WHITESPACE_COLLAPSE_RE, " ")
-    .trim();
-  if (cleaned.length === 0) return "";
-  return cleaned;
+  const normalized = query.replace(WHITESPACE_COLLAPSE_RE, " ").trim();
+  if (normalized.length === 0) return "";
+  // Avoid parser errors in websearch_to_tsquery for unterminated phrases.
+  const quoteCount = (normalized.match(/"/g) ?? []).length;
+  if (quoteCount % 2 !== 0) return "";
+  // Strip only chars that are not meaningful for websearch operators.
+  return normalized.replace(/[\\;']/g, "");
+}
+
+/**
+ * Parses "safety:" inline filter value.
+ * Supported forms: 80, =80, >80, >=80, <80, <=80
+ */
+export function parseSafetyFilter(raw: string): ParsedSafetyFilter | null {
+  const trimmed = raw.trim();
+  const match = trimmed.match(/^(>=|<=|>|<|=)?\s*(\d{1,3})$/);
+  if (!match) return null;
+
+  const rawOp = match[1] ?? "=";
+  const value = parseInt(match[2], 10);
+  if (Number.isNaN(value) || value < 0 || value > 100) return null;
+  if (rawOp === ">") return { operator: ">=", value };
+  if (rawOp === "<") return { operator: "<=", value };
+  return { operator: rawOp as ParsedSafetyFilter["operator"], value };
 }
 
 /**
@@ -217,12 +255,16 @@ export async function findDidYouMean(
  */
 export function processQuery(rawQuery: string): {
   parsed: ParsedQuery;
+  interpretation: IntentInterpretation;
+  interpretedQuery: string;
   expandedQuery: string;
   websearchInput: string;
 } {
   const normalized = normalizeQuery(rawQuery);
   const parsed = parseSearchOperators(normalized);
-  const expandedQuery = expandWithSynonyms(parsed.textQuery);
+  const interpretation = interpretIntentQuery(parsed.textQuery);
+  const interpretedQuery = interpretation.interpretedText;
+  const expandedQuery = expandWithSynonyms(interpretedQuery);
   const websearchInput = buildWebsearchQuery(expandedQuery);
-  return { parsed, expandedQuery, websearchInput };
+  return { parsed, interpretation, interpretedQuery, expandedQuery, websearchInput };
 }

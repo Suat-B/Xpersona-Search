@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   useState,
@@ -12,6 +12,10 @@ import {
 import Link from "next/link";
 import { getRecentSearches, removeRecentSearch } from "@/lib/search-history";
 import { PROTOCOL_LABELS } from "@/components/search/ProtocolBadge";
+import {
+  extractClientErrorMessage,
+  unwrapClientResponse,
+} from "@/lib/api/client-response";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -23,6 +27,15 @@ export interface SuggestionAgent {
   slug: string;
   description: string | null;
   protocols: string[];
+}
+
+interface SuggestResponsePayload {
+  querySuggestions?: string[];
+  agentSuggestions?: SuggestionAgent[];
+}
+
+interface TrendingResponsePayload {
+  trending?: string[];
 }
 
 type SuggestionItem =
@@ -313,11 +326,12 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
       setLoading(true);
       try {
         const res = await fetch(
-          `/api/search/suggest?q=${encodeURIComponent(q)}&limit=8`,
+          `/api/v1/search/suggest?q=${encodeURIComponent(q)}&limit=8`,
           { signal: abortRef.current.signal }
         );
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Suggest failed");
+        const payload = await res.json();
+        if (!res.ok) throw new Error(extractClientErrorMessage(payload, "Suggest failed"));
+        const data = unwrapClientResponse<SuggestResponsePayload>(payload);
         hasUsedArrowKeysRef.current = false;
 
         const querySuggestions: string[] = data.querySuggestions ?? [];
@@ -352,9 +366,10 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
       setHighlightedIndex(0);
 
       try {
-        const res = await fetch("/api/search/trending");
-        const data = await res.json();
+        const res = await fetch("/api/v1/search/trending");
+        const payload = await res.json();
         if (!res.ok) return;
+        const data = unwrapClientResponse<TrendingResponsePayload>(payload);
 
         const trending: string[] = data.trending ?? [];
         const recentSet = new Set(recent.map((s) => s.toLowerCase()));
@@ -601,3 +616,6 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
     );
   }
 );
+
+
+

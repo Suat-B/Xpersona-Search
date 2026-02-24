@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback } from "react";
 
@@ -12,7 +12,7 @@ export function useIsPermanent(serverIsPermanent: boolean): boolean {
 
   const fetchMe = useCallback(async () => {
     try {
-      const res = await fetch("/api/me", { credentials: "include" });
+      const res = await fetch("/api/v1/me", { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (data?.success && data?.data?.isPermanent === true) {
         setIsPermanent(true);
@@ -37,3 +37,6 @@ export function useIsPermanent(serverIsPermanent: boolean): boolean {
 
   return isPermanent;
 }
+
+
+

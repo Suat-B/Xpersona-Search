@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useCallback } from "react";
 
@@ -23,7 +23,7 @@ export function RecoveryLinkCard() {
     setLoading(true);
     setRecoveryUrl(null);
     try {
-      const res = await fetch("/api/me/recovery-link", {
+      const res = await fetch("/api/v1/me/recovery-link", {
         method: "POST",
         credentials: "include",
       });
@@ -83,7 +83,7 @@ export function RecoveryLinkCard() {
               {loading ? (
                 <>
                   <span className="w-3 h-3 border border-amber-400 border-t-transparent rounded-full animate-spin" />
-                  Generating…
+                  Generatingâ€¦
                 </>
               ) : (
                 <>
@@ -120,3 +120,6 @@ export function RecoveryLinkCard() {
     </div>
   );
 }
+
+
+

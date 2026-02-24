@@ -657,5 +657,10 @@ export {
   agentCustomizationVersions,
   crawlFrontier,
   crawlJobs,
+  crawlCheckpoints,
   searchClicks,
+  agentEmbeddings,
+  searchOutcomes,
+  agentExecutionMetrics,
+  agentCapabilityContracts,
 } from "./search-schema";

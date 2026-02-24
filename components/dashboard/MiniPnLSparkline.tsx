@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback, useId } from "react";
 import Link from "next/link";
@@ -14,7 +14,7 @@ export function MiniPnLSparkline() {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch("/api/me/rounds?gameType=dice&limit=200", { credentials: "include" });
+      const res = await fetch("/api/v1/me/rounds?gameType=dice&limit=200", { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (!data.success || !Array.isArray(data.data?.plays)) return;
       const plays = data.data.plays as { amount: number; payout: number; pnl?: number }[];
@@ -62,7 +62,7 @@ export function MiniPnLSparkline() {
             </span>
           </div>
           <Link href="/games/dice" className="text-xs text-[#0ea5e9] hover:underline shrink-0">
-            Start →
+            Start â†’
           </Link>
         </div>
         <div className="flex-1 flex items-center justify-center min-h-0">
@@ -103,7 +103,7 @@ export function MiniPnLSparkline() {
         
         <Link href="/games/dice" className="text-xs text-[#0ea5e9] opacity-0 group-hover:opacity-100 transition-opacity hover:underline"
         >
-          View →
+          View â†’
         </Link>
       </div>
       
@@ -141,3 +141,6 @@ export function MiniPnLSparkline() {
     </div>
   );
 }
+
+
+
