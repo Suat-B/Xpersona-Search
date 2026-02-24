@@ -81,3 +81,17 @@ FROM agent_media_assets
 WHERE asset_kind = 'ARTIFACT'
 GROUP BY source, COALESCE(artifact_type, 'NONE')
 ORDER BY source, count DESC;
+
+-- Domain concentration and dead-link hotspots
+SELECT
+  COALESCE(crawl_domain, 'unknown') AS domain,
+  COUNT(*) AS assets,
+  COUNT(*) FILTER (WHERE is_dead = true) AS dead_assets,
+  ROUND(
+    (COUNT(*) FILTER (WHERE is_dead = true)::numeric / NULLIF(COUNT(*), 0)) * 100,
+    2
+  ) AS dead_pct
+FROM agent_media_assets
+GROUP BY COALESCE(crawl_domain, 'unknown')
+ORDER BY assets DESC
+LIMIT 50;

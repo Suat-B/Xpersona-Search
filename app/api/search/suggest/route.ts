@@ -8,6 +8,8 @@ import { suggestCache, buildCacheKey } from "@/lib/search/cache";
 import { checkSearchRateLimit } from "@/lib/search/rate-limit";
 import { suggestCircuitBreaker } from "@/lib/search/circuit-breaker";
 import { sanitizeForStorage } from "@/lib/search/query-engine";
+import { TASK_TYPES } from "@/lib/search/taxonomy";
+import { SUGGEST_ENTITIES } from "@/lib/search/suggest-entities";
 
 const SuggestSchema = z.object({
   q: z
@@ -16,6 +18,7 @@ const SuggestSchema = z.object({
     .max(100)
     .transform((s) => s.trim()),
   limit: z.coerce.number().min(1).max(12).default(8),
+  intent: z.enum(["discover", "execute"]).default("discover"),
 });
 
 type SuggestParams = z.infer<typeof SuggestSchema>;
@@ -43,6 +46,7 @@ const DESC_TRUNCATE = 80;
 const MAX_QUERY_SUGGESTIONS = 8;
 const MAX_AGENT_SUGGESTIONS = 3;
 const MAX_PROTOCOL_APPENDS = 2;
+const DEFAULT_MIN_RESULTS = 7;
 
 const NATURAL_BONUS = 12;
 const TECHNICAL_PENALTY = 14;
@@ -78,10 +82,28 @@ const TECHNICAL_TERMS = [
 ];
 
 type CandidateSource = "popular" | "name" | "capability" | "protocol";
+type CandidateSourceV2 =
+  | CandidateSource
+  | "template"
+  | "entity"
+  | "fallback";
 
-interface CandidateSuggestion {
+interface ParsedQueryIntent {
+  query: string;
+  lower: string;
+  tokens: string[];
+  actionToken: string | null;
+  slotPreposition: string | null;
+  stablePrefix: string | null;
+  mutableEntity: string | null;
+}
+
+interface SuggestionCandidateV2 {
   text: string;
-  source: CandidateSource;
+  source: CandidateSourceV2;
+  confidence: number;
+  templateId: string | null;
+  semanticSignals: string[];
 }
 
 function isIncompletePhrase(text: string): boolean {
@@ -122,6 +144,84 @@ function looksMalformed(text: string): boolean {
   return false;
 }
 
+function toIntEnv(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.floor(parsed);
+}
+
+function getSuggestBounds(limit: number): { minResults: number; maxResults: number } {
+  const configuredMin = Math.max(1, toIntEnv(process.env.SEARCH_SUGGEST_MIN_RESULTS, DEFAULT_MIN_RESULTS));
+  const configuredMax = Math.max(configuredMin, toIntEnv(process.env.SEARCH_SUGGEST_MAX_RESULTS, MAX_QUERY_SUGGESTIONS));
+  const maxResults = Math.min(limit, configuredMax);
+  const minResults = limit < configuredMin ? Math.min(limit, maxResults) : Math.min(configuredMin, maxResults);
+  return { minResults, maxResults };
+}
+
+function normalizeSkeleton(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseQueryIntent(query: string): ParsedQueryIntent {
+  const trimmed = query.trim();
+  const lower = trimmed.toLowerCase();
+  const tokens = lower.split(/\s+/).filter(Boolean);
+  const actionToken = tokens.find((token) =>
+    ["deploy", "build", "create", "run", "host", "launch", "publish", "automate", "integrate"].includes(token)
+  ) ?? null;
+
+  const prepMatch = lower.match(/\b(on|for|with|in|via|using)\s+([a-z0-9.+/_-]{2,})\s*$/i);
+  const slotPreposition = prepMatch?.[1]?.toLowerCase() ?? null;
+  const mutableEntity = prepMatch?.[2]?.toLowerCase() ?? null;
+  const stablePrefix = prepMatch ? trimmed.slice(0, prepMatch.index).trim() : null;
+
+  return {
+    query: trimmed,
+    lower,
+    tokens,
+    actionToken,
+    slotPreposition,
+    stablePrefix,
+    mutableEntity,
+  };
+}
+
+function sourceWeight(source: CandidateSourceV2): number {
+  switch (source) {
+    case "popular":
+      return 12;
+    case "template":
+      return 10;
+    case "entity":
+      return 9;
+    case "capability":
+      return 8;
+    case "name":
+      return 6;
+    case "protocol":
+      return 5;
+    case "fallback":
+      return 2;
+    default:
+      return 1;
+  }
+}
+
+function addCandidate(
+  target: SuggestionCandidateV2[],
+  text: string,
+  source: CandidateSourceV2,
+  confidence: number,
+  templateId: string | null,
+  semanticSignals: string[]
+) {
+  target.push({ text, source, confidence, templateId, semanticSignals });
+}
+
 function scoreNaturalness(text: string, qLower: string, queryIsTechnical: boolean): number {
   const raw = text.trim();
   const lower = raw.toLowerCase();
@@ -140,6 +240,33 @@ function scoreNaturalness(text: string, qLower: string, queryIsTechnical: boolea
   if (isPackageLikeText(raw) && !queryIsTechnical) score -= TECHNICAL_PENALTY;
 
   return score;
+}
+
+function generateTemplateVariants(
+  parsed: ParsedQueryIntent,
+  entityPool: string[],
+  queryIsTechnical: boolean
+): SuggestionCandidateV2[] {
+  if (!parsed.stablePrefix || !parsed.slotPreposition) return [];
+  const out: SuggestionCandidateV2[] = [];
+  const base = parsed.stablePrefix.trim();
+  const prep = parsed.slotPreposition;
+  const originalEntity = parsed.mutableEntity;
+  const uniqueEntities = [...new Set(entityPool.map((e) => e.toLowerCase().trim()).filter(Boolean))];
+  for (const entity of uniqueEntities) {
+    if (entity === originalEntity) continue;
+    if (!queryIsTechnical && isPackageLikeText(entity)) continue;
+    addCandidate(
+      out,
+      `${base} ${prep} ${entity}`,
+      "template",
+      0.9,
+      "entity-substitute",
+      ["prefix-preserved", "entity-substituted"]
+    );
+    if (out.length >= 20) break;
+  }
+  return out;
 }
 
 export async function GET(req: NextRequest) {
@@ -168,9 +295,21 @@ export async function GET(req: NextRequest) {
 
   // Sanitize input
   params = { ...params, q: sanitizeForStorage(params.q) };
+  const clientType = req.headers.get("x-client-type")?.toLowerCase() ?? "";
+  const executeSuggestMode =
+    params.intent === "execute" ||
+    clientType === "agent" ||
+    process.env.SEARCH_EXECUTE_SUGGEST_ENABLED === "1";
 
   // Cache check
-  const cacheKey = buildCacheKey({ endpoint: "suggest", q: params.q, limit: params.limit });
+  const cacheKey = buildCacheKey({
+    v: "suggest-v2",
+    endpoint: "suggest",
+    q: params.q,
+    limit: params.limit,
+    intent: params.intent,
+    executeSuggestMode,
+  });
   const cached = suggestCache.get(cacheKey);
   if (cached) {
     const response = NextResponse.json(cached);
@@ -189,9 +328,14 @@ export async function GET(req: NextRequest) {
 
   try {
     const qLower = params.q.toLowerCase();
+    const qSkeleton = normalizeSkeleton(params.q);
     const esc = escapeLike(params.q);
-    const maxQuerySuggestions = Math.min(params.limit, MAX_QUERY_SUGGESTIONS);
-    const queryIsTechnical = isTechnicalQuery(params.q);
+    const { minResults: minQuerySuggestions, maxResults: maxQuerySuggestions } = getSuggestBounds(params.limit);
+    const relevanceFloor = toIntEnv(process.env.SEARCH_SUGGEST_V2_RELEVANCE_FLOOR, MIN_NATURAL_SCORE);
+    const enableTemplateExpansion = process.env.SEARCH_SUGGEST_V2_ENABLE_TEMPLATE_EXPANSION !== "0";
+    const queryIsTechnical = isTechnicalQuery(params.q) || executeSuggestMode;
+    const parsedIntent = parseQueryIntent(params.q);
+    const sourceUsage = new Set<string>();
 
     // --- Tier 1: Popular search completions from search_queries table ---
     const popularCompletions = await db
@@ -207,6 +351,18 @@ export async function GET(req: NextRequest) {
       )
       .orderBy(desc(searchQueries.count))
       .limit(maxQuerySuggestions);
+    if (executeSuggestMode) {
+      for (const task of TASK_TYPES) {
+        popularCompletions.push({ query: `task:${task}`, count: 0 });
+      }
+      popularCompletions.push(
+        { query: "requires:mcp", count: 0 },
+        { query: "requires:streaming", count: 0 },
+        { query: "forbidden:rate_limit", count: 0 },
+        { query: "dataRegion:us", count: 0 }
+      );
+    }
+    if (popularCompletions.length > 0) sourceUsage.add("popular");
 
     // --- Tier 2: Agent name prefix completions ---
     const nameCompletionRows = await db
@@ -220,6 +376,7 @@ export async function GET(req: NextRequest) {
       )
       .orderBy(desc(agents.overallRank))
       .limit(10);
+    if (nameCompletionRows.length > 0) sourceUsage.add("name");
 
     // --- Tier 3: Capability/protocol completions ---
     const prefixQuery = toPrefixTsQuery(params.q);
@@ -256,6 +413,7 @@ export async function GET(req: NextRequest) {
       .where(and(eq(agents.status, "ACTIVE"), searchCondition))
       .orderBy(desc(agents.overallRank), desc(agents.createdAt))
       .limit(30);
+    if (matchingRows.length > 0) sourceUsage.add("corpus");
 
     const agentSuggestions = matchingRows.slice(0, MAX_AGENT_SUGGESTIONS).map((r) => ({
       id: r.id,
@@ -271,12 +429,12 @@ export async function GET(req: NextRequest) {
         : [],
     }));
 
-    const candidates: CandidateSuggestion[] = [];
+    const candidates: SuggestionCandidateV2[] = [];
     for (const row of popularCompletions) {
-      candidates.push({ text: row.query, source: "popular" });
+      addCandidate(candidates, row.query, "popular", 0.95, null, ["history"]);
     }
     for (const row of nameCompletionRows) {
-      candidates.push({ text: row.name, source: "name" });
+      addCandidate(candidates, row.name, "name", 0.6, null, ["agent-name"]);
     }
 
     const capSet = new Set<string>();
@@ -296,7 +454,7 @@ export async function GET(req: NextRequest) {
     }
     const sortedCaps = [...capSet].sort((a, b) => a.length - b.length);
     for (const cap of sortedCaps) {
-      candidates.push({ text: cap, source: "capability" });
+      addCandidate(candidates, cap, "capability", 0.7, null, ["capability"]);
     }
 
     const protoSet = new Set<string>();
@@ -311,7 +469,44 @@ export async function GET(req: NextRequest) {
     for (const proto of protoSet) {
       const externalProto = toExternalProtocolName(proto);
       const label = PROTOCOL_LABELS[proto] ?? PROTOCOL_LABELS[externalProto] ?? externalProto;
-      candidates.push({ text: `${params.q} ${label}`, source: "protocol" });
+      addCandidate(candidates, `${params.q} ${label}`, "protocol", 0.45, "protocol-append", ["protocol"]);
+    }
+
+    const corpusEntities = new Set<string>();
+    for (const row of matchingRows) {
+      if (Array.isArray(row.protocols)) {
+        for (const p of row.protocols) {
+          if (typeof p === "string" && p.length >= 2) corpusEntities.add(p.toLowerCase());
+        }
+      }
+      if (Array.isArray(row.capabilities)) {
+        for (const c of row.capabilities) {
+          if (typeof c === "string" && c.length >= 2 && c.length <= 32) {
+            const token = c.toLowerCase().trim();
+            if (!token.includes(" ")) corpusEntities.add(token);
+          }
+        }
+      }
+    }
+    const hybridEntities = [...new Set([...SUGGEST_ENTITIES, ...corpusEntities])];
+    if (hybridEntities.length > 0) sourceUsage.add("entity");
+    for (const entity of hybridEntities) {
+      if (!parsedIntent.slotPreposition || !parsedIntent.stablePrefix) break;
+      if (entity === parsedIntent.mutableEntity) continue;
+      addCandidate(
+        candidates,
+        `${parsedIntent.stablePrefix} ${parsedIntent.slotPreposition} ${entity}`,
+        "entity",
+        0.8,
+        "hybrid-entity",
+        ["entity-replace"]
+      );
+    }
+
+    if (enableTemplateExpansion) {
+      const templateCandidates = generateTemplateVariants(parsedIntent, hybridEntities, queryIsTechnical);
+      for (const candidate of templateCandidates) candidates.push(candidate);
+      if (templateCandidates.length > 0) sourceUsage.add("template");
     }
 
     const seen = new Set<string>();
@@ -319,23 +514,31 @@ export async function GET(req: NextRequest) {
       .map((candidate, index) => ({
         ...candidate,
         index,
-        key: candidate.text.toLowerCase().trim(),
-        score: scoreNaturalness(candidate.text, qLower, queryIsTechnical),
+        key: normalizeSkeleton(candidate.text),
+        score:
+          scoreNaturalness(candidate.text, qLower, queryIsTechnical) +
+          sourceWeight(candidate.source) +
+          Math.round(candidate.confidence * 8) +
+          (parsedIntent.stablePrefix && normalizeSkeleton(candidate.text).startsWith(normalizeSkeleton(parsedIntent.stablePrefix))
+            ? 8
+            : 0) +
+          (parsedIntent.actionToken && normalizeSkeleton(candidate.text).includes(parsedIntent.actionToken) ? 6 : 0),
       }))
       .filter((c) => {
         if (!c.key || c.key.length < 2) return false;
-        if (c.key === qLower) return false;
+        if (c.key === qSkeleton) return false;
         if (STOPWORDS.has(c.key)) return false;
         if (isIncompletePhrase(c.text)) return false;
-        if (qLower.includes(c.key) && c.key.length < 8) return false;
+        if (qSkeleton.includes(c.key) && c.key.length < 8) return false;
         if (looksMalformed(c.text)) return false;
-        if (!queryIsTechnical && c.score < MIN_NATURAL_SCORE) return false;
+        if (!queryIsTechnical && c.score < relevanceFloor) return false;
         return true;
       })
       .sort((a, b) => b.score - a.score || a.index - b.index);
 
     const querySuggestions: string[] = [];
     let protocolAdded = 0;
+    let generationUsed = false;
 
     for (const item of ranked) {
       if (querySuggestions.length >= maxQuerySuggestions) break;
@@ -352,11 +555,56 @@ export async function GET(req: NextRequest) {
       if (item.source === "protocol") protocolAdded += 1;
     }
 
+    if (querySuggestions.length < minQuerySuggestions) {
+      const fallbackQueue: SuggestionCandidateV2[] = [];
+      for (const entity of hybridEntities) {
+        if (!parsedIntent.stablePrefix || !parsedIntent.slotPreposition) break;
+        if (entity === parsedIntent.mutableEntity) continue;
+        addCandidate(
+          fallbackQueue,
+          `${parsedIntent.stablePrefix} ${parsedIntent.slotPreposition} ${entity}`,
+          "fallback",
+          0.65,
+          "hard-fill-prefix",
+          ["hard-fill"]
+        );
+      }
+      if (fallbackQueue.length === 0) {
+        const suffixes = ["tutorial", "guide", "step by step", "best practices", "for beginners", "without coding"];
+        for (const suffix of suffixes) {
+          addCandidate(
+            fallbackQueue,
+            `${params.q} ${suffix}`,
+            "fallback",
+            0.45,
+            "hard-fill-suffix",
+            ["hard-fill"]
+          );
+        }
+      }
+      for (const item of fallbackQueue) {
+        if (querySuggestions.length >= minQuerySuggestions || querySuggestions.length >= maxQuerySuggestions) break;
+        const key = normalizeSkeleton(item.text);
+        if (!key || seen.has(key) || looksMalformed(item.text) || isIncompletePhrase(item.text)) continue;
+        seen.add(key);
+        querySuggestions.push(item.text.trim());
+        generationUsed = true;
+      }
+      if (querySuggestions.length > 0) sourceUsage.add("fallback");
+    }
+
     suggestCircuitBreaker.recordSuccess();
 
     const responseBody = {
       querySuggestions: querySuggestions.slice(0, maxQuerySuggestions),
       agentSuggestions,
+      meta: {
+        countRequested: params.limit,
+        countReturned: querySuggestions.slice(0, maxQuerySuggestions).length,
+        generationUsed,
+        relevanceFloorApplied: true,
+        sourcesUsed: [...sourceUsage],
+      },
     };
 
     suggestCache.set(cacheKey, responseBody);

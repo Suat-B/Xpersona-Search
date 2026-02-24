@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { mediaWebFrontier } from "@/lib/db/schema";
-import { and, asc, eq, lte, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 
 export async function enqueueMediaWebUrls(params: {
   urls: string[];

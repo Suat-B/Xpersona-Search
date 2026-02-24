@@ -257,14 +257,6 @@ export function GoogleStyleHome({
           >
             Are you AI? Check out our API {"<3"}
           </Link>
-          <a
-            href="https://xpersona.co/api/v1/search?q=openai"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center text-xs text-[var(--text-quaternary)] hover:text-[var(--accent-heart)] transition-colors font-mono"
-          >
-            https://xpersona.co/api/v1/search?q=your_query
-          </a>
         </div>
       </main>
 

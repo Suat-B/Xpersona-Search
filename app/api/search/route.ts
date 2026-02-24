@@ -154,12 +154,7 @@ const SearchSchema = z.object({
     .transform((s) => s === "1" || s === "true"),
   fields: z.enum(["full", "compact"]).default("full"),
   intent: z.enum(["discover", "execute"]).default("discover"),
-  taskType: z
-    .string()
-    .min(1)
-    .max(32)
-    .optional()
-    .transform((s) => (s ? s.trim().toLowerCase() : undefined)),
+  taskType: z.enum(TASK_TYPES).optional(),
   maxLatencyMs: z.coerce.number().int().min(1).max(300000).optional(),
   maxCostUsd: z.coerce.number().min(0).max(10000).optional(),
   requires: z
@@ -176,6 +171,14 @@ const SearchSchema = z.object({
     .optional()
     .transform((s) => s === "1" || s === "true"),
   explain: z
+    .string()
+    .optional()
+    .transform((s) => s === "1" || s === "true"),
+  strictContracts: z
+    .string()
+    .optional()
+    .transform((s) => s === "1" || s === "true"),
+  returnPlan: z
     .string()
     .optional()
     .transform((s) => s === "1" || s === "true"),
@@ -492,6 +495,20 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
     stagesTried: string[];
   };
 }> {
+  const sourceBuckets: Record<string, string[]> = {
+    GITHUB: [
+      "GITHUB_REPOS",
+      "GITHUB_MCP",
+      "GITHUB_OPENCLEW",
+      "CREWAI",
+      "CLAWHUB",
+      "CURATED_SEEDS",
+      "AWESOME_LISTS",
+      "HOMEPAGE",
+    ],
+    REGISTRY: ["MCP_REGISTRY", "A2A_REGISTRY", "SMITHERY", "AGENTSCAPE"],
+    WEB: ["WEB", "WEB_CRAWL", "HOMEPAGE"],
+  };
   const rawQuery = params.q?.trim() ?? "";
   const queryTokens = rawQuery
     .toLowerCase()
@@ -526,9 +543,10 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
   }
 
   if (params.includeSources.length > 0) {
+    const expanded = params.includeSources.flatMap((v) => sourceBuckets[v] ?? [v]);
     conditions.push(
       sql`${agentMediaAssets.source} = ANY(ARRAY[${sql.join(
-        params.includeSources.map((v) => sql`${v}`),
+        expanded.map((v) => sql`${v}`),
         sql`, `
       )}]::text[])`
     );
@@ -605,7 +623,6 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
       ${agentMediaAssets.safetyScore} AS safety_score,
       ${agentMediaAssets.rankScore} AS rank_score,
       ${agentMediaAssets.updatedAt} AS updated_at,
-      ${agentMediaAssets.source} AS source,
       ${agentMediaAssets.crawlDomain} AS crawl_domain,
       ${agentMediaAssets.discoveryMethod} AS discovery_method
     FROM ${agentMediaAssets}
@@ -638,6 +655,7 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
     artifactType: (row.artifact_type as string | null) ?? null,
     url: row.url as string,
     sourcePageUrl: (row.source_page_url as string | null) ?? null,
+    source: (row.source as string | null) ?? null,
     title: (row.title as string | null) ?? null,
     caption: (row.caption as string | null) ?? null,
     width: (row.width as number | null) ?? null,
@@ -708,6 +726,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
     }
   }
+  const clientType = req.headers.get("x-client-type");
+  const executeBias = params.intent === "execute" && isExecuteBiasEnabled(clientType);
+  const strictContracts =
+    params.intent === "execute" &&
+    (Boolean(params.strictContracts) || isStrictContractsEnabled(clientType));
 
   // --- Cache check ---
   const cacheKey = buildCacheKey({
@@ -740,6 +763,10 @@ export async function GET(req: NextRequest) {
     dataRegion: params.dataRegion ?? "",
     bundle: Boolean(params.bundle),
     explain: Boolean(params.explain),
+    strictContracts,
+    returnPlan: Boolean(params.returnPlan),
+    executeBias,
+    clientType: clientType ?? "",
   });
 
   const cached = searchResultsCache.get(cacheKey);
@@ -1223,6 +1250,7 @@ export async function GET(req: NextRequest) {
             supportsStreaming: agentCapabilityContracts.supportsStreaming,
             supportsMcp: agentCapabilityContracts.supportsMcp,
             supportsA2a: agentCapabilityContracts.supportsA2a,
+            updatedAt: agentCapabilityContracts.updatedAt,
           })
           .from(agentCapabilityContracts)
           .where(sql`${agentCapabilityContracts.agentId} = ANY(${sql.raw(`ARRAY[${agentIds.map((id) => `'${id}'::uuid`).join(",")}]`)})`);
@@ -1239,6 +1267,7 @@ export async function GET(req: NextRequest) {
             rateLimitRpm: agentExecutionMetrics.rateLimitRpm,
             rateLimitBurst: agentExecutionMetrics.rateLimitBurst,
             lastVerifiedAt: agentExecutionMetrics.lastVerifiedAt,
+            updatedAt: agentExecutionMetrics.updatedAt,
           })
           .from(agentExecutionMetrics)
           .where(sql`${agentExecutionMetrics.agentId} = ANY(${sql.raw(`ARRAY[${agentIds.map((id) => `'${id}'::uuid`).join(",")}]`)})`);
@@ -1262,6 +1291,36 @@ export async function GET(req: NextRequest) {
             )
           );
         for (const row of rowsResult) outcomesByAgent.set(String(row.agentId), row as unknown as Record<string, unknown>);
+      }
+    }
+    const nowMs = Date.now();
+    const maxContractAgeMs = Math.max(1, CONTRACT_MAX_AGE_HOURS) * 60 * 60 * 1000;
+    const maxMetricsAgeMs = Math.max(1, METRICS_MAX_AGE_HOURS) * 60 * 60 * 1000;
+
+    if (strictContracts) {
+      const beforeCount = diversified.length;
+      diversified = diversified.filter((row) => {
+        const agentId = String(row.id);
+        const contract = contractsByAgent.get(agentId);
+        const metrics = metricsByAgent.get(agentId);
+        if (!contract || !metrics) return false;
+        const authModes = (contract.authModes as string[] | undefined) ?? [];
+        const hasSchemas = Boolean(
+          (contract.inputSchemaRef as string | null | undefined) ||
+            (contract.outputSchemaRef as string | null | undefined)
+        );
+        const contractUpdatedAt = contract.updatedAt instanceof Date
+          ? contract.updatedAt.getTime()
+          : Number.NaN;
+        const metricsUpdatedAt = metrics.updatedAt instanceof Date
+          ? metrics.updatedAt.getTime()
+          : Number.NaN;
+        if (authModes.length === 0 || !hasSchemas) return false;
+        if (!Number.isFinite(contractUpdatedAt) || !Number.isFinite(metricsUpdatedAt)) return false;
+        return (nowMs - contractUpdatedAt) <= maxContractAgeMs && (nowMs - metricsUpdatedAt) <= maxMetricsAgeMs;
+      });
+      if (beforeCount > 0 && diversified.length === 0) {
+        constraintDiagnostics.push("strict-contracts-filter-eliminated-all-candidates");
       }
     }
 
@@ -1360,7 +1419,7 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    if (executeParams.intent === "execute") {
+    if (executeBias) {
       executionDecorated.sort((a, b) => b.rankingSignals.finalScore - a.rankingSignals.finalScore);
     }
 
@@ -1425,6 +1484,19 @@ export async function GET(req: NextRequest) {
             )
           : undefined;
       const delegationHints = buildDelegationHints(executeParams.taskType, executionSlugs);
+      const contractUpdatedAt = contract?.updatedAt instanceof Date ? contract.updatedAt : null;
+      const metricsUpdatedAt = metrics?.updatedAt instanceof Date ? metrics.updatedAt : null;
+      const contractFreshnessHours = contractUpdatedAt
+        ? Math.round((Date.now() - contractUpdatedAt.getTime()) / (1000 * 60 * 60))
+        : null;
+      const metricsFreshnessHours = metricsUpdatedAt
+        ? Math.round((Date.now() - metricsUpdatedAt.getTime()) / (1000 * 60 * 60))
+        : null;
+      const executionFit = {
+        score: item.policyMatch.score,
+        reasons: item.policyMatch.matched,
+        blockers: item.policyMatch.blockedBy,
+      };
 
       if (params.fields === "compact") {
         return {
@@ -1435,6 +1507,10 @@ export async function GET(req: NextRequest) {
             ? {
                 agentExecution,
                 policyMatch: item.policyMatch,
+                executionFit,
+                contractFreshnessHours,
+                metricsFreshnessHours,
+                fallbackCandidates: fallbacks ?? [],
                 ...(executeParams.bundle ? { fallbacks } : {}),
                 delegationHints,
                 ...(executeParams.explain ? { rankingSignals: item.rankingSignals } : {}),
@@ -1461,6 +1537,10 @@ export async function GET(req: NextRequest) {
           ? {
               agentExecution,
               policyMatch: item.policyMatch,
+              executionFit,
+              contractFreshnessHours,
+              metricsFreshnessHours,
+              fallbackCandidates: fallbacks ?? [],
               ...(executeParams.bundle ? { fallbacks } : {}),
               delegationHints,
               ...(executeParams.explain ? { rankingSignals: item.rankingSignals } : {}),
@@ -1529,6 +1609,20 @@ export async function GET(req: NextRequest) {
       pagination: { hasMore, nextCursor, total: totalFromWindow },
       facets,
       searchMeta,
+      ...(params.returnPlan && executeParams.intent === "execute"
+        ? {
+            executionPlan: {
+              querySignature,
+              taskType: executeParams.taskType ?? "general",
+              primaryAgentId: results[0]?.id ?? null,
+              primaryAgentSlug: results[0]?.slug ?? null,
+              fallbackCandidates: (results[0] as { fallbackCandidates?: unknown[] } | undefined)
+                ?.fallbackCandidates ?? [],
+              delegationHints: (results[0] as { delegationHints?: unknown[] } | undefined)
+                ?.delegationHints ?? [],
+            },
+          }
+        : {}),
       ...(constraintDiagnostics.length > 0 ? { constraintDiagnostics } : {}),
       ...(didYouMean ? { didYouMean } : {}),
     };

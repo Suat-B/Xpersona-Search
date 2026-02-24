@@ -13,6 +13,7 @@ import {
   uniqueIndex,
   check,
 } from "drizzle-orm/pg-core";
+import { agents } from "./search-schema";
 
 /** Account type: agent (AI), human (decoy), google (OAuth, deprecated), email (credentials). */
 export type AccountType = "agent" | "human" | "google" | "email";
@@ -647,6 +648,145 @@ export const searchQueries = pgTable(
     uniqueIndex("search_queries_normalized_idx").on(table.normalizedQuery),
     index("search_queries_count_idx").on(table.count),
   ]
+);
+
+// Economy jobs: core lifecycle entity for paid hiring.
+export const economyJobs = pgTable(
+  "economy_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientUserId: uuid("client_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    workerDeveloperId: uuid("worker_developer_id").references(
+      () => marketplaceDevelopers.id,
+      { onDelete: "restrict" }
+    ),
+    agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
+    title: varchar("title", { length: 200 }).notNull(),
+    description: text("description").notNull(),
+    requirements: jsonb("requirements").$type<Record<string, unknown>>(),
+    budgetCents: integer("budget_cents").notNull(),
+    currency: varchar("currency", { length: 10 }).notNull().default("USD"),
+    status: varchar("status", { length: 24 }).notNull().default("POSTED"),
+    deadlineAt: timestamp("deadline_at", { withTimezone: true }),
+    postedAt: timestamp("posted_at", { withTimezone: true }).defaultNow().notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("economy_jobs_client_created_idx").on(table.clientUserId, table.createdAt),
+    index("economy_jobs_worker_status_idx").on(table.workerDeveloperId, table.status),
+    index("economy_jobs_status_posted_idx").on(table.status, table.postedAt),
+  ]
+);
+
+export const economyEscrows = pgTable(
+  "economy_escrows",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    jobId: uuid("job_id")
+      .notNull()
+      .unique()
+      .references(() => economyJobs.id, { onDelete: "cascade" }),
+    status: varchar("status", { length: 24 }).notNull().default("PENDING"),
+    amountCents: integer("amount_cents").notNull(),
+    currency: varchar("currency", { length: 10 }).notNull().default("USD"),
+    stripePaymentIntentId: varchar("stripe_payment_intent_id", { length: 255 }),
+    stripeCheckoutSessionId: varchar("stripe_checkout_session_id", { length: 255 }),
+    fundedAt: timestamp("funded_at", { withTimezone: true }),
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+    refundedAt: timestamp("refunded_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("economy_escrows_job_id_idx").on(table.jobId),
+    index("economy_escrows_stripe_pi_idx").on(table.stripePaymentIntentId),
+  ]
+);
+
+export const economyTransactions = pgTable(
+  "economy_transactions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => economyJobs.id, { onDelete: "cascade" }),
+    type: varchar("type", { length: 24 }).notNull(),
+    status: varchar("status", { length: 24 }).notNull().default("PENDING"),
+    amountCents: integer("amount_cents").notNull(),
+    feeCents: integer("fee_cents").notNull().default(0),
+    netAmountCents: integer("net_amount_cents").notNull(),
+    stripePaymentIntentId: varchar("stripe_payment_intent_id", { length: 255 }),
+    stripeTransferId: varchar("stripe_transfer_id", { length: 255 }),
+    stripeRefundId: varchar("stripe_refund_id", { length: 255 }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("economy_transactions_job_id_idx").on(table.jobId),
+    index("economy_transactions_type_created_idx").on(table.type, table.createdAt),
+  ]
+);
+
+export const economyEscrowReleases = pgTable(
+  "economy_escrow_releases",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    escrowId: uuid("escrow_id")
+      .notNull()
+      .references(() => economyEscrows.id, { onDelete: "cascade" }),
+    transactionId: uuid("transaction_id")
+      .notNull()
+      .references(() => economyTransactions.id, { onDelete: "cascade" }),
+    amountCents: integer("amount_cents").notNull(),
+    reason: varchar("reason", { length: 64 }).notNull(),
+    releasedAt: timestamp("released_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("economy_escrow_releases_escrow_idx").on(table.escrowId)]
+);
+
+export const economyDeliverables = pgTable(
+  "economy_deliverables",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => economyJobs.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 200 }).notNull(),
+    deliverableType: varchar("deliverable_type", { length: 24 }).notNull().default("DATA"),
+    data: jsonb("data").$type<Record<string, unknown>>(),
+    fileUrl: text("file_url"),
+    textContent: text("text_content"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("economy_deliverables_job_id_idx").on(table.jobId)]
+);
+
+export const economyJobMessages = pgTable(
+  "economy_job_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => economyJobs.id, { onDelete: "cascade" }),
+    senderUserId: uuid("sender_user_id").references(() => users.id, { onDelete: "set null" }),
+    senderDeveloperId: uuid("sender_developer_id").references(
+      () => marketplaceDevelopers.id,
+      { onDelete: "set null" }
+    ),
+    senderRole: varchar("sender_role", { length: 24 }).notNull(),
+    content: jsonb("content").$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("economy_job_messages_job_created_idx").on(table.jobId, table.createdAt)]
 );
 
 // Search engine tables - re-exported from search-schema

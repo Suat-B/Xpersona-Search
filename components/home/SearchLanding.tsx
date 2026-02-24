@@ -223,6 +223,8 @@ export function SearchLanding() {
       const nextForbidden = overrides?.forbidden ?? forbidden;
       const nextBundle = overrides?.bundle ?? bundle;
       const nextExplain = overrides?.explain ?? explain;
+      const nextRecall = overrides?.recall ?? recall;
+      const nextIncludeSources = overrides?.includeSources ?? includeSources;
 
       const params = new URLSearchParams();
       if (nextQuery.trim()) params.set("q", nextQuery.trim());
@@ -231,6 +233,10 @@ export function SearchLanding() {
       params.set("sort", nextSort);
       params.set("limit", "30");
       params.set("vertical", nextVertical);
+      params.set("recall", nextRecall);
+      if (nextIncludeSources.length > 0) {
+        params.set("includeSources", nextIncludeSources.join(","));
+      }
       params.set("intent", nextIntent);
       if (nextTaskType.trim()) params.set("taskType", nextTaskType.trim());
       if (nextMaxLatencyMs.trim()) params.set("maxLatencyMs", nextMaxLatencyMs.trim());
@@ -240,7 +246,12 @@ export function SearchLanding() {
       if (nextForbidden.trim()) params.set("forbidden", nextForbidden);
       if (nextBundle) params.set("bundle", "1");
       if (nextExplain) params.set("explain", "1");
-      if (!reset && cursor) params.set("cursor", cursor);
+      if (!reset) {
+        if (nextVertical === "agents" && cursor) params.set("cursor", cursor);
+        if ((nextVertical === "images" || nextVertical === "artifacts") && mediaCursor) {
+          params.set("mediaCursor", mediaCursor);
+        }
+      }
 
       router.replace(`/?${params.toString()}`, { scroll: false });
 
@@ -260,7 +271,13 @@ export function SearchLanding() {
           setMediaResults((prev) => [...prev, ...(data.mediaResults ?? [])]);
         }
         setHasMore(data.pagination?.hasMore ?? false);
-        setCursor(data.pagination?.nextCursor ?? null);
+        if (nextVertical === "agents") {
+          setCursor(data.pagination?.nextCursor ?? null);
+          setMediaCursor(null);
+        } else {
+          setMediaCursor(data.pagination?.nextCursor ?? null);
+          setCursor(null);
+        }
         if (data.facets) setFacets(data.facets);
         setSearchMeta(data.searchMeta ?? null);
       } catch (err) {
@@ -291,6 +308,9 @@ export function SearchLanding() {
       forbidden,
       bundle,
       explain,
+      recall,
+      includeSources,
+      mediaCursor,
       router,
     ]
   );
@@ -312,6 +332,8 @@ export function SearchLanding() {
     forbidden,
     bundle,
     explain,
+    recall,
+    includeSources,
   ]);
 
   useEffect(() => {
@@ -335,6 +357,13 @@ export function SearchLanding() {
     setForbidden(searchParams.get("forbidden") ?? "");
     setBundle(parseBoolFromUrl(searchParams.get("bundle")));
     setExplain(parseBoolFromUrl(searchParams.get("explain")));
+    setRecall(searchParams.get("recall") === "high" ? "high" : "normal");
+    setIncludeSources(
+      (searchParams.get("includeSources") ?? "")
+        .split(",")
+        .map((s) => s.trim().toUpperCase())
+        .filter(Boolean)
+    );
   }, [searchParams]);
 
   useEffect(() => {
@@ -369,6 +398,8 @@ export function SearchLanding() {
     setForbidden("");
     setBundle(false);
     setExplain(false);
+    setRecall("normal");
+    setIncludeSources([]);
 
     await search(true, {
       query: "",
@@ -385,6 +416,8 @@ export function SearchLanding() {
       forbidden: "",
       bundle: false,
       explain: false,
+      recall: "normal",
+      includeSources: [],
     });
   }, [search]);
 
@@ -461,6 +494,57 @@ export function SearchLanding() {
               </button>
             ))}
           </div>
+          {vertical !== "agents" && (
+            <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-[var(--text-tertiary)]">Density:</span>
+              <button
+                type="button"
+                onClick={() => setRecall("normal")}
+                className={`px-2.5 py-1 rounded border ${
+                  recall === "normal"
+                    ? "border-[var(--accent-heart)] text-[var(--accent-heart)]"
+                    : "border-[var(--border)] text-[var(--text-tertiary)]"
+                }`}
+              >
+                Normal
+              </button>
+              <button
+                type="button"
+                onClick={() => setRecall("high")}
+                className={`px-2.5 py-1 rounded border ${
+                  recall === "high"
+                    ? "border-[var(--accent-heart)] text-[var(--accent-heart)]"
+                    : "border-[var(--border)] text-[var(--text-tertiary)]"
+                }`}
+              >
+                High recall
+              </button>
+              <span className="ml-2 text-[var(--text-tertiary)]">Sources:</span>
+              {["GITHUB", "REGISTRY", "WEB"].map((src) => {
+                const active = includeSources.includes(src);
+                return (
+                  <button
+                    key={src}
+                    type="button"
+                    onClick={() =>
+                      setIncludeSources((prev) =>
+                        prev.includes(src)
+                          ? prev.filter((v) => v !== src)
+                          : [...prev, src]
+                      )
+                    }
+                    className={`px-2.5 py-1 rounded border ${
+                      active
+                        ? "border-[var(--accent-heart)] text-[var(--accent-heart)]"
+                        : "border-[var(--border)] text-[var(--text-tertiary)]"
+                    }`}
+                  >
+                    {src}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           <main aria-label="Search results">
             {loading && !hasResults ? (
@@ -504,6 +588,11 @@ export function SearchLanding() {
                       : `${agents.length} agent${agents.length === 1 ? "" : "s"} found`
                     : `${mediaResults.length} visual asset${mediaResults.length === 1 ? "" : "s"} found`}
                 </p>
+                {vertical !== "agents" && (
+                  <p className="mb-4 text-xs text-[var(--text-quaternary)]">
+                    Searching visual index with {recall} recall.
+                  </p>
+                )}
 
                 {vertical === "agents" ? (
                   <div className="divide-y-0">

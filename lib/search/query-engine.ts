@@ -38,6 +38,13 @@ const SYNONYM_MAP: Record<string, string[]> = {
   translate: ["translation", "language translation"],
   voice: ["speech", "audio"],
   image: ["vision", "image generation", "computer vision"],
+  diagram: ["architecture diagram", "system design", "flowchart"],
+  architecture: ["system design", "diagram", "topology"],
+  benchmark: ["performance benchmark", "latency", "throughput"],
+  screenshot: ["ui preview", "interface snapshot", "visual preview"],
+  openapi: ["swagger", "api spec", "rest schema"],
+  schema: ["json schema", "contract", "interface definition"],
+  "model card": ["model documentation", "model metadata", "evaluation report"],
   email: ["mail", "inbox automation"],
   analytics: ["analysis", "insights", "reporting"],
 };

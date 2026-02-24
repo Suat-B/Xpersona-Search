@@ -103,6 +103,7 @@ describe("GET /api/search/suggest", () => {
     expect(res.status).toBe(200);
     expect(data).toHaveProperty("querySuggestions");
     expect(data).toHaveProperty("agentSuggestions");
+    expect(data).toHaveProperty("meta");
     expect(Array.isArray(data.querySuggestions)).toBe(true);
     expect(Array.isArray(data.agentSuggestions)).toBe(true);
   });
@@ -176,7 +177,7 @@ describe("GET /api/search/suggest", () => {
     expect(occurrences).toBe(1);
   });
 
-  it("uses protocol appends as fallback when natural suggestions are insufficient", async () => {
+  it("fills suggestions up to at least 7 for default limit", async () => {
     const matchingRows = [
       {
         id: "1",
@@ -193,13 +194,12 @@ describe("GET /api/search/suggest", () => {
       .mockImplementationOnce(createMockChain([])) // names
       .mockImplementationOnce(createMockChain(matchingRows)); // matching rows
 
-    const res = await GET(new NextRequest("http://localhost/api/search/suggest?q=trad&limit=5"));
+    const res = await GET(new NextRequest("http://localhost/api/search/suggest?q=trad"));
     const data = await res.json();
 
     expect(res.status).toBe(200);
-    expect(data.querySuggestions).toContain("trad MCP");
-    expect(data.querySuggestions).toContain("trad A2A");
-    expect(data.querySuggestions.length).toBeLessThanOrEqual(5);
+    expect(data.querySuggestions.length).toBeGreaterThanOrEqual(7);
+    expect(data.querySuggestions.length).toBeLessThanOrEqual(8);
   });
 
   it("respects limit parameter", async () => {
@@ -219,6 +219,35 @@ describe("GET /api/search/suggest", () => {
 
     expect(res.status).toBe(200);
     expect(data.querySuggestions.length).toBe(3);
+  });
+
+  it("generates platform/entity substitutions for complex prefixes", async () => {
+    mockDb.select
+      .mockImplementationOnce(createMockChain([])) // popular
+      .mockImplementationOnce(createMockChain([])) // names
+      .mockImplementationOnce(createMockChain([])); // matching rows
+
+    const res = await GET(
+      new NextRequest("http://localhost/api/search/suggest?q=how to deploy an ai agent on twitter")
+    );
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data.querySuggestions.length).toBeGreaterThanOrEqual(7);
+    const preserved = data.querySuggestions.filter((s: string) =>
+      s.toLowerCase().startsWith("how to deploy an ai agent on ")
+    );
+    expect(preserved.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("returns meta with count and source details", async () => {
+    const res = await GET(new NextRequest("http://localhost/api/search/suggest?q=test"));
+    const data = await res.json();
+
+    expect(data.meta).toBeDefined();
+    expect(typeof data.meta.countRequested).toBe("number");
+    expect(typeof data.meta.countReturned).toBe("number");
+    expect(Array.isArray(data.meta.sourcesUsed)).toBe(true);
   });
 
   // --- Rate limiting ---

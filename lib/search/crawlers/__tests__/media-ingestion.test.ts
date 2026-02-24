@@ -1,18 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockGetAgentBySourceId = vi.hoisted(() => vi.fn());
-const mockUpsertMediaAsset = vi.hoisted(() => vi.fn());
+const mockUpsertMediaAssetsBulk = vi.hoisted(() => vi.fn());
+const mockComputeMediaRankScore = vi.hoisted(() => vi.fn());
 const mockDiscoverMediaAssets = vi.hoisted(() => vi.fn());
 const mockFetchHomepageContent = vi.hoisted(() => vi.fn());
+const mockEnqueueMediaWebUrls = vi.hoisted(() => vi.fn());
 
 vi.mock("../../agent-upsert", () => ({
   getAgentBySourceId: mockGetAgentBySourceId,
-  upsertMediaAsset: mockUpsertMediaAsset,
+  upsertMediaAssetsBulk: mockUpsertMediaAssetsBulk,
+  computeMediaRankScore: mockComputeMediaRankScore,
 }));
 
 vi.mock("../media-discovery", () => ({
   discoverMediaAssets: mockDiscoverMediaAssets,
   fetchHomepageContent: mockFetchHomepageContent,
+}));
+vi.mock("../media-web-frontier", () => ({
+  enqueueMediaWebUrls: mockEnqueueMediaWebUrls,
 }));
 import { ingestAgentMedia } from "../media-ingestion";
 
@@ -22,6 +28,7 @@ describe("media-ingestion", () => {
     vi.unstubAllEnvs();
     vi.stubEnv("SEARCH_MEDIA_VERTICAL_ENABLED", "1");
     mockGetAgentBySourceId.mockResolvedValue({ id: "agent-1" });
+    mockComputeMediaRankScore.mockReturnValue(90);
     mockDiscoverMediaAssets.mockResolvedValue([
       {
         assetKind: "IMAGE",
@@ -39,8 +46,9 @@ describe("media-ingestion", () => {
         sha256: "abc",
       },
     ]);
-    mockUpsertMediaAsset.mockResolvedValue(undefined);
+    mockUpsertMediaAssetsBulk.mockResolvedValue(undefined);
     mockFetchHomepageContent.mockResolvedValue(null);
+    mockEnqueueMediaWebUrls.mockResolvedValue(0);
   });
 
   it("upserts discovered assets and returns metrics", async () => {
@@ -54,7 +62,7 @@ describe("media-ingestion", () => {
     expect(metrics.discovered).toBe(1);
     expect(metrics.upserted).toBe(1);
     expect(metrics.errors).toBe(0);
-    expect(mockUpsertMediaAsset).toHaveBeenCalledTimes(1);
+    expect(mockUpsertMediaAssetsBulk).toHaveBeenCalledTimes(1);
   });
 
   it("respects min quality threshold", async () => {

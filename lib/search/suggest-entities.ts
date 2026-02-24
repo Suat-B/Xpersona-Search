@@ -1,0 +1,51 @@
+export const SUGGEST_ENTITY_GROUPS = {
+  platforms: [
+    "twitter",
+    "x",
+    "discord",
+    "telegram",
+    "reddit",
+    "youtube",
+    "tiktok",
+    "linkedin",
+    "github",
+    "openclaw",
+    "pinterest",
+    "instagram",
+    "facebook",
+    "slack",
+    "notion",
+    "shopify",
+  ],
+  deploymentTargets: [
+    "vercel",
+    "cloudflare",
+    "aws",
+    "gcp",
+    "azure",
+    "docker",
+    "kubernetes",
+    "railway",
+    "render",
+    "fly.io",
+    "digitalocean",
+  ],
+  frameworks: [
+    "openai",
+    "langchain",
+    "crewai",
+    "autogen",
+    "mastra",
+    "next.js",
+    "node.js",
+    "python",
+    "typescript",
+  ],
+} as const;
+
+export const SUGGEST_ENTITIES: readonly string[] = [
+  ...SUGGEST_ENTITY_GROUPS.platforms,
+  ...SUGGEST_ENTITY_GROUPS.deploymentTargets,
+  ...SUGGEST_ENTITY_GROUPS.frameworks,
+];
+

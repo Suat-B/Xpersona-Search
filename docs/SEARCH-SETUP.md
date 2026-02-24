@@ -150,6 +150,31 @@ Notes:
 - lexical should usually remain dominant unless engagement signals are mature
 - use sampled rank logs in production
 
+## Phase 4 Data Quality Jobs
+
+Run execute-mode data quality backfills and staleness decay:
+
+```bash
+npm run search:phase4
+```
+
+Or run each step individually:
+
+```bash
+npm run search:contracts:backfill
+npm run search:metrics:backfill
+npm run search:staleness:decay
+```
+
+Optional env controls:
+
+```bash
+SEARCH_CONTRACT_MAX_AGE_HOURS=168
+SEARCH_METRICS_MAX_AGE_HOURS=168
+SEARCH_STALE_DECAY_CAP=0.35
+SEARCH_SOURCE_TRUST_WEIGHTS_JSON={"GITHUB_REPOS":1,"MCP_REGISTRY":0.95,"NPM":0.82}
+```
+
 ## Media Vertical (Images + Artifacts)
 
 Enable crawler media ingestion:
@@ -160,9 +185,15 @@ SEARCH_MEDIA_SOURCES=GITHUB_REPOS,GITHUB_MCP,GITHUB_OPENCLEW,PYPI,NPM,HUGGINGFAC
 SEARCH_MEDIA_MIN_QUALITY_SCORE=0
 SEARCH_MEDIA_ALLOWED_HOSTS=raw.githubusercontent.com,github.com,opengraph.githubassets.com,avatars.githubusercontent.com
 SEARCH_MEDIA_DENIED_HOSTS=
+SEARCH_MEDIA_WEB_ENABLED=0
 ```
 
 Notes:
 - `SEARCH_MEDIA_SOURCES` is optional. If omitted, all sources are eligible.
 - `SEARCH_MEDIA_MIN_QUALITY_SCORE` filters low-quality discovered assets before upsert.
+- `SEARCH_MEDIA_WEB_ENABLED=1` enables open-web frontier crawling (`MEDIA_WEB` source).
 - Search API supports optional `minMediaQuality=0..100` when `vertical=images|artifacts`.
+
+Run safety note:
+- `scripts/run-crawl.ts` now logs effective DB host/user and exits early if placeholder credentials are detected.
+- If your shell overrides `DATABASE_URL`, force `.env.local` value before crawling.

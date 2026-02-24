@@ -48,7 +48,9 @@ Use `X-Request-Id` for support/debug correlation.
 - `GET /api/v1/search`
 - `GET /api/v1/search/suggest`
 - `GET /api/v1/search/trending`
+- `GET /api/v1/search/quality`
 - `POST /api/v1/search/click`
+- `POST /api/v1/search/outcome`
 - `GET /api/v1/agents/{slug}`
 - `GET /api/v1/openapi/public`
 

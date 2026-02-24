@@ -5214,6 +5214,70 @@
           }
         }
       }
+    },
+    "/api/v1/search/outcome": {
+      "post": {
+        "operationId": "post_api_v1_search_outcome",
+        "summary": "POST /api/v1/search/outcome",
+        "description": "Auto-generated operation for /api/v1/search/outcome.",
+        "tags": [
+          "search"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/search/quality": {
+      "get": {
+        "operationId": "get_api_v1_search_quality",
+        "summary": "GET /api/v1/search/quality",
+        "description": "Auto-generated operation for /api/v1/search/quality.",
+        "tags": [
+          "search"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

@@ -58,6 +58,8 @@ Response headers:
 - `GET /api/v1/search`
 - `GET /api/v1/search/suggest`
 - `GET /api/v1/search/trending`
+- `GET /api/v1/search/quality`
+- `POST /api/v1/search/outcome`
 - `POST /api/v1/search/click`
 - `GET /api/v1/agents/{slug}`
 
@@ -65,6 +67,10 @@ Examples:
 
 ```bash
 curl "https://xpersona.co/api/v1/search?q=code+review+agent&protocols=MCP,OPENCLAW&limit=10"
+```
+
+```bash
+curl "https://xpersona.co/api/v1/search?q=build+mcp+pipeline&intent=execute&taskType=automation&strictContracts=1&returnPlan=1&requires=mcp,streaming&maxLatencyMs=1500&maxCostUsd=0.02"
 ```
 
 ```bash
@@ -76,16 +82,34 @@ curl "https://xpersona.co/api/v1/search/trending"
 ```
 
 ```bash
+curl "https://xpersona.co/api/v1/search/trending?intent=execute" \
+  -H "X-Client-Type: agent"
+```
+
+```bash
+curl "https://xpersona.co/api/v1/search/quality?window=7d&intent=execute"
+```
+
+```bash
 curl -X POST "https://xpersona.co/api/v1/search/click" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: click-123" \
   -d '{"query":"code review agent","agentId":"550e8400-e29b-41d4-a716-446655440000","position":0}'
 ```
 
+```bash
+curl -X POST "https://xpersona.co/api/v1/search/outcome" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: outcome-123" \
+  -d '{"querySignature":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","selectedResultId":"550e8400-e29b-41d4-a716-446655440000","query":"build mcp pipeline","outcome":"failure","failureCode":"timeout","executionPath":"delegated","budgetExceeded":false,"taskType":"automation"}'
+```
+
 Notes:
 - `cursor` must be a UUID or returns `400`.
 - Protocol naming is canonicalized as `OPENCLAW` in API responses.
 - `fields=compact` can be used on search for smaller agent payloads.
+- Execute mode adds machine-actionable fields: `executionFit`, `contractFreshnessHours`, `metricsFreshnessHours`, and `fallbackCandidates`.
+- Agent-oriented suggest/trending can be forced with `intent=execute` or `X-Client-Type: agent`.
 
 ## Ownership / Claim API (Authenticated)
 
@@ -101,6 +125,7 @@ Claim initiation now returns the real `claimId` from the claim row.
 ## Specs
 
 - Public OpenAPI JSON: `GET /api/v1/openapi/public`
+- Draft v2 OpenAPI JSON: `GET /openapi.v2.draft.json`
 - Internal OpenAPI JSON: `GET /api/v1/openapi/internal` (internal auth)
 - Human docs: `https://xpersona.co/docs`
 

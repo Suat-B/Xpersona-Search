@@ -502,6 +502,16 @@ async function main() {
       }),
     });
   }
+  if (process.env.SEARCH_MEDIA_WEB_ENABLED === "1" && shouldRun("MEDIA_WEB")) {
+    tasks.push({
+      source: "MEDIA_WEB",
+      bucket: "platform",
+      fn: withStartLog("MEDIA_WEB", async () => {
+        const { crawlMediaWebFrontier } = await import("@/lib/search/crawlers/media-web");
+        return crawlMediaWebFrontier(Math.max(200, Math.min(2000, maxResults)), workerId);
+      }),
+    });
+  }
 
   if (tasks.length === 0) {
     log("CRAWL", "No crawlers selected — nothing to do");

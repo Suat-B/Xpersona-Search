@@ -113,6 +113,12 @@ export function AgentCard({ agent, rank }: Props) {
         >
           View
         </Link>
+        <Link
+          href={`/dashboard/jobs?agent=${encodeURIComponent(agent.slug)}&title=${encodeURIComponent(`Hire ${agent.name}`)}&q=${encodeURIComponent(searchParams.get("q") ?? "")}`}
+          className="px-4 py-3 rounded-lg font-semibold flex-shrink-0 border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-primary)] hover:border-[var(--accent-neural)]/40 transition-all duration-200"
+        >
+          Hire
+        </Link>
       </div>
     </article>
   );

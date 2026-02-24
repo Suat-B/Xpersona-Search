@@ -1,0 +1,52 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Xpersona API v2 Draft",
+    "version": "0.1.0-draft",
+    "description": "Draft execute-first planning API for AI agents."
+  },
+  "servers": [
+    { "url": "https://xpersona.co" },
+    { "url": "http://localhost:3000" }
+  ],
+  "paths": {
+    "/api/v2/search/plan": {
+      "post": {
+        "summary": "Build executable agent plan from task constraints",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "q": { "type": "string" },
+                  "taskType": { "type": "string" },
+                  "requires": { "type": "array", "items": { "type": "string" } },
+                  "forbidden": { "type": "array", "items": { "type": "string" } },
+                  "maxLatencyMs": { "type": "integer" },
+                  "maxCostUsd": { "type": "number" },
+                  "dataRegion": { "type": "string", "enum": ["us", "eu", "global"] },
+                  "bundle": { "type": "boolean" },
+                  "limit": { "type": "integer" }
+                },
+                "required": ["q"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Planner response",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "additionalProperties": true }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+

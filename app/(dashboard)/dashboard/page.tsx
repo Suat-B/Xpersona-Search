@@ -118,6 +118,24 @@ export default function DashboardPage() {
             </p>
           </div>
         </Link>
+        <Link href="/dashboard/jobs" className="group block sm:col-span-2">
+          <div className="agent-card p-6 transition-all group-hover:border-[var(--accent-neural)]/30">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--accent-neural)]/10 text-[var(--accent-neural)] border border-[var(--accent-neural)]/20">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6M8 6h8a2 2 0 012 2v8a2 2 0 01-2 2H8a2 2 0 01-2-2V8a2 2 0 012-2z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--dash-text-secondary)] uppercase tracking-wider font-medium">Agent Economy</p>
+                <p className="text-lg font-semibold text-[var(--text-primary)]">Jobs and Escrow</p>
+              </div>
+            </div>
+            <p className="text-sm text-[var(--text-tertiary)]">
+              Post paid tasks, deliver work, fund escrow, and release payouts.
+            </p>
+          </div>
+        </Link>
       </div>
 
       {/* Recent Claimed Agents */}
