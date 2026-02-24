@@ -73,6 +73,12 @@ export const agents = pgTable(
     claimedByUserId: uuid("claimed_by_user_id"),
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     claimStatus: varchar("claim_status", { length: 24 }).notNull().default("UNCLAIMED"),
+    verificationTier: varchar("verification_tier", { length: 16 })
+      .notNull()
+      .default("NONE"),
+    verificationMethod: varchar("verification_method", { length: 32 }),
+    hasCustomPage: boolean("has_custom_page").notNull().default(false),
+    customPageUpdatedAt: timestamp("custom_page_updated_at", { withTimezone: true }),
     ownerOverrides: jsonb("owner_overrides").$type<Record<string, unknown>>(),
 
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
@@ -85,6 +91,8 @@ export const agents = pgTable(
     index("agents_overall_rank_idx").on(table.overallRank),
     index("agents_claimed_by_user_id_idx").on(table.claimedByUserId),
     index("agents_claim_status_idx").on(table.claimStatus),
+    index("agents_verification_tier_idx").on(table.verificationTier),
+    index("agents_has_custom_page_idx").on(table.hasCustomPage),
   ]
 );
 
@@ -99,6 +107,8 @@ export const agentClaims = pgTable(
     verificationMethod: varchar("verification_method", { length: 32 }).notNull(),
     verificationToken: varchar("verification_token", { length: 128 }).notNull(),
     verificationData: jsonb("verification_data").$type<Record<string, unknown>>(),
+    resolvedTier: varchar("resolved_tier", { length: 16 }),
+    verificationMetadata: jsonb("verification_metadata").$type<Record<string, unknown>>(),
     verifiedAt: timestamp("verified_at", { withTimezone: true }),
     reviewedByUserId: uuid("reviewed_by_user_id"),
     reviewNote: text("review_note"),
@@ -119,16 +129,76 @@ export const crawlFrontier = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     url: varchar("url", { length: 2048 }).notNull().unique(),
+    repoFullName: varchar("repo_full_name", { length: 255 }),
+    originSource: varchar("origin_source", { length: 64 }),
+    discoveryAt: timestamp("discovery_at", { withTimezone: true }).defaultNow(),
+    confidence: integer("confidence").notNull().default(0),
+    reasons: jsonb("reasons").$type<string[]>().default([]),
     discoveredFrom: uuid("discovered_from"),
     priority: integer("priority").notNull().default(0),
     status: varchar("status", { length: 20 }).notNull().default("PENDING"),
     attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    lockOwner: varchar("lock_owner", { length: 64 }),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
     lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   },
   (table) => [
     index("crawl_frontier_status_idx").on(table.status),
     index("crawl_frontier_priority_idx").on(table.priority),
+    index("crawl_frontier_confidence_idx").on(table.confidence),
+    index("crawl_frontier_repo_full_name_idx").on(table.repoFullName),
+    index("crawl_frontier_next_attempt_at_idx").on(table.nextAttemptAt),
+  ]
+);
+
+/** Claimed owner customization payload for public agent page rendering. */
+export const agentCustomizations = pgTable(
+  "agent_customizations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id").notNull().unique(),
+    status: varchar("status", { length: 16 }).notNull().default("PUBLISHED"),
+    customHtml: text("custom_html"),
+    customCss: text("custom_css"),
+    customJs: text("custom_js"),
+    sanitizedHtml: text("sanitized_html"),
+    sanitizedCss: text("sanitized_css"),
+    sanitizedJs: text("sanitized_js"),
+    widgetLayout: jsonb("widget_layout").$type<unknown[]>(),
+    editorState: jsonb("editor_state").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("agent_customizations_agent_id_idx").on(table.agentId),
+    index("agent_customizations_status_idx").on(table.status),
+  ]
+);
+
+/** Version history for customization changes and rollback/audit support. */
+export const agentCustomizationVersions = pgTable(
+  "agent_customization_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    customizationId: uuid("customization_id").notNull(),
+    version: integer("version").notNull(),
+    customHtml: text("custom_html"),
+    customCss: text("custom_css"),
+    customJs: text("custom_js"),
+    widgetLayout: jsonb("widget_layout").$type<unknown[]>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("agent_customization_versions_unique_idx").on(
+      table.customizationId,
+      table.version
+    ),
+    index("agent_customization_versions_customization_id_idx").on(
+      table.customizationId
+    ),
   ]
 );
 
@@ -144,6 +214,11 @@ export const crawlJobs = pgTable(
     error: text("error"),
     agentsFound: integer("agents_found").notNull().default(0),
     agentsUpdated: integer("agents_updated").notNull().default(0),
+    budgetUsed: integer("budget_used").notNull().default(0),
+    timeouts: integer("timeouts").notNull().default(0),
+    rateLimits: integer("rate_limits").notNull().default(0),
+    skipped: integer("skipped").notNull().default(0),
+    cursorSnapshot: jsonb("cursor_snapshot").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   },
   (table) => [

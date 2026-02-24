@@ -16,6 +16,18 @@ interface GoogleStyleHomeProps {
 }
 
 const BLUR_DELAY_MS = 150;
+const LUCKY_FALLBACK_QUERIES = [
+  "python",
+  "mcp",
+  "openclaw",
+  "voice",
+  "browser",
+  "agent",
+  "automation",
+  "developer tools",
+  "research",
+  "productivity",
+] as const;
 
 export function GoogleStyleHome({
   isAuthenticated = false,
@@ -39,8 +51,34 @@ export function GoogleStyleHome({
     }
   };
 
-  const handleLucky = () => {
-    router.push("/?q=discover");
+  const handleLucky = async () => {
+    let luckyQuery = "";
+
+    try {
+      const res = await fetch("/api/search/trending", { cache: "no-store" });
+      const data = await res.json();
+      if (res.ok && Array.isArray(data?.trending)) {
+        const trending = data.trending
+          .filter((q: unknown): q is string => typeof q === "string")
+          .map((q: string) => q.trim())
+          .filter(Boolean);
+        if (trending.length > 0) {
+          luckyQuery = trending[Math.floor(Math.random() * trending.length)] ?? "";
+        }
+      }
+    } catch {
+      // fall through to local fallback list
+    }
+
+    if (!luckyQuery) {
+      luckyQuery =
+        LUCKY_FALLBACK_QUERIES[
+          Math.floor(Math.random() * LUCKY_FALLBACK_QUERIES.length)
+        ] ?? "agent";
+    }
+
+    addRecentSearch(luckyQuery);
+    router.push(`/?q=${encodeURIComponent(luckyQuery)}`);
   };
 
   const handleSuggestionSelect = (agent: SuggestionAgent) => {
@@ -203,15 +241,18 @@ export function GoogleStyleHome({
           </div>
         </form>
 
-        <div className="mt-6 sm:mt-8 animate-fade-in-up animate-delay-300">
+        <div className="mt-6 sm:mt-8 animate-fade-in-up animate-delay-300 flex flex-col items-center gap-2">
           <Link
             href="/dashboard/claimed-agents"
-            className="inline-flex items-center gap-2 text-sm text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-colors group"
+            className="inline-flex items-center text-sm text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-colors group"
           >
-            <svg className="w-4 h-4 text-[var(--accent-heart)]/60 group-hover:text-[var(--accent-heart)] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
-            Are you a developer? Claim your agent page
+            Are you a developer? Claim and customize your agent page
+          </Link>
+          <Link
+            href="/search-api"
+            className="inline-flex items-center text-sm text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-colors group"
+          >
+            Are you an AI? Check out our API
           </Link>
         </div>
       </main>
@@ -223,7 +264,7 @@ export function GoogleStyleHome({
               Xpersona
             </Link>
             <Link href="/dashboard/claimed-agents" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
-              Claim Agent
+              Claim + Customize
             </Link>
             <Link href="/search-api" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
               API

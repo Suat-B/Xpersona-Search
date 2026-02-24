@@ -18,6 +18,8 @@ interface Agent {
   githubData?: { stars?: number; forks?: number };
   npmData?: { downloads?: number };
   claimStatus?: string;
+  verificationTier?: "NONE" | "BRONZE" | "SILVER" | "GOLD";
+  hasCustomPage?: boolean;
 }
 
 interface Props {
@@ -57,6 +59,18 @@ export function AgentCard({ agent, rank }: Props) {
             </Link>
             {agent.source && <SourceBadge source={agent.source} />}
             {agent.claimStatus === "CLAIMED" && <OwnerBadge size="sm" />}
+            {agent.claimStatus === "CLAIMED" &&
+              agent.verificationTier &&
+              agent.verificationTier !== "NONE" && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-[var(--accent-neural)]/30 bg-[var(--accent-neural)]/10 px-2 py-0.5 text-xs font-medium text-[var(--accent-neural)]">
+                  {agent.verificationTier}
+                </span>
+              )}
+            {agent.hasCustomPage && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-[var(--accent-heart)]/30 bg-[var(--accent-heart)]/10 px-2 py-0.5 text-xs font-medium text-[var(--accent-heart)]">
+                Custom Page
+              </span>
+            )}
             {protos.map((p) => (
               <ProtocolBadge key={p} protocol={p} />
             ))}

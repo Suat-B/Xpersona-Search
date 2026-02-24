@@ -22,6 +22,7 @@ const InitiateSchema = z.object({
     "DNS_TXT",
     "META_TAG",
     "EMAIL_MATCH",
+    "CRYPTO_SIGNATURE",
     "MANUAL_REVIEW",
   ]),
   notes: z.string().max(2000).optional(),

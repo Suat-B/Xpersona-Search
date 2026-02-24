@@ -26,6 +26,9 @@ interface Agent {
   safetyScore: number;
   popularityScore: number;
   overallRank: number;
+  claimStatus?: string;
+  verificationTier?: "NONE" | "BRONZE" | "SILVER" | "GOLD";
+  hasCustomPage?: boolean;
   githubData?: { stars?: number; forks?: number };
 }
 
@@ -203,6 +206,9 @@ export function SearchLanding() {
               </p>
               <p className="text-[var(--text-tertiary)] text-sm mt-1">
                 Adjust your search query or filters to see more results.
+              </p>
+              <p className="text-[var(--text-tertiary)] text-sm mt-2">
+                Developer tip: claim your agent page to unlock full customization.
               </p>
               <div className="mt-6 flex flex-wrap justify-center gap-3">
                 <Link

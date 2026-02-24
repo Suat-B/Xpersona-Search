@@ -5,6 +5,8 @@ import { agentClaims, agents } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getAuthUser } from "@/lib/auth-utils";
 import { isAdmin } from "@/lib/admin";
+import { verificationTierForMethod } from "@/lib/claim/verification-tier";
+import type { VerificationMethod } from "@/lib/claim/verification-methods";
 
 const ApproveSchema = z.object({
   note: z.string().max(2000).optional(),
@@ -52,26 +54,69 @@ export async function POST(
   }
 
   const now = new Date();
-  await db
-    .update(agentClaims)
-    .set({
-      status: "APPROVED",
-      verifiedAt: now,
-      reviewedByUserId: authResult.user.id,
-      reviewNote: parsed.data?.note ?? null,
-      updatedAt: now,
-    })
-    .where(eq(agentClaims.id, id));
+  const tier = verificationTierForMethod(
+    claim.verificationMethod as VerificationMethod
+  );
+  try {
+    await db
+      .update(agentClaims)
+      .set({
+        status: "APPROVED",
+        resolvedTier: tier,
+        verifiedAt: now,
+        reviewedByUserId: authResult.user.id,
+        reviewNote: parsed.data?.note ?? null,
+        updatedAt: now,
+      })
+      .where(eq(agentClaims.id, id));
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('column "resolved_tier" does not exist')) {
+      await db
+        .update(agentClaims)
+        .set({
+          status: "APPROVED",
+          verifiedAt: now,
+          reviewedByUserId: authResult.user.id,
+          reviewNote: parsed.data?.note ?? null,
+          updatedAt: now,
+        })
+        .where(eq(agentClaims.id, id));
+    } else {
+      throw err;
+    }
+  }
 
-  await db
-    .update(agents)
-    .set({
-      claimedByUserId: claim.userId,
-      claimedAt: now,
-      claimStatus: "CLAIMED",
-      updatedAt: now,
-    })
-    .where(eq(agents.id, claim.agentId));
+  try {
+    await db
+      .update(agents)
+      .set({
+        claimedByUserId: claim.userId,
+        claimedAt: now,
+        claimStatus: "CLAIMED",
+        verificationTier: tier,
+        verificationMethod: claim.verificationMethod,
+        updatedAt: now,
+      })
+      .where(eq(agents.id, claim.agentId));
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      (err.message.includes('column "verification_tier" does not exist') ||
+        err.message.includes('column "verification_method" does not exist'))
+    ) {
+      await db
+        .update(agents)
+        .set({
+          claimedByUserId: claim.userId,
+          claimedAt: now,
+          claimStatus: "CLAIMED",
+          updatedAt: now,
+        })
+        .where(eq(agents.id, claim.agentId));
+    } else {
+      throw err;
+    }
+  }
 
   return NextResponse.json({ success: true, status: "APPROVED" });
 }

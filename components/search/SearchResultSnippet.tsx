@@ -17,6 +17,9 @@ interface Agent {
   safetyScore: number;
   popularityScore: number;
   overallRank: number;
+  claimStatus?: string;
+  verificationTier?: "NONE" | "BRONZE" | "SILVER" | "GOLD";
+  hasCustomPage?: boolean;
   githubData?: { stars?: number; forks?: number };
   npmData?: { packageName?: string; version?: string };
 }
@@ -136,6 +139,9 @@ export function SearchResultSnippet({ agent, showSitelinks = false, className }:
   const displayUrl = getDisplayUrl(agent.slug);
   const sitelinks = showSitelinks ? getSitelinks(agent) : [];
 
+  const isClaimed = agent.claimStatus === "CLAIMED";
+  const tier = agent.verificationTier ?? "NONE";
+
   return (
     <article className={`py-4 sm:py-5 border-b border-[var(--border)] last:border-b-0 group min-w-0 ${className ?? ""}`}>
       <Link
@@ -168,6 +174,21 @@ export function SearchResultSnippet({ agent, showSitelinks = false, className }:
       )}
 
       <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-[var(--text-quaternary)]">
+        {isClaimed && (
+          <span className="px-2 py-0.5 rounded bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/30">
+            Claimed
+          </span>
+        )}
+        {isClaimed && tier !== "NONE" && (
+          <span className="px-2 py-0.5 rounded bg-[var(--accent-neural)]/15 text-[var(--accent-neural)] border border-[var(--accent-neural)]/30">
+            {tier}
+          </span>
+        )}
+        {agent.hasCustomPage && (
+          <span className="px-2 py-0.5 rounded bg-[var(--accent-heart)]/15 text-[var(--accent-heart)] border border-[var(--accent-heart)]/30">
+            Custom page
+          </span>
+        )}
         {protos.map((p) => (
           <span
             key={p}

@@ -15,6 +15,7 @@ import { crawlA2ARegistry } from "@/lib/search/crawlers/a2a-registry";
 import { crawlNpmPackages } from "@/lib/search/crawlers/npm";
 import { crawlAwesomeLists } from "@/lib/search/crawlers/awesome-lists";
 import { crawlSmithery } from "@/lib/search/crawlers/smithery";
+import type { CrawlMode, CrawlRuntimeOptions } from "@/lib/search/crawlers/crawler-mode";
 
 export const maxDuration = 300;
 
@@ -38,6 +39,13 @@ export async function GET(req: NextRequest) {
     .filter(Boolean);
   const runSource = (name: string) =>
     sourceFilter.length === 0 || sourceFilter.includes(name.toUpperCase());
+  const mode = (process.env.CRAWL_MODE ?? "backfill").toLowerCase() as CrawlMode;
+  const runtimeOptions: CrawlRuntimeOptions = {
+    mode: mode === "hot" || mode === "warm" ? mode : "backfill",
+    githubBudget: parseInt(process.env.CRAWL_GITHUB_BUDGET ?? "800", 10),
+    timeBudgetMs: parseInt(process.env.CRAWL_TIME_BUDGET_MS ?? "120000", 10),
+    lockOwner: "cron-crawl",
+  };
 
   const tasks: CrawlTask[] = [];
 
@@ -46,14 +54,14 @@ export async function GET(req: NextRequest) {
       tasks.push({
         source: "GITHUB_OPENCLEW",
         bucket: "github",
-        fn: () => crawlOpenClawSkills(since, maxResults),
+        fn: () => crawlOpenClawSkills(since, maxResults, runtimeOptions),
       });
     }
     if (runSource("GITHUB_MCP")) {
       tasks.push({
         source: "GITHUB_MCP",
         bucket: "github",
-        fn: () => crawlGitHubMCP(since, Math.min(maxResults, 300)),
+        fn: () => crawlGitHubMCP(since, Math.min(maxResults, 300), runtimeOptions),
       });
     }
     if (runSource("CLAWHUB")) {
@@ -67,7 +75,7 @@ export async function GET(req: NextRequest) {
       tasks.push({
         source: "GITHUB_REPOS",
         bucket: "github",
-        fn: () => crawlGitHubRepos(Math.min(maxResults * 4, 2000)),
+        fn: () => crawlGitHubRepos(Math.min(maxResults * 4, 2000), runtimeOptions),
       });
     }
   }

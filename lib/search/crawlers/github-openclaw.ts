@@ -2,7 +2,16 @@ import pLimit from "p-limit";
 import { db } from "@/lib/db";
 import { agents, crawlJobs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { octokit, fetchRepoDetails, fetchFileContent } from "../utils/github";
+import {
+  octokit,
+  fetchRepoDetails,
+  fetchFileContent,
+  withGithubTimeout,
+  isRetryableGitHubError,
+} from "../utils/github";
+import { canProceed, recordFailure, recordSuccess } from "./source-health";
+import { getCrawlMode, isHotOrWarm, type CrawlRuntimeOptions } from "./crawler-mode";
+import { ackCandidate, failCandidate, leaseCandidates, requeueCandidate } from "./discovery-frontier";
 import { parseSkillMd } from "../parsers/skill-md";
 import { calculateSafetyScore } from "../scoring/safety";
 import {
@@ -52,7 +61,8 @@ function sleep(ms: number): Promise<void> {
 
 export async function crawlOpenClawSkills(
   since?: Date,
-  maxResults: number = 500
+  maxResults: number = 500,
+  options?: CrawlRuntimeOptions
 ): Promise<{ total: number; jobId: string }> {
   const [job] = await db
     .insert(crawlJobs)
@@ -68,8 +78,118 @@ export async function crawlOpenClawSkills(
   const seenSourceIds = new Set<string>();
 
   let totalFound = 0;
+  const sourceHealthKey = "GITHUB_OPENCLEW";
+  const mode = getCrawlMode(options);
 
   try {
+    if (isHotOrWarm(options)) {
+      if (!canProceed(sourceHealthKey)) {
+        await db
+          .update(crawlJobs)
+          .set({
+            status: "COMPLETED",
+            completedAt: new Date(),
+            agentsFound: 0,
+            skipped: 1,
+          })
+          .where(eq(crawlJobs.id, jobId));
+        return { total: 0, jobId };
+      }
+
+      const minConfidence = mode === "hot" ? 80 : 50;
+      const leased = await leaseCandidates({
+        lockOwner: options?.lockOwner ?? sourceHealthKey,
+        limit: maxResults,
+        minConfidence,
+      });
+
+      for (const candidate of leased) {
+        if (totalFound >= maxResults) break;
+        const repo = await fetchRepoDetails(candidate.repoFullName);
+        if (!repo) {
+          await requeueCandidate(candidate.id, "Repo details unavailable", 30_000);
+          continue;
+        }
+        const sourceId = `github:${repo.id}`;
+        if (since && new Date(repo.updated_at) <= since) {
+          await ackCandidate(candidate.id);
+          continue;
+        }
+
+        const skillContent = await fetchFileContent(
+          repo.full_name,
+          "SKILL.md",
+          repo.default_branch
+        );
+        if (!skillContent) {
+          await failCandidate(candidate.id, "SKILL.md not found");
+          continue;
+        }
+
+        const skillData = parseSkillMd(skillContent);
+        const safetyScore = await calculateSafetyScore(repo, skillContent);
+        const popularityScore = calculatePopularityScore(repo);
+        const freshnessScore = calculateFreshnessScore(repo);
+
+        const slug =
+          generateSlug(repo.full_name.replace("/", "-")) || `agent-${repo.id}`;
+
+        const agentData = {
+          sourceId,
+          source: "GITHUB_OPENCLEW" as const,
+          name: skillData.name ?? repo.name,
+          slug,
+          description: skillData.description ?? repo.description ?? null,
+          url: repo.html_url,
+          homepage: skillData.homepage ?? null,
+          capabilities: skillData.capabilities ?? [],
+          protocols: skillData.protocols,
+          languages: ["typescript"] as string[],
+          githubData: {
+            stars: repo.stargazers_count,
+            forks: repo.forks_count,
+            lastCommit: repo.pushed_at,
+            defaultBranch: repo.default_branch,
+          },
+          openclawData: skillData as unknown as Record<string, unknown>,
+          readme: skillContent,
+          safetyScore,
+          popularityScore,
+          freshnessScore,
+          performanceScore: 0,
+          overallRank: calculateOverallRank({
+            safety: safetyScore,
+            popularity: popularityScore,
+            freshness: freshnessScore,
+            performance: 0,
+          }),
+          status: safetyScore >= 40 ? ("ACTIVE" as const) : ("PENDING_REVIEW" as const),
+          lastCrawledAt: new Date(),
+          nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        };
+
+        await upsertAgent(agentData, {
+          name: agentData.name,
+          slug: agentData.slug,
+          description: agentData.description,
+          githubData: agentData.githubData,
+          openclawData: agentData.openclawData,
+          readme: agentData.readme,
+          safetyScore: agentData.safetyScore,
+          popularityScore: agentData.popularityScore,
+          freshnessScore: agentData.freshnessScore,
+          overallRank: agentData.overallRank,
+          status: agentData.status,
+          lastCrawledAt: agentData.lastCrawledAt,
+          nextCrawlAt: agentData.nextCrawlAt,
+        });
+
+        await ackCandidate(candidate.id);
+        totalFound++;
+      }
+
+      recordSuccess(sourceHealthKey);
+    } else {
     for (const searchQuery of SEARCH_QUERIES) {
       if (totalFound >= maxResults) break;
       let page = 1;
@@ -77,18 +197,26 @@ export async function crawlOpenClawSkills(
       while (totalFound < maxResults && page <= MAX_PAGES_PER_QUERY) {
         let data: { items?: Array<{ repository?: { full_name?: string } }> };
         try {
-          const res = await octokit.rest.search.code({
-            q: searchQuery,
-            sort: "indexed",
-            order: "desc",
-            per_page: PAGE_SIZE,
-            page,
-          });
+          const res = await withGithubTimeout(
+            () =>
+              octokit.rest.search.code({
+                q: searchQuery,
+                sort: "indexed",
+                order: "desc",
+                per_page: PAGE_SIZE,
+                page,
+              }),
+            `search.code "${searchQuery}" page=${page}`
+          );
           data = res.data as { items?: Array<{ repository?: { full_name?: string } }> };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           if (msg.includes("Cannot access beyond the first 1000 results") || (err as { status?: number })?.status === 422) {
             break; // Hit GitHub's 1000-result cap, move to next query
+          }
+          if (isRetryableGitHubError(err)) {
+            console.warn(`[GITHUB_OPENCLEW] transient GitHub error on query "${searchQuery}" page ${page}: ${msg}`);
+            break; // Skip this query page and continue crawl
           }
           throw err;
         }
@@ -183,6 +311,7 @@ export async function crawlOpenClawSkills(
         page++;
       }
     }
+    }
 
     await db
       .update(crawlJobs)
@@ -193,6 +322,7 @@ export async function crawlOpenClawSkills(
       })
       .where(eq(crawlJobs.id, jobId));
   } catch (err) {
+    recordFailure(sourceHealthKey);
     await db
       .update(crawlJobs)
       .set({

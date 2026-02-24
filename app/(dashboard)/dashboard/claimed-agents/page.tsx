@@ -10,6 +10,8 @@ interface ClaimedAgent {
   description: string | null;
   source: string;
   claimStatus: string;
+  verificationTier?: string;
+  hasCustomPage?: boolean;
   claimedAt: string | null;
   safetyScore: number;
   popularityScore: number;
@@ -102,6 +104,16 @@ export default function ClaimedAgentsPage() {
                       </svg>
                       Claimed
                     </span>
+                    {agent.verificationTier && agent.verificationTier !== "NONE" && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-[var(--accent-neural)]/30 bg-[var(--accent-neural)]/10 px-2 py-0.5 text-xs font-medium text-[var(--accent-neural)] flex-shrink-0">
+                        {agent.verificationTier}
+                      </span>
+                    )}
+                    {agent.hasCustomPage && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-[var(--accent-heart)]/30 bg-[var(--accent-heart)]/10 px-2 py-0.5 text-xs font-medium text-[var(--accent-heart)] flex-shrink-0">
+                        Custom page
+                      </span>
+                    )}
                   </div>
                   {agent.description && (
                     <p className="text-sm text-[var(--text-tertiary)] truncate">

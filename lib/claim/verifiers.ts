@@ -1,4 +1,5 @@
 import dns from "dns/promises";
+import crypto from "crypto";
 import type { VerificationMethod } from "./verification-methods";
 import { getMaintainerEmail } from "./verification-methods";
 
@@ -10,6 +11,8 @@ export interface VerifyResult {
 }
 
 interface AgentLike {
+  slug?: string;
+  sourceId?: string;
   url?: string;
   homepage?: string | null;
   source?: string | null;
@@ -20,6 +23,11 @@ interface AgentLike {
     lastCommit?: string;
     defaultBranch?: string;
   } | null;
+}
+
+export interface VerifyOptions {
+  publicKey?: string;
+  signature?: string;
 }
 
 function parseGitHubRepo(
@@ -240,11 +248,93 @@ async function verifyEmailMatch(
   };
 }
 
+function parseSignature(input: string): Buffer | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  try {
+    if (/^[0-9a-fA-F]+$/.test(trimmed) && trimmed.length % 2 === 0) {
+      return Buffer.from(trimmed, "hex");
+    }
+    return Buffer.from(trimmed, "base64");
+  } catch {
+    return null;
+  }
+}
+
+function parseEd25519PublicKey(input: string): crypto.KeyObject | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  try {
+    if (trimmed.includes("BEGIN PUBLIC KEY")) {
+      return crypto.createPublicKey(trimmed);
+    }
+
+    let raw: Buffer;
+    if (/^[0-9a-fA-F]+$/.test(trimmed) && trimmed.length % 2 === 0) {
+      raw = Buffer.from(trimmed, "hex");
+    } else {
+      raw = Buffer.from(trimmed, "base64");
+    }
+
+    if (raw.length !== 32) return null;
+
+    // SPKI DER wrapper for Ed25519 raw key
+    const prefix = Buffer.from("302a300506032b6570032100", "hex");
+    return crypto.createPublicKey({
+      key: Buffer.concat([prefix, raw]),
+      format: "der",
+      type: "spki",
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function verifyCryptoSignature(
+  agent: AgentLike,
+  token: string,
+  options?: VerifyOptions
+): Promise<VerifyResult> {
+  const publicKeyInput = options?.publicKey?.trim();
+  const signatureInput = options?.signature?.trim();
+  if (!publicKeyInput || !signatureInput) {
+    return { verified: false, error: "Public key and signature are required" };
+  }
+
+  const publicKey = parseEd25519PublicKey(publicKeyInput);
+  if (!publicKey) {
+    return { verified: false, error: "Invalid ED25519 public key format" };
+  }
+
+  const signature = parseSignature(signatureInput);
+  if (!signature) {
+    return { verified: false, error: "Invalid signature format (use base64 or hex)" };
+  }
+
+  const slug = agent.slug ?? "unknown-agent";
+  const message = Buffer.from(`xpersona-verify:${slug}:${token}`, "utf8");
+
+  try {
+    const ok = crypto.verify(null, message, publicKey, signature);
+    return ok
+      ? { verified: true }
+      : { verified: false, error: "Signature does not match challenge message" };
+  } catch (err) {
+    return {
+      verified: false,
+      error: err instanceof Error ? err.message : "Signature verification failed",
+    };
+  }
+}
+
 export async function runVerifier(
   method: VerificationMethod,
   agent: AgentLike,
   token: string,
-  userEmail?: string
+  userEmail?: string,
+  options?: VerifyOptions
 ): Promise<VerifyResult> {
   switch (method) {
     case "GITHUB_FILE":
@@ -259,6 +349,8 @@ export async function runVerifier(
       return verifyMetaTag(agent, token);
     case "EMAIL_MATCH":
       return verifyEmailMatch(agent, token, userEmail);
+    case "CRYPTO_SIGNATURE":
+      return verifyCryptoSignature(agent, token, options);
     case "MANUAL_REVIEW":
       return { verified: false, error: "Manual review claims are processed by admins" };
     default:

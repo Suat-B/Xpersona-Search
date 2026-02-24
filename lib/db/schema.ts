@@ -649,5 +649,13 @@ export const searchQueries = pgTable(
   ]
 );
 
-// Search engine (agents, crawl_jobs, crawl_frontier, agent_claims) - re-exported from search-schema
-export { agents, agentClaims, crawlFrontier, crawlJobs } from "./search-schema";
+// Search engine tables - re-exported from search-schema
+export {
+  agents,
+  agentClaims,
+  agentCustomizations,
+  agentCustomizationVersions,
+  crawlFrontier,
+  crawlJobs,
+  searchClicks,
+} from "./search-schema";

@@ -9,6 +9,9 @@
  *      npx tsx scripts/run-crawl.ts 100k --sources=GITHUB_MCP,CLAWHUB  (run only these)
  *      On PowerShell, quote the list: --sources="HUGGINGFACE,DOCKER,REPLICATE"
  *      npx tsx scripts/run-crawl.ts 100k --parallel  (run all buckets in parallel)
+ *      npx tsx scripts/run-crawl.ts 500 --mode=hot --github-budget=800 --time-budget-ms=120000
+ * Optional env:
+ *      GITHUB_REQUEST_TIMEOUT_MS=15000 (default) to fail slow GitHub calls faster
  *
  * Requires: DATABASE_URL, GITHUB_TOKEN (for GitHub sources)
  */
@@ -17,10 +20,19 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 
 import { runCrawlPool, type CrawlTask, type CrawlResult } from "@/lib/search/crawlers/pool";
+import type { CrawlMode, CrawlRuntimeOptions } from "@/lib/search/crawlers/crawler-mode";
 
 const args = process.argv.slice(2);
 const maxArg = args.find((a) => !a.startsWith("--"));
 const parallelMode = args.includes("--parallel");
+const modeArg = args.find((a) => a.startsWith("--mode="))?.split("=")[1]?.toLowerCase();
+const budgetArg = args.find((a) => a.startsWith("--github-budget="))?.split("=")[1];
+const timeBudgetArg = args.find((a) => a.startsWith("--time-budget-ms="))?.split("=")[1];
+const requestedMode: CrawlMode = modeArg === "hot" || modeArg === "warm" ? (modeArg as CrawlMode) : "backfill";
+const mode: CrawlMode = process.env.CRAWL_HYBRID_MODE === "0" ? "backfill" : requestedMode;
+const githubBudget = budgetArg ? parseInt(budgetArg, 10) : undefined;
+const timeBudgetMs = timeBudgetArg ? parseInt(timeBudgetArg, 10) : undefined;
+const lockOwner = `run-crawl:${process.pid}`;
 
 // Support both --sources=X,Y,Z and --sources X,Y,Z (PowerShell may split on =)
 const sourcesIdx = args.findIndex((a) => a === "--sources" || a.startsWith("--sources="));
@@ -125,6 +137,16 @@ function log(source: string, msg: string, ...rest: unknown[]) {
   console.log(`[${ts}] [${source}]`, out);
 }
 
+function metric(event: string, payload: Record<string, unknown>) {
+  console.log(
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      event,
+      ...payload,
+    })
+  );
+}
+
 function shouldRun(source: string): boolean {
   if (!selectedSources) return true;
   return selectedSources.has(source.toUpperCase());
@@ -148,6 +170,18 @@ async function main() {
   if (selectedSources && selectedSources.size > 0) {
     log("CRAWL", "Sources filter: %s", [...selectedSources].join(", "));
   }
+  log(
+    "CRAWL",
+    "GitHub request timeout: %sms",
+    process.env.GITHUB_REQUEST_TIMEOUT_MS ?? "15000"
+  );
+  log("CRAWL", "Mode=%s githubBudget=%s timeBudgetMs=%s", mode, githubBudget ?? "none", timeBudgetMs ?? "none");
+  const runtimeOptions: CrawlRuntimeOptions = {
+    mode,
+    githubBudget,
+    timeBudgetMs,
+    lockOwner,
+  };
 
   const tasks: CrawlTask[] = [];
 
@@ -158,7 +192,7 @@ async function main() {
         bucket: "github",
         fn: withStartLog("GITHUB_OPENCLEW", async () => {
           const { crawlOpenClawSkills } = await import("@/lib/search/crawlers/github-openclaw");
-          return crawlOpenClawSkills(undefined, limits.openClaw);
+          return crawlOpenClawSkills(undefined, limits.openClaw, runtimeOptions);
         }),
       });
     }
@@ -168,7 +202,7 @@ async function main() {
         bucket: "github",
         fn: withStartLog("GITHUB_MCP", async () => {
           const { crawlGitHubMCP } = await import("@/lib/search/crawlers/github-mcp");
-          return crawlGitHubMCP(undefined, limits.mcp);
+          return crawlGitHubMCP(undefined, limits.mcp, runtimeOptions);
         }),
       });
     }
@@ -188,7 +222,7 @@ async function main() {
         bucket: "github",
         fn: withStartLog("GITHUB_REPOS", async () => {
           const { crawlGitHubRepos } = await import("@/lib/search/crawlers/github-repos");
-          return crawlGitHubRepos(limits.githubRepos);
+          return crawlGitHubRepos(limits.githubRepos, runtimeOptions);
         }),
       });
     }
@@ -322,7 +356,7 @@ async function main() {
       bucket: "github",
       fn: withStartLog("CREWAI", async () => {
         const { crawlCrewAI } = await import("@/lib/search/crawlers/crewai");
-        return crawlCrewAI(limits.crewai);
+        return crawlCrewAI(limits.crewai, runtimeOptions);
       }),
     });
   }
@@ -332,7 +366,7 @@ async function main() {
       bucket: "platform",
       fn: withStartLog("VERCEL_TEMPLATES", async () => {
         const { crawlVercelTemplates } = await import("@/lib/search/crawlers/vercel-templates");
-        return crawlVercelTemplates(limits.vercelTemplates);
+        return crawlVercelTemplates(limits.vercelTemplates, runtimeOptions);
       }),
     });
   }
@@ -358,6 +392,13 @@ async function main() {
   const results = await runCrawlPool(tasks, (r) => {
     if (r.error) log(r.source, "FAILED (%dms): %s", r.durationMs, r.error);
     else log(r.source, "OK — %d agents (%dms)", r.total, r.durationMs);
+    metric("crawl.source.result", {
+      mode,
+      source: r.source,
+      total: r.total,
+      durationMs: r.durationMs,
+      error: r.error ?? null,
+    });
   });
 
   const total = results.reduce((s, r) => s + r.total, 0);
@@ -366,6 +407,13 @@ async function main() {
 
   log("CRAWL", "\n--- Summary ---");
   log("CRAWL", "Total agents: %d", total);
+  metric("crawl.summary", {
+    mode,
+    total,
+    succeeded: succeeded.length,
+    failed: failed.length,
+    sources: results.length,
+  });
   log("CRAWL", "Succeeded: %d / %d sources", succeeded.length, results.length);
   if (succeeded.length > 0) {
     succeeded.forEach((r) => log("CRAWL", "  OK %s: %d (%dms)", r.source, r.total, r.durationMs));

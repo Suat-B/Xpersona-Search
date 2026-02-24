@@ -5,6 +5,7 @@ export type VerificationMethod =
   | "DNS_TXT"
   | "META_TAG"
   | "EMAIL_MATCH"
+  | "CRYPTO_SIGNATURE"
   | "MANUAL_REVIEW";
 
 export interface MethodInfo {
@@ -15,6 +16,7 @@ export interface MethodInfo {
 }
 
 interface AgentLike {
+  slug?: string;
   source?: string | null;
   url?: string;
   homepage?: string | null;
@@ -105,6 +107,14 @@ export function getAvailableMethods(agent: AgentLike): MethodInfo[] {
   }
 
   methods.push({
+    method: "CRYPTO_SIGNATURE",
+    label: "Cryptographic signature",
+    description:
+      "Sign an ownership challenge with your ED25519 private key and submit the public key + signature.",
+    automated: true,
+  });
+
+  methods.push({
     method: "MANUAL_REVIEW",
     label: "Request manual review",
     description:
@@ -147,6 +157,10 @@ export function getInstructionsForMethod(
       return `Add this tag inside the <head> of your homepage (${agent.homepage ?? "your homepage"}):\n\n<meta name="xpersona-verify" content="${token}">\n\nThen click Verify.`;
     case "EMAIL_MATCH":
       return `Your account email will be compared to the package maintainer email on file. Click Verify to check.`;
+    case "CRYPTO_SIGNATURE": {
+      const slug = agent.slug ?? "agent-slug";
+      return `Sign this exact message with your ED25519 private key:\n\nxpersona-verify:${slug}:${token}\n\nThen submit your public key and base64 signature in the verify form.`;
+    }
     case "MANUAL_REVIEW":
       return `Provide evidence of ownership (links, screenshots) in the notes field. An admin will review your claim within 48 hours.`;
   }

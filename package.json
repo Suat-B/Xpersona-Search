@@ -20,6 +20,8 @@
     "crawl": "tsx scripts/run-crawl.ts",
     "crawl:full": "tsx scripts/run-crawl.ts 2500",
     "crawl:100k": "tsx scripts/run-crawl.ts 100k",
+    "crawl:hot": "tsx scripts/run-crawl.ts 500 --mode=hot --github-budget=800 --time-budget-ms=120000",
+    "crawl:hot:loop": "node scripts/run-crawl-hot-loop.mjs",
     "db:studio": "drizzle-kit studio",
     "setup": "docker compose up -d && npm run db:push",
     "setup:google": "node scripts/setup-google-auth.mjs",

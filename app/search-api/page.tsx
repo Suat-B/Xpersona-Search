@@ -46,6 +46,9 @@ export default function SearchApiPage() {
       "popularityScore": 72,
       "freshnessScore": 90,
       "overallRank": 82.5,
+      "claimStatus": "CLAIMED",
+      "verificationTier": "SILVER",
+      "hasCustomPage": true,
       "githubData": { "stars": 120, "forks": 15 },
       "createdAt": "2025-01-01T00:00:00Z"
     }

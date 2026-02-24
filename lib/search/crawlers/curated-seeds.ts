@@ -10,6 +10,8 @@ import { fetchFileContent } from "../utils/github";
 import { upsertAgent } from "../agent-upsert";
 import { calculateDynamicScores } from "../scoring/rank";
 import { buildSearchableReadme } from "../utils/build-readme";
+import { enqueueCandidates } from "./discovery-frontier";
+import { scoreCandidate } from "./candidate-scoring";
 
 const AWESOME_OPENCLEW_REPO = "VoltAgent/awesome-openclaw-skills";
 const MCP_SERVERS_REPO = "modelcontextprotocol/servers";
@@ -77,6 +79,12 @@ export async function crawlCuratedSeeds(
 
   const jobId = job?.id ?? crypto.randomUUID();
   let totalFound = 0;
+  const discoveredCandidates: Array<{
+    repoFullName: string;
+    originSource: string;
+    confidence: number;
+    reasons: string[];
+  }> = [];
 
   try {
     const awesomeMd = await fetchFileContent(
@@ -133,6 +141,17 @@ export async function crawlCuratedSeeds(
         });
 
         totalFound++;
+        const score = scoreCandidate({
+          name: s.name,
+          description: s.description,
+          originSource: "CURATED_SEEDS",
+        });
+        discoveredCandidates.push({
+          repoFullName: `openclaw/skills`,
+          originSource: "CURATED_SEEDS",
+          confidence: score.confidence,
+          reasons: score.reasons,
+        });
       }
     }
 
@@ -226,7 +245,28 @@ export async function crawlCuratedSeeds(
         });
 
         totalFound++;
+        if (s.url.includes("github.com/")) {
+          const repoMatch = s.url.match(/github\.com\/([^/]+\/[^/]+?)(?:\.git|\/|$)/);
+          const repoFullName = repoMatch?.[1]?.replace(/\.git$/, "");
+          if (repoFullName) {
+            const score = scoreCandidate({
+              name: s.name,
+              description: s.description,
+              originSource: "CURATED_SEEDS",
+            });
+            discoveredCandidates.push({
+              repoFullName,
+              originSource: "CURATED_SEEDS",
+              confidence: score.confidence,
+              reasons: score.reasons,
+            });
+          }
+        }
       }
+    }
+
+    if (discoveredCandidates.length > 0) {
+      await enqueueCandidates(discoveredCandidates);
     }
 
     await db

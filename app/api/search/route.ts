@@ -12,6 +12,8 @@ import { searchResultsCache, buildCacheKey } from "@/lib/search/cache";
 import { checkSearchRateLimit } from "@/lib/search/rate-limit";
 import { searchCircuitBreaker } from "@/lib/search/circuit-breaker";
 
+let hasSearchClaimColumnsCache: boolean | null = null;
+
 function escapeLike(s: string): string {
   return s.replace(/[%_\\]/g, (c) => `\\${c}`);
 }
@@ -160,6 +162,16 @@ function trackSearchQuery(query: string) {
 function sanitizeError(err: unknown): string {
   if (process.env.NODE_ENV !== "production" && err instanceof Error) return err.message;
   return "Search temporarily unavailable";
+}
+
+function isMissingSearchClaimColumnsError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return (
+    msg.includes('column "verification_tier" does not exist') ||
+    msg.includes('column "claim_status" does not exist') ||
+    msg.includes('column "has_custom_page" does not exist')
+  );
 }
 
 export async function GET(req: NextRequest) {
@@ -331,35 +343,42 @@ export async function GET(req: NextRequest) {
     }
 
     // --- Main query with ts_headline snippets ---
-    let rows: Array<Record<string, unknown>>;
-    if (useRelevance) {
+    async function runMainQuery(
+      includeClaimColumns: boolean
+    ): Promise<Array<Record<string, unknown>>> {
+      const claimCols = includeClaimColumns
+        ? sql`claim_status, verification_tier, has_custom_page,`
+        : sql`'UNCLAIMED'::varchar AS claim_status, 'NONE'::varchar AS verification_tier, false::boolean AS has_custom_page,`;
+
+      if (useRelevance) {
+        const rawResult = await db.execute(
+          sql`SELECT
+                id, name, slug, description, url, homepage, source, source_id,
+                capabilities, protocols, safety_score, popularity_score,
+                freshness_score, overall_rank, github_data, npm_data,
+                languages, created_at, ${claimCols}
+                ts_rank(search_vector, websearch_to_tsquery('english', ${websearchInput})) AS relevance,
+                ts_headline('english', coalesce(description, ''),
+                  websearch_to_tsquery('english', ${websearchInput}),
+                  'MaxWords=35, MinWords=15, StartSel=<mark>, StopSel=</mark>'
+                ) AS snippet,
+                count(*) OVER() AS total_count
+              FROM agents
+              WHERE ${and(...allConditions)}
+              ORDER BY
+                CASE WHEN homepage IS NOT NULL AND homepage != '' THEN 1 ELSE 0 END DESC,
+                relevance DESC, overall_rank DESC, created_at DESC, id DESC
+              LIMIT ${limit}`
+        );
+        return (rawResult as unknown as { rows?: Array<Record<string, unknown>> }).rows ?? [];
+      }
+
       const rawResult = await db.execute(
         sql`SELECT
               id, name, slug, description, url, homepage, source, source_id,
               capabilities, protocols, safety_score, popularity_score,
               freshness_score, overall_rank, github_data, npm_data,
-              languages, created_at,
-              ts_rank(search_vector, websearch_to_tsquery('english', ${websearchInput})) AS relevance,
-              ts_headline('english', coalesce(description, ''),
-                websearch_to_tsquery('english', ${websearchInput}),
-                'MaxWords=35, MinWords=15, StartSel=<mark>, StopSel=</mark>'
-              ) AS snippet,
-              count(*) OVER() AS total_count
-            FROM agents
-            WHERE ${and(...allConditions)}
-            ORDER BY
-              CASE WHEN homepage IS NOT NULL AND homepage != '' THEN 1 ELSE 0 END DESC,
-              relevance DESC, overall_rank DESC, created_at DESC, id DESC
-            LIMIT ${limit}`
-      );
-      rows = ((rawResult as unknown as { rows?: Array<Record<string, unknown>> }).rows ?? []);
-    } else {
-      const rawResult = await db.execute(
-        sql`SELECT
-              id, name, slug, description, url, homepage, source, source_id,
-              capabilities, protocols, safety_score, popularity_score,
-              freshness_score, overall_rank, github_data, npm_data,
-              languages, created_at,
+              languages, created_at, ${claimCols}
               ${textQuery
                 ? sql`ts_headline('english', coalesce(description, ''),
                     plainto_tsquery('english', ${textQuery}),
@@ -381,7 +400,21 @@ export async function GET(req: NextRequest) {
               created_at DESC, id DESC
             LIMIT ${limit}`
       );
-      rows = ((rawResult as unknown as { rows?: Array<Record<string, unknown>> }).rows ?? []);
+      return (rawResult as unknown as { rows?: Array<Record<string, unknown>> }).rows ?? [];
+    }
+
+    let rows: Array<Record<string, unknown>>;
+    const tryExtendedCols = hasSearchClaimColumnsCache !== false;
+    try {
+      rows = await runMainQuery(tryExtendedCols);
+      if (tryExtendedCols) hasSearchClaimColumnsCache = true;
+    } catch (mainQueryErr) {
+      if (tryExtendedCols && isMissingSearchClaimColumnsError(mainQueryErr)) {
+        hasSearchClaimColumnsCache = false;
+        rows = await runMainQuery(false);
+      } else {
+        throw mainQueryErr;
+      }
     }
 
     // Extract total from window function (avoids separate count query)
@@ -411,6 +444,9 @@ export async function GET(req: NextRequest) {
       githubData: r.github_data as Record<string, unknown> | null,
       npmData: r.npm_data as Record<string, unknown> | null,
       languages: r.languages as string[] | null,
+      claimStatus: (r.claim_status as string | null) ?? "UNCLAIMED",
+      verificationTier: (r.verification_tier as string | null) ?? "NONE",
+      hasCustomPage: Boolean(r.has_custom_page),
       createdAt: r.created_at as Date | null,
     }));
 

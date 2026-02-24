@@ -10,8 +10,13 @@ import {
   octokit,
   fetchRepoDetails,
   fetchFileContent,
+  withGithubTimeout,
+  isRetryableGitHubError,
   type GitHubRepo,
 } from "../utils/github";
+import { canProceed, recordFailure, recordSuccess } from "./source-health";
+import { getCrawlMode, isHotOrWarm, type CrawlRuntimeOptions } from "./crawler-mode";
+import { ackCandidate, failCandidate, leaseCandidates, requeueCandidate } from "./discovery-frontier";
 import { calculateSafetyScore } from "../scoring/safety";
 import {
   calculatePopularityScore,
@@ -91,7 +96,8 @@ function extractMcpMetadata(
 
 export async function crawlGitHubMCP(
   since?: Date,
-  maxResults: number = 300
+  maxResults: number = 300,
+  options?: CrawlRuntimeOptions
 ): Promise<{ total: number; jobId: string }> {
   const [job] = await db
     .insert(crawlJobs)
@@ -107,8 +113,133 @@ export async function crawlGitHubMCP(
   const seenSourceIds = new Set<string>();
 
   let totalFound = 0;
+  const sourceHealthKey = "GITHUB_MCP";
+  const mode = getCrawlMode(options);
 
   try {
+    if (isHotOrWarm(options)) {
+      if (!canProceed(sourceHealthKey)) {
+        await db
+          .update(crawlJobs)
+          .set({
+            status: "COMPLETED",
+            completedAt: new Date(),
+            agentsFound: 0,
+            skipped: 1,
+          })
+          .where(eq(crawlJobs.id, jobId));
+        return { total: 0, jobId };
+      }
+
+      const leased = await leaseCandidates({
+        lockOwner: options?.lockOwner ?? sourceHealthKey,
+        limit: maxResults,
+        minConfidence: mode === "hot" ? 80 : 50,
+      });
+
+      for (const candidate of leased) {
+        if (totalFound >= maxResults) break;
+        const repo = await fetchRepoDetails(candidate.repoFullName);
+        if (!repo) {
+          await requeueCandidate(candidate.id, "Repo details unavailable", 30_000);
+          continue;
+        }
+        if (since && new Date(repo.updated_at) <= since) {
+          await ackCandidate(candidate.id);
+          continue;
+        }
+
+        const sourceId = `github-mcp:${repo.id}`;
+        const pkgContent = await fetchFileContent(
+          repo.full_name,
+          "package.json",
+          repo.default_branch
+        );
+        if (!pkgContent) {
+          await failCandidate(candidate.id, "package.json not found");
+          continue;
+        }
+        const pkg = parsePackageJson(pkgContent);
+        if (!pkg || !hasMcpDependency(pkg)) {
+          await failCandidate(candidate.id, "MCP dependency not found");
+          continue;
+        }
+
+        const readme = await fetchFileContent(
+          repo.full_name,
+          "README.md",
+          repo.default_branch
+        );
+        const contentForSafety = [pkgContent, readme ?? ""].join("\n");
+        const safetyScore = await calculateSafetyScore(repo, contentForSafety);
+        const popularityScore = calculatePopularityScore(repo);
+        const freshnessScore = calculateFreshnessScore(repo);
+        const { name, description, capabilities } = extractMcpMetadata(pkg, repo);
+        const baseSlug = generateSlug(`mcp-${repo.full_name.replace("/", "-")}`);
+        const slug = baseSlug || `mcp-${repo.id}`;
+
+        const agentData = {
+          sourceId,
+          source: "GITHUB_MCP" as const,
+          name,
+          slug,
+          description,
+          url: repo.html_url,
+          homepage: (pkg.homepage as string) ?? null,
+          capabilities,
+          protocols: ["MCP"] as string[],
+          languages: ["typescript"] as string[],
+          githubData: {
+            stars: repo.stargazers_count,
+            forks: repo.forks_count,
+            lastCommit: repo.pushed_at,
+            defaultBranch: repo.default_branch,
+          },
+          npmData: {
+            packageName: pkg.name,
+            version: pkg.version,
+          } as Record<string, unknown>,
+          openclawData: null as unknown as Record<string, unknown>,
+          readme: readme ?? pkgContent,
+          safetyScore,
+          popularityScore,
+          freshnessScore,
+          performanceScore: 0,
+          overallRank: calculateOverallRank({
+            safety: safetyScore,
+            popularity: popularityScore,
+            freshness: freshnessScore,
+            performance: 0,
+          }),
+          status:
+            safetyScore >= 40 ? ("ACTIVE" as const) : ("PENDING_REVIEW" as const),
+          lastCrawledAt: new Date(),
+          nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        };
+
+        await upsertAgent(agentData, {
+          name: agentData.name,
+          slug: agentData.slug,
+          description: agentData.description,
+          homepage: agentData.homepage,
+          githubData: agentData.githubData,
+          npmData: agentData.npmData,
+          readme: agentData.readme,
+          safetyScore: agentData.safetyScore,
+          popularityScore: agentData.popularityScore,
+          freshnessScore: agentData.freshnessScore,
+          overallRank: agentData.overallRank,
+          status: agentData.status,
+          lastCrawledAt: agentData.lastCrawledAt,
+          nextCrawlAt: agentData.nextCrawlAt,
+        });
+
+        await ackCandidate(candidate.id);
+        totalFound++;
+      }
+
+      recordSuccess(sourceHealthKey);
+    } else {
     for (const searchQuery of SEARCH_QUERIES) {
       if (totalFound >= maxResults) break;
       let page = 1;
@@ -116,18 +247,26 @@ export async function crawlGitHubMCP(
       while (totalFound < maxResults && page <= MAX_PAGES_PER_QUERY) {
         let data: { items?: Array<{ repository?: { full_name?: string }; path?: string }> };
         try {
-          const res = await octokit.rest.search.code({
-            q: searchQuery,
-            sort: "indexed",
-            order: "desc",
-            per_page: PAGE_SIZE,
-            page,
-          });
+          const res = await withGithubTimeout(
+            () =>
+              octokit.rest.search.code({
+                q: searchQuery,
+                sort: "indexed",
+                order: "desc",
+                per_page: PAGE_SIZE,
+                page,
+              }),
+            `search.code "${searchQuery}" page=${page}`
+          );
           data = res.data as { items?: Array<{ repository?: { full_name?: string }; path?: string }> };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           if (msg.includes("Cannot access beyond the first 1000 results") || (err as { status?: number })?.status === 422) {
             break; // Hit GitHub's 1000-result cap, move to next query
+          }
+          if (isRetryableGitHubError(err)) {
+            console.warn(`[GITHUB_MCP] transient GitHub error on query "${searchQuery}" page ${page}: ${msg}`);
+            break; // Skip this query page and continue crawl
           }
           throw err;
         }
@@ -242,6 +381,7 @@ export async function crawlGitHubMCP(
         page++;
       }
     }
+    }
 
     await db
       .update(crawlJobs)
@@ -252,6 +392,7 @@ export async function crawlGitHubMCP(
       })
       .where(eq(crawlJobs.id, jobId));
   } catch (err) {
+    recordFailure(sourceHealthKey);
     await db
       .update(crawlJobs)
       .set({

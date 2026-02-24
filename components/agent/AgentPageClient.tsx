@@ -10,6 +10,8 @@ import { SkillMarkdown } from "./SkillMarkdown";
 import { AgentHomepageEmbed } from "./AgentHomepageEmbed";
 import { ClaimBanner } from "./ClaimBanner";
 import { OwnerBadge } from "./OwnerBadge";
+import { VerificationTierBadge } from "./VerificationTierBadge";
+import { CustomAgentPage } from "./CustomAgentPage";
 
 interface OpenClawData {
   parameters?: Record<
@@ -49,9 +51,18 @@ interface Agent {
   codeSnippets?: string[];
   openclawData?: OpenClawData | null;
   claimStatus?: string;
+  verificationTier?: "NONE" | "BRONZE" | "SILVER" | "GOLD";
   claimedByName?: string | null;
   isOwner?: boolean;
   claimedAt?: string | null;
+  hasCustomPage?: boolean;
+  customPage?: {
+    html: string;
+    css: string;
+    js: string;
+    widgetLayout: unknown[];
+    updatedAt?: string | null;
+  } | null;
   customLinks?: Array<{ label: string; url: string }>;
 }
 
@@ -151,6 +162,57 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
   const searchParams = useSearchParams();
   const forceDetails = searchParams.get("view") === "details";
 
+  if (agent.hasCustomPage && agent.customPage && !forceDetails) {
+    return (
+      <div className="min-h-screen bg-[var(--bg-deep)]">
+        <div className="relative max-w-5xl mx-auto px-4 py-8">
+          <div className="flex items-center justify-between mb-6">
+            <BackToSearchLink />
+            {agent.claimStatus !== "CLAIMED" && (
+              <a
+                href={`/agent/${agent.slug}/claim`}
+                className="inline-flex items-center gap-1.5 text-sm text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-colors"
+              >
+                Claim this agent
+              </a>
+            )}
+          </div>
+
+          <ClaimBanner
+            slug={agent.slug}
+            claimStatus={agent.claimStatus ?? "UNCLAIMED"}
+            isOwner={agent.isOwner ?? false}
+          />
+
+          <header className="mb-6 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+            <div className="flex items-start gap-3 mb-2 flex-wrap">
+              <h1 className="text-2xl md:text-3xl font-bold text-[var(--text-primary)] tracking-tight">
+                {agent.name}
+              </h1>
+              {agent.claimStatus === "CLAIMED" && (
+                <OwnerBadge claimedByName={agent.claimedByName} size="sm" />
+              )}
+              <VerificationTierBadge tier={agent.verificationTier} size="sm" />
+            </div>
+            <p className="text-sm text-[var(--text-tertiary)]">
+              This is a developer-customized page rendered in a secure sandbox.
+            </p>
+          </header>
+
+          <CustomAgentPage
+            agentSlug={agent.slug}
+            code={{
+              html: agent.customPage.html,
+              css: agent.customPage.css,
+              js: agent.customPage.js,
+            }}
+            className="w-full min-h-[75vh] rounded-xl border border-[var(--border)] bg-white"
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (agent.homepage && !forceDetails) {
     return (
       <AgentHomepageEmbed
@@ -229,6 +291,7 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
             {agent.claimStatus === "CLAIMED" && (
               <OwnerBadge claimedByName={agent.claimedByName} />
             )}
+            <VerificationTierBadge tier={agent.verificationTier} />
           </div>
           <div className="flex flex-wrap gap-2 mb-4">
             {agent.source && <SourceBadge source={agent.source} />}

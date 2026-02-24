@@ -279,7 +279,14 @@ describe("GET /api/search", () => {
 
   it("includes snippet field in results when query is present", async () => {
     mockDb.execute.mockResolvedValue({
-      rows: [mockAgent({ snippet: "<mark>test</mark> agent" })],
+      rows: [
+        mockAgent({
+          snippet: "<mark>test</mark> agent",
+          claim_status: "CLAIMED",
+          verification_tier: "SILVER",
+          has_custom_page: true,
+        }),
+      ],
     });
 
     const res = await GET(new NextRequest("http://localhost/api/search?q=test&sort=rank"));
@@ -287,6 +294,9 @@ describe("GET /api/search", () => {
 
     expect(res.status).toBe(200);
     expect(data.results[0]).toHaveProperty("snippet");
+    expect(data.results[0].claimStatus).toBe("CLAIMED");
+    expect(data.results[0].verificationTier).toBe("SILVER");
+    expect(data.results[0].hasCustomPage).toBe(true);
   });
 
   // --- Pagination ---

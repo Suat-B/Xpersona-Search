@@ -48,6 +48,9 @@ export interface SearchSuggestionsHandle {
 
 const DEBOUNCE_MS = 150;
 const MIN_QUERY_LENGTH = 2;
+const PANEL_VIEWPORT_GUTTER_PX = 12;
+const PANEL_MAX_HEIGHT_PX = 420;
+const PANEL_SWITCH_TO_TOP_THRESHOLD_PX = 220;
 
 /* ------------------------------------------------------------------ */
 /*  Icons                                                              */
@@ -185,6 +188,8 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
     const [items, setItems] = useState<SuggestionItem[]>([]);
     const [loading, setLoading] = useState(false);
     const [highlightedIndex, setHighlightedIndex] = useState(0);
+    const [panelPlacement, setPanelPlacement] = useState<"top" | "bottom">("bottom");
+    const [panelMaxHeight, setPanelMaxHeight] = useState(360);
     const listRef = useRef<HTMLUListElement>(null);
     const abortRef = useRef<AbortController | null>(null);
     const hasUsedArrowKeysRef = useRef(false);
@@ -240,6 +245,62 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
         ?.querySelector(`[data-index="${highlightedIndex}"]`)
         ?.scrollIntoView({ block: "nearest" });
     }, [highlightedIndex]);
+
+    /* ---- keep suggestions inside visible viewport / scroll container ---- */
+    const updatePanelGeometry = useCallback(() => {
+      if (!anchorRef.current || typeof window === "undefined") return;
+
+      const viewportBottom = window.visualViewport?.height ?? window.innerHeight;
+      const viewportTop = 0;
+      let boundaryTop = viewportTop;
+      let boundaryBottom = viewportBottom;
+
+      // Clamp against clipping/scrollable ancestors so the panel does not spill out.
+      let parent = anchorRef.current.parentElement;
+      while (parent) {
+        const { overflowY } = window.getComputedStyle(parent);
+        if (/(auto|scroll|overlay|hidden|clip)/.test(overflowY)) {
+          const rect = parent.getBoundingClientRect();
+          boundaryTop = Math.max(boundaryTop, rect.top);
+          boundaryBottom = Math.min(boundaryBottom, rect.bottom);
+        }
+        parent = parent.parentElement;
+      }
+
+      const anchorRect = anchorRef.current.getBoundingClientRect();
+      const spaceBelow = boundaryBottom - anchorRect.bottom - PANEL_VIEWPORT_GUTTER_PX;
+      const spaceAbove = anchorRect.top - boundaryTop - PANEL_VIEWPORT_GUTTER_PX;
+
+      const shouldOpenUp =
+        spaceBelow < PANEL_SWITCH_TO_TOP_THRESHOLD_PX && spaceAbove > spaceBelow;
+      const availableSpace = shouldOpenUp ? spaceAbove : spaceBelow;
+      const boundedHeight = Math.max(
+        0,
+        Math.min(PANEL_MAX_HEIGHT_PX, Math.floor(availableSpace))
+      );
+
+      setPanelPlacement(shouldOpenUp ? "top" : "bottom");
+      setPanelMaxHeight(boundedHeight);
+    }, [anchorRef]);
+
+    useEffect(() => {
+      if (!visible) return;
+
+      const handleReposition = () => updatePanelGeometry();
+      handleReposition();
+
+      window.addEventListener("resize", handleReposition);
+      window.addEventListener("scroll", handleReposition, true);
+      window.visualViewport?.addEventListener("resize", handleReposition);
+      window.visualViewport?.addEventListener("scroll", handleReposition);
+
+      return () => {
+        window.removeEventListener("resize", handleReposition);
+        window.removeEventListener("scroll", handleReposition, true);
+        window.visualViewport?.removeEventListener("resize", handleReposition);
+        window.visualViewport?.removeEventListener("scroll", handleReposition);
+      };
+    }, [visible, updatePanelGeometry]);
 
     /* ---- fetch API suggestions ---- */
     const fetchSuggestions = useCallback(async (q: string) => {
@@ -514,7 +575,10 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
     return (
       <div
         id={id}
-        className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-xl overflow-hidden max-h-[min(52vh,360px)] sm:max-h-[min(420px,60vh)] overflow-y-auto overscroll-contain"
+        className={`absolute left-0 right-0 z-50 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-xl overflow-hidden overflow-y-auto overscroll-contain ${
+          panelPlacement === "top" ? "bottom-full mb-1" : "top-full mt-1"
+        }`}
+        style={{ maxHeight: `${panelMaxHeight}px` }}
         role="listbox"
         aria-expanded={visible}
         aria-label="Search suggestions"

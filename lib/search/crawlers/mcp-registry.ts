@@ -8,6 +8,8 @@ import { upsertAgent } from "../agent-upsert";
 import { eq } from "drizzle-orm";
 import { generateSlug } from "../utils/slug";
 import { calculateDynamicScores } from "../scoring/rank";
+import { enqueueCandidates } from "./discovery-frontier";
+import { scoreCandidate } from "./candidate-scoring";
 
 const MCP_REGISTRY_BASE =
   process.env.MCP_REGISTRY_URL ?? "https://registry.modelcontextprotocol.io";
@@ -75,6 +77,12 @@ export async function crawlMcpRegistry(
   const jobId = job?.id ?? crypto.randomUUID();
   let totalFound = 0;
   let cursor: string | undefined;
+  const discoveredCandidates: Array<{
+    repoFullName: string;
+    originSource: string;
+    confidence: number;
+    reasons: string[];
+  }> = [];
 
   try {
     do {
@@ -107,6 +115,21 @@ export async function crawlMcpRegistry(
           ) || `mcp-registry-${totalFound}`;
 
         const serverUrl = getUrl(server);
+        const repoMatch = serverUrl.match(/github\.com\/([^/]+\/[^/]+?)(?:\.git|\/|$)/);
+        if (repoMatch?.[1]) {
+          const scored = scoreCandidate({
+            name,
+            description: server.description,
+            originSource: "MCP_REGISTRY",
+            topics: ["mcp"],
+          });
+          discoveredCandidates.push({
+            repoFullName: repoMatch[1].replace(/\.git$/, ""),
+            originSource: "MCP_REGISTRY",
+            confidence: scored.confidence,
+            reasons: scored.reasons,
+          });
+        }
         const npmPkg = server.packages?.find((p) => p.registryType === "npm")?.identifier ?? null;
 
         const dynamicScores = await calculateDynamicScores({
@@ -158,6 +181,10 @@ export async function crawlMcpRegistry(
         totalFound++;
       }
     } while (cursor && totalFound < maxResults);
+
+    if (discoveredCandidates.length > 0) {
+      await enqueueCandidates(discoveredCandidates);
+    }
 
     await db
       .update(crawlJobs)

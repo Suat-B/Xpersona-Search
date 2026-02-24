@@ -27,6 +27,8 @@ export default function ClaimPage() {
   const [error, setError] = useState<string>("");
   const [verifyError, setVerifyError] = useState<string>("");
   const [notes, setNotes] = useState("");
+  const [publicKey, setPublicKey] = useState("");
+  const [signature, setSignature] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -117,7 +119,12 @@ export default function ClaimPage() {
       const res = await fetch(`/api/agents/${slug}/claim/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ method: selectedMethod }),
+        body: JSON.stringify({
+          method: selectedMethod,
+          ...(selectedMethod === "CRYPTO_SIGNATURE"
+            ? { publicKey, signature }
+            : {}),
+        }),
       });
       const data = await res.json();
       if (data.verified) {
@@ -131,7 +138,7 @@ export default function ClaimPage() {
       setVerifyError("Network error. Please try again.");
     }
     setLoading(false);
-  }, [slug, selectedMethod]);
+  }, [slug, selectedMethod, publicKey, signature]);
 
   if (step === "loading") {
     return (
@@ -184,7 +191,7 @@ export default function ClaimPage() {
               href={`/agent/${slug}/manage`}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--accent-heart)] px-6 py-3 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
             >
-              Manage Your Page
+              Customize Your Page
             </Link>
             <Link
               href={`/agent/${slug}`}
@@ -395,10 +402,41 @@ export default function ClaimPage() {
                   </div>
                 )}
 
+                {selectedMethod === "CRYPTO_SIGNATURE" && (
+                  <div className="space-y-3 rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
+                    <div>
+                      <label className="block text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-1.5">
+                        Public key (PEM, base64, or hex)
+                      </label>
+                      <textarea
+                        value={publicKey}
+                        onChange={(e) => setPublicKey(e.target.value)}
+                        className="w-full rounded-lg border border-[var(--border)] bg-black/30 px-3 py-2 text-xs font-mono text-[var(--text-primary)] min-h-[84px]"
+                        placeholder="-----BEGIN PUBLIC KEY----- ..."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-1.5">
+                        Signature (base64 or hex)
+                      </label>
+                      <textarea
+                        value={signature}
+                        onChange={(e) => setSignature(e.target.value)}
+                        className="w-full rounded-lg border border-[var(--border)] bg-black/30 px-3 py-2 text-xs font-mono text-[var(--text-primary)] min-h-[80px]"
+                        placeholder="base64-signature"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-3">
                   <button
                     onClick={verify}
-                    disabled={loading}
+                    disabled={
+                      loading ||
+                      (selectedMethod === "CRYPTO_SIGNATURE" &&
+                        (!publicKey.trim() || !signature.trim()))
+                    }
                     className="flex-1 rounded-xl bg-[var(--accent-heart)] px-6 py-3 text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-60"
                   >
                     {loading ? "Verifying..." : "Verify Now"}

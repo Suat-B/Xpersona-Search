@@ -7,6 +7,7 @@ import { getAuthUser } from "@/lib/auth-utils";
 import { checkClaimVerifyRateLimit } from "@/lib/claim/rate-limit";
 import { runVerifier } from "@/lib/claim/verifiers";
 import type { VerificationMethod } from "@/lib/claim/verification-methods";
+import { verificationTierForMethod } from "@/lib/claim/verification-tier";
 
 const VerifySchema = z.object({
   method: z
@@ -17,9 +18,12 @@ const VerifySchema = z.object({
       "DNS_TXT",
       "META_TAG",
       "EMAIL_MATCH",
+      "CRYPTO_SIGNATURE",
       "MANUAL_REVIEW",
     ])
     .optional(),
+  publicKey: z.string().max(4096).optional(),
+  signature: z.string().max(8192).optional(),
 });
 
 /**
@@ -97,8 +101,14 @@ export async function POST(
     );
   }
 
-  const method = (parsed.data?.method ??
-    claim.verificationMethod) as VerificationMethod;
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Invalid request", details: parsed.error.flatten() },
+      { status: 400 }
+    );
+  }
+
+  const method = (parsed.data.method ?? claim.verificationMethod) as VerificationMethod;
 
   if (method === "MANUAL_REVIEW") {
     return NextResponse.json({
@@ -109,7 +119,25 @@ export async function POST(
     });
   }
 
-  const result = await runVerifier(method, agent, claim.verificationToken, user.email);
+  if (method === "CRYPTO_SIGNATURE") {
+    if (!parsed.data.publicKey || !parsed.data.signature) {
+      return NextResponse.json(
+        { error: "publicKey and signature are required for cryptographic verification." },
+        { status: 400 }
+      );
+    }
+  }
+
+  const result = await runVerifier(
+    method,
+    agent,
+    claim.verificationToken,
+    user.email,
+    {
+      publicKey: parsed.data.publicKey,
+      signature: parsed.data.signature,
+    }
+  );
 
   if (!result.verified) {
     return NextResponse.json(
@@ -124,24 +152,76 @@ export async function POST(
   }
 
   const now = new Date();
-  await db
-    .update(agentClaims)
-    .set({
-      status: "APPROVED",
-      verifiedAt: now,
-      updatedAt: now,
-    })
-    .where(eq(agentClaims.id, claim.id));
+  const tier = verificationTierForMethod(method);
+  const verificationMetadata =
+    method === "CRYPTO_SIGNATURE"
+      ? {
+          publicKey: parsed.data.publicKey,
+          signature: parsed.data.signature,
+        }
+      : null;
 
-  await db
-    .update(agents)
-    .set({
-      claimedByUserId: user.id,
-      claimedAt: now,
-      claimStatus: "CLAIMED",
-      updatedAt: now,
-    })
-    .where(eq(agents.id, agent.id));
+  try {
+    await db
+      .update(agentClaims)
+      .set({
+        status: "APPROVED",
+        resolvedTier: tier,
+        verificationMetadata,
+        verifiedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(agentClaims.id, claim.id));
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      (err.message.includes('column "resolved_tier" does not exist') ||
+        err.message.includes('column "verification_metadata" does not exist'))
+    ) {
+      await db
+        .update(agentClaims)
+        .set({
+          status: "APPROVED",
+          verifiedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(agentClaims.id, claim.id));
+    } else {
+      throw err;
+    }
+  }
+
+  try {
+    await db
+      .update(agents)
+      .set({
+        claimedByUserId: user.id,
+        claimedAt: now,
+        claimStatus: "CLAIMED",
+        verificationTier: tier,
+        verificationMethod: method,
+        updatedAt: now,
+      })
+      .where(eq(agents.id, agent.id));
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      (err.message.includes('column "verification_tier" does not exist') ||
+        err.message.includes('column "verification_method" does not exist'))
+    ) {
+      await db
+        .update(agents)
+        .set({
+          claimedByUserId: user.id,
+          claimedAt: now,
+          claimStatus: "CLAIMED",
+          updatedAt: now,
+        })
+        .where(eq(agents.id, agent.id));
+    } else {
+      throw err;
+    }
+  }
 
   return NextResponse.json({
     success: true,

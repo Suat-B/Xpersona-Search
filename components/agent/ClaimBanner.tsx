@@ -30,7 +30,7 @@ export function ClaimBanner({ slug, claimStatus, isOwner }: ClaimBannerProps) {
             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
-            Manage Page
+            Customize Page
           </Link>
         </div>
       </div>
@@ -72,7 +72,7 @@ export function ClaimBanner({ slug, claimStatus, isOwner }: ClaimBannerProps) {
               Are you the developer?
             </p>
             <p className="text-xs text-[var(--text-tertiary)]">
-              Claim this page to manage it and get a verified badge.
+              Claim this page to unlock customization and trust tier badges.
             </p>
           </div>
         </div>

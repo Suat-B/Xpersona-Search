@@ -6,7 +6,16 @@ import pLimit from "p-limit";
 import { db } from "@/lib/db";
 import { agents, crawlJobs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { octokit, fetchRepoDetails, fetchFileContent } from "../utils/github";
+import {
+  octokit,
+  fetchRepoDetails,
+  fetchFileContent,
+  withGithubTimeout,
+  isRetryableGitHubError,
+} from "../utils/github";
+import { canProceed, recordFailure, recordSuccess } from "./source-health";
+import { getCrawlMode, isHotOrWarm, type CrawlRuntimeOptions } from "./crawler-mode";
+import { ackCandidate, leaseCandidates, requeueCandidate } from "./discovery-frontier";
 import { parseSkillMd } from "../parsers/skill-md";
 import { calculateSafetyScore } from "../scoring/safety";
 import {
@@ -100,7 +109,8 @@ function isLikelyAgent(repo: { description?: string | null; name?: string }): bo
 }
 
 export async function crawlGitHubRepos(
-  maxResults: number = 5000
+  maxResults: number = 5000,
+  options?: CrawlRuntimeOptions
 ): Promise<{ total: number; jobId: string }> {
   const [job] = await db
     .insert(crawlJobs)
@@ -115,8 +125,146 @@ export async function crawlGitHubRepos(
   const limit = pLimit(CONCURRENCY);
   const seenIds = new Set<number>();
   let totalFound = 0;
+  const sourceHealthKey = "GITHUB_REPOS";
+  const mode = getCrawlMode(options);
 
   try {
+    if (isHotOrWarm(options)) {
+      if (!canProceed(sourceHealthKey)) {
+        await db
+          .update(crawlJobs)
+          .set({
+            status: "COMPLETED",
+            completedAt: new Date(),
+            agentsFound: 0,
+            skipped: 1,
+          })
+          .where(eq(crawlJobs.id, jobId));
+        return { total: 0, jobId };
+      }
+
+      const leased = await leaseCandidates({
+        lockOwner: options?.lockOwner ?? sourceHealthKey,
+        limit: maxResults,
+        minConfidence: mode === "hot" ? 80 : 50,
+      });
+
+      for (const candidate of leased) {
+        if (totalFound >= maxResults) break;
+        const repo = await fetchRepoDetails(candidate.repoFullName);
+        if (!repo) {
+          await requeueCandidate(candidate.id, "Repo details unavailable", 30_000);
+          continue;
+        }
+        if (repo.fork) {
+          await ackCandidate(candidate.id);
+          continue;
+        }
+        const sourceId = `github:${repo.id}`;
+        let description = repo.description;
+        let capabilities: string[] = [];
+        let protocols = ["OPENCLEW"] as string[];
+
+        const skillContent = await fetchFileContent(
+          repo.full_name,
+          "SKILL.md",
+          repo.default_branch
+        );
+        if (skillContent) {
+          const skillData = parseSkillMd(skillContent);
+          description = skillData.description ?? description;
+          capabilities = skillData.capabilities ?? [];
+          protocols = skillData.protocols;
+        } else {
+          const pkgContent = await fetchFileContent(
+            repo.full_name,
+            "package.json",
+            repo.default_branch
+          );
+          if (pkgContent) {
+            try {
+              const pkg = JSON.parse(pkgContent) as Record<string, unknown>;
+              const deps = {
+                ...((pkg.dependencies as Record<string, string>) ?? {}),
+                ...((pkg.devDependencies as Record<string, string>) ?? {}),
+              };
+              if (
+                Object.keys(deps).some(
+                  (k) => k.includes("mcp") || k.includes("modelcontextprotocol")
+                )
+              ) {
+                protocols = ["MCP", "OPENCLEW"];
+              }
+            } catch {
+              // ignore parse error
+            }
+          }
+        }
+
+        const safetyScore = await calculateSafetyScore(repo, skillContent ?? "");
+        const popularityScore = calculatePopularityScore(repo);
+        const freshnessScore = calculateFreshnessScore(repo);
+        const slug =
+          generateSlug(repo.full_name.replace("/", "-")) ||
+          `github-${repo.id}`;
+
+        const agentData = {
+          sourceId,
+          source: "GITHUB_REPOS" as const,
+          name: repo.name,
+          slug,
+          description: description ?? null,
+          url: repo.html_url,
+          homepage: null,
+          capabilities,
+          protocols,
+          languages: ["typescript"] as string[],
+          githubData: {
+            stars: repo.stargazers_count,
+            forks: repo.forks_count,
+            lastCommit: repo.pushed_at,
+            defaultBranch: repo.default_branch,
+          },
+          npmData: null,
+          openclawData: null,
+          readme: skillContent ?? description ?? "",
+          safetyScore,
+          popularityScore,
+          freshnessScore,
+          performanceScore: 0,
+          overallRank: calculateOverallRank({
+            safety: safetyScore,
+            popularity: popularityScore,
+            freshness: freshnessScore,
+            performance: 0,
+          }),
+          status: safetyScore >= 40 ? ("ACTIVE" as const) : ("PENDING_REVIEW" as const),
+          lastCrawledAt: new Date(),
+          nextCrawlAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        };
+
+        await upsertAgent(agentData, {
+          name: agentData.name,
+          slug: agentData.slug,
+          description: agentData.description,
+          capabilities: agentData.capabilities,
+          protocols: agentData.protocols,
+          githubData: agentData.githubData,
+          readme: agentData.readme,
+          safetyScore: agentData.safetyScore,
+          popularityScore: agentData.popularityScore,
+          freshnessScore: agentData.freshnessScore,
+          overallRank: agentData.overallRank,
+          status: agentData.status,
+          lastCrawledAt: agentData.lastCrawledAt,
+          nextCrawlAt: agentData.nextCrawlAt,
+        });
+
+        await ackCandidate(candidate.id);
+        totalFound++;
+      }
+      recordSuccess(sourceHealthKey);
+    } else {
     for (const query of REPO_SEARCH_QUERIES) {
       if (totalFound >= maxResults) break;
 
@@ -125,18 +273,26 @@ export async function crawlGitHubRepos(
       while (totalFound < maxResults && page <= MAX_PAGES_PER_QUERY) {
         let data: { items?: Array<{ id?: number; full_name?: string; description?: string | null; name?: string }> };
         try {
-          const res = await octokit.rest.search.repos({
-            q: query,
-            sort: "stars",
-            order: "desc",
-            per_page: PAGE_SIZE,
-            page,
-          });
+          const res = await withGithubTimeout(
+            () =>
+              octokit.rest.search.repos({
+                q: query,
+                sort: "stars",
+                order: "desc",
+                per_page: PAGE_SIZE,
+                page,
+              }),
+            `search.repos "${query}" page=${page}`
+          );
           data = res.data as { items?: Array<{ id?: number; full_name?: string; description?: string | null; name?: string }> };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           if (msg.includes("Cannot access beyond the first 1000 results") || (err as { status?: number })?.status === 422) {
             break; // Hit GitHub's 1000-result cap, move to next query
+          }
+          if (isRetryableGitHubError(err)) {
+            console.warn(`[GITHUB_REPOS] transient GitHub error on query "${query}" page ${page}: ${msg}`);
+            break; // Skip this query page and continue crawl
           }
           throw err;
         }
@@ -263,6 +419,7 @@ export async function crawlGitHubRepos(
         if (items.length < PAGE_SIZE) break;
       }
     }
+    }
 
     await db
       .update(crawlJobs)
@@ -273,6 +430,7 @@ export async function crawlGitHubRepos(
       })
       .where(eq(crawlJobs.id, jobId));
   } catch (err) {
+    recordFailure(sourceHealthKey);
     await db
       .update(crawlJobs)
       .set({
