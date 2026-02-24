@@ -493,7 +493,7 @@ export function SearchLanding() {
 
         <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-6">
           <div className="mb-4 flex items-center gap-2">
-            {(["agents", "images", "artifacts"] as const).map((v) => (
+            {(["agents", "artifacts"] as const).map((v) => (
               <button
                 key={v}
                 type="button"

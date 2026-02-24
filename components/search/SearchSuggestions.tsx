@@ -222,6 +222,24 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
       [onSelect, onQuerySelect, onClose]
     );
 
+    const handlePointerSelect = useCallback(
+      (e: React.PointerEvent, item: SuggestionItem) => {
+        e.preventDefault();
+        selectItem(item);
+      },
+      [selectItem]
+    );
+
+    const handleClickSelect = useCallback(
+      (e: React.MouseEvent, item: SuggestionItem) => {
+        e.preventDefault();
+        if (e.detail === 0) {
+          selectItem(item);
+        }
+      },
+      [selectItem]
+    );
+
     /* ---- keyboard navigation ---- */
     const handleKeyDown = useCallback(
       (e: React.KeyboardEvent) => {
@@ -419,18 +437,12 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
       return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [visible, onClose, anchorRef]);
 
-    /* ---- handle remove recent ---- */
-    const handleRemoveRecent = useCallback(
-      (e: React.MouseEvent, text: string) => {
+    const handleRemoveRecentPointer = useCallback(
+      (e: React.PointerEvent, text: string) => {
         e.stopPropagation();
         e.preventDefault();
         removeRecentSearch(text);
-        setItems((prev) => {
-          const next = prev.filter(
-            (item) => !(item.type === "recent" && item.text === text)
-          );
-          return next;
-        });
+        setItems((prev) => prev.filter((item) => !(item.type === "recent" && item.text === text)));
       },
       []
     );
@@ -455,7 +467,8 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
           <li key={`r-${idx}-${item.text}`} data-index={idx}>
             <button
               type="button"
-              onClick={() => selectItem(item)}
+              onPointerDown={(e) => handlePointerSelect(e, item)}
+              onClick={(e) => handleClickSelect(e, item)}
               onMouseEnter={() => setHighlightedIndex(idx)}
               data-index={idx}
               role="option"
@@ -469,7 +482,10 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
               <span
                 role="button"
                 tabIndex={-1}
-                onClick={(e) => handleRemoveRecent(e, item.text)}
+                onPointerDown={(e) => handleRemoveRecentPointer(e, item.text)}
+                onClick={(e) => {
+                  e.preventDefault();
+                }}
                 className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-white/10 text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-opacity"
                 aria-label={`Remove ${item.text} from recent`}
               >
@@ -490,7 +506,8 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
           <li key={`t-${idx}-${item.text}`} data-index={idx}>
             <button
               type="button"
-              onClick={() => selectItem(item)}
+              onPointerDown={(e) => handlePointerSelect(e, item)}
+              onClick={(e) => handleClickSelect(e, item)}
               onMouseEnter={() => setHighlightedIndex(idx)}
               data-index={idx}
               role="option"
@@ -518,7 +535,8 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
           <li key={`q-${idx}-${item.text}`} data-index={idx}>
             <button
               type="button"
-              onClick={() => selectItem(item)}
+              onPointerDown={(e) => handlePointerSelect(e, item)}
+              onClick={(e) => handleClickSelect(e, item)}
               onMouseEnter={() => setHighlightedIndex(idx)}
               data-index={idx}
               role="option"
@@ -546,10 +564,8 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
           <li key={item.agent.id} data-index={idx}>
             <Link
               href={`/agent/${item.agent.slug}`}
-              onClick={(e) => {
-                e.preventDefault();
-                selectItem(item);
-              }}
+              onPointerDown={(e) => handlePointerSelect(e, item)}
+              onClick={(e) => handleClickSelect(e, item)}
               onMouseEnter={() => setHighlightedIndex(idx)}
               data-index={idx}
               role="option"
