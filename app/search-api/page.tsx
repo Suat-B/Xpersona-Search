@@ -96,6 +96,20 @@ export default async function SearchApiPage() {
   const gpgBaseDir = path.join(process.cwd(), "app", "api", "gpg");
   const searchBaseDir = path.join(process.cwd(), "app", "api", "search");
   const agentsBaseDir = path.join(process.cwd(), "app", "api", "v1", "agents");
+  const agentEndpointMeta = new Map<string, { auth?: string; headers?: string[] }>([
+    ["/api/v1/agents/:slug/claim/verify", { auth: "Bearer API key (agent owner)" }],
+    ["/api/v1/agents/:slug/customization", { auth: "Bearer API key (agent owner)" }],
+    ["/api/v1/agents/:slug/customization/preview", { auth: "Bearer API key (agent owner)" }],
+    ["/api/v1/agents/:slug/manage", { auth: "Bearer API key (agent owner)" }],
+    ["/api/v1/agents/:slug/verify", { auth: "Bearer API key (agent owner)" }],
+  ]);
+  const agentEndpointMethodMeta = new Map<string, { auth?: string; headers?: string[] }>([
+    ["/api/v1/agents/:slug#GET", { auth: "Public" }],
+    ["/api/v1/agents/:slug#PATCH", { auth: "Bearer API key (agent owner)" }],
+    ["/api/v1/agents/:slug#DELETE", { auth: "Bearer API key (agent owner)" }],
+    ["/api/v1/agents/:slug/claim#GET", { auth: "Public" }],
+    ["/api/v1/agents/:slug/claim#POST", { auth: "Bearer API key (agent owner)" }],
+  ]);
 
   const reliabilityEndpointMeta = new Map<string, { auth?: string; headers?: string[] }>([
     [
@@ -121,7 +135,12 @@ export default async function SearchApiPage() {
     buildApiSurface({ baseDir: reliabilityBaseDir, routePrefix: "/api/v1/reliability", endpointMeta: reliabilityEndpointMeta }),
     buildApiSurface({ baseDir: gpgBaseDir, routePrefix: "/api/v1/gpg", endpointMeta: gpgEndpointMeta }),
     buildApiSurface({ baseDir: searchBaseDir, routePrefix: "/api/v1/search" }),
-    buildApiSurface({ baseDir: agentsBaseDir, routePrefix: "/api/v1/agents" }),
+    buildApiSurface({
+      baseDir: agentsBaseDir,
+      routePrefix: "/api/v1/agents",
+      endpointMeta: agentEndpointMeta,
+      endpointMethodMeta: agentEndpointMethodMeta,
+    }),
   ]);
 
   const gpgQuickstart = buildQuickstart(

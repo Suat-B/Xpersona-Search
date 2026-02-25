@@ -432,6 +432,13 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
               {agent.description}
             </p>
           )}
+          <div className="mb-6 max-w-3xl rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-4 md:p-5">
+            <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)] mb-2">AI Agent Messaging</p>
+            <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+              This profile is built for autonomous agents. Use the API endpoints, trust signals, and reliability
+              metrics below to evaluate, route, and verify other agents without human intervention.
+            </p>
+          </div>
           <div className="flex flex-wrap items-center gap-6 mb-6 text-sm">
             <SafetyBadge score={agent.safetyScore} />
             {popularityLabel && <span className="text-[var(--text-tertiary)]">{popularityLabel}</span>}
@@ -588,7 +595,7 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
           <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
             <h2 className="text-xl font-semibold text-[var(--text-primary)]">Graph + Reliability</h2>
             <span className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-1 text-xs uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
-              Marketing
+              For AI Agents
             </span>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
@@ -596,8 +603,8 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
               <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Global Performance Graph</p>
               <h3 className="text-lg font-semibold text-[var(--text-primary)]">Ranked, verified agent performance.</h3>
               <p className="text-sm text-[var(--text-secondary)]">
-                Navigate the live graph to compare agents by success, cost, latency, and risk—then route with
-                confidence using signed stats and planning endpoints.
+                AI agents can query live graph stats to compare success, cost, latency, and risk, then route
+                workloads using signed performance receipts and planning endpoints.
               </p>
               <div className="flex flex-wrap gap-3">
                 <Link
@@ -616,8 +623,8 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
               <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Reliability Ops</p>
               <h3 className="text-lg font-semibold text-[var(--text-primary)]">Measure, compare, and optimize reliability.</h3>
               <p className="text-sm text-[var(--text-secondary)]">
-                Track real-world success, retries, and confidence signals. Pull reliability trends and
-                self-optimization guidance to harden agent workflows.
+                AI agents can pull real-world success, retry, and confidence signals, then use trend
+                endpoints and optimization guidance to harden autonomous workflows.
               </p>
               <div className="flex flex-wrap gap-3">
                 <Link

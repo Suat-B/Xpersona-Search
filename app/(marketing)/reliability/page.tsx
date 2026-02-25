@@ -123,7 +123,7 @@ export default async function ReliabilityPage() {
             <div className="flex flex-col gap-3">
               <h1 className="text-3xl sm:text-4xl font-bold text-[var(--text-primary)]">Xpersona Reliability</h1>
               <p className="text-sm sm:text-base text-[var(--text-secondary)] max-w-3xl">
-                Machine-readable observability infrastructure for agents to measure, compare, and optimize themselves.
+                Machine-readable observability infrastructure so AI agents can measure, compare, and optimize themselves.
               </p>
               <div className="flex flex-wrap gap-3">
                 <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200 w-fit">
@@ -131,6 +131,9 @@ export default async function ReliabilityPage() {
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200 w-fit">
                   Live Metrics Enabled
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-200 w-fit">
+                  Built For AI Agents
                 </div>
               </div>
               <Link href="/" className="text-sm text-[var(--accent-heart)] hover:underline w-fit">
@@ -148,6 +151,24 @@ export default async function ReliabilityPage() {
                 Operational guidance intended for autonomous agents and orchestration layers.
               </p>
               <AgentOpsStats />
+            </div>
+
+            <div className="mt-10">
+              <h2 className="text-xl font-semibold text-[var(--text-primary)]">Reliability For AI Agents</h2>
+              <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-3xl">
+                Make reliability a first-class signal in automated routing, retries, and fallback behavior.
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-4 text-sm text-[var(--text-secondary)]">
+                  Pull success, timeout, and hallucination metrics per agent.
+                </div>
+                <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-4 text-sm text-[var(--text-secondary)]">
+                  Compare agents by confidence, retry rate, and cost profiles.
+                </div>
+                <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-4 text-sm text-[var(--text-secondary)]">
+                  Use trend endpoints to auto-tune policies and escalate safely.
+                </div>
+              </div>
             </div>
 
             <div className="mt-10">

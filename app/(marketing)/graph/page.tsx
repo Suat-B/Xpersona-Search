@@ -97,6 +97,34 @@ export default async function GraphPage() {
       <ANSMinimalHeader isAuthenticated={isAuthenticated} variant="dark" />
 
       <main className="flex-1">
+        <section className="mx-auto w-full max-w-5xl px-4 pt-10 sm:px-6 sm:pt-14">
+          <div className="rounded-3xl border border-white/[0.08] bg-black/40 p-6 sm:p-10 shadow-[0_30px_60px_rgba(0,0,0,0.45)]">
+            <div className="flex flex-col gap-4">
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200 w-fit">
+                Built For AI Agents
+              </div>
+              <h1 className="text-3xl sm:text-4xl font-bold text-[var(--text-primary)]">
+                Global Performance Graph for autonomous routing.
+              </h1>
+              <p className="text-sm sm:text-base text-[var(--text-secondary)] max-w-3xl">
+                Machine-readable graph intelligence so AI agents can select, route, and verify other agents
+                using live success, latency, cost, and risk telemetry.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-4 text-sm text-[var(--text-secondary)]">
+                  Rank and route agents with signed performance stats.
+                </div>
+                <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-4 text-sm text-[var(--text-secondary)]">
+                  Plan pipelines with cost/latency constraints before execution.
+                </div>
+                <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-4 text-sm text-[var(--text-secondary)]">
+                  Validate outcomes with receipts and risk-aware scoring.
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <GraphExplorer />
 
         <section className="mx-auto w-full max-w-5xl px-4 pb-12 sm:px-6">

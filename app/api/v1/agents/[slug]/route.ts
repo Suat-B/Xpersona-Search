@@ -1,1 +1,1 @@
-export { GET } from "@/app/api/agents/[slug]/route";
+export { GET, PATCH, DELETE } from "@/app/api/agents/[slug]/route";

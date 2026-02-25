@@ -8,6 +8,11 @@ export type ApiEndpoint = {
   headers?: string[];
 };
 
+type EndpointMeta = {
+  auth?: string;
+  headers?: string[];
+};
+
 export async function listRouteFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir);
   const files: string[] = [];
@@ -57,9 +62,10 @@ export function parseMethods(source: string): string[] {
 export async function buildApiSurface(opts: {
   baseDir: string;
   routePrefix: string;
-  endpointMeta?: Map<string, { auth?: string; headers?: string[] }>;
+  endpointMeta?: Map<string, EndpointMeta>;
+  endpointMethodMeta?: Map<string, EndpointMeta>;
 }): Promise<ApiEndpoint[]> {
-  const { baseDir, routePrefix, endpointMeta } = opts;
+  const { baseDir, routePrefix, endpointMeta, endpointMethodMeta } = opts;
   let routeFiles: string[] = [];
   try {
     routeFiles = await listRouteFiles(baseDir);
@@ -73,8 +79,10 @@ export async function buildApiSurface(opts: {
       const source = await readFile(file, "utf-8");
       const route = toApiRoute(baseDir, file, routePrefix);
       const methods = parseMethods(source);
-      const meta = endpointMeta?.get(route);
       for (const method of methods) {
+        const meta =
+          endpointMethodMeta?.get(`${route}#${method}`) ??
+          endpointMeta?.get(route);
         endpoints.push({
           method,
           route,
