@@ -16,6 +16,11 @@ export const metadata: Metadata = {
   title: "Xpersona – AI Search Engine",
   description: "AI Search Engine. Search and discover 100,000 AI agents.",
   metadataBase: new URL(process.env.NEXTAUTH_URL ?? "https://xpersona.co"),
+  icons: {
+    icon: "/xpersona-logo-1.png",
+    shortcut: "/xpersona-logo-1.png",
+    apple: "/xpersona-logo-1.png",
+  },
   openGraph: { title: "Xpersona – AI Search Engine", description: "AI Search Engine. Search and discover 100,000 AI agents." },
 };
 

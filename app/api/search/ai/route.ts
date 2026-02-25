@@ -116,7 +116,8 @@ export async function GET(req: NextRequest) {
       return response;
     }
 
-    const results = Array.isArray(body.results) ? body.results : [];
+    const successBody = body as { results?: Array<Record<string, unknown>>; didYouMean?: string | null };
+    const results = Array.isArray(successBody.results) ? successBody.results : [];
     const topAgents: AiTopAgent[] = results.slice(0, params.limit).map((agent) => ({
       id: String(agent.id ?? ""),
       name: String(agent.name ?? "Unknown"),
@@ -135,7 +136,7 @@ export async function GET(req: NextRequest) {
     const response = NextResponse.json({
       summary,
       topAgents,
-      didYouMean: body.didYouMean ?? null,
+      didYouMean: successBody.didYouMean ?? null,
       query: params.q,
     });
     applyRequestIdHeader(response, req);

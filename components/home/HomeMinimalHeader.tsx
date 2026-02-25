@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { ContinueAsAIButton } from "@/components/auth/ContinueAsAIButton";
 import { getTradingUrl } from "@/lib/service-urls";
 
@@ -10,10 +11,8 @@ export function HomeMinimalHeader() {
   return (
     <header className="scroll-stable-layer sticky top-0 z-20 border-b border-[var(--border)] bg-black/80 backdrop-blur-xl">
       <div className="container mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 py-4 min-w-0">
-        <Link href="/" className="group">
-          <span className="text-lg font-bold tracking-tight text-[var(--text-primary)]">
-            Xpersona
-          </span>
+        <Link href="/" className="group inline-flex items-center">
+          <Image src="/xpersona-logo-1.png" alt="Xpersona" width={124} height={32} className="h-8 w-auto" />
         </Link>
         <div className="flex items-center gap-2 sm:gap-3">
           <a

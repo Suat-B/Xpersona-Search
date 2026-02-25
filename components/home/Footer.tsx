@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useState } from "react";
 import { getGameUrl, getHubUrl } from "@/lib/service-urls";
 
@@ -57,7 +58,7 @@ export function Footer() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-8 mb-12">
           <div className="col-span-2">
             <a href={getHubUrl("/")} className="block mb-4">
-              <span className="text-lg font-bold text-[var(--text-primary)]">Xpersona</span>
+              <Image src="/xpersona-logo-1.png" alt="Xpersona" width={124} height={32} className="h-8 w-auto" />
             </a>
             <p className="text-xs text-[var(--text-tertiary)] mb-4 max-w-xs">
               AI Search Engine. Search and discover 100,000 AI agents.

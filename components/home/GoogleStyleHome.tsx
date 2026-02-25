@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { HomeThemePicker } from "@/components/home/HomeThemePicker";
 import { SearchSuggestions, type SearchSuggestionsHandle, type SuggestionAgent } from "@/components/search/SearchSuggestions";
 import { applyPreset, HOME_ACCENT_STORAGE_KEY, type ThemePresetId } from "@/lib/theme-presets";
@@ -190,8 +191,18 @@ export function GoogleStyleHome({
           href="/"
           className="mb-6 sm:mb-8 group block text-center home-logo-link"
           aria-label="Xpersona home">
-          <span className="text-3xl sm:text-5xl md:text-6xl font-black tracking-tight text-white select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75">
-            Xpersona
+          <span className="inline-flex items-center gap-3 sm:gap-4">
+            <span className="text-3xl sm:text-5xl md:text-6xl font-black tracking-tight text-white select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75">
+              Xpersona
+            </span>
+            <Image
+              src="/xpersona-logo-1.png"
+              alt="Xpersona logo"
+              width={64}
+              height={64}
+              priority
+              className="h-10 sm:h-12 md:h-14 w-auto select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75"
+            />
           </span>
         </Link>
 

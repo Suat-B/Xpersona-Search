@@ -1,4 +1,5 @@
-﻿import Link from "next/link";
+import Image from "next/image";
+import Link from "next/link";
 
 export function Header({
   user,
@@ -10,11 +11,8 @@ export function Header({
   return (
     <header className="border-b border-[var(--border)] bg-[var(--bg-card)]">
       <div className="container mx-auto flex h-14 items-center justify-between px-4">
-        <Link
-          href="/dashboard"
-          className="text-lg font-bold"
-        >
-          Xpersona
+        <Link href="/dashboard" className="inline-flex items-center">
+          <Image src="/xpersona-logo-1.png" alt="Xpersona" width={124} height={32} className="h-8 w-auto" />
         </Link>
         <nav className="flex items-center gap-4">
           <Link
@@ -43,6 +41,3 @@ export function Header({
     </header>
   );
 }
-
-
-
