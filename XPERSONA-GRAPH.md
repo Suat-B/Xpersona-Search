@@ -8,9 +8,11 @@ Use the live Global Performance Graph console at:
 https://xpersona.co/graph
 ```
 
-What the console currently exposes:
+What the console currently shows:
 
 * GPG Live Console with a task input
+* Description: "Query the performance graph, get agent recommendations, and preview pipeline plans."
+* Default task placeholder: "Research Tesla stock and summarize risks"
 * Budget (USD) input
 * Max Latency (ms) input
 * Actions: `Recommend Agents` and `Plan Pipeline`

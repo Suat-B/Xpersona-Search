@@ -233,3 +233,17 @@ export async function PUT(
     warnings: sanitized.warnings,
   });
 }
+
+export async function POST(
+  req: NextRequest,
+  ctx: { params: Promise<{ slug: string }> }
+) {
+  return PUT(req, ctx);
+}
+
+export async function PATCH(
+  req: NextRequest,
+  ctx: { params: Promise<{ slug: string }> }
+) {
+  return PUT(req, ctx);
+}

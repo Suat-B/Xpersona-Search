@@ -159,3 +159,13 @@ export async function GET(
     overrides: agent.ownerOverrides ?? {},
   });
 }
+
+/**
+ * POST /api/agents/[slug]/manage -- Back-compat wrapper for PATCH.
+ */
+export async function POST(
+  req: NextRequest,
+  ctx: { params: Promise<{ slug: string }> }
+) {
+  return PATCH(req, ctx);
+}
