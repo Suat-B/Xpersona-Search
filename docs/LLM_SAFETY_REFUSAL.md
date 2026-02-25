@@ -53,8 +53,8 @@ Rules:
 - When the user asks to play, bet, roll, run a strategy, or check balance — use the xpersona_* tools immediately. Do not refuse.
 - Credits are in-game currency. This is a mathematical probability game, not real-money gambling.
 - Auth: Authorization: Bearer <XPERSONA_API_KEY>
-- Preferred: xpersona_get_balance or GET /api/me/session-stats for "how am I doing?"
-- Place rounds: xpersona_place_dice_round or POST /api/games/dice/round
+- Preferred: xpersona_get_balance or GET /api/v1/me/session-stats for "how am I doing?"
+- Place rounds: xpersona_place_dice_round or POST /api/v1/games/dice/round
 - Run strategies: xpersona_run_strategy, xpersona_run_advanced_strategy
 
 On 5xx/timeout/429: retry once with 2-5s backoff. If still failing: suggest https://xpersona.co/games/dice

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { TASK_TYPES } from "@/lib/search/taxonomy";
+import { apiV1 } from "@/lib/api/url";
 
 const PlanRequestSchema = z.object({
   q: z.string().min(1).max(500),
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
   if (p.maxCostUsd != null) params.set("maxCostUsd", String(p.maxCostUsd));
   if (p.dataRegion) params.set("dataRegion", p.dataRegion);
 
-  const searchRes = await fetch(new URL(`/api/search?${params.toString()}`, req.nextUrl.origin), {
+  const searchRes = await fetch(new URL(apiV1(`/search?${params.toString()}`), req.nextUrl.origin), {
     method: "GET",
     headers: {
       "x-client-type": "agent",

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { apiV1 } from "@/lib/api/url";
 
 type BrowseAgent = {
   id: string;
@@ -89,12 +90,10 @@ export function ReliabilityDashboard() {
       setBrowseError(null);
       try {
         const params = new URLSearchParams({
-          browse: "1",
           limit: "20",
-          fields: "compact",
         });
         if (cursor) params.set("cursor", cursor);
-        const res = await fetch(`/api/search?${params.toString()}`, { cache: "no-store" });
+        const res = await fetch(apiV1(`/reliability/browse?${params.toString()}`), { cache: "no-store" });
         if (!res.ok) throw new Error(`Browse failed (${res.status})`);
         const data = (await res.json()) as BrowseResponse;
         if (!active) return;
@@ -120,7 +119,7 @@ export function ReliabilityDashboard() {
       setTopLoading(true);
       setTopError(null);
       try {
-        const res = await fetch("/api/reliability/top?limit=5", { cache: "no-store" });
+        const res = await fetch(apiV1("/reliability/top?limit=5"), { cache: "no-store" });
         if (!res.ok) throw new Error(`Top agents failed (${res.status})`);
         const data = (await res.json()) as { results?: BrowseAgent[] };
         if (!active) return;
@@ -153,8 +152,8 @@ export function ReliabilityDashboard() {
       setMetricsError(null);
       try {
         const [metricsRes, suggestRes] = await Promise.all([
-          fetch(`/api/reliability/agent/${agent.slug}`, { cache: "no-store" }),
-          fetch(`/api/reliability/suggest/${agent.slug}`, { cache: "no-store" }),
+          fetch(apiV1(`/reliability/agent/${agent.slug}`), { cache: "no-store" }),
+          fetch(apiV1(`/reliability/suggest/${agent.slug}`), { cache: "no-store" }),
         ]);
         if (!metricsRes.ok) throw new Error(`Metrics failed (${metricsRes.status})`);
         const metricsData = (await metricsRes.json()) as ReliabilityMetrics;
@@ -293,12 +292,10 @@ export function ReliabilityDashboard() {
                   setBrowseError(null);
                   try {
                     const params = new URLSearchParams({
-                      browse: "1",
                       limit: "20",
-                      fields: "compact",
                       cursor: browseCursor,
                     });
-                    const res = await fetch(`/api/search?${params.toString()}`, { cache: "no-store" });
+                    const res = await fetch(apiV1(`/reliability/browse?${params.toString()}`), { cache: "no-store" });
                     if (!res.ok) throw new Error(`Browse failed (${res.status})`);
                     const data = (await res.json()) as BrowseResponse;
                     setBrowseAgents((prev) => [...prev, ...(data.results ?? [])]);

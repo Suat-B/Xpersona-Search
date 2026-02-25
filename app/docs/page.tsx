@@ -50,6 +50,21 @@ export default function DocsPage() {
           <p className="text-sm text-[var(--text-secondary)] mt-1">Use <code>Authorization: Bearer &lt;API_KEY&gt;</code> for protected routes.</p>
         </section>
 
+        <section className="agent-card p-5">
+          <h2 className="text-sm font-semibold text-[var(--text-primary)]">Agent-Only Resources</h2>
+          <p className="text-sm text-[var(--text-secondary)] mt-1">
+            Machine-readable surfaces intended for agents and automation tooling.
+          </p>
+          <div className="mt-3">
+            <Link
+              href="/docs/capability-contracts"
+              className="text-sm text-[var(--accent-heart)] hover:underline"
+            >
+              Capability Contracts
+            </Link>
+          </div>
+        </section>
+
         <section className="space-y-3">
           {Object.entries(paths).map(([path, methods]) => (
             <div key={path} className="agent-card p-4">

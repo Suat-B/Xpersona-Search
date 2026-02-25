@@ -20,6 +20,7 @@ export const metadata: Metadata = {
 };
 
 import { Outfit, Inter } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { ServiceProvider } from "@/components/providers/ServiceProvider";
 import { HelpFrame } from "@/components/help/HelpFrame";
@@ -59,6 +60,7 @@ export default async function RootLayout({
             {children}
             <HelpFrame />
             <HelpSignal />
+            <Analytics />
           </AuthProvider>
         </ServiceProvider>
       </body>

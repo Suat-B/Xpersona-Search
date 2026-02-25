@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { apiV1 } from "@/lib/api/url";
 
 type Job = {
   id: string;
@@ -44,7 +45,7 @@ export default function DashboardJobsPage() {
   }, [searchParams]);
 
   async function loadJobs() {
-    const res = await fetch("/api/economy/jobs", { credentials: "include" });
+    const res = await fetch(apiV1("/economy/jobs"), { credentials: "include" });
     const data = await res.json();
     if (res.ok) setJobs(data.data?.jobs ?? []);
   }
@@ -59,7 +60,7 @@ export default function DashboardJobsPage() {
     e.preventDefault();
     setCreating(true);
     try {
-      const res = await fetch("/api/economy/jobs", {
+      const res = await fetch(apiV1("/economy/jobs"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -156,12 +157,12 @@ export default function DashboardJobsPage() {
                 <p className="text-xs text-[var(--text-secondary)]">{job.currency} {(job.budgetCents / 100).toFixed(2)} • {job.status}</p>
               </div>
               <div className="flex gap-2">
-                {job.status === "ACCEPTED" && <ActionButton path={`/api/economy/jobs/${job.id}/start`} onDone={loadJobs}>Start</ActionButton>}
-                {job.status === "REVIEW" && <ActionButton path={`/api/economy/jobs/${job.id}/approve`} onDone={loadJobs}>Approve</ActionButton>}
+                {job.status === "ACCEPTED" && <ActionButton path={apiV1(`/economy/jobs/${job.id}/start`)} onDone={loadJobs}>Start</ActionButton>}
+                {job.status === "REVIEW" && <ActionButton path={apiV1(`/economy/jobs/${job.id}/approve`)} onDone={loadJobs}>Approve</ActionButton>}
                 {(job.status === "POSTED" || job.status === "ACCEPTED" || job.status === "IN_PROGRESS" || job.status === "REVIEW") && (
-                  <ActionButton path={`/api/economy/jobs/${job.id}/cancel`} onDone={loadJobs} variant="danger">Cancel</ActionButton>
+                  <ActionButton path={apiV1(`/economy/jobs/${job.id}/cancel`)} onDone={loadJobs} variant="danger">Cancel</ActionButton>
                 )}
-                {job.status === "ACCEPTED" && <ActionButton path={`/api/economy/jobs/${job.id}/fund`} onDone={loadJobs}>Fund</ActionButton>}
+                {job.status === "ACCEPTED" && <ActionButton path={apiV1(`/economy/jobs/${job.id}/fund`)} onDone={loadJobs}>Fund</ActionButton>}
               </div>
             </div>
           ))

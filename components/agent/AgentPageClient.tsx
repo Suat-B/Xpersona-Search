@@ -82,6 +82,20 @@ interface AgentPageClientProps {
 
 type CtaConfig = { label: string; href: string };
 
+type CapabilityContract = {
+  authModes?: string[];
+  requires?: string[];
+  forbidden?: string[];
+  dataRegion?: string | null;
+  inputSchemaRef?: string | null;
+  outputSchemaRef?: string | null;
+  supportsStreaming?: boolean;
+  supportsMcp?: boolean;
+  supportsA2a?: boolean;
+  updatedAt?: string;
+  createdAt?: string;
+};
+
 function ensureExternalUrl(rawUrl: string | null | undefined): string {
   const url = (rawUrl ?? "").trim();
   if (!url) return "#";
@@ -221,10 +235,44 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
     ? `/agent/${agent.slug}/claim?from=${encodeURIComponent(safeFrom)}`
     : `/agent/${agent.slug}/claim`;
   const [agentApiUrl, setAgentApiUrl] = useState<string>("");
+  const [capabilityContractUrl, setCapabilityContractUrl] = useState<string>("");
+  const [capabilityContract, setCapabilityContract] = useState<CapabilityContract | null>(null);
+  const [contractStatus, setContractStatus] = useState<
+    "idle" | "loading" | "ready" | "missing" | "error"
+  >("idle");
 
   useEffect(() => {
     const base = `${window.location.protocol}//${window.location.host}`;
     setAgentApiUrl(`${base}/api/v1/agents/${agent.slug}`);
+    setCapabilityContractUrl(`${base}/api/agents/${agent.slug}/contract`);
+  }, [agent.slug]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadContract() {
+      setContractStatus("loading");
+      try {
+        const res = await fetch(`/api/agents/${agent.slug}/contract`, { cache: "no-store" });
+        if (!res.ok) {
+          if (active) setContractStatus("missing");
+          return;
+        }
+        const data = (await res.json()) as { contract?: CapabilityContract | null };
+        if (!active) return;
+        if (data?.contract) {
+          setCapabilityContract(data.contract);
+          setContractStatus("ready");
+        } else {
+          setContractStatus("missing");
+        }
+      } catch {
+        if (active) setContractStatus("error");
+      }
+    }
+    loadContract();
+    return () => {
+      active = false;
+    };
   }, [agent.slug]);
 
   if (agent.hasCustomPage && agent.customPage && !forceDetails) {
@@ -318,10 +366,12 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
   const popularityLabel = getPopularityLabel(agent);
   const docsSourceLabel = getDocsSourceLabel(agent);
   const agentCardJson = agent.agentCard ? JSON.stringify(agent.agentCard, null, 2) : null;
+  const contractJson = capabilityContract ? JSON.stringify(capabilityContract, null, 2) : null;
   const githubUrl = getGithubUrl(agent);
   const agentModeCurl = agentApiUrl ? `curl "${agentApiUrl}?mode=agent"` : "";
   const agentCardCurl = agentApiUrl ? `curl "${agentApiUrl}?format=card"` : "";
   const trustCurl = agentApiUrl ? `curl "${agentApiUrl}/trust"` : "";
+  const contractCurl = capabilityContractUrl ? `curl "${capabilityContractUrl}"` : "";
   const verifyCurl = agentApiUrl
     ? `curl -X POST "${agentApiUrl}/verify" -H "Authorization: Bearer <token>"`
     : "";
@@ -532,6 +582,113 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
                 </pre>
               </div>
             </div>
+          </div>
+        </section>
+
+        {/* Capability Contract */}
+        <section className="mb-12">
+          <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+            <h2 className="text-xl font-semibold text-[var(--text-primary)]">Capability Contract</h2>
+            <span className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-1 text-xs uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+              Agent-only
+            </span>
+          </div>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-6 space-y-4">
+            {contractStatus === "loading" && (
+              <p className="text-sm text-[var(--text-tertiary)]">Loading contract…</p>
+            )}
+            {contractStatus === "error" && (
+              <p className="text-sm text-rose-300">Unable to load capability contract.</p>
+            )}
+            {contractStatus === "missing" && (
+              <p className="text-sm text-[var(--text-tertiary)]">
+                No capability contract has been published for this agent yet.
+              </p>
+            )}
+            {contractStatus === "ready" && capabilityContract && (
+              <>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-secondary)]">
+                    Auth:{" "}
+                    <span className="text-[var(--text-primary)]">
+                      {(capabilityContract.authModes ?? []).join(", ") || "None"}
+                    </span>
+                  </span>
+                  <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-secondary)]">
+                    Streaming:{" "}
+                    <span className="text-[var(--text-primary)]">
+                      {capabilityContract.supportsStreaming ? "Yes" : "No"}
+                    </span>
+                  </span>
+                  <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-secondary)]">
+                    MCP:{" "}
+                    <span className="text-[var(--text-primary)]">
+                      {capabilityContract.supportsMcp ? "Yes" : "No"}
+                    </span>
+                  </span>
+                  <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-secondary)]">
+                    A2A:{" "}
+                    <span className="text-[var(--text-primary)]">
+                      {capabilityContract.supportsA2a ? "Yes" : "No"}
+                    </span>
+                  </span>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2 text-sm text-[var(--text-secondary)]">
+                  <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Requires</p>
+                    <p className="mt-2 text-sm text-[var(--text-secondary)]">
+                      {(capabilityContract.requires ?? []).join(", ") || "None"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Forbidden</p>
+                    <p className="mt-2 text-sm text-[var(--text-secondary)]">
+                      {(capabilityContract.forbidden ?? []).join(", ") || "None"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Data Region</p>
+                    <p className="mt-2 text-sm text-[var(--text-secondary)]">
+                      {capabilityContract.dataRegion ?? "Unspecified"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Schemas</p>
+                    <p className="mt-2 text-sm text-[var(--text-secondary)]">
+                      Input: {capabilityContract.inputSchemaRef ?? "None"}
+                    </p>
+                    <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                      Output: {capabilityContract.outputSchemaRef ?? "None"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2 text-xs text-[var(--text-tertiary)]">
+                  <div className="relative">
+                    <p className="mb-2">Fetch contract JSON</p>
+                    <pre className="p-3 rounded-lg bg-black/50 border border-[var(--border)] font-mono text-xs text-[var(--text-secondary)] overflow-x-auto whitespace-pre">
+                      {contractCurl}
+                    </pre>
+                  </div>
+                  {contractJson && (
+                    <div className="relative">
+                      <p className="mb-2">Machine-readable payload</p>
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText(contractJson)}
+                        className="absolute top-2 right-2 rounded-lg px-2 py-1 text-xs font-medium bg-[var(--bg-elevated)] hover:bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border)] transition-colors"
+                      >
+                        Copy JSON
+                      </button>
+                      <pre className="p-3 rounded-lg bg-black/50 border border-[var(--border)] font-mono text-xs text-[var(--text-secondary)] overflow-x-auto whitespace-pre">
+                        {contractJson}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </section>
 

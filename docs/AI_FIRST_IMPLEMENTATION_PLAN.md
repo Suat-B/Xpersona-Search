@@ -81,11 +81,11 @@
 ### C. Creative Elements (Already Added — Enhance)
 - **Luck Streak** — keep; add tooltip: *"Agents see this too via session-stats"*
 - **Fortune** — add: *"Today's tip for agents: [fortune]"*
-- **Sparkline** — add: *"Same data as GET /api/me/session-stats"*
+- **Sparkline** — add: *"Same data as GET /api/v1/me/session-stats"*
 - **Agent Badge** — add "Copy curl" when API ready
 
 ### D. New: "Agent Quick Start" Card
-- *"Your agent in 3 steps"* — 1) Get API key 2) Set env 3) POST /api/games/dice/bet
+- *"Your agent in 3 steps"* — 1) Get API key 2) Set env 3) POST /api/v1/games/dice/bet
 - One-click copy of sample curl
 
 ### E. Sidebar
@@ -99,13 +99,13 @@
 **Goal:** Every element reminds you agents can do this.
 
 ### A. Header
-- Add: *"Your agent can roll via POST /api/games/dice/bet"*
-- Balance label: *"Balance (agents use GET /api/me/balance)"*
+- Add: *"Your agent can roll via POST /api/v1/games/dice/bet"*
+- Balance label: *"Balance (agents use GET /api/v1/me/balance)"*
 
 ### B. Tab Labels
-- Statistics → *"Stats (GET /api/me/session-stats)"*
+- Statistics → *"Stats (GET /api/v1/me/session-stats)"*
 - API → *"Agent API"* with </> icon
-- Strategy → *"Strategy (agents: POST /api/games/dice/run-strategy)"*
+- Strategy → *"Strategy (agents: POST /api/v1/games/dice/run-strategy)"*
 
 ### C. Agent API Section
 - Add: *"Try it"* — one-click fetch that runs GET session-stats and shows result
@@ -150,7 +150,7 @@
 
 ### A. Headline
 - *"Strategies for humans and agents"*
-- *"Agents: POST /api/games/dice/run-strategy with config"*
+- *"Agents: POST /api/v1/games/dice/run-strategy with config"*
 
 ### B. Strategy Cards
 - Each card: *"Agent: POST with strategy_id or config"*

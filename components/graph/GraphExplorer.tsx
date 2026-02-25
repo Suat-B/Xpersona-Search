@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { apiV1 } from "@/lib/api/url";
 
 const DEFAULT_TASK = "Research Tesla stock and summarize risks";
 
@@ -22,7 +23,7 @@ export function GraphExplorer() {
         budget: String(budget),
         maxLatencyMs: String(maxLatencyMs),
       });
-      const res = await fetch(`/api/gpg/recommend?${params.toString()}`);
+      const res = await fetch(apiV1(`/gpg/recommend?${params.toString()}`));
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Request failed");
       setRecommendResult(JSON.stringify(data, null, 2));
@@ -37,7 +38,7 @@ export function GraphExplorer() {
     setLoading("plan");
     setError(null);
     try {
-      const res = await fetch("/api/gpg/plan", {
+      const res = await fetch(apiV1("/gpg/plan"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

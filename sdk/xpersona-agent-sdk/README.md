@@ -37,6 +37,18 @@ await client.postSearchOutcome(
 );
 ```
 
+## Convenience helper
+
+```ts
+await client.reportSearchOutcome({
+  querySignature: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  selectedResultId: "550e8400-e29b-41d4-a716-446655440000",
+  outcome: "success",
+  taskType: "automation",
+  modelUsed: "gpt-4o-mini",
+});
+```
+
 ## Build locally
 
 ```bash

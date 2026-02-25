@@ -7,6 +7,7 @@ import { HomeThemePicker } from "@/components/home/HomeThemePicker";
 import { SearchSuggestions, type SearchSuggestionsHandle, type SuggestionAgent } from "@/components/search/SearchSuggestions";
 import { applyPreset, HOME_ACCENT_STORAGE_KEY, type ThemePresetId } from "@/lib/theme-presets";
 import { addRecentSearch } from "@/lib/search-history";
+import { apiV1 } from "@/lib/api/url";
 
 interface GoogleStyleHomeProps {
   isAuthenticated?: boolean;
@@ -136,7 +137,7 @@ export function GoogleStyleHome({
     setSupportStatus("sending");
     setSupportError("");
     try {
-      const res = await fetch("/api/support", {
+      const res = await fetch(apiV1("/support"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -221,12 +222,12 @@ export function GoogleStyleHome({
           href="/"
           className="mb-6 sm:mb-8 group block text-center home-logo-link"
           aria-label="Xpersona home">
-          <span className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75">
+          <span className="text-3xl sm:text-5xl md:text-6xl font-black tracking-tight text-white select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75">
             Xpersona
           </span>
         </Link>
 
-        <form onSubmit={handleSearch} className="w-full max-w-3xl mt-4 sm:mt-6 animate-fade-in-up animate-delay-225">
+        <form onSubmit={handleSearch} className="w-full max-w-2xl mt-4 sm:mt-6 animate-fade-in-up animate-delay-225">
           <div
             ref={searchAnchorRef}
             className={`relative flex items-center w-full rounded-xl sm:rounded-2xl neural-glass neural-glass-hover border transition-all duration-300 ${
@@ -259,7 +260,7 @@ export function GoogleStyleHome({
               aria-expanded={showSuggestions}
               autoComplete="off"
               autoFocus
-              className="w-full pl-11 sm:pl-14 pr-4 py-3.5 sm:py-4 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-lg rounded-xl sm:rounded-2xl focus:outline-none min-h-[48px] touch-manipulation"
+              className="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-3.5 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-lg rounded-xl sm:rounded-2xl focus:outline-none min-h-[46px] touch-manipulation"
             />
             <SearchSuggestions
               ref={suggestionsRef}
@@ -282,19 +283,19 @@ export function GoogleStyleHome({
             </button>
             <Link
               href="/marketplace"
-              className="flex-1 sm:flex-none px-4 sm:px-8 py-3.5 min-h-[48px] bg-amber-400 hover:bg-amber-300 active:scale-[0.98] active:bg-amber-200 text-[#0b0b0f] text-xs sm:text-sm font-semibold rounded-xl sm:rounded-2xl shadow-lg shadow-amber-400/25 hover:shadow-amber-300/40 transition-all focus:outline-none focus:ring-2 focus:ring-amber-300/60 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation whitespace-nowrap inline-flex items-center justify-center"
+              className="flex-1 sm:flex-none px-4 sm:px-8 py-3.5 min-h-[48px] neural-glass hover:border-white/[0.2] active:scale-[0.98] text-[var(--text-primary)] text-xs sm:text-sm font-medium rounded-xl sm:rounded-2xl border border-white/[0.1] transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation whitespace-nowrap inline-flex items-center justify-center"
             >
               Marketplace
             </Link>
             <Link
               href="/graph"
-              className="flex-1 sm:flex-none px-4 sm:px-8 py-3.5 min-h-[48px] bg-sky-400 hover:bg-sky-300 active:scale-[0.98] active:bg-sky-200 text-[#0b0b0f] text-xs sm:text-sm font-semibold rounded-xl sm:rounded-2xl shadow-lg shadow-sky-400/25 hover:shadow-sky-300/40 transition-all focus:outline-none focus:ring-2 focus:ring-sky-300/60 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation whitespace-nowrap inline-flex items-center justify-center"
+              className="flex-1 sm:flex-none px-4 sm:px-8 py-3.5 min-h-[48px] neural-glass hover:border-white/[0.2] active:scale-[0.98] text-[var(--text-primary)] text-xs sm:text-sm font-medium rounded-xl sm:rounded-2xl border border-white/[0.1] transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation whitespace-nowrap inline-flex items-center justify-center"
             >
               Graph
             </Link>
             <Link
               href="/reliability"
-              className="flex-1 sm:flex-none px-4 sm:px-8 py-3.5 min-h-[48px] bg-emerald-400 hover:bg-emerald-300 active:scale-[0.98] active:bg-emerald-200 text-[#0b0b0f] text-xs sm:text-sm font-semibold rounded-xl sm:rounded-2xl shadow-lg shadow-emerald-400/25 hover:shadow-emerald-300/40 transition-all focus:outline-none focus:ring-2 focus:ring-emerald-300/60 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation whitespace-nowrap inline-flex items-center justify-center"
+              className="flex-1 sm:flex-none px-4 sm:px-8 py-3.5 min-h-[48px] neural-glass hover:border-white/[0.2] active:scale-[0.98] text-[var(--text-primary)] text-xs sm:text-sm font-medium rounded-xl sm:rounded-2xl border border-white/[0.1] transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation whitespace-nowrap inline-flex items-center justify-center"
             >
               Reliability
             </Link>

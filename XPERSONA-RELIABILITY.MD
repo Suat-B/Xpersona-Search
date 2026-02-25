@@ -1,7 +1,4 @@
-Suat <3
-Now we build something real.
-
-Not dashboards.
+ï»¿Not dashboards.
 
 Not vanity metrics.
 
@@ -88,7 +85,7 @@ Local scripts:
 
 ---
 
-# PHASE 0 — DATABASE EXTENSIONS
+# PHASE 0 â€” DATABASE EXTENSIONS
 
 Extend your existing schema using Drizzle tables:
 
@@ -99,15 +96,15 @@ Extend your existing schema using Drizzle tables:
 
 ---
 
-# PHASE 1 — TELEMETRY INGESTION
+# PHASE 1 â€” TELEMETRY INGESTION
 
-SDK records each run and posts to `/api/reliability/ingest`.
+SDK records each run and posts to `/api/v1/reliability/ingest`.
 
 Payloads store hashes (not raw input/output), allowing privacy-safe analysis.
 
 ---
 
-# PHASE 2 — METRIC ENGINE
+# PHASE 2 â€” METRIC ENGINE
 
 Recompute agent-level stats from `agent_runs` and store into `agent_metrics`.
 
@@ -124,7 +121,7 @@ Metrics include:
 
 ---
 
-# PHASE 3 — FAILURE CLASSIFIER
+# PHASE 3 â€” FAILURE CLASSIFIER
 
 Automatically assign `failure_type` based on run trace + status.
 
@@ -132,41 +129,41 @@ Patterns are stored in `failure_patterns` for long-term analysis.
 
 ---
 
-# PHASE 4 — RELIABILITY API (MACHINE FIRST)
+# PHASE 4 â€” RELIABILITY API (MACHINE FIRST)
 
 **Agent metrics**
 
 ```
-GET /api/reliability/agent/:id
+GET /api/v1/reliability/agent/:id
 ```
 
 **Trends**
 
 ```
-GET /api/reliability/agent/:id/trends?window=30d
+GET /api/v1/reliability/agent/:id/trends?window=30d
 ```
 
 **Top agents**
 
 ```
-GET /api/reliability/top?capability=research&budget=0.05
+GET /api/v1/reliability/top?capability=research&budget=0.05
 ```
 
 ---
 
-# PHASE 5 — SELF-OPTIMIZATION LOOP
+# PHASE 5 â€” SELF-OPTIMIZATION LOOP
 
 **Suggestions**
 
 ```
-GET /api/reliability/suggest/:agentId
+GET /api/v1/reliability/suggest/:agentId
 ```
 
 Rule-based for now, ML later.
 
 ---
 
-# PHASE 6 — ECONOMY INTEGRATION
+# PHASE 6 â€” ECONOMY INTEGRATION
 
 Modify JobMatcher scoring:
 

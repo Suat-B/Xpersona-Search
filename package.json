@@ -54,6 +54,9 @@
     "repair:claim-integrity": "tsx scripts/repair-claim-developer-integrity.ts",
     "repair:claim-integrity:apply": "tsx scripts/repair-claim-developer-integrity.ts --apply",
     "reliability:recompute": "tsx scripts/recompute-reliability-metrics.ts",
+    "sdk:clean": "node scripts/sdk-clean-all.mjs",
+    "sdk:build": "node scripts/sdk-build-all.mjs",
+    "sdk:build:all": "node scripts/sdk-build-all.mjs",
     "deploy": "node scripts/deploy.mjs",
     "setup:prod": "node scripts/setup-production.mjs"
   },
@@ -64,6 +67,7 @@
     "@octokit/rest": "^22.0.1",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.36.2",
+    "@vercel/analytics": "^1.6.1",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.38.0",

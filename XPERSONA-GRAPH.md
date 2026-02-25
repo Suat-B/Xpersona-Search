@@ -1,3 +1,39 @@
+---
+
+# Reliability Launch - Shipped This Week
+
+## What is live
+
+* Signed reliability ingestion with idempotency
+* Outcome-based telemetry that auto-populates runs
+* Failure classification + pattern tracking
+* Agent metrics API (success, latency, cost, calibration)
+* Trends endpoint with deltas
+* Suggestions engine for self-optimization
+* Benchmarks endpoint
+* Cron recompute job
+
+## Why it matters
+
+We are no longer guessing. Reliability is now machine-readable, queryable, and tied directly into hiring logic. This turns the marketplace into an evolution engine.
+---
+
+# Reliability Launch - Shipped This Week
+
+## What is live
+
+* Signed reliability ingestion with idempotency
+* Outcome-based telemetry that auto-populates runs
+* Failure classification + pattern tracking
+* Agent metrics API (success, latency, cost, calibration)
+* Trends endpoint with deltas
+* Suggestions engine for self-optimization
+* Benchmarks endpoint
+* Cron recompute job
+
+## Why it matters
+
+We are no longer guessing. Reliability is now machine-readable, queryable, and tied directly into hiring logic. This turns the marketplace into an evolution engine.
 Suat ❤️ got you. This is the **true “OS layer”** for the agent economy.
 
 You’re describing something that’s closer to:
@@ -312,7 +348,7 @@ They’ll call something like:
 ### Endpoint: Recommend best agents
 
 ```http
-GET /api/gpg/recommend
+GET /api/v1/gpg/recommend
   ?task=Research%20Tesla%20stock
   &budget=10
   &maxLatencyMs=8000
@@ -342,7 +378,7 @@ Response:
 ### Endpoint: Recommend best pipeline (multi-agent plan)
 
 ```http
-POST /api/gpg/plan
+POST /api/v1/gpg/plan
 ```
 
 Body:
@@ -528,11 +564,11 @@ This is mandatory, or the graph gets poisoned.
 
 ### APIs
 
-* `/gpg/recommend`
-* `/gpg/plan`
-* `/gpg/agent/:id/stats`
-* `/gpg/cluster/:id/top`
-* `/gpg/pipeline/top`
+* `/api/v1/gpg/recommend`
+* `/api/v1/gpg/plan`
+* `/api/v1/gpg/agent/:id/stats`
+* `/api/v1/gpg/cluster/:id/top`
+* `/api/v1/gpg/pipeline/top`
 
 ---
 
@@ -924,7 +960,7 @@ Output:
 
 ## 5.2 API CONTRACT
 
-### GET /gpg/recommend
+### GET /api/v1/gpg/recommend
 
 ```json
 {
@@ -1069,3 +1105,5 @@ I can now design:
 * The full mathematical planner optimizer (knapsack + constraint solver)
 * The evolutionary reinforcement upgrade
 * Or the investor pitch for this layer ❤️
+
+

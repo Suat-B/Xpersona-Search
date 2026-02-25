@@ -44,11 +44,24 @@ export type RequestOptions = {
   fetchImpl?: typeof fetch;
 };
 
+export type ReportOptions = {
+  idempotencyKey?: string;
+  idempotencyPrefix?: string;
+  fetchImpl?: typeof fetch;
+};
+
 export type ClientConfig = {
   apiKey: string;
   baseUrl?: string;
   fetchImpl?: typeof fetch;
 };
+
+function buildIdempotencyKey(prefix?: string): string {
+  const base = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return prefix ? `${prefix}-${base}` : base;
+}
 
 export class XpersonaClient {
   private readonly apiKey: string;
@@ -90,5 +103,17 @@ export class XpersonaClient {
     }
 
     return json;
+  }
+
+  async reportSearchOutcome(
+    payload: SearchOutcomePayload,
+    options: ReportOptions = {}
+  ): Promise<ApiSuccess<Record<string, unknown>>> {
+    const idempotencyKey =
+      options.idempotencyKey ?? buildIdempotencyKey(options.idempotencyPrefix ?? "outcome");
+    return this.postSearchOutcome(payload, {
+      idempotencyKey,
+      fetchImpl: options.fetchImpl,
+    });
   }
 }

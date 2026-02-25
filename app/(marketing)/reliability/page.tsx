@@ -1,12 +1,11 @@
-import { readFile } from "fs/promises";
-import path from "path";
 import Link from "next/link";
+import { readFile, readdir, stat } from "fs/promises";
+import path from "path";
 import { auth } from "@/lib/auth";
 import { cookies } from "next/headers";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import { ANSMinimalHeader } from "@/components/home/ANSMinimalHeader";
 import { ANSMinimalFooter } from "@/components/home/ANSMinimalFooter";
-import { SkillMarkdown } from "@/components/agent/SkillMarkdown";
 import { ReliabilityDashboard } from "@/components/reliability/ReliabilityDashboard";
 import { GlobalPerformanceGraph } from "@/components/reliability/GlobalPerformanceGraph";
 
@@ -23,42 +22,124 @@ export default async function ReliabilityPage() {
   const userIdFromCookie = getAuthUserFromCookie(cookieStore);
   const isAuthenticated = !!(session?.user || userIdFromCookie);
 
-  const filePath = path.join(process.cwd(), "XPERSONA-RELIABILITY.MD");
-  const content = await readFile(filePath, "utf-8");
-  const phases = [
-    { title: "Phase 0", subtitle: "Database Extensions", status: "Implemented" },
-    { title: "Phase 1", subtitle: "Telemetry Ingestion", status: "Implemented" },
-    { title: "Phase 2", subtitle: "Metric Engine", status: "Implemented" },
-    { title: "Phase 3", subtitle: "Failure Classifier", status: "Implemented" },
-    { title: "Phase 4", subtitle: "Reliability API", status: "Implemented" },
-    { title: "Phase 5", subtitle: "Self-Optimization Loop", status: "Implemented" },
-    { title: "Phase 6", subtitle: "Economy Integration", status: "Implemented" },
-    { title: "Phase 7", subtitle: "Benchmark Suites", status: "Implemented" },
-    { title: "Phase 8", subtitle: "Global Performance Graph", status: "Implemented" },
+  const apiBaseDir = path.join(process.cwd(), "app", "api", "reliability");
+  const reliabilityLibDir = path.join(process.cwd(), "lib", "reliability");
+
+  type ApiEndpoint = {
+    method: string;
+    route: string;
+    auth?: string;
+    headers?: string[];
+  };
+
+  async function listRouteFiles(dir: string): Promise<string[]> {
+    const entries = await readdir(dir);
+    const files: string[] = [];
+    for (const entry of entries) {
+      const full = path.join(dir, entry);
+      const stats = await stat(full);
+      if (stats.isDirectory()) {
+        files.push(...(await listRouteFiles(full)));
+      } else if (entry === "route.ts") {
+        files.push(full);
+      }
+    }
+    return files;
+  }
+
+  function toApiRoute(filePath: string): string {
+    const rel = path.relative(apiBaseDir, filePath).replace(/\\/g, "/");
+    const cleaned = rel.replace(/\/route\.ts$/, "");
+    const withParams = cleaned.replace(/\[([^\]]+)\]/g, (_m, p1) => `:${p1}`);
+    return `/api/v1/reliability/${withParams}`.replace(/\/$/, "");
+  }
+
+  function parseMethods(source: string): string[] {
+    const methods = new Set<string>();
+    const exportFnRegex = /export\s+async\s+function\s+(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\b/g;
+    const exportListRegex = /export\s*\{\s*([^}]+)\s*\}/g;
+    let match: RegExpExecArray | null;
+    while ((match = exportFnRegex.exec(source))) {
+      methods.add(match[1]);
+    }
+    while ((match = exportListRegex.exec(source))) {
+      const chunk = match[1];
+      chunk
+        .split(",")
+        .map((s) => s.trim())
+        .forEach((name) => {
+          const cleaned = name.replace(/as\s+\w+$/, "").trim();
+          if (["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"].includes(cleaned)) {
+            methods.add(cleaned);
+          }
+        });
+    }
+    return methods.size ? Array.from(methods) : ["GET"];
+  }
+
+  const routeFiles = await listRouteFiles(apiBaseDir);
+  const endpointMeta = new Map<string, { auth?: string; headers?: string[] }>([
+    [
+      "/api/v1/reliability/ingest",
+      {
+        auth: "Bearer API key (agent owner or admin)",
+        headers: ["idempotency-key", "x-gpg-key-id", "x-gpg-timestamp", "x-gpg-signature"],
+      },
+    ],
+  ]);
+
+  const endpoints: ApiEndpoint[] = [];
+  for (const file of routeFiles) {
+    const source = await readFile(file, "utf-8");
+    const route = toApiRoute(file);
+    const methods = parseMethods(source);
+    const meta = endpointMeta.get(route);
+    for (const method of methods) {
+      endpoints.push({
+        method,
+        route,
+        auth: meta?.auth,
+        headers: meta?.headers,
+      });
+    }
+  }
+
+  endpoints.sort((a, b) => a.route.localeCompare(b.route) || a.method.localeCompare(b.method));
+
+  const quickstart = endpoints.slice(0, 6).map((item) => ({
+    title: `${item.method} ${item.route.replace("/api/v1", "")}`,
+    description: item.auth ? `Auth: ${item.auth}` : "Public endpoint.",
+    method: item.method,
+    path: item.route,
+    curl: `curl -s -X ${item.method} http://localhost:3000${item.route}`,
+  }));
+
+  const apiCatalog = [
+    {
+      group: "Reliability API",
+      items: endpoints.map((e) => ({
+        label: `${e.method} ${e.route}`,
+        auth: e.auth ?? "Public",
+        headers: e.headers ?? [],
+      })),
+    },
   ];
-  const quickstart = [
-    {
-      title: "Agent Metrics",
-      description: "Fetch live reliability metrics for an agent by slug or id.",
-      method: "GET",
-      path: "/api/reliability/agent/:id",
-      curl: "curl -s http://localhost:3000/api/reliability/agent/AGENT_SLUG",
-    },
-    {
-      title: "Suggestions",
-      description: "Get self-optimization suggestions for an agent.",
-      method: "GET",
-      path: "/api/reliability/suggest/:agentId",
-      curl: "curl -s http://localhost:3000/api/reliability/suggest/AGENT_SLUG",
-    },
-    {
-      title: "Top Agents",
-      description: "List top agents by reliability ranking.",
-      method: "GET",
-      path: "/api/reliability/top?limit=5",
-      curl: "curl -s \"http://localhost:3000/api/reliability/top?limit=5\"",
-    },
-  ];
+
+  const libFiles = new Set<string>((await readdir(reliabilityLibDir)).filter((f) => f.endsWith(".ts")));
+  const capabilities = [
+    libFiles.has("classifier.ts") ? "Failure type classification and pattern tracking." : null,
+    libFiles.has("metrics.ts") ? "Rolling reliability metrics (success, latency, cost, hallucination, retry, dispute)." : null,
+    libFiles.has("hiring.ts") ? "Percentile ranks and hiring score computation." : null,
+    libFiles.has("suggestions.ts") ? "Self-optimization suggestions for agents." : null,
+    libFiles.has("clusters.ts") ? "Cluster + price tier aggregation (Global Performance Graph)." : null,
+    libFiles.has("sdk.ts") ? "SDK helper for client-side telemetry ingest." : null,
+    endpoints.some((e) => e.route.includes("/agent/:id/trends")) ? "Agent reliability trends over configurable windows." : null,
+    endpoints.some((e) => e.route.includes("/top")) ? "Top reliability rankings with cluster/tier filters." : null,
+    endpoints.some((e) => e.route.includes("/run-benchmark")) ? "Benchmark runner endpoint to seed or validate metrics." : null,
+    endpoints.some((e) => e.route.includes("/ingest"))
+      ? "Signed, idempotent telemetry ingest with verification headers."
+      : null,
+  ].filter(Boolean) as string[];
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--bg-deep)]">
@@ -68,9 +149,6 @@ export default async function ReliabilityPage() {
         <section className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
           <div className="rounded-3xl border border-white/[0.08] bg-black/40 p-6 sm:p-10 shadow-[0_30px_60px_rgba(0,0,0,0.45)]">
             <div className="flex flex-col gap-3">
-              <div className="inline-flex items-center rounded-full border border-white/[0.12] bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
-                Reliability Blueprint
-              </div>
               <h1 className="text-3xl sm:text-4xl font-bold text-[var(--text-primary)]">
                 Xpersona Reliability
               </h1>
@@ -120,29 +198,55 @@ export default async function ReliabilityPage() {
             </div>
 
             <div className="mt-10">
-              <h2 className="text-xl font-semibold text-[var(--text-primary)]">Phase Overview</h2>
+              <h2 className="text-xl font-semibold text-[var(--text-primary)]">Reliability API Surface</h2>
               <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-3xl">
-                Each phase builds the machine-readable reliability stack. All phases listed below are represented in the live stack.
+                Full endpoint surface detected in this codebase.
               </p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {phases.map((phase) => (
-                  <div
-                    key={phase.title}
-                    className="rounded-2xl border border-white/[0.08] bg-black/30 p-4"
-                  >
-                    <p className="text-xs uppercase tracking-[0.25em] text-[var(--text-tertiary)]">{phase.title}</p>
-                    <p className="mt-2 text-base font-semibold text-[var(--text-primary)]">{phase.subtitle}</p>
-                    <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-200">
-                      {phase.status}
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                {apiCatalog.map((group) => (
+                  <div key={group.group} className="rounded-2xl border border-white/[0.08] bg-black/30 p-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
+                      {group.group}
+                    </p>
+                    <div className="mt-3 space-y-3">
+                      {group.items.map((item) => (
+                        <div key={item.label} className="rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2">
+                          <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[var(--text-secondary)]">
+                            <span className="text-emerald-200">{item.label}</span>
+                            <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
+                              Auth: {item.auth}
+                            </span>
+                          </div>
+                          {item.headers.length > 0 && (
+                            <p className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+                              Required headers: {item.headers.join(", ")}
+                            </p>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="mt-8 rounded-2xl border border-white/[0.08] bg-black/30 p-5 sm:p-8">
-              <SkillMarkdown content={content} />
+            <div className="mt-10">
+              <h2 className="text-xl font-semibold text-[var(--text-primary)]">Reliability Capabilities</h2>
+              <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-3xl">
+                Functionality available today based on the current reliability stack.
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {capabilities.map((item) => (
+                  <div
+                    key={item}
+                    className="rounded-2xl border border-white/[0.08] bg-black/30 p-4 text-sm text-[var(--text-secondary)]"
+                  >
+                    {item}
+                  </div>
+                ))}
+              </div>
             </div>
+
           </div>
         </section>
       </main>

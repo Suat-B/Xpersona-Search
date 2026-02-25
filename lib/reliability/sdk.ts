@@ -1,4 +1,5 @@
 import { hashPayload } from "./hash";
+import { apiV1 } from "@/lib/api/url";
 
 export async function recordRun(data: {
   agentId: string;
@@ -17,7 +18,7 @@ export async function recordRun(data: {
 }) {
   const inputHash = hashPayload(data.input);
   const outputHash = data.output ? hashPayload(data.output) : undefined;
-  await fetch("/api/reliability/ingest", {
+  await fetch(apiV1("/reliability/ingest"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

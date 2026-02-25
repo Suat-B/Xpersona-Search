@@ -80,7 +80,7 @@ export function SavedAdvancedStrategiesList({
       <div className="rounded-sm terminal-pane border border-dashed border-white/[0.06] p-3">
         <p className="text-xs text-[var(--text-secondary)]">
           No saved strategies yet. Create via <Link href="/dashboard/strategies" className="text-emerald-400 hover:underline">Dashboard â†’ Strategies</Link> or{" "}
-          <code className="bg-white/10 px-1 rounded text-[10px]">POST /api/me/advanced-strategies</code> â€” then they appear here to load and run.
+          <code className="bg-white/10 px-1 rounded text-[10px]">POST /api/v1/me/advanced-strategies</code> â€” then they appear here to load and run.
         </p>
       </div>
     );
