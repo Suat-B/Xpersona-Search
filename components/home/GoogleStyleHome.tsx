@@ -198,7 +198,10 @@ export function GoogleStyleHome({
           href="/"
           className="mb-6 sm:mb-8 group block text-center home-logo-link"
           aria-label="Xpersona home">
-          <span className="inline-flex flex-col items-center gap-2 sm:gap-3">
+          <span className="inline-flex items-center gap-3 sm:gap-4">
+            <span className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75">
+              Xpersona
+            </span>
             <Image
               src="/xpersona-logo-1.png"
               alt="Xpersona logo"
@@ -207,9 +210,6 @@ export function GoogleStyleHome({
               priority
               className="h-10 sm:h-12 md:h-14 w-auto select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75"
             />
-            <span className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75">
-              Xpersona
-            </span>
           </span>
           <span className="mt-2 block text-xs sm:text-sm font-medium tracking-wide text-[var(--text-tertiary)]">
             Currently in Beta
