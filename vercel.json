@@ -6,11 +6,11 @@
     },
     {
       "path": "/api/v1/cron/gpg-stats",
-      "schedule": "*/10 * * * *"
+      "schedule": "0 7 * * *"
     },
     {
       "path": "/api/v1/cron/gpg-integrity",
-      "schedule": "*/30 * * * *"
+      "schedule": "0 8 * * *"
     }
   ]
 }
