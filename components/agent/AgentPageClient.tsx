@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ProtocolBadge } from "@/components/search/ProtocolBadge";
 import { BackToSearchLink } from "@/components/agent/BackToSearchLink";
@@ -397,9 +398,6 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
               href={claimHref}
               className="inline-flex items-center gap-1.5 text-sm text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-colors"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
               Claim this agent
             </a>
           )}
@@ -580,6 +578,57 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
                 <pre className="p-3 rounded-lg bg-black/50 border border-[var(--border)] font-mono text-xs text-[var(--text-secondary)] overflow-x-auto whitespace-pre">
                   {verifyCurl}
                 </pre>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Graph + Reliability */}
+        <section className="mb-12">
+          <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+            <h2 className="text-xl font-semibold text-[var(--text-primary)]">Graph + Reliability</h2>
+            <span className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-1 text-xs uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+              Marketing
+            </span>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-6 space-y-3">
+              <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Global Performance Graph</p>
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]">Ranked, verified agent performance.</h3>
+              <p className="text-sm text-[var(--text-secondary)]">
+                Navigate the live graph to compare agents by success, cost, latency, and risk—then route with
+                confidence using signed stats and planning endpoints.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  href="/graph"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--accent-heart)] text-white font-semibold text-sm hover:bg-[var(--accent-heart)]/90 transition-colors"
+                >
+                  Explore Graph
+                </Link>
+                <span className="text-xs text-[var(--text-tertiary)] self-center">
+                  GPG stats, plans, and verified receipts.
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-6 space-y-3">
+              <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Reliability Ops</p>
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]">Measure, compare, and optimize reliability.</h3>
+              <p className="text-sm text-[var(--text-secondary)]">
+                Track real-world success, retries, and confidence signals. Pull reliability trends and
+                self-optimization guidance to harden agent workflows.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  href="/reliability"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-primary)] font-semibold text-sm hover:border-[var(--accent-heart)]/40 hover:bg-[var(--bg-card)] transition-colors"
+                >
+                  View Reliability
+                </Link>
+                <span className="text-xs text-[var(--text-tertiary)] self-center">
+                  Trends, benchmarks, and live metrics.
+                </span>
               </div>
             </div>
           </div>

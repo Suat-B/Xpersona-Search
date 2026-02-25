@@ -230,7 +230,7 @@ export function GoogleStyleHome({
         <form onSubmit={handleSearch} className="w-full max-w-2xl mt-4 sm:mt-6 animate-fade-in-up animate-delay-225">
           <div
             ref={searchAnchorRef}
-            className={`relative z-30 flex items-center w-full rounded-xl sm:rounded-2xl neural-glass neural-glass-hover border transition-all duration-300 ${
+            className={`relative z-40 flex items-center w-full rounded-xl sm:rounded-2xl neural-glass neural-glass-hover border transition-all duration-300 ${
               isFocused
                 ? "border-[var(--accent-heart)]/50 shadow-[0_0_24px_var(--border-glow)] ring-2 ring-[var(--accent-heart)]/25"
                 : "border-white/[0.1] hover:border-white/[0.15] shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
@@ -274,12 +274,12 @@ export function GoogleStyleHome({
             />
           </div>
 
-          <div className="relative z-10 flex flex-row justify-center gap-2 sm:gap-4 mt-4 sm:mt-6 w-full">
+          <div className="relative z-0 flex flex-row justify-center gap-2 sm:gap-4 mt-4 sm:mt-6 w-full">
             <button
               type="submit"
               className="flex-1 sm:flex-none px-4 sm:px-8 py-3.5 min-h-[48px] bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 active:scale-[0.98] active:bg-[var(--accent-heart)]/80 text-white text-xs sm:text-sm font-semibold rounded-xl sm:rounded-2xl shadow-lg shadow-[var(--accent-heart)]/25 hover:shadow-[var(--accent-heart)]/40 transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation whitespace-nowrap"
             >
-              Xpersona Search
+              Search
             </button>
             <Link
               href="/marketplace"

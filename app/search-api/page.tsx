@@ -1,29 +1,41 @@
-﻿"use client";
-
 import Link from "next/link";
-import { useState } from "react";
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        navigator.clipboard.writeText(text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      }}
-      className="absolute top-2 right-2 rounded-lg px-2 py-1 text-xs font-medium bg-white/5 hover:bg-white/10 text-[var(--text-secondary)] transition-colors"
-    >
-      {copied ? "Copied!" : "Copy"}
-    </button>
-  );
-}
+import path from "path";
+import { CopyButton } from "@/components/docs/CopyButton";
+import { buildApiSurface, type ApiEndpoint } from "@/lib/docs/api-surface";
 
 /** Canonical base URL for the Search API. Always production (xpersona.co) so AI agents and external devs get the correct endpoint. Override via NEXT_PUBLIC_APP_URL for staging. */
 const SEARCH_API_BASE = process.env.NEXT_PUBLIC_APP_URL ?? "https://xpersona.co";
 
-export default function SearchApiPage() {
+type QuickstartItem = {
+  title: string;
+  description: string;
+  method: string;
+  path: string;
+  curl: string;
+};
+
+function buildQuickstart(endpoints: ApiEndpoint[], priority: string[], baseUrl: string): QuickstartItem[] {
+  const quickstartSorted = [...endpoints].sort((a, b) => {
+    const aBase = a.route.split("?")[0];
+    const bBase = b.route.split("?")[0];
+    const aIdx = priority.indexOf(aBase);
+    const bIdx = priority.indexOf(bBase);
+    const aRank = aIdx === -1 ? 999 : aIdx;
+    const bRank = bIdx === -1 ? 999 : bIdx;
+    if (aRank !== bRank) return aRank - bRank;
+    return a.route.localeCompare(b.route) || a.method.localeCompare(b.method);
+  });
+
+  return quickstartSorted.slice(0, 6).map((item) => ({
+    title: `${item.method} ${item.route.replace("/api/v1", "")}`,
+    description: item.auth ? `Auth: ${item.auth}` : "Public endpoint.",
+    method: item.method,
+    path: item.route,
+    curl: `curl -s -X ${item.method} ${baseUrl}${item.route}`,
+  }));
+}
+
+export default async function SearchApiPage() {
   const baseUrl = SEARCH_API_BASE.replace(/\/$/, "");
 
   const searchCurl = `curl "${baseUrl}/api/v1/search?q=crypto&protocols=A2A,MCP&minSafety=50&sort=rank&limit=10"`;
@@ -80,6 +92,64 @@ export default function SearchApiPage() {
   }
 }`;
 
+  const reliabilityBaseDir = path.join(process.cwd(), "app", "api", "reliability");
+  const gpgBaseDir = path.join(process.cwd(), "app", "api", "gpg");
+  const searchBaseDir = path.join(process.cwd(), "app", "api", "search");
+  const agentsBaseDir = path.join(process.cwd(), "app", "api", "v1", "agents");
+
+  const reliabilityEndpointMeta = new Map<string, { auth?: string; headers?: string[] }>([
+    [
+      "/api/v1/reliability/ingest",
+      {
+        auth: "Bearer API key (agent owner or admin)",
+        headers: ["idempotency-key", "x-gpg-key-id", "x-gpg-timestamp", "x-gpg-signature"],
+      },
+    ],
+  ]);
+
+  const gpgEndpointMeta = new Map<string, { auth?: string; headers?: string[] }>([
+    [
+      "/api/v1/gpg/ingest",
+      {
+        auth: "Bearer API key (agent owner or admin)",
+        headers: ["idempotency-key", "x-gpg-key-id", "x-gpg-timestamp", "x-gpg-signature"],
+      },
+    ],
+  ]);
+
+  const [reliabilityEndpoints, gpgEndpoints, searchEndpoints, agentEndpoints] = await Promise.all([
+    buildApiSurface({ baseDir: reliabilityBaseDir, routePrefix: "/api/v1/reliability", endpointMeta: reliabilityEndpointMeta }),
+    buildApiSurface({ baseDir: gpgBaseDir, routePrefix: "/api/v1/gpg", endpointMeta: gpgEndpointMeta }),
+    buildApiSurface({ baseDir: searchBaseDir, routePrefix: "/api/v1/search" }),
+    buildApiSurface({ baseDir: agentsBaseDir, routePrefix: "/api/v1/agents" }),
+  ]);
+
+  const gpgQuickstart = buildQuickstart(
+    gpgEndpoints,
+    [
+      "/api/v1/gpg/recommend",
+      "/api/v1/gpg/plan",
+      "/api/v1/gpg/agent/:id/stats",
+      "/api/v1/gpg/cluster/:id/top",
+      "/api/v1/gpg/pipeline/top",
+      "/api/v1/gpg/ingest",
+    ],
+    baseUrl,
+  );
+
+  const reliabilityQuickstart = buildQuickstart(
+    reliabilityEndpoints,
+    [
+      "/api/v1/reliability/agent/:id",
+      "/api/v1/reliability/agent/:id/trends",
+      "/api/v1/reliability/suggest/:agentId",
+      "/api/v1/reliability/top",
+      "/api/v1/reliability/graph",
+      "/api/v1/reliability/ingest",
+    ],
+    baseUrl,
+  );
+
   return (
     <main className="min-h-screen bg-[var(--bg-deep)] text-[var(--text-primary)]">
       <header className="sticky top-0 z-30 border-b border-white/5 bg-[var(--bg-deep)]/95 backdrop-blur-xl">
@@ -89,9 +159,7 @@ export default function SearchApiPage() {
               <Link href="/" className="hover:opacity-90 transition-opacity">
                 Xpersona
               </Link>{" "}
-              <span className="text-[var(--text-secondary)] font-normal">
-                Search API
-              </span>
+              <span className="text-[var(--text-secondary)] font-normal">Search API</span>
             </h1>
             <p className="mt-0.5 text-sm text-[var(--text-secondary)]">
               Public REST API for discovering AI agents. No authentication required.
@@ -299,6 +367,154 @@ export default function SearchApiPage() {
               </div>
             </div>
           </div>
+
+          <div className="mt-6 rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
+            <h3 className="text-sm font-medium text-white mb-3">Full Search API Surface</h3>
+            <p className="text-xs text-[var(--text-secondary)] mb-4">
+              Auto-detected endpoints under <code className="rounded bg-white/10 px-1 font-mono">/api/v1/search</code>.
+            </p>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {searchEndpoints.map((item) => (
+                <div key={item.route + item.method} className="rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[var(--text-secondary)]">
+                    <span className="text-emerald-200">
+                      {item.method} {item.route}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
+                      Auth: {item.auth ?? "Public"}
+                    </span>
+                  </div>
+                  {item.headers && item.headers.length > 0 && (
+                    <p className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+                      Required headers: {item.headers.join(", ")}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
+            <h3 className="text-sm font-medium text-white mb-3">Full Agents API Surface</h3>
+            <p className="text-xs text-[var(--text-secondary)] mb-4">
+              Auto-detected endpoints under <code className="rounded bg-white/10 px-1 font-mono">/api/v1/agents</code>.
+            </p>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {agentEndpoints.map((item) => (
+                <div key={item.route + item.method} className="rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[var(--text-secondary)]">
+                    <span className="text-emerald-200">
+                      {item.method} {item.route}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
+                      Auth: {item.auth ?? "Public"}
+                    </span>
+                  </div>
+                  {item.headers && item.headers.length > 0 && (
+                    <p className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+                      Required headers: {item.headers.join(", ")}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="mb-12">
+          <h2 className="text-lg font-semibold text-white mb-3">Graph (GPG) API Additions</h2>
+          <div className="rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
+            <h3 className="text-sm font-medium text-white mb-2">Quickstart</h3>
+            <p className="text-xs text-[var(--text-secondary)] mb-4">
+              Endpoints that power the Global Performance Graph planner and recommendations.
+            </p>
+            <div className="grid gap-3 lg:grid-cols-3">
+              {gpgQuickstart.map((item) => (
+                <div key={item.title} className="rounded-2xl border border-white/[0.08] bg-black/30 p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">{item.title}</p>
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-emerald-200">{item.method}</span>
+                  </div>
+                  <p className="mt-2 text-sm text-[var(--text-secondary)]">{item.description}</p>
+                  <p className="mt-3 text-xs font-mono text-[var(--text-tertiary)]">{item.path}</p>
+                  <pre className="mt-3 text-xs text-[var(--text-secondary)] bg-black/40 border border-white/[0.08] rounded-lg p-3 overflow-x-auto">
+                    {item.curl}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
+            <h3 className="text-sm font-medium text-white mb-3">Full GPG API Surface</h3>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {gpgEndpoints.map((item) => (
+                <div key={item.route + item.method} className="rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[var(--text-secondary)]">
+                    <span className="text-emerald-200">
+                      {item.method} {item.route}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
+                      Auth: {item.auth ?? "Public"}
+                    </span>
+                  </div>
+                  {item.headers && item.headers.length > 0 && (
+                    <p className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+                      Required headers: {item.headers.join(", ")}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="mb-12">
+          <h2 className="text-lg font-semibold text-white mb-3">Reliability API Additions</h2>
+          <div className="rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
+            <h3 className="text-sm font-medium text-white mb-2">Quickstart</h3>
+            <p className="text-xs text-[var(--text-secondary)] mb-4">
+              Machine-readable reliability endpoints for metrics, suggestions, and global performance graphs.
+            </p>
+            <div className="grid gap-3 lg:grid-cols-3">
+              {reliabilityQuickstart.map((item) => (
+                <div key={item.title} className="rounded-2xl border border-white/[0.08] bg-black/30 p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">{item.title}</p>
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-emerald-200">{item.method}</span>
+                  </div>
+                  <p className="mt-2 text-sm text-[var(--text-secondary)]">{item.description}</p>
+                  <p className="mt-3 text-xs font-mono text-[var(--text-tertiary)]">{item.path}</p>
+                  <pre className="mt-3 text-xs text-[var(--text-secondary)] bg-black/40 border border-white/[0.08] rounded-lg p-3 overflow-x-auto">
+                    {item.curl}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
+            <h3 className="text-sm font-medium text-white mb-3">Full Reliability API Surface</h3>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {reliabilityEndpoints.map((item) => (
+                <div key={item.route + item.method} className="rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[var(--text-secondary)]">
+                    <span className="text-emerald-200">
+                      {item.method} {item.route}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
+                      Auth: {item.auth ?? "Public"}
+                    </span>
+                  </div>
+                  {item.headers && item.headers.length > 0 && (
+                    <p className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+                      Required headers: {item.headers.join(", ")}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
 
         <section className="mb-12">
@@ -358,5 +574,3 @@ export default function SearchApiPage() {
     </main>
   );
 }
-
-

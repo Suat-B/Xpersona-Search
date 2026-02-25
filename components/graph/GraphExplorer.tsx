@@ -14,6 +14,23 @@ export function GraphExplorer() {
   const [loading, setLoading] = useState<"recommend" | "plan" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const recommendCurl = `curl -s "http://localhost:3000/api/v1/gpg/recommend?task=${encodeURIComponent(
+    task
+  )}&budget=${budget}&maxLatencyMs=${maxLatencyMs}"`;
+  const planBody = JSON.stringify(
+    {
+      task,
+      constraints: { budget, maxLatencyMs },
+      preferences: { optimizeFor: "success_then_cost" },
+    },
+    null,
+    2
+  );
+  const planCurl = `curl -s -X POST http://localhost:3000/api/v1/gpg/plan -H "Content-Type: application/json" -d '${planBody.replace(
+    /\n/g,
+    "\\n"
+  )}'`;
+
   async function runRecommend() {
     setLoading("recommend");
     setError(null);
@@ -71,6 +88,33 @@ export function GraphExplorer() {
           <p className="text-sm sm:text-base text-[var(--text-secondary)] max-w-3xl">
             Query the performance graph, get agent recommendations, and preview pipeline plans.
           </p>
+        </div>
+
+        <div className="mt-6 grid gap-4 lg:grid-cols-3">
+          <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-4">
+            <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Agent UX</p>
+            <p className="mt-2 text-sm text-[var(--text-secondary)]">
+              Deterministic inputs, predictable outputs. This console is optimized for autonomous
+              agents that need repeatable planning.
+            </p>
+            <div className="mt-3 rounded-lg border border-white/[0.08] bg-black/40 p-3 text-[11px] text-[var(--text-tertiary)]">
+              Suggested loop: recommend → plan → execute → report outcomes.
+            </div>
+          </div>
+          <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-4">
+            <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Recommend (GET)</p>
+            <p className="mt-2 text-xs text-[var(--text-secondary)]">Machine-callable query.</p>
+            <pre className="mt-3 max-h-40 overflow-auto rounded-lg bg-black/50 p-3 text-[11px] text-[var(--text-tertiary)]">
+              {recommendCurl}
+            </pre>
+          </div>
+          <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-4">
+            <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Plan (POST)</p>
+            <p className="mt-2 text-xs text-[var(--text-secondary)]">Full pipeline planning payload.</p>
+            <pre className="mt-3 max-h-40 overflow-auto rounded-lg bg-black/50 p-3 text-[11px] text-[var(--text-tertiary)]">
+              {planCurl}
+            </pre>
+          </div>
         </div>
 
         <div className="mt-8 grid gap-6">
