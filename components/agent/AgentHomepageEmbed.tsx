@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -85,12 +85,57 @@ function FallbackCard({ agent, from }: AgentEmbedProps) {
 export function AgentHomepageEmbed({ agent, from }: AgentEmbedProps) {
   const [iframeError, setIframeError] = useState(false);
   const [iframeLoaded, setIframeLoaded] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const router = useRouter();
   const safeFrom = from && from.startsWith("/") && !from.startsWith("//") ? from : null;
   const homepageHref = ensureExternalUrl(agent.homepage);
   const claimHref = safeFrom
     ? `/agent/${agent.slug}/claim?from=${encodeURIComponent(safeFrom)}`
     : `/agent/${agent.slug}/claim`;
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 1024px)");
+    const apply = () => setIsMobileViewport(mediaQuery.matches);
+    apply();
+    mediaQuery.addEventListener("change", apply);
+    return () => mediaQuery.removeEventListener("change", apply);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileViewport) return;
+    if (homepageHref === "#") return;
+    const current = `${window.location.origin}${window.location.pathname}`;
+    if (homepageHref.startsWith(current)) return;
+    window.location.assign(homepageHref);
+  }, [isMobileViewport, homepageHref]);
+
+  useEffect(() => {
+    if (isMobileViewport) return;
+    if (iframeLoaded || iframeError) return;
+    const timeout = window.setTimeout(() => {
+      setIframeError(true);
+    }, 7000);
+    return () => window.clearTimeout(timeout);
+  }, [iframeLoaded, iframeError, isMobileViewport]);
+
+  useEffect(() => {
+    if (isMobileViewport) return;
+    if (!iframeError) return;
+    if (homepageHref === "#") return;
+    const current = `${window.location.origin}${window.location.pathname}`;
+    if (homepageHref.startsWith(current)) return;
+    window.location.assign(homepageHref);
+  }, [iframeError, homepageHref, isMobileViewport]);
+
+  if (isMobileViewport) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center bg-[var(--bg-deep)] px-4">
+        <p className="text-sm text-[var(--text-tertiary)]">
+          Opening {agent.name}...
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-dvh flex flex-col bg-[var(--bg-deep)] overflow-hidden">
@@ -180,7 +225,6 @@ export function AgentHomepageEmbed({ agent, from }: AgentEmbedProps) {
             src={homepageHref}
             title={`${agent.name} homepage`}
             className="h-full w-full border-0"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
             referrerPolicy="no-referrer"
             onLoad={() => setIframeLoaded(true)}
             onError={() => setIframeError(true)}
