@@ -33,6 +33,9 @@ const OutcomeSchema = z.object({
   budgetExceeded: z.boolean().optional().default(false),
   latencyMs: z.number().int().min(0).max(300000).optional(),
   costUsd: z.number().min(0).max(10000).optional(),
+  modelUsed: z.string().min(1).max(64).optional(),
+  tokensInput: z.number().int().min(0).optional(),
+  tokensOutput: z.number().int().min(0).optional(),
 });
 
 const IDEMPOTENCY_WINDOW_MS = 2 * 60 * 1000;
@@ -262,9 +265,9 @@ export async function POST(req: NextRequest) {
         },
         inputHash: params.querySignature,
         outputHash: null,
-        modelUsed: "unknown",
-        tokensInput: null,
-        tokensOutput: null,
+        modelUsed: params.modelUsed ?? "unknown",
+        tokensInput: params.tokensInput ?? null,
+        tokensOutput: params.tokensOutput ?? null,
         startedAt,
         completedAt: new Date(),
         isVerified: false,

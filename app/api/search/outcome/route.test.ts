@@ -24,6 +24,11 @@ vi.mock("@/lib/search/rate-limit", () => ({
   SEARCH_AUTH_RATE_LIMIT: 120,
 }));
 
+const mockIngestRun = vi.hoisted(() => vi.fn().mockResolvedValue({}));
+vi.mock("@/lib/gpg/ingest", () => ({
+  ingestRun: mockIngestRun,
+}));
+
 describe("POST /api/search/outcome", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -39,6 +44,9 @@ describe("POST /api/search/outcome", () => {
         selectedResultId: "550e8400-e29b-41d4-a716-446655440000",
         outcome: "success",
         taskType: "retrieval",
+        modelUsed: "gpt-4o-mini",
+        tokensInput: 420,
+        tokensOutput: 128,
       }),
     });
 

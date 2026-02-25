@@ -62,10 +62,54 @@ function operationTag(v1Path) {
   return seg;
 }
 
+const REQUEST_BODY_OVERRIDES = {
+  "/api/v1/search/outcome": {
+    post: {
+      required: true,
+      schema: {
+        type: "object",
+        properties: {
+          querySignature: { type: "string", minLength: 64, maxLength: 64 },
+          selectedResultId: { type: "string", format: "uuid" },
+          outcome: { type: "string", enum: ["success", "failure", "timeout"] },
+          taskType: { type: "string" },
+          query: { type: "string", minLength: 1, maxLength: 500 },
+          failureCode: { type: "string", enum: ["auth", "rate_limit", "tool_error", "schema_mismatch"] },
+          executionPath: { type: "string", enum: ["single", "delegated", "bundled"] },
+          budgetExceeded: { type: "boolean" },
+          latencyMs: { type: "integer", minimum: 0, maximum: 300000 },
+          costUsd: { type: "number", minimum: 0, maximum: 10000 },
+          modelUsed: { type: "string", minLength: 1, maxLength: 64 },
+          tokensInput: { type: "integer", minimum: 0 },
+          tokensOutput: { type: "integer", minimum: 0 },
+        },
+        required: ["querySignature", "selectedResultId", "outcome"],
+        additionalProperties: false,
+      },
+      example: {
+        querySignature: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        selectedResultId: "550e8400-e29b-41d4-a716-446655440000",
+        outcome: "failure",
+        taskType: "automation",
+        query: "build mcp pipeline",
+        failureCode: "timeout",
+        executionPath: "delegated",
+        budgetExceeded: false,
+        latencyMs: 1800,
+        costUsd: 0.012,
+        modelUsed: "gpt-4o-mini",
+        tokensInput: 420,
+        tokensOutput: 128,
+      },
+    },
+  },
+};
+
 function buildOperation(method, v1Path) {
   const params = pathParameters(v1Path);
   const requiresBody = !["GET", "HEAD", "OPTIONS"].includes(method);
   const authRequired = requiresAuth(v1Path);
+  const override = REQUEST_BODY_OVERRIDES[v1Path]?.[method.toLowerCase()];
 
   return {
     operationId: operationId(method, v1Path),
@@ -76,13 +120,13 @@ function buildOperation(method, v1Path) {
     ...(requiresBody
       ? {
           requestBody: {
-            required: false,
+            required: override?.required ?? false,
             content: {
               "application/json": {
-                schema: { type: "object", additionalProperties: true },
+                schema: override?.schema ?? { type: "object", additionalProperties: true },
                 examples: {
                   sample: {
-                    value: {},
+                    value: override?.example ?? {},
                   },
                 },
               },

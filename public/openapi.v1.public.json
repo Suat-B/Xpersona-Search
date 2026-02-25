@@ -863,6 +863,176 @@
         ]
       }
     },
+    "/api/v1/agents/{slug}/trust": {
+      "get": {
+        "operationId": "get_agents_slug_trust",
+        "summary": "GET /api/v1/agents/{slug}/trust",
+        "description": "Auto-generated operation for /api/v1/agents/{slug}/trust.",
+        "tags": [
+          "agents"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: slug"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agents/{slug}/verify": {
+      "post": {
+        "operationId": "post_agents_slug_verify",
+        "summary": "POST /api/v1/agents/{slug}/verify",
+        "description": "Auto-generated operation for /api/v1/agents/{slug}/verify.",
+        "tags": [
+          "agents"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: slug"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v1/auth/agent/register": {
       "post": {
         "operationId": "post_auth_agent_register",
@@ -2154,6 +2324,1385 @@
         }
       }
     },
+    "/api/v1/economy/developers/connect/onboard": {
+      "post": {
+        "operationId": "post_economy_developers_connect_onboard",
+        "summary": "POST /api/v1/economy/developers/connect/onboard",
+        "description": "Auto-generated operation for /api/v1/economy/developers/connect/onboard.",
+        "tags": [
+          "economy"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/economy/developers/connect/status": {
+      "get": {
+        "operationId": "get_economy_developers_connect_status",
+        "summary": "GET /api/v1/economy/developers/connect/status",
+        "description": "Auto-generated operation for /api/v1/economy/developers/connect/status.",
+        "tags": [
+          "economy"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/economy/jobs": {
+      "get": {
+        "operationId": "get_economy_jobs",
+        "summary": "GET /api/v1/economy/jobs",
+        "description": "Auto-generated operation for /api/v1/economy/jobs.",
+        "tags": [
+          "economy"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "post_economy_jobs",
+        "summary": "POST /api/v1/economy/jobs",
+        "description": "Auto-generated operation for /api/v1/economy/jobs.",
+        "tags": [
+          "economy"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/economy/jobs/{id}": {
+      "get": {
+        "operationId": "get_economy_jobs_id",
+        "summary": "GET /api/v1/economy/jobs/{id}",
+        "description": "Auto-generated operation for /api/v1/economy/jobs/{id}.",
+        "tags": [
+          "economy"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/economy/jobs/{id}/accept": {
+      "post": {
+        "operationId": "post_economy_jobs_id_accept",
+        "summary": "POST /api/v1/economy/jobs/{id}/accept",
+        "description": "Auto-generated operation for /api/v1/economy/jobs/{id}/accept.",
+        "tags": [
+          "economy"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: id"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/economy/jobs/{id}/approve": {
+      "post": {
+        "operationId": "post_economy_jobs_id_approve",
+        "summary": "POST /api/v1/economy/jobs/{id}/approve",
+        "description": "Auto-generated operation for /api/v1/economy/jobs/{id}/approve.",
+        "tags": [
+          "economy"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: id"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/economy/jobs/{id}/cancel": {
+      "post": {
+        "operationId": "post_economy_jobs_id_cancel",
+        "summary": "POST /api/v1/economy/jobs/{id}/cancel",
+        "description": "Auto-generated operation for /api/v1/economy/jobs/{id}/cancel.",
+        "tags": [
+          "economy"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: id"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/economy/jobs/{id}/deliver": {
+      "post": {
+        "operationId": "post_economy_jobs_id_deliver",
+        "summary": "POST /api/v1/economy/jobs/{id}/deliver",
+        "description": "Auto-generated operation for /api/v1/economy/jobs/{id}/deliver.",
+        "tags": [
+          "economy"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: id"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/economy/jobs/{id}/fund": {
+      "post": {
+        "operationId": "post_economy_jobs_id_fund",
+        "summary": "POST /api/v1/economy/jobs/{id}/fund",
+        "description": "Auto-generated operation for /api/v1/economy/jobs/{id}/fund.",
+        "tags": [
+          "economy"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: id"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/economy/jobs/{id}/start": {
+      "post": {
+        "operationId": "post_economy_jobs_id_start",
+        "summary": "POST /api/v1/economy/jobs/{id}/start",
+        "description": "Auto-generated operation for /api/v1/economy/jobs/{id}/start.",
+        "tags": [
+          "economy"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: id"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/gpg/agent/{id}/stats": {
+      "get": {
+        "operationId": "get_gpg_agent_id_stats",
+        "summary": "GET /api/v1/gpg/agent/{id}/stats",
+        "description": "Auto-generated operation for /api/v1/gpg/agent/{id}/stats.",
+        "tags": [
+          "gpg"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/gpg/cluster/{id}/top": {
+      "get": {
+        "operationId": "get_gpg_cluster_id_top",
+        "summary": "GET /api/v1/gpg/cluster/{id}/top",
+        "description": "Auto-generated operation for /api/v1/gpg/cluster/{id}/top.",
+        "tags": [
+          "gpg"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/gpg/ingest": {
+      "post": {
+        "operationId": "post_gpg_ingest",
+        "summary": "POST /api/v1/gpg/ingest",
+        "description": "Auto-generated operation for /api/v1/gpg/ingest.",
+        "tags": [
+          "gpg"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/gpg/pipeline/top": {
+      "get": {
+        "operationId": "get_gpg_pipeline_top",
+        "summary": "GET /api/v1/gpg/pipeline/top",
+        "description": "Auto-generated operation for /api/v1/gpg/pipeline/top.",
+        "tags": [
+          "gpg"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/gpg/plan": {
+      "post": {
+        "operationId": "post_gpg_plan",
+        "summary": "POST /api/v1/gpg/plan",
+        "description": "Auto-generated operation for /api/v1/gpg/plan.",
+        "tags": [
+          "gpg"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/gpg/recommend": {
+      "get": {
+        "operationId": "get_gpg_recommend",
+        "summary": "GET /api/v1/gpg/recommend",
+        "description": "Auto-generated operation for /api/v1/gpg/recommend.",
+        "tags": [
+          "gpg"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "get_health",
@@ -2213,6 +3762,72 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/marketplace/strategies": {
+      "get": {
+        "operationId": "get_marketplace_strategies",
+        "summary": "GET /api/v1/marketplace/strategies",
+        "description": "Auto-generated operation for /api/v1/marketplace/strategies.",
+        "tags": [
+          "marketplace"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/v1/me": {
@@ -4071,6 +5686,533 @@
         }
       }
     },
+    "/api/v1/reliability/agent/{id}": {
+      "get": {
+        "operationId": "get_reliability_agent_id",
+        "summary": "GET /api/v1/reliability/agent/{id}",
+        "description": "Auto-generated operation for /api/v1/reliability/agent/{id}.",
+        "tags": [
+          "reliability"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/reliability/agent/{id}/trends": {
+      "get": {
+        "operationId": "get_reliability_agent_id_trends",
+        "summary": "GET /api/v1/reliability/agent/{id}/trends",
+        "description": "Auto-generated operation for /api/v1/reliability/agent/{id}/trends.",
+        "tags": [
+          "reliability"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/reliability/graph": {
+      "get": {
+        "operationId": "get_reliability_graph",
+        "summary": "GET /api/v1/reliability/graph",
+        "description": "Auto-generated operation for /api/v1/reliability/graph.",
+        "tags": [
+          "reliability"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/reliability/ingest": {
+      "post": {
+        "operationId": "post_reliability_ingest",
+        "summary": "POST /api/v1/reliability/ingest",
+        "description": "Auto-generated operation for /api/v1/reliability/ingest.",
+        "tags": [
+          "reliability"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/reliability/run-benchmark": {
+      "post": {
+        "operationId": "post_reliability_run-benchmark",
+        "summary": "POST /api/v1/reliability/run-benchmark",
+        "description": "Auto-generated operation for /api/v1/reliability/run-benchmark.",
+        "tags": [
+          "reliability"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/reliability/suggest/{agentId}": {
+      "get": {
+        "operationId": "get_reliability_suggest_agentId",
+        "summary": "GET /api/v1/reliability/suggest/{agentId}",
+        "description": "Auto-generated operation for /api/v1/reliability/suggest/{agentId}.",
+        "tags": [
+          "reliability"
+        ],
+        "parameters": [
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: agentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/reliability/top": {
+      "get": {
+        "operationId": "get_reliability_top",
+        "summary": "GET /api/v1/reliability/top",
+        "description": "Auto-generated operation for /api/v1/reliability/top.",
+        "tags": [
+          "reliability"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v1/search": {
       "get": {
         "operationId": "get_search",
@@ -4156,6 +6298,233 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/search/outcome": {
+      "post": {
+        "operationId": "post_search_outcome",
+        "summary": "POST /api/v1/search/outcome",
+        "description": "Auto-generated operation for /api/v1/search/outcome.",
+        "tags": [
+          "search"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "querySignature": {
+                    "type": "string",
+                    "minLength": 64,
+                    "maxLength": 64
+                  },
+                  "selectedResultId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "success",
+                      "failure",
+                      "timeout"
+                    ]
+                  },
+                  "taskType": {
+                    "type": "string"
+                  },
+                  "query": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "failureCode": {
+                    "type": "string",
+                    "enum": [
+                      "auth",
+                      "rate_limit",
+                      "tool_error",
+                      "schema_mismatch"
+                    ]
+                  },
+                  "executionPath": {
+                    "type": "string",
+                    "enum": [
+                      "single",
+                      "delegated",
+                      "bundled"
+                    ]
+                  },
+                  "budgetExceeded": {
+                    "type": "boolean"
+                  },
+                  "latencyMs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 300000
+                  },
+                  "costUsd": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 10000
+                  },
+                  "modelUsed": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "tokensInput": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "tokensOutput": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "querySignature",
+                  "selectedResultId",
+                  "outcome"
+                ],
+                "additionalProperties": false
+              },
+              "examples": {
+                "sample": {
+                  "value": {
+                    "querySignature": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "selectedResultId": "550e8400-e29b-41d4-a716-446655440000",
+                    "outcome": "failure",
+                    "taskType": "automation",
+                    "query": "build mcp pipeline",
+                    "failureCode": "timeout",
+                    "executionPath": "delegated",
+                    "budgetExceeded": false,
+                    "latencyMs": 1800,
+                    "costUsd": 0.012,
+                    "modelUsed": "gpt-4o-mini",
+                    "tokensInput": 420,
+                    "tokensOutput": 128
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/search/quality": {
+      "get": {
+        "operationId": "get_search_quality",
+        "summary": "GET /api/v1/search/quality",
+        "description": "Auto-generated operation for /api/v1/search/quality.",
+        "tags": [
+          "search"
+        ],
         "responses": {
           "200": {
             "description": "Success",
@@ -4599,6 +6968,493 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/stripe/webhook": {
+      "post": {
+        "operationId": "post_stripe_webhook",
+        "summary": "POST /api/v1/stripe/webhook",
+        "description": "Auto-generated operation for /api/v1/stripe/webhook.",
+        "tags": [
+          "stripe"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/support": {
+      "post": {
+        "operationId": "post_support",
+        "summary": "POST /api/v1/support",
+        "description": "Auto-generated operation for /api/v1/support.",
+        "tags": [
+          "support"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/trust/receipts": {
+      "post": {
+        "operationId": "post_trust_receipts",
+        "summary": "POST /api/v1/trust/receipts",
+        "description": "Auto-generated operation for /api/v1/trust/receipts.",
+        "tags": [
+          "trust"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/trust/receipts/{id}": {
+      "get": {
+        "operationId": "get_trust_receipts_id",
+        "summary": "GET /api/v1/trust/receipts/{id}",
+        "description": "Auto-generated operation for /api/v1/trust/receipts/{id}.",
+        "tags": [
+          "trust"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/trust/verify": {
+      "post": {
+        "operationId": "post_trust_verify",
+        "summary": "POST /api/v1/trust/verify",
+        "description": "Auto-generated operation for /api/v1/trust/verify.",
+        "tags": [
+          "trust"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/v2/search/plan": {
+      "post": {
+        "operationId": "post_v2_search_plan",
+        "summary": "POST /api/v1/v2/search/plan",
+        "description": "Auto-generated operation for /api/v1/v2/search/plan.",
+        "tags": [
+          "v2"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/v1/{path+}": {
@@ -5208,70 +8064,6 @@
                 "schema": {
                   "type": "object",
                   "additionalProperties": true
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/search/outcome": {
-      "post": {
-        "operationId": "post_api_v1_search_outcome",
-        "summary": "POST /api/v1/search/outcome",
-        "description": "Auto-generated operation for /api/v1/search/outcome.",
-        "tags": [
-          "search"
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiSuccess"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/search/quality": {
-      "get": {
-        "operationId": "get_api_v1_search_quality",
-        "summary": "GET /api/v1/search/quality",
-        "description": "Auto-generated operation for /api/v1/search/quality.",
-        "tags": [
-          "search"
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiSuccess"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
                 }
               }
             }

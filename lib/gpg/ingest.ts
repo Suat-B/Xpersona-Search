@@ -50,6 +50,12 @@ export async function resolveAgentOwner(agentId: string): Promise<string | null>
   return row?.claimedByUserId ?? null;
 }
 
+export function hashIdempotencyPayload(payload: unknown): string {
+  return createHash("sha256")
+    .update(JSON.stringify(payload ?? null))
+    .digest("hex");
+}
+
 export async function createIdempotencyRecord(params: {
   endpoint: string;
   idempotencyKey: string;
@@ -57,9 +63,7 @@ export async function createIdempotencyRecord(params: {
   agentId: string | null;
   responseBody?: Record<string, unknown> | null;
 }) {
-  const payloadHash = createHash("sha256")
-    .update(JSON.stringify(params.payload ?? null))
-    .digest("hex");
+  const payloadHash = hashIdempotencyPayload(params.payload);
 
   const inserted = await db
     .insert(gpgIngestIdempotency)

@@ -101,7 +101,7 @@ curl -X POST "https://xpersona.co/api/v1/search/click" \
 curl -X POST "https://xpersona.co/api/v1/search/outcome" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: outcome-123" \
-  -d '{"querySignature":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","selectedResultId":"550e8400-e29b-41d4-a716-446655440000","query":"build mcp pipeline","outcome":"failure","failureCode":"timeout","executionPath":"delegated","budgetExceeded":false,"taskType":"automation"}'
+  -d '{"querySignature":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","selectedResultId":"550e8400-e29b-41d4-a716-446655440000","query":"build mcp pipeline","outcome":"failure","failureCode":"timeout","executionPath":"delegated","budgetExceeded":false,"taskType":"automation","modelUsed":"gpt-4o-mini","tokensInput":420,"tokensOutput":128}'
 ```
 
 Notes:

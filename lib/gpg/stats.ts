@@ -38,7 +38,18 @@ export async function recomputeAgentClusterStats(clusterId: string, agentId: str
       isVerified: agentRuns.isVerified,
     })
     .from(agentRuns)
-    .where(and(eq(agentRuns.clusterId, clusterId), eq(agentRuns.agentId, agentId), gte(agentRuns.createdAt, since90)))
+    .where(
+      and(
+        eq(agentRuns.clusterId, clusterId),
+        eq(agentRuns.agentId, agentId),
+        gte(agentRuns.createdAt, since90),
+        eq(agentRuns.isVerified, true),
+        sql`NOT EXISTS (
+          SELECT 1 FROM gpg_integrity_flags flags
+          WHERE flags.run_id = ${agentRuns.id} AND flags.is_resolved = false
+        )`
+      )
+    )
     .orderBy(desc(agentRuns.createdAt));
 
   const rows30 = rows.filter((r) => r.createdAt >= since30);
@@ -135,7 +146,18 @@ export async function recomputePipelineStats(clusterId: string, pathHash: string
       agentPath: gpgPipelineRuns.agentPath,
     })
     .from(gpgPipelineRuns)
-    .where(and(eq(gpgPipelineRuns.clusterId, clusterId), eq(gpgPipelineRuns.pathHash, pathHash), gte(gpgPipelineRuns.createdAt, since30)))
+    .where(
+      and(
+        eq(gpgPipelineRuns.clusterId, clusterId),
+        eq(gpgPipelineRuns.pathHash, pathHash),
+        gte(gpgPipelineRuns.createdAt, since30),
+        eq(gpgPipelineRuns.isVerified, true),
+        sql`NOT EXISTS (
+          SELECT 1 FROM gpg_integrity_flags flags
+          WHERE flags.pipeline_run_id = ${gpgPipelineRuns.id} AND flags.is_resolved = false
+        )`
+      )
+    )
     .orderBy(desc(gpgPipelineRuns.createdAt));
 
   const total = rows.length;
@@ -193,7 +215,13 @@ export async function recomputeGraphEdges(clusterId: string) {
   const rows = await db.execute(sql`
     SELECT pipeline_run_id, array_agg(agent_id::text ORDER BY pipeline_step) AS agent_path
     FROM agent_runs
-    WHERE cluster_id = ${clusterId}::uuid AND pipeline_run_id IS NOT NULL
+    WHERE cluster_id = ${clusterId}::uuid
+      AND pipeline_run_id IS NOT NULL
+      AND is_verified = true
+      AND NOT EXISTS (
+        SELECT 1 FROM gpg_integrity_flags flags
+        WHERE flags.run_id = agent_runs.id AND flags.is_resolved = false
+      )
     GROUP BY pipeline_run_id
   `);
   const runs = (rows as unknown as { rows?: Array<{ agent_path: string[] }> }).rows ?? [];
@@ -240,11 +268,13 @@ export async function recomputeGraphEdges(clusterId: string) {
 }
 
 export async function recomputeAllClusterStats() {
-  const clusterRows = await db.execute(sql`SELECT DISTINCT cluster_id FROM agent_runs WHERE cluster_id IS NOT NULL`);
+  const clusterRows = await db.execute(
+    sql`SELECT DISTINCT cluster_id FROM agent_runs WHERE cluster_id IS NOT NULL AND is_verified = true`
+  );
   const clusters = (clusterRows as unknown as { rows?: Array<{ cluster_id: string }> }).rows ?? [];
   for (const row of clusters) {
     const agentRows = await db.execute(
-      sql`SELECT DISTINCT agent_id FROM agent_runs WHERE cluster_id = ${row.cluster_id}::uuid`
+      sql`SELECT DISTINCT agent_id FROM agent_runs WHERE cluster_id = ${row.cluster_id}::uuid AND is_verified = true`
     );
     const agentIds = (agentRows as unknown as { rows?: Array<{ agent_id: string }> }).rows ?? [];
     for (const agent of agentIds) {
@@ -253,7 +283,9 @@ export async function recomputeAllClusterStats() {
     await recomputeGraphEdges(row.cluster_id);
   }
 
-  const pipelineRows = await db.execute(sql`SELECT DISTINCT cluster_id, path_hash FROM gpg_pipeline_runs`);
+  const pipelineRows = await db.execute(
+    sql`SELECT DISTINCT cluster_id, path_hash FROM gpg_pipeline_runs WHERE is_verified = true`
+  );
   const pipelines = (pipelineRows as unknown as { rows?: Array<{ cluster_id: string; path_hash: string }> }).rows ?? [];
   for (const p of pipelines) {
     await recomputePipelineStats(p.cluster_id, p.path_hash);

@@ -30,19 +30,48 @@ function slugify(value: string): string {
     .slice(0, 191);
 }
 
-async function findNearestCluster(embedding: number[]): Promise<{ id: string; similarity: number } | null> {
-  const vectorSql = sql.raw(`'${JSON.stringify(embedding)}'::jsonb`);
+function cosineSimilarity(a: number[], b: number[]): number {
+  const len = Math.min(a.length, b.length);
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < len; i += 1) {
+    const av = a[i] ?? 0;
+    const bv = b[i] ?? 0;
+    dot += av * bv;
+    normA += av * av;
+    normB += bv * bv;
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+async function findNearestCluster(
+  embedding: number[],
+  normalized: string
+): Promise<{ id: string; similarity: number } | null> {
+  const token = normalized.split(" ").slice(0, 5).join(" ");
+  if (!token) return null;
+
   const rows = await db.execute(sql`
-    SELECT id,
-      1 - (embedding::jsonb <-> ${vectorSql}) AS similarity
+    SELECT id, embedding
     FROM gpg_task_clusters
     WHERE embedding IS NOT NULL
-    ORDER BY embedding::jsonb <-> ${vectorSql}
-    LIMIT 1
+      AND normalized_label ILIKE ${`%${token}%`}
+    ORDER BY volume_30d DESC, created_at DESC
+    LIMIT 50
   `);
-  const row = (rows as unknown as { rows?: Array<{ id: string; similarity: number }> }).rows?.[0];
-  if (!row) return null;
-  return { id: row.id, similarity: Number(row.similarity ?? 0) };
+
+  const candidates = (rows as unknown as { rows?: Array<{ id: string; embedding: number[] | null }> }).rows ?? [];
+  let best: { id: string; similarity: number } | null = null;
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate.embedding)) continue;
+    const similarity = cosineSimilarity(embedding, candidate.embedding);
+    if (!best || similarity > best.similarity) {
+      best = { id: candidate.id, similarity };
+    }
+  }
+  return best;
 }
 
 async function findNearestClusterLexical(normalized: string): Promise<string | null> {
@@ -99,13 +128,22 @@ export async function ensureTaskSignature(params: {
 
   let clusterId: string | null = null;
   if (embedding && embedding.length > 0) {
-    const nearest = await findNearestCluster(embedding);
+    const nearest = await findNearestCluster(embedding, normalized);
     if (nearest && nearest.similarity >= DEFAULT_SIM_THRESHOLD) {
       clusterId = nearest.id;
     }
   }
   if (!clusterId) {
     clusterId = await findNearestClusterLexical(normalized);
+  }
+  if (!clusterId) {
+    const cluster = await ensureTaskCluster({
+      normalizedText: normalized,
+      taskType,
+      tags,
+      embedding,
+    });
+    clusterId = cluster.id;
   }
 
   const signature = await db
@@ -117,9 +155,9 @@ export async function ensureTaskSignature(params: {
       tags,
       embedding,
       taskType,
-      clusterId,
-      createdAt: new Date(),
-    })
+    clusterId,
+    createdAt: new Date(),
+  })
     .returning();
 
   return {

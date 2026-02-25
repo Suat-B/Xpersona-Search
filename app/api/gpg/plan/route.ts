@@ -1,7 +1,13 @@
+import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { planPipeline } from "@/lib/gpg/recommend";
 import { ensureTaskSignature } from "@/lib/gpg/task-canonicalization";
+import { hasTrustTable } from "@/lib/trust/db";
+import { getActiveReceiptKeyId } from "@/lib/trust/receipts";
+import { buildGpgReceiptPayload, signGpgReceipt } from "@/lib/gpg/receipts";
+import { db } from "@/lib/db";
+import { trustReceipts } from "@/lib/db/schema";
 
 const PlanSchema = z.object({
   task: z.string().min(1).max(500),
@@ -40,6 +46,46 @@ export async function POST(req: NextRequest) {
     constraints: parsed.data.constraints,
     preferences: parsed.data.preferences,
   });
+
+  const idempotencyKey = req.headers.get("idempotency-key")?.trim() ?? null;
+  const leadAgentId = response.plan?.agents?.[0] ?? null;
+  if (leadAgentId && (await hasTrustTable("trust_receipts"))) {
+    const keyId = getActiveReceiptKeyId();
+    if (keyId) {
+      const receiptIdempotency = idempotencyKey && idempotencyKey.length <= 64 ? idempotencyKey : null;
+      const { payload, payloadHash } = buildGpgReceiptPayload({
+        receiptType: "gpg_plan_issued",
+        agentId: leadAgentId,
+        eventPayload: {
+          clusterId: response.clusterId,
+          taskType: response.taskType,
+          task: parsed.data.task,
+          constraints: parsed.data.constraints ?? null,
+          preferences: parsed.data.preferences ?? null,
+          plan: response.plan,
+          alternatives: response.alternatives,
+          issuedAt: new Date().toISOString(),
+        },
+        idempotencyKey: receiptIdempotency,
+      });
+      const signatureValue = signGpgReceipt(payloadHash, keyId);
+      try {
+        await db.insert(trustReceipts).values({
+          receiptType: payload.receiptType,
+          agentId: payload.agentId,
+          counterpartyAgentId: payload.counterpartyAgentId ?? null,
+          eventPayload: payload.eventPayload,
+          payloadHash,
+          signature: signatureValue,
+          keyId,
+          nonce: crypto.randomUUID(),
+          idempotencyKey: receiptIdempotency,
+        });
+      } catch {
+        // best-effort
+      }
+    }
+  }
 
   return NextResponse.json({ success: true, data: response });
 }

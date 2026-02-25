@@ -287,6 +287,12 @@ export function GoogleStyleHome({
               Marketplace
             </Link>
             <Link
+              href="/graph"
+              className="flex-1 sm:flex-none px-4 sm:px-8 py-3.5 min-h-[48px] bg-sky-400 hover:bg-sky-300 active:scale-[0.98] active:bg-sky-200 text-[#0b0b0f] text-xs sm:text-sm font-semibold rounded-xl sm:rounded-2xl shadow-lg shadow-sky-400/25 hover:shadow-sky-300/40 transition-all focus:outline-none focus:ring-2 focus:ring-sky-300/60 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation whitespace-nowrap inline-flex items-center justify-center"
+            >
+              Graph
+            </Link>
+            <Link
               href="/reliability"
               className="flex-1 sm:flex-none px-4 sm:px-8 py-3.5 min-h-[48px] bg-emerald-400 hover:bg-emerald-300 active:scale-[0.98] active:bg-emerald-200 text-[#0b0b0f] text-xs sm:text-sm font-semibold rounded-xl sm:rounded-2xl shadow-lg shadow-emerald-400/25 hover:shadow-emerald-300/40 transition-all focus:outline-none focus:ring-2 focus:ring-emerald-300/60 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation whitespace-nowrap inline-flex items-center justify-center"
             >
@@ -335,6 +341,9 @@ export function GoogleStyleHome({
             </Link>
             <Link href="/marketplace" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
               Marketplace
+            </Link>
+            <Link href="/graph" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+              Graph
             </Link>
             <Link href="/reliability" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
               Reliability

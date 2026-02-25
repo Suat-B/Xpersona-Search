@@ -31,7 +31,7 @@ export async function findSuspiciousPipelines() {
   const rows = await db.execute(sql`
     SELECT id, cluster_id, agent_path, cost_usd, latency_ms
     FROM gpg_pipeline_runs
-    WHERE is_verified = false
+    WHERE is_verified = true
       AND created_at > now() - interval '7 days'
       AND cost_usd = 0
       AND latency_ms = 0

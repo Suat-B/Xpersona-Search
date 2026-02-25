@@ -69,18 +69,20 @@ export async function POST(
     description: agent.description,
   });
 
-  await db.insert(agentCapabilityHandshakes).values({
-    agentId: agent.id,
-    verifiedAt: handshake.verifiedAt,
-    expiresAt: handshake.expiresAt,
-    status: handshake.status,
-    protocolChecks: handshake.protocolChecks,
-    capabilityChecks: handshake.capabilityChecks,
-    latencyProbeMs: handshake.latencyProbeMs,
-    errorRateProbe: handshake.errorRateProbe,
-    evidenceRef: handshake.evidenceRef ?? null,
-    requestId: req.headers.get("x-request-id") ?? null,
-  });
+  await db.insert(agentCapabilityHandshakes).values([
+    {
+      agentId: agent.id,
+      verifiedAt: handshake.verifiedAt,
+      expiresAt: handshake.expiresAt,
+      status: handshake.status,
+      protocolChecks: handshake.protocolChecks,
+      capabilityChecks: handshake.capabilityChecks,
+      latencyProbeMs: handshake.latencyProbeMs,
+      errorRateProbe: handshake.errorRateProbe,
+      evidenceRef: handshake.evidenceRef ?? null,
+      requestId: req.headers.get("x-request-id") ?? null,
+    },
+  ]);
 
   return NextResponse.json({
     status: handshake.status,

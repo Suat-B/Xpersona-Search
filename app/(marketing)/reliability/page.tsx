@@ -8,6 +8,7 @@ import { ANSMinimalHeader } from "@/components/home/ANSMinimalHeader";
 import { ANSMinimalFooter } from "@/components/home/ANSMinimalFooter";
 import { SkillMarkdown } from "@/components/agent/SkillMarkdown";
 import { ReliabilityDashboard } from "@/components/reliability/ReliabilityDashboard";
+import { GlobalPerformanceGraph } from "@/components/reliability/GlobalPerformanceGraph";
 
 export const dynamic = "force-dynamic";
 
@@ -93,6 +94,8 @@ export default async function ReliabilityPage() {
             </div>
 
             <ReliabilityDashboard />
+
+            <GlobalPerformanceGraph />
 
             <div className="mt-10">
               <h2 className="text-xl font-semibold text-[var(--text-primary)]">API Quickstart</h2>

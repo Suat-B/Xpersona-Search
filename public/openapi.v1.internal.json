@@ -754,6 +754,204 @@
           }
         ]
       }
+    },
+    "/api/v1/cron/gpg-integrity": {
+      "get": {
+        "operationId": "get_cron_gpg-integrity",
+        "summary": "GET /api/v1/cron/gpg-integrity",
+        "description": "Auto-generated operation for /api/v1/cron/gpg-integrity.",
+        "tags": [
+          "cron"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/cron/gpg-stats": {
+      "get": {
+        "operationId": "get_cron_gpg-stats",
+        "summary": "GET /api/v1/cron/gpg-stats",
+        "description": "Auto-generated operation for /api/v1/cron/gpg-stats.",
+        "tags": [
+          "cron"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/cron/reliability-metrics": {
+      "get": {
+        "operationId": "get_cron_reliability-metrics",
+        "summary": "GET /api/v1/cron/reliability-metrics",
+        "description": "Auto-generated operation for /api/v1/cron/reliability-metrics.",
+        "tags": [
+          "cron"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
     }
   },
   "components": {

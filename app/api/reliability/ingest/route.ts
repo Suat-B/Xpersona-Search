@@ -1,12 +1,18 @@
+import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getAuthUser } from "@/lib/auth-utils";
 import { isAdmin } from "@/lib/admin";
+import { requireBearerApiKey } from "@/lib/api/auth-guards";
 import { verifyPayloadSignature } from "@/lib/gpg/security";
-import { checkIdempotency, createIdempotencyRecord, ingestRun, resolveAgentOwner } from "@/lib/gpg/ingest";
+import { checkIdempotency, createIdempotencyRecord, hashIdempotencyPayload, ingestRun, resolveAgentOwner } from "@/lib/gpg/ingest";
 import { hashPayload } from "@/lib/reliability/hash";
 import { classifyFailure } from "@/lib/reliability/classifier";
 import type { FailureType, RunStatus } from "@/lib/reliability/types";
+import { db } from "@/lib/db";
+import { trustReceipts } from "@/lib/db/schema";
+import { hasTrustTable } from "@/lib/trust/db";
+import { getActiveReceiptKeyId } from "@/lib/trust/receipts";
+import { buildGpgReceiptPayload, signGpgReceipt } from "@/lib/gpg/receipts";
 
 const IngestSchema = z.object({
   agentId: z.string().min(1),
@@ -43,10 +49,8 @@ const IngestSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const auth = await getAuthUser(req);
-  if ("error" in auth) {
-    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-  }
+  const auth = await requireBearerApiKey(req);
+  if (!auth.ok) return auth.response;
 
   const idempotencyKey = req.headers.get("idempotency-key")?.trim();
   const keyId = req.headers.get("x-gpg-key-id")?.trim();
@@ -76,6 +80,10 @@ export async function POST(req: NextRequest) {
 
   const existing = await checkIdempotency({ endpoint: "reliability_ingest", idempotencyKey });
   if (existing) {
+    const incomingHash = hashIdempotencyPayload(parsed.data);
+    if (incomingHash !== existing.payloadHash) {
+      return NextResponse.json({ error: "IDEMPOTENCY_PAYLOAD_MISMATCH" }, { status: 409 });
+    }
     return NextResponse.json({ success: true, deduped: true, data: existing.responseBody ?? {} });
   }
 
@@ -133,6 +141,41 @@ export async function POST(req: NextRequest) {
     agentId: parsed.data.agentId,
     responseBody: result,
   });
+
+  if (await hasTrustTable("trust_receipts")) {
+    const keyId = getActiveReceiptKeyId();
+    if (keyId) {
+      const receiptIdempotency = idempotencyKey.length <= 64 ? idempotencyKey : null;
+      const { payload: receiptPayload, payloadHash } = buildGpgReceiptPayload({
+        receiptType: "gpg_ingest_verified",
+        agentId: parsed.data.agentId,
+        eventPayload: {
+          runId: result.runId,
+          clusterId: result.clusterId,
+          taskSignatureId: result.taskSignatureId,
+          pipelineRunId: result.pipelineRunId,
+          verifiedAt: new Date().toISOString(),
+        },
+        idempotencyKey: receiptIdempotency,
+      });
+      const signatureValue = signGpgReceipt(payloadHash, keyId);
+      try {
+        await db.insert(trustReceipts).values({
+          receiptType: receiptPayload.receiptType,
+          agentId: receiptPayload.agentId,
+          counterpartyAgentId: receiptPayload.counterpartyAgentId ?? null,
+          eventPayload: receiptPayload.eventPayload,
+          payloadHash,
+          signature: signatureValue,
+          keyId,
+          nonce: crypto.randomUUID(),
+          idempotencyKey: receiptIdempotency,
+        });
+      } catch {
+        // best-effort
+      }
+    }
+  }
 
   return NextResponse.json({ success: true, data: result });
 }
