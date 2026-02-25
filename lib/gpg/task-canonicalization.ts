@@ -46,6 +46,27 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
+function getEmbeddingTimeoutMs(): number {
+  const raw = Number(process.env.GPG_EMBEDDING_TIMEOUT_MS ?? "2500");
+  if (!Number.isFinite(raw) || raw <= 0) return 2500;
+  return Math.min(10_000, Math.max(500, Math.floor(raw)));
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return await new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Embedding timeout")), timeoutMs);
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+
 async function findNearestCluster(
   embedding: number[],
   normalized: string
@@ -119,8 +140,9 @@ export async function ensureTaskSignature(params: {
   let embedding: number[] | null = null;
   if (provider && provider.isAvailable()) {
     try {
-      const vectors = await provider.embed([normalized]);
-      embedding = vectors[0] ?? null;
+      const timeoutMs = getEmbeddingTimeoutMs();
+      const vectors = await withTimeout(provider.embed([normalized]), timeoutMs);
+      embedding = Array.isArray(vectors?.[0]) ? (vectors[0] as number[]) : null;
     } catch {
       embedding = null;
     }

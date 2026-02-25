@@ -3,6 +3,7 @@
  * Falls back to openclaw/skills GitHub repo (archives ClawHub) if API is unavailable.
  */
 import pLimit from "p-limit";
+import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
 import { crawlJobs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -61,9 +62,16 @@ function sleep(ms: number): Promise<void> {
 function parseRetryAfterMs(headers: Headers): number | null {
   const raw = headers.get("retry-after");
   if (!raw) return null;
-  const asSeconds = Number(raw);
-  if (Number.isFinite(asSeconds) && asSeconds >= 0) {
-    return Math.floor(asSeconds * 1000);
+  const asNumeric = Number(raw);
+  if (Number.isFinite(asNumeric) && asNumeric >= 0) {
+    // Some providers send absolute UNIX timestamps instead of delta seconds.
+    if (asNumeric >= 1_000_000_000_000) {
+      return Math.max(0, Math.floor(asNumeric - Date.now()));
+    }
+    if (asNumeric >= 1_000_000_000) {
+      return Math.max(0, Math.floor(asNumeric * 1000 - Date.now()));
+    }
+    return Math.floor(asNumeric * 1000);
   }
   const asDate = Date.parse(raw);
   if (Number.isFinite(asDate)) {
@@ -80,6 +88,41 @@ function computeBackoffMs(attempt: number): number {
   const jitter = Math.floor(Math.random() * 250);
   const exp = CLAWHUB_API_BASE_BACKOFF_MS * 2 ** Math.max(0, attempt - 1);
   return Math.min(CLAWHUB_API_MAX_BACKOFF_MS, exp + jitter);
+}
+
+function clampWaitMs(ms: number): number {
+  if (!Number.isFinite(ms) || ms <= 0) return 1000;
+  // Node timers use 32-bit signed int max. Keep well under that.
+  return Math.min(2_000_000_000, Math.min(CLAWHUB_API_MAX_BACKOFF_MS, Math.floor(ms)));
+}
+
+function shortHash(input: string): string {
+  return createHash("sha256").update(input).digest("hex").slice(0, 16);
+}
+
+function buildClawhubSourceId(ownerKey: string, slug: string): string {
+  const raw = `clawhub:${ownerKey}:${slug}`;
+  if (raw.length <= 255) return raw;
+  const slugSlice = slug.slice(0, 120);
+  const ownerSlice = ownerKey.slice(0, 60);
+  const hash = shortHash(raw);
+  return `clawhub:${ownerSlice}:${slugSlice}:h${hash}`.slice(0, 255);
+}
+
+function truncateVarchar(value: string, maxLen: number): string {
+  return value.length > maxLen ? value.slice(0, maxLen) : value;
+}
+
+function normalizeAgentName(value: string | null | undefined, fallback: string): string {
+  const candidate = (value ?? "").trim();
+  const safe = candidate.length > 0 ? candidate : fallback;
+  return truncateVarchar(safe, 255);
+}
+
+function normalizeAgentSlug(value: string, fallbackPrefix: string, idx: number): string {
+  const s = (value ?? "").trim();
+  if (s.length > 0) return truncateVarchar(s, 255);
+  return truncateVarchar(`${fallbackPrefix}-${idx}`, 255);
 }
 
 type ClawHubSkillListItem = {
@@ -134,7 +177,7 @@ async function fetchClawHubSkillListPage(params: {
       throw new Error(lastErr);
     }
     const retryAfterMs = parseRetryAfterMs(res.headers);
-    const waitMs = retryAfterMs ?? computeBackoffMs(attempt + 1);
+    const waitMs = clampWaitMs(retryAfterMs ?? computeBackoffMs(attempt + 1));
     console.warn(
       `[CRAWL] CLAWHUB list retry attempt=${attempt + 1} status=${res.status} waitMs=${waitMs}`
     );
@@ -158,7 +201,7 @@ async function fetchClawHubSkillDetail(slug: string): Promise<ClawHubSkillDetail
     if (res.status === 404) return null;
     if (attempt >= CLAWHUB_API_MAX_RETRIES || !isRetryableStatus(res.status)) return null;
     const retryAfterMs = parseRetryAfterMs(res.headers);
-    const waitMs = retryAfterMs ?? computeBackoffMs(attempt + 1);
+    const waitMs = clampWaitMs(retryAfterMs ?? computeBackoffMs(attempt + 1));
     await sleep(waitMs);
   }
   console.warn(`[CRAWL] CLAWHUB detail exhausted retries slug=${slug} lastStatus=${lastStatus}`);
@@ -194,20 +237,27 @@ async function crawlClawHubApi(maxResults: number): Promise<number> {
           const detail = await fetchClawHubSkillDetail(item.slug);
           const ownerHandle = detail?.owner?.handle ?? null;
           const ownerId = detail?.owner?.userId ?? null;
-          const sourceId = `clawhub:${ownerId ?? ownerHandle ?? "unknown"}:${item.slug}`;
-          const displayName = detail?.skill?.displayName ?? item.displayName ?? item.slug;
+          const sourceId = buildClawhubSourceId(
+            ownerId ?? ownerHandle ?? "unknown",
+            item.slug
+          );
+          const displayName = normalizeAgentName(
+            detail?.skill?.displayName ?? item.displayName ?? item.slug,
+            item.slug
+          );
           const summary = detail?.skill?.summary ?? item.summary ?? null;
           const url = `${CLAWHUB_SITE_BASE}/${encodeURIComponent(
             ownerHandle ?? ownerId ?? "unknown"
           )}/${encodeURIComponent(item.slug)}`;
-          const slug =
+          const rawSlug =
             generateSlug(
               `clawhub-${ownerHandle ?? ownerId ?? "unknown"}-${item.slug}`
             ) || `clawhub-${totalFound}`;
+          const slug = normalizeAgentSlug(rawSlug, "clawhub", totalFound);
 
           const popularityScore = computePopularityScore(item.stats?.downloads);
           const agentData = {
-            sourceId,
+            sourceId: truncateVarchar(sourceId, 255),
             source: "CLAWHUB" as const,
             name: displayName,
             slug,
@@ -301,7 +351,7 @@ async function crawlClawHubGitHub(maxResults: number): Promise<number> {
     const pathBase = path.replace(/\/SKILL\.md$/, "");
     const parts = pathBase.split("/");
     const slugFromPath = parts[parts.length - 1] ?? "skill";
-    const sourceId = `clawhub:${pathBase.replace(/\//g, ":")}`;
+    const sourceId = truncateVarchar(`clawhub:${pathBase.replace(/\//g, ":")}`, 255);
 
     const skillContent = await limit(() =>
       fetchFileContent(SKILLS_REPO, path, "main")
@@ -309,10 +359,11 @@ async function crawlClawHubGitHub(maxResults: number): Promise<number> {
     if (!skillContent) continue;
 
     const skillData = parseSkillMd(skillContent);
-    const name = skillData.name ?? slugFromPath;
-    const slug =
+    const name = normalizeAgentName(skillData.name ?? slugFromPath, slugFromPath);
+    const rawSlug =
       generateSlug(`clawhub-${pathBase.replace(/\//g, "-")}`) ||
       `clawhub-${totalFound}`;
+    const slug = normalizeAgentSlug(rawSlug, "clawhub", totalFound);
     const url = `https://github.com/${SKILLS_REPO}/tree/main/${pathBase}`;
 
     const agentData = {

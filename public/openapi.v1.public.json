@@ -15,6 +15,70 @@
   ],
   "paths": {
     "/api/v1/agents/submit": {
+      "get": {
+        "operationId": "get_agents_submit",
+        "summary": "GET /api/v1/agents/submit",
+        "description": "Auto-generated operation for /api/v1/agents/submit.",
+        "tags": [
+          "agents"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "post": {
         "operationId": "post_agents_submit",
         "summary": "POST /api/v1/agents/submit",
@@ -97,6 +161,97 @@
       }
     },
     "/api/v1/agents/{slug}": {
+      "delete": {
+        "operationId": "delete_agents_slug",
+        "summary": "DELETE /api/v1/agents/{slug}",
+        "description": "Auto-generated operation for /api/v1/agents/{slug}.",
+        "tags": [
+          "agents"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: slug"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "get": {
         "operationId": "get_agents_slug",
         "summary": "GET /api/v1/agents/{slug}",
@@ -115,6 +270,97 @@
             "description": "Path parameter: slug"
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "patch_agents_slug",
+        "summary": "PATCH /api/v1/agents/{slug}",
+        "description": "Auto-generated operation for /api/v1/agents/{slug}.",
+        "tags": [
+          "agents"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: slug"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Success",
@@ -342,6 +588,81 @@
       }
     },
     "/api/v1/agents/{slug}/claim/verify": {
+      "get": {
+        "operationId": "get_agents_slug_claim_verify",
+        "summary": "GET /api/v1/agents/{slug}/claim/verify",
+        "description": "Auto-generated operation for /api/v1/agents/{slug}/claim/verify.",
+        "tags": [
+          "agents"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: slug"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "post": {
         "operationId": "post_agents_slug_claim_verify",
         "summary": "POST /api/v1/agents/{slug}/claim/verify",
@@ -587,6 +908,188 @@
           }
         ]
       },
+      "patch": {
+        "operationId": "patch_agents_slug_customization",
+        "summary": "PATCH /api/v1/agents/{slug}/customization",
+        "description": "Auto-generated operation for /api/v1/agents/{slug}/customization.",
+        "tags": [
+          "agents"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: slug"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "post_agents_slug_customization",
+        "summary": "POST /api/v1/agents/{slug}/customization",
+        "description": "Auto-generated operation for /api/v1/agents/{slug}/customization.",
+        "tags": [
+          "agents"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: slug"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "put": {
         "operationId": "put_agents_slug_customization",
         "summary": "PUT /api/v1/agents/{slug}/customization",
@@ -680,6 +1183,81 @@
       }
     },
     "/api/v1/agents/{slug}/customization/preview": {
+      "get": {
+        "operationId": "get_agents_slug_customization_preview",
+        "summary": "GET /api/v1/agents/{slug}/customization/preview",
+        "description": "Auto-generated operation for /api/v1/agents/{slug}/customization/preview.",
+        "tags": [
+          "agents"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: slug"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "post": {
         "operationId": "post_agents_slug_customization_preview",
         "summary": "POST /api/v1/agents/{slug}/customization/preview",
@@ -938,6 +1516,174 @@
             "bearerAuth": []
           }
         ]
+      },
+      "post": {
+        "operationId": "post_agents_slug_manage",
+        "summary": "POST /api/v1/agents/{slug}/manage",
+        "description": "Auto-generated operation for /api/v1/agents/{slug}/manage.",
+        "tags": [
+          "agents"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: slug"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agents/{slug}/snapshot": {
+      "get": {
+        "operationId": "get_agents_slug_snapshot",
+        "summary": "GET /api/v1/agents/{slug}/snapshot",
+        "description": "Auto-generated operation for /api/v1/agents/{slug}/snapshot.",
+        "tags": [
+          "agents"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: slug"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/v1/agents/{slug}/trust": {
@@ -1018,6 +1764,81 @@
       }
     },
     "/api/v1/agents/{slug}/verify": {
+      "get": {
+        "operationId": "get_agents_slug_verify",
+        "summary": "GET /api/v1/agents/{slug}/verify",
+        "description": "Auto-generated operation for /api/v1/agents/{slug}/verify.",
+        "tags": [
+          "agents"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: slug"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "post": {
         "operationId": "post_agents_slug_verify",
         "summary": "POST /api/v1/agents/{slug}/verify",
@@ -3485,6 +4306,70 @@
       }
     },
     "/api/v1/gpg/ingest": {
+      "get": {
+        "operationId": "get_gpg_ingest",
+        "summary": "GET /api/v1/gpg/ingest",
+        "description": "Auto-generated operation for /api/v1/gpg/ingest.",
+        "tags": [
+          "gpg"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "post": {
         "operationId": "post_gpg_ingest",
         "summary": "POST /api/v1/gpg/ingest",
@@ -3633,6 +4518,70 @@
       }
     },
     "/api/v1/gpg/plan": {
+      "get": {
+        "operationId": "get_gpg_plan",
+        "summary": "GET /api/v1/gpg/plan",
+        "description": "Auto-generated operation for /api/v1/gpg/plan.",
+        "tags": [
+          "gpg"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "post": {
         "operationId": "post_gpg_plan",
         "summary": "POST /api/v1/gpg/plan",
@@ -3780,11 +4729,427 @@
         ]
       }
     },
+    "/api/v1/graph/plan": {
+      "get": {
+        "operationId": "get_graph_plan",
+        "summary": "GET /api/v1/graph/plan",
+        "description": "Auto-generated operation for /api/v1/graph/plan.",
+        "tags": [
+          "graph"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "post_graph_plan",
+        "summary": "POST /api/v1/graph/plan",
+        "description": "Auto-generated operation for /api/v1/graph/plan.",
+        "tags": [
+          "graph"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "examples": {
+                "sample": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/graph/recommend": {
+      "get": {
+        "operationId": "get_graph_recommend",
+        "summary": "GET /api/v1/graph/recommend",
+        "description": "Auto-generated operation for /api/v1/graph/recommend.",
+        "tags": [
+          "graph"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/graph/related/{agentId}": {
+      "get": {
+        "operationId": "get_graph_related_agentId",
+        "summary": "GET /api/v1/graph/related/{agentId}",
+        "description": "Auto-generated operation for /api/v1/graph/related/{agentId}.",
+        "tags": [
+          "graph"
+        ],
+        "parameters": [
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Path parameter: agentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/graph/top": {
+      "get": {
+        "operationId": "get_graph_top",
+        "summary": "GET /api/v1/graph/top",
+        "description": "Auto-generated operation for /api/v1/graph/top.",
+        "tags": [
+          "graph"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "get_health",
         "summary": "GET /api/v1/health",
         "description": "Auto-generated operation for /api/v1/health.",
+        "tags": [
+          "health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/health/dependencies": {
+      "get": {
+        "operationId": "get_health_dependencies",
+        "summary": "GET /api/v1/health/dependencies",
+        "description": "Auto-generated operation for /api/v1/health/dependencies.",
         "tags": [
           "health"
         ],
@@ -5580,6 +6945,138 @@
         ]
       }
     },
+    "/api/v1/metrics": {
+      "get": {
+        "operationId": "get_metrics",
+        "summary": "GET /api/v1/metrics",
+        "description": "Auto-generated operation for /api/v1/metrics.",
+        "tags": [
+          "metrics"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/metrics/prometheus": {
+      "get": {
+        "operationId": "get_metrics_prometheus",
+        "summary": "GET /api/v1/metrics/prometheus",
+        "description": "Auto-generated operation for /api/v1/metrics/prometheus.",
+        "tags": [
+          "metrics"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v1/openapi": {
       "get": {
         "operationId": "get_openapi",
@@ -6545,6 +8042,67 @@
         }
       }
     },
+    "/api/v1/search/ai": {
+      "get": {
+        "operationId": "get_search_ai",
+        "summary": "GET /api/v1/search/ai",
+        "description": "Auto-generated operation for /api/v1/search/ai.",
+        "tags": [
+          "search"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/search/click": {
       "post": {
         "operationId": "post_search_click",
@@ -6854,6 +8412,67 @@
         "operationId": "get_search_suggest",
         "summary": "GET /api/v1/search/suggest",
         "description": "Auto-generated operation for /api/v1/search/suggest.",
+        "tags": [
+          "search"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/search/tool": {
+      "get": {
+        "operationId": "get_search_tool",
+        "summary": "GET /api/v1/search/tool",
+        "description": "Auto-generated operation for /api/v1/search/tool.",
         "tags": [
           "search"
         ],
@@ -7239,6 +8858,72 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/status": {
+      "get": {
+        "operationId": "get_status",
+        "summary": "GET /api/v1/status",
+        "description": "Auto-generated operation for /api/v1/status.",
+        "tags": [
+          "status"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiSuccess"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {},
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                },
+                "examples": {
+                  "error": {
+                    "value": {
+                      "success": false,
+                      "error": {
+                        "code": "BAD_REQUEST",
+                        "message": "Invalid request"
+                      },
+                      "meta": {
+                        "requestId": "req_example",
+                        "version": "v1",
+                        "timestamp": "2026-02-24T00:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/v1/stripe/webhook": {

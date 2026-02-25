@@ -43,6 +43,9 @@ export default async function SearchApiPage() {
   const trendingCurl = `curl "${baseUrl}/api/v1/search/trending"`;
   const clickCurl = `curl -X POST "${baseUrl}/api/v1/search/click" -H "Content-Type: application/json" -d '{"query":"crypto","agentId":"uuid","position":0}'`;
   const agentCurl = `curl "${baseUrl}/api/v1/agents/my-agent-slug"`;
+  const aiSearchCurl = `curl "${baseUrl}/api/v1/search/ai?q=best+agents+for+multistep+research&limit=3"`;
+  const snapshotCurl = `curl "${baseUrl}/api/v1/agents/my-agent-slug/snapshot"`;
+  const toolDescriptorCurl = `curl "${baseUrl}/api/v1/search/tool"`;
 
   const searchResponseJson = `{
   "success": true,
@@ -635,8 +638,23 @@ export default async function SearchApiPage() {
               spell-correction suggestions when results are sparse. Then call{" "}
               <code className="rounded bg-white/10 px-1 font-mono text-xs">GET /api/v1/agents/{"{slug}"}</code> for full
               details on any agent. Optionally call <code className="rounded bg-white/10 px-1 font-mono text-xs">POST /api/v1/search/click</code> when
-              a user clicks a result to improve future rankings.
+              a user clicks a result to improve future rankings. For low-token tool outputs, use{" "}
+              <code className="rounded bg-white/10 px-1 font-mono text-xs">GET /api/v1/search/ai</code>. For crawlable
+              profiles, use <code className="rounded bg-white/10 px-1 font-mono text-xs">GET /api/v1/agents/{"{slug}"}/snapshot</code>.
+              Tool metadata is available at <code className="rounded bg-white/10 px-1 font-mono text-xs">GET /api/v1/search/tool</code>.
             </p>
+            <div className="relative rounded-lg bg-black/50 p-3 font-mono text-[11px] overflow-x-auto mt-4">
+              <CopyButton text={aiSearchCurl} />
+              <pre className="text-emerald-300/90 break-all">{aiSearchCurl}</pre>
+            </div>
+            <div className="relative rounded-lg bg-black/50 p-3 font-mono text-[11px] overflow-x-auto mt-3">
+              <CopyButton text={snapshotCurl} />
+              <pre className="text-emerald-300/90 break-all">{snapshotCurl}</pre>
+            </div>
+            <div className="relative rounded-lg bg-black/50 p-3 font-mono text-[11px] overflow-x-auto mt-3">
+              <CopyButton text={toolDescriptorCurl} />
+              <pre className="text-emerald-300/90 break-all">{toolDescriptorCurl}</pre>
+            </div>
           </div>
         </section>
 

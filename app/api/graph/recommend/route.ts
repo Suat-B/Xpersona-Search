@@ -19,6 +19,36 @@ const RecommendSchema = z.object({
   limit: z.number().int().min(1).max(50).optional(),
 });
 
+function fallbackRecommendResponse(
+  req: NextRequest,
+  startedAt: number,
+  cacheKey: string,
+  reason: "CIRCUIT_OPEN" | "INTERNAL_ERROR",
+  details?: unknown
+) {
+  const payload = {
+    success: true,
+    _fallback: true,
+    fallbackReason: reason,
+    data: {
+      clusterId: null,
+      clusterName: null,
+      taskType: "general",
+      topAgents: [],
+      alternatives: [],
+    },
+    ...(details !== undefined ? { error: details } : {}),
+  };
+  const response = NextResponse.json(payload, {
+    status: 200,
+    headers: { "X-Graph-Recommend-Fallback": "1", "X-Cache": "MISS" },
+  });
+  graphRecommendCache.set(cacheKey, payload);
+  applyRequestIdHeader(response, req);
+  recordApiResponse("/api/graph/recommend", req, response, startedAt);
+  return response;
+}
+
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
   const url = new URL(req.url);
@@ -71,14 +101,7 @@ export async function GET(req: NextRequest) {
       recordApiResponse("/api/graph/recommend", req, response, startedAt);
       return response;
     }
-    const response = jsonError(req, {
-      code: "CIRCUIT_OPEN",
-      message: "Graph recommend is temporarily unavailable",
-      status: 503,
-      retryAfterMs: 20_000,
-    });
-    recordApiResponse("/api/graph/recommend", req, response, startedAt);
-    return response;
+    return fallbackRecommendResponse(req, startedAt, cacheKey, "CIRCUIT_OPEN");
   }
 
   try {
@@ -118,13 +141,12 @@ export async function GET(req: NextRequest) {
       recordApiResponse("/api/graph/recommend", req, response, startedAt);
       return response;
     }
-    const response = jsonError(req, {
-      code: "INTERNAL_ERROR",
-      message: "Graph recommend failed",
-      status: 500,
-      details: process.env.NODE_ENV === "production" ? undefined : String(err),
-    });
-    recordApiResponse("/api/graph/recommend", req, response, startedAt);
-    return response;
+    return fallbackRecommendResponse(
+      req,
+      startedAt,
+      cacheKey,
+      "INTERNAL_ERROR",
+      process.env.NODE_ENV === "production" ? undefined : String(err)
+    );
   }
 }

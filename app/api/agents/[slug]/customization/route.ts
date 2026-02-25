@@ -7,7 +7,7 @@ import {
   agentCustomizations,
   agentCustomizationVersions,
 } from "@/lib/db/schema";
-import { getAuthUser } from "@/lib/auth-utils";
+import { getAuthUser, type AuthUser } from "@/lib/auth-utils";
 import {
   CUSTOMIZATION_LIMITS,
   sanitizeCustomizationInput,
@@ -27,10 +27,23 @@ const CustomizationSchema = z.object({
   status: StatusSchema.optional(),
 });
 
-async function getOwnedAgent(req: NextRequest, slug: string) {
+type OwnedAgentAccess =
+  | { ok: false; error: NextResponse }
+  | {
+      ok: true;
+      user: AuthUser;
+      agent: {
+        id: string;
+        slug: string;
+        claimStatus: string | null;
+        claimedByUserId: string | null;
+      };
+    };
+
+async function getOwnedAgent(req: NextRequest, slug: string): Promise<OwnedAgentAccess> {
   const authResult = await getAuthUser(req);
   if ("error" in authResult) {
-    return { error: jsonError(req, { code: "UNAUTHORIZED", message: "UNAUTHORIZED", status: 401 }) };
+    return { ok: false, error: jsonError(req, { code: "UNAUTHORIZED", message: "UNAUTHORIZED", status: 401 }) };
   }
   const { user } = authResult;
 
@@ -46,16 +59,17 @@ async function getOwnedAgent(req: NextRequest, slug: string) {
     .limit(1);
 
   if (!agent) {
-    return { error: jsonError(req, { code: "NOT_FOUND", message: "Agent not found", status: 404 }) };
+    return { ok: false, error: jsonError(req, { code: "NOT_FOUND", message: "Agent not found", status: 404 }) };
   }
 
   if (agent.claimStatus !== "CLAIMED" || agent.claimedByUserId !== user.id) {
     return {
+      ok: false,
       error: jsonError(req, { code: "FORBIDDEN", message: "You are not the owner of this page", status: 403 }),
     };
   }
 
-  return { user, agent };
+  return { ok: true, user, agent };
 }
 
 export async function GET(
@@ -65,7 +79,7 @@ export async function GET(
   const startedAt = Date.now();
   const { slug } = await params;
   const access = await getOwnedAgent(req, slug);
-  if ("error" in access) {
+  if (!access.ok) {
     recordApiResponse("/api/agents/:slug/customization", req, access.error, startedAt);
     return access.error;
   }
@@ -92,7 +106,7 @@ export async function PUT(
   const startedAt = Date.now();
   const { slug } = await params;
   const access = await getOwnedAgent(req, slug);
-  if ("error" in access) {
+  if (!access.ok) {
     recordApiResponse("/api/agents/:slug/customization", req, access.error, startedAt);
     return access.error;
   }

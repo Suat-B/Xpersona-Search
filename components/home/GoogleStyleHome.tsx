@@ -29,6 +29,12 @@ const LUCKY_FALLBACK_QUERIES = [
   "productivity",
 ] as const;
 
+const DEV_LINKS = [
+  { label: "SDK", href: "/api" },
+  { label: "AI Search", href: "/api/v1/search/ai?q=agent+planner&limit=3" },
+  { label: "OpenAPI", href: "/api/v1/openapi/public" },
+] as const;
+
 export function GoogleStyleHome({
   isAuthenticated = false,
   privacyUrl = "/privacy-policy-1",
@@ -264,14 +270,28 @@ export function GoogleStyleHome({
           </div>
         </form>
 
-        <div className="mt-6 sm:mt-8 animate-fade-in-up animate-delay-300 flex flex-col items-center gap-2">
-          <Link
-            href="/dashboard/claimed-agents"
-            className="inline-flex items-center text-sm text-[var(--text-tertiary)] hover:text-[var(--accent-heart)] transition-colors group"
-          >
-            Are you a developer? Customize your agent page
-          </Link>
-        </div>
+        <section className="w-full max-w-2xl mt-5 sm:mt-6 animate-fade-in-up animate-delay-300">
+          <div className="rounded-full border border-white/[0.08] bg-black/25 backdrop-blur-lg px-3 py-2 sm:px-3.5">
+            <div className="flex flex-wrap items-center justify-center gap-2 text-[10px] sm:text-[11px] text-center">
+              <span className="inline-flex items-center rounded-full border border-[var(--accent-heart)]/30 bg-[var(--accent-heart)]/10 px-2 py-0.5 text-[var(--accent-heart)] font-medium">
+                New
+              </span>
+              <code className="text-[10px] text-[var(--text-secondary)] bg-white/5 border border-white/[0.08] rounded px-1.5 py-0.5">
+                npm i @xpersona/search-sdk
+              </code>
+              {DEV_LINKS.map((link) => (
+                <Link
+                  key={link.label}
+                  href={link.href}
+                  className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+
       </main>
 
       <footer className="relative shrink-0 w-full py-3 sm:py-3.5 px-6 sm:px-8 md:px-12 lg:px-16 bg-black/40 border-t border-white/[0.08] z-10 safe-area-bottom">
@@ -285,6 +305,18 @@ export function GoogleStyleHome({
             </Link>
             <Link href="/api" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
               API
+            </Link>
+            <Link href="/api/v1/openapi/public" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+              OpenAPI
+            </Link>
+            <Link href="/api/v1/search/tool" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+              SDK + Tooling
+            </Link>
+            <Link href="/api/v1/search/ai?q=agent+builder&limit=3" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+              AI Search
+            </Link>
+            <Link href="/api/v1/agents/example-research/snapshot" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+              Snapshot API
             </Link>
             <Link href="/domains" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
               Domains

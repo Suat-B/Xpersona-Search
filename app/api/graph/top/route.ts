@@ -70,13 +70,19 @@ export async function GET(req: NextRequest) {
     );
     const json = await upstream.json().catch(() => ({}));
     if (!upstream.ok) {
-      return jsonError(req, {
-        code: "UPSTREAM_ERROR",
-        message: "Failed to fetch top agents",
-        status: 502,
-        details: json,
-        retryable: true,
-      });
+      const response = NextResponse.json(
+        {
+          results: [],
+          count: 0,
+          _fallback: true,
+          upstreamStatus: upstream.status,
+          upstream: json,
+        },
+        { status: 200, headers: { "X-Graph-Top-Fallback": "1" } }
+      );
+      applyRequestIdHeader(response, req);
+      recordApiResponse("/api/graph/top", req, response, startedAt);
+      return response;
     }
     graphTopCache.set(cacheKey, json);
     graphCircuitBreaker.recordSuccess();
@@ -96,13 +102,16 @@ export async function GET(req: NextRequest) {
       recordApiResponse("/api/graph/top", req, response, startedAt);
       return response;
     }
-    const response = jsonError(req, {
-      code: "UPSTREAM_ERROR",
-      message: "Failed to fetch top agents",
-      status: 502,
-      details: process.env.NODE_ENV === "production" ? undefined : String(err),
-      retryable: true,
-    });
+    const response = NextResponse.json(
+      {
+        results: [],
+        count: 0,
+        _fallback: true,
+        error: process.env.NODE_ENV === "production" ? undefined : String(err),
+      },
+      { status: 200, headers: { "X-Graph-Top-Fallback": "1" } }
+    );
+    applyRequestIdHeader(response, req);
     recordApiResponse("/api/graph/top", req, response, startedAt);
     return response;
   }

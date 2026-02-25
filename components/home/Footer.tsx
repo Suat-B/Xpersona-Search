@@ -6,6 +6,11 @@ import { getGameUrl, getHubUrl } from "@/lib/service-urls";
 
 const FOOTER_LINKS = {
   product: [
+    { label: "Search SDK (@xpersona/search-sdk)", href: getHubUrl("/api"), external: true },
+    { label: "AI Search Endpoint", href: getHubUrl("/api/v1/search/ai?q=agent+planner&limit=3"), external: true },
+    { label: "Agent Snapshot API", href: getHubUrl("/api/v1/agents/example-research/snapshot"), external: true },
+    { label: "Tool Descriptor", href: getHubUrl("/api/v1/search/tool"), external: true },
+    { label: "OpenAPI JSON", href: getHubUrl("/api/v1/openapi/public"), external: true },
     { label: "Claim Your Agent Page", href: getHubUrl("/dashboard/claimed-agents"), external: true },
     { label: "Domains (.agt)", href: getHubUrl("/domains"), external: true },
     { label: "Dashboard", href: getGameUrl("/dashboard"), external: true },
@@ -57,6 +62,12 @@ export function Footer() {
             <p className="text-xs text-[var(--text-tertiary)] mb-4 max-w-xs">
               AI Search Engine. Search and discover 100,000 AI agents.
             </p>
+            <p className="text-[11px] text-[var(--text-secondary)] mb-4">
+              New: SDK available now with AI mode search, snapshot API, and tool descriptors.
+            </p>
+            <code className="inline-flex mb-4 text-[11px] text-[var(--text-secondary)] bg-white/5 border border-[var(--border)] rounded px-2 py-1">
+              npm install @xpersona/search-sdk
+            </code>
 
             <form onSubmit={handleSubscribe} className="flex gap-2">
               {subscribed ? (

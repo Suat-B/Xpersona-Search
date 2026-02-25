@@ -27,6 +27,36 @@ const PlanSchema = z.object({
     .optional(),
 });
 
+function fallbackPlanResponse(
+  req: NextRequest,
+  startedAt: number,
+  cacheKey: string,
+  reason: "CIRCUIT_OPEN" | "INTERNAL_ERROR",
+  details?: unknown
+) {
+  const payload = {
+    success: true,
+    _fallback: true,
+    fallbackReason: reason,
+    data: {
+      clusterId: null,
+      clusterName: null,
+      taskType: "general",
+      plan: null,
+      alternatives: [],
+    },
+    ...(details !== undefined ? { error: details } : {}),
+  };
+  const response = NextResponse.json(payload, {
+    status: 200,
+    headers: { "X-Graph-Plan-Fallback": "1", "X-Cache": "MISS" },
+  });
+  graphPlanCache.set(cacheKey, payload);
+  applyRequestIdHeader(response, req);
+  recordApiResponse("/api/graph/plan", req, response, startedAt);
+  return response;
+}
+
 function parsePlanFromQuery(req: NextRequest) {
   const url = new URL(req.url);
   return PlanSchema.safeParse({
@@ -82,14 +112,7 @@ async function buildPlanResponse(req: NextRequest, data: z.infer<typeof PlanSche
       recordApiResponse("/api/graph/plan", req, response, startedAt);
       return response;
     }
-    const response = jsonError(req, {
-      code: "CIRCUIT_OPEN",
-      message: "Graph planner is temporarily unavailable",
-      status: 503,
-      retryAfterMs: 20_000,
-    });
-    recordApiResponse("/api/graph/plan", req, response, startedAt);
-    return response;
+    return fallbackPlanResponse(req, startedAt, cacheKey, "CIRCUIT_OPEN");
   }
 
   try {
@@ -124,14 +147,13 @@ async function buildPlanResponse(req: NextRequest, data: z.infer<typeof PlanSche
       recordApiResponse("/api/graph/plan", req, response, startedAt);
       return response;
     }
-    const response = jsonError(req, {
-      code: "INTERNAL_ERROR",
-      message: "Graph planner failed",
-      status: 500,
-      details: process.env.NODE_ENV === "production" ? undefined : String(err),
-    });
-    recordApiResponse("/api/graph/plan", req, response, startedAt);
-    return response;
+    return fallbackPlanResponse(
+      req,
+      startedAt,
+      cacheKey,
+      "INTERNAL_ERROR",
+      process.env.NODE_ENV === "production" ? undefined : String(err)
+    );
   }
 }
 

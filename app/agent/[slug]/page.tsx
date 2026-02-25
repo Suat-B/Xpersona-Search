@@ -59,9 +59,23 @@ export default async function AgentPage({ params }: Props) {
   const payload = await res.json();
   const agent = unwrapAgentPayload(payload);
   if (!agent) notFound();
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: String(agent.name ?? "Agent"),
+    description: (agent.description as string | null) ?? undefined,
+    applicationCategory: "AI Agent",
+    operatingSystem: "Web",
+    url: `${baseUrl}/agent/${slug}`,
+    keywords: [
+      ...(((agent.protocols as string[] | null) ?? []).slice(0, 8)),
+      ...(((agent.capabilities as string[] | null) ?? []).slice(0, 8)),
+    ],
+  };
 
   return (
     <Suspense>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <AgentPageClient agent={agent as unknown as Parameters<typeof AgentPageClient>[0]["agent"]} />
     </Suspense>
   );
