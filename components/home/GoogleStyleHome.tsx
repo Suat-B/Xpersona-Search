@@ -239,7 +239,7 @@ export function GoogleStyleHome({
               aria-expanded={showSuggestions}
               autoComplete="off"
               enterKeyHint="search"
-              className="w-full pl-10 sm:pl-12 pr-4 py-2.5 sm:py-3 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-lg rounded-xl sm:rounded-2xl focus:outline-none min-h-[40px] touch-manipulation"
+              className="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-3.5 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-lg rounded-xl sm:rounded-2xl focus:outline-none min-h-[46px] touch-manipulation"
             />
             <SearchSuggestions
               ref={suggestionsRef}

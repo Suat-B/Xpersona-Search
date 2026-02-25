@@ -230,6 +230,22 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
       [selectItem]
     );
 
+    const handleMouseDownSelect = useCallback(
+      (e: React.MouseEvent, item: SuggestionItem) => {
+        e.preventDefault();
+        selectItem(item);
+      },
+      [selectItem]
+    );
+
+    const handleTouchStartSelect = useCallback(
+      (e: React.TouchEvent, item: SuggestionItem) => {
+        e.preventDefault();
+        selectItem(item);
+      },
+      [selectItem]
+    );
+
     const handleClickSelect = useCallback(
       (e: React.MouseEvent, item: SuggestionItem) => {
         e.preventDefault();
@@ -468,6 +484,8 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
             <button
               type="button"
               onPointerDown={(e) => handlePointerSelect(e, item)}
+              onMouseDown={(e) => handleMouseDownSelect(e, item)}
+              onTouchStart={(e) => handleTouchStartSelect(e, item)}
               onClick={(e) => handleClickSelect(e, item)}
               onMouseEnter={() => setHighlightedIndex(idx)}
               data-index={idx}
@@ -507,6 +525,8 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
             <button
               type="button"
               onPointerDown={(e) => handlePointerSelect(e, item)}
+              onMouseDown={(e) => handleMouseDownSelect(e, item)}
+              onTouchStart={(e) => handleTouchStartSelect(e, item)}
               onClick={(e) => handleClickSelect(e, item)}
               onMouseEnter={() => setHighlightedIndex(idx)}
               data-index={idx}
@@ -536,6 +556,8 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
             <button
               type="button"
               onPointerDown={(e) => handlePointerSelect(e, item)}
+              onMouseDown={(e) => handleMouseDownSelect(e, item)}
+              onTouchStart={(e) => handleTouchStartSelect(e, item)}
               onClick={(e) => handleClickSelect(e, item)}
               onMouseEnter={() => setHighlightedIndex(idx)}
               data-index={idx}
@@ -565,6 +587,8 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
             <Link
               href={`/agent/${item.agent.slug}`}
               onPointerDown={(e) => handlePointerSelect(e, item)}
+              onMouseDown={(e) => handleMouseDownSelect(e, item)}
+              onTouchStart={(e) => handleTouchStartSelect(e, item)}
               onClick={(e) => handleClickSelect(e, item)}
               onMouseEnter={() => setHighlightedIndex(idx)}
               data-index={idx}
@@ -614,6 +638,8 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
             : `absolute ${panelPlacement === "top" ? "bottom-full mb-1" : "top-full mt-1"}`
         }`}
         style={{ maxHeight: `${panelMaxHeight}px` }}
+        onMouseDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
         role="listbox"
         aria-expanded={visible}
         aria-label="Search suggestions"
