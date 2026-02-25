@@ -41,10 +41,12 @@ async function main() {
     console.log("No SDK packages found under ./sdk");
     return;
   }
-  for (const pkg of packages) {
-    console.log(`\n[SDK] ${script} -> ${pkg.name}`);
-    await runNpm(pkg.dir, script);
-  }
+  await Promise.all(
+    packages.map(async (pkg) => {
+      console.log(`\n[SDK] ${script} -> ${pkg.name}`);
+      await runNpm(pkg.dir, script);
+    })
+  );
 }
 
 main().catch((err) => {

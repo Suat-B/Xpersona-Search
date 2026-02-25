@@ -21,10 +21,10 @@ export const metadata: Metadata = {
 
 import { Outfit, Inter } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { ServiceProvider } from "@/components/providers/ServiceProvider";
 import { HelpFrame } from "@/components/help/HelpFrame";
-import { HelpSignal } from "@/components/help/HelpSignal";
 import { getService } from "@/lib/service";
 
 const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
@@ -59,8 +59,8 @@ export default async function RootLayout({
           <AuthProvider>
             {children}
             <HelpFrame />
-            <HelpSignal />
             <Analytics />
+            <SpeedInsights />
           </AuthProvider>
         </ServiceProvider>
       </body>

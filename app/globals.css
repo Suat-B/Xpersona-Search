@@ -703,6 +703,12 @@ input[type="reset"] {
   outline-offset: 2px;
 }
 
+html:focus-visible,
+body:focus-visible,
+#__next:focus-visible {
+  outline: none;
+}
+
 /* Selection */
 ::selection {
   background: rgba(10, 132, 255, 0.25);

@@ -106,7 +106,27 @@ export default async function ReliabilityPage() {
 
   endpoints.sort((a, b) => a.route.localeCompare(b.route) || a.method.localeCompare(b.method));
 
-  const quickstart = endpoints.slice(0, 6).map((item) => ({
+  const quickstartPriority = [
+    "/api/v1/reliability/agent/:id",
+    "/api/v1/reliability/agent/:id/trends",
+    "/api/v1/reliability/suggest/:agentId",
+    "/api/v1/reliability/top",
+    "/api/v1/reliability/graph",
+    "/api/v1/reliability/ingest",
+  ];
+
+  const quickstartSorted = [...endpoints].sort((a, b) => {
+    const aBase = a.route.split("?")[0];
+    const bBase = b.route.split("?")[0];
+    const aIdx = quickstartPriority.indexOf(aBase);
+    const bIdx = quickstartPriority.indexOf(bBase);
+    const aRank = aIdx === -1 ? 999 : aIdx;
+    const bRank = bIdx === -1 ? 999 : bIdx;
+    if (aRank !== bRank) return aRank - bRank;
+    return a.route.localeCompare(b.route) || a.method.localeCompare(b.method);
+  });
+
+  const quickstart = quickstartSorted.slice(0, 6).map((item) => ({
     title: `${item.method} ${item.route.replace("/api/v1", "")}`,
     description: item.auth ? `Auth: ${item.auth}` : "Public endpoint.",
     method: item.method,
