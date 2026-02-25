@@ -4,6 +4,7 @@ import { TASK_TYPES } from "@/lib/search/taxonomy";
 import { apiV1 } from "@/lib/api/url";
 import { fetchWithTimeout } from "@/lib/api/fetch-timeout";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 const PlanRequestSchema = z.object({
   q: z.string().min(1).max(500),
@@ -18,24 +19,29 @@ const PlanRequestSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: "BAD_REQUEST",
       message: "Invalid JSON body",
       status: 400,
     });
+    recordApiResponse("/api/v2/search/plan", req, response, startedAt);
+    return response;
   }
   const parsed = PlanRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: "BAD_REQUEST",
       message: "Invalid payload",
       status: 400,
       details: parsed.error.flatten(),
     });
+    recordApiResponse("/api/v2/search/plan", req, response, startedAt);
+    return response;
   }
   const p = parsed.data;
   const params = new URLSearchParams({
@@ -68,13 +74,15 @@ export async function POST(req: NextRequest) {
     executionPlan?: Record<string, unknown>;
   };
   if (!searchRes.ok) {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: "UPSTREAM_ERROR",
       message: "Planner failed to get candidates",
       status: 502,
       details: searchJson,
       retryable: true,
     });
+    recordApiResponse("/api/v2/search/plan", req, response, startedAt);
+    return response;
   }
 
   const results = searchJson.results ?? [];
@@ -95,6 +103,7 @@ export async function POST(req: NextRequest) {
     },
   });
   applyRequestIdHeader(response, req);
+  recordApiResponse("/api/v2/search/plan", req, response, startedAt);
   return response;
 }
 

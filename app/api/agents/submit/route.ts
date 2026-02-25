@@ -8,6 +8,8 @@ import { db } from "@/lib/db";
 import { agents } from "@/lib/db/schema";
 import { generateSlug } from "@/lib/search/utils/slug";
 import { checkAgentSubmitRateLimit } from "@/lib/rate-limit";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 const SubmitSchema = z.object({
   name: z.string().min(1).max(255),
@@ -27,33 +29,43 @@ function getClientIp(req: NextRequest): string {
 }
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
   const ip = getClientIp(req);
   const limitResult = checkAgentSubmitRateLimit(ip);
   if (!limitResult.ok) {
-    return NextResponse.json(
-      { error: "Too many submissions. Try again later." },
-      {
-        status: 429,
-        headers: limitResult.retryAfter
-          ? { "Retry-After": String(limitResult.retryAfter) }
-          : undefined,
-      }
-    );
+    const response = jsonError(req, {
+      code: "RATE_LIMITED",
+      message: "Too many submissions. Try again later.",
+      status: 429,
+      retryAfterMs: (limitResult.retryAfter ?? 60) * 1000,
+    });
+    recordApiResponse("/api/agents/submit", req, response, startedAt);
+    return response;
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    const response = jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "Invalid JSON body",
+      status: 400,
+    });
+    recordApiResponse("/api/agents/submit", req, response, startedAt);
+    return response;
   }
 
   const parseResult = SubmitSchema.safeParse(body);
   if (!parseResult.success) {
-    return NextResponse.json(
-      { error: "Invalid request", details: parseResult.error.flatten() },
-      { status: 400 }
-    );
+    const response = jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "Invalid request",
+      status: 400,
+      details: parseResult.error.flatten(),
+    });
+    recordApiResponse("/api/agents/submit", req, response, startedAt);
+    return response;
   }
 
   const data = parseResult.data;
@@ -84,14 +96,20 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error("[Agent submit] Error:", err);
-    return NextResponse.json(
-      { error: "Submission failed" },
-      { status: 500 }
-    );
+    const response = jsonError(req, {
+      code: "INTERNAL_ERROR",
+      message: "Submission failed",
+      status: 500,
+    });
+    recordApiResponse("/api/agents/submit", req, response, startedAt);
+    return response;
   }
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     success: true,
     message: "Agent submitted for review. It will appear after approval.",
   });
+  applyRequestIdHeader(response, req);
+  recordApiResponse("/api/agents/submit", req, response, startedAt);
+  return response;
 }

@@ -13,6 +13,8 @@ import {
   sanitizeCustomizationInput,
 } from "@/lib/agent-customization/sanitize";
 import { checkCustomizationUpdateRateLimit } from "@/lib/agent-customization/rate-limit";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 const StatusSchema = z.enum(["DRAFT", "PUBLISHED", "DISABLED"]);
 
@@ -28,7 +30,7 @@ const CustomizationSchema = z.object({
 async function getOwnedAgent(req: NextRequest, slug: string) {
   const authResult = await getAuthUser(req);
   if ("error" in authResult) {
-    return { error: NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 }) };
+    return { error: jsonError(req, { code: "UNAUTHORIZED", message: "UNAUTHORIZED", status: 401 }) };
   }
   const { user } = authResult;
 
@@ -44,15 +46,12 @@ async function getOwnedAgent(req: NextRequest, slug: string) {
     .limit(1);
 
   if (!agent) {
-    return { error: NextResponse.json({ error: "Agent not found" }, { status: 404 }) };
+    return { error: jsonError(req, { code: "NOT_FOUND", message: "Agent not found", status: 404 }) };
   }
 
   if (agent.claimStatus !== "CLAIMED" || agent.claimedByUserId !== user.id) {
     return {
-      error: NextResponse.json(
-        { error: "You are not the owner of this page" },
-        { status: 403 }
-      ),
+      error: jsonError(req, { code: "FORBIDDEN", message: "You are not the owner of this page", status: 403 }),
     };
   }
 
@@ -63,9 +62,13 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  const startedAt = Date.now();
   const { slug } = await params;
   const access = await getOwnedAgent(req, slug);
-  if ("error" in access) return access.error;
+  if ("error" in access) {
+    recordApiResponse("/api/agents/:slug/customization", req, access.error, startedAt);
+    return access.error;
+  }
 
   const [customization] = await db
     .select()
@@ -73,44 +76,58 @@ export async function GET(
     .where(eq(agentCustomizations.agentId, access.agent.id))
     .limit(1);
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     customization: customization ?? null,
     limits: CUSTOMIZATION_LIMITS,
   });
+  applyRequestIdHeader(response, req);
+  recordApiResponse("/api/agents/:slug/customization", req, response, startedAt);
+  return response;
 }
 
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  const startedAt = Date.now();
   const { slug } = await params;
   const access = await getOwnedAgent(req, slug);
-  if ("error" in access) return access.error;
+  if ("error" in access) {
+    recordApiResponse("/api/agents/:slug/customization", req, access.error, startedAt);
+    return access.error;
+  }
 
   const rl = checkCustomizationUpdateRateLimit(access.user.id);
   if (!rl.ok) {
-    return NextResponse.json(
-      { error: "Too many customization updates. Try again later." },
-      {
-        status: 429,
-        headers: rl.retryAfter ? { "Retry-After": String(rl.retryAfter) } : undefined,
-      }
-    );
+    const response = jsonError(req, {
+      code: "RATE_LIMITED",
+      message: "Too many customization updates. Try again later.",
+      status: 429,
+      retryAfterMs: (rl.retryAfter ?? 60) * 1000,
+    });
+    recordApiResponse("/api/agents/:slug/customization", req, response, startedAt);
+    return response;
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    const response = jsonError(req, { code: "BAD_REQUEST", message: "Invalid JSON body", status: 400 });
+    recordApiResponse("/api/agents/:slug/customization", req, response, startedAt);
+    return response;
   }
 
   const parsed = CustomizationSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Invalid request", details: parsed.error.flatten() },
-      { status: 400 }
-    );
+    const response = jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "Invalid request",
+      status: 400,
+      details: parsed.error.flatten(),
+    });
+    recordApiResponse("/api/agents/:slug/customization", req, response, startedAt);
+    return response;
   }
 
   const data = parsed.data;
@@ -123,20 +140,24 @@ export async function PUT(
       customJs: data.customJs ?? "",
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to sanitize customization" },
-      { status: 400 }
-    );
+    const response = jsonError(req, {
+      code: "BAD_REQUEST",
+      message: err instanceof Error ? err.message : "Failed to sanitize customization",
+      status: 400,
+    });
+    recordApiResponse("/api/agents/:slug/customization", req, response, startedAt);
+    return response;
   }
 
   if (sanitized.jsBlockedPatterns.length > 0) {
-    return NextResponse.json(
-      {
-        error: "Custom JS contains blocked patterns.",
-        blockedPatterns: sanitized.jsBlockedPatterns,
-      },
-      { status: 400 }
-    );
+    const response = jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "Custom JS contains blocked patterns.",
+      status: 400,
+      details: { blockedPatterns: sanitized.jsBlockedPatterns },
+    });
+    recordApiResponse("/api/agents/:slug/customization", req, response, startedAt);
+    return response;
   }
 
   const status = data.status ?? "PUBLISHED";
@@ -227,11 +248,14 @@ export async function PUT(
     .where(eq(agentCustomizations.agentId, access.agent.id))
     .limit(1);
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     success: true,
     customization: saved ?? null,
     warnings: sanitized.warnings,
   });
+  applyRequestIdHeader(response, req);
+  recordApiResponse("/api/agents/:slug/customization", req, response, startedAt);
+  return response;
 }
 
 export async function POST(

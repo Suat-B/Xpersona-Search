@@ -14,6 +14,7 @@ import { hasTrustTable } from "@/lib/trust/db";
 import { getActiveReceiptKeyId } from "@/lib/trust/receipts";
 import { buildGpgReceiptPayload, signGpgReceipt } from "@/lib/gpg/receipts";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 const IngestSchema = z.object({
   agentId: z.string().min(1),
@@ -50,8 +51,12 @@ const IngestSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
   const auth = await requireBearerApiKey(req);
-  if (!auth.ok) return auth.response;
+  if (!auth.ok) {
+    recordApiResponse("/api/reliability/ingest", req, auth.response, startedAt);
+    return auth.response;
+  }
 
   const idempotencyKey = req.headers.get("idempotency-key")?.trim();
   const keyId = req.headers.get("x-gpg-key-id")?.trim();
@@ -59,22 +64,26 @@ export async function POST(req: NextRequest) {
   const signature = req.headers.get("x-gpg-signature")?.trim();
 
   if (!idempotencyKey || !keyId || !timestamp || !signature) {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: "SIGNED_HEADERS_REQUIRED",
       message: "Signed headers are required",
       status: 401,
     });
+    recordApiResponse("/api/reliability/ingest", req, response, startedAt);
+    return response;
   }
 
   const payload = await req.json().catch(() => null);
   const parsed = IngestSchema.safeParse(payload);
   if (!parsed.success) {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: "BAD_REQUEST",
       message: "Invalid payload",
       status: 400,
       details: parsed.error.flatten(),
     });
+    recordApiResponse("/api/reliability/ingest", req, response, startedAt);
+    return response;
   }
 
   const verify = verifyPayloadSignature({
@@ -85,42 +94,51 @@ export async function POST(req: NextRequest) {
     keyId,
   });
   if (!verify.ok) {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: verify.reason ?? "BAD_SIGNATURE",
       message: "Signature verification failed",
       status: 401,
     });
+    recordApiResponse("/api/reliability/ingest", req, response, startedAt);
+    return response;
   }
 
   const existing = await checkIdempotency({ endpoint: "reliability_ingest", idempotencyKey });
   if (existing) {
     const incomingHash = hashIdempotencyPayload(parsed.data);
     if (incomingHash !== existing.payloadHash) {
-      return jsonError(req, {
+      const response = jsonError(req, {
         code: "IDEMPOTENCY_PAYLOAD_MISMATCH",
         message: "Idempotency payload mismatch",
         status: 409,
       });
+      recordApiResponse("/api/reliability/ingest", req, response, startedAt);
+      return response;
     }
     const response = NextResponse.json({ success: true, deduped: true, data: existing.responseBody ?? {} });
     applyRequestIdHeader(response, req);
+    recordApiResponse("/api/reliability/ingest", req, response, startedAt);
     return response;
   }
 
   const ownerId = await resolveAgentOwner(parsed.data.agentId);
   if (!ownerId && !isAdmin(auth.user)) {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: "AGENT_NOT_CLAIMED",
       message: "Agent not claimed",
       status: 403,
     });
+    recordApiResponse("/api/reliability/ingest", req, response, startedAt);
+    return response;
   }
   if (ownerId && ownerId !== auth.user.id && !isAdmin(auth.user)) {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: "FORBIDDEN_AGENT",
       message: "Forbidden agent",
       status: 403,
     });
+    recordApiResponse("/api/reliability/ingest", req, response, startedAt);
+    return response;
   }
 
   const inputHash = parsed.data.inputHash ?? hashPayload(parsed.data.input);
@@ -207,5 +225,6 @@ export async function POST(req: NextRequest) {
 
   const response = NextResponse.json({ success: true, data: result });
   applyRequestIdHeader(response, req);
+  recordApiResponse("/api/reliability/ingest", req, response, startedAt);
   return response;
 }

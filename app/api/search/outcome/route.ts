@@ -22,6 +22,7 @@ import {
 } from "@/lib/trust/receipts";
 import { hasTrustTable } from "@/lib/trust/db";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 const OutcomeSchema = z.object({
   querySignature: z.string().length(64),
@@ -76,6 +77,7 @@ function seenIdempotencyKey(key: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
   const authProbe = await getAuthUser(req);
   const isAuthenticated = !("error" in authProbe);
   const rateLimitLimit = isAuthenticated ? SEARCH_AUTH_RATE_LIMIT : SEARCH_ANON_RATE_LIMIT;
@@ -89,6 +91,7 @@ export async function POST(req: NextRequest) {
     });
     response.headers.set("X-RateLimit-Remaining", "0");
     response.headers.set("X-RateLimit-Limit", String(rateLimitLimit));
+    recordApiResponse("/api/search/outcome", req, response, startedAt);
     return response;
   }
 
@@ -96,11 +99,13 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: "BAD_REQUEST",
       message: "Invalid JSON",
       status: 400,
     });
+    recordApiResponse("/api/search/outcome", req, response, startedAt);
+    return response;
   }
 
   let params: z.infer<typeof OutcomeSchema>;
@@ -109,11 +114,13 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     if (err instanceof ZodError) {
       const msg = err.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
-      return jsonError(req, {
+      const response = jsonError(req, {
         code: "BAD_REQUEST",
         message: msg,
         status: 400,
       });
+      recordApiResponse("/api/search/outcome", req, response, startedAt);
+      return response;
     }
     throw err;
   }
@@ -124,6 +131,7 @@ export async function POST(req: NextRequest) {
     if (seenIdempotencyKey(token)) {
       const response = NextResponse.json({ ok: true, deduped: true }, { status: 200 });
       applyRequestIdHeader(response, req);
+      recordApiResponse("/api/search/outcome", req, response, startedAt);
       return response;
     }
   }
@@ -299,5 +307,6 @@ export async function POST(req: NextRequest) {
     }
   );
   applyRequestIdHeader(response, req);
+  recordApiResponse("/api/search/outcome", req, response, startedAt);
   return response;
 }

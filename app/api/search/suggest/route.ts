@@ -11,6 +11,7 @@ import { sanitizeForStorage } from "@/lib/search/query-engine";
 import { TASK_TYPES } from "@/lib/search/taxonomy";
 import { SUGGEST_ENTITIES } from "@/lib/search/suggest-entities";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 const SuggestSchema = z.object({
   q: z
@@ -321,6 +322,7 @@ function generateTemplateVariants(
 }
 
 export async function GET(req: NextRequest) {
+  const startedAt = Date.now();
   // Rate limiting
   const rlResult = await checkSearchRateLimit(req);
   if (!rlResult.allowed) {
@@ -330,6 +332,7 @@ export async function GET(req: NextRequest) {
       status: 429,
       retryAfterMs: (rlResult.retryAfter ?? 60) * 1000,
     });
+    recordApiResponse("/api/search/suggest", req, response, startedAt);
     return response;
   }
 
@@ -339,11 +342,13 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     if (err instanceof ZodError) {
       const msg = err.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
-      return jsonError(req, {
+      const response = jsonError(req, {
         code: "BAD_REQUEST",
         message: msg,
         status: 400,
       });
+      recordApiResponse("/api/search/suggest", req, response, startedAt);
+      return response;
     }
     throw err;
   }
@@ -371,6 +376,7 @@ export async function GET(req: NextRequest) {
     response.headers.set("Cache-Control", "public, s-maxage=30, stale-while-revalidate=60");
     response.headers.set("X-Cache", "HIT");
     applyRequestIdHeader(response, req);
+    recordApiResponse("/api/search/suggest", req, response, startedAt);
     return response;
   }
 
@@ -389,6 +395,7 @@ export async function GET(req: NextRequest) {
       { status: 503, headers: { "Retry-After": "15" } }
     );
     applyRequestIdHeader(response, req);
+    recordApiResponse("/api/search/suggest", req, response, startedAt);
     return response;
   }
 
@@ -704,6 +711,7 @@ export async function GET(req: NextRequest) {
     response.headers.set("Cache-Control", "public, s-maxage=30, stale-while-revalidate=60");
     response.headers.set("X-Cache", "MISS");
     applyRequestIdHeader(response, req);
+    recordApiResponse("/api/search/suggest", req, response, startedAt);
     return response;
   } catch (err) {
     console.error("[Search Suggest] Error:", err);
@@ -714,6 +722,7 @@ export async function GET(req: NextRequest) {
       const response = NextResponse.json(stale);
       response.headers.set("X-Cache", "STALE");
       applyRequestIdHeader(response, req);
+      recordApiResponse("/api/search/suggest", req, response, startedAt);
       return response;
     }
 
@@ -729,6 +738,7 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
     applyRequestIdHeader(response, req);
+    recordApiResponse("/api/search/suggest", req, response, startedAt);
     return response;
   }
 }

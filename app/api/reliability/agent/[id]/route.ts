@@ -6,19 +6,23 @@ import { computeCalibrationError, getFailurePatterns, getPercentileRank } from "
 import { computeHiringScore } from "@/lib/reliability/hiring";
 import { resolveAgentByIdOrSlug } from "@/lib/reliability/lookup";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const startedAt = Date.now();
   const { id } = await params;
   const agent = await resolveAgentByIdOrSlug(id);
   if (!agent) {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: "NOT_FOUND",
       message: "Agent not found",
       status: 404,
     });
+    recordApiResponse("/api/reliability/agent/:id", req, response, startedAt);
+    return response;
   }
 
   let metrics: typeof agentMetrics.$inferSelect | undefined;
@@ -105,5 +109,6 @@ export async function GET(
     metrics_unavailable: metricsUnavailable,
   });
   applyRequestIdHeader(response, req);
+  recordApiResponse("/api/reliability/agent/:id", req, response, startedAt);
   return response;
 }

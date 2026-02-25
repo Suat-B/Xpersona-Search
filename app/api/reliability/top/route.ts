@@ -4,8 +4,10 @@ import { agents, agentMetrics } from "@/lib/db/schema";
 import { and, desc, eq, sql, type SQL } from "drizzle-orm";
 import { inferClusters, inferPriceTier, type PriceTier } from "@/lib/reliability/clusters";
 import { applyRequestIdHeader } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 export async function GET(req: NextRequest) {
+  const startedAt = Date.now();
   try {
     const url = new URL(req.url);
     const capability = url.searchParams.get("capability");
@@ -72,6 +74,7 @@ export async function GET(req: NextRequest) {
       count: withPercentile.length,
     });
     applyRequestIdHeader(response, req);
+    recordApiResponse("/api/reliability/top", req, response, startedAt);
     return response;
   } catch (error) {
     console.error("Error fetching top reliability agents:", error);
@@ -85,6 +88,7 @@ export async function GET(req: NextRequest) {
       }
     );
     applyRequestIdHeader(response, req);
+    recordApiResponse("/api/reliability/top", req, response, startedAt);
     return response;
   }
 }

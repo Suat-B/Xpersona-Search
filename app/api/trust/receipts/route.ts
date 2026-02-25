@@ -12,6 +12,7 @@ import {
 } from "@/lib/trust/receipts";
 import { hasTrustTable } from "@/lib/trust/db";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 const ReceiptSchema = z.object({
   receiptType: z.enum([
@@ -30,23 +31,28 @@ const ReceiptSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
   if (!(await hasTrustTable("trust_receipts"))) {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: "SERVICE_UNAVAILABLE",
       message: "Trust tables not ready",
       status: 503,
     });
+    recordApiResponse("/api/trust/receipts", req, response, startedAt);
+    return response;
   }
 
   const body = await req.json();
   const parsed = ReceiptSchema.safeParse(body);
   if (!parsed.success) {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: "BAD_REQUEST",
       message: "Invalid payload",
       status: 400,
       details: parsed.error.flatten(),
     });
+    recordApiResponse("/api/trust/receipts", req, response, startedAt);
+    return response;
   }
 
   const idempotencyKey =
@@ -67,17 +73,20 @@ export async function POST(req: NextRequest) {
     if (existing[0]) {
       const response = NextResponse.json(existing[0]);
       applyRequestIdHeader(response, req);
+      recordApiResponse("/api/trust/receipts", req, response, startedAt);
       return response;
     }
   }
 
   const keyId = getActiveReceiptKeyId();
   if (!keyId) {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: "INTERNAL_ERROR",
       message: "Receipt signing unavailable",
       status: 500,
     });
+    recordApiResponse("/api/trust/receipts", req, response, startedAt);
+    return response;
   }
 
   const canonical = canonicalizePayload(parsed.data.eventPayload);
@@ -101,5 +110,6 @@ export async function POST(req: NextRequest) {
   const inserted = await db.insert(trustReceipts).values(receipt).returning();
   const response = NextResponse.json(inserted[0] ?? receipt);
   applyRequestIdHeader(response, req);
+  recordApiResponse("/api/trust/receipts", req, response, startedAt);
   return response;
 }

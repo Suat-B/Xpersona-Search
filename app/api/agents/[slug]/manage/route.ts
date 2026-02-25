@@ -8,6 +8,8 @@ import {
   buildPermanentAccountRequiredPayload,
   resolveUpgradeCallbackPath,
 } from "@/lib/auth-flow";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 const ManageSchema = z.object({
   description: z.string().max(5000).optional(),
@@ -36,10 +38,13 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  const startedAt = Date.now();
   const { slug } = await params;
   const authResult = await getAuthUser(req);
   if ("error" in authResult) {
-    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    const response = jsonError(req, { code: "UNAUTHORIZED", message: "UNAUTHORIZED", status: 401 });
+    recordApiResponse("/api/agents/:slug/manage", req, response, startedAt);
+    return response;
   }
   const { user } = authResult;
   if (!user.isPermanent) {
@@ -47,10 +52,13 @@ export async function PATCH(
       `/agent/${slug}/manage`,
       req.headers.get("referer")
     );
-    return NextResponse.json(
+    const response = NextResponse.json(
       buildPermanentAccountRequiredPayload(user.accountType, callbackPath),
       { status: 403 }
     );
+    applyRequestIdHeader(response, req);
+    recordApiResponse("/api/agents/:slug/manage", req, response, startedAt);
+    return response;
   }
 
   const [agent] = await db
@@ -65,29 +73,31 @@ export async function PATCH(
     .limit(1);
 
   if (!agent) {
-    return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+    const response = jsonError(req, { code: "NOT_FOUND", message: "Agent not found", status: 404 });
+    recordApiResponse("/api/agents/:slug/manage", req, response, startedAt);
+    return response;
   }
 
   if (agent.claimStatus !== "CLAIMED" || agent.claimedByUserId !== user.id) {
-    return NextResponse.json(
-      { error: "You are not the owner of this page" },
-      { status: 403 }
-    );
+    const response = jsonError(req, { code: "FORBIDDEN", message: "You are not the owner of this page", status: 403 });
+    recordApiResponse("/api/agents/:slug/manage", req, response, startedAt);
+    return response;
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    const response = jsonError(req, { code: "BAD_REQUEST", message: "Invalid JSON body", status: 400 });
+    recordApiResponse("/api/agents/:slug/manage", req, response, startedAt);
+    return response;
   }
 
   const parsed = ManageSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Invalid request", details: parsed.error.flatten() },
-      { status: 400 }
-    );
+    const response = jsonError(req, { code: "BAD_REQUEST", message: "Invalid request", status: 400, details: parsed.error.flatten() });
+    recordApiResponse("/api/agents/:slug/manage", req, response, startedAt);
+    return response;
   }
 
   const data = parsed.data;
@@ -110,7 +120,10 @@ export async function PATCH(
     .set({ ownerOverrides: newOverrides, updatedAt: new Date() })
     .where(eq(agents.id, agent.id));
 
-  return NextResponse.json({ success: true, overrides: newOverrides });
+  const response = NextResponse.json({ success: true, overrides: newOverrides });
+  applyRequestIdHeader(response, req);
+  recordApiResponse("/api/agents/:slug/manage", req, response, startedAt);
+  return response;
 }
 
 /**
@@ -120,10 +133,13 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  const startedAt = Date.now();
   const { slug } = await params;
   const authResult = await getAuthUser(req);
   if ("error" in authResult) {
-    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    const response = jsonError(req, { code: "UNAUTHORIZED", message: "UNAUTHORIZED", status: 401 });
+    recordApiResponse("/api/agents/:slug/manage", req, response, startedAt);
+    return response;
   }
   const { user } = authResult;
   if (!user.isPermanent) {
@@ -131,10 +147,13 @@ export async function GET(
       `/agent/${slug}/manage`,
       req.headers.get("referer")
     );
-    return NextResponse.json(
+    const response = NextResponse.json(
       buildPermanentAccountRequiredPayload(user.accountType, callbackPath),
       { status: 403 }
     );
+    applyRequestIdHeader(response, req);
+    recordApiResponse("/api/agents/:slug/manage", req, response, startedAt);
+    return response;
   }
 
   const [agent] = await db
@@ -144,20 +163,24 @@ export async function GET(
     .limit(1);
 
   if (!agent) {
-    return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+    const response = jsonError(req, { code: "NOT_FOUND", message: "Agent not found", status: 404 });
+    recordApiResponse("/api/agents/:slug/manage", req, response, startedAt);
+    return response;
   }
 
   if (agent.claimStatus !== "CLAIMED" || agent.claimedByUserId !== user.id) {
-    return NextResponse.json(
-      { error: "You are not the owner of this page" },
-      { status: 403 }
-    );
+    const response = jsonError(req, { code: "FORBIDDEN", message: "You are not the owner of this page", status: 403 });
+    recordApiResponse("/api/agents/:slug/manage", req, response, startedAt);
+    return response;
   }
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     agent,
     overrides: agent.ownerOverrides ?? {},
   });
+  applyRequestIdHeader(response, req);
+  recordApiResponse("/api/agents/:slug/manage", req, response, startedAt);
+  return response;
 }
 
 /**

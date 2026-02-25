@@ -4,6 +4,7 @@ import { agents, agentMetrics } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { CLUSTERS, inferClusters, inferPriceTier, type PriceTier } from "@/lib/reliability/clusters";
 import { applyRequestIdHeader } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 type AgentRow = {
   id: string;
@@ -23,6 +24,7 @@ function percentile(values: number[], p: number) {
 }
 
 export async function GET(req: NextRequest) {
+  const startedAt = Date.now();
   try {
     const url = new URL(req.url);
     const limit = Math.min(2000, Math.max(100, Number(url.searchParams.get("limit") ?? "800")));
@@ -89,6 +91,7 @@ export async function GET(req: NextRequest) {
       sample_size: rows.length,
     });
     applyRequestIdHeader(response, req);
+    recordApiResponse("/api/reliability/graph", req, response, startedAt);
     return response;
   } catch (error) {
     console.error("Error building reliability graph:", error);
@@ -118,6 +121,7 @@ export async function GET(req: NextRequest) {
       }
     );
     applyRequestIdHeader(response, req);
+    recordApiResponse("/api/reliability/graph", req, response, startedAt);
     return response;
   }
 }

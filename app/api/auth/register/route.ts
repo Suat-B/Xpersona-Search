@@ -5,6 +5,7 @@ import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { SIGNUP_BONUS } from "@/lib/constants";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 const BCRYPT_ROUNDS = 12;
 
@@ -13,6 +14,7 @@ function isValidEmail(s: string): boolean {
 }
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
   try {
     const body = await request.json();
     const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
@@ -20,27 +22,33 @@ export async function POST(request: Request) {
     const name = typeof body?.name === "string" ? body.name.trim() || null : null;
 
     if (!email || !password) {
-      return jsonError(request, {
+      const response = jsonError(request, {
         code: "VALIDATION_ERROR",
         message: "Email and password are required",
         status: 400,
       });
+      recordApiResponse("/api/auth/register", request, response, startedAt);
+      return response;
     }
 
     if (!isValidEmail(email)) {
-      return jsonError(request, {
+      const response = jsonError(request, {
         code: "VALIDATION_ERROR",
         message: "Invalid email format",
         status: 400,
       });
+      recordApiResponse("/api/auth/register", request, response, startedAt);
+      return response;
     }
 
     if (password.length < 8) {
-      return jsonError(request, {
+      const response = jsonError(request, {
         code: "VALIDATION_ERROR",
         message: "Password must be at least 8 characters",
         status: 400,
       });
+      recordApiResponse("/api/auth/register", request, response, startedAt);
+      return response;
     }
 
     const [existing] = await db
@@ -50,11 +58,13 @@ export async function POST(request: Request) {
       .limit(1);
 
     if (existing) {
-      return jsonError(request, {
+      const response = jsonError(request, {
         code: "EMAIL_EXISTS",
         message: "An account with this email already exists",
         status: 400,
       });
+      recordApiResponse("/api/auth/register", request, response, startedAt);
+      return response;
     }
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -71,11 +81,13 @@ export async function POST(request: Request) {
       .returning({ id: users.id });
 
     if (!user) {
-      return jsonError(request, {
+      const response = jsonError(request, {
         code: "INTERNAL_ERROR",
         message: "Failed to create account",
         status: 500,
       });
+      recordApiResponse("/api/auth/register", request, response, startedAt);
+      return response;
     }
 
     const response = NextResponse.json({
@@ -83,13 +95,16 @@ export async function POST(request: Request) {
       data: { userId: user.id },
     });
     applyRequestIdHeader(response, request);
+    recordApiResponse("/api/auth/register", request, response, startedAt);
     return response;
   } catch (err) {
     console.error("[auth/register] error:", err);
-    return jsonError(request, {
+    const response = jsonError(request, {
       code: "INTERNAL_ERROR",
       message: err instanceof Error ? err.message : "Failed to create account",
       status: 500,
     });
+    recordApiResponse("/api/auth/register", request, response, startedAt);
+    return response;
   }
 }

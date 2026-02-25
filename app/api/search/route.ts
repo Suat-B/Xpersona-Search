@@ -31,6 +31,7 @@ import { getEngagementParams, getRankingWeights } from "@/lib/search/scoring/hyb
 import { getAuthUser } from "@/lib/auth-utils";
 import { isAdmin } from "@/lib/admin";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 import {
   getEmbeddingProvider,
   getSemanticCandidatesLimit,
@@ -703,6 +704,7 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
 }
 
 export async function GET(req: NextRequest) {
+  const startedAt = Date.now();
   // --- Rate limiting ---
   const authProbe = await getAuthUser(req);
   const authUser = "error" in authProbe ? null : authProbe.user;
@@ -721,6 +723,7 @@ export async function GET(req: NextRequest) {
     });
     response.headers.set("X-RateLimit-Remaining", "0");
     response.headers.set("X-RateLimit-Limit", String(rateLimitLimit));
+    recordApiResponse("/api/search", req, response, startedAt);
     return response;
   }
 
@@ -735,22 +738,26 @@ export async function GET(req: NextRequest) {
       const msg = err.errors
         .map((e) => `${e.path.join(".")}: ${e.message}`)
         .join("; ");
-      return jsonError(req, {
+      const response = jsonError(req, {
         code: "BAD_REQUEST",
         message: msg,
         status: 400,
       });
+      recordApiResponse("/api/search", req, response, startedAt);
+      return response;
     }
     throw err;
   }
 
   if (params.includePending || params.includePrivate || params.includeUnsafeMedia) {
     if (!authUser || !isAdmin(authUser)) {
-      return jsonError(req, {
+      const response = jsonError(req, {
         code: "FORBIDDEN",
         message: "FORBIDDEN",
         status: 403,
       });
+      recordApiResponse("/api/search", req, response, startedAt);
+      return response;
     }
   }
   const clientType = req.headers.get("x-client-type");
@@ -805,6 +812,7 @@ export async function GET(req: NextRequest) {
     );
     response.headers.set("X-Cache", "HIT");
     applyRequestIdHeader(response, req);
+    recordApiResponse("/api/search", req, response, startedAt);
     return response;
   }
 
@@ -824,6 +832,7 @@ export async function GET(req: NextRequest) {
       { status: 503, headers: { "Retry-After": "30" } }
     );
     applyRequestIdHeader(response, req);
+    recordApiResponse("/api/search", req, response, startedAt);
     return response;
   }
 
@@ -838,6 +847,7 @@ export async function GET(req: NextRequest) {
       );
       response.headers.set("X-Cache", "MISS");
       applyRequestIdHeader(response, req);
+      recordApiResponse("/api/search", req, response, startedAt);
       return response;
     }
 
@@ -1792,6 +1802,7 @@ export async function GET(req: NextRequest) {
     }
     response.headers.set("X-RateLimit-Limit", String(rateLimitLimit));
     applyRequestIdHeader(response, req);
+    recordApiResponse("/api/search", req, response, startedAt);
     return response;
   } catch (err) {
     console.error("[Search] Error:", err);
@@ -1806,6 +1817,7 @@ export async function GET(req: NextRequest) {
       });
       response.headers.set("X-Cache", "STALE");
       applyRequestIdHeader(response, req);
+      recordApiResponse("/api/search", req, response, startedAt);
       return response;
     }
 
@@ -1822,6 +1834,7 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
     applyRequestIdHeader(response, req);
+    recordApiResponse("/api/search", req, response, startedAt);
     return response;
   }
 }

@@ -8,6 +8,8 @@ import {
   CUSTOMIZATION_LIMITS,
   sanitizeCustomizationInput,
 } from "@/lib/agent-customization/sanitize";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 const PreviewSchema = z.object({
   customHtml: z.string().max(CUSTOMIZATION_LIMITS.maxHtmlBytes).optional().nullable(),
@@ -19,11 +21,14 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  const startedAt = Date.now();
   const { slug } = await params;
 
   const authResult = await getAuthUser(req);
   if ("error" in authResult) {
-    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    const response = jsonError(req, { code: "UNAUTHORIZED", message: "UNAUTHORIZED", status: 401 });
+    recordApiResponse("/api/agents/:slug/customization/preview", req, response, startedAt);
+    return response;
   }
 
   const [agent] = await db
@@ -37,34 +42,41 @@ export async function POST(
     .limit(1);
 
   if (!agent) {
-    return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+    const response = jsonError(req, { code: "NOT_FOUND", message: "Agent not found", status: 404 });
+    recordApiResponse("/api/agents/:slug/customization/preview", req, response, startedAt);
+    return response;
   }
 
   if (agent.claimStatus !== "CLAIMED" || agent.claimedByUserId !== authResult.user.id) {
-    return NextResponse.json(
-      { error: "You are not the owner of this page" },
-      { status: 403 }
-    );
+    const response = jsonError(req, { code: "FORBIDDEN", message: "You are not the owner of this page", status: 403 });
+    recordApiResponse("/api/agents/:slug/customization/preview", req, response, startedAt);
+    return response;
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    const response = jsonError(req, { code: "BAD_REQUEST", message: "Invalid JSON body", status: 400 });
+    recordApiResponse("/api/agents/:slug/customization/preview", req, response, startedAt);
+    return response;
   }
 
   const parsed = PreviewSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Invalid request", details: parsed.error.flatten() },
-      { status: 400 }
-    );
+    const response = jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "Invalid request",
+      status: 400,
+      details: parsed.error.flatten(),
+    });
+    recordApiResponse("/api/agents/:slug/customization/preview", req, response, startedAt);
+    return response;
   }
 
   try {
     const sanitized = sanitizeCustomizationInput(parsed.data);
-    return NextResponse.json({
+    const response = NextResponse.json({
       preview: {
         html: sanitized.html,
         css: sanitized.css,
@@ -73,10 +85,16 @@ export async function POST(
       warnings: sanitized.warnings,
       blockedPatterns: sanitized.jsBlockedPatterns,
     });
+    applyRequestIdHeader(response, req);
+    recordApiResponse("/api/agents/:slug/customization/preview", req, response, startedAt);
+    return response;
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to generate preview" },
-      { status: 400 }
-    );
+    const response = jsonError(req, {
+      code: "BAD_REQUEST",
+      message: err instanceof Error ? err.message : "Failed to generate preview",
+      status: 400,
+    });
+    recordApiResponse("/api/agents/:slug/customization/preview", req, response, startedAt);
+    return response;
   }
 }

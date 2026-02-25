@@ -3,8 +3,10 @@ import { db } from "@/lib/db";
 import { agents } from "@/lib/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 export async function GET(req: NextRequest) {
+  const startedAt = Date.now();
   try {
     const url = new URL(req.url);
     const limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit") ?? "20")));
@@ -35,13 +37,16 @@ export async function GET(req: NextRequest) {
       },
     });
     applyRequestIdHeader(response, req);
+    recordApiResponse("/api/reliability/browse", req, response, startedAt);
     return response;
   } catch (err) {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: "INTERNAL_ERROR",
       message: "Failed to browse agents",
       status: 500,
       details: process.env.NODE_ENV === "production" ? undefined : String(err),
     });
+    recordApiResponse("/api/reliability/browse", req, response, startedAt);
+    return response;
   }
 }

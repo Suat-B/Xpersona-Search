@@ -95,7 +95,7 @@ export async function crawlAwesomeLists(
   const [job] = await db
     .insert(crawlJobs)
     .values({
-      source: "CURATED_SEEDS",
+      source: "AWESOME_LISTS",
       status: "RUNNING",
       startedAt: new Date(),
     })
@@ -128,12 +128,12 @@ export async function crawlAwesomeLists(
         seenSourceIds.add(sourceId);
 
         const slug =
-          generateSlug(`awesome-${repo.category}-${link.name}`) ||
-          `awesome-${totalFound}`;
+          generateSlug(`awesome-${repo.category}-${link.name}-${link.url}`) ||
+          `awesome-${repo.category}-${totalFound}`;
 
         const agentData = {
           sourceId,
-          source: "CURATED_SEEDS" as const,
+          source: "AWESOME_LISTS" as const,
           name: link.name,
           slug,
           description: link.description || null,

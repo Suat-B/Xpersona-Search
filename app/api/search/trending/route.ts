@@ -7,6 +7,7 @@ import { checkSearchRateLimit } from "@/lib/search/rate-limit";
 import { suggestCircuitBreaker } from "@/lib/search/circuit-breaker";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 import { retryDb } from "@/lib/db/retry";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 const MAX_TRENDING = 8;
 const TRENDING_WINDOW_DAYS = 30;
@@ -28,15 +29,18 @@ function sanitizeError(err: unknown): string {
 }
 
 export async function GET(req: NextRequest) {
+  const startedAt = Date.now();
   // Rate limiting
   const rlResult = await checkSearchRateLimit(req);
   if (!rlResult.allowed) {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: "RATE_LIMITED",
       message: "Too many requests. Please try again later.",
       status: 429,
       retryAfterMs: (rlResult.retryAfter ?? 60) * 1000,
     });
+    recordApiResponse("/api/search/trending", req, response, startedAt);
+    return response;
   }
 
   const requestedIntent = req.nextUrl.searchParams.get("intent");
@@ -51,6 +55,7 @@ export async function GET(req: NextRequest) {
     response.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
     response.headers.set("X-Cache", "HIT");
     applyRequestIdHeader(response, req);
+    recordApiResponse("/api/search/trending", req, response, startedAt);
     return response;
   }
 
@@ -68,6 +73,7 @@ export async function GET(req: NextRequest) {
       { status: 503, headers: { "Retry-After": "15" } }
     );
     applyRequestIdHeader(response, req);
+    recordApiResponse("/api/search/trending", req, response, startedAt);
     return response;
   }
 
@@ -140,6 +146,7 @@ export async function GET(req: NextRequest) {
     response.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
     response.headers.set("X-Cache", "MISS");
     applyRequestIdHeader(response, req);
+    recordApiResponse("/api/search/trending", req, response, startedAt);
     return response;
   } catch (err) {
     console.error("[Search Trending] Error:", err);
@@ -150,6 +157,7 @@ export async function GET(req: NextRequest) {
       const response = NextResponse.json(stale);
       response.headers.set("X-Cache", "STALE");
       applyRequestIdHeader(response, req);
+      recordApiResponse("/api/search/trending", req, response, startedAt);
       return response;
     }
 
@@ -164,6 +172,7 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
     applyRequestIdHeader(response, req);
+    recordApiResponse("/api/search/trending", req, response, startedAt);
     return response;
   }
 }

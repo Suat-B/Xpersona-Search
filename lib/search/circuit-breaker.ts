@@ -134,5 +134,12 @@ export const suggestCircuitBreaker = new CircuitBreaker({
   recoveryTimeoutMs: 15_000,
 });
 
+// Graph planner/recommend endpoints
+export const graphCircuitBreaker = new CircuitBreaker({
+  failureThreshold: 6,
+  failureWindowMs: 60_000,
+  recoveryTimeoutMs: 20_000,
+});
+
 export { CircuitBreaker };
 export type { CircuitState, CircuitBreakerConfig };

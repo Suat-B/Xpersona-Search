@@ -12,6 +12,8 @@ import {
   buildPermanentAccountRequiredPayload,
   resolveUpgradeCallbackPath,
 } from "@/lib/auth-flow";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 const VerifySchema = z.object({
   method: z
@@ -37,10 +39,17 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  const startedAt = Date.now();
   const { slug } = await params;
   const authResult = await getAuthUser(req);
   if ("error" in authResult) {
-    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    const response = jsonError(req, {
+      code: "UNAUTHORIZED",
+      message: "UNAUTHORIZED",
+      status: 401,
+    });
+    recordApiResponse("/api/agents/:slug/claim/verify", req, response, startedAt);
+    return response;
   }
   const { user } = authResult;
   if (!user.isPermanent) {
@@ -48,23 +57,25 @@ export async function POST(
       `/agent/${slug}/claim`,
       req.headers.get("referer")
     );
-    return NextResponse.json(
+    const response = NextResponse.json(
       buildPermanentAccountRequiredPayload(user.accountType, callbackPath),
       { status: 403 }
     );
+    applyRequestIdHeader(response, req);
+    recordApiResponse("/api/agents/:slug/claim/verify", req, response, startedAt);
+    return response;
   }
 
   const rateLimit = checkClaimVerifyRateLimit(user.id);
   if (!rateLimit.ok) {
-    return NextResponse.json(
-      { error: "Too many verification attempts. Try again later." },
-      {
-        status: 429,
-        headers: rateLimit.retryAfter
-          ? { "Retry-After": String(rateLimit.retryAfter) }
-          : undefined,
-      }
-    );
+    const response = jsonError(req, {
+      code: "RATE_LIMITED",
+      message: "Too many verification attempts. Try again later.",
+      status: 429,
+      retryAfterMs: (rateLimit.retryAfter ?? 60) * 1000,
+    });
+    recordApiResponse("/api/agents/:slug/claim/verify", req, response, startedAt);
+    return response;
   }
 
   let body: unknown;
@@ -82,7 +93,13 @@ export async function POST(
     .limit(1);
 
   if (!agent) {
-    return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+    const response = jsonError(req, {
+      code: "NOT_FOUND",
+      message: "Agent not found",
+      status: 404,
+    });
+    recordApiResponse("/api/agents/:slug/claim/verify", req, response, startedAt);
+    return response;
   }
 
   const [claim] = await db
@@ -98,10 +115,13 @@ export async function POST(
     .limit(1);
 
   if (!claim) {
-    return NextResponse.json(
-      { error: "No pending claim found. Initiate a claim first." },
-      { status: 404 }
-    );
+    const response = jsonError(req, {
+      code: "NOT_FOUND",
+      message: "No pending claim found. Initiate a claim first.",
+      status: 404,
+    });
+    recordApiResponse("/api/agents/:slug/claim/verify", req, response, startedAt);
+    return response;
   }
 
   if (claim.expiresAt && new Date(claim.expiresAt) < new Date()) {
@@ -109,36 +129,49 @@ export async function POST(
       .update(agentClaims)
       .set({ status: "EXPIRED", updatedAt: new Date() })
       .where(eq(agentClaims.id, claim.id));
-    return NextResponse.json(
-      { error: "Claim has expired. Please initiate a new claim." },
-      { status: 410 }
-    );
+    const response = jsonError(req, {
+      code: "GONE",
+      message: "Claim has expired. Please initiate a new claim.",
+      status: 410,
+    });
+    recordApiResponse("/api/agents/:slug/claim/verify", req, response, startedAt);
+    return response;
   }
 
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Invalid request", details: parsed.error.flatten() },
-      { status: 400 }
-    );
+    const response = jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "Invalid request",
+      status: 400,
+      details: parsed.error.flatten(),
+    });
+    recordApiResponse("/api/agents/:slug/claim/verify", req, response, startedAt);
+    return response;
   }
 
   const method = (parsed.data.method ?? claim.verificationMethod) as VerificationMethod;
 
   if (method === "MANUAL_REVIEW") {
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       status: "PENDING",
       message:
         "Your claim has been submitted for manual review. An admin will review it within 48 hours.",
     });
+    applyRequestIdHeader(response, req);
+    recordApiResponse("/api/agents/:slug/claim/verify", req, response, startedAt);
+    return response;
   }
 
   if (method === "CRYPTO_SIGNATURE") {
     if (!parsed.data.publicKey || !parsed.data.signature) {
-      return NextResponse.json(
-        { error: "publicKey and signature are required for cryptographic verification." },
-        { status: 400 }
-      );
+      const response = jsonError(req, {
+        code: "BAD_REQUEST",
+        message: "publicKey and signature are required for cryptographic verification.",
+        status: 400,
+      });
+      recordApiResponse("/api/agents/:slug/claim/verify", req, response, startedAt);
+      return response;
     }
   }
 
@@ -154,7 +187,7 @@ export async function POST(
   );
 
   if (!result.verified) {
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         success: false,
         verified: false,
@@ -163,6 +196,9 @@ export async function POST(
       },
       { status: 200 }
     );
+    applyRequestIdHeader(response, req);
+    recordApiResponse("/api/agents/:slug/claim/verify", req, response, startedAt);
+    return response;
   }
 
   const now = new Date();
@@ -237,10 +273,13 @@ export async function POST(
     }
   }
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     success: true,
     verified: true,
     status: "CLAIMED",
     message: "Congratulations! You are now the verified owner of this page.",
   });
+  applyRequestIdHeader(response, req);
+  recordApiResponse("/api/agents/:slug/claim/verify", req, response, startedAt);
+  return response;
 }

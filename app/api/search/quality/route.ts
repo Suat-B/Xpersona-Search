@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { searchOutcomes } from "@/lib/db/schema";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 const WINDOW_TO_DAYS: Record<string, number> = {
   "24h": 1,
@@ -10,14 +12,27 @@ const WINDOW_TO_DAYS: Record<string, number> = {
 };
 
 export async function GET(req: NextRequest) {
+  const startedAt = Date.now();
   const windowParam = req.nextUrl.searchParams.get("window") ?? "7d";
   const intent = req.nextUrl.searchParams.get("intent") ?? "execute";
   const days = WINDOW_TO_DAYS[windowParam];
   if (!days) {
-    return NextResponse.json({ error: "window must be one of 24h,7d,30d" }, { status: 400 });
+    const response = jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "window must be one of 24h,7d,30d",
+      status: 400,
+    });
+    recordApiResponse("/api/search/quality", req, response, startedAt);
+    return response;
   }
   if (!["discover", "execute"].includes(intent)) {
-    return NextResponse.json({ error: "intent must be discover or execute" }, { status: 400 });
+    const response = jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "intent must be discover or execute",
+      status: 400,
+    });
+    recordApiResponse("/api/search/quality", req, response, startedAt);
+    return response;
   }
 
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -53,7 +68,7 @@ export async function GET(req: NextRequest) {
   const fallbackSwitches = Number(row.fallbackSwitches ?? 0);
   const budgetExceededRate = Number(row.avgBudgetExceededRate ?? 0);
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     window: windowParam,
     intent,
     metrics: {
@@ -68,5 +83,7 @@ export async function GET(req: NextRequest) {
       budgetExceededRate,
     },
   });
+  applyRequestIdHeader(response, req);
+  recordApiResponse("/api/search/quality", req, response, startedAt);
+  return response;
 }
-

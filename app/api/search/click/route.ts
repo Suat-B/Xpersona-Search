@@ -8,6 +8,7 @@ import {
 } from "@/lib/search/rate-limit";
 import { getAuthUser } from "@/lib/auth-utils";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 const ClickSchema = z.object({
   query: z.string().min(1).max(500),
@@ -30,6 +31,7 @@ function seenIdempotencyKey(key: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
   const authProbe = await getAuthUser(req);
   const userId = "error" in authProbe ? undefined : authProbe.user.id;
   const isAuthenticated = Boolean(userId);
@@ -46,6 +48,7 @@ export async function POST(req: NextRequest) {
     });
     response.headers.set("X-RateLimit-Remaining", "0");
     response.headers.set("X-RateLimit-Limit", String(rateLimitLimit));
+    recordApiResponse("/api/search/click", req, response, startedAt);
     return response;
   }
 
@@ -53,11 +56,13 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: "BAD_REQUEST",
       message: "Invalid JSON",
       status: 400,
     });
+    recordApiResponse("/api/search/click", req, response, startedAt);
+    return response;
   }
 
   let params: z.infer<typeof ClickSchema>;
@@ -66,11 +71,13 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     if (err instanceof ZodError) {
       const msg = err.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
-      return jsonError(req, {
+      const response = jsonError(req, {
         code: "BAD_REQUEST",
         message: msg,
         status: 400,
       });
+      recordApiResponse("/api/search/click", req, response, startedAt);
+      return response;
     }
     throw err;
   }
@@ -91,6 +98,7 @@ export async function POST(req: NextRequest) {
         }
       );
       applyRequestIdHeader(response, req);
+      recordApiResponse("/api/search/click", req, response, startedAt);
       return response;
     }
   }
@@ -113,5 +121,6 @@ export async function POST(req: NextRequest) {
     }
   );
   applyRequestIdHeader(response, req);
+  recordApiResponse("/api/search/click", req, response, startedAt);
   return response;
 }

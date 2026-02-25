@@ -6,13 +6,20 @@ import { getAuthUser } from "@/lib/auth-utils";
 import { isAdmin } from "@/lib/admin";
 import { runCapabilityHandshake } from "@/lib/trust/handshake";
 import { hasTrustTable } from "@/lib/trust/db";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  const startedAt = Date.now();
   const { slug } = await params;
-  if (!slug) return NextResponse.json({ error: "Missing slug" }, { status: 400 });
+  if (!slug) {
+    const response = jsonError(req, { code: "BAD_REQUEST", message: "Missing slug", status: 400 });
+    recordApiResponse("/api/agents/:slug/verify", req, response, startedAt);
+    return response;
+  }
 
   const internalToken = req.headers.get("x-trust-internal-token");
   const allowInternal =
@@ -26,7 +33,9 @@ export async function POST(
   if (!isAllowed) {
     const authResult = await getAuthUser(req);
     if ("error" in authResult) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      const response = jsonError(req, { code: "UNAUTHORIZED", message: "Unauthorized", status: 401 });
+      recordApiResponse("/api/agents/:slug/verify", req, response, startedAt);
+      return response;
     }
     authUserId = authResult.user.id;
     isAllowed = isAdmin(authResult.user) === true;
@@ -48,16 +57,24 @@ export async function POST(
     .limit(1);
 
   const agent = agentRows[0];
-  if (!agent) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!agent) {
+    const response = jsonError(req, { code: "NOT_FOUND", message: "Not found", status: 404 });
+    recordApiResponse("/api/agents/:slug/verify", req, response, startedAt);
+    return response;
+  }
 
   if (!isAllowed) {
     if (!authUserId || authUserId !== agent.claimedByUserId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      const response = jsonError(req, { code: "FORBIDDEN", message: "Forbidden", status: 403 });
+      recordApiResponse("/api/agents/:slug/verify", req, response, startedAt);
+      return response;
     }
   }
 
   if (!(await hasTrustTable("agent_capability_handshakes"))) {
-    return NextResponse.json({ error: "Trust tables not ready" }, { status: 503 });
+    const response = jsonError(req, { code: "SERVICE_UNAVAILABLE", message: "Trust tables not ready", status: 503 });
+    recordApiResponse("/api/agents/:slug/verify", req, response, startedAt);
+    return response;
   }
 
   const handshake = await runCapabilityHandshake({
@@ -84,7 +101,7 @@ export async function POST(
     },
   ]);
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     status: handshake.status,
     verifiedAt: handshake.verifiedAt.toISOString(),
     expiresAt: handshake.expiresAt.toISOString(),
@@ -94,4 +111,7 @@ export async function POST(
     errorRateProbe: handshake.errorRateProbe,
     evidenceRef: handshake.evidenceRef,
   });
+  applyRequestIdHeader(response, req);
+  recordApiResponse("/api/agents/:slug/verify", req, response, startedAt);
+  return response;
 }

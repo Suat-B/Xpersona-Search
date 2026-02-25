@@ -6,6 +6,7 @@ import { eq, and, isNotNull } from "drizzle-orm";
 import { sendPasswordResetEmail } from "@/lib/email";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 function isValidEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
@@ -26,15 +27,18 @@ function getBaseUrl(): string {
 }
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
   const ip = getClientIp(request);
   const limit = checkRateLimit(ip, "forgot-password");
   if (!limit.ok) {
-    return jsonError(request, {
+    const response = jsonError(request, {
       code: "RATE_LIMITED",
       message: "Too many attempts. Please try again later.",
       status: 429,
       retryAfterMs: (limit.retryAfter ?? 900) * 1000,
     });
+    recordApiResponse("/api/auth/forgot-password", request, response, startedAt);
+    return response;
   }
 
   try {
@@ -42,19 +46,23 @@ export async function POST(request: Request) {
     const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
 
     if (!email) {
-      return jsonError(request, {
+      const response = jsonError(request, {
         code: "VALIDATION_ERROR",
         message: "Email is required",
         status: 400,
       });
+      recordApiResponse("/api/auth/forgot-password", request, response, startedAt);
+      return response;
     }
 
     if (!isValidEmail(email)) {
-      return jsonError(request, {
+      const response = jsonError(request, {
         code: "VALIDATION_ERROR",
         message: "Invalid email format",
         status: 400,
       });
+      recordApiResponse("/api/auth/forgot-password", request, response, startedAt);
+      return response;
     }
 
     const [user] = await db
@@ -93,11 +101,13 @@ export async function POST(request: Request) {
 
     const response = NextResponse.json({ success: true });
     applyRequestIdHeader(response, request);
+    recordApiResponse("/api/auth/forgot-password", request, response, startedAt);
     return response;
   } catch (err) {
     console.error("[forgot-password] error:", err);
     const response = NextResponse.json({ success: true });
     applyRequestIdHeader(response, request);
+    recordApiResponse("/api/auth/forgot-password", request, response, startedAt);
     return response;
   }
 }

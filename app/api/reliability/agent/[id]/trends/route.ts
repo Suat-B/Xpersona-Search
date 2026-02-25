@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { resolveAgentByIdOrSlug } from "@/lib/reliability/lookup";
 import { sql } from "drizzle-orm";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 function parseWindowDays(value: string | null): number {
   if (!value) return 30;
@@ -18,14 +19,17 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const startedAt = Date.now();
   const { id } = await params;
   const agent = await resolveAgentByIdOrSlug(id);
   if (!agent) {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: "NOT_FOUND",
       message: "Agent not found",
       status: 404,
     });
+    recordApiResponse("/api/reliability/agent/:id/trends", req, response, startedAt);
+    return response;
   }
 
   const url = new URL(req.url);
@@ -115,5 +119,6 @@ export async function GET(
     top_failure_modes: failureRows,
   });
   applyRequestIdHeader(response, req);
+  recordApiResponse("/api/reliability/agent/:id/trends", req, response, startedAt);
   return response;
 }

@@ -15,6 +15,8 @@ import {
   buildPermanentAccountRequiredPayload,
   resolveUpgradeCallbackPath,
 } from "@/lib/auth-flow";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 const CLAIM_EXPIRY_DAYS = 7;
 
@@ -39,10 +41,17 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  const startedAt = Date.now();
   const { slug } = await params;
   const authResult = await getAuthUser(req);
   if ("error" in authResult) {
-    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    const response = jsonError(req, {
+      code: "UNAUTHORIZED",
+      message: "UNAUTHORIZED",
+      status: 401,
+    });
+    recordApiResponse("/api/agents/:slug/claim", req, response, startedAt);
+    return response;
   }
   const { user } = authResult;
   if (!user.isPermanent) {
@@ -50,33 +59,50 @@ export async function POST(
       `/agent/${slug}/claim`,
       req.headers.get("referer")
     );
-    return NextResponse.json(
+    const response = NextResponse.json(
       buildPermanentAccountRequiredPayload(user.accountType, callbackPath),
       { status: 403 }
     );
+    applyRequestIdHeader(response, req);
+    recordApiResponse("/api/agents/:slug/claim", req, response, startedAt);
+    return response;
   }
 
   const rateLimit = checkClaimInitRateLimit(user.id);
   if (!rateLimit.ok) {
-    return NextResponse.json(
-      { error: "Too many claim attempts. Try again later." },
-      { status: 429, headers: rateLimit.retryAfter ? { "Retry-After": String(rateLimit.retryAfter) } : undefined }
-    );
+    const response = jsonError(req, {
+      code: "RATE_LIMITED",
+      message: "Too many claim attempts. Try again later.",
+      status: 429,
+      retryAfterMs: (rateLimit.retryAfter ?? 60) * 1000,
+    });
+    recordApiResponse("/api/agents/:slug/claim", req, response, startedAt);
+    return response;
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    const response = jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "Invalid JSON body",
+      status: 400,
+    });
+    recordApiResponse("/api/agents/:slug/claim", req, response, startedAt);
+    return response;
   }
 
   const parsed = InitiateSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Invalid request", details: parsed.error.flatten() },
-      { status: 400 }
-    );
+    const response = jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "Invalid request",
+      status: 400,
+      details: parsed.error.flatten(),
+    });
+    recordApiResponse("/api/agents/:slug/claim", req, response, startedAt);
+    return response;
   }
 
   const { method, notes } = parsed.data;
@@ -88,33 +114,46 @@ export async function POST(
     .limit(1);
 
   if (!agent) {
-    return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+    const response = jsonError(req, {
+      code: "NOT_FOUND",
+      message: "Agent not found",
+      status: 404,
+    });
+    recordApiResponse("/api/agents/:slug/claim", req, response, startedAt);
+    return response;
   }
 
   if (agent.claimStatus === "CLAIMED" && agent.claimedByUserId !== user.id) {
-    return NextResponse.json(
-      { error: "This page is already claimed by another user" },
-      { status: 409 }
-    );
+    const response = jsonError(req, {
+      code: "CONFLICT",
+      message: "This page is already claimed by another user",
+      status: 409,
+    });
+    recordApiResponse("/api/agents/:slug/claim", req, response, startedAt);
+    return response;
   }
 
   if (agent.claimedByUserId === user.id && agent.claimStatus === "CLAIMED") {
-    return NextResponse.json(
-      { error: "You already own this page" },
-      { status: 409 }
-    );
+    const response = jsonError(req, {
+      code: "CONFLICT",
+      message: "You already own this page",
+      status: 409,
+    });
+    recordApiResponse("/api/agents/:slug/claim", req, response, startedAt);
+    return response;
   }
 
   const availableMethods = getAvailableMethods(agent);
   const methodAllowed = availableMethods.some((m) => m.method === method);
   if (!methodAllowed) {
-    return NextResponse.json(
-      {
-        error: "Verification method not available for this agent",
-        availableMethods: availableMethods.map((m) => m.method),
-      },
-      { status: 400 }
-    );
+    const response = jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "Verification method not available for this agent",
+      status: 400,
+      details: { availableMethods: availableMethods.map((m) => m.method) },
+    });
+    recordApiResponse("/api/agents/:slug/claim", req, response, startedAt);
+    return response;
   }
 
   const [existingPending] = await db
@@ -166,13 +205,16 @@ export async function POST(
   );
 
   if (!insertedClaim?.id) {
-    return NextResponse.json(
-      { error: "CLAIM_CREATION_FAILED" },
-      { status: 500 }
-    );
+    const response = jsonError(req, {
+      code: "INTERNAL_ERROR",
+      message: "CLAIM_CREATION_FAILED",
+      status: 500,
+    });
+    recordApiResponse("/api/agents/:slug/claim", req, response, startedAt);
+    return response;
   }
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     success: true,
     claimId: insertedClaim.id,
     method,
@@ -186,6 +228,9 @@ export async function POST(
       automated: m.automated,
     })),
   });
+  applyRequestIdHeader(response, req);
+  recordApiResponse("/api/agents/:slug/claim", req, response, startedAt);
+  return response;
 }
 
 /**
@@ -195,6 +240,7 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  const startedAt = Date.now();
   const { slug } = await params;
 
   const [agent] = await db
@@ -204,7 +250,13 @@ export async function GET(
     .limit(1);
 
   if (!agent) {
-    return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+    const response = jsonError(req, {
+      code: "NOT_FOUND",
+      message: "Agent not found",
+      status: 404,
+    });
+    recordApiResponse("/api/agents/:slug/claim", req, response, startedAt);
+    return response;
   }
 
   let claimedByName: string | null = null;
@@ -256,7 +308,7 @@ export async function GET(
     automated: m.automated,
   }));
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     claimStatus: agent.claimStatus,
     claimedAt: agent.claimedAt,
     claimedByName,
@@ -264,4 +316,7 @@ export async function GET(
     pendingClaim,
     availableMethods,
   });
+  applyRequestIdHeader(response, req);
+  recordApiResponse("/api/agents/:slug/claim", req, response, startedAt);
+  return response;
 }

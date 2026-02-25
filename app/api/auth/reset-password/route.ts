@@ -4,10 +4,12 @@ import { db } from "@/lib/db";
 import { users, verificationTokens } from "@/lib/db/schema";
 import { eq, and, like } from "drizzle-orm";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 const BCRYPT_ROUNDS = 12;
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
   try {
     const body = await request.json();
     const token = typeof body?.token === "string" ? body.token.trim() : "";
@@ -15,27 +17,33 @@ export async function POST(request: Request) {
     const confirmPassword = typeof body?.confirmPassword === "string" ? body.confirmPassword : "";
 
     if (!token) {
-      return jsonError(request, {
+      const response = jsonError(request, {
         code: "VALIDATION_ERROR",
         message: "Invalid or expired link",
         status: 400,
       });
+      recordApiResponse("/api/auth/reset-password", request, response, startedAt);
+      return response;
     }
 
     if (!password || password.length < 8) {
-      return jsonError(request, {
+      const response = jsonError(request, {
         code: "VALIDATION_ERROR",
         message: "Password must be at least 8 characters",
         status: 400,
       });
+      recordApiResponse("/api/auth/reset-password", request, response, startedAt);
+      return response;
     }
 
     if (password !== confirmPassword) {
-      return jsonError(request, {
+      const response = jsonError(request, {
         code: "VALIDATION_ERROR",
         message: "Passwords do not match",
         status: 400,
       });
+      recordApiResponse("/api/auth/reset-password", request, response, startedAt);
+      return response;
     }
 
     const now = new Date();
@@ -51,31 +59,37 @@ export async function POST(request: Request) {
       .limit(1);
 
     if (!vt) {
-      return jsonError(request, {
+      const response = jsonError(request, {
         code: "VALIDATION_ERROR",
         message: "Invalid or expired link. Please request a new reset.",
         status: 400,
       });
+      recordApiResponse("/api/auth/reset-password", request, response, startedAt);
+      return response;
     }
 
     if (vt.expires < now) {
       await db
         .delete(verificationTokens)
         .where(eq(verificationTokens.identifier, vt.identifier));
-      return jsonError(request, {
+      const response = jsonError(request, {
         code: "VALIDATION_ERROR",
         message: "Invalid or expired link. Please request a new reset.",
         status: 400,
       });
+      recordApiResponse("/api/auth/reset-password", request, response, startedAt);
+      return response;
     }
 
     const userId = vt.identifier.replace(/^reset:/, "");
     if (!userId) {
-      return jsonError(request, {
+      const response = jsonError(request, {
         code: "VALIDATION_ERROR",
         message: "Invalid or expired link",
         status: 400,
       });
+      recordApiResponse("/api/auth/reset-password", request, response, startedAt);
+      return response;
     }
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -96,13 +110,16 @@ export async function POST(request: Request) {
 
     const response = NextResponse.json({ success: true });
     applyRequestIdHeader(response, request);
+    recordApiResponse("/api/auth/reset-password", request, response, startedAt);
     return response;
   } catch (err) {
     console.error("[reset-password] error:", err);
-    return jsonError(request, {
+    const response = jsonError(request, {
       code: "INTERNAL_ERROR",
       message: "Something went wrong. Please try again.",
       status: 500,
     });
+    recordApiResponse("/api/auth/reset-password", request, response, startedAt);
+    return response;
   }
 }

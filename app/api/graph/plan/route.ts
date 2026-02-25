@@ -3,6 +3,10 @@ import { z } from "zod";
 import { planPipeline } from "@/lib/gpg/recommend";
 import { ensureTaskSignature } from "@/lib/gpg/task-canonicalization";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { buildCacheKey } from "@/lib/search/cache";
+import { graphPlanCache } from "@/lib/graph/cache";
+import { graphCircuitBreaker } from "@/lib/search/circuit-breaker";
+import { recordApiResponse } from "@/lib/metrics/record";
 
 const PlanSchema = z.object({
   q: z.string().min(1).max(500),
@@ -46,46 +50,120 @@ function parsePlanFromQuery(req: NextRequest) {
 }
 
 async function buildPlanResponse(req: NextRequest, data: z.infer<typeof PlanSchema>) {
-  const signature = await ensureTaskSignature({
-    rawText: data.q,
-    taskType: data.taskType,
-    tags: data.tags,
+  const startedAt = Date.now();
+  const cacheKey = buildCacheKey({
+    endpoint: "graph-plan",
+    q: data.q,
+    taskType: data.taskType ?? "",
+    tags: (data.tags ?? []).join(","),
+    budget: data.constraints?.budget ?? "",
+    maxLatencyMs: data.constraints?.maxLatencyMs ?? "",
+    minSuccessProb: data.constraints?.minSuccessProb ?? "",
+    minQuality: data.constraints?.minQuality ?? "",
+    optimizeFor: data.preferences?.optimizeFor ?? "",
   });
 
-  const response = await planPipeline({
-    clusterId: signature.clusterId,
-    constraints: data.constraints,
-    preferences: data.preferences,
-  });
+  const cached = graphPlanCache.get(cacheKey);
+  if (cached) {
+    const response = NextResponse.json(cached);
+    response.headers.set("Cache-Control", "public, s-maxage=30, stale-while-revalidate=60");
+    response.headers.set("X-Cache", "HIT");
+    applyRequestIdHeader(response, req);
+    recordApiResponse("/api/graph/plan", req, response, startedAt);
+    return response;
+  }
 
-  const res = NextResponse.json({ success: true, data: response });
-  applyRequestIdHeader(res, req);
-  return res;
+  if (!graphCircuitBreaker.isAllowed()) {
+    const stale = graphPlanCache.get(cacheKey);
+    if (stale) {
+      const response = NextResponse.json({ ...(stale as Record<string, unknown>), _stale: true });
+      response.headers.set("X-Cache", "STALE");
+      applyRequestIdHeader(response, req);
+      recordApiResponse("/api/graph/plan", req, response, startedAt);
+      return response;
+    }
+    const response = jsonError(req, {
+      code: "CIRCUIT_OPEN",
+      message: "Graph planner is temporarily unavailable",
+      status: 503,
+      retryAfterMs: 20_000,
+    });
+    recordApiResponse("/api/graph/plan", req, response, startedAt);
+    return response;
+  }
+
+  try {
+    const signature = await ensureTaskSignature({
+      rawText: data.q,
+      taskType: data.taskType,
+      tags: data.tags,
+    });
+
+    const response = await planPipeline({
+      clusterId: signature.clusterId,
+      constraints: data.constraints,
+      preferences: data.preferences,
+    });
+
+    const payload = { success: true, data: response };
+    graphPlanCache.set(cacheKey, payload);
+    graphCircuitBreaker.recordSuccess();
+    const res = NextResponse.json(payload);
+    res.headers.set("Cache-Control", "public, s-maxage=30, stale-while-revalidate=60");
+    res.headers.set("X-Cache", "MISS");
+    applyRequestIdHeader(res, req);
+    recordApiResponse("/api/graph/plan", req, res, startedAt);
+    return res;
+  } catch (err) {
+    graphCircuitBreaker.recordFailure();
+    const stale = graphPlanCache.get(cacheKey);
+    if (stale) {
+      const response = NextResponse.json({ ...(stale as Record<string, unknown>), _stale: true });
+      response.headers.set("X-Cache", "STALE");
+      applyRequestIdHeader(response, req);
+      recordApiResponse("/api/graph/plan", req, response, startedAt);
+      return response;
+    }
+    const response = jsonError(req, {
+      code: "INTERNAL_ERROR",
+      message: "Graph planner failed",
+      status: 500,
+      details: process.env.NODE_ENV === "production" ? undefined : String(err),
+    });
+    recordApiResponse("/api/graph/plan", req, response, startedAt);
+    return response;
+  }
 }
 
 export async function GET(req: NextRequest) {
+  const startedAt = Date.now();
   const parsed = parsePlanFromQuery(req);
   if (!parsed.success) {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: "BAD_REQUEST",
       message: "Invalid parameters",
       status: 400,
       details: parsed.error.flatten(),
     });
+    recordApiResponse("/api/graph/plan", req, response, startedAt);
+    return response;
   }
   return buildPlanResponse(req, parsed.data);
 }
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
   const body = await req.json().catch(() => null);
   const parsed = PlanSchema.safeParse(body);
   if (!parsed.success) {
-    return jsonError(req, {
+    const response = jsonError(req, {
       code: "BAD_REQUEST",
       message: "Invalid payload",
       status: 400,
       details: parsed.error.flatten(),
     });
+    recordApiResponse("/api/graph/plan", req, response, startedAt);
+    return response;
   }
   return buildPlanResponse(req, parsed.data);
 }

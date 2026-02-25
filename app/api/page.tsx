@@ -94,6 +94,7 @@ export default async function SearchApiPage() {
 
   const reliabilityBaseDir = path.join(process.cwd(), "app", "api", "reliability");
   const gpgBaseDir = path.join(process.cwd(), "app", "api", "gpg");
+  const graphBaseDir = path.join(process.cwd(), "app", "api", "v1", "graph");
   const searchBaseDir = path.join(process.cwd(), "app", "api", "search");
   const agentsBaseDir = path.join(process.cwd(), "app", "api", "v1", "agents");
   const agentEndpointMeta = new Map<string, { auth?: string; headers?: string[] }>([
@@ -131,9 +132,10 @@ export default async function SearchApiPage() {
     ],
   ]);
 
-  const [reliabilityEndpoints, gpgEndpoints, searchEndpoints, agentEndpoints] = await Promise.all([
+  const [reliabilityEndpoints, gpgEndpoints, graphEndpoints, searchEndpoints, agentEndpoints] = await Promise.all([
     buildApiSurface({ baseDir: reliabilityBaseDir, routePrefix: "/api/v1/reliability", endpointMeta: reliabilityEndpointMeta }),
     buildApiSurface({ baseDir: gpgBaseDir, routePrefix: "/api/v1/gpg", endpointMeta: gpgEndpointMeta }),
+    buildApiSurface({ baseDir: graphBaseDir, routePrefix: "/api/v1/graph" }),
     buildApiSurface({ baseDir: searchBaseDir, routePrefix: "/api/v1/search" }),
     buildApiSurface({
       baseDir: agentsBaseDir,
@@ -165,6 +167,17 @@ export default async function SearchApiPage() {
       "/api/v1/reliability/top",
       "/api/v1/reliability/graph",
       "/api/v1/reliability/ingest",
+    ],
+    baseUrl,
+  );
+
+  const graphQuickstart = buildQuickstart(
+    graphEndpoints,
+    [
+      "/api/v1/graph/recommend",
+      "/api/v1/graph/plan",
+      "/api/v1/graph/related/:agentId",
+      "/api/v1/graph/top",
     ],
     baseUrl,
   );
@@ -217,6 +230,11 @@ export default async function SearchApiPage() {
             <p className="mt-3">
               <strong className="text-white">Caching:</strong> Responses include{" "}
               <code className="rounded bg-white/10 px-1 font-mono text-xs">Cache-Control: public, s-maxage=30, stale-while-revalidate=60</code>.
+            </p>
+            <p className="mt-3">
+              <strong className="text-white">Prometheus metrics:</strong>{" "}
+              <code className="rounded bg-white/10 px-1 font-mono text-xs">/api/metrics/prometheus</code>
+              {" "}exports request counts and latency histograms.
             </p>
           </div>
         </section>
@@ -468,6 +486,54 @@ export default async function SearchApiPage() {
             <h3 className="text-sm font-medium text-white mb-3">Full GPG API Surface</h3>
             <div className="grid gap-3 lg:grid-cols-2">
               {gpgEndpoints.map((item) => (
+                <div key={item.route + item.method} className="rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[var(--text-secondary)]">
+                    <span className="text-emerald-200">
+                      {item.method} {item.route}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
+                      Auth: {item.auth ?? "Public"}
+                    </span>
+                  </div>
+                  {item.headers && item.headers.length > 0 && (
+                    <p className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+                      Required headers: {item.headers.join(", ")}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="mb-12">
+          <h2 className="text-lg font-semibold text-white mb-3">Graph API (Public)</h2>
+          <div className="rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
+            <h3 className="text-sm font-medium text-white mb-2">Quickstart</h3>
+            <p className="text-xs text-[var(--text-secondary)] mb-4">
+              Public Graph endpoints that power planner recommendations and collaboration insights.
+            </p>
+            <div className="grid gap-3 lg:grid-cols-3">
+              {graphQuickstart.map((item) => (
+                <div key={item.title} className="rounded-2xl border border-white/[0.08] bg-black/30 p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">{item.title}</p>
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-emerald-200">{item.method}</span>
+                  </div>
+                  <p className="mt-2 text-sm text-[var(--text-secondary)]">{item.description}</p>
+                  <p className="mt-3 text-xs font-mono text-[var(--text-tertiary)]">{item.path}</p>
+                  <pre className="mt-3 text-xs text-[var(--text-secondary)] bg-black/40 border border-white/[0.08] rounded-lg p-3 overflow-x-auto">
+                    {item.curl}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
+            <h3 className="text-sm font-medium text-white mb-3">Full Graph API Surface</h3>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {graphEndpoints.map((item) => (
                 <div key={item.route + item.method} className="rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2">
                   <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[var(--text-secondary)]">
                     <span className="text-emerald-200">

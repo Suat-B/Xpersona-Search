@@ -1,32 +1,32 @@
-Suat ?? this feedback is actually **very good news**.
+ÔªøSuat ‚Äî this feedback is actually **very good news**.
 
-An 85/100 from an AI agent ó without auth, without deep integration, and with parts down ó means your foundation is strong.
+An 85/100 from an AI agent ‚Äî without auth, without deep integration, and with parts down ‚Äî means your foundation is strong.
 
-Now letís turn that missing 15 points into a **clear AñZ execution plan** your agentic AI can implement to push this to 95ñ98/100.
+Now let‚Äôs turn that missing 15 points into a **clear A‚ÄìZ execution plan** your agentic AI can implement to push this to 95‚Äì98/100.
 
-Iíll structure this exactly around the gaps they mentioned.
+I‚Äôll structure this exactly around the gaps they mentioned.
 
 ---
 
-# ?? Gap Analysis ? Upgrade Blueprint
+# Gap Analysis & Upgrade Blueprint
 
 The missing points were:
 
-1. ? Graph API down / not public
-2. ? No native integration (needs curl/exec)
-3. ? 404/502 endpoint instability
-4. ? Dynamic pages not extractable
-5. ? Docs could improve
+1. Graph API down / not public
+2. No native integration (needs curl/exec)
+3. 404/502 endpoint instability
+4. Dynamic pages not extractable
+5. Docs could improve
 
-Weíll address each one systemically.
+We‚Äôll address each one systemically.
 
 ---
 
-# PHASE 1 ó Stabilize & Production-Harden Core API (Critical)
+# PHASE 1 ‚Äî Stabilize & Production-Harden Core API (Critical)
 
-## ?? Goal
+## Goal
 
-Move from ìworks most of the timeî ? ìinfrastructure reliability.î
+Move from ‚Äúworks most of the time‚Äù to ‚Äúinfrastructure reliability.‚Äù
 
 ---
 
@@ -100,13 +100,13 @@ app.use((err, req, res, next) => {
 
 ---
 
-# PHASE 2 ó Graph API Resurrection (Huge Impact)
+# PHASE 2 ‚Äî Graph API Resurrection (Huge Impact)
 
 This alone could move you to 95.
 
 ---
 
-## ?? Goal
+## Goal
 
 Make Graph API public, stable, documented, and agent-consumable.
 
@@ -145,7 +145,7 @@ try {
 ### 2.3 Caching
 
 * Redis cache per (query + constraints)
-* TTL 30ñ120 seconds
+* TTL 30‚Äì120 seconds
 * Warm popular clusters
 
 ---
@@ -158,7 +158,7 @@ try {
 
 ---
 
-# PHASE 3 ó Native Integration (SDK Layer)
+# PHASE 3 ‚Äî Native Integration (SDK Layer)
 
 This is huge for AI usefulness.
 
@@ -169,7 +169,7 @@ We fix that.
 
 ---
 
-## ?? Goal
+## Goal
 
 Make Xpersona a first-class programmable tool.
 
@@ -233,13 +233,13 @@ Now LLM agents can plug it directly into tool-calling.
 
 ---
 
-# PHASE 4 ó Make Pages Extractable (For Web Fetch)
+# PHASE 4 ‚Äî Make Pages Extractable (For Web Fetch)
 
-The AI complained dynamic pages donít extract well.
+The AI complained dynamic pages don‚Äôt extract well.
 
 ---
 
-## ?? Goal
+## Goal
 
 Add static, crawlable, AI-friendly pages.
 
@@ -291,11 +291,11 @@ Now web_fetch works reliably.
 
 ---
 
-# PHASE 5 ó Observability + Monitoring
+# PHASE 5 ‚Äî Observability + Monitoring
 
 ---
 
-## ?? Goal
+## Goal
 
 Never let things silently degrade.
 
@@ -320,13 +320,13 @@ Never let things silently degrade.
 
 ---
 
-# PHASE 6 ó Documentation Upgrade
+# PHASE 6 ‚Äî Documentation Upgrade
 
 ---
 
-## ?? Goal
+## Goal
 
-Make it ìobviously integratable.î
+Make it ‚Äúobviously integratable.‚Äù
 
 ---
 
@@ -340,7 +340,7 @@ Add:
 
 ---
 
-# PHASE 7 ó AI Mode Endpoint (Bonus 5ñ10 Points)
+# PHASE 7 ‚Äî AI Mode Endpoint (Bonus 5‚Äì10 Points)
 
 Add:
 
@@ -365,12 +365,12 @@ Now LLMs can consume without heavy parsing.
 
 # Impact Projection
 
-Fix reliability ? +4
-Public Graph API ? +5
-Native SDK ? +3
-Extractable pages ? +2
-Docs polish ? +2
-AI-mode endpoint ? +2
+Fix reliability +4
+Public Graph API +5
+Native SDK +3
+Extractable pages +2
+Docs polish +2
+AI-mode endpoint +2
 
 That closes the 15-point gap.
 
@@ -380,20 +380,20 @@ That closes the 15-point gap.
 
 After these upgrades:
 
-95ñ98/100
+95‚Äì98/100
 
-The remaining 2ñ5 points are ecosystem maturity.
+The remaining 2‚Äì5 points are ecosystem maturity.
 
 ---
 
 # If You Want Maximum Impact Order
 
-1?? Stabilize errors
-2?? Public Graph API
-3?? SDK
-4?? AI snapshot endpoints
-5?? Observability
-6?? Docs
+1. Stabilize errors
+2. Public Graph API
+3. SDK
+4. AI snapshot endpoints
+5. Observability
+6. Docs
 
 ---
 
@@ -401,4 +401,4 @@ If you want next, I can:
 
 * Convert this into a **single executable task list your agentic AI can follow file-by-file**
 * Or generate the full OpenAPI spec
-* Or design the SDK implementation in full detail ??
+* Or design the SDK implementation in full detail
