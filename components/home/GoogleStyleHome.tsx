@@ -195,7 +195,7 @@ export function GoogleStyleHome({
           </span>
         </Link>
 
-        <form onSubmit={handleSearch} className="w-full max-w-2xl mt-4 sm:mt-6 animate-fade-in-up animate-delay-225">
+        <form onSubmit={handleSearch} className="relative z-50 w-full max-w-2xl mt-4 sm:mt-6 animate-fade-in-up animate-delay-225">
           <div
             ref={searchAnchorRef}
             className={`relative z-40 flex items-center w-full rounded-xl sm:rounded-2xl neural-glass neural-glass-hover border transition-all duration-300 ${
@@ -270,8 +270,8 @@ export function GoogleStyleHome({
           </div>
         </form>
 
-        <section className="w-full max-w-2xl mt-5 sm:mt-6 animate-fade-in-up animate-delay-300">
-          <div className="rounded-full border border-white/[0.08] bg-black/25 backdrop-blur-lg px-3 py-2 sm:px-3.5">
+        <section className="relative z-10 w-full max-w-2xl mt-5 sm:mt-6 animate-fade-in-up animate-delay-300">
+          <div className="rounded-full bg-black/25 backdrop-blur-lg px-3 py-2 sm:px-3.5">
             <div className="flex flex-wrap items-center justify-center gap-2 text-[10px] sm:text-[11px] text-center">
               <span className="inline-flex items-center rounded-full border border-[var(--accent-heart)]/30 bg-[var(--accent-heart)]/10 px-2 py-0.5 text-[var(--accent-heart)] font-medium">
                 New

@@ -23,6 +23,14 @@ type AiTopAgent = {
   capabilities?: string[] | null;
 };
 
+type UpstreamErrorPayload = {
+  error?: {
+    code?: string;
+    message?: string;
+    retryAfterMs?: number;
+  };
+};
+
 function buildWhy(agent: Record<string, unknown>): string {
   const reasons: string[] = [];
   const safety = typeof agent.safetyScore === "number" ? agent.safetyScore : null;
@@ -80,13 +88,29 @@ export async function GET(req: NextRequest) {
   const upstreamUrl = `${req.nextUrl.origin}/api/search?${searchParams.toString()}`;
   try {
     const upstream = await fetchWithTimeout(upstreamUrl, { method: "GET", headers: { accept: "application/json" } }, 6000);
-    const body = (await upstream.json()) as { results?: Array<Record<string, unknown>>; didYouMean?: string | null };
+    const body = (await upstream.json()) as
+      | { results?: Array<Record<string, unknown>>; didYouMean?: string | null }
+      | UpstreamErrorPayload;
     if (!upstream.ok) {
+      const upstreamError = "error" in body ? body.error : undefined;
+      const retryAfterMs =
+        typeof upstreamError?.retryAfterMs === "number"
+          ? upstreamError.retryAfterMs
+          : upstream.status === 429
+            ? 60_000
+            : undefined;
       const response = jsonError(req, {
-        code: "SEARCH_UNAVAILABLE",
-        message: "Unable to complete AI-mode search",
+        code:
+          typeof upstreamError?.code === "string" && upstreamError.code.length > 0
+            ? upstreamError.code
+            : "SEARCH_UNAVAILABLE",
+        message:
+          typeof upstreamError?.message === "string" && upstreamError.message.length > 0
+            ? upstreamError.message
+            : "Unable to complete AI-mode search",
         status: upstream.status >= 500 ? 503 : upstream.status,
-        retryable: upstream.status >= 500,
+        retryable: upstream.status >= 500 || upstream.status === 429,
+        retryAfterMs,
       });
       recordApiResponse("/api/search/ai", req, response, startedAt);
       return response;

@@ -68,5 +68,25 @@ describe("GET /api/search/ai", () => {
     expect(res.status).toBe(504);
     expect(data.error.code).toBe("SEARCH_TIMEOUT");
   });
-});
 
+  it("passes through upstream 429 details", async () => {
+    mockFetchWithTimeout.mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: async () => ({
+        error: {
+          code: "RATE_LIMITED",
+          message: "Too many requests. Please try again later.",
+          retryAfterMs: 120000,
+        },
+      }),
+    });
+    const res = await GET(new NextRequest("http://localhost/api/search/ai?q=research+agent"));
+    const data = await res.json();
+    expect(res.status).toBe(429);
+    expect(data.error.code).toBe("RATE_LIMITED");
+    expect(data.error.message).toContain("Too many requests");
+    expect(data.error.retryable).toBe(true);
+    expect(data.error.retryAfterMs).toBe(120000);
+  });
+});
