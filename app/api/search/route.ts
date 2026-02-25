@@ -48,6 +48,9 @@ import {
   type ExecuteParams,
 } from "@/lib/search/execute-mode";
 import { TASK_TYPES } from "@/lib/search/taxonomy";
+import { blendExecuteScore } from "@/lib/gpg/execute-blend";
+import { recommendAgents } from "@/lib/gpg/recommend";
+import { ensureTaskSignature } from "@/lib/gpg/task-canonicalization";
 
 let hasSearchClaimColumnsCache: boolean | null = null;
 let hasSearchClicksTableCache: boolean | null = null;
@@ -1465,13 +1468,50 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    let gpgByAgent = new Map<string, { clusterId: string | null; pSuccess: number; risk: number; expectedCost: number; expectedLatencyMs: number; gpgScore: number }>();
+    if (executeParams.intent === "execute" && (params.q ?? "").trim().length > 0) {
+      try {
+        const signature = await ensureTaskSignature({
+          rawText: params.q ?? "",
+          taskType: executeParams.taskType,
+        });
+        const gpgResponse = await recommendAgents({
+          clusterId: signature.clusterId,
+          constraints: {
+            budget: executeParams.maxCostUsd,
+            maxLatencyMs: executeParams.maxLatencyMs,
+          },
+          limit: 25,
+        });
+        for (const item of gpgResponse.topAgents.concat(gpgResponse.alternatives)) {
+          gpgByAgent.set(item.agentId, {
+            clusterId: gpgResponse.clusterId,
+            pSuccess: item.p_success,
+            risk: item.risk,
+            expectedCost: item.expected_cost,
+            expectedLatencyMs: item.p95_latency_ms,
+            gpgScore: item.gpg_score,
+          });
+        }
+      } catch {
+        gpgByAgent = new Map();
+      }
+    }
+
     if (executeBias) {
-      executionDecorated.sort((a, b) => b.rankingSignals.finalScore - a.rankingSignals.finalScore);
+      executionDecorated.sort((a, b) => {
+        const aGpg = gpgByAgent.get(String(a.row.id))?.gpgScore ?? null;
+        const bGpg = gpgByAgent.get(String(b.row.id))?.gpgScore ?? null;
+        const aScore = blendExecuteScore(a.rankingSignals.finalScore, aGpg);
+        const bScore = blendExecuteScore(b.rankingSignals.finalScore, bGpg);
+        return bScore - aScore;
+      });
     }
 
     const executionSlugs = executionDecorated.map((item) => String(item.row.slug));
     const results = executionDecorated.map((item) => {
       const r = item.row;
+      const gpg = gpgByAgent.get(String(r.id));
       const protocolsRaw = Array.isArray(r.protocols) ? (r.protocols as string[]) : null;
       const protocols = protocolsRaw
         ?.map((p) => toExternalProtocolName(p))
@@ -1530,6 +1570,7 @@ export async function GET(req: NextRequest) {
             )
           : undefined;
       const delegationHints = buildDelegationHints(executeParams.taskType, executionSlugs);
+      const agentId = String(r.id);
       const contractUpdatedAt = contract?.updatedAt instanceof Date ? contract.updatedAt : null;
       const metricsUpdatedAt = metrics?.updatedAt instanceof Date ? metrics.updatedAt : null;
       const contractFreshnessHours = contractUpdatedAt
@@ -1564,7 +1605,13 @@ export async function GET(req: NextRequest) {
                 fallbackCandidates: fallbacks ?? [],
                 ...(executeParams.bundle ? { fallbacks } : {}),
                 delegationHints,
-                ...(executeParams.explain ? { rankingSignals: item.rankingSignals } : {}),
+                ...(executeParams.explain ? {
+                  rankingSignals: {
+                    ...item.rankingSignals,
+                    finalScore: blendExecuteScore(item.rankingSignals.finalScore, gpg?.gpgScore ?? null),
+                  },
+                } : {}),
+                ...(gpg ? { gpg } : {}),
               }
             : {}),
         };
@@ -1595,7 +1642,13 @@ export async function GET(req: NextRequest) {
               fallbackCandidates: fallbacks ?? [],
               ...(executeParams.bundle ? { fallbacks } : {}),
               delegationHints,
-              ...(executeParams.explain ? { rankingSignals: item.rankingSignals } : {}),
+              ...(executeParams.explain ? {
+                rankingSignals: {
+                  ...item.rankingSignals,
+                  finalScore: blendExecuteScore(item.rankingSignals.finalScore, gpg?.gpgScore ?? null),
+                },
+              } : {}),
+              ...(gpg ? { gpg } : {}),
             }
           : {}),
         ...(includeRankingDebug

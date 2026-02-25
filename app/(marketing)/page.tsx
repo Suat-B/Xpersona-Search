@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { auth } from "@/lib/auth";
 import { cookies } from "next/headers";
-import { getAuthUserFromCookie } from "@/lib/auth-utils";
+import { getAgentCookieName, verifyAgentToken } from "@/lib/auth-utils";
 import { SearchLanding } from "@/components/home/SearchLanding";
 import { GoogleStyleHomeClient as GoogleStyleHome } from "@/components/home/GoogleStyleHomeClient";
 import { ANSMinimalHeader } from "@/components/home/ANSMinimalHeader";
@@ -20,8 +20,9 @@ export default async function HomePage({
   } catch {}
 
   const cookieStore = await cookies();
-  const userIdFromCookie = getAuthUserFromCookie(cookieStore);
-  const isAuthenticated = !!(session?.user || userIdFromCookie);
+  const agentCookie = cookieStore.get(getAgentCookieName())?.value;
+  const agentUserId = agentCookie ? verifyAgentToken(agentCookie) : null;
+  const isAuthenticated = !!(session?.user || agentUserId);
 
   const params = await searchParams;
   const hasSearchQuery = !!params?.q?.trim();

@@ -1,7 +1,9 @@
+import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { trustReceipts } from "@/lib/db/schema";
 import { getAuthUser } from "@/lib/auth-utils";
 import { sanitizeForStorage } from "@/lib/search/query-engine";
 import { EXECUTION_PATHS, FAILURE_CODES, TASK_TYPES } from "@/lib/search/taxonomy";
@@ -10,6 +12,13 @@ import {
   SEARCH_ANON_RATE_LIMIT,
   SEARCH_AUTH_RATE_LIMIT,
 } from "@/lib/search/rate-limit";
+import {
+  canonicalizePayload,
+  getActiveReceiptKeyId,
+  hashPayload,
+  signPayloadHash,
+} from "@/lib/trust/receipts";
+import { hasTrustTable } from "@/lib/trust/db";
 
 const OutcomeSchema = z.object({
   querySignature: z.string().length(64),
@@ -155,6 +164,42 @@ export async function POST(req: NextRequest) {
         estimated_cost_usd = COALESCE(EXCLUDED.estimated_cost_usd, agent_execution_metrics.estimated_cost_usd),
         updated_at = now()
     `);
+  }
+
+  const issueReceipts = process.env.TRUST_RECEIPT_ON_OUTCOME === "1";
+  if (issueReceipts && (await hasTrustTable("trust_receipts"))) {
+    const keyId = getActiveReceiptKeyId();
+    if (keyId) {
+      const eventPayload = {
+        querySignature: params.querySignature,
+        selectedResultId: params.selectedResultId,
+        outcome: params.outcome,
+        taskType: params.taskType,
+        executionPath: params.executionPath,
+        failureCode: params.failureCode ?? null,
+        latencyMs: params.latencyMs ?? null,
+        costUsd: params.costUsd ?? null,
+        budgetExceeded: params.budgetExceeded ?? false,
+        observedAt: new Date().toISOString(),
+      };
+      const canonical = canonicalizePayload(eventPayload);
+      const payloadHash = hashPayload(canonical);
+      const signature = signPayloadHash(payloadHash, keyId);
+      try {
+        await db.insert(trustReceipts).values({
+          receiptType:
+            params.outcome === "success" ? "execution_complete" : "fallback_switch",
+          agentId: params.selectedResultId,
+          eventPayload,
+          payloadHash,
+          signature,
+          keyId,
+          nonce: crypto.randomUUID(),
+        });
+      } catch {
+        // best-effort, do not fail outcome ingestion
+      }
+    }
   }
 
   return NextResponse.json(

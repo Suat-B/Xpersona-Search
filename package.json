@@ -33,6 +33,8 @@
     "search:metrics:backfill": "tsx scripts/backfill-agent-execution-metrics.ts",
     "search:staleness:decay": "tsx scripts/decay-execute-staleness.ts",
     "search:phase4": "npm run search:contracts:backfill && npm run search:metrics:backfill && npm run search:staleness:decay",
+    "trust:handshake": "tsx scripts/run-trust-handshake.ts",
+    "trust:reputation": "tsx scripts/recompute-reputation.ts",
     "crawl:hot": "tsx scripts/run-crawl.ts 500 --mode=hot --github-budget=800 --time-budget-ms=120000",
     "crawl:hot:loop": "node scripts/run-crawl-hot-loop.mjs",
     "crawl:worker": "node scripts/run-crawl-worker.mjs",
@@ -51,6 +53,7 @@
     "db:seed-production": "node scripts/seed-production.mjs",
     "repair:claim-integrity": "tsx scripts/repair-claim-developer-integrity.ts",
     "repair:claim-integrity:apply": "tsx scripts/repair-claim-developer-integrity.ts --apply",
+    "reliability:recompute": "tsx scripts/recompute-reliability-metrics.ts",
     "deploy": "node scripts/deploy.mjs",
     "setup:prod": "node scripts/setup-production.mjs"
   },

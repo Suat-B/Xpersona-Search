@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { unwrapClientResponse } from "@/lib/api/client-response";
 
 type Tab = "overview" | "users" | "claims" | "agent_submissions" | "custom_pages";
 
@@ -64,6 +65,7 @@ export default function AdminPage() {
   const [claimsData, setClaimsData] = useState<ClaimRow[]>([]);
   const [submissions, setSubmissions] = useState<AgentSubmissionRow[]>([]);
   const [customPages, setCustomPages] = useState<CustomPageRow[]>([]);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
     async function checkAdmin() {
@@ -83,39 +85,52 @@ export default function AdminPage() {
   useEffect(() => {
     if (!isAdmin) return;
 
+    let isActive = true;
     async function loadTabData() {
       try {
         if (tab === "overview") {
-          const res = await fetch("/api/v1/admin/overview");
+          const res = await fetch("/api/v1/admin/overview", { cache: "no-store" });
           const json = await res.json();
-          if (json.success) setOverview(json.data);
+          const data = unwrapClientResponse<OverviewData>(json);
+          if (isActive) setOverview(data);
         }
         if (tab === "users") {
-          const res = await fetch("/api/v1/admin/users?limit=100");
+          const res = await fetch("/api/v1/admin/users?limit=100", { cache: "no-store" });
           const json = await res.json();
-          if (json.success) setUsersData(json.data.users ?? []);
+          const data = unwrapClientResponse<{ users?: UserRow[] }>(json);
+          if (isActive) setUsersData(data.users ?? []);
         }
         if (tab === "claims") {
-          const res = await fetch("/api/v1/admin/claims?status=PENDING&limit=100");
+          const res = await fetch("/api/v1/admin/claims?status=PENDING&limit=100", { cache: "no-store" });
           const json = await res.json();
-          setClaimsData(json.claims ?? []);
+          const data = unwrapClientResponse<{ claims?: ClaimRow[] }>(json);
+          if (isActive) setClaimsData(data.claims ?? []);
         }
         if (tab === "agent_submissions") {
-          const res = await fetch("/api/v1/admin/agents/submissions?limit=100");
+          const res = await fetch("/api/v1/admin/agents/submissions?limit=100", { cache: "no-store" });
           const json = await res.json();
-          if (json.success) setSubmissions(json.data.items ?? []);
+          const data = unwrapClientResponse<{ items?: AgentSubmissionRow[] }>(json);
+          if (isActive) setSubmissions(data.items ?? []);
         }
         if (tab === "custom_pages") {
-          const res = await fetch("/api/v1/admin/custom-pages?limit=100");
+          const res = await fetch("/api/v1/admin/custom-pages?limit=100", { cache: "no-store" });
           const json = await res.json();
-          if (json.success) setCustomPages(json.data.items ?? []);
+          const data = unwrapClientResponse<{ items?: CustomPageRow[] }>(json);
+          if (isActive) setCustomPages(data.items ?? []);
         }
+        if (isActive) setLastUpdated(new Date());
       } catch {
-        setError("Failed to load admin data");
+        if (isActive) setError("Failed to load admin data");
       }
     }
 
     loadTabData();
+    const interval = setInterval(loadTabData, 60_000);
+
+    return () => {
+      isActive = false;
+      clearInterval(interval);
+    };
   }, [isAdmin, tab]);
 
   async function handleClaimAction(claimId: string, action: "approve" | "reject") {
@@ -152,6 +167,11 @@ export default function AdminPage() {
       <header>
         <h1 className="text-3xl font-semibold tracking-tight text-gradient-primary">Admin Panel</h1>
         <p className="mt-1 text-[var(--text-secondary)]">Moderation dashboard for users and agent content.</p>
+        {lastUpdated && (
+          <p className="mt-1 text-xs text-[var(--text-tertiary)]">
+            Last updated {lastUpdated.toLocaleTimeString()}
+          </p>
+        )}
       </header>
 
       <div className="flex flex-wrap gap-2 border-b border-[var(--border)] pb-2">

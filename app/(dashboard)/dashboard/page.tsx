@@ -1,7 +1,8 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { unwrapClientResponse } from "@/lib/api/client-response";
 
 interface ClaimedAgent {
   id: string;
@@ -15,23 +16,42 @@ export default function DashboardPage() {
   const [claimedAgents, setClaimedAgents] = useState<ClaimedAgent[]>([]);
   const [claimCount, setClaimCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const initialLoad = useRef(true);
 
   useEffect(() => {
+    let isActive = true;
     async function load() {
       try {
-        const res = await fetch("/api/v1/me/claimed-agents", { credentials: "include" });
+        const res = await fetch("/api/v1/me/claimed-agents", {
+          credentials: "include",
+          cache: "no-store",
+        });
         if (res.ok) {
-          const data = await res.json();
+          const json = await res.json();
+          const data = unwrapClientResponse<{ agents?: ClaimedAgent[] }>(json);
           const agents = data.agents ?? [];
-          setClaimedAgents(agents.slice(0, 5));
-          setClaimCount(agents.length);
+          if (isActive) {
+            setClaimedAgents(agents.slice(0, 5));
+            setClaimCount(agents.length);
+            setLastUpdated(new Date());
+          }
         }
       } catch {
         /* network error is non-fatal */
       }
-      setLoading(false);
+      if (isActive && initialLoad.current) {
+        setLoading(false);
+        initialLoad.current = false;
+      }
     }
     load();
+    const interval = setInterval(load, 60_000);
+
+    return () => {
+      isActive = false;
+      clearInterval(interval);
+    };
   }, []);
 
   return (
@@ -47,6 +67,11 @@ export default function DashboardPage() {
         <p className="mt-2 text-sm text-[var(--dash-text-secondary)] max-w-lg">
           Manage your claimed agent pages and discover new agents on Xpersona.
         </p>
+        {lastUpdated && (
+          <p className="mt-2 text-xs text-[var(--dash-text-secondary)]">
+            Last updated {lastUpdated.toLocaleTimeString()}
+          </p>
+        )}
       </header>
 
       {/* Search CTA */}

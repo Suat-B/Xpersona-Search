@@ -67,7 +67,7 @@ export async function runCapabilityHandshake(params: {
     errorRateProbe = null;
   }
 
-  const protocolChecks = protocols.map((p) => {
+  const protocolChecks: HandshakeResult["protocolChecks"] = protocols.map((p) => {
     const tokens = PROTOCOL_TOKENS[p] ?? [p.toLowerCase()];
     const found = tokens.some((t) => readmeText.includes(t));
     if (!readmeText.trim()) {
@@ -75,12 +75,12 @@ export async function runCapabilityHandshake(params: {
     }
     return {
       protocol: p,
-      status: found ? "PASS" : "WARN",
+      status: found ? ("PASS" as const) : ("WARN" as const),
       reason: found ? "Protocol mentioned in docs" : "Protocol not found in docs",
     };
   });
 
-  const capabilityChecks = capabilities.slice(0, 20).map((cap) => {
+  const capabilityChecks: HandshakeResult["capabilityChecks"] = capabilities.slice(0, 20).map((cap) => {
     if (!readmeText.trim()) {
       return { capability: cap, status: "UNKNOWN" as const, reason: "No docs to verify" };
     }
@@ -88,7 +88,7 @@ export async function runCapabilityHandshake(params: {
     const found = readmeText.includes(normalized);
     return {
       capability: cap,
-      status: found ? "PASS" : "WARN",
+      status: found ? ("PASS" as const) : ("WARN" as const),
       reason: found ? "Capability mentioned in docs" : "Capability not found in docs",
     };
   });

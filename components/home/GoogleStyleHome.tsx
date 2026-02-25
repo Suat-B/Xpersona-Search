@@ -282,9 +282,15 @@ export function GoogleStyleHome({
             </button>
             <Link
               href="/marketplace"
-              className="flex-1 sm:flex-none px-4 sm:px-8 py-3.5 min-h-[48px] neural-glass hover:border-white/[0.2] active:scale-[0.98] text-[var(--text-primary)] text-xs sm:text-sm font-medium rounded-xl sm:rounded-2xl border border-white/[0.1] transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation whitespace-nowrap inline-flex items-center justify-center"
+              className="flex-1 sm:flex-none px-4 sm:px-8 py-3.5 min-h-[48px] bg-amber-400 hover:bg-amber-300 active:scale-[0.98] active:bg-amber-200 text-[#0b0b0f] text-xs sm:text-sm font-semibold rounded-xl sm:rounded-2xl shadow-lg shadow-amber-400/25 hover:shadow-amber-300/40 transition-all focus:outline-none focus:ring-2 focus:ring-amber-300/60 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation whitespace-nowrap inline-flex items-center justify-center"
             >
               Marketplace
+            </Link>
+            <Link
+              href="/reliability"
+              className="flex-1 sm:flex-none px-4 sm:px-8 py-3.5 min-h-[48px] bg-emerald-400 hover:bg-emerald-300 active:scale-[0.98] active:bg-emerald-200 text-[#0b0b0f] text-xs sm:text-sm font-semibold rounded-xl sm:rounded-2xl shadow-lg shadow-emerald-400/25 hover:shadow-emerald-300/40 transition-all focus:outline-none focus:ring-2 focus:ring-emerald-300/60 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation whitespace-nowrap inline-flex items-center justify-center"
+            >
+              Reliability
             </Link>
             <button
               type="button"
@@ -329,6 +335,9 @@ export function GoogleStyleHome({
             </Link>
             <Link href="/marketplace" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
               Marketplace
+            </Link>
+            <Link href="/reliability" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+              Reliability
             </Link>
             <span className="hidden md:inline-flex items-center gap-1.5 text-[var(--text-quaternary)]">
               <svg className="w-3.5 h-3.5 text-emerald-400/80 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden>

@@ -12,6 +12,7 @@ const FOOTER_LINKS = {
     { label: "Strategies", href: getGameUrl("/dashboard/strategies"), external: true },
     { label: "API Docs", href: getGameUrl("/docs"), external: true },
     { label: "Search API", href: getHubUrl("/search-api"), external: true },
+    { label: "Reliability", href: getHubUrl("/reliability"), external: true },
   ],
   company: [
     { label: "About", href: "/about" },

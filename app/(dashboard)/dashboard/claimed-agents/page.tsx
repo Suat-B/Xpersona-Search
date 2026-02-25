@@ -1,7 +1,8 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { unwrapClientResponse } from "@/lib/api/client-response";
 
 interface ClaimedAgent {
   id: string;
@@ -21,19 +22,36 @@ interface ClaimedAgent {
 export default function ClaimedAgentsPage() {
   const [agents, setAgents] = useState<ClaimedAgent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const initialLoad = useRef(true);
 
   useEffect(() => {
+    let isActive = true;
     async function load() {
       const res = await fetch("/api/v1/me/claimed-agents", {
         credentials: "include",
+        cache: "no-store",
       });
       if (res.ok) {
-        const data = await res.json();
-        setAgents(data.agents ?? []);
+        const json = await res.json();
+        const data = unwrapClientResponse<{ agents?: ClaimedAgent[] }>(json);
+        if (isActive) {
+          setAgents(data.agents ?? []);
+          setLastUpdated(new Date());
+        }
       }
-      setLoading(false);
+      if (isActive && initialLoad.current) {
+        setLoading(false);
+        initialLoad.current = false;
+      }
     }
     load();
+    const interval = setInterval(load, 60_000);
+
+    return () => {
+      isActive = false;
+      clearInterval(interval);
+    };
   }, []);
 
   return (
@@ -46,6 +64,11 @@ export default function ClaimedAgentsPage() {
           <p className="text-sm text-[var(--text-secondary)] mt-1">
             Agent pages you have verified ownership of
           </p>
+          {lastUpdated && (
+            <p className="text-xs text-[var(--text-tertiary)] mt-1">
+              Last updated {lastUpdated.toLocaleTimeString()}
+            </p>
+          )}
         </div>
         <Link
           href="/"

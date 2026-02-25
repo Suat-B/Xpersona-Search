@@ -633,6 +633,345 @@ export const signalDeliveryLogs = pgTable(
   ]
 );
 
+// Reliability: agent run telemetry (machine-readable observability)
+export const gpgTaskClusters = pgTable(
+  "gpg_task_clusters",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: varchar("slug", { length: 191 }).notNull().unique(),
+    name: varchar("name", { length: 255 }).notNull(),
+    description: text("description"),
+    normalizedLabel: varchar("normalized_label", { length: 255 }).notNull(),
+    signatureHash: varchar("signature_hash", { length: 64 }).notNull().unique(),
+    taskType: varchar("task_type", { length: 32 }).notNull().default("general"),
+    tags: jsonb("tags").$type<string[]>().notNull().default([]),
+    embedding: jsonb("embedding").$type<number[]>(),
+    volume30d: integer("volume_30d").notNull().default(0),
+    medianBudgetUsd: doublePrecision("median_budget_usd"),
+    runCountTotal: integer("run_count_total").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("gpg_task_clusters_slug_idx").on(table.slug),
+    uniqueIndex("gpg_task_clusters_signature_hash_idx").on(table.signatureHash),
+    index("gpg_task_clusters_task_type_idx").on(table.taskType),
+    index("gpg_task_clusters_volume_30d_idx").on(table.volume30d),
+  ]
+);
+
+export const gpgTaskSignatures = pgTable(
+  "gpg_task_signatures",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    rawText: text("raw_text").notNull(),
+    normalizedText: text("normalized_text").notNull(),
+    textHash: varchar("text_hash", { length: 64 }).notNull(),
+    tags: jsonb("tags").$type<string[]>().notNull().default([]),
+    embedding: jsonb("embedding").$type<number[]>(),
+    taskType: varchar("task_type", { length: 32 }).notNull().default("general"),
+    difficulty: integer("difficulty"),
+    riskLevel: integer("risk_level"),
+    clusterId: uuid("cluster_id").references(() => gpgTaskClusters.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("gpg_task_signatures_cluster_id_idx").on(table.clusterId),
+    index("gpg_task_signatures_text_hash_idx").on(table.textHash),
+    index("gpg_task_signatures_task_type_idx").on(table.taskType),
+  ]
+);
+
+export const gpgAgentClusterStats = pgTable(
+  "gpg_agent_cluster_stats",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    clusterId: uuid("cluster_id")
+      .notNull()
+      .references(() => gpgTaskClusters.id, { onDelete: "cascade" }),
+    successRate30d: doublePrecision("success_rate_30d").notNull().default(0),
+    failureRate30d: doublePrecision("failure_rate_30d").notNull().default(0),
+    disputeRate90d: doublePrecision("dispute_rate_90d").notNull().default(0),
+    avgQuality30d: doublePrecision("avg_quality_30d").notNull().default(0),
+    calibError30d: doublePrecision("calib_error_30d").notNull().default(0),
+    p50LatencyMs30d: doublePrecision("p50_latency_ms_30d").notNull().default(0),
+    p95LatencyMs30d: doublePrecision("p95_latency_ms_30d").notNull().default(0),
+    avgCost30d: doublePrecision("avg_cost_30d").notNull().default(0),
+    runCount30d: integer("run_count_30d").notNull().default(0),
+    verifiedRunCount30d: integer("verified_run_count_30d").notNull().default(0),
+    bayesSuccess30d: doublePrecision("bayes_success_30d").notNull().default(0),
+    riskScore30d: doublePrecision("risk_score_30d").notNull().default(1),
+    lastWindowStart: timestamp("last_window_start", { withTimezone: true }),
+    lastWindowEnd: timestamp("last_window_end", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("gpg_agent_cluster_stats_agent_cluster_idx").on(table.agentId, table.clusterId),
+    index("gpg_agent_cluster_stats_cluster_idx").on(table.clusterId),
+    index("gpg_agent_cluster_stats_agent_idx").on(table.agentId),
+    index("gpg_agent_cluster_stats_bayes_idx").on(table.bayesSuccess30d),
+  ]
+);
+
+export const gpgPipelineRuns = pgTable(
+  "gpg_pipeline_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    jobId: varchar("job_id", { length: 64 }),
+    clusterId: uuid("cluster_id").references(() => gpgTaskClusters.id, { onDelete: "set null" }),
+    agentPath: jsonb("agent_path").$type<string[]>().notNull().default([]),
+    pathHash: varchar("path_hash", { length: 64 }).notNull(),
+    status: varchar("status", { length: 16 }).notNull(),
+    latencyMs: integer("latency_ms").notNull(),
+    costUsd: doublePrecision("cost_usd").notNull().default(0),
+    qualityScore: doublePrecision("quality_score"),
+    confidence: doublePrecision("confidence"),
+    failureType: varchar("failure_type", { length: 32 }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    isVerified: boolean("is_verified").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("gpg_pipeline_runs_cluster_idx").on(table.clusterId),
+    index("gpg_pipeline_runs_path_hash_idx").on(table.pathHash),
+    index("gpg_pipeline_runs_status_idx").on(table.status),
+    index("gpg_pipeline_runs_created_idx").on(table.createdAt),
+  ]
+);
+
+export const gpgPipelineStats = pgTable(
+  "gpg_pipeline_stats",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clusterId: uuid("cluster_id")
+      .notNull()
+      .references(() => gpgTaskClusters.id, { onDelete: "cascade" }),
+    pathHash: varchar("path_hash", { length: 64 }).notNull(),
+    agentPath: jsonb("agent_path").$type<string[]>().notNull().default([]),
+    successRate30d: doublePrecision("success_rate_30d").notNull().default(0),
+    bayesSuccess30d: doublePrecision("bayes_success_30d").notNull().default(0),
+    p50LatencyMs30d: doublePrecision("p50_latency_ms_30d").notNull().default(0),
+    p95LatencyMs30d: doublePrecision("p95_latency_ms_30d").notNull().default(0),
+    avgCost30d: doublePrecision("avg_cost_30d").notNull().default(0),
+    avgQuality30d: doublePrecision("avg_quality_30d").notNull().default(0),
+    runCount30d: integer("run_count_30d").notNull().default(0),
+    riskScore30d: doublePrecision("risk_score_30d").notNull().default(1),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("gpg_pipeline_stats_cluster_path_idx").on(table.clusterId, table.pathHash),
+    index("gpg_pipeline_stats_cluster_idx").on(table.clusterId),
+    index("gpg_pipeline_stats_bayes_idx").on(table.bayesSuccess30d),
+  ]
+);
+
+export const gpgAgentCollaborationEdges = pgTable(
+  "gpg_agent_collaboration_edges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fromAgentId: uuid("from_agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    toAgentId: uuid("to_agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    clusterId: uuid("cluster_id").references(() => gpgTaskClusters.id, { onDelete: "set null" }),
+    weight30d: integer("weight_30d").notNull().default(0),
+    successWeight30d: doublePrecision("success_weight_30d").notNull().default(0),
+    failureWeight30d: doublePrecision("failure_weight_30d").notNull().default(0),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("gpg_agent_collab_from_to_cluster_idx").on(
+      table.fromAgentId,
+      table.toAgentId,
+      table.clusterId
+    ),
+    index("gpg_agent_collab_from_idx").on(table.fromAgentId),
+    index("gpg_agent_collab_to_idx").on(table.toAgentId),
+  ]
+);
+
+export const gpgClusterTransitionEdges = pgTable(
+  "gpg_cluster_transition_edges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fromClusterId: uuid("from_cluster_id")
+      .notNull()
+      .references(() => gpgTaskClusters.id, { onDelete: "cascade" }),
+    toClusterId: uuid("to_cluster_id")
+      .notNull()
+      .references(() => gpgTaskClusters.id, { onDelete: "cascade" }),
+    weight30d: integer("weight_30d").notNull().default(0),
+    successWeight30d: doublePrecision("success_weight_30d").notNull().default(0),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("gpg_cluster_transition_from_to_idx").on(table.fromClusterId, table.toClusterId),
+    index("gpg_cluster_transition_from_idx").on(table.fromClusterId),
+    index("gpg_cluster_transition_to_idx").on(table.toClusterId),
+  ]
+);
+
+export const gpgIntegrityFlags = pgTable(
+  "gpg_integrity_flags",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id").references(() => agents.id, { onDelete: "cascade" }),
+    runId: uuid("run_id"),
+    pipelineRunId: uuid("pipeline_run_id").references(() => gpgPipelineRuns.id, { onDelete: "set null" }),
+    clusterId: uuid("cluster_id").references(() => gpgTaskClusters.id, { onDelete: "set null" }),
+    flagType: varchar("flag_type", { length: 40 }).notNull(),
+    reason: text("reason"),
+    severity: integer("severity").notNull().default(1),
+    score: doublePrecision("score"),
+    evidence: jsonb("evidence").$type<Record<string, unknown>>(),
+    isResolved: boolean("is_resolved").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("gpg_integrity_flags_agent_idx").on(table.agentId),
+    index("gpg_integrity_flags_run_idx").on(table.runId),
+    index("gpg_integrity_flags_pipeline_idx").on(table.pipelineRunId),
+    index("gpg_integrity_flags_resolved_idx").on(table.isResolved),
+    index("gpg_integrity_flags_type_idx").on(table.flagType),
+  ]
+);
+
+export const gpgIngestIdempotency = pgTable(
+  "gpg_ingest_idempotency",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    endpoint: varchar("endpoint", { length: 64 }).notNull(),
+    idempotencyKey: varchar("idempotency_key", { length: 128 }).notNull(),
+    payloadHash: varchar("payload_hash", { length: 64 }).notNull(),
+    agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
+    responseBody: jsonb("response_body").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("gpg_ingest_idempotency_endpoint_key_idx").on(
+      table.endpoint,
+      table.idempotencyKey
+    ),
+    index("gpg_ingest_idempotency_agent_idx").on(table.agentId),
+    index("gpg_ingest_idempotency_created_idx").on(table.createdAt),
+  ]
+);
+
+export const agentRuns = pgTable(
+  "agent_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    jobId: varchar("job_id", { length: 64 }),
+    inputHash: varchar("input_hash", { length: 64 }).notNull(),
+    outputHash: varchar("output_hash", { length: 64 }),
+    status: varchar("status", { length: 16 }).notNull(),
+    latencyMs: integer("latency_ms").notNull(),
+    costUsd: doublePrecision("cost_usd").notNull().default(0),
+    confidence: doublePrecision("confidence"),
+    hallucinationScore: doublePrecision("hallucination_score"),
+    failureType: varchar("failure_type", { length: 32 }),
+    failureDetails: jsonb("failure_details"),
+    modelUsed: varchar("model_used", { length: 64 }).notNull(),
+    tokensInput: integer("tokens_input"),
+    tokensOutput: integer("tokens_output"),
+    clusterId: uuid("cluster_id").references(() => gpgTaskClusters.id, { onDelete: "set null" }),
+    taskSignatureId: uuid("task_signature_id").references(() => gpgTaskSignatures.id, {
+      onDelete: "set null",
+    }),
+    pipelineRunId: uuid("pipeline_run_id").references(() => gpgPipelineRuns.id, {
+      onDelete: "set null",
+    }),
+    pipelineStep: integer("pipeline_step"),
+    isVerified: boolean("is_verified").notNull().default(false),
+    ingestIdempotencyKey: varchar("ingest_idempotency_key", { length: 128 }),
+    ingestKeyId: varchar("ingest_key_id", { length: 64 }),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    trace: jsonb("trace").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_runs_agent_id_idx").on(table.agentId),
+    index("agent_runs_status_idx").on(table.status),
+    index("agent_runs_started_at_idx").on(table.startedAt),
+    index("agent_runs_cluster_id_idx").on(table.clusterId),
+    index("agent_runs_task_signature_id_idx").on(table.taskSignatureId),
+    index("agent_runs_pipeline_run_id_idx").on(table.pipelineRunId),
+    index("agent_runs_verified_idx").on(table.isVerified),
+  ]
+);
+
+export const agentMetrics = pgTable(
+  "agent_metrics",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .unique()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    successRate: doublePrecision("success_rate").notNull().default(0),
+    avgLatencyMs: doublePrecision("avg_latency_ms").notNull().default(0),
+    avgCostUsd: doublePrecision("avg_cost_usd").notNull().default(0),
+    hallucinationRate: doublePrecision("hallucination_rate").notNull().default(0),
+    retryRate: doublePrecision("retry_rate").notNull().default(0),
+    disputeRate: doublePrecision("dispute_rate").notNull().default(0),
+    p50Latency: doublePrecision("p50_latency").notNull().default(0),
+    p95Latency: doublePrecision("p95_latency").notNull().default(0),
+    lastUpdated: timestamp("last_updated", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("agent_metrics_agent_id_idx").on(table.agentId)]
+);
+
+export const failurePatterns = pgTable(
+  "failure_patterns",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    type: varchar("type", { length: 32 }).notNull(),
+    frequency: integer("frequency").notNull().default(0),
+    lastSeen: timestamp("last_seen", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("failure_patterns_agent_id_idx").on(table.agentId),
+    uniqueIndex("failure_patterns_agent_type_idx").on(table.agentId, table.type),
+  ]
+);
+
+export const agentBenchmarkResults = pgTable(
+  "agent_benchmark_results",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    suiteName: varchar("suite_name", { length: 64 }).notNull(),
+    score: doublePrecision("score").notNull().default(0),
+    accuracy: doublePrecision("accuracy"),
+    latencyMs: doublePrecision("latency_ms"),
+    costUsd: doublePrecision("cost_usd"),
+    safetyViolations: integer("safety_violations").default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_benchmark_results_agent_id_idx").on(table.agentId),
+    index("agent_benchmark_results_suite_idx").on(table.suiteName),
+  ]
+);
+
 // Aggregated search queries for trending/popular suggestions
 export const searchQueries = pgTable(
   "search_queries",

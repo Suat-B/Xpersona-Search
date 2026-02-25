@@ -1,10 +1,13 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { desc, eq, or } from "drizzle-orm";
 import { z } from "zod";
 import { getAuthUser } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
 import { economyEscrows, economyJobs, marketplaceDevelopers } from "@/lib/db/schema";
 import { economyError } from "@/lib/economy/http";
+import { ensureTaskSignature } from "@/lib/gpg/task-canonicalization";
+import { recommendAgents } from "@/lib/gpg/recommend";
+import { computeEscrowMultiplier } from "@/lib/gpg/risk";
 
 const CreateJobSchema = z.object({
   agentId: z.string().uuid().optional(),
@@ -52,6 +55,33 @@ export async function POST(request: NextRequest) {
   try {
     const json = await request.json();
     const body = CreateJobSchema.parse(json);
+    const taskText = `${body.title}\n${body.description}`.trim();
+
+    let gpgDecision: Record<string, unknown> | null = null;
+    let escrowMultiplier = 1;
+    try {
+      const signature = await ensureTaskSignature({ rawText: taskText, taskType: "general" });
+      const gpg = await recommendAgents({
+        clusterId: signature.clusterId,
+        constraints: { budget: body.budgetCents / 100 },
+        limit: 10,
+      });
+      escrowMultiplier = computeEscrowMultiplier(
+        gpg.topAgents[0]?.risk ?? gpg.alternatives[0]?.risk ?? 0
+      );
+      gpgDecision = {
+        clusterId: gpg.clusterId,
+        clusterName: gpg.clusterName,
+        taskType: gpg.taskType,
+        topAgents: gpg.topAgents,
+        alternatives: gpg.alternatives,
+        risk: gpg.topAgents[0]?.risk ?? null,
+        escrowMultiplier,
+      };
+    } catch {
+      gpgDecision = null;
+      escrowMultiplier = 1;
+    }
 
     const inserted = await db
       .insert(economyJobs)
@@ -65,22 +95,37 @@ export async function POST(request: NextRequest) {
         currency: body.currency.toUpperCase(),
         status: "POSTED",
         deadlineAt: body.deadlineAt ? new Date(body.deadlineAt) : null,
-        metadata: body.metadata ?? {},
+        metadata: {
+          ...(body.metadata ?? {}),
+          gpg: gpgDecision,
+        },
         updatedAt: new Date(),
       })
       .returning({ id: economyJobs.id, budgetCents: economyJobs.budgetCents, currency: economyJobs.currency });
 
     const job = inserted[0];
+    const escrowAmount = Math.max(1, Math.round(job.budgetCents * escrowMultiplier));
 
     await db.insert(economyEscrows).values({
       jobId: job.id,
-      amountCents: job.budgetCents,
+      amountCents: escrowAmount,
       currency: job.currency,
       status: "PENDING",
       updatedAt: new Date(),
     });
 
-    return NextResponse.json({ success: true, data: { id: job.id } }, { status: 201 });
+    return NextResponse.json(
+      {
+        success: true,
+        data: {
+          id: job.id,
+          gpg: gpgDecision,
+          escrowMultiplier,
+          escrowAmountCents: escrowAmount,
+        },
+      },
+      { status: 201 }
+    );
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ success: false, error: "VALIDATION_ERROR", details: err.flatten() }, { status: 400 });
