@@ -188,13 +188,14 @@ export function SearchResultsBar({
                 onFocus={handleFocus}
                 onBlur={handleBlur}
                 onKeyDown={handleInputKeyDown}
+                enterKeyHint="search"
                 placeholder="Search AI agents..."
                 aria-label="Search AI agents"
                 aria-autocomplete="list"
                 aria-controls="agent-suggestions-bar"
                 aria-expanded={showSuggestions}
                 autoComplete="off"
-                className="w-full min-w-0 pl-9 pr-4 py-3 sm:py-2.5 min-h-[44px] bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-sm rounded-xl focus:outline-none touch-manipulation"
+                className="w-full min-w-0 pl-9 pr-4 py-2 sm:py-2.5 min-h-[38px] sm:min-h-[40px] bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-sm rounded-xl focus:outline-none touch-manipulation"
               />
               <SearchSuggestions
                 ref={suggestionsRef}
@@ -212,7 +213,7 @@ export function SearchResultsBar({
               disabled={loading}
               aria-busy={loading}
               aria-label={loading ? "Searching" : "Search"}
-              className="px-4 py-2.5 min-h-[44px] flex items-center bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 disabled:opacity-50 rounded-xl text-sm font-semibold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation shrink-0"
+              className="px-4 py-2 min-h-[38px] sm:min-h-[40px] flex items-center bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 disabled:opacity-50 rounded-xl text-sm font-semibold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation shrink-0"
             >
               {loading ? "..." : "Search"}
             </button>
