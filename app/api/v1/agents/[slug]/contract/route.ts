@@ -1,1 +1,1 @@
-export { GET, POST } from "@/app/api/agents/[slug]/contract/route";
+export { GET } from "@/app/api/agents/[slug]/contract/route";

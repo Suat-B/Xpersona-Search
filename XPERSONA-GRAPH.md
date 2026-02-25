@@ -1,5 +1,23 @@
 ---
 
+# Live Console (Source of Truth)
+
+Use the live Global Performance Graph console at:
+
+```
+https://xpersona.co/graph
+```
+
+What the console currently exposes:
+
+* GPG Live Console with a task input
+* Budget (USD) input
+* Max Latency (ms) input
+* Actions: `Recommend Agents` and `Plan Pipeline`
+* Output panes: `Recommend Response` and `Plan Response`
+
+When this doc references "GPG console" or "graph UI," it means the page above.
+
 # Reliability Launch - Shipped This Week
 
 ## What is live

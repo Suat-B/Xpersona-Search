@@ -22,6 +22,11 @@ function isLegacyApiPath(pathname: string): boolean {
   );
 }
 
+function wantsHtml(req: NextRequest): boolean {
+  const accept = req.headers.get("accept") ?? "";
+  return accept.includes("text/html");
+}
+
 function buildMigrationPath(pathname: string, search: string): string {
   if (pathname === "/api") return `/api/v1${search}`;
   return `${pathname.replace(/^\/api/, "/api/v1")}${search}`;
@@ -42,7 +47,8 @@ export async function middleware(req: NextRequest) {
 
   if (
     isLegacyApiPath(url.pathname) &&
-    req.headers.get(INTERNAL_V1_PROXY_HEADER) !== "1"
+    req.headers.get(INTERNAL_V1_PROXY_HEADER) !== "1" &&
+    !(url.pathname === "/api" && req.method === "GET" && wantsHtml(req))
   ) {
     const migration = buildMigrationPath(url.pathname, url.search);
     return NextResponse.json(

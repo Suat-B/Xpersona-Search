@@ -68,7 +68,7 @@ export function HelpDrawer({
     }
 
     if (choice.action === "OPEN_SEARCH_API") {
-      router.push("/search-api");
+      router.push("/api");
       onClose();
       return;
     }
