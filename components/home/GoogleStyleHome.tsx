@@ -192,7 +192,7 @@ export function GoogleStyleHome({
           className="mb-6 sm:mb-8 group block text-center home-logo-link"
           aria-label="Xpersona home">
           <span className="inline-flex items-center gap-3 sm:gap-4">
-            <span className="text-3xl sm:text-5xl md:text-6xl font-black tracking-tight text-white select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75">
+            <span className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75">
               Xpersona
             </span>
             <Image
@@ -305,40 +305,40 @@ export function GoogleStyleHome({
 
       </main>
 
-      <footer className="relative shrink-0 w-full py-3 sm:py-3.5 px-6 sm:px-8 md:px-12 lg:px-16 bg-black/40 border-t border-white/[0.08] z-10 safe-area-bottom">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-6 w-full">
-          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 sm:gap-6 text-xs sm:text-[13px] text-[var(--text-tertiary)]">
-            <Link href="/" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+      <footer className="relative shrink-0 w-full py-2 sm:py-3.5 px-4 sm:px-8 md:px-12 lg:px-16 bg-black/40 border-t border-white/[0.08] z-10 safe-area-bottom">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-6 w-full">
+          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 sm:gap-6 text-[11px] sm:text-[13px] text-[var(--text-tertiary)]">
+            <Link href="/" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation">
               Xpersona
             </Link>
-            <Link href="/dashboard/claimed-agents" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+            <Link href="/dashboard/claimed-agents" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation">
               Claim + Customize
             </Link>
-            <Link href="/api" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+            <Link href="/api" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation">
               API
             </Link>
-            <Link href="/api/v1/openapi/public" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+            <Link href="/api/v1/openapi/public" className="hidden sm:flex hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] items-center touch-manipulation">
               OpenAPI
             </Link>
-            <Link href="/api/v1/search/tool" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+            <Link href="/api/v1/search/tool" className="hidden sm:flex hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] items-center touch-manipulation">
               SDK + Tooling
             </Link>
-            <Link href="/api/v1/search/ai?q=agent+builder&limit=3" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+            <Link href="/api/v1/search/ai?q=agent+builder&limit=3" className="hidden sm:flex hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] items-center touch-manipulation">
               AI Search
             </Link>
-            <Link href="/api/v1/agents/example-research/snapshot" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+            <Link href="/api/v1/agents/example-research/snapshot" className="hidden sm:flex hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] items-center touch-manipulation">
               Snapshot API
             </Link>
-            <Link href="/domains" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+            <Link href="/domains" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation">
               Domains
             </Link>
-            <Link href="/marketplace" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+            <Link href="/marketplace" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation">
               Marketplace
             </Link>
-            <Link href="/graph" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+            <Link href="/graph" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation">
               Graph
             </Link>
-            <Link href="/reliability" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+            <Link href="/reliability" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation">
               Reliability
             </Link>
             <span className="hidden md:inline-flex items-center gap-1.5 text-[var(--text-quaternary)]">
@@ -348,19 +348,19 @@ export function GoogleStyleHome({
               Search AI agents, skills, and tools
             </span>
           </div>
-          <nav className="flex flex-wrap items-center justify-center sm:justify-end gap-4 sm:gap-6 text-xs sm:text-[13px] text-[var(--text-tertiary)]" aria-label="Footer navigation">
+          <nav className="flex flex-wrap items-center justify-center sm:justify-end gap-2.5 sm:gap-6 text-[11px] sm:text-[13px] text-[var(--text-tertiary)]" aria-label="Footer navigation">
             <Link
               href={supportMailto}
               onClick={openSupport}
-              className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation"
+              className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation"
               aria-label={`Email support at ${supportRecipient}`}
             >
               Support
             </Link>
-            <Link href={privacyUrl} className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+            <Link href={privacyUrl} className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation">
               Privacy
             </Link>
-            <Link href={termsUrl} className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
+            <Link href={termsUrl} className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation">
               Terms
             </Link>
           </nav>

@@ -93,9 +93,9 @@ export function AgentHomepageEmbed({ agent, from }: AgentEmbedProps) {
     : `/agent/${agent.slug}/claim`;
 
   return (
-    <div className="h-screen flex flex-col bg-[var(--bg-deep)] overflow-hidden">
+    <div className="min-h-dvh flex flex-col bg-[var(--bg-deep)] overflow-hidden">
       {/* Top bar */}
-      <header className="relative z-50 flex h-14 shrink-0 items-center gap-3 border-b border-[var(--border)] bg-[var(--bg-deep)]/95 backdrop-blur-md px-4">
+      <header className="safe-area-inset-top relative z-50 flex h-14 shrink-0 items-center gap-3 border-b border-[var(--border)] bg-[var(--bg-deep)]/95 backdrop-blur-md px-4">
         {/* Left: back to search */}
         <div className="flex items-center gap-3 min-w-0">
           <button
@@ -166,7 +166,7 @@ export function AgentHomepageEmbed({ agent, from }: AgentEmbedProps) {
 
       {/* Iframe zone */}
       {!iframeError ? (
-        <div className="flex-1 relative">
+        <div className="flex-1 min-h-0 relative">
           {/* Loading skeleton */}
           {!iframeLoaded && (
             <div className="absolute inset-0 flex items-center justify-center bg-[var(--bg-deep)]">

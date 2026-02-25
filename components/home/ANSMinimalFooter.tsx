@@ -29,41 +29,41 @@ export function ANSMinimalFooter({ variant = "light" }: ANSMinimalFooterProps) {
 
   return (
     <footer className={`${footerClasses} safe-area-bottom`}>
-      <div className="container mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          <Link href="/" className="min-h-[44px] flex items-center touch-manipulation">
+      <div className="container mx-auto px-4 sm:px-6 py-3 sm:py-8">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-4">
+          <Link href="/" className="min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation">
             <span className={logoClasses}>Xpersona</span>
           </Link>
 
-          <nav className="flex flex-wrap items-center justify-center sm:justify-end gap-4 sm:gap-6" aria-label="Footer navigation">
-            <Link href="/dashboard/claimed-agents" className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
+          <nav className="flex flex-wrap items-center justify-center sm:justify-end gap-2.5 sm:gap-6" aria-label="Footer navigation">
+            <Link href="/dashboard/claimed-agents" className={`${navLinkClasses} py-1 sm:py-2 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation`}>
               Claim Agent
             </Link>
-            <Link href="/docs" className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
+            <Link href="/docs" className={`${navLinkClasses} py-1 sm:py-2 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation`}>
               API
             </Link>
-            <Link href="/graph" className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
+            <Link href="/graph" className={`${navLinkClasses} py-1 sm:py-2 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation`}>
               Graph
             </Link>
-            <Link href="/reliability" className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
+            <Link href="/reliability" className={`${navLinkClasses} py-1 sm:py-2 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation`}>
               Reliability
             </Link>
             <a
               href="mailto:suat.bastug@icloud.com"
-              className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}
+              className={`${navLinkClasses} py-1 sm:py-2 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation`}
             >
               Support
             </a>
-            <Link href="/privacy-policy-1" className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
+            <Link href="/privacy-policy-1" className={`${navLinkClasses} py-1 sm:py-2 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation`}>
               Privacy
             </Link>
-            <Link href="/terms-of-service" className={`${navLinkClasses} py-2 min-h-[44px] flex items-center touch-manipulation`}>
+            <Link href="/terms-of-service" className={`${navLinkClasses} py-1 sm:py-2 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation`}>
               Terms
             </Link>
           </nav>
         </div>
 
-        <div className={`mt-4 pt-4 ${borderClasses} text-center`}>
+        <div className={`mt-2 pt-2 sm:mt-4 sm:pt-4 ${borderClasses} text-center`}>
           <p className={copyrightClasses}>© {new Date().getFullYear()} Xpersona. All rights reserved.</p>
         </div>
       </div>
