@@ -7,6 +7,7 @@ import { buildCacheKey } from "@/lib/search/cache";
 import { graphPlanCache } from "@/lib/graph/cache";
 import { graphCircuitBreaker } from "@/lib/search/circuit-breaker";
 import { recordApiResponse } from "@/lib/metrics/record";
+import { recordGraphFallback } from "@/lib/metrics/kpi";
 
 const PlanSchema = z.object({
   q: z.string().min(1).max(500),
@@ -51,6 +52,7 @@ function fallbackPlanResponse(
     status: 200,
     headers: { "X-Graph-Plan-Fallback": "1", "X-Cache": "MISS" },
   });
+  recordGraphFallback("plan", reason === "CIRCUIT_OPEN" ? "circuit_open" : "internal_error");
   graphPlanCache.set(cacheKey, payload);
   applyRequestIdHeader(response, req);
   recordApiResponse("/api/graph/plan", req, response, startedAt);
@@ -108,6 +110,7 @@ async function buildPlanResponse(req: NextRequest, data: z.infer<typeof PlanSche
     if (stale) {
       const response = NextResponse.json({ ...(stale as Record<string, unknown>), _stale: true });
       response.headers.set("X-Cache", "STALE");
+      recordGraphFallback("plan", "stale_cache");
       applyRequestIdHeader(response, req);
       recordApiResponse("/api/graph/plan", req, response, startedAt);
       return response;
@@ -143,6 +146,7 @@ async function buildPlanResponse(req: NextRequest, data: z.infer<typeof PlanSche
     if (stale) {
       const response = NextResponse.json({ ...(stale as Record<string, unknown>), _stale: true });
       response.headers.set("X-Cache", "STALE");
+      recordGraphFallback("plan", "stale_cache");
       applyRequestIdHeader(response, req);
       recordApiResponse("/api/graph/plan", req, response, startedAt);
       return response;

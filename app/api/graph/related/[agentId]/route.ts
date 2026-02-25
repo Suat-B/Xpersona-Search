@@ -8,6 +8,7 @@ import { buildCacheKey } from "@/lib/search/cache";
 import { graphRelatedCache } from "@/lib/graph/cache";
 import { graphCircuitBreaker } from "@/lib/search/circuit-breaker";
 import { recordApiResponse } from "@/lib/metrics/record";
+import { recordGraphFallback } from "@/lib/metrics/kpi";
 
 export async function GET(
   req: NextRequest,
@@ -51,6 +52,7 @@ export async function GET(
     if (stale) {
       const response = NextResponse.json({ ...(stale as Record<string, unknown>), _stale: true });
       response.headers.set("X-Cache", "STALE");
+      recordGraphFallback("related", "stale_cache");
       applyRequestIdHeader(response, req);
       recordApiResponse("/api/graph/related/:agentId", req, response, startedAt);
       return response;
@@ -61,6 +63,7 @@ export async function GET(
       status: 503,
       retryAfterMs: 20_000,
     });
+    recordGraphFallback("related", "circuit_open");
     recordApiResponse("/api/graph/related/:agentId", req, response, startedAt);
     return response;
   }
@@ -141,6 +144,7 @@ export async function GET(
     if (stale) {
       const response = NextResponse.json({ ...(stale as Record<string, unknown>), _stale: true });
       response.headers.set("X-Cache", "STALE");
+      recordGraphFallback("related", "stale_cache");
       applyRequestIdHeader(response, req);
       recordApiResponse("/api/graph/related/:agentId", req, response, startedAt);
       return response;
@@ -151,6 +155,7 @@ export async function GET(
       status: 500,
       details: process.env.NODE_ENV === "production" ? undefined : String(err),
     });
+    recordGraphFallback("related", "internal_error");
     recordApiResponse("/api/graph/related/:agentId", req, response, startedAt);
     return response;
   }

@@ -32,6 +32,11 @@ export default function DocsPage() {
 
   const paths = spec.paths ?? {};
   const base = spec.servers?.[0]?.url ?? "https://xpersona.co";
+  const searchCurl = `curl -s "${base}/api/v1/search?q=crypto+trading&protocols=A2A,MCP&limit=5"`;
+  const aiCurl = `curl -s "${base}/api/v1/search/ai?q=best+agents+for+research&limit=3"`;
+  const graphPlanCurl = `curl -s -X POST "${base}/api/v1/graph/plan" -H "Content-Type: application/json" -d '{"q":"Research Tesla stock","preferences":{"optimizeFor":"success_then_cost"}}'`;
+  const snapshotCurl = `curl -s "${base}/api/v1/agents/my-agent-slug/snapshot"`;
+  const toolDescriptorCurl = `curl -s "${base}/api/v1/search/tool"`;
 
   return (
     <main className="min-h-screen bg-[var(--bg-deep)] text-[var(--text-primary)] p-6">
@@ -48,6 +53,49 @@ export default function DocsPage() {
         <section className="agent-card p-5">
           <p className="text-sm text-[var(--text-secondary)]">Base URL: <code>{base}</code></p>
           <p className="text-sm text-[var(--text-secondary)] mt-1">Use <code>Authorization: Bearer &lt;API_KEY&gt;</code> for protected routes.</p>
+        </section>
+
+        <section className="agent-card p-5">
+          <h2 className="text-sm font-semibold text-[var(--text-primary)]">Quickstart in 3 Steps</h2>
+          <ol className="mt-2 list-decimal pl-5 space-y-2 text-sm text-[var(--text-secondary)]">
+            <li>Discover agents with <code>GET /api/v1/search</code> or low-token mode <code>GET /api/v1/search/ai</code>.</li>
+            <li>Inspect candidates via <code>GET /api/v1/agents/{`{slug}`}/snapshot</code>.</li>
+            <li>For orchestration, query Graph planning at <code>POST /api/v1/graph/plan</code>.</li>
+          </ol>
+        </section>
+
+        <section className="agent-card p-5 space-y-4">
+          <h2 className="text-sm font-semibold text-[var(--text-primary)]">Copy-Paste Examples</h2>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-[var(--text-secondary)]">Search</p>
+            <pre className="mt-1 overflow-x-auto rounded bg-black/40 p-3 text-xs text-emerald-300">{searchCurl}</pre>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-[var(--text-secondary)]">AI Mode</p>
+            <pre className="mt-1 overflow-x-auto rounded bg-black/40 p-3 text-xs text-emerald-300">{aiCurl}</pre>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-[var(--text-secondary)]">Graph Plan</p>
+            <pre className="mt-1 overflow-x-auto rounded bg-black/40 p-3 text-xs text-emerald-300">{graphPlanCurl}</pre>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-[var(--text-secondary)]">Agent Snapshot</p>
+            <pre className="mt-1 overflow-x-auto rounded bg-black/40 p-3 text-xs text-emerald-300">{snapshotCurl}</pre>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-[var(--text-secondary)]">Tool Descriptor</p>
+            <pre className="mt-1 overflow-x-auto rounded bg-black/40 p-3 text-xs text-emerald-300">{toolDescriptorCurl}</pre>
+          </div>
+        </section>
+
+        <section className="agent-card p-5">
+          <h2 className="text-sm font-semibold text-[var(--text-primary)]">Error & Retry Semantics</h2>
+          <ul className="mt-2 space-y-1 text-sm text-[var(--text-secondary)]">
+            <li><code>400</code>: invalid input (fix parameters).</li>
+            <li><code>429</code>: rate-limited; respect <code>Retry-After</code>.</li>
+            <li><code>503</code>/<code>504</code>: temporary service issue; retry with backoff.</li>
+            <li>Errors include <code>error.code</code>, <code>error.message</code>, and request metadata headers.</li>
+          </ul>
         </section>
 
         <section className="agent-card p-5">
@@ -80,7 +128,10 @@ export default function DocsPage() {
           ))}
         </section>
 
-        <a href="/openapi.v1.public.json" className="text-sm text-[var(--accent-heart)] hover:underline">Download OpenAPI JSON</a>
+        <div className="flex gap-4">
+          <a href="/openapi.v1.public.json" className="text-sm text-[var(--accent-heart)] hover:underline">Download OpenAPI JSON</a>
+          <a href="/openapi.yaml" className="text-sm text-[var(--accent-heart)] hover:underline">Download OpenAPI YAML</a>
+        </div>
       </div>
     </main>
   );

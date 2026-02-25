@@ -5,6 +5,7 @@ import { buildCacheKey } from "@/lib/search/cache";
 import { graphTopCache } from "@/lib/graph/cache";
 import { graphCircuitBreaker } from "@/lib/search/circuit-breaker";
 import { recordApiResponse } from "@/lib/metrics/record";
+import { recordGraphFallback } from "@/lib/metrics/kpi";
 
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
@@ -48,6 +49,7 @@ export async function GET(req: NextRequest) {
     if (stale) {
       const response = NextResponse.json({ ...(stale as Record<string, unknown>), _stale: true });
       response.headers.set("X-Cache", "STALE");
+      recordGraphFallback("top", "stale_cache");
       applyRequestIdHeader(response, req);
       recordApiResponse("/api/graph/top", req, response, startedAt);
       return response;
@@ -58,6 +60,7 @@ export async function GET(req: NextRequest) {
       status: 503,
       retryAfterMs: 20_000,
     });
+    recordGraphFallback("top", "circuit_open");
     recordApiResponse("/api/graph/top", req, response, startedAt);
     return response;
   }
@@ -80,6 +83,7 @@ export async function GET(req: NextRequest) {
         },
         { status: 200, headers: { "X-Graph-Top-Fallback": "1" } }
       );
+      recordGraphFallback("top", "upstream_error");
       applyRequestIdHeader(response, req);
       recordApiResponse("/api/graph/top", req, response, startedAt);
       return response;
@@ -98,6 +102,7 @@ export async function GET(req: NextRequest) {
     if (stale) {
       const response = NextResponse.json({ ...(stale as Record<string, unknown>), _stale: true });
       response.headers.set("X-Cache", "STALE");
+      recordGraphFallback("top", "stale_cache");
       applyRequestIdHeader(response, req);
       recordApiResponse("/api/graph/top", req, response, startedAt);
       return response;
@@ -111,6 +116,7 @@ export async function GET(req: NextRequest) {
       },
       { status: 200, headers: { "X-Graph-Top-Fallback": "1" } }
     );
+    recordGraphFallback("top", "internal_error");
     applyRequestIdHeader(response, req);
     recordApiResponse("/api/graph/top", req, response, startedAt);
     return response;

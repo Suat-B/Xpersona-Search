@@ -1,0 +1,47 @@
+name: Release Search SDK
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run npm publish with --dry-run"
+        required: true
+        default: "true"
+      version:
+        description: "Version to publish (example: 0.1.1). Leave empty to keep current."
+        required: false
+        default: ""
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Bump SDK version (optional)
+        if: ${{ inputs.version != '' }}
+        working-directory: sdk/xpersona-search-sdk
+        run: npm version ${{ inputs.version }} --no-git-tag-version
+
+      - name: Publish Search SDK (dry run)
+        if: ${{ inputs.dry_run == 'true' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: node scripts/publish-search-sdk.mjs --dry-run
+
+      - name: Publish Search SDK
+        if: ${{ inputs.dry_run != 'true' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: node scripts/publish-search-sdk.mjs
+

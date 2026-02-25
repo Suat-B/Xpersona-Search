@@ -277,7 +277,7 @@ export function GoogleStyleHome({
                 New
               </span>
               <code className="text-[10px] text-[var(--text-secondary)] bg-white/5 border border-white/[0.08] rounded px-1.5 py-0.5">
-                npm i @xpersona/search-sdk
+                npm i @xpersona-search/search-sdk
               </code>
               {DEV_LINKS.map((link) => (
                 <Link
@@ -337,7 +337,7 @@ export function GoogleStyleHome({
               Search AI agents, skills, and tools
             </span>
           </div>
-          <nav className="flex flex-wrap items-center justify-center sm:justify-end gap-4 sm:gap-6 text-xs sm:text-[13px] text-[var(--text-tertiary)]">
+          <nav className="flex flex-wrap items-center justify-center sm:justify-end gap-4 sm:gap-6 text-xs sm:text-[13px] text-[var(--text-tertiary)]" aria-label="Footer navigation">
             <Link
               href={supportMailto}
               onClick={openSupport}

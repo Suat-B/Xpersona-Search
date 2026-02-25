@@ -655,6 +655,14 @@ export default async function SearchApiPage() {
               <CopyButton text={toolDescriptorCurl} />
               <pre className="text-emerald-300/90 break-all">{toolDescriptorCurl}</pre>
             </div>
+            <p className="mt-4">
+              SDK package: <code className="rounded bg-white/10 px-1 font-mono text-xs">@xpersona-search/search-sdk</code>
+              {" "}with methods for search, AI mode, suggestions, and snapshots.
+              Postman collection:{" "}
+              <a href="/postman.xpersona.v1.collection.json" className="text-[var(--accent-heart)] hover:underline">
+                Download collection JSON
+              </a>.
+            </p>
           </div>
         </section>
 

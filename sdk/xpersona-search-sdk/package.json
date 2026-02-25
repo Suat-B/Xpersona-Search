@@ -1,5 +1,5 @@
 {
-  "name": "@xpersona/search-sdk",
+  "name": "@xpersona-search/search-sdk",
   "version": "0.1.0",
   "description": "Official Xpersona Search SDK for search, AI mode, and agent snapshots.",
   "type": "module",
@@ -17,7 +17,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "prepublishOnly": "npm run clean && npm run build"
   },
   "devDependencies": {
     "typescript": "^5.0.0"

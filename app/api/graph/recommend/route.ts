@@ -7,6 +7,7 @@ import { buildCacheKey } from "@/lib/search/cache";
 import { graphRecommendCache } from "@/lib/graph/cache";
 import { graphCircuitBreaker } from "@/lib/search/circuit-breaker";
 import { recordApiResponse } from "@/lib/metrics/record";
+import { recordGraphFallback } from "@/lib/metrics/kpi";
 
 const RecommendSchema = z.object({
   q: z.string().min(1).max(500),
@@ -43,6 +44,7 @@ function fallbackRecommendResponse(
     status: 200,
     headers: { "X-Graph-Recommend-Fallback": "1", "X-Cache": "MISS" },
   });
+  recordGraphFallback("recommend", reason === "CIRCUIT_OPEN" ? "circuit_open" : "internal_error");
   graphRecommendCache.set(cacheKey, payload);
   applyRequestIdHeader(response, req);
   recordApiResponse("/api/graph/recommend", req, response, startedAt);
@@ -97,6 +99,7 @@ export async function GET(req: NextRequest) {
     if (stale) {
       const response = NextResponse.json({ ...(stale as Record<string, unknown>), _stale: true });
       response.headers.set("X-Cache", "STALE");
+      recordGraphFallback("recommend", "stale_cache");
       applyRequestIdHeader(response, req);
       recordApiResponse("/api/graph/recommend", req, response, startedAt);
       return response;
@@ -137,6 +140,7 @@ export async function GET(req: NextRequest) {
     if (stale) {
       const response = NextResponse.json({ ...(stale as Record<string, unknown>), _stale: true });
       response.headers.set("X-Cache", "STALE");
+      recordGraphFallback("recommend", "stale_cache");
       applyRequestIdHeader(response, req);
       recordApiResponse("/api/graph/recommend", req, response, startedAt);
       return response;

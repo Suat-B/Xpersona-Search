@@ -9,6 +9,8 @@ import {
 import { getAuthUser } from "@/lib/auth-utils";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 import { recordApiResponse } from "@/lib/metrics/record";
+import { recordSearchClick as recordSearchClickKpi } from "@/lib/metrics/kpi";
+import { recordSearchClick as recordSearchClickMetric } from "@/lib/metrics/kpi";
 
 const ClickSchema = z.object({
   query: z.string().min(1).max(500),
@@ -109,6 +111,8 @@ export async function POST(req: NextRequest) {
     position: params.position,
     userId,
   });
+  recordSearchClickKpi();
+  recordSearchClickMetric();
 
   const response = NextResponse.json(
     { ok: true },

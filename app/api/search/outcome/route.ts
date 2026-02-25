@@ -23,6 +23,7 @@ import {
 import { hasTrustTable } from "@/lib/trust/db";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 import { recordApiResponse } from "@/lib/metrics/record";
+import { recordSearchExecutionOutcome } from "@/lib/metrics/kpi";
 
 const OutcomeSchema = z.object({
   querySignature: z.string().length(64),
@@ -295,6 +296,7 @@ export async function POST(req: NextRequest) {
       console.warn("[Reliability] Outcome ingest failed:", err);
     }
   }
+  recordSearchExecutionOutcome(params.outcome);
 
   const response = NextResponse.json(
     { ok: true },
@@ -306,6 +308,7 @@ export async function POST(req: NextRequest) {
       },
     }
   );
+  recordSearchExecutionOutcome(params.outcome);
   applyRequestIdHeader(response, req);
   recordApiResponse("/api/search/outcome", req, response, startedAt);
   return response;

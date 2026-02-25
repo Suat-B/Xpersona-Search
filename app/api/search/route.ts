@@ -32,6 +32,7 @@ import { getAuthUser } from "@/lib/auth-utils";
 import { isAdmin } from "@/lib/admin";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 import { recordApiResponse } from "@/lib/metrics/record";
+import { recordSearchOutcome } from "@/lib/metrics/kpi";
 import {
   getEmbeddingProvider,
   getSemanticCandidatesLimit,
@@ -1801,6 +1802,7 @@ export async function GET(req: NextRequest) {
       );
     }
     response.headers.set("X-RateLimit-Limit", String(rateLimitLimit));
+    recordSearchOutcome(results.length > 0 ? "success" : "no_results");
     applyRequestIdHeader(response, req);
     recordApiResponse("/api/search", req, response, startedAt);
     return response;
@@ -1816,6 +1818,7 @@ export async function GET(req: NextRequest) {
         _stale: true,
       });
       response.headers.set("X-Cache", "STALE");
+      recordSearchOutcome("fallback");
       applyRequestIdHeader(response, req);
       recordApiResponse("/api/search", req, response, startedAt);
       return response;
@@ -1833,6 +1836,7 @@ export async function GET(req: NextRequest) {
       },
       { status: 500 }
     );
+    recordSearchOutcome("error");
     applyRequestIdHeader(response, req);
     recordApiResponse("/api/search", req, response, startedAt);
     return response;

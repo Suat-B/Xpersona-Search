@@ -25,11 +25,25 @@ const durationHistogram: HistogramState = {
   byLabel: new Map(),
 };
 
+const namedCounters: Map<string, Map<LabelKey, number>> = new Map();
+
 function labelKey(labels: Record<string, string | number>): LabelKey {
   return Object.entries(labels)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([k, v]) => `${k}=${String(v)}`)
     .join("|");
+}
+
+function parseLabelKey(key: LabelKey): Record<string, string> {
+  return Object.fromEntries(
+    key
+      .split("|")
+      .filter(Boolean)
+      .map((part) => {
+        const [k, v] = part.split("=");
+        return [k, v ?? ""];
+      })
+  ) as Record<string, string>;
 }
 
 export function incRequest(labels: { route: string; method: string; status: number }) {
@@ -61,6 +75,16 @@ export function observeDuration(
   }
   state.sum += durationMs;
   state.count += 1;
+}
+
+export function incNamedCounter(
+  metric: string,
+  labels: Record<string, string | number> = {}
+) {
+  const perMetric = namedCounters.get(metric) ?? new Map<LabelKey, number>();
+  const key = labelKey(labels);
+  perMetric.set(key, (perMetric.get(key) ?? 0) + 1);
+  namedCounters.set(metric, perMetric);
 }
 
 function formatLabels(labels: Record<string, string | number>): string {
@@ -113,6 +137,27 @@ export function renderPrometheus(): string {
     );
     lines.push(`xpersona_http_request_duration_ms_sum${formatLabels(labels)} ${state.sum}`);
     lines.push(`xpersona_http_request_duration_ms_count${formatLabels(labels)} ${state.count}`);
+  }
+
+  lines.push("# HELP xpersona_http_not_found_total Total HTTP 404 responses.");
+  lines.push("# TYPE xpersona_http_not_found_total counter");
+  for (const [key, value] of requestCounter.byLabel.entries()) {
+    const labels = parseLabelKey(key);
+    if (labels.status !== "404") continue;
+    lines.push(
+      `xpersona_http_not_found_total${formatLabels({
+        route: labels.route ?? "",
+        method: labels.method ?? "",
+      })} ${value}`
+    );
+  }
+
+  for (const [metric, byLabel] of namedCounters.entries()) {
+    lines.push(`# HELP ${metric} Custom application counter.`);
+    lines.push(`# TYPE ${metric} counter`);
+    for (const [key, value] of byLabel.entries()) {
+      lines.push(`${metric}${formatLabels(parseLabelKey(key))} ${value}`);
+    }
   }
 
   return lines.join("\n") + "\n";

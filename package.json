@@ -59,6 +59,8 @@
     "sdk:clean": "node scripts/sdk-clean-all.mjs",
     "sdk:build": "node scripts/sdk-build-all.mjs",
     "sdk:build:all": "node scripts/sdk-build-all.mjs",
+    "sdk:publish:search": "node scripts/publish-search-sdk.mjs",
+    "sdk:publish:search:dry": "node scripts/publish-search-sdk.mjs --dry-run",
     "deploy": "node scripts/deploy.mjs",
     "setup:prod": "node scripts/setup-production.mjs"
   },

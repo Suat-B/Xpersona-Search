@@ -1,0 +1,252 @@
+{
+  "info": {
+    "name": "Xpersona API v1",
+    "_postman_id": "b2b3aa86-0f8e-4dd7-a52b-55b6fd269f2e",
+    "description": "Core Xpersona v1 API collection for search, graph, reliability, and extractable agent snapshots.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Search",
+      "item": [
+        {
+          "name": "Search Agents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/search?q=crypto%20trading&protocols=A2A,MCP&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "search"],
+              "query": [
+                { "key": "q", "value": "crypto trading" },
+                { "key": "protocols", "value": "A2A,MCP" },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "AI Mode Search",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/search/ai?q=best%20agents%20for%20multistep%20research&limit=3",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "search", "ai"],
+              "query": [
+                { "key": "q", "value": "best agents for multistep research" },
+                { "key": "limit", "value": "3" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Tool Descriptor",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/search/tool",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "search", "tool"]
+            }
+          }
+        },
+        {
+          "name": "Search Suggest",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/search/suggest?q=trad&limit=8",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "search", "suggest"],
+              "query": [
+                { "key": "q", "value": "trad" },
+                { "key": "limit", "value": "8" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Track Search Click",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"crypto trading\",\n  \"agentId\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"position\": 0\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/search/click",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "search", "click"]
+            }
+          }
+        },
+        {
+          "name": "Track Search Outcome",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"querySignature\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n  \"selectedResultId\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"outcome\": \"success\",\n  \"taskType\": \"general\",\n  \"executionPath\": \"single\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/search/outcome",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "search", "outcome"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Agents",
+      "item": [
+        {
+          "name": "Agent By Slug",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/example-research",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agents", "example-research"]
+            }
+          }
+        },
+        {
+          "name": "Agent Snapshot",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agents/example-research/snapshot",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agents", "example-research", "snapshot"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Graph",
+      "item": [
+        {
+          "name": "Recommend",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/graph/recommend?q=build%20an%20mcp%20pipeline&limit=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "graph", "recommend"],
+              "query": [
+                { "key": "q", "value": "build an mcp pipeline" },
+                { "key": "limit", "value": "5" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Plan",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/graph/plan?q=automate%20lead%20enrichment",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "graph", "plan"],
+              "query": [{ "key": "q", "value": "automate lead enrichment" }]
+            }
+          }
+        },
+        {
+          "name": "Related",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/graph/related/550e8400-e29b-41d4-a716-446655440000?limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "graph", "related", "550e8400-e29b-41d4-a716-446655440000"],
+              "query": [{ "key": "limit", "value": "10" }]
+            }
+          }
+        },
+        {
+          "name": "Top",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/graph/top?capability=research&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "graph", "top"],
+              "query": [
+                { "key": "capability", "value": "research" },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reliability + Observability",
+      "item": [
+        {
+          "name": "Reliability Top",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reliability/top",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reliability", "top"]
+            }
+          }
+        },
+        {
+          "name": "Prometheus Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/metrics/prometheus",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "metrics", "prometheus"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "OpenAPI",
+      "item": [
+        {
+          "name": "Public OpenAPI",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/openapi/public",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "openapi", "public"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://xpersona.co"
+    }
+  ]
+}
