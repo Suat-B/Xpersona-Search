@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fail, inferErrorCode, ok } from "@/lib/api/contracts";
+import { GET as getSearchAi } from "@/app/api/search/ai/route";
 import {
   applyResponseMetaHeaders,
   cloneHeadersWithProxyBypass,
@@ -62,6 +63,13 @@ async function proxyToLegacy(req: NextRequest, ctx: RouteContext): Promise<NextR
   const { path } = await ctx.params;
   const requestId = getOrCreateRequestId(req);
   const pathText = path.join("/");
+
+  // Guard explicit v1 routes that may otherwise fall through to this catch-all
+  // during runtime route resolution edge-cases.
+  if (req.method.toUpperCase() === "GET" && pathText === "search/ai") {
+    return getSearchAi(req);
+  }
+
   const legacyPath = `/api/${pathText}${req.nextUrl.search}`;
   const target = new URL(legacyPath, req.nextUrl.origin);
 

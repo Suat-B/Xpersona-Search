@@ -41,8 +41,6 @@ function FallbackCard({ agent, from }: AgentEmbedProps) {
     }
     return `/agent/${agent.slug}?view=details`;
   }, [agent.slug, from]);
-  const homepageHref = ensureExternalUrl(agent.homepage);
-
   return (
     <div className="flex-1 flex items-center justify-center p-6">
       <div className="max-w-lg w-full rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-8 text-center shadow-lg">
@@ -58,17 +56,12 @@ function FallbackCard({ agent, from }: AgentEmbedProps) {
         <p className="text-sm text-[var(--text-tertiary)] mb-6">
           This page cannot be displayed inline. Visit it directly instead.
         </p>
-        <a
-          href={homepageHref}
-          target="_blank"
-          rel="noopener noreferrer"
+        <Link
+          href={detailsHref}
           className="inline-flex items-center gap-2 px-6 py-3 bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 rounded-xl font-semibold text-white transition-colors shadow-lg shadow-[var(--accent-heart)]/20"
         >
-          Visit Homepage
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-          </svg>
-        </a>
+          View Agent Details
+        </Link>
         <div className="mt-4">
           <Link
             href={detailsHref}
@@ -92,6 +85,9 @@ export function AgentHomepageEmbed({ agent, from }: AgentEmbedProps) {
   const claimHref = safeFrom
     ? `/agent/${agent.slug}/claim?from=${encodeURIComponent(safeFrom)}`
     : `/agent/${agent.slug}/claim`;
+  const detailsHref = safeFrom
+    ? `/agent/${agent.slug}?view=details&from=${encodeURIComponent(safeFrom)}`
+    : `/agent/${agent.slug}?view=details`;
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 1024px)");
@@ -103,11 +99,8 @@ export function AgentHomepageEmbed({ agent, from }: AgentEmbedProps) {
 
   useEffect(() => {
     if (!isMobileViewport) return;
-    if (homepageHref === "#") return;
-    const current = `${window.location.origin}${window.location.pathname}`;
-    if (homepageHref.startsWith(current)) return;
-    window.location.assign(homepageHref);
-  }, [isMobileViewport, homepageHref]);
+    router.replace(detailsHref);
+  }, [detailsHref, isMobileViewport, router]);
 
   useEffect(() => {
     if (isMobileViewport) return;
@@ -121,11 +114,8 @@ export function AgentHomepageEmbed({ agent, from }: AgentEmbedProps) {
   useEffect(() => {
     if (isMobileViewport) return;
     if (!iframeError) return;
-    if (homepageHref === "#") return;
-    const current = `${window.location.origin}${window.location.pathname}`;
-    if (homepageHref.startsWith(current)) return;
-    window.location.assign(homepageHref);
-  }, [iframeError, homepageHref, isMobileViewport]);
+    router.replace(detailsHref);
+  }, [detailsHref, iframeError, isMobileViewport, router]);
 
   if (isMobileViewport) {
     return (

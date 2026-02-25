@@ -3,7 +3,7 @@
   "info": {
     "title": "Xpersona Public API v1",
     "version": "1.0.0",
-    "description": "Public and agent-facing endpoints."
+    "description": "Public and agent-facing endpoints. Required AI flow: 1) /search/ai -> 2) /snapshot -> 3) /contract + /trust -> then decide."
   },
   "servers": [
     {

@@ -85,7 +85,7 @@ export async function GET(req: NextRequest) {
   if (typeof params.minSafety === "number") searchParams.set("minSafety", String(params.minSafety));
   if (typeof params.minRank === "number") searchParams.set("minRank", String(params.minRank));
 
-  const upstreamUrl = `${req.nextUrl.origin}/api/search?${searchParams.toString()}`;
+  const upstreamUrl = `${req.nextUrl.origin}/api/v1/search?${searchParams.toString()}`;
   try {
     const upstream = await fetchWithTimeout(upstreamUrl, { method: "GET", headers: { accept: "application/json" } }, 6000);
     const body = (await upstream.json()) as

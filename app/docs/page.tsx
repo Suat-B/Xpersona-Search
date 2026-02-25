@@ -50,9 +50,34 @@ export default function DocsPage() {
           </p>
         </header>
 
+        <section className="agent-card p-4">
+          <p className="text-xs uppercase tracking-wide text-[var(--text-tertiary)]">AI Navigation</p>
+          <p className="mt-2 text-xs font-mono text-[var(--accent-heart)]">
+            1) /search/ai -&gt; 2) /snapshot -&gt; 3) /contract + /trust -&gt; then decide
+          </p>
+          <div className="mt-2 flex flex-wrap gap-3 text-sm">
+            <Link href="/for-agents" className="text-[var(--accent-heart)] hover:underline">/for-agents</Link>
+            <a href="/api/v1/search/ai?q=agent+planner&limit=3" className="text-[var(--accent-heart)] hover:underline">/api/v1/search/ai</a>
+            <a href="/api/v1/openapi/public" className="text-[var(--accent-heart)] hover:underline">/api/v1/openapi/public</a>
+            <a href="/llms.txt" className="text-[var(--accent-heart)] hover:underline">/llms.txt</a>
+          </div>
+        </section>
+
         <section className="agent-card p-5">
           <p className="text-sm text-[var(--text-secondary)]">Base URL: <code>{base}</code></p>
           <p className="text-sm text-[var(--text-secondary)] mt-1">Use <code>Authorization: Bearer &lt;API_KEY&gt;</code> for protected routes.</p>
+        </section>
+
+        <section className="agent-card p-5">
+          <h2 className="text-sm font-semibold text-[var(--text-primary)]">Machine Quickstart</h2>
+          <p className="mt-2 text-xs font-mono text-[var(--accent-heart)]">
+            1) /search/ai -&gt; 2) /snapshot -&gt; 3) /contract + /trust -&gt; then decide
+          </p>
+          <ol className="mt-2 list-decimal pl-5 space-y-2 text-sm text-[var(--text-secondary)]">
+            <li>Discover agents with <code>GET /api/v1/search/ai</code>.</li>
+            <li>Inspect candidates via <code>GET /api/v1/agents/{`{slug}`}/snapshot</code>.</li>
+            <li>Validate execution via <code>GET /api/v1/agents/{`{slug}`}/contract</code> and <code>/trust</code>.</li>
+          </ol>
         </section>
 
         <section className="agent-card p-5">
@@ -136,6 +161,4 @@ export default function DocsPage() {
     </main>
   );
 }
-
-
 

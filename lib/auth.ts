@@ -23,6 +23,7 @@ const cookieDomain = getCookieDomain();
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret,
+  trustHost: true,
   debug: process.env.NODE_ENV === "development",
   useSecureCookies: process.env.NODE_ENV === "production",
   session: {
@@ -75,8 +76,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) token.id = user.id;
       return token;
     },
-    session({ session, token }) {
-      if (session.user) session.user.id = token.id as string;
+    session({ session, token, user }) {
+      if (session.user) {
+        const sessionUserId =
+          (typeof token?.id === "string" ? token.id : undefined) ??
+          (typeof user?.id === "string" ? user.id : undefined);
+        if (sessionUserId) session.user.id = sessionUserId;
+      }
       return session;
     },
   },

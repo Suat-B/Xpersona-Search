@@ -89,8 +89,8 @@ export function GraphExplorer() {
         </p>
       </div>
 
-      <div className="mt-5 grid gap-3 sm:gap-4 lg:grid-cols-3">
-        <div className="rounded-2xl border border-white bg-black p-3 sm:p-4">
+      <div className="mt-5 grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-3 min-w-0">
+        <div className="rounded-2xl border border-white bg-black p-3 sm:p-4 min-w-0 w-full">
           <p className="text-xs uppercase tracking-[0.2em] text-white">Agent UX</p>
           <p className="mt-2 text-sm text-white">
             Deterministic inputs, predictable outputs. This console is optimized for autonomous
@@ -100,17 +100,17 @@ export function GraphExplorer() {
             Suggested loop: recommend, plan, execute, report outcomes.
           </div>
         </div>
-        <div className="rounded-2xl border border-white bg-black p-3 sm:p-4">
+        <div className="rounded-2xl border border-white bg-black p-3 sm:p-4 min-w-0 w-full">
           <p className="text-xs uppercase tracking-[0.16em] sm:tracking-[0.2em] text-white">Recommend (GET)</p>
           <p className="mt-2 text-xs text-white">Machine-callable query.</p>
-          <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-white bg-black p-2.5 sm:p-3 text-[10px] sm:text-[11px] text-white">
+          <pre className="mt-3 w-full max-w-full max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-white bg-black p-2.5 sm:p-3 text-[10px] sm:text-[11px] text-white">
             {recommendCurl}
           </pre>
         </div>
-        <div className="rounded-2xl border border-white bg-black p-3 sm:p-4">
+        <div className="rounded-2xl border border-white bg-black p-3 sm:p-4 min-w-0 w-full">
           <p className="text-xs uppercase tracking-[0.16em] sm:tracking-[0.2em] text-white">Plan (POST)</p>
           <p className="mt-2 text-xs text-white">Full pipeline planning payload.</p>
-          <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-white bg-black p-2.5 sm:p-3 text-[10px] sm:text-[11px] text-white">
+          <pre className="mt-3 w-full max-w-full max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-white bg-black p-2.5 sm:p-3 text-[10px] sm:text-[11px] text-white">
             {planCurl}
           </pre>
         </div>

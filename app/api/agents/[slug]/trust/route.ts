@@ -75,7 +75,9 @@ export async function GET(
   const response = NextResponse.json({
     handshake: handshake[0] ?? null,
     reputation: reputation[0] ?? null,
+    generatedAt: new Date().toISOString(),
   });
+  response.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
   applyRequestIdHeader(response, req);
   recordApiResponse("/api/agents/:slug/trust", req, response, startedAt);
   return response;

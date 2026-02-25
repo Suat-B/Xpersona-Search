@@ -14,6 +14,8 @@ interface GoogleStyleHomeProps {
   /** Pass from Server Component to avoid hydration mismatch (NEXTAUTH_URL is server-only) */
   privacyUrl?: string;
   termsUrl?: string;
+  /** Optional content rendered just above the footer (bottom of page). */
+  bottomContent?: React.ReactNode;
 }
 
 const BLUR_DELAY_MS = 150;
@@ -40,6 +42,7 @@ export function GoogleStyleHome({
   isAuthenticated = false,
   privacyUrl = "/privacy-policy-1",
   termsUrl = "/terms-of-service",
+  bottomContent,
 }: GoogleStyleHomeProps) {
   const [query, setQuery] = useState("");
   const [isFocused, setIsFocused] = useState(false);
@@ -186,15 +189,16 @@ export function GoogleStyleHome({
         )}
       </header>
 
-      <main className="relative z-10 flex flex-1 flex-col items-center justify-start px-4 py-5 sm:px-6 sm:py-0 sm:justify-center sm:-mt-24 md:-mt-28 overflow-y-auto overscroll-contain">
+      <main
+        className={`relative z-10 flex flex-1 flex-col items-center justify-center px-4 py-5 sm:px-6 sm:py-0 sm:-mt-24 md:-mt-28 overflow-y-auto overscroll-contain ${
+          bottomContent ? "pb-24 sm:pb-28" : ""
+        }`}
+      >
         <Link
           href="/"
           className="mb-6 sm:mb-8 group block text-center home-logo-link"
           aria-label="Xpersona home">
-          <span className="inline-flex items-center gap-3 sm:gap-4">
-            <span className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75">
-              Xpersona
-            </span>
+          <span className="inline-flex flex-col items-center gap-2 sm:gap-3">
             <Image
               src="/xpersona-logo-1.png"
               alt="Xpersona logo"
@@ -203,6 +207,12 @@ export function GoogleStyleHome({
               priority
               className="h-10 sm:h-12 md:h-14 w-auto select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75"
             />
+            <span className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75">
+              Xpersona
+            </span>
+          </span>
+          <span className="mt-2 block text-xs sm:text-sm font-medium tracking-wide text-[var(--text-tertiary)]">
+            Currently in Beta
           </span>
         </Link>
 
@@ -305,9 +315,16 @@ export function GoogleStyleHome({
 
       </main>
 
-      <footer className="relative shrink-0 w-full py-2 sm:py-3.5 px-4 sm:px-8 md:px-12 lg:px-16 bg-black/40 border-t border-white/[0.08] z-10 safe-area-bottom">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-6 w-full">
-          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 sm:gap-6 text-[11px] sm:text-[13px] text-[var(--text-tertiary)]">
+      <div className="relative shrink-0 w-full">
+        {bottomContent && (
+          <div className="absolute left-0 right-0 bottom-full z-20 px-4 sm:px-6 pb-1 pointer-events-auto">
+            {bottomContent}
+          </div>
+        )}
+
+        <footer className="relative w-full py-2 sm:py-3.5 px-4 sm:px-8 md:px-12 lg:px-16 bg-black/40 border-t border-white/[0.08] z-10 safe-area-bottom overflow-x-auto">
+          <div className="flex flex-row items-center justify-between gap-2 sm:gap-6 w-full min-w-max flex-nowrap">
+            <div className="flex flex-nowrap items-center justify-center sm:justify-start gap-2.5 sm:gap-6 text-[11px] sm:text-[13px] text-[var(--text-tertiary)] whitespace-nowrap">
             <Link href="/" className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation">
               Xpersona
             </Link>
@@ -347,8 +364,8 @@ export function GoogleStyleHome({
               </svg>
               Search AI agents, skills, and tools
             </span>
-          </div>
-          <nav className="flex flex-wrap items-center justify-center sm:justify-end gap-2.5 sm:gap-6 text-[11px] sm:text-[13px] text-[var(--text-tertiary)]" aria-label="Footer navigation">
+            </div>
+            <nav className="flex flex-nowrap items-center justify-center sm:justify-end gap-2.5 sm:gap-6 text-[11px] sm:text-[13px] text-[var(--text-tertiary)] whitespace-nowrap" aria-label="Footer navigation">
             <Link
               href={supportMailto}
               onClick={openSupport}
@@ -363,9 +380,10 @@ export function GoogleStyleHome({
             <Link href={termsUrl} className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1 sm:py-1.5 min-h-[34px] sm:min-h-[44px] flex items-center touch-manipulation">
               Terms
             </Link>
-          </nav>
-        </div>
-      </footer>
+            </nav>
+          </div>
+        </footer>
+      </div>
 
       {showSupportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">

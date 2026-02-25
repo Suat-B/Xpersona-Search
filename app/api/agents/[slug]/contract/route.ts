@@ -72,6 +72,7 @@ export async function GET(
     slug: agent.slug,
     contract: rows[0] ?? null,
   });
+  response.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
   applyRequestIdHeader(response, req);
   recordApiResponse("/api/agents/:slug/contract", req, response, startedAt);
   return response;

@@ -45,6 +45,7 @@ export default async function SearchApiPage() {
   const agentCurl = `curl "${baseUrl}/api/v1/agents/my-agent-slug"`;
   const aiSearchCurl = `curl "${baseUrl}/api/v1/search/ai?q=best+agents+for+multistep+research&limit=3"`;
   const snapshotCurl = `curl "${baseUrl}/api/v1/agents/my-agent-slug/snapshot"`;
+  const policyCurl = `curl "${baseUrl}/api/v1/search/policy"`;
   const toolDescriptorCurl = `curl "${baseUrl}/api/v1/search/tool"`;
   const metricsCurl = `curl "${baseUrl}/api/metrics/prometheus"`;
   const sdkInstall = `npm install @xpersona-search/search-sdk`;
@@ -250,12 +251,19 @@ console.log(result.topAgents);`;
               <strong className="text-white">Observability setup:</strong>{" "}
               <code className="rounded bg-white/10 px-1 font-mono text-xs">docs/OBSERVABILITY-SETUP.md</code>
             </p>
+            <p className="mt-3">
+              <strong className="text-white">Required AI flow:</strong>{" "}
+              <code className="rounded bg-white/10 px-1 font-mono text-xs">1) /search/ai -&gt; 2) /snapshot -&gt; 3) /contract + /trust -&gt; then decide</code>
+            </p>
           </div>
         </section>
 
         <section className="mb-12">
           <h2 className="text-lg font-semibold text-white mb-3">Quickstart in 3 Steps</h2>
           <div className="rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
+            <p className="mb-3 text-xs font-mono text-[var(--accent-heart)]">
+              1) /search/ai -&gt; 2) /snapshot -&gt; 3) /contract + /trust -&gt; then decide
+            </p>
             <ol className="list-decimal pl-5 space-y-3 text-sm text-[var(--text-secondary)]">
               <li>
                 Try search immediately:
@@ -270,6 +278,8 @@ console.log(result.topAgents);`;
                 <code className="ml-1 rounded bg-white/10 px-1 py-0.5 font-mono text-xs">/api/v1/search/ai</code>
                 <span className="mx-1">+</span>
                 <code className="rounded bg-white/10 px-1 py-0.5 font-mono text-xs">/api/v1/agents/{"{slug}"}/snapshot</code>
+                <span className="mx-1">+</span>
+                <code className="rounded bg-white/10 px-1 py-0.5 font-mono text-xs">/api/v1/search/policy</code>
               </li>
             </ol>
 
@@ -304,6 +314,10 @@ console.log(result.topAgents);`;
               <div className="relative rounded-lg bg-black/50 p-3 font-mono text-[11px] overflow-x-auto">
                 <CopyButton text={snapshotCurl} />
                 <pre className="text-emerald-300/90 break-all">{snapshotCurl}</pre>
+              </div>
+              <div className="relative rounded-lg bg-black/50 p-3 font-mono text-[11px] overflow-x-auto">
+                <CopyButton text={policyCurl} />
+                <pre className="text-emerald-300/90 break-all">{policyCurl}</pre>
               </div>
               <div className="relative rounded-lg bg-black/50 p-3 font-mono text-[11px] overflow-x-auto">
                 <CopyButton text={metricsCurl} />

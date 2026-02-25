@@ -11,6 +11,7 @@ import { z } from "zod";
 import { buildPermanentAccountRequiredPayload, resolveUpgradeCallbackPath } from "@/lib/auth-flow";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 import { recordApiResponse } from "@/lib/metrics/record";
+import { getPublicAgentPageData } from "@/lib/agents/public-agent-page";
 
 let hasAgentCustomizationColumnsCache: boolean | null = null;
 
@@ -34,6 +35,26 @@ export async function GET(
   const { slug } = await params;
   if (!slug) {
     const response = jsonError(req, { code: "BAD_REQUEST", message: "Missing slug", status: 400 });
+    recordApiResponse("/api/agents/:slug", req, response, startedAt);
+    return response;
+  }
+
+  if (mode === "machine") {
+    const machineData = await getPublicAgentPageData(slug);
+    if (!machineData) {
+      const response = jsonError(req, { code: "NOT_FOUND", message: "Not found", status: 404 });
+      recordApiResponse("/api/agents/:slug", req, response, startedAt);
+      return response;
+    }
+    const response = NextResponse.json({
+      id: machineData.id,
+      slug: machineData.slug,
+      name: machineData.name,
+      schemaVersion: machineData.machineBlocks.schemaVersion,
+      generatedAt: machineData.machineBlocks.generatedAt,
+      machineBlocks: machineData.machineBlocks,
+    });
+    applyRequestIdHeader(response, req);
     recordApiResponse("/api/agents/:slug", req, response, startedAt);
     return response;
   }

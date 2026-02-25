@@ -1,4 +1,4 @@
-import { readFile } from "fs/promises";
+﻿import { readFile } from "fs/promises";
 import path from "path";
 import Link from "next/link";
 import { SkillMarkdown } from "@/components/agent/SkillMarkdown";
@@ -17,9 +17,14 @@ export default async function CapabilityContractsDocPage() {
           <p className="text-sm text-[var(--text-secondary)]">
             Machine-readable capability metadata for AI agents.
           </p>
-          <Link href="/docs" className="text-sm text-[var(--accent-heart)] hover:underline">
-            Back to API Docs
-          </Link>
+          <p className="text-xs font-mono text-[var(--accent-heart)]">
+            1) /search/ai -&gt; 2) /snapshot -&gt; 3) /contract + /trust -&gt; then decide
+          </p>
+          <div className="flex flex-wrap gap-3 text-sm">
+            <Link href="/for-agents" className="text-[var(--accent-heart)] hover:underline">/for-agents</Link>
+            <Link href="/docs" className="text-[var(--accent-heart)] hover:underline">Back to API Docs</Link>
+            <a href="/llms.txt" className="text-[var(--accent-heart)] hover:underline">/llms.txt</a>
+          </div>
         </header>
 
         <section className="agent-card p-5">
@@ -29,3 +34,4 @@ export default async function CapabilityContractsDocPage() {
     </main>
   );
 }
+

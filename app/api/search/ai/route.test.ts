@@ -44,6 +44,11 @@ describe("GET /api/search/ai", () => {
     const data = await res.json();
 
     expect(res.status).toBe(200);
+    expect(mockFetchWithTimeout).toHaveBeenCalledWith(
+      expect.stringContaining("/api/v1/search?"),
+      expect.any(Object),
+      6000
+    );
     expect(data.topAgents).toHaveLength(1);
     expect(data.topAgents[0].name).toBe("Agent One");
     expect(data.topAgents[0].trust).toBe(0.92);

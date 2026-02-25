@@ -6,6 +6,12 @@ import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 import { recordApiResponse } from "@/lib/metrics/record";
 import { getTrustSummary } from "@/lib/trust/summary";
 
+function toExternalProtocolName(protocol: unknown): string {
+  if (typeof protocol !== "string") return "";
+  if (protocol.toUpperCase() === "OPENCLEW") return "OPENCLAW";
+  return protocol;
+}
+
 function toTrustScore(reputationScore: number | null): number | null {
   if (reputationScore == null || !Number.isFinite(reputationScore)) return null;
   if (reputationScore <= 1 && reputationScore >= 0) return Number(reputationScore.toFixed(3));
@@ -54,7 +60,9 @@ export async function GET(
     name: agent.name,
     description: agent.description,
     capabilities: (agent.capabilities as string[] | null) ?? [],
-    protocols: (agent.protocols as string[] | null) ?? [],
+    protocols: ((agent.protocols as string[] | null) ?? [])
+      .map((p) => toExternalProtocolName(p))
+      .filter((p) => p.length > 0),
     safetyScore: agent.safetyScore,
     overallRank: agent.overallRank,
     trustScore: toTrustScore(trust?.reputationScore ?? null),
@@ -62,6 +70,8 @@ export async function GET(
     source: agent.source,
     updatedAt: agent.updatedAt?.toISOString?.() ?? null,
   });
+  response.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
+  response.headers.set("Content-Type", "application/json; charset=utf-8");
   applyRequestIdHeader(response, req);
   recordApiResponse("/api/agents/:slug/snapshot", req, response, startedAt);
   return response;

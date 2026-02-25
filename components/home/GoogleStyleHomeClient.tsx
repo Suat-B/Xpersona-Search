@@ -20,14 +20,16 @@ interface Props {
   isAuthenticated?: boolean;
   privacyUrl: string;
   termsUrl: string;
+  bottomContent?: React.ReactNode;
 }
 
-export function GoogleStyleHomeClient({ isAuthenticated, privacyUrl, termsUrl }: Props) {
+export function GoogleStyleHomeClient({ isAuthenticated, privacyUrl, termsUrl, bottomContent }: Props) {
   return (
     <GoogleStyleHome
       isAuthenticated={isAuthenticated}
       privacyUrl={privacyUrl}
       termsUrl={termsUrl}
+      bottomContent={bottomContent}
     />
   );
 }
