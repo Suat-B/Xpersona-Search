@@ -222,36 +222,21 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
       [onSelect, onQuerySelect, onClose]
     );
 
-    const handlePointerSelect = useCallback(
-      (e: React.PointerEvent, item: SuggestionItem) => {
-        e.preventDefault();
-        selectItem(item);
-      },
-      [selectItem]
-    );
-
-    const handleMouseDownSelect = useCallback(
-      (e: React.MouseEvent, item: SuggestionItem) => {
-        e.preventDefault();
-        selectItem(item);
-      },
-      [selectItem]
-    );
-
-    const handleTouchStartSelect = useCallback(
-      (e: React.TouchEvent, item: SuggestionItem) => {
-        e.preventDefault();
-        selectItem(item);
-      },
-      [selectItem]
-    );
+    // NOTE: Do not select on pointer/touch down.
+    // On mobile, selecting + closing the panel on touchstart/pointerdown can cause the
+    // subsequent "click" to land on whatever is now underneath the finger (ghost click).
+    // We instead select on click/tap, and use mousedown only to prevent the input from
+    // blurring on desktop.
+    const handleMouseDownOnly = useCallback((e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+    }, []);
 
     const handleClickSelect = useCallback(
       (e: React.MouseEvent, item: SuggestionItem) => {
         e.preventDefault();
-        if (e.detail === 0) {
-          selectItem(item);
-        }
+        e.stopPropagation();
+        selectItem(item);
       },
       [selectItem]
     );
@@ -454,7 +439,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
     }, [visible, onClose, anchorRef]);
 
     const handleRemoveRecentPointer = useCallback(
-      (e: React.PointerEvent, text: string) => {
+      (e: React.MouseEvent, text: string) => {
         e.stopPropagation();
         e.preventDefault();
         removeRecentSearch(text);
@@ -483,10 +468,8 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
           <li key={`r-${idx}-${item.text}`} data-index={idx}>
             <button
               type="button"
-              onPointerDown={(e) => handlePointerSelect(e, item)}
-              onMouseDown={(e) => handleMouseDownSelect(e, item)}
-              onTouchStart={(e) => handleTouchStartSelect(e, item)}
               onClick={(e) => handleClickSelect(e, item)}
+              onMouseDown={handleMouseDownOnly}
               onMouseEnter={() => setHighlightedIndex(idx)}
               data-index={idx}
               role="option"
@@ -497,15 +480,15 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
             >
               <ClockIcon />
               <span className="truncate flex-1 font-medium">{item.text}</span>
-              <span
-                role="button"
-                tabIndex={-1}
-                onPointerDown={(e) => handleRemoveRecentPointer(e, item.text)}
-                onClick={(e) => {
-                  e.preventDefault();
-                }}
-                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-white/10 text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-opacity"
-                aria-label={`Remove ${item.text} from recent`}
+                <span
+                  role="button"
+                  tabIndex={-1}
+                  onMouseDown={(e) => handleRemoveRecentPointer(e, item.text)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                  }}
+                  className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-white/10 text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-opacity"
+                  aria-label={`Remove ${item.text} from recent`}
               >
                 <RemoveIcon />
               </span>
@@ -524,10 +507,8 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
           <li key={`t-${idx}-${item.text}`} data-index={idx}>
             <button
               type="button"
-              onPointerDown={(e) => handlePointerSelect(e, item)}
-              onMouseDown={(e) => handleMouseDownSelect(e, item)}
-              onTouchStart={(e) => handleTouchStartSelect(e, item)}
               onClick={(e) => handleClickSelect(e, item)}
+              onMouseDown={handleMouseDownOnly}
               onMouseEnter={() => setHighlightedIndex(idx)}
               data-index={idx}
               role="option"
@@ -555,10 +536,8 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
           <li key={`q-${idx}-${item.text}`} data-index={idx}>
             <button
               type="button"
-              onPointerDown={(e) => handlePointerSelect(e, item)}
-              onMouseDown={(e) => handleMouseDownSelect(e, item)}
-              onTouchStart={(e) => handleTouchStartSelect(e, item)}
               onClick={(e) => handleClickSelect(e, item)}
+              onMouseDown={handleMouseDownOnly}
               onMouseEnter={() => setHighlightedIndex(idx)}
               data-index={idx}
               role="option"
@@ -586,10 +565,8 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
           <li key={item.agent.id} data-index={idx}>
             <Link
               href={`/agent/${item.agent.slug}`}
-              onPointerDown={(e) => handlePointerSelect(e, item)}
-              onMouseDown={(e) => handleMouseDownSelect(e, item)}
-              onTouchStart={(e) => handleTouchStartSelect(e, item)}
               onClick={(e) => handleClickSelect(e, item)}
+              onMouseDown={handleMouseDownOnly}
               onMouseEnter={() => setHighlightedIndex(idx)}
               data-index={idx}
               role="option"

@@ -21,12 +21,21 @@ export async function GET(
     return response;
   }
 
-  const suggestions = await buildSuggestions(resolved);
+  let suggestions: Awaited<ReturnType<typeof buildSuggestions>> | null = null;
+  try {
+    suggestions = await buildSuggestions(resolved);
+  } catch (err) {
+    console.warn("[Reliability] suggest degraded:", err);
+    suggestions = null;
+  }
+
   const response = NextResponse.json({
     agentId: resolved,
-    recommended_actions: suggestions.recommendedActions,
-    expected_success_rate_gain: suggestions.expectedSuccessRateGain,
-    expected_cost_reduction: suggestions.expectedCostReduction,
+    recommended_actions: suggestions?.recommendedActions ?? [
+      "Maintain current strategy and monitor for new failure patterns.",
+    ],
+    expected_success_rate_gain: suggestions?.expectedSuccessRateGain ?? 0,
+    expected_cost_reduction: suggestions?.expectedCostReduction ?? 0,
   });
   applyRequestIdHeader(response, req);
   recordApiResponse("/api/reliability/suggest/:agentId", req, response, startedAt);

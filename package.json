@@ -18,6 +18,7 @@
     "openapi:generate": "node scripts/generate-openapi.mjs",
     "openapi:check": "node scripts/generate-openapi.mjs --check",
     "ci:api": "npm run check:utf8 && npm run api:inventory && npm run api:refs && npm run api:legacy-smoke && npm run openapi:check",
+    "smoke:graph": "node scripts/smoke-graph.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
@@ -62,6 +63,7 @@
     "sdk:publish:search": "node scripts/publish-search-sdk.mjs",
     "sdk:publish:search:dry": "node scripts/publish-search-sdk.mjs --dry-run",
     "deploy": "node scripts/deploy.mjs",
+    "smoke:reliability": "node scripts/smoke-reliability.mjs",
     "setup:prod": "node scripts/setup-production.mjs"
   },
   "dependencies": {
