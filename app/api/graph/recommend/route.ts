@@ -1,17 +1,11 @@
-import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { recommendAgents } from "@/lib/gpg/recommend";
 import { ensureTaskSignature } from "@/lib/gpg/task-canonicalization";
-import { hasTrustTable } from "@/lib/trust/db";
-import { getActiveReceiptKeyId } from "@/lib/trust/receipts";
-import { buildGpgReceiptPayload, signGpgReceipt } from "@/lib/gpg/receipts";
-import { db } from "@/lib/db";
-import { trustReceipts } from "@/lib/db/schema";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 
 const RecommendSchema = z.object({
-  task: z.string().min(1).max(500),
+  q: z.string().min(1).max(500),
   taskType: z.string().max(32).optional(),
   tags: z.array(z.string().min(1).max(64)).optional(),
   budget: z.number().min(0).optional(),
@@ -24,7 +18,7 @@ const RecommendSchema = z.object({
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const parsed = RecommendSchema.safeParse({
-    task: url.searchParams.get("task"),
+    q: url.searchParams.get("q"),
     taskType: url.searchParams.get("taskType") ?? undefined,
     tags: url.searchParams.get("tags")?.split(",").filter(Boolean),
     budget: url.searchParams.get("budget") ? Number(url.searchParams.get("budget")) : undefined,
@@ -43,7 +37,7 @@ export async function GET(req: NextRequest) {
   }
 
   const signature = await ensureTaskSignature({
-    rawText: parsed.data.task,
+    rawText: parsed.data.q,
     taskType: parsed.data.taskType,
     tags: parsed.data.tags,
   });
@@ -58,50 +52,6 @@ export async function GET(req: NextRequest) {
     },
     limit: parsed.data.limit,
   });
-
-  const idempotencyKey = req.headers.get("idempotency-key")?.trim() ?? null;
-  const topAgentId = response.topAgents[0]?.agentId ?? null;
-  if (topAgentId && (await hasTrustTable("trust_receipts"))) {
-    const keyId = getActiveReceiptKeyId();
-    if (keyId) {
-      const receiptIdempotency = idempotencyKey && idempotencyKey.length <= 64 ? idempotencyKey : null;
-      const { payload, payloadHash } = buildGpgReceiptPayload({
-        receiptType: "gpg_recommend_issued",
-        agentId: topAgentId,
-        eventPayload: {
-          clusterId: response.clusterId,
-          taskType: response.taskType,
-          task: parsed.data.task,
-          constraints: {
-            budget: parsed.data.budget ?? null,
-            maxLatencyMs: parsed.data.maxLatencyMs ?? null,
-            minSuccessProb: parsed.data.minSuccessProb ?? null,
-            minQuality: parsed.data.minQuality ?? null,
-          },
-          topAgentIds: response.topAgents.map((agent) => agent.agentId),
-          alternatives: response.alternatives.map((agent) => agent.agentId),
-          issuedAt: new Date().toISOString(),
-        },
-        idempotencyKey: receiptIdempotency,
-      });
-      const signatureValue = signGpgReceipt(payloadHash, keyId);
-      try {
-        await db.insert(trustReceipts).values({
-          receiptType: payload.receiptType,
-          agentId: payload.agentId,
-          counterpartyAgentId: payload.counterpartyAgentId ?? null,
-          eventPayload: payload.eventPayload,
-          payloadHash,
-          signature: signatureValue,
-          keyId,
-          nonce: crypto.randomUUID(),
-          idempotencyKey: receiptIdempotency,
-        });
-      } catch {
-        // best-effort
-      }
-    }
-  }
 
   const res = NextResponse.json({ success: true, data: response });
   applyRequestIdHeader(res, req);

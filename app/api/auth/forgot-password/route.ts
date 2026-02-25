@@ -5,6 +5,7 @@ import { users, verificationTokens } from "@/lib/db/schema";
 import { eq, and, isNotNull } from "drizzle-orm";
 import { sendPasswordResetEmail } from "@/lib/email";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 
 function isValidEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
@@ -28,13 +29,12 @@ export async function POST(request: Request) {
   const ip = getClientIp(request);
   const limit = checkRateLimit(ip, "forgot-password");
   if (!limit.ok) {
-    return NextResponse.json(
-      { success: false, message: "Too many attempts. Please try again later." },
-      {
-        status: 429,
-        headers: { "Retry-After": String(limit.retryAfter ?? 900) },
-      }
-    );
+    return jsonError(request, {
+      code: "RATE_LIMITED",
+      message: "Too many attempts. Please try again later.",
+      status: 429,
+      retryAfterMs: (limit.retryAfter ?? 900) * 1000,
+    });
   }
 
   try {
@@ -42,17 +42,19 @@ export async function POST(request: Request) {
     const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
 
     if (!email) {
-      return NextResponse.json(
-        { success: false, message: "Email is required" },
-        { status: 400 }
-      );
+      return jsonError(request, {
+        code: "VALIDATION_ERROR",
+        message: "Email is required",
+        status: 400,
+      });
     }
 
     if (!isValidEmail(email)) {
-      return NextResponse.json(
-        { success: false, message: "Invalid email format" },
-        { status: 400 }
-      );
+      return jsonError(request, {
+        code: "VALIDATION_ERROR",
+        message: "Invalid email format",
+        status: 400,
+      });
     }
 
     const [user] = await db
@@ -89,9 +91,13 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ success: true });
+    const response = NextResponse.json({ success: true });
+    applyRequestIdHeader(response, request);
+    return response;
   } catch (err) {
     console.error("[forgot-password] error:", err);
-    return NextResponse.json({ success: true });
+    const response = NextResponse.json({ success: true });
+    applyRequestIdHeader(response, request);
+    return response;
   }
 }

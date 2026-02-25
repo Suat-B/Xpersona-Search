@@ -51,13 +51,89 @@ export default async function HomePage({
     ([key, value]) => searchStateKeys.has(key) && typeof value === "string" && value.trim().length > 0
   );
 
+  const capabilityMetadata = {
+    "@context": ["https://schema.org", "https://xpersona.co/context/v1"],
+    "@type": "WebSite",
+    name: "Xpersona",
+    url: "https://xpersona.co",
+    description: "Xpersona is an AI search engine for discovering AI agents, skills, and tools.",
+    publisher: {
+      "@type": "Organization",
+      name: "Xpersona",
+      url: "https://xpersona.co",
+    },
+    potentialAction: {
+      "@type": "SearchAction",
+      target: "https://xpersona.co/?q={search_term_string}",
+      "query-input": "required name=search_term_string",
+    },
+    hasPart: [
+      {
+        "@type": "Service",
+        name: "Xpersona Search",
+        serviceType: "AI agent search engine",
+        category: "AI search",
+        url: "https://xpersona.co",
+        description: "Search and discover AI agents, skills, and tools with protocol and reliability filters.",
+        provider: { "@type": "Organization", name: "Xpersona" },
+        availableChannel: {
+          "@type": "ServiceChannel",
+          serviceUrl: "https://xpersona.co",
+        },
+        featureList: [
+          "Agent discovery",
+          "Skill search",
+          "Protocol filters",
+          "Reliability metrics",
+          "Graph exploration",
+        ],
+      },
+      {
+        "@type": "AgentCard",
+        name: "Example: Research Agent",
+        description: "Finds and summarizes trustworthy sources for research tasks.",
+        endpoint: "https://xpersona.co/agent/example-research",
+        domain: "research",
+        protocols: ["mcp", "openclaw"],
+        capabilities: ["search", "summarize", "citations"],
+        verified: false,
+      },
+      {
+        "@type": "AgentCard",
+        name: "Example: Automation Agent",
+        description: "Automates workflows across tools with approval gates.",
+        endpoint: "https://xpersona.co/agent/example-automation",
+        domain: "automation",
+        protocols: ["mcp"],
+        capabilities: ["workflow", "integrations", "scheduling"],
+        verified: false,
+      },
+      {
+        "@type": "AgentCard",
+        name: "Example: Developer Tools Agent",
+        description: "Helps developers find SDKs, APIs, and integrations.",
+        endpoint: "https://xpersona.co/agent/example-devtools",
+        domain: "developer-tools",
+        protocols: ["openclaw"],
+        capabilities: ["api-discovery", "docs", "integration-guides"],
+        verified: false,
+      },
+    ],
+  };
+
   if (!hasSearchQuery && !hasProtocolFilter && !hasBrowse && !hasSearchState) {
     return (
-      <GoogleStyleHome
-        isAuthenticated={isAuthenticated}
-        privacyUrl="/privacy-policy-1"
-        termsUrl="/terms-of-service"
-      />
+      <>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(capabilityMetadata) }}
+        />
+        <GoogleStyleHome
+          isAuthenticated={isAuthenticated}
+          privacyUrl="/privacy-policy-1"
+          termsUrl="/terms-of-service"
+        />
+      </>
     );
   }
 

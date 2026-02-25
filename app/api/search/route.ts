@@ -30,6 +30,7 @@ import { hashQuery } from "@/lib/search/click-tracking";
 import { getEngagementParams, getRankingWeights } from "@/lib/search/scoring/hybrid-rank";
 import { getAuthUser } from "@/lib/auth-utils";
 import { isAdmin } from "@/lib/admin";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 import {
   getEmbeddingProvider,
   getSemanticCandidatesLimit,
@@ -711,17 +712,16 @@ export async function GET(req: NextRequest) {
     : SEARCH_ANON_RATE_LIMIT;
   const rlResult = await checkSearchRateLimit(req, isAuthenticated);
   if (!rlResult.allowed) {
-    return NextResponse.json(
-      { error: "Too many requests. Please try again later." },
-      {
-        status: 429,
-        headers: {
-          "Retry-After": String(rlResult.retryAfter ?? 60),
-          "X-RateLimit-Remaining": "0",
-          "X-RateLimit-Limit": String(rateLimitLimit),
-        },
-      }
-    );
+    const response = jsonError(req, {
+      code: "RATE_LIMITED",
+      message: "Too many requests. Please try again later.",
+      status: 429,
+      retryAfterMs: (rlResult.retryAfter ?? 60) * 1000,
+      details: { limit: rateLimitLimit },
+    });
+    response.headers.set("X-RateLimit-Remaining", "0");
+    response.headers.set("X-RateLimit-Limit", String(rateLimitLimit));
+    return response;
   }
 
   // --- Input validation ---
@@ -735,14 +735,22 @@ export async function GET(req: NextRequest) {
       const msg = err.errors
         .map((e) => `${e.path.join(".")}: ${e.message}`)
         .join("; ");
-      return NextResponse.json({ error: msg }, { status: 400 });
+      return jsonError(req, {
+        code: "BAD_REQUEST",
+        message: msg,
+        status: 400,
+      });
     }
     throw err;
   }
 
   if (params.includePending || params.includePrivate || params.includeUnsafeMedia) {
     if (!authUser || !isAdmin(authUser)) {
-      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+      return jsonError(req, {
+        code: "FORBIDDEN",
+        message: "FORBIDDEN",
+        status: 403,
+      });
     }
   }
   const clientType = req.headers.get("x-client-type");
@@ -796,20 +804,27 @@ export async function GET(req: NextRequest) {
       "public, s-maxage=30, stale-while-revalidate=60"
     );
     response.headers.set("X-Cache", "HIT");
+    applyRequestIdHeader(response, req);
     return response;
   }
 
   // --- Circuit breaker check ---
   if (!searchCircuitBreaker.isAllowed()) {
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         results: [],
         pagination: { hasMore: false, nextCursor: null, total: 0 },
         facets: { protocols: [] },
-        error: "Search is temporarily degraded. Please try again shortly.",
+        error: {
+          code: "CIRCUIT_OPEN",
+          message: "Search is temporarily degraded. Please try again shortly.",
+          retryAfterMs: 30_000,
+        },
       },
       { status: 503, headers: { "Retry-After": "30" } }
     );
+    applyRequestIdHeader(response, req);
+    return response;
   }
 
   try {
@@ -822,6 +837,7 @@ export async function GET(req: NextRequest) {
         "public, s-maxage=30, stale-while-revalidate=60"
       );
       response.headers.set("X-Cache", "MISS");
+      applyRequestIdHeader(response, req);
       return response;
     }
 
@@ -1775,6 +1791,7 @@ export async function GET(req: NextRequest) {
       );
     }
     response.headers.set("X-RateLimit-Limit", String(rateLimitLimit));
+    applyRequestIdHeader(response, req);
     return response;
   } catch (err) {
     console.error("[Search] Error:", err);
@@ -1788,18 +1805,24 @@ export async function GET(req: NextRequest) {
         _stale: true,
       });
       response.headers.set("X-Cache", "STALE");
+      applyRequestIdHeader(response, req);
       return response;
     }
 
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
-        error: sanitizeError(err),
+        error: {
+          code: "INTERNAL_ERROR",
+          message: sanitizeError(err),
+        },
         results: [],
         pagination: { hasMore: false, nextCursor: null, total: 0 },
         facets: { protocols: [] },
       },
       { status: 500 }
     );
+    applyRequestIdHeader(response, req);
+    return response;
   }
 }
 

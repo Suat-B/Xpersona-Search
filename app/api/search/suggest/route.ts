@@ -10,6 +10,7 @@ import { suggestCircuitBreaker } from "@/lib/search/circuit-breaker";
 import { sanitizeForStorage } from "@/lib/search/query-engine";
 import { TASK_TYPES } from "@/lib/search/taxonomy";
 import { SUGGEST_ENTITIES } from "@/lib/search/suggest-entities";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 
 const SuggestSchema = z.object({
   q: z
@@ -323,13 +324,13 @@ export async function GET(req: NextRequest) {
   // Rate limiting
   const rlResult = await checkSearchRateLimit(req);
   if (!rlResult.allowed) {
-    return NextResponse.json(
-      { error: "Too many requests. Please try again later." },
-      {
-        status: 429,
-        headers: { "Retry-After": String(rlResult.retryAfter ?? 60) },
-      }
-    );
+    const response = jsonError(req, {
+      code: "RATE_LIMITED",
+      message: "Too many requests. Please try again later.",
+      status: 429,
+      retryAfterMs: (rlResult.retryAfter ?? 60) * 1000,
+    });
+    return response;
   }
 
   let params: SuggestParams;
@@ -338,7 +339,11 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     if (err instanceof ZodError) {
       const msg = err.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
-      return NextResponse.json({ error: msg }, { status: 400 });
+      return jsonError(req, {
+        code: "BAD_REQUEST",
+        message: msg,
+        status: 400,
+      });
     }
     throw err;
   }
@@ -365,15 +370,26 @@ export async function GET(req: NextRequest) {
     const response = NextResponse.json(cached);
     response.headers.set("Cache-Control", "public, s-maxage=30, stale-while-revalidate=60");
     response.headers.set("X-Cache", "HIT");
+    applyRequestIdHeader(response, req);
     return response;
   }
 
   // Circuit breaker
   if (!suggestCircuitBreaker.isAllowed()) {
-    return NextResponse.json(
-      { querySuggestions: [], agentSuggestions: [] },
+    const response = NextResponse.json(
+      {
+        querySuggestions: [],
+        agentSuggestions: [],
+        error: {
+          code: "CIRCUIT_OPEN",
+          message: "Suggest is temporarily degraded. Please try again shortly.",
+          retryAfterMs: 15_000,
+        },
+      },
       { status: 503, headers: { "Retry-After": "15" } }
     );
+    applyRequestIdHeader(response, req);
+    return response;
   }
 
   try {
@@ -687,6 +703,7 @@ export async function GET(req: NextRequest) {
     const response = NextResponse.json(responseBody);
     response.headers.set("Cache-Control", "public, s-maxage=30, stale-while-revalidate=60");
     response.headers.set("X-Cache", "MISS");
+    applyRequestIdHeader(response, req);
     return response;
   } catch (err) {
     console.error("[Search Suggest] Error:", err);
@@ -696,12 +713,22 @@ export async function GET(req: NextRequest) {
     if (stale) {
       const response = NextResponse.json(stale);
       response.headers.set("X-Cache", "STALE");
+      applyRequestIdHeader(response, req);
       return response;
     }
 
-    return NextResponse.json(
-      { error: sanitizeError(err), querySuggestions: [], agentSuggestions: [] },
+    const response = NextResponse.json(
+      {
+        error: {
+          code: "INTERNAL_ERROR",
+          message: sanitizeError(err),
+        },
+        querySuggestions: [],
+        agentSuggestions: [],
+      },
       { status: 500 }
     );
+    applyRequestIdHeader(response, req);
+    return response;
   }
 }

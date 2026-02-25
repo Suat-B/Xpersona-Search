@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { users, verificationTokens } from "@/lib/db/schema";
 import { eq, and, like } from "drizzle-orm";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 
 const BCRYPT_ROUNDS = 12;
 
@@ -14,24 +15,27 @@ export async function POST(request: Request) {
     const confirmPassword = typeof body?.confirmPassword === "string" ? body.confirmPassword : "";
 
     if (!token) {
-      return NextResponse.json(
-        { success: false, message: "Invalid or expired link" },
-        { status: 400 }
-      );
+      return jsonError(request, {
+        code: "VALIDATION_ERROR",
+        message: "Invalid or expired link",
+        status: 400,
+      });
     }
 
     if (!password || password.length < 8) {
-      return NextResponse.json(
-        { success: false, message: "Password must be at least 8 characters" },
-        { status: 400 }
-      );
+      return jsonError(request, {
+        code: "VALIDATION_ERROR",
+        message: "Password must be at least 8 characters",
+        status: 400,
+      });
     }
 
     if (password !== confirmPassword) {
-      return NextResponse.json(
-        { success: false, message: "Passwords do not match" },
-        { status: 400 }
-      );
+      return jsonError(request, {
+        code: "VALIDATION_ERROR",
+        message: "Passwords do not match",
+        status: 400,
+      });
     }
 
     const now = new Date();
@@ -47,28 +51,31 @@ export async function POST(request: Request) {
       .limit(1);
 
     if (!vt) {
-      return NextResponse.json(
-        { success: false, message: "Invalid or expired link. Please request a new reset." },
-        { status: 400 }
-      );
+      return jsonError(request, {
+        code: "VALIDATION_ERROR",
+        message: "Invalid or expired link. Please request a new reset.",
+        status: 400,
+      });
     }
 
     if (vt.expires < now) {
       await db
         .delete(verificationTokens)
         .where(eq(verificationTokens.identifier, vt.identifier));
-      return NextResponse.json(
-        { success: false, message: "Invalid or expired link. Please request a new reset." },
-        { status: 400 }
-      );
+      return jsonError(request, {
+        code: "VALIDATION_ERROR",
+        message: "Invalid or expired link. Please request a new reset.",
+        status: 400,
+      });
     }
 
     const userId = vt.identifier.replace(/^reset:/, "");
     if (!userId) {
-      return NextResponse.json(
-        { success: false, message: "Invalid or expired link" },
-        { status: 400 }
-      );
+      return jsonError(request, {
+        code: "VALIDATION_ERROR",
+        message: "Invalid or expired link",
+        status: 400,
+      });
     }
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -87,12 +94,15 @@ export async function POST(request: Request) {
         )
       );
 
-    return NextResponse.json({ success: true });
+    const response = NextResponse.json({ success: true });
+    applyRequestIdHeader(response, request);
+    return response;
   } catch (err) {
     console.error("[reset-password] error:", err);
-    return NextResponse.json(
-      { success: false, message: "Something went wrong. Please try again." },
-      { status: 500 }
-    );
+    return jsonError(request, {
+      code: "INTERNAL_ERROR",
+      message: "Something went wrong. Please try again.",
+      status: 500,
+    });
   }
 }

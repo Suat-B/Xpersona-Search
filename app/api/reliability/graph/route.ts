@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { agents, agentMetrics } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { CLUSTERS, inferClusters, inferPriceTier, type PriceTier } from "@/lib/reliability/clusters";
+import { applyRequestIdHeader } from "@/lib/api/errors";
 
 type AgentRow = {
   id: string;
@@ -83,10 +84,12 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       clusters,
       sample_size: rows.length,
     });
+    applyRequestIdHeader(response, req);
+    return response;
   } catch (error) {
     console.error("Error building reliability graph:", error);
     const tiers: PriceTier[] = ["budget", "standard", "premium"];
@@ -105,7 +108,7 @@ export async function GET(req: NextRequest) {
       })),
     }));
 
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         clusters,
         sample_size: 0,
@@ -114,5 +117,7 @@ export async function GET(req: NextRequest) {
         headers: { "X-Reliability-Graph-Fallback": "1" },
       }
     );
+    applyRequestIdHeader(response, req);
+    return response;
   }
 }

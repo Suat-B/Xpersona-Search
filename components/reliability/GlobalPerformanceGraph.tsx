@@ -65,21 +65,19 @@ export function GlobalPerformanceGraph() {
   }, []);
 
   return (
-    <section className="mt-10 rounded-3xl bg-black/20 p-6 sm:p-8">
+    <section className="mt-8 rounded-2xl border border-white bg-black p-6 sm:p-8">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-[var(--text-tertiary)]">Global Graph</p>
-          <h2 className="text-2xl sm:text-3xl font-semibold text-[var(--text-primary)]">
-            Global Performance Graph
-          </h2>
-          <p className="text-sm text-[var(--text-secondary)] max-w-2xl">
+          <p className="text-xs uppercase tracking-[0.3em] text-white">Global Graph</p>
+          <h2 className="text-2xl sm:text-3xl font-semibold text-white">Global Performance Graph</h2>
+          <p className="text-sm text-white max-w-2xl">
             Percentile summaries across capability clusters and price tiers, derived from live agent telemetry.
           </p>
         </div>
         {data && (
-          <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-tertiary)]">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-white">
             <span>Sample size: {data.sample_size}</span>
-            <span className="hidden sm:inline">•</span>
+            <span className="hidden sm:inline">-</span>
             <span>{data.clusters.length} clusters</span>
           </div>
         )}
@@ -87,13 +85,11 @@ export function GlobalPerformanceGraph() {
 
       {data && (
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <label className="text-xs text-[var(--text-tertiary)] uppercase tracking-[0.2em]">
-            Cluster
-          </label>
+          <label className="text-xs text-white uppercase tracking-[0.2em]">Cluster</label>
           <select
             value={selectedCluster}
             onChange={(e) => setSelectedCluster(e.target.value)}
-            className="rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2 text-xs text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-emerald-400/40"
+            className="rounded-xl border border-white bg-black px-3 py-2 text-xs text-white focus:outline-none focus:border-white"
           >
             <option value="all">All</option>
             {data.clusters.map((cluster) => (
@@ -103,13 +99,11 @@ export function GlobalPerformanceGraph() {
             ))}
           </select>
 
-          <label className="text-xs text-[var(--text-tertiary)] uppercase tracking-[0.2em]">
-            Tier
-          </label>
+          <label className="text-xs text-white uppercase tracking-[0.2em]">Tier</label>
           <select
             value={selectedTier}
             onChange={(e) => setSelectedTier(e.target.value as typeof selectedTier)}
-            className="rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2 text-xs text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-emerald-400/40"
+            className="rounded-xl border border-white bg-black px-3 py-2 text-xs text-white focus:outline-none focus:border-white"
           >
             <option value="all">All</option>
             <option value="budget">Budget</option>
@@ -119,11 +113,9 @@ export function GlobalPerformanceGraph() {
         </div>
       )}
 
-      {loading && (
-        <div className="mt-6 text-sm text-[var(--text-tertiary)]">Loading graph...</div>
-      )}
+      {loading && <div className="mt-6 text-sm text-white">Loading graph...</div>}
       {error && (
-        <div className="mt-6 rounded-xl border border-rose-400/40 bg-rose-500/10 p-3 text-sm text-rose-200">
+        <div className="mt-6 rounded-xl border border-white bg-black p-3 text-sm text-white">
           {error}
         </div>
       )}
@@ -131,42 +123,35 @@ export function GlobalPerformanceGraph() {
       {data && (
         <div className="mt-6 grid gap-4 lg:grid-cols-2">
           {data.clusters
-            .filter((cluster) => selectedCluster === "all" || cluster.id === selectedCluster)
+            .filter((cluster) => selectedCluster == "all" || cluster.id == selectedCluster)
             .map((cluster) => (
-            <div key={cluster.id} className="rounded-2xl border border-white/[0.08] bg-black/30 p-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-[var(--text-primary)]">{cluster.label}</p>
-                <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
-                  {cluster.id}
-                </span>
+              <div key={cluster.id} className="rounded-2xl border border-white bg-black p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-white">{cluster.label}</p>
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-white">{cluster.id}</span>
+                </div>
+                <div className="mt-3 space-y-3">
+                  {cluster.tiers
+                    .filter((tier) => selectedTier == "all" || tier.tier == selectedTier)
+                    .map((tier) => (
+                      <div key={`${cluster.id}-${tier.tier}`} className="rounded-xl border border-white bg-black p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs uppercase tracking-[0.2em] text-white">{tier.tier}</span>
+                          <span className="text-xs text-white">{tier.count} agents</span>
+                        </div>
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2 text-xs text-white">
+                          <span>Success p50: {formatPct(tier.success_p50)}</span>
+                          <span>Success p90: {formatPct(tier.success_p90)}</span>
+                          <span>Cost p50: {formatUsd(tier.cost_p50)}</span>
+                          <span>Cost p90: {formatUsd(tier.cost_p90)}</span>
+                          <span>Latency p50: {Math.round(tier.latency_p50)} ms</span>
+                          <span>Latency p90: {Math.round(tier.latency_p90)} ms</span>
+                        </div>
+                      </div>
+                    ))}
+                </div>
               </div>
-              <div className="mt-3 space-y-3">
-                {cluster.tiers
-                  .filter((tier) => selectedTier === "all" || tier.tier === selectedTier)
-                  .map((tier) => (
-                  <div
-                    key={`${cluster.id}-${tier.tier}`}
-                    className="rounded-xl border border-white/[0.08] bg-black/40 p-3"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
-                        {tier.tier}
-                      </span>
-                      <span className="text-xs text-[var(--text-tertiary)]">{tier.count} agents</span>
-                    </div>
-                    <div className="mt-2 grid gap-2 sm:grid-cols-2 text-xs text-[var(--text-secondary)]">
-                      <span>Success p50: {formatPct(tier.success_p50)}</span>
-                      <span>Success p90: {formatPct(tier.success_p90)}</span>
-                      <span>Cost p50: {formatUsd(tier.cost_p50)}</span>
-                      <span>Cost p90: {formatUsd(tier.cost_p90)}</span>
-                      <span>Latency p50: {Math.round(tier.latency_p50)} ms</span>
-                      <span>Latency p90: {Math.round(tier.latency_p90)} ms</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
+            ))}
         </div>
       )}
     </section>

@@ -5,15 +5,20 @@ import { eq, desc, sql } from "drizzle-orm";
 import { computeCalibrationError, getFailurePatterns, getPercentileRank } from "@/lib/reliability/metrics";
 import { computeHiringScore } from "@/lib/reliability/hiring";
 import { resolveAgentByIdOrSlug } from "@/lib/reliability/lookup";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
   const agent = await resolveAgentByIdOrSlug(id);
   if (!agent) {
-    return NextResponse.json({ success: false, message: "Agent not found" }, { status: 404 });
+    return jsonError(req, {
+      code: "NOT_FOUND",
+      message: "Agent not found",
+      status: 404,
+    });
   }
 
   let metrics: typeof agentMetrics.$inferSelect | undefined;
@@ -73,7 +78,7 @@ export async function GET(
     metricsUnavailable = true;
   }
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     agentId: agent.id,
     agentSlug: agent.slug,
     success_rate: metrics?.successRate ?? 0,
@@ -99,4 +104,6 @@ export async function GET(
     last_updated: metrics?.lastUpdated ?? null,
     metrics_unavailable: metricsUnavailable,
   });
+  applyRequestIdHeader(response, req);
+  return response;
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { resolveAgentByIdOrSlug } from "@/lib/reliability/lookup";
 import { sql } from "drizzle-orm";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 
 function parseWindowDays(value: string | null): number {
   if (!value) return 30;
@@ -20,7 +21,11 @@ export async function GET(
   const { id } = await params;
   const agent = await resolveAgentByIdOrSlug(id);
   if (!agent) {
-    return NextResponse.json({ success: false, message: "Agent not found" }, { status: 404 });
+    return jsonError(req, {
+      code: "NOT_FOUND",
+      message: "Agent not found",
+      status: 404,
+    });
   }
 
   const url = new URL(req.url);
@@ -84,7 +89,7 @@ export async function GET(
   const failureRows =
     (failures as unknown as { rows?: Array<{ type: string; frequency: number }> }).rows ?? [];
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     agentId: agent.id,
     agentSlug: agent.slug,
     window_days: windowDays,
@@ -109,4 +114,6 @@ export async function GET(
     },
     top_failure_modes: failureRows,
   });
+  applyRequestIdHeader(response, req);
+  return response;
 }

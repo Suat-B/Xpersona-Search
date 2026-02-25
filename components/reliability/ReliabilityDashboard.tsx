@@ -138,8 +138,8 @@ export function ReliabilityDashboard() {
   }, []);
 
   useEffect(() => {
-    if (!initialAgent || browseAgents.length === 0) return;
-    const match = browseAgents.find((agent) => agent.slug === initialAgent || agent.id === initialAgent);
+    if (!initialAgent || browseAgents.length == 0) return;
+    const match = browseAgents.find((agent) => agent.slug == initialAgent || agent.id == initialAgent);
     if (match) {
       setSelectedAgent(match);
     }
@@ -199,12 +199,12 @@ export function ReliabilityDashboard() {
   }, [browseAgents, browseFilter]);
 
   return (
-    <section className="mt-10 rounded-3xl bg-black/20 p-6 sm:p-8">
+    <section className="rounded-2xl border border-white bg-black p-6 sm:p-8">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-[var(--text-tertiary)]">Live Reliability</p>
-          <h2 className="text-2xl sm:text-3xl font-semibold text-[var(--text-primary)]">Agent Reliability Dashboard</h2>
-          <p className="text-sm text-[var(--text-secondary)] max-w-2xl">
+          <p className="text-xs uppercase tracking-[0.3em] text-white">Live Reliability</p>
+          <h2 className="text-2xl sm:text-3xl font-semibold text-white">Agent Reliability Dashboard</h2>
+          <p className="text-sm text-white max-w-2xl">
             Browse agents to load real-time metrics, failure modes, and self-optimization suggestions.
           </p>
         </div>
@@ -214,14 +214,14 @@ export function ReliabilityDashboard() {
               <button
                 type="button"
                 onClick={() => setMetricsReloadKey((v) => v + 1)}
-                className="px-4 py-2 rounded-full border border-white/[0.12] text-xs text-[var(--text-secondary)] hover:text-white hover:border-white/30 transition-colors"
+                className="px-4 py-2 rounded-full border border-white text-xs text-white hover:bg-white hover:text-black transition-colors"
               >
                 Refresh metrics
               </button>
               <button
                 type="button"
                 onClick={() => setSelectedAgent(null)}
-                className="px-4 py-2 rounded-full border border-white/[0.12] text-xs text-[var(--text-secondary)] hover:text-white hover:border-white/30 transition-colors"
+                className="px-4 py-2 rounded-full border border-white text-xs text-white hover:bg-white hover:text-black transition-colors"
               >
                 Clear selection
               </button>
@@ -231,10 +231,10 @@ export function ReliabilityDashboard() {
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.4fr]">
-        <div className="rounded-2xl border border-white/[0.08] bg-black/40 p-4 sm:p-5">
+        <div className="rounded-2xl border border-white bg-black p-4 sm:p-5">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-[var(--text-primary)] uppercase tracking-[0.22em]">Browse Agents</h3>
-            <span className="text-xs text-[var(--text-tertiary)]">{filteredAgents.length} shown</span>
+            <h3 className="text-sm font-semibold text-white uppercase tracking-[0.22em]">Browse Agents</h3>
+            <span className="text-xs text-white">{filteredAgents.length} shown</span>
           </div>
           <div className="mt-3">
             <input
@@ -242,18 +242,16 @@ export function ReliabilityDashboard() {
               placeholder="Filter agents by name or slug..."
               value={browseFilter}
               onChange={(e) => setBrowseFilter(e.target.value)}
-              className="w-full rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-emerald-400/40"
+              className="w-full rounded-xl border border-white bg-black px-3 py-2 text-xs text-white placeholder:text-white focus:outline-none focus:border-white"
             />
           </div>
           <div className="mt-4 space-y-3 max-h-[460px] overflow-y-auto pr-1">
-            {browseLoading && browseAgents.length === 0 && (
-              <div className="text-sm text-[var(--text-tertiary)]">Loading agents...</div>
+            {browseLoading && browseAgents.length == 0 && (
+              <div className="text-sm text-white">Loading agents...</div>
             )}
-            {browseError && (
-              <div className="text-sm text-rose-300">{browseError}</div>
-            )}
+            {browseError && <div className="text-sm text-white">{browseError}</div>}
             {filteredAgents.map((agent) => {
-              const isActive = selectedSlug === agent.slug;
+              const isActive = selectedSlug == agent.slug;
               return (
                 <button
                   key={agent.id}
@@ -261,21 +259,23 @@ export function ReliabilityDashboard() {
                   onClick={() => setSelectedAgent(agent)}
                   className={`w-full text-left rounded-xl border px-3 py-3 transition-all ${
                     isActive
-                      ? "border-emerald-400/40 bg-emerald-500/10"
-                      : "border-white/[0.08] hover:border-white/[0.2] hover:bg-white/[0.02]"
+                      ? "border-white bg-white text-black"
+                      : "border-white text-white hover:bg-white hover:text-black"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <p className="text-sm font-semibold text-[var(--text-primary)]">{agent.name}</p>
-                      <p className="text-xs text-[var(--text-tertiary)]">@{agent.slug}</p>
+                      <p className={`text-sm font-semibold ${isActive ? "text-black" : "text-white"}`}>
+                        {agent.name}
+                      </p>
+                      <p className={`text-xs ${isActive ? "text-black/70" : "text-white/70"}`}>@{agent.slug}</p>
                     </div>
-                    <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
+                    <span className={`text-[10px] uppercase tracking-[0.2em] ${isActive ? "text-black/70" : "text-white/70"}`}>
                       {isActive ? "Selected" : "Select"}
                     </span>
                   </div>
                   {agent.description && (
-                    <p className="mt-2 text-xs text-[var(--text-secondary)] line-clamp-2">
+                    <p className={`mt-2 text-xs ${isActive ? "text-black/70" : "text-white/80"} line-clamp-2`}>
                       {agent.description}
                     </p>
                   )}
@@ -307,46 +307,44 @@ export function ReliabilityDashboard() {
                     setBrowseLoading(false);
                   }
                 }}
-                className="w-full rounded-xl border border-white/[0.08] px-3 py-2 text-xs text-[var(--text-secondary)] hover:text-white hover:border-white/30 transition-colors"
+                className="w-full rounded-xl border border-white px-3 py-2 text-xs text-white hover:bg-white hover:text-black transition-colors"
               >
                 {browseLoading ? "Loading..." : "Load more"}
               </button>
             )}
           </div>
-          <div className="mt-5 rounded-xl border border-white/[0.08] bg-black/30 p-3">
-            <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Top Reliability</p>
-            <div className="mt-2 space-y-2 text-sm text-[var(--text-secondary)]">
+          <div className="mt-5 rounded-xl border border-white bg-black p-3">
+            <p className="text-xs uppercase tracking-[0.2em] text-white">Top Reliability</p>
+            <div className="mt-2 space-y-2 text-sm text-white">
               {topLoading && <div>Loading top agents...</div>}
-              {topError && <div className="text-rose-300">{topError}</div>}
-              {!topLoading && topAgents.length === 0 && !topError && (
-                <div>No ranked agents yet.</div>
-              )}
+              {topError && <div className="text-white">{topError}</div>}
+              {!topLoading && topAgents.length == 0 && !topError && <div>No ranked agents yet.</div>}
               {!topLoading &&
                 topAgents.map((agent) => (
                   <button
                     key={`top-${agent.id}`}
                     type="button"
                     onClick={() => setSelectedAgent(agent)}
-                    className="w-full text-left rounded-lg border border-white/[0.08] px-3 py-2 hover:border-white/30 transition-colors"
+                    className="w-full text-left rounded-lg border border-white px-3 py-2 hover:bg-white hover:text-black transition-colors"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-[var(--text-primary)]">{agent.name}</span>
-                      <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-tertiary)]">View</span>
+                      <span className="text-sm">{agent.name}</span>
+                      <span className="text-[10px] uppercase tracking-[0.2em]">View</span>
                     </div>
-                    <p className="text-xs text-[var(--text-tertiary)]">@{agent.slug}</p>
+                    <p className="text-xs">@{agent.slug}</p>
                   </button>
                 ))}
             </div>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-white/[0.08] bg-black/40 p-4 sm:p-5">
+        <div className="rounded-2xl border border-white bg-black p-4 sm:p-5">
           {!selectedAgent && (
             <div className="flex flex-col items-center justify-center min-h-[420px] text-center gap-3">
-              <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-400/30 flex items-center justify-center text-emerald-200 text-xl">
+              <div className="w-16 h-16 rounded-full border border-white flex items-center justify-center text-white text-xl">
                 o
               </div>
-              <p className="text-sm text-[var(--text-secondary)] max-w-sm">{EMPTY_STATE_MESSAGE}</p>
+              <p className="text-sm text-white max-w-sm">{EMPTY_STATE_MESSAGE}</p>
             </div>
           )}
 
@@ -354,106 +352,106 @@ export function ReliabilityDashboard() {
             <div>
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <h3 className="text-lg font-semibold text-[var(--text-primary)]">{selectedAgent.name}</h3>
-                  <p className="text-xs text-[var(--text-tertiary)]">@{selectedAgent.slug}</p>
+                  <h3 className="text-lg font-semibold text-white">{selectedAgent.name}</h3>
+                  <p className="text-xs text-white/70">@{selectedAgent.slug}</p>
                 </div>
-                <span className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Live Metrics</span>
+                <span className="text-xs uppercase tracking-[0.2em] text-white">Live Metrics</span>
               </div>
 
               {metricsError && (
-                <div className="mt-4 rounded-xl border border-rose-400/40 bg-rose-500/10 p-3 text-sm text-rose-200">
+                <div className="mt-4 rounded-xl border border-white bg-black p-3 text-sm text-white">
                   {metricsError}
                 </div>
               )}
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
-                  <p className="text-xs text-[var(--text-tertiary)] uppercase tracking-[0.2em]">Success Rate</p>
-                  <p className="text-2xl font-semibold text-[var(--text-primary)]">
+                <div className="rounded-xl border border-white bg-black p-3">
+                  <p className="text-xs text-white uppercase tracking-[0.2em]">Success Rate</p>
+                  <p className="text-2xl font-semibold text-white">
                     {metricsLoading ? "..." : formatPct(metrics?.success_rate)}
                   </p>
                 </div>
-                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
-                  <p className="text-xs text-[var(--text-tertiary)] uppercase tracking-[0.2em]">Avg Latency</p>
-                  <p className="text-2xl font-semibold text-[var(--text-primary)]">
+                <div className="rounded-xl border border-white bg-black p-3">
+                  <p className="text-xs text-white uppercase tracking-[0.2em]">Avg Latency</p>
+                  <p className="text-2xl font-semibold text-white">
                     {metricsLoading ? "..." : formatInt(metrics?.avg_latency_ms, " ms")}
                   </p>
                 </div>
-                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
-                  <p className="text-xs text-[var(--text-tertiary)] uppercase tracking-[0.2em]">Avg Cost</p>
-                  <p className="text-2xl font-semibold text-[var(--text-primary)]">
+                <div className="rounded-xl border border-white bg-black p-3">
+                  <p className="text-xs text-white uppercase tracking-[0.2em]">Avg Cost</p>
+                  <p className="text-2xl font-semibold text-white">
                     {metricsLoading ? "..." : formatNumber(metrics?.avg_cost_usd, " USD")}
                   </p>
                 </div>
-                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
-                  <p className="text-xs text-[var(--text-tertiary)] uppercase tracking-[0.2em]">Hallucination</p>
-                  <p className="text-2xl font-semibold text-[var(--text-primary)]">
+                <div className="rounded-xl border border-white bg-black p-3">
+                  <p className="text-xs text-white uppercase tracking-[0.2em]">Hallucination</p>
+                  <p className="text-2xl font-semibold text-white">
                     {metricsLoading ? "..." : formatPct(metrics?.hallucination_rate)}
                   </p>
                 </div>
               </div>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
-                  <p className="text-xs text-[var(--text-tertiary)] uppercase tracking-[0.2em]">Percentile Rank</p>
-                  <p className="text-2xl font-semibold text-[var(--text-primary)]">
+                <div className="rounded-xl border border-white bg-black p-3">
+                  <p className="text-xs text-white uppercase tracking-[0.2em]">Percentile Rank</p>
+                  <p className="text-2xl font-semibold text-white">
                     {metricsLoading ? "..." : formatInt(metrics?.percentile_rank)}
                   </p>
                 </div>
-                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
-                  <p className="text-xs text-[var(--text-tertiary)] uppercase tracking-[0.2em]">Hiring Score</p>
-                  <p className="text-2xl font-semibold text-[var(--text-primary)]">
+                <div className="rounded-xl border border-white bg-black p-3">
+                  <p className="text-xs text-white uppercase tracking-[0.2em]">Hiring Score</p>
+                  <p className="text-2xl font-semibold text-white">
                     {metricsLoading ? "..." : formatInt(metrics?.hiring_score)}
                   </p>
                 </div>
-                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
-                  <p className="text-xs text-[var(--text-tertiary)] uppercase tracking-[0.2em]">P50 Latency</p>
-                  <p className="text-2xl font-semibold text-[var(--text-primary)]">
+                <div className="rounded-xl border border-white bg-black p-3">
+                  <p className="text-xs text-white uppercase tracking-[0.2em]">P50 Latency</p>
+                  <p className="text-2xl font-semibold text-white">
                     {metricsLoading ? "..." : formatInt(metrics?.p50_latency, " ms")}
                   </p>
                 </div>
-                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
-                  <p className="text-xs text-[var(--text-tertiary)] uppercase tracking-[0.2em]">P95 Latency</p>
-                  <p className="text-2xl font-semibold text-[var(--text-primary)]">
+                <div className="rounded-xl border border-white bg-black p-3">
+                  <p className="text-xs text-white uppercase tracking-[0.2em]">P95 Latency</p>
+                  <p className="text-2xl font-semibold text-white">
                     {metricsLoading ? "..." : formatInt(metrics?.p95_latency, " ms")}
                   </p>
                 </div>
               </div>
 
-              <div className="mt-4 rounded-xl border border-white/[0.08] bg-black/30 p-3">
-                <p className="text-xs text-[var(--text-tertiary)] uppercase tracking-[0.2em]">Last 30 Day Trend</p>
-                <div className="mt-2 flex flex-wrap gap-4 text-sm text-[var(--text-secondary)]">
+              <div className="mt-4 rounded-xl border border-white bg-black p-3">
+                <p className="text-xs text-white uppercase tracking-[0.2em]">Last 30 Day Trend</p>
+                <div className="mt-2 flex flex-wrap gap-4 text-sm text-white">
                   <span>Success delta: {metricsLoading ? "..." : formatNumber(metrics?.last_30_day_trend?.success_rate_delta)}</span>
                   <span>Cost delta: {metricsLoading ? "..." : formatNumber(metrics?.last_30_day_trend?.cost_delta)}</span>
                 </div>
               </div>
 
               <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
-                  <p className="text-xs text-[var(--text-tertiary)] uppercase tracking-[0.2em]">Top Failure Modes</p>
-                  <div className="mt-2 space-y-2 text-sm text-[var(--text-secondary)]">
+                <div className="rounded-xl border border-white bg-black p-3">
+                  <p className="text-xs text-white uppercase tracking-[0.2em]">Top Failure Modes</p>
+                  <div className="mt-2 space-y-2 text-sm text-white">
                     {metricsLoading && <div>Loading...</div>}
-                    {!metricsLoading && topFailures.length === 0 && <div>No failures recorded.</div>}
+                    {!metricsLoading && topFailures.length == 0 && <div>No failures recorded.</div>}
                     {!metricsLoading &&
                       topFailures.map((failure) => (
                         <div key={failure.type} className="flex items-center justify-between">
                           <span>{failure.type}</span>
-                          <span className="text-xs text-[var(--text-tertiary)]">{failure.frequency}</span>
+                          <span className="text-xs">{failure.frequency}</span>
                         </div>
                       ))}
                   </div>
                 </div>
-                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
-                  <p className="text-xs text-[var(--text-tertiary)] uppercase tracking-[0.2em]">Suggestions</p>
-                  <div className="mt-2 space-y-2 text-sm text-[var(--text-secondary)]">
+                <div className="rounded-xl border border-white bg-black p-3">
+                  <p className="text-xs text-white uppercase tracking-[0.2em]">Suggestions</p>
+                  <div className="mt-2 space-y-2 text-sm text-white">
                     {metricsLoading && <div>Loading...</div>}
-                    {!metricsLoading && (!suggestions?.recommended_actions || suggestions.recommended_actions.length === 0) && (
+                    {!metricsLoading && (!suggestions?.recommended_actions || suggestions.recommended_actions.length == 0) && (
                       <div>No suggestions yet.</div>
                     )}
                     {!metricsLoading &&
                       suggestions?.recommended_actions?.map((action) => (
                         <div key={action} className="flex gap-2">
-                          <span className="text-emerald-300">-</span>
+                          <span>-</span>
                           <span>{action}</span>
                         </div>
                       ))}

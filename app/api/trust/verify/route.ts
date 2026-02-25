@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { verifyReceiptSignature } from "@/lib/trust/receipts";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 
 const VerifySchema = z.object({
   payload: z.record(z.unknown()),
@@ -13,7 +14,12 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const parsed = VerifySchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ valid: false, error: "Invalid payload" }, { status: 400 });
+    return jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "Invalid payload",
+      status: 400,
+      details: parsed.error.flatten(),
+    });
   }
 
   const valid = verifyReceiptSignature({
@@ -23,5 +29,7 @@ export async function POST(req: NextRequest) {
     keyId: parsed.data.keyId,
   });
 
-  return NextResponse.json({ valid });
+  const response = NextResponse.json({ valid });
+  applyRequestIdHeader(response, req);
+  return response;
 }

@@ -13,6 +13,7 @@ import { trustReceipts } from "@/lib/db/schema";
 import { hasTrustTable } from "@/lib/trust/db";
 import { getActiveReceiptKeyId } from "@/lib/trust/receipts";
 import { buildGpgReceiptPayload, signGpgReceipt } from "@/lib/gpg/receipts";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 
 const IngestSchema = z.object({
   agentId: z.string().min(1),
@@ -58,13 +59,22 @@ export async function POST(req: NextRequest) {
   const signature = req.headers.get("x-gpg-signature")?.trim();
 
   if (!idempotencyKey || !keyId || !timestamp || !signature) {
-    return NextResponse.json({ error: "SIGNED_HEADERS_REQUIRED" }, { status: 401 });
+    return jsonError(req, {
+      code: "SIGNED_HEADERS_REQUIRED",
+      message: "Signed headers are required",
+      status: 401,
+    });
   }
 
   const payload = await req.json().catch(() => null);
   const parsed = IngestSchema.safeParse(payload);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+    return jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "Invalid payload",
+      status: 400,
+      details: parsed.error.flatten(),
+    });
   }
 
   const verify = verifyPayloadSignature({
@@ -75,24 +85,42 @@ export async function POST(req: NextRequest) {
     keyId,
   });
   if (!verify.ok) {
-    return NextResponse.json({ error: verify.reason ?? "BAD_SIGNATURE" }, { status: 401 });
+    return jsonError(req, {
+      code: verify.reason ?? "BAD_SIGNATURE",
+      message: "Signature verification failed",
+      status: 401,
+    });
   }
 
   const existing = await checkIdempotency({ endpoint: "reliability_ingest", idempotencyKey });
   if (existing) {
     const incomingHash = hashIdempotencyPayload(parsed.data);
     if (incomingHash !== existing.payloadHash) {
-      return NextResponse.json({ error: "IDEMPOTENCY_PAYLOAD_MISMATCH" }, { status: 409 });
+      return jsonError(req, {
+        code: "IDEMPOTENCY_PAYLOAD_MISMATCH",
+        message: "Idempotency payload mismatch",
+        status: 409,
+      });
     }
-    return NextResponse.json({ success: true, deduped: true, data: existing.responseBody ?? {} });
+    const response = NextResponse.json({ success: true, deduped: true, data: existing.responseBody ?? {} });
+    applyRequestIdHeader(response, req);
+    return response;
   }
 
   const ownerId = await resolveAgentOwner(parsed.data.agentId);
   if (!ownerId && !isAdmin(auth.user)) {
-    return NextResponse.json({ error: "AGENT_NOT_CLAIMED" }, { status: 403 });
+    return jsonError(req, {
+      code: "AGENT_NOT_CLAIMED",
+      message: "Agent not claimed",
+      status: 403,
+    });
   }
   if (ownerId && ownerId !== auth.user.id && !isAdmin(auth.user)) {
-    return NextResponse.json({ error: "FORBIDDEN_AGENT" }, { status: 403 });
+    return jsonError(req, {
+      code: "FORBIDDEN_AGENT",
+      message: "Forbidden agent",
+      status: 403,
+    });
   }
 
   const inputHash = parsed.data.inputHash ?? hashPayload(parsed.data.input);
@@ -177,5 +205,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ success: true, data: result });
+  const response = NextResponse.json({ success: true, data: result });
+  applyRequestIdHeader(response, req);
+  return response;
 }

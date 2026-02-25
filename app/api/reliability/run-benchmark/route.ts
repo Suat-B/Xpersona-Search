@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { agentBenchmarkResults } from "@/lib/db/schema";
 import { resolveAgentId } from "@/lib/reliability/lookup";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 
 const BenchmarkSchema = z.object({
   agentId: z.string().min(1),
@@ -19,7 +20,11 @@ export async function POST(req: NextRequest) {
     const payload = BenchmarkSchema.parse(await req.json());
     const agentId = await resolveAgentId(payload.agentId);
     if (!agentId) {
-      return NextResponse.json({ success: false, message: "Agent not found" }, { status: 404 });
+      return jsonError(req, {
+        code: "NOT_FOUND",
+        message: "Agent not found",
+        status: 404,
+      });
     }
 
     await db.insert(agentBenchmarkResults).values({
@@ -33,7 +38,7 @@ export async function POST(req: NextRequest) {
       createdAt: new Date(),
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       agentId,
       suiteName: payload.suiteName,
@@ -43,8 +48,14 @@ export async function POST(req: NextRequest) {
       cost_usd: payload.costUsd ?? null,
       safety_violations: payload.safetyViolations ?? 0,
     });
+    applyRequestIdHeader(response, req);
+    return response;
   } catch (err) {
     const message = err instanceof Error ? err.message : "Invalid payload";
-    return NextResponse.json({ success: false, message }, { status: 400 });
+    return jsonError(req, {
+      code: "BAD_REQUEST",
+      message,
+      status: 400,
+    });
   }
 }

@@ -7,6 +7,7 @@ import {
   SEARCH_AUTH_RATE_LIMIT,
 } from "@/lib/search/rate-limit";
 import { getAuthUser } from "@/lib/auth-utils";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 
 const ClickSchema = z.object({
   query: z.string().min(1).max(500),
@@ -37,24 +38,26 @@ export async function POST(req: NextRequest) {
     : SEARCH_ANON_RATE_LIMIT;
   const rlResult = await checkSearchRateLimit(req, isAuthenticated);
   if (!rlResult.allowed) {
-    return NextResponse.json(
-      { error: "Too many requests" },
-      {
-        status: 429,
-        headers: {
-          "Retry-After": String(rlResult.retryAfter ?? 60),
-          "X-RateLimit-Remaining": "0",
-          "X-RateLimit-Limit": String(rateLimitLimit),
-        },
-      }
-    );
+    const response = jsonError(req, {
+      code: "RATE_LIMITED",
+      message: "Too many requests",
+      status: 429,
+      retryAfterMs: (rlResult.retryAfter ?? 60) * 1000,
+    });
+    response.headers.set("X-RateLimit-Remaining", "0");
+    response.headers.set("X-RateLimit-Limit", String(rateLimitLimit));
+    return response;
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "Invalid JSON",
+      status: 400,
+    });
   }
 
   let params: z.infer<typeof ClickSchema>;
@@ -63,7 +66,11 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     if (err instanceof ZodError) {
       const msg = err.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
-      return NextResponse.json({ error: msg }, { status: 400 });
+      return jsonError(req, {
+        code: "BAD_REQUEST",
+        message: msg,
+        status: 400,
+      });
     }
     throw err;
   }
@@ -73,7 +80,7 @@ export async function POST(req: NextRequest) {
   if (idempotencyHeader) {
     const idempotencyToken = `${idempotencyHeader}:${queryHash}:${params.agentId}:${params.position}:${userId ?? "anon"}`;
     if (seenIdempotencyKey(idempotencyToken)) {
-      return NextResponse.json(
+      const response = NextResponse.json(
         { ok: true, deduped: true },
         {
           status: 200,
@@ -83,6 +90,8 @@ export async function POST(req: NextRequest) {
           },
         }
       );
+      applyRequestIdHeader(response, req);
+      return response;
     }
   }
 
@@ -93,7 +102,7 @@ export async function POST(req: NextRequest) {
     userId,
   });
 
-  return NextResponse.json(
+  const response = NextResponse.json(
     { ok: true },
     {
       status: 200,
@@ -103,4 +112,6 @@ export async function POST(req: NextRequest) {
       },
     }
   );
+  applyRequestIdHeader(response, req);
+  return response;
 }

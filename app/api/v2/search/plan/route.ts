@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { TASK_TYPES } from "@/lib/search/taxonomy";
 import { apiV1 } from "@/lib/api/url";
+import { fetchWithTimeout } from "@/lib/api/fetch-timeout";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 
 const PlanRequestSchema = z.object({
   q: z.string().min(1).max(500),
@@ -20,11 +22,20 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "Invalid JSON body",
+      status: 400,
+    });
   }
   const parsed = PlanRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    return jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "Invalid payload",
+      status: 400,
+      details: parsed.error.flatten(),
+    });
   }
   const p = parsed.data;
   const params = new URLSearchParams({
@@ -42,23 +53,33 @@ export async function POST(req: NextRequest) {
   if (p.maxCostUsd != null) params.set("maxCostUsd", String(p.maxCostUsd));
   if (p.dataRegion) params.set("dataRegion", p.dataRegion);
 
-  const searchRes = await fetch(new URL(apiV1(`/search?${params.toString()}`), req.nextUrl.origin), {
-    method: "GET",
-    headers: {
-      "x-client-type": "agent",
+  const searchRes = await fetchWithTimeout(
+    new URL(apiV1(`/search?${params.toString()}`), req.nextUrl.origin),
+    {
+      method: "GET",
+      headers: {
+        "x-client-type": "agent",
+      },
     },
-  });
+    Number(process.env.SEARCH_UPSTREAM_TIMEOUT_MS ?? "8000")
+  );
   const searchJson = (await searchRes.json()) as {
     results?: Array<Record<string, unknown>>;
     executionPlan?: Record<string, unknown>;
   };
   if (!searchRes.ok) {
-    return NextResponse.json({ error: "Planner failed to get candidates", details: searchJson }, { status: 502 });
+    return jsonError(req, {
+      code: "UPSTREAM_ERROR",
+      message: "Planner failed to get candidates",
+      status: 502,
+      details: searchJson,
+      retryable: true,
+    });
   }
 
   const results = searchJson.results ?? [];
   const primary = results[0] ?? null;
-  return NextResponse.json({
+  const response = NextResponse.json({
     success: true,
     data: {
       input: p,
@@ -73,5 +94,7 @@ export async function POST(req: NextRequest) {
       generatedAt: new Date().toISOString(),
     },
   });
+  applyRequestIdHeader(response, req);
+  return response;
 }
 

@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { agents, agentMetrics } from "@/lib/db/schema";
 import { and, desc, eq, sql, type SQL } from "drizzle-orm";
 import { inferClusters, inferPriceTier, type PriceTier } from "@/lib/reliability/clusters";
+import { applyRequestIdHeader } from "@/lib/api/errors";
 
 export async function GET(req: NextRequest) {
   try {
@@ -66,13 +67,15 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       results: withPercentile.slice(0, limit),
       count: withPercentile.length,
     });
+    applyRequestIdHeader(response, req);
+    return response;
   } catch (error) {
     console.error("Error fetching top reliability agents:", error);
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         results: [],
         count: 0,
@@ -81,5 +84,7 @@ export async function GET(req: NextRequest) {
         headers: { "X-Reliability-Top-Fallback": "1" },
       }
     );
+    applyRequestIdHeader(response, req);
+    return response;
   }
 }

@@ -21,6 +21,7 @@ import {
   signPayloadHash,
 } from "@/lib/trust/receipts";
 import { hasTrustTable } from "@/lib/trust/db";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 
 const OutcomeSchema = z.object({
   querySignature: z.string().length(64),
@@ -80,24 +81,26 @@ export async function POST(req: NextRequest) {
   const rateLimitLimit = isAuthenticated ? SEARCH_AUTH_RATE_LIMIT : SEARCH_ANON_RATE_LIMIT;
   const rlResult = await checkSearchRateLimit(req, isAuthenticated);
   if (!rlResult.allowed) {
-    return NextResponse.json(
-      { error: "Too many requests" },
-      {
-        status: 429,
-        headers: {
-          "Retry-After": String(rlResult.retryAfter ?? 60),
-          "X-RateLimit-Remaining": "0",
-          "X-RateLimit-Limit": String(rateLimitLimit),
-        },
-      }
-    );
+    const response = jsonError(req, {
+      code: "RATE_LIMITED",
+      message: "Too many requests",
+      status: 429,
+      retryAfterMs: (rlResult.retryAfter ?? 60) * 1000,
+    });
+    response.headers.set("X-RateLimit-Remaining", "0");
+    response.headers.set("X-RateLimit-Limit", String(rateLimitLimit));
+    return response;
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "Invalid JSON",
+      status: 400,
+    });
   }
 
   let params: z.infer<typeof OutcomeSchema>;
@@ -106,7 +109,11 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     if (err instanceof ZodError) {
       const msg = err.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
-      return NextResponse.json({ error: msg }, { status: 400 });
+      return jsonError(req, {
+        code: "BAD_REQUEST",
+        message: msg,
+        status: 400,
+      });
     }
     throw err;
   }
@@ -115,7 +122,9 @@ export async function POST(req: NextRequest) {
   if (idem) {
     const token = `${idem}:${params.querySignature}:${params.selectedResultId}:${params.outcome}:${params.taskType}:${params.executionPath}`;
     if (seenIdempotencyKey(token)) {
-      return NextResponse.json({ ok: true, deduped: true }, { status: 200 });
+      const response = NextResponse.json({ ok: true, deduped: true }, { status: 200 });
+      applyRequestIdHeader(response, req);
+      return response;
     }
   }
   const querySanitized = params.query ? sanitizeForStorage(params.query).slice(0, 255) : null;
@@ -279,7 +288,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json(
+  const response = NextResponse.json(
     { ok: true },
     {
       status: 200,
@@ -289,4 +298,6 @@ export async function POST(req: NextRequest) {
       },
     }
   );
+  applyRequestIdHeader(response, req);
+  return response;
 }

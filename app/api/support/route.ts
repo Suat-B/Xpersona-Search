@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sendSupportEmail } from "@/lib/email";
 import { headers } from "next/headers";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 
 const SUPPORT_TO = process.env.SUPPORT_EMAIL ?? "Suat.Bastug@icloud.com";
 
@@ -16,10 +17,18 @@ export async function POST(req: Request) {
     const message = typeof body?.message === "string" ? body.message.trim() : "";
 
     if (!message) {
-      return NextResponse.json({ success: false, message: "Message is required" }, { status: 400 });
+      return jsonError(req, {
+        code: "VALIDATION_ERROR",
+        message: "Message is required",
+        status: 400,
+      });
     }
     if (email && !isValidEmail(email)) {
-      return NextResponse.json({ success: false, message: "Invalid email format" }, { status: 400 });
+      return jsonError(req, {
+        code: "VALIDATION_ERROR",
+        message: "Invalid email format",
+        status: 400,
+      });
     }
 
     const headerStore = await headers();
@@ -33,9 +42,15 @@ export async function POST(req: Request) {
       sourceUrl: origin,
     });
 
-    return NextResponse.json({ success: true });
+    const response = NextResponse.json({ success: true });
+    applyRequestIdHeader(response, req);
+    return response;
   } catch (err) {
     console.error("[support] send failed:", err);
-    return NextResponse.json({ success: false, message: "Failed to send email" }, { status: 500 });
+    return jsonError(req, {
+      code: "INTERNAL_ERROR",
+      message: "Failed to send email",
+      status: 500,
+    });
   }
 }

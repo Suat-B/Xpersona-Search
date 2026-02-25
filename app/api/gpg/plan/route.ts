@@ -8,6 +8,7 @@ import { getActiveReceiptKeyId } from "@/lib/trust/receipts";
 import { buildGpgReceiptPayload, signGpgReceipt } from "@/lib/gpg/receipts";
 import { db } from "@/lib/db";
 import { trustReceipts } from "@/lib/db/schema";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 
 const PlanSchema = z.object({
   task: z.string().min(1).max(500),
@@ -32,7 +33,12 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const parsed = PlanSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+    return jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "Invalid payload",
+      status: 400,
+      details: parsed.error.flatten(),
+    });
   }
 
   const signature = await ensureTaskSignature({
@@ -87,5 +93,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ success: true, data: response });
+  const res = NextResponse.json({ success: true, data: response });
+  applyRequestIdHeader(res, req);
+  return res;
 }

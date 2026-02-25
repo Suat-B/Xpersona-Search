@@ -1,9 +1,5 @@
+import Link from "next/link";
 import path from "path";
-import { auth } from "@/lib/auth";
-import { cookies } from "next/headers";
-import { getAuthUserFromCookie } from "@/lib/auth-utils";
-import { ANSMinimalHeader } from "@/components/home/ANSMinimalHeader";
-import { ANSMinimalFooter } from "@/components/home/ANSMinimalFooter";
 import { GraphExplorer } from "@/components/graph/GraphExplorer";
 import { buildApiSurface, type ApiEndpoint } from "@/lib/docs/api-surface";
 import { readdir } from "fs/promises";
@@ -24,9 +20,9 @@ function buildQuickstart(endpoints: ApiEndpoint[], priority: string[]): Quicksta
     const bBase = b.route.split("?")[0];
     const aIdx = priority.indexOf(aBase);
     const bIdx = priority.indexOf(bBase);
-    const aRank = aIdx === -1 ? 999 : aIdx;
-    const bRank = bIdx === -1 ? 999 : bIdx;
-    if (aRank !== bRank) return aRank - bRank;
+    const aRank = aIdx == -1 ? 999 : aIdx;
+    const bRank = bIdx == -1 ? 999 : bIdx;
+    if (aRank != bRank) return aRank - bRank;
     return a.route.localeCompare(b.route) || a.method.localeCompare(b.method);
   });
 
@@ -40,16 +36,6 @@ function buildQuickstart(endpoints: ApiEndpoint[], priority: string[]): Quicksta
 }
 
 export default async function GraphPage() {
-  let session = null;
-  try {
-    session = await auth();
-  } catch {
-    // Ignore auth errors for public page rendering.
-  }
-  const cookieStore = await cookies();
-  const userIdFromCookie = getAuthUserFromCookie(cookieStore);
-  const isAuthenticated = !!(session?.user || userIdFromCookie);
-
   const gpgBaseDir = path.join(process.cwd(), "app", "api", "gpg");
   const gpgEndpointMeta = new Map<string, { auth?: string; headers?: string[] }>([
     [
@@ -93,120 +79,170 @@ export default async function GraphPage() {
   ].filter(Boolean) as string[];
 
   return (
-    <div className="min-h-screen flex flex-col bg-[var(--bg-deep)]">
-      <ANSMinimalHeader isAuthenticated={isAuthenticated} variant="dark" />
+    <section className="min-h-dvh bg-black text-white">
+      <div className="container mx-auto px-4 sm:px-6 py-10 sm:py-14">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
+              <span className="text-xs font-medium text-white uppercase tracking-wider">Global Performance Graph</span>
+            </div>
+            <h1 className="text-2xl sm:text-4xl font-bold text-white">
+              Global routing intelligence for autonomous agents.
+            </h1>
+            <p className="mt-2 text-sm text-white max-w-2xl">
+              Machine-readable graph intelligence so AI agents can select, route, and verify other agents
+              using live success, latency, cost, and risk telemetry.
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+            <Link
+              href="/api"
+              className="inline-flex items-center justify-center rounded-full border border-white px-5 py-2.5 text-sm font-medium text-white hover:bg-white hover:text-black transition-colors"
+            >
+              View API
+            </Link>
+            <Link
+              href="/marketplace"
+              className="inline-flex items-center justify-center rounded-full bg-white text-black px-5 py-2.5 text-sm font-semibold hover:bg-black hover:text-white border border-white transition-colors"
+            >
+              Visit Marketplace
+            </Link>
+          </div>
+        </div>
 
-      <main className="flex-1">
-        <section className="mx-auto w-full max-w-5xl px-4 pt-10 sm:px-6 sm:pt-14">
-          <div className="rounded-3xl border border-white/[0.08] bg-black/40 p-6 sm:p-10 shadow-[0_30px_60px_rgba(0,0,0,0.45)]">
-            <div className="flex flex-col gap-4">
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200 w-fit">
-                Built For AI Agents
-              </div>
-              <h1 className="text-3xl sm:text-4xl font-bold text-[var(--text-primary)]">
-                Global Performance Graph for autonomous routing.
-              </h1>
-              <p className="text-sm sm:text-base text-[var(--text-secondary)] max-w-3xl">
-                Machine-readable graph intelligence so AI agents can select, route, and verify other agents
-                using live success, latency, cost, and risk telemetry.
-              </p>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-4 text-sm text-[var(--text-secondary)]">
-                  Rank and route agents with signed performance stats.
-                </div>
-                <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-4 text-sm text-[var(--text-secondary)]">
-                  Plan pipelines with cost/latency constraints before execution.
-                </div>
-                <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-4 text-sm text-[var(--text-secondary)]">
-                  Validate outcomes with receipts and risk-aware scoring.
-                </div>
-              </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-8">
+          <div className="rounded-2xl border border-white bg-black p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-white">Routing Contracts</h2>
+              <span className="text-[10px] rounded-full border border-white px-2 py-0.5">Agents</span>
+            </div>
+            <p className="text-xs text-white mb-4">
+              Encode supported protocols, required auth, safety constraints, and expected cost/latency so
+              routers can make deterministic, auditable decisions.
+            </p>
+            <div className="rounded-lg border border-white p-3 text-[11px]">
+              <p className="text-white/70">Contract promise</p>
+              <p className="mt-1 font-mono">protocol + auth + safety + latency + cost</p>
             </div>
           </div>
-        </section>
+
+          <div className="rounded-2xl border border-white bg-black p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-white">Telemetry Graph</h2>
+              <span className="text-[10px] rounded-full border border-white px-2 py-0.5">Live</span>
+            </div>
+            <p className="text-xs text-white mb-4">
+              Contracts pair with live telemetry to validate promised behavior, detect drift, and highlight
+              agents that are safe to promote into critical workflows.
+            </p>
+            <div className="rounded-lg border border-white p-3 text-[11px]">
+              <p className="text-white/70">Signal mix</p>
+              <p className="mt-1 font-mono">success + latency + cost + risk</p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white bg-black p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-white">Deterministic Routing</h2>
+              <span className="text-[10px] rounded-full border border-white px-2 py-0.5">GPG</span>
+            </div>
+            <p className="text-xs text-white mb-4">
+              With contracts in place, routing systems compare options deterministically, enforce constraints,
+              and maintain auditability with fewer failed runs.
+            </p>
+            <div className="rounded-lg border border-white p-3 text-[11px]">
+              <p className="text-white/70">Planner goal</p>
+              <p className="mt-1 font-mono">optimize success, then cost</p>
+            </div>
+          </div>
+        </div>
 
         <GraphExplorer />
 
-        <section className="mx-auto w-full max-w-5xl px-4 pb-12 sm:px-6">
-          <div className="rounded-3xl border border-white/[0.08] bg-black/40 p-6 sm:p-10 shadow-[0_30px_60px_rgba(0,0,0,0.45)]">
-            <div className="flex flex-col gap-3">
-              <h2 className="text-2xl sm:text-3xl font-semibold text-[var(--text-primary)]">Graph API Additions</h2>
-              <p className="text-sm text-[var(--text-secondary)] max-w-3xl">
-                Direct machine endpoints for querying the Global Performance Graph and planning pipelines.
-              </p>
-            </div>
-
-            <div className="mt-8">
-              <h3 className="text-xl font-semibold text-[var(--text-primary)]">API Quickstart</h3>
-              <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-3xl">
-                Recommended endpoints to get up and running.
-              </p>
-              <div className="mt-4 grid gap-3 lg:grid-cols-3">
-                {gpgQuickstart.map((item) => (
-                  <div key={item.title} className="rounded-2xl border border-white/[0.08] bg-black/30 p-4">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">{item.title}</p>
-                      <span className="text-[10px] uppercase tracking-[0.2em] text-emerald-200">{item.method}</span>
-                    </div>
-                    <p className="mt-2 text-sm text-[var(--text-secondary)]">{item.description}</p>
-                    <p className="mt-3 text-xs font-mono text-[var(--text-tertiary)]">{item.path}</p>
-                    <pre className="mt-3 text-xs text-[var(--text-secondary)] bg-black/40 border border-white/[0.08] rounded-lg p-3 overflow-x-auto">
-                      {item.curl}
-                    </pre>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-10">
-              <h3 className="text-xl font-semibold text-[var(--text-primary)]">GPG API Surface</h3>
-              <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-3xl">
-                All available endpoints detected in this codebase.
-              </p>
-              <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                {gpgEndpoints.map((item) => (
-                  <div key={item.route + item.method} className="rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2">
-                    <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[var(--text-secondary)]">
-                      <span className="text-emerald-200">
-                        {item.method} {item.route}
-                      </span>
-                      <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
-                        Auth: {item.auth ?? "Public"}
-                      </span>
-                    </div>
-                    {item.headers && item.headers.length > 0 && (
-                      <p className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
-                        Required headers: {item.headers.join(", ")}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {capabilities.length > 0 && (
-              <div className="mt-10">
-                <h3 className="text-xl font-semibold text-[var(--text-primary)]">GPG Capabilities</h3>
-                <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-3xl">
-                  Functionality available today based on the current GPG stack.
-                </p>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {capabilities.map((item) => (
-                    <div
-                      key={item}
-                      className="rounded-2xl border border-white/[0.08] bg-black/30 p-4 text-sm text-[var(--text-secondary)]"
-                    >
-                      {item}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+        <div className="mt-10 rounded-2xl border border-white bg-black p-6 sm:p-8">
+          <div className="flex flex-col gap-3">
+            <h2 className="text-2xl sm:text-3xl font-semibold text-white">Graph API Additions</h2>
+            <p className="text-sm text-white max-w-3xl">
+              Direct machine endpoints for querying the Global Performance Graph and planning pipelines.
+            </p>
           </div>
-        </section>
-      </main>
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border border-white bg-black p-4 text-sm text-white">
+              Use the Graph API when you need live routing inputs: success probability, latency distribution,
+              cost estimates, and risk scores. These fields are designed to be machine-consumed by planners.
+            </div>
+            <div className="rounded-2xl border border-white bg-black p-4 text-sm text-white">
+              Pair Graph API responses with capability contracts to build fail-safe routing: only choose agents
+              that meet hard requirements, then optimize for cost, latency, or reliability.
+            </div>
+          </div>
 
-      <ANSMinimalFooter variant="dark" />
-    </div>
+          <div className="mt-8">
+            <h3 className="text-xl font-semibold text-white">API Quickstart</h3>
+            <p className="mt-2 text-sm text-white max-w-3xl">
+              Recommended endpoints to get up and running.
+            </p>
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+              {gpgQuickstart.map((item) => (
+                <div key={item.title} className="rounded-2xl border border-white bg-black p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs uppercase tracking-[0.2em] text-white">{item.title}</p>
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-white">{item.method}</span>
+                  </div>
+                  <p className="mt-2 text-sm text-white">{item.description}</p>
+                  <p className="mt-3 text-xs font-mono text-white">{item.path}</p>
+                  <pre className="mt-3 text-xs text-white bg-black border border-white rounded-lg p-3 overflow-x-auto">
+                    {item.curl}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-10">
+            <h3 className="text-xl font-semibold text-white">GPG API Surface</h3>
+            <p className="mt-2 text-sm text-white max-w-3xl">
+              All available endpoints detected in this codebase.
+            </p>
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {gpgEndpoints.map((item) => (
+                <div key={item.route + item.method} className="rounded-xl border border-white bg-black px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-white">
+                    <span className="text-white">
+                      {item.method} {item.route}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-white">
+                      Auth: {item.auth ?? "Public"}
+                    </span>
+                  </div>
+                  {item.headers && item.headers.length > 0 && (
+                    <p className="mt-2 text-[10px] uppercase tracking-[0.18em] text-white">
+                      Required headers: {item.headers.join(", ")}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {capabilities.length > 0 && (
+            <div className="mt-10">
+              <h3 className="text-xl font-semibold text-white">GPG Capabilities</h3>
+              <p className="mt-2 text-sm text-white max-w-3xl">
+                Functionality available today based on the current GPG stack.
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {capabilities.map((item) => (
+                  <div key={item} className="rounded-2xl border border-white bg-black p-4 text-sm text-white">
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }

@@ -18,12 +18,12 @@ type TopResponse = {
 };
 
 function formatNumber(value: number | null, suffix = "") {
-  if (value == null || Number.isNaN(value)) return "—";
+  if (value == null || Number.isNaN(value)) return "--";
   return `${value}${suffix}`;
 }
 
 function formatPct(value: number | null) {
-  if (value == null || Number.isNaN(value)) return "—";
+  if (value == null || Number.isNaN(value)) return "--";
   return `${(value * 100).toFixed(1)}%`;
 }
 
@@ -69,44 +69,44 @@ export function AgentOpsStats() {
 
   return (
     <div className="mt-4 grid gap-3 lg:grid-cols-3">
-      <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-4">
-        <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Ingest Contract</p>
-        <p className="mt-2 text-sm text-[var(--text-secondary)]">
+      <div className="rounded-2xl border border-white bg-black p-4">
+        <p className="text-xs uppercase tracking-[0.2em] text-white">Ingest Contract</p>
+        <p className="mt-2 text-sm text-white">
           Signed telemetry with idempotency. Rejects duplicates and replays.
         </p>
-        <div className="mt-3 rounded-lg border border-white/[0.08] bg-black/40 p-3 text-[11px] text-[var(--text-tertiary)]">
+        <div className="mt-3 rounded-lg border border-white bg-black p-3 text-[11px] text-white">
           Required headers: idempotency-key, x-gpg-key-id, x-gpg-timestamp, x-gpg-signature
         </div>
-        <div className="mt-3 text-[11px] text-[var(--text-tertiary)]">
+        <div className="mt-3 text-[11px] text-white">
           Live sample: {formatNumber(graph?.sample_size ?? null)} runs
         </div>
       </div>
 
-      <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-4">
-        <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Decision Loop</p>
-        <p className="mt-2 text-sm text-[var(--text-secondary)]">
-          Query reliability → select agent → execute → report outcome. Use trends to tune retries.
+      <div className="rounded-2xl border border-white bg-black p-4">
+        <p className="text-xs uppercase tracking-[0.2em] text-white">Decision Loop</p>
+        <p className="mt-2 text-sm text-white">
+          Query reliability, select agent, execute, report outcome. Use trends to tune retries.
         </p>
-        <div className="mt-3 rounded-lg border border-white/[0.08] bg-black/40 p-3 text-[11px] text-[var(--text-tertiary)]">
+        <div className="mt-3 rounded-lg border border-white bg-black p-3 text-[11px] text-white">
           Preferred cadence: 5-15 min refresh for hot tasks; daily for cold tasks.
         </div>
-        <div className="mt-3 text-[11px] text-[var(--text-tertiary)]">
+        <div className="mt-3 text-[11px] text-white">
           Active clusters: {formatNumber(graph?.clusters?.length ?? null)}
         </div>
       </div>
 
-      <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-4">
-        <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Reliability Signals</p>
-        <p className="mt-2 text-sm text-[var(--text-secondary)]">
+      <div className="rounded-2xl border border-white bg-black p-4">
+        <p className="text-xs uppercase tracking-[0.2em] text-white">Reliability Signals</p>
+        <p className="mt-2 text-sm text-white">
           Prioritize success rate, calibration, and dispute rate. Penalize high variance.
         </p>
-        <div className="mt-3 rounded-lg border border-white/[0.08] bg-black/40 p-3 text-[11px] text-[var(--text-tertiary)]">
+        <div className="mt-3 rounded-lg border border-white bg-black p-3 text-[11px] text-white">
           Deterministic filters: cluster, tier, and time window.
         </div>
-        <div className="mt-3 grid grid-cols-3 gap-2 text-[11px] text-[var(--text-tertiary)]">
+        <div className="mt-3 grid grid-cols-3 gap-2 text-[11px] text-white">
           <span>Top-5 SR: {formatPct(aggregate.success)}</span>
           <span>Avg Lat: {formatNumber(aggregate.latency ? Math.round(aggregate.latency) : null, "ms")}</span>
-          <span>Avg Cost: {aggregate.cost == null ? "—" : `$${aggregate.cost.toFixed(3)}`}</span>
+          <span>Avg Cost: {aggregate.cost == null ? "--" : `$${aggregate.cost.toFixed(3)}`}</span>
         </div>
       </div>
     </div>

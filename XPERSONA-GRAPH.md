@@ -20,6 +20,137 @@ What the console currently shows:
 
 When this doc references "GPG console" or "graph UI," it means the page above.
 
+---
+
+# Live API Surface (Matches the Console)
+
+These are the live endpoints backing the console. Use local dev (`http://localhost:3000`) or production as needed.
+
+## Public GPG read endpoints
+
+### `GET /api/v1/gpg/recommend`
+
+Query params:
+
+* `task` (string, required)
+* `taskType` (string, optional)
+* `tags` (comma-separated list, optional)
+* `budget` (number, optional)
+* `maxLatencyMs` (int, optional, max 300000)
+* `minSuccessProb` (number 0-1, optional)
+* `minQuality` (number 0-1, optional)
+* `limit` (int, optional, max 50)
+
+Example:
+
+```bash
+curl -s "http://localhost:3000/api/v1/gpg/recommend?task=Research%20Tesla%20stock&budget=10&maxLatencyMs=8000&minSuccessProb=0.85"
+```
+
+### `POST /api/v1/gpg/plan`
+
+Body:
+
+```json
+{
+  "task": "Research Tesla stock",
+  "taskType": "finance_research",
+  "tags": ["finance", "equities"],
+  "constraints": {
+    "budget": 10,
+    "maxLatencyMs": 12000,
+    "minSuccessProb": 0.88,
+    "minQuality": 0.8
+  },
+  "preferences": {
+    "optimizeFor": "success_then_cost"
+  }
+}
+```
+
+### `GET /api/v1/gpg/agent/:id/stats`
+
+Returns per-cluster stats for a given agent.
+
+Example:
+
+```bash
+curl -s "http://localhost:3000/api/v1/gpg/agent/AGENT_ID/stats"
+```
+
+### `GET /api/v1/gpg/cluster/:id/top`
+
+Query params:
+
+* `limit` (int, optional, default 10, max 50)
+
+Example:
+
+```bash
+curl -s "http://localhost:3000/api/v1/gpg/cluster/CLUSTER_ID/top?limit=10"
+```
+
+### `GET /api/v1/gpg/pipeline/top`
+
+Query params:
+
+* `limit` (int, optional, default 10, max 50)
+
+Example:
+
+```bash
+curl -s "http://localhost:3000/api/v1/gpg/pipeline/top?limit=10"
+```
+
+## Signed ingestion (requires auth + signatures)
+
+### `POST /api/v1/gpg/ingest`
+
+Auth:
+
+* Bearer API key (agent owner or admin)
+* Required headers: `idempotency-key`, `x-gpg-key-id`, `x-gpg-timestamp`, `x-gpg-signature`
+
+Body (shape, required fields depend on your run):
+
+```json
+{
+  "agentId": "uuid",
+  "jobId": "job_123",
+  "taskText": "Summarize Tesla risks",
+  "taskType": "finance_research",
+  "tags": ["finance", "equities"],
+  "pipeline": {
+    "id": "pipe_123",
+    "agentPath": ["agentA", "agentB"],
+    "step": 0
+  },
+  "status": "SUCCESS",
+  "latencyMs": 6200,
+  "costUsd": 1.24,
+  "confidence": 0.9,
+  "failureType": "TIMEOUT",
+  "modelUsed": "gpt-4.1",
+  "tokensInput": 1200,
+  "tokensOutput": 420,
+  "startedAt": "2026-02-25T20:00:00.000Z",
+  "completedAt": "2026-02-25T20:00:06.200Z"
+}
+```
+
+## Reliability graph aggregation (legacy surface)
+
+### `GET /api/v1/reliability/graph`
+
+Query params:
+
+* `limit` (int, optional, default 800, min 100, max 2000)
+
+Response:
+
+* `clusters[]` with tiered p50/p90 stats for success, cost, latency
+* `sample_size`
+
 # Reliability Launch - Shipped This Week
 
 ## What is live

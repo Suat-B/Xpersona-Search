@@ -7,7 +7,6 @@ import { HomeThemePicker } from "@/components/home/HomeThemePicker";
 import { SearchSuggestions, type SearchSuggestionsHandle, type SuggestionAgent } from "@/components/search/SearchSuggestions";
 import { applyPreset, HOME_ACCENT_STORAGE_KEY, type ThemePresetId } from "@/lib/theme-presets";
 import { addRecentSearch } from "@/lib/search-history";
-import { apiV1 } from "@/lib/api/url";
 
 interface GoogleStyleHomeProps {
   isAuthenticated?: boolean;
@@ -42,13 +41,9 @@ export function GoogleStyleHome({
   const searchAnchorRef = useRef<HTMLDivElement>(null);
   const suggestionsRef = useRef<SearchSuggestionsHandle>(null);
   const router = useRouter();
+  const supportRecipient = "suat.bastug@icloud.com";
+  const supportMailto = `mailto:${supportRecipient}`;
   const [showSupportModal, setShowSupportModal] = useState(false);
-  const [supportName, setSupportName] = useState("");
-  const [supportEmail, setSupportEmail] = useState("");
-  const [supportMessage, setSupportMessage] = useState("");
-  const supportRecipient = "Suat.Bastug@icloud.com";
-  const [supportStatus, setSupportStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
-  const [supportError, setSupportError] = useState("");
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,36 +123,6 @@ export function GoogleStyleHome({
 
   const closeSupport = () => {
     setShowSupportModal(false);
-    setSupportStatus("idle");
-    setSupportError("");
-  };
-
-  const submitSupport = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSupportStatus("sending");
-    setSupportError("");
-    try {
-      const res = await fetch(apiV1("/support"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: supportName.trim(),
-          email: supportEmail.trim(),
-          message: supportMessage.trim(),
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.message || "Failed to send email");
-      }
-      setSupportStatus("sent");
-      setSupportName("");
-      setSupportEmail("");
-      setSupportMessage("");
-    } catch (err) {
-      setSupportStatus("error");
-      setSupportError(err instanceof Error ? err.message : "Failed to send email");
-    }
   };
 
   useEffect(() => {
@@ -196,9 +161,6 @@ export function GoogleStyleHome({
       </div>
 
       <header className="relative flex justify-end items-center px-4 sm:px-6 py-3 sm:py-4 gap-3 sm:gap-4 shrink-0 z-20 safe-area-inset-top">
-        <div className="hidden sm:flex">
-          <HomeThemePicker />
-        </div>
         {!isAuthenticated && (
           <>
             <Link
@@ -299,13 +261,6 @@ export function GoogleStyleHome({
             >
               Reliability
             </Link>
-            <button
-              type="button"
-              onClick={handleLucky}
-              className="flex-1 sm:flex-none px-4 sm:px-8 py-3.5 min-h-[48px] neural-glass hover:border-white/[0.2] active:scale-[0.98] text-[var(--text-primary)] text-xs sm:text-sm font-medium rounded-xl sm:rounded-2xl border border-white/[0.1] transition-all focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation whitespace-nowrap"
-            >
-              I'm Feeling Lucky
-            </button>
           </div>
         </form>
 
@@ -351,13 +306,14 @@ export function GoogleStyleHome({
             </span>
           </div>
           <nav className="flex flex-wrap items-center justify-center sm:justify-end gap-4 sm:gap-6 text-xs sm:text-[13px] text-[var(--text-tertiary)]">
-            <button
-              type="button"
+            <Link
+              href={supportMailto}
               onClick={openSupport}
               className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation"
+              aria-label={`Email support at ${supportRecipient}`}
             >
               Support
-            </button>
+            </Link>
             <Link href={privacyUrl} className="hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-transparent rounded py-1.5 min-h-[44px] flex items-center touch-manipulation">
               Privacy
             </Link>
@@ -374,11 +330,11 @@ export function GoogleStyleHome({
             type="button"
             className="absolute inset-0 bg-black/70"
             onClick={closeSupport}
-            aria-label="Close support form"
+            aria-label="Close support message"
           />
           <div className="relative w-full max-w-md rounded-2xl border border-white/[0.1] bg-[#0b0b0f] p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-[var(--text-primary)]">Contact Support</h2>
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">Support</h2>
               <button
                 type="button"
                 onClick={closeSupport}
@@ -388,61 +344,10 @@ export function GoogleStyleHome({
                 ×
               </button>
             </div>
-            <p className="text-sm text-[var(--text-tertiary)] mb-4">
-              Send a support message directly to {supportRecipient}.
-            </p>
-            <form onSubmit={submitSupport} className="space-y-3">
-              <input
-                type="text"
-                placeholder="Your name (optional)"
-                value={supportName}
-                onChange={(e) => setSupportName(e.target.value)}
-                className="w-full rounded-lg border border-white/[0.1] bg-white/5 px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/40"
-              />
-              <input
-                type="email"
-                placeholder="Your email (optional)"
-                value={supportEmail}
-                onChange={(e) => setSupportEmail(e.target.value)}
-                className="w-full rounded-lg border border-white/[0.1] bg-white/5 px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/40"
-              />
-              <textarea
-                placeholder="How can we help?"
-                value={supportMessage}
-                onChange={(e) => setSupportMessage(e.target.value)}
-                rows={5}
-                className="w-full rounded-lg border border-white/[0.1] bg-white/5 px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/40"
-              />
-              {supportStatus === "sent" && (
-                <div className="text-sm text-emerald-400">Message sent. We will get back to you soon.</div>
-              )}
-              {supportStatus === "error" && (
-                <div className="text-sm text-rose-400">{supportError || "Failed to send email"}</div>
-              )}
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={closeSupport}
-                  className="px-4 py-2 text-sm text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={supportStatus === "sending"}
-                  className="px-4 py-2 text-sm font-semibold text-white bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 rounded-lg transition-colors"
-                >
-                  {supportStatus === "sending" ? "Sending..." : "Send Email"}
-                </button>
-              </div>
-            </form>
+            <p className="text-sm text-[var(--text-tertiary)]">Support Email: {supportRecipient}</p>
           </div>
         </div>
       )}
     </div>
   );
 }
-
-
-
-

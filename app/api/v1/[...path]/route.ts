@@ -6,6 +6,7 @@ import {
   copyPassthroughHeaders,
   getOrCreateRequestId,
 } from "@/lib/api/request-meta";
+import { fetchWithTimeout } from "@/lib/api/fetch-timeout";
 
 type RouteContext = {
   params: Promise<{ path: string[] }>;
@@ -77,7 +78,11 @@ async function proxyToLegacy(req: NextRequest, ctx: RouteContext): Promise<NextR
   }
 
   try {
-    const upstream = await fetch(target, init);
+    const upstream = await fetchWithTimeout(
+      target,
+      init,
+      Number(process.env.API_UPSTREAM_TIMEOUT_MS ?? "8000")
+    );
     const responseHeaders = applyResponseMetaHeaders(new Headers(), requestId);
     copyPassthroughHeaders(upstream.headers, responseHeaders);
 

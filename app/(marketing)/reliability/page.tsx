@@ -1,11 +1,6 @@
 import Link from "next/link";
-import { readdir } from "fs/promises";
 import path from "path";
-import { auth } from "@/lib/auth";
-import { cookies } from "next/headers";
-import { getAuthUserFromCookie } from "@/lib/auth-utils";
-import { ANSMinimalHeader } from "@/components/home/ANSMinimalHeader";
-import { ANSMinimalFooter } from "@/components/home/ANSMinimalFooter";
+import { readdir } from "fs/promises";
 import { ReliabilityDashboard } from "@/components/reliability/ReliabilityDashboard";
 import { GlobalPerformanceGraph } from "@/components/reliability/GlobalPerformanceGraph";
 import { AgentOpsStats } from "@/components/reliability/AgentOpsStats";
@@ -27,14 +22,14 @@ function buildQuickstart(endpoints: ApiEndpoint[], priority: string[]): Quicksta
     const bBase = b.route.split("?")[0];
     const aIdx = priority.indexOf(aBase);
     const bIdx = priority.indexOf(bBase);
-    const aRank = aIdx === -1 ? 999 : aIdx;
-    const bRank = bIdx === -1 ? 999 : bIdx;
-    if (aRank !== bRank) return aRank - bRank;
+    const aRank = aIdx == -1 ? 999 : aIdx;
+    const bRank = bIdx == -1 ? 999 : bIdx;
+    if (aRank != bRank) return aRank - bRank;
     return a.route.localeCompare(b.route) || a.method.localeCompare(b.method);
   });
 
   return quickstartSorted.slice(0, 6).map((item) => ({
-    title: `${item.method} ${item.route.replace("/api/v1", "")}`,
+    title: `${item.route.replace("/api/v1", "")}`,
     description: item.auth ? `Auth: ${item.auth}` : "Public endpoint.",
     method: item.method,
     path: item.route,
@@ -43,16 +38,6 @@ function buildQuickstart(endpoints: ApiEndpoint[], priority: string[]): Quicksta
 }
 
 export default async function ReliabilityPage() {
-  let session = null;
-  try {
-    session = await auth();
-  } catch {
-    // Ignore auth source errors for public page rendering.
-  }
-  const cookieStore = await cookies();
-  const userIdFromCookie = getAuthUserFromCookie(cookieStore);
-  const isAuthenticated = !!(session?.user || userIdFromCookie);
-
   const apiBaseDir = path.join(process.cwd(), "app", "api", "reliability");
   const reliabilityLibDir = path.join(process.cwd(), "lib", "reliability");
 
@@ -114,161 +99,192 @@ export default async function ReliabilityPage() {
   ].filter(Boolean) as string[];
 
   return (
-    <div className="min-h-screen flex flex-col bg-[var(--bg-deep)]">
-      <ANSMinimalHeader isAuthenticated={isAuthenticated} variant="dark" />
-
-      <main className="flex-1">
-        <section className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
-          <div className="rounded-3xl border border-white/[0.08] bg-black/40 p-6 sm:p-10 shadow-[0_30px_60px_rgba(0,0,0,0.45)]">
-            <div className="flex flex-col gap-3">
-              <h1 className="text-3xl sm:text-4xl font-bold text-[var(--text-primary)]">Xpersona Reliability</h1>
-              <p className="text-sm sm:text-base text-[var(--text-secondary)] max-w-3xl">
-                Machine-readable observability infrastructure so AI agents can measure, compare, and optimize themselves.
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200 w-fit">
-                  All Phases Implemented
-                </div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200 w-fit">
-                  Live Metrics Enabled
-                </div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-200 w-fit">
-                  Built For AI Agents
-                </div>
-              </div>
-              <Link href="/" className="text-sm text-[var(--accent-heart)] hover:underline w-fit">
-                Back to home
-              </Link>
+    <section className="min-h-dvh bg-black text-white">
+      <div className="container mx-auto px-4 sm:px-6 py-10 sm:py-14">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
+              <span className="text-xs font-medium text-white uppercase tracking-wider">Reliability Layer</span>
             </div>
+            <h1 className="text-2xl sm:text-4xl font-bold text-white">Xpersona Reliability</h1>
+            <p className="mt-2 text-sm text-white max-w-2xl">
+              Machine-readable observability infrastructure so AI agents can measure, compare, and optimize
+              themselves with live, signed telemetry.
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+            <Link
+              href="/api"
+              className="inline-flex items-center justify-center rounded-full border border-white px-5 py-2.5 text-sm font-medium text-white hover:bg-white hover:text-black transition-colors"
+            >
+              View API
+            </Link>
+            <Link
+              href="/marketplace"
+              className="inline-flex items-center justify-center rounded-full bg-white text-black px-5 py-2.5 text-sm font-semibold hover:bg-black hover:text-white border border-white transition-colors"
+            >
+              Visit Marketplace
+            </Link>
+          </div>
+        </div>
 
-            <ReliabilityDashboard />
-
-            <GlobalPerformanceGraph />
-
-            <div className="mt-10">
-              <h2 className="text-xl font-semibold text-[var(--text-primary)]">Agent-First Ops</h2>
-              <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-3xl">
-                Operational guidance intended for autonomous agents and orchestration layers.
-              </p>
-              <AgentOpsStats />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-8">
+          <div className="rounded-2xl border border-white bg-black p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-white">Signed Telemetry</h2>
+              <span className="text-[10px] rounded-full border border-white px-2 py-0.5">Public</span>
             </div>
-
-            <div className="mt-10">
-              <h2 className="text-xl font-semibold text-[var(--text-primary)]">Reliability For AI Agents</h2>
-              <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-3xl">
-                Make reliability a first-class signal in automated routing, retries, and fallback behavior.
-              </p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-4 text-sm text-[var(--text-secondary)]">
-                  Pull success, timeout, and hallucination metrics per agent.
-                </div>
-                <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-4 text-sm text-[var(--text-secondary)]">
-                  Compare agents by confidence, retry rate, and cost profiles.
-                </div>
-                <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-4 text-sm text-[var(--text-secondary)]">
-                  Use trend endpoints to auto-tune policies and escalate safely.
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-10">
-              <h2 className="text-xl font-semibold text-[var(--text-primary)]">New API Additions</h2>
-              <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-3xl">
-                The latest machine endpoints now live for reliability-aware routing, metrics, and optimization.
-              </p>
-              <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                {endpoints.map((item) => (
-                  <div key={item.route + item.method} className="rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2">
-                    <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[var(--text-secondary)]">
-                      <span className="text-emerald-200">
-                        {item.method} {item.route}
-                      </span>
-                      <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
-                        Auth: {item.auth ?? "Public"}
-                      </span>
-                    </div>
-                    {item.headers && item.headers.length > 0 && (
-                      <p className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
-                        Required headers: {item.headers.join(", ")}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-10">
-              <h2 className="text-xl font-semibold text-[var(--text-primary)]">API Quickstart</h2>
-              <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-3xl">
-                Direct machine endpoints for agents to query reliability and optimization guidance.
-              </p>
-              <div className="mt-4 grid gap-3 lg:grid-cols-3">
-                {quickstart.map((item) => (
-                  <div key={item.title} className="rounded-2xl border border-white/[0.08] bg-black/30 p-4">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">{item.title}</p>
-                      <span className="text-[10px] uppercase tracking-[0.2em] text-emerald-200">{item.method}</span>
-                    </div>
-                    <p className="mt-2 text-sm text-[var(--text-secondary)]">{item.description}</p>
-                    <p className="mt-3 text-xs font-mono text-[var(--text-tertiary)]">{item.path}</p>
-                    <pre className="mt-3 text-xs text-[var(--text-secondary)] bg-black/40 border border-white/[0.08] rounded-lg p-3 overflow-x-auto">
-                      {item.curl}
-                    </pre>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-10">
-              <h2 className="text-xl font-semibold text-[var(--text-primary)]">Reliability API Surface</h2>
-              <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-3xl">Full endpoint surface detected in this codebase.</p>
-              <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                {apiCatalog.map((group) => (
-                  <div key={group.group} className="rounded-2xl border border-white/[0.08] bg-black/30 p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">{group.group}</p>
-                    <div className="mt-3 space-y-3">
-                      {group.items.map((item) => (
-                        <div key={item.label} className="rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2">
-                          <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[var(--text-secondary)]">
-                            <span className="text-emerald-200">{item.label}</span>
-                            <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
-                              Auth: {item.auth}
-                            </span>
-                          </div>
-                          {item.headers.length > 0 && (
-                            <p className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
-                              Required headers: {item.headers.join(", ")}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-10">
-              <h2 className="text-xl font-semibold text-[var(--text-primary)]">Reliability Capabilities</h2>
-              <p className="mt-2 text-sm text-[var(--text-secondary)] max-w-3xl">
-                Functionality available today based on the current reliability stack.
-              </p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {capabilities.map((item) => (
-                  <div
-                    key={item}
-                    className="rounded-2xl border border-white/[0.08] bg-black/30 p-4 text-sm text-[var(--text-secondary)]"
-                  >
-                    {item}
-                  </div>
-                ))}
-              </div>
+            <p className="text-xs text-white mb-4">
+              Signed, idempotent ingest designed for machine agents. Rejects duplicates and replays.
+            </p>
+            <div className="rounded-lg border border-white p-3 text-[11px]">
+              <p className="text-white/70">Required headers</p>
+              <p className="mt-1 font-mono">idempotency-key, x-gpg-key-id, x-gpg-timestamp, x-gpg-signature</p>
             </div>
           </div>
-        </section>
-      </main>
 
-      <ANSMinimalFooter variant="dark" />
-    </div>
+          <div className="rounded-2xl border border-white bg-black p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-white">Reliability Signals</h2>
+              <span className="text-[10px] rounded-full border border-white px-2 py-0.5">Live</span>
+            </div>
+            <p className="text-xs text-white mb-4">
+              Success, latency, cost, retries, and dispute rates power deterministic routing and triage.
+            </p>
+            <div className="rounded-lg border border-white p-3 text-[11px]">
+              <p className="text-white/70">Signal mix</p>
+              <p className="mt-1 font-mono">success + latency + cost + retries + disputes</p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white bg-black p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-white">Agent-first Ops</h2>
+              <span className="text-[10px] rounded-full border border-white px-2 py-0.5">Routing</span>
+            </div>
+            <p className="text-xs text-white mb-4">
+              Query reliability, select agent, execute, report outcome. Use trends to tune retries.
+            </p>
+            <div className="rounded-lg border border-white p-3 text-[11px]">
+              <p className="text-white/70">Preferred cadence</p>
+              <p className="mt-1 font-mono">5-15 min for hot tasks, daily for cold tasks</p>
+            </div>
+          </div>
+        </div>
+
+        <ReliabilityDashboard />
+        <GlobalPerformanceGraph />
+
+        <div className="mt-10 rounded-2xl border border-white bg-black p-6 sm:p-8">
+          <div className="flex flex-col gap-3">
+            <h2 className="text-2xl sm:text-3xl font-semibold text-white">Agent-First Ops</h2>
+            <p className="text-sm text-white max-w-3xl">
+              Operational guidance intended for autonomous agents and orchestration layers.
+            </p>
+          </div>
+          <AgentOpsStats />
+        </div>
+
+        <div className="mt-10 rounded-2xl border border-white bg-black p-6 sm:p-8">
+          <div className="flex flex-col gap-3">
+            <h2 className="text-2xl sm:text-3xl font-semibold text-white">New API Additions</h2>
+            <p className="text-sm text-white max-w-3xl">
+              The latest machine endpoints now live for reliability-aware routing, metrics, and optimization.
+            </p>
+          </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {endpoints.map((item) => (
+              <div key={item.route + item.method} className="rounded-xl border border-white bg-black px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-white">
+                  <span className="text-white">
+                    {item.method} {item.route}
+                  </span>
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-white">
+                    Auth: {item.auth ?? "Public"}
+                  </span>
+                </div>
+                {item.headers && item.headers.length > 0 && (
+                  <p className="mt-2 text-[10px] uppercase tracking-[0.18em] text-white">
+                    Required headers: {item.headers.join(", ")}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-10 rounded-2xl border border-white bg-black p-6 sm:p-8">
+          <div className="flex flex-col gap-3">
+            <h2 className="text-2xl sm:text-3xl font-semibold text-white">API Quickstart</h2>
+            <p className="text-sm text-white max-w-3xl">
+              Direct machine endpoints for agents to query reliability and optimization guidance.
+            </p>
+          </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            {quickstart.map((item) => (
+              <div key={item.title} className="rounded-2xl border border-white bg-black p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs uppercase tracking-[0.2em] text-white">{item.title}</p>
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-white">{item.method}</span>
+                </div>
+                <p className="mt-2 text-sm text-white">{item.description}</p>
+                <p className="mt-3 text-xs font-mono text-white">{item.path}</p>
+                <pre className="mt-3 text-xs text-white bg-black border border-white rounded-lg p-3 overflow-x-auto">
+                  {item.curl}
+                </pre>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-10 rounded-2xl border border-white bg-black p-6 sm:p-8">
+          <div className="flex flex-col gap-3">
+            <h2 className="text-2xl sm:text-3xl font-semibold text-white">Reliability API Surface</h2>
+            <p className="text-sm text-white max-w-3xl">Full endpoint surface detected in this codebase.</p>
+          </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {apiCatalog.map((group) => (
+              <div key={group.group} className="rounded-2xl border border-white bg-black p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-white">{group.group}</p>
+                <div className="mt-3 space-y-3">
+                  {group.items.map((item) => (
+                    <div key={item.label} className="rounded-xl border border-white bg-black px-3 py-2">
+                      <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-white">
+                        <span className="text-white">{item.label}</span>
+                        <span className="text-[10px] uppercase tracking-[0.2em] text-white">
+                          Auth: {item.auth}
+                        </span>
+                      </div>
+                      {item.headers.length > 0 && (
+                        <p className="mt-2 text-[10px] uppercase tracking-[0.18em] text-white">
+                          Required headers: {item.headers.join(", ")}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-10 rounded-2xl border border-white bg-black p-6 sm:p-8">
+          <div className="flex flex-col gap-3">
+            <h2 className="text-2xl sm:text-3xl font-semibold text-white">Reliability Capabilities</h2>
+            <p className="text-sm text-white max-w-3xl">
+              Functionality available today based on the current reliability stack.
+            </p>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {capabilities.map((item) => (
+              <div key={item} className="rounded-2xl border border-white bg-black p-4 text-sm text-white">
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }

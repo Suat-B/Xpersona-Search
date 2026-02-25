@@ -11,6 +11,7 @@ import {
   signPayloadHash,
 } from "@/lib/trust/receipts";
 import { hasTrustTable } from "@/lib/trust/db";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 
 const ReceiptSchema = z.object({
   receiptType: z.enum([
@@ -30,13 +31,22 @@ const ReceiptSchema = z.object({
 
 export async function POST(req: NextRequest) {
   if (!(await hasTrustTable("trust_receipts"))) {
-    return NextResponse.json({ error: "Trust tables not ready" }, { status: 503 });
+    return jsonError(req, {
+      code: "SERVICE_UNAVAILABLE",
+      message: "Trust tables not ready",
+      status: 503,
+    });
   }
 
   const body = await req.json();
   const parsed = ReceiptSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+    return jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "Invalid payload",
+      status: 400,
+      details: parsed.error.flatten(),
+    });
   }
 
   const idempotencyKey =
@@ -54,11 +64,21 @@ export async function POST(req: NextRequest) {
         )
       )
       .limit(1);
-    if (existing[0]) return NextResponse.json(existing[0]);
+    if (existing[0]) {
+      const response = NextResponse.json(existing[0]);
+      applyRequestIdHeader(response, req);
+      return response;
+    }
   }
 
   const keyId = getActiveReceiptKeyId();
-  if (!keyId) return NextResponse.json({ error: "Receipt signing unavailable" }, { status: 500 });
+  if (!keyId) {
+    return jsonError(req, {
+      code: "INTERNAL_ERROR",
+      message: "Receipt signing unavailable",
+      status: 500,
+    });
+  }
 
   const canonical = canonicalizePayload(parsed.data.eventPayload);
   const payloadHash = hashPayload(canonical);
@@ -79,5 +99,7 @@ export async function POST(req: NextRequest) {
   };
 
   const inserted = await db.insert(trustReceipts).values(receipt).returning();
-  return NextResponse.json(inserted[0] ?? receipt);
+  const response = NextResponse.json(inserted[0] ?? receipt);
+  applyRequestIdHeader(response, req);
+  return response;
 }

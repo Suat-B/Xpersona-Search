@@ -3,16 +3,27 @@ import { db } from "@/lib/db";
 import { trustReceipts } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { hasTrustTable } from "@/lib/trust/db";
+import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+  if (!id) {
+    return jsonError(req, {
+      code: "BAD_REQUEST",
+      message: "Missing id",
+      status: 400,
+    });
+  }
 
   if (!(await hasTrustTable("trust_receipts"))) {
-    return NextResponse.json({ error: "Trust tables not ready" }, { status: 503 });
+    return jsonError(req, {
+      code: "SERVICE_UNAVAILABLE",
+      message: "Trust tables not ready",
+      status: 503,
+    });
   }
 
   const rows = await db
@@ -21,6 +32,14 @@ export async function GET(
     .where(eq(trustReceipts.id, id))
     .limit(1);
 
-  if (!rows[0]) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(rows[0]);
+  if (!rows[0]) {
+    return jsonError(req, {
+      code: "NOT_FOUND",
+      message: "Not found",
+      status: 404,
+    });
+  }
+  const response = NextResponse.json(rows[0]);
+  applyRequestIdHeader(response, req);
+  return response;
 }
