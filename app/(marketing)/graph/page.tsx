@@ -79,15 +79,15 @@ export default async function GraphPage() {
   ].filter(Boolean) as string[];
 
   return (
-    <section className="min-h-dvh bg-black text-white">
-      <div className="container mx-auto px-4 sm:px-6 py-10 sm:py-14">
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8">
+    <section className="min-h-dvh bg-black text-white overflow-x-hidden">
+      <div className="container mx-auto px-3 sm:px-6 py-6 sm:py-14">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 sm:gap-6 mb-6 sm:mb-8">
           <div>
             <div className="flex items-center gap-2 mb-2">
               <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
               <span className="text-xs font-medium text-white uppercase tracking-wider">Global Performance Graph</span>
             </div>
-            <h1 className="text-2xl sm:text-4xl font-bold text-white">
+            <h1 className="text-xl sm:text-4xl font-bold text-white">
               Global routing intelligence for autonomous agents.
             </h1>
             <p className="mt-2 text-sm text-white max-w-2xl">
@@ -111,8 +111,8 @@ export default async function GraphPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-8">
-          <div className="rounded-2xl border border-white bg-black p-5">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-5 mb-6 sm:mb-8">
+          <div className="rounded-2xl border border-white bg-black p-4 sm:p-5">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-white">Routing Contracts</h2>
               <span className="text-[10px] rounded-full border border-white px-2 py-0.5">Agents</span>
@@ -121,13 +121,13 @@ export default async function GraphPage() {
               Encode supported protocols, required auth, safety constraints, and expected cost/latency so
               routers can make deterministic, auditable decisions.
             </p>
-            <div className="rounded-lg border border-white p-3 text-[11px]">
+            <div className="rounded-lg border border-white p-2.5 sm:p-3 text-[10px] sm:text-[11px]">
               <p className="text-white/70">Contract promise</p>
               <p className="mt-1 font-mono">protocol + auth + safety + latency + cost</p>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white bg-black p-5">
+          <div className="rounded-2xl border border-white bg-black p-4 sm:p-5">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-white">Telemetry Graph</h2>
               <span className="text-[10px] rounded-full border border-white px-2 py-0.5">Live</span>
@@ -136,13 +136,13 @@ export default async function GraphPage() {
               Contracts pair with live telemetry to validate promised behavior, detect drift, and highlight
               agents that are safe to promote into critical workflows.
             </p>
-            <div className="rounded-lg border border-white p-3 text-[11px]">
+            <div className="rounded-lg border border-white p-2.5 sm:p-3 text-[10px] sm:text-[11px]">
               <p className="text-white/70">Signal mix</p>
               <p className="mt-1 font-mono">success + latency + cost + risk</p>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white bg-black p-5">
+          <div className="rounded-2xl border border-white bg-black p-4 sm:p-5">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-white">Deterministic Routing</h2>
               <span className="text-[10px] rounded-full border border-white px-2 py-0.5">GPG</span>
@@ -151,7 +151,7 @@ export default async function GraphPage() {
               With contracts in place, routing systems compare options deterministically, enforce constraints,
               and maintain auditability with fewer failed runs.
             </p>
-            <div className="rounded-lg border border-white p-3 text-[11px]">
+            <div className="rounded-lg border border-white p-2.5 sm:p-3 text-[10px] sm:text-[11px]">
               <p className="text-white/70">Planner goal</p>
               <p className="mt-1 font-mono">optimize success, then cost</p>
             </div>
@@ -160,9 +160,9 @@ export default async function GraphPage() {
 
         <GraphExplorer />
 
-        <div className="mt-10 rounded-2xl border border-white bg-black p-6 sm:p-8">
+        <div className="mt-8 sm:mt-10 rounded-2xl border border-white bg-black p-4 sm:p-8 min-w-0">
           <div className="flex flex-col gap-3">
-            <h2 className="text-2xl sm:text-3xl font-semibold text-white">Graph API Additions</h2>
+            <h2 className="text-xl sm:text-3xl font-semibold text-white">Graph API Additions</h2>
             <p className="text-sm text-white max-w-3xl">
               Direct machine endpoints for querying the Global Performance Graph and planning pipelines.
             </p>
@@ -183,16 +183,16 @@ export default async function GraphPage() {
             <p className="mt-2 text-sm text-white max-w-3xl">
               Recommended endpoints to get up and running.
             </p>
-            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            <div className="mt-4 grid gap-3 lg:grid-cols-3 min-w-0">
               {gpgQuickstart.map((item) => (
-                <div key={item.title} className="rounded-2xl border border-white bg-black p-4">
+                <div key={item.title} className="rounded-2xl border border-white bg-black p-3 sm:p-4 min-w-0">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs uppercase tracking-[0.2em] text-white">{item.title}</p>
+                    <p className="text-[11px] sm:text-xs uppercase tracking-[0.14em] sm:tracking-[0.2em] text-white">{item.title}</p>
                     <span className="text-[10px] uppercase tracking-[0.2em] text-white">{item.method}</span>
                   </div>
                   <p className="mt-2 text-sm text-white">{item.description}</p>
-                  <p className="mt-3 text-xs font-mono text-white">{item.path}</p>
-                  <pre className="mt-3 text-xs text-white bg-black border border-white rounded-lg p-3 overflow-x-auto">
+                  <p className="mt-3 text-[11px] sm:text-xs font-mono text-white break-all">{item.path}</p>
+                  <pre className="mt-3 text-[11px] sm:text-xs text-white bg-black border border-white rounded-lg p-2.5 sm:p-3 overflow-auto whitespace-pre-wrap break-words">
                     {item.curl}
                   </pre>
                 </div>
@@ -205,11 +205,11 @@ export default async function GraphPage() {
             <p className="mt-2 text-sm text-white max-w-3xl">
               All available endpoints detected in this codebase.
             </p>
-            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            <div className="mt-4 grid gap-3 lg:grid-cols-2 min-w-0">
               {gpgEndpoints.map((item) => (
-                <div key={item.route + item.method} className="rounded-xl border border-white bg-black px-3 py-2">
+                <div key={item.route + item.method} className="rounded-xl border border-white bg-black px-3 py-2 min-w-0">
                   <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-white">
-                    <span className="text-white">
+                    <span className="text-white break-all">
                       {item.method} {item.route}
                     </span>
                     <span className="text-[10px] uppercase tracking-[0.2em] text-white">
