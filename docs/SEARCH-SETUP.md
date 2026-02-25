@@ -100,7 +100,7 @@ Worker behavior:
 
 ## Production (Vercel Cron)
 
-The `/api/cron/crawl` route can run non-GitHub crawlers, and optionally GitHub crawlers.
+The `/api/v1/cron/crawl` route can run non-GitHub crawlers, and optionally GitHub crawlers.
 
 Recommended env:
 - `CRON_SECRET` - generate with `openssl rand -hex 32`
@@ -116,7 +116,7 @@ Recommended env:
 - `A2A_REGISTRY_URL` - optional
 - `MCP_REGISTRY_URL` - optional
 
-Then configure a cron job to call `GET /api/cron/crawl` with `Authorization: Bearer <CRON_SECRET>`.
+Then configure a cron job to call `GET /api/v1/cron/crawl` with `Authorization: Bearer <CRON_SECRET>`.
 
 ---
 

@@ -22,68 +22,97 @@ function percentile(values: number[], p: number) {
 }
 
 export async function GET(req: NextRequest) {
-  const url = new URL(req.url);
-  const limit = Math.min(2000, Math.max(100, Number(url.searchParams.get("limit") ?? "800")));
+  try {
+    const url = new URL(req.url);
+    const limit = Math.min(2000, Math.max(100, Number(url.searchParams.get("limit") ?? "800")));
 
-  const rows = (await db
-    .select({
-      id: agents.id,
-      slug: agents.slug,
-      name: agents.name,
-      capabilities: agents.capabilities,
-      successRate: agentMetrics.successRate,
-      avgLatencyMs: agentMetrics.avgLatencyMs,
-      avgCostUsd: agentMetrics.avgCostUsd,
-    })
-    .from(agents)
-    .innerJoin(agentMetrics, eq(agentMetrics.agentId, agents.id))
-    .limit(limit)) as AgentRow[];
+    const rows = (await db
+      .select({
+        id: agents.id,
+        slug: agents.slug,
+        name: agents.name,
+        capabilities: agents.capabilities,
+        successRate: agentMetrics.successRate,
+        avgLatencyMs: agentMetrics.avgLatencyMs,
+        avgCostUsd: agentMetrics.avgCostUsd,
+      })
+      .from(agents)
+      .innerJoin(agentMetrics, eq(agentMetrics.agentId, agents.id))
+      .limit(limit)) as AgentRow[];
 
-  const buckets = new Map<string, { count: number; success: number[]; cost: number[]; latency: number[] }>();
+    const buckets = new Map<string, { count: number; success: number[]; cost: number[]; latency: number[] }>();
 
-  for (const row of rows) {
-    const caps = Array.isArray(row.capabilities) ? (row.capabilities as string[]) : [];
-    const clusters = inferClusters(caps);
-    const tier = inferPriceTier(row.avgCostUsd);
-    for (const cluster of clusters) {
-      const key = `${cluster}:${tier}`;
-      if (!buckets.has(key)) {
-        buckets.set(key, { count: 0, success: [], cost: [], latency: [] });
+    for (const row of rows) {
+      const caps = Array.isArray(row.capabilities) ? (row.capabilities as string[]) : [];
+      const clusters = inferClusters(caps);
+      const tier = inferPriceTier(row.avgCostUsd);
+      for (const cluster of clusters) {
+        const key = `${cluster}:${tier}`;
+        if (!buckets.has(key)) {
+          buckets.set(key, { count: 0, success: [], cost: [], latency: [] });
+        }
+        const bucket = buckets.get(key);
+        if (!bucket) continue;
+        bucket.count += 1;
+        bucket.success.push(Number(row.successRate ?? 0));
+        bucket.cost.push(Number(row.avgCostUsd ?? 0));
+        bucket.latency.push(Number(row.avgLatencyMs ?? 0));
       }
-      const bucket = buckets.get(key);
-      if (!bucket) continue;
-      bucket.count += 1;
-      bucket.success.push(Number(row.successRate ?? 0));
-      bucket.cost.push(Number(row.avgCostUsd ?? 0));
-      bucket.latency.push(Number(row.avgLatencyMs ?? 0));
     }
-  }
 
-  const tiers: PriceTier[] = ["budget", "standard", "premium"];
-  const clusters = CLUSTERS.map((cluster) => {
-    const tierStats = tiers.map((tier) => {
-      const key = `${cluster.id}:${tier}`;
-      const bucket = buckets.get(key);
+    const tiers: PriceTier[] = ["budget", "standard", "premium"];
+    const clusters = CLUSTERS.map((cluster) => {
+      const tierStats = tiers.map((tier) => {
+        const key = `${cluster.id}:${tier}`;
+        const bucket = buckets.get(key);
+        return {
+          tier,
+          count: bucket?.count ?? 0,
+          success_p50: percentile(bucket?.success ?? [], 0.5),
+          success_p90: percentile(bucket?.success ?? [], 0.9),
+          cost_p50: percentile(bucket?.cost ?? [], 0.5),
+          cost_p90: percentile(bucket?.cost ?? [], 0.9),
+          latency_p50: percentile(bucket?.latency ?? [], 0.5),
+          latency_p90: percentile(bucket?.latency ?? [], 0.9),
+        };
+      });
       return {
-        tier,
-        count: bucket?.count ?? 0,
-        success_p50: percentile(bucket?.success ?? [], 0.5),
-        success_p90: percentile(bucket?.success ?? [], 0.9),
-        cost_p50: percentile(bucket?.cost ?? [], 0.5),
-        cost_p90: percentile(bucket?.cost ?? [], 0.9),
-        latency_p50: percentile(bucket?.latency ?? [], 0.5),
-        latency_p90: percentile(bucket?.latency ?? [], 0.9),
+        id: cluster.id,
+        label: cluster.label,
+        tiers: tierStats,
       };
     });
-    return {
+
+    return NextResponse.json({
+      clusters,
+      sample_size: rows.length,
+    });
+  } catch (error) {
+    console.error("Error building reliability graph:", error);
+    const tiers: PriceTier[] = ["budget", "standard", "premium"];
+    const clusters = CLUSTERS.map((cluster) => ({
       id: cluster.id,
       label: cluster.label,
-      tiers: tierStats,
-    };
-  });
+      tiers: tiers.map((tier) => ({
+        tier,
+        count: 0,
+        success_p50: 0,
+        success_p90: 0,
+        cost_p50: 0,
+        cost_p90: 0,
+        latency_p50: 0,
+        latency_p90: 0,
+      })),
+    }));
 
-  return NextResponse.json({
-    clusters,
-    sample_size: rows.length,
-  });
+    return NextResponse.json(
+      {
+        clusters,
+        sample_size: 0,
+      },
+      {
+        headers: { "X-Reliability-Graph-Fallback": "1" },
+      }
+    );
+  }
 }

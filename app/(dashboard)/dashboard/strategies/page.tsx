@@ -1,6 +1,5 @@
 "use client";
 
-import StrategiesSectionClient from "../StrategiesSectionClient";
 
 const FAQS = [
   {
@@ -39,7 +38,18 @@ export default function StrategiesPage() {
         </p>
       </header>
 
-      <StrategiesSectionClient />
+      <section className="agent-card p-6 text-center">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] text-[var(--accent-neural)]">
+          <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">Coming soon</h2>
+        <p className="mt-2 text-sm text-[var(--text-secondary)]">
+          We’re polishing the new strategy experience. Check back shortly for the upgraded builder and
+          management tools.
+        </p>
+      </section>
 
       <section className="agent-card p-6">
         <div className="flex items-center gap-3 mb-4">

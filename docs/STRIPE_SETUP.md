@@ -17,7 +17,7 @@ This will:
 
 **To change package values** (credits, prices, names): Edit `lib/credit-packages-config.json`, then run `npm run seed`. If you changed prices, run `npm run setup:stripe` to create new Stripe products.
 
-**After running:** Start `stripe listen --forward-to <your-url>/api/stripe/webhook` in another terminal for local testing. Restart your dev server.
+**After running:** Start `stripe listen --forward-to <your-url>/api/v1/stripe/webhook` in another terminal for local testing. Restart your dev server.
 
 ---
 
@@ -101,7 +101,7 @@ The app adds credits when Stripe sends `checkout.session.completed`. For that, S
 2. Log in: `stripe login`.
 3. Forward webhooks to your app:
    ```bash
-   stripe listen --forward-to localhost:3000/api/stripe/webhook
+   stripe listen --forward-to localhost:3000/api/v1/stripe/webhook
    ```
 4. The CLI will print a **webhook signing secret** (e.g. `whsec_...`). Put that in `.env.local` as **STRIPE_WEBHOOK_SECRET**.
 5. Keep `stripe listen` running while you test payments locally.
@@ -109,7 +109,7 @@ The app adds credits when Stripe sends `checkout.session.completed`. For that, S
 ### 5b. Production (xpersona.co)
 
 1. In Stripe Dashboard go to **Developers** → **Webhooks** → **Add endpoint**.
-2. **Endpoint URL**: `https://xpersona.co/api/stripe/webhook`
+2. **Endpoint URL**: `https://xpersona.co/api/v1/stripe/webhook`
 3. **Events to send**: select **checkout.session.completed** (or “Checkout session completed”).
 4. Click **Add endpoint**.
 5. Open the new endpoint → **Reveal** the **Signing secret**.
@@ -133,7 +133,7 @@ Your app reads packages from the `credit_packages` table; each row must have a v
 ## 7. Test the flow
 
 1. Start the app: `npm run dev`.
-2. If testing locally, start the Stripe CLI: `stripe listen --forward-to localhost:3000/api/stripe/webhook`.
+2. If testing locally, start the Stripe CLI: `stripe listen --forward-to localhost:3000/api/v1/stripe/webhook`.
 3. Sign in (e.g. Google), go to the dashboard, and click **Buy** on a credit package.
 4. You should be redirected to Stripe Checkout. In test mode use card `4242 4242 4242 4242`, any future expiry, any CVC, any billing details.
 5. After payment, Stripe sends `checkout.session.completed` to your webhook; the app adds credits and redirects to `/dashboard?success=1`. Confirm your balance increased.
@@ -144,7 +144,7 @@ Your app reads packages from the `credit_packages` table; each row must have a v
 
 - [ ] Create **live** products/prices in Stripe (or switch existing to live if you use the same structure).
 - [ ] Use **live** API keys: **STRIPE_SECRET_KEY** = `sk_live_...`.
-- [ ] Add production webhook endpoint `https://xpersona.co/api/stripe/webhook` and set **STRIPE_WEBHOOK_SECRET** to its signing secret.
+- [ ] Add production webhook endpoint `https://xpersona.co/api/v1/stripe/webhook` and set **STRIPE_WEBHOOK_SECRET** to its signing secret.
 - [ ] In Vercel (or your host), set all Stripe env vars for the production environment.
 - [ ] Seed production DB with **live** Stripe Price IDs (via env or manual DB update).
 - [ ] Run a test live payment (small amount) and confirm credits are added.
@@ -168,17 +168,17 @@ If anything fails, check: correct keys (test vs live), webhook URL and event typ
 ## How the integration works
 
 ```
-User clicks "Get 500 credits"  →  POST /api/credits/checkout { packageId }
+User clicks "Get 500 credits"  →  POST /api/v1/credits/checkout { packageId }
        ↓
 Checkout API creates Stripe Session with metadata: { userId, credits: "500" }
        ↓
 User is redirected to Stripe Checkout (hosted by Stripe)
        ↓
-User pays  →  Stripe sends checkout.session.completed to /api/stripe/webhook
+User pays  →  Stripe sends checkout.session.completed to /api/v1/stripe/webhook
        ↓
 Webhook reads metadata.userId + metadata.credits  →  Adds credits to user in DB
        ↓
 User is redirected back to /dashboard/deposit?success=1
 ```
 
-**Important**: Do not use Stripe Payment Links directly. They do not include `userId` in metadata, so the webhook cannot credit the correct user. Always use the app's checkout flow (`/api/credits/checkout`).
+**Important**: Do not use Stripe Payment Links directly. They do not include `userId` in metadata, so the webhook cannot credit the correct user. Always use the app's checkout flow (`/api/v1/credits/checkout`).

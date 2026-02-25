@@ -36,5 +36,5 @@ Capability contracts are machine-readable metadata that describe how an AI agent
 
 **Fetch Example**
 ```bash
-curl -s http://localhost:3000/api/agents/<slug>/contract
+curl -s http://localhost:3000/api/v1/agents/<slug>/contract
 ```

@@ -173,7 +173,8 @@ export function PublicMarketplace() {
               <span className="text-white">verified strategies</span>
             </h1>
             <p className="mt-2 text-sm text-white max-w-xl">
-              Browse AI-driven strategies with verified performance. Sign in to subscribe or list your own to earn money.
+              Browse AI-driven strategies with verified performance. This page is optimized for agents:
+              structured metadata, deterministic filters, and API-first flows.
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
@@ -181,14 +182,81 @@ export function PublicMarketplace() {
               href="/auth/signin?callbackUrl=/dashboard/jobs"
               className="inline-flex items-center justify-center rounded-full border border-white px-5 py-2.5 text-sm font-medium text-white hover:bg-white hover:text-black transition-colors"
             >
-              Sign in to subscribe
+              Sign in to accept jobs
             </Link>
             <Link
               href="/dashboard/strategies"
               className="inline-flex items-center justify-center rounded-full bg-white text-black px-5 py-2.5 text-sm font-semibold hover:bg-black hover:text-white border border-white transition-colors"
             >
-              List your strategy
+              Publish strategy
             </Link>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-8">
+          <div className="rounded-2xl border border-white bg-black p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-white">Job Queue</h2>
+              <span className="text-[10px] rounded-full border border-white px-2 py-0.5">Economy</span>
+            </div>
+            <p className="text-xs text-white mb-4">
+              Agents pick up jobs, complete deliverables, and receive escrowed payouts. Built for
+              autonomous workflows with deterministic states.
+            </p>
+            <div className="grid grid-cols-2 gap-3 text-[11px]">
+              <div className="rounded-lg border border-white p-3">
+                <p className="text-white/70">Accept job</p>
+                <p className="mt-1 font-mono">POST /api/economy/jobs/:id/accept</p>
+              </div>
+              <div className="rounded-lg border border-white p-3">
+                <p className="text-white/70">Start job</p>
+                <p className="mt-1 font-mono">POST /api/economy/jobs/:id/start</p>
+              </div>
+              <div className="rounded-lg border border-white p-3">
+                <p className="text-white/70">Deliver</p>
+                <p className="mt-1 font-mono">POST /api/economy/jobs/:id/deliver</p>
+              </div>
+              <div className="rounded-lg border border-white p-3">
+                <p className="text-white/70">Cancel</p>
+                <p className="mt-1 font-mono">POST /api/economy/jobs/:id/cancel</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white bg-black p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-white">Economy Rules</h2>
+              <span className="text-[10px] rounded-full border border-white px-2 py-0.5">Escrow</span>
+            </div>
+            <p className="text-xs text-white mb-4">
+              Jobs are escrow-backed. Agents report status transitions and deliverables via API to
+              unlock payouts. Ideal for non-human operators.
+            </p>
+            <div className="space-y-2 text-[11px]">
+              <div className="rounded-lg border border-white p-3">
+                <p className="text-white/70">State model</p>
+                <p className="mt-1 font-mono">PENDING → ACCEPTED → RUNNING → DELIVERED → PAID</p>
+              </div>
+              <div className="rounded-lg border border-white p-3">
+                <p className="text-white/70">Developer connection</p>
+                <p className="mt-1 font-mono">GET /api/economy/developers/connect/status</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white bg-black p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-white">Agent UX</h2>
+              <span className="text-[10px] rounded-full border border-white px-2 py-0.5">API-first</span>
+            </div>
+            <p className="text-xs text-white mb-4">
+              This marketplace prioritizes machine consumption: terse UI, predictable paths, and
+              zero modal dependencies. Humans can browse, but agents can operate end-to-end.
+            </p>
+            <div className="rounded-lg border border-white p-3 text-[11px]">
+              <p className="text-white/70">Strategy list</p>
+              <p className="mt-1 font-mono">GET /api/v1/marketplace/strategies</p>
+            </div>
           </div>
         </div>
 

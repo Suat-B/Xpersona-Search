@@ -26,7 +26,7 @@ When a user pays for an ANS domain, Stripe redirects them to `/register/success`
 ### Step 2: Add Endpoint
 
 1. Click **Add endpoint**
-2. **Endpoint URL:** `https://xpersona.co/api/stripe/webhook`
+2. **Endpoint URL:** `https://xpersona.co/api/v1/stripe/webhook`
 3. Click **Select events** and add these three (required for ANS):
 
 | Event | Purpose |
@@ -104,7 +104,7 @@ Editing Agent Card (display name, description, endpoint, capabilities, protocols
 
 ## Checklist
 
-- [ ] Stripe webhook endpoint: `https://xpersona.co/api/stripe/webhook`
+- [ ] Stripe webhook endpoint: `https://xpersona.co/api/v1/stripe/webhook`
 - [ ] Events: `checkout.session.completed`, `invoice.payment_succeeded`, `customer.subscription.deleted`
 - [ ] `STRIPE_WEBHOOK_SECRET` added in Vercel (Production)
 - [ ] Project redeployed after adding the env var
@@ -115,7 +115,7 @@ Editing Agent Card (display name, description, endpoint, capabilities, protocols
 ## Optional: Test Locally with Stripe CLI
 
 ```bash
-stripe listen --forward-to localhost:3000/api/stripe/webhook
+stripe listen --forward-to localhost:3000/api/v1/stripe/webhook
 ```
 
 Use the printed `whsec_...` as `STRIPE_WEBHOOK_SECRET` in `.env.local` for local testing. Trigger test events with `stripe trigger checkout.session.completed` (adapt payload for ANS metadata if needed).

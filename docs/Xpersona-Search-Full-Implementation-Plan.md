@@ -955,8 +955,8 @@ export async function GET(req: NextRequest) {
 ```json
 {
   "crons": [
-    { "path": "/api/cron/ans-verify", "schedule": "0 12 * * *" },
-    { "path": "/api/cron/crawl", "schedule": "0 6 * * *" }
+    { "path": "/api/v1/cron/ans-verify", "schedule": "0 12 * * *" },
+    { "path": "/api/v1/cron/crawl", "schedule": "0 6 * * *" }
   ]
 }
 ```
@@ -1421,7 +1421,7 @@ export function SearchLanding() {
       if (!reset && cursor) params.set("cursor", cursor);
 
       try {
-        const res = await fetch(`/api/search?${params}`);
+        const res = await fetch(`/api/v1/search?${params}`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Search failed");
 
@@ -1567,7 +1567,7 @@ interface Props {
 export default async function AgentPage({ params }: Props) {
   const { slug } = await params;
   const res = await fetch(
-    `${process.env.NEXTAUTH_URL ?? "http://localhost:3000"}/api/agents/${slug}`,
+    `${process.env.NEXTAUTH_URL ?? "http://localhost:3000"}/api/v1/agents/${slug}`,
     { cache: "no-store" }
   );
   if (!res.ok) notFound();
@@ -1641,9 +1641,9 @@ export default async function AgentPage({ params }: Props) {
 
 ```typescript
 // Remove from rewrites:
-// { source: "/agent/:name", destination: "/api/ans/card/:name" }
+// { source: "/agent/:name", destination: "/api/v1/ans/card/:name" }
 
-// If ANS card must remain for legacy: keep it at /api/ans/card/[name] only.
+// If ANS card must remain for legacy: keep it at /api/v1/ans/card/[name] only.
 // Clients use that URL directly.
 ```
 
@@ -1661,7 +1661,7 @@ export default async function AgentPage({ params }: Props) {
 
 ## 4.2 Keep (Optional)
 
-- `/api/ans/card/[name]` — Keep for existing registered ANS domains.
+- `/api/v1/ans/card/[name]` — Keep for existing registered ANS domains.
 - `ans_domains`, `ans_subscriptions` — Keep for data integrity.
 
 ---
@@ -1689,7 +1689,7 @@ DATABASE_URL=postgresql://...
 Reuse existing `docker-compose.yml`. Run crawler manually:
 
 ```bash
-curl -H "Authorization: Bearer $CRON_SECRET" "http://localhost:3000/api/cron/crawl"
+curl -H "Authorization: Bearer $CRON_SECRET" "http://localhost:3000/api/v1/cron/crawl"
 ```
 
 ---
@@ -1723,7 +1723,7 @@ This skill supports OpenClaw and A2A.`;
 
 ```typescript
 // app/api/search/route.test.ts
-// GET /api/search?sort=rank&limit=5
+// GET /api/v1/search?sort=rank&limit=5
 // Expect 200, results array, pagination object
 ```
 

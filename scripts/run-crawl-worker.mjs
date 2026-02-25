@@ -71,19 +71,20 @@ async function reapStaleJobs() {
 
 function runCrawl(args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      process.platform === "win32" ? "npx.cmd" : "npx",
-      ["tsx", "scripts/run-crawl.ts", ...args],
-      {
-        stdio: "inherit",
-        shell: false,
-        env: {
-          ...process.env,
-          CRAWL_WORKER_ID: workerId,
-          CRAWL_GITHUB_IN_CRON: "0",
-        },
-      }
-    );
+    const isWin = process.platform === "win32";
+    const command = isWin ? "cmd" : "npx";
+    const commandArgs = isWin
+      ? ["/d", "/s", "/c", "npx", "tsx", "scripts/run-crawl.ts", ...args]
+      : ["tsx", "scripts/run-crawl.ts", ...args];
+  const child = spawn(command, commandArgs, {
+      stdio: "inherit",
+      shell: false,
+      env: {
+        ...process.env,
+        CRAWL_WORKER_ID: workerId,
+        CRAWL_GITHUB_IN_CRON: "0",
+      },
+    });
     child.on("error", reject);
     child.on("exit", (code) => {
       if ((code ?? 0) === 0) resolve();

@@ -199,7 +199,7 @@ export function ReliabilityDashboard() {
   }, [browseAgents, browseFilter]);
 
   return (
-    <section className="mt-10 rounded-3xl border border-white/[0.08] bg-black/35 p-6 sm:p-8 shadow-[0_30px_60px_rgba(0,0,0,0.45)]">
+    <section className="mt-10 rounded-3xl bg-black/20 p-6 sm:p-8">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-[var(--text-tertiary)]">Live Reliability</p>

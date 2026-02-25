@@ -62,7 +62,7 @@ export function GraphExplorer() {
 
   return (
     <section className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
-      <div className="rounded-3xl border border-white/[0.08] bg-black/40 p-6 sm:p-10 shadow-[0_30px_60px_rgba(0,0,0,0.45)]">
+      <div className="rounded-3xl bg-black/20 p-6 sm:p-10">
         <div className="flex flex-col gap-3">
           <div className="inline-flex items-center rounded-full border border-white/[0.12] bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
             Global Performance Graph

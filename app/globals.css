@@ -180,15 +180,9 @@
 }
 
 html {
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
   color-scheme: dark; /* Ensures native form controls (select dropdowns etc.) use dark styling */
   scrollbar-gutter: stable both-edges;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
 }
 
 /* Fixed gradient background via pseudo-element — avoids background-attachment:fixed
@@ -215,7 +209,7 @@ body::before {
 
 /* Stable scroll root for app layouts — avoids nested-scroll flicker */
 .scroll-contain-paint {
-  -webkit-overflow-scrolling: touch;
+  -webkit-overflow-scrolling: auto;
   overscroll-behavior-y: contain;
   scrollbar-gutter: stable both-edges;
 }

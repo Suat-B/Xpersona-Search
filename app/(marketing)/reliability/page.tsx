@@ -77,7 +77,12 @@ export default async function ReliabilityPage() {
     return methods.size ? Array.from(methods) : ["GET"];
   }
 
-  const routeFiles = await listRouteFiles(apiBaseDir);
+  let routeFiles: string[] = [];
+  try {
+    routeFiles = await listRouteFiles(apiBaseDir);
+  } catch {
+    routeFiles = [];
+  }
   const endpointMeta = new Map<string, { auth?: string; headers?: string[] }>([
     [
       "/api/v1/reliability/ingest",
@@ -90,17 +95,21 @@ export default async function ReliabilityPage() {
 
   const endpoints: ApiEndpoint[] = [];
   for (const file of routeFiles) {
-    const source = await readFile(file, "utf-8");
-    const route = toApiRoute(file);
-    const methods = parseMethods(source);
-    const meta = endpointMeta.get(route);
-    for (const method of methods) {
-      endpoints.push({
-        method,
-        route,
-        auth: meta?.auth,
-        headers: meta?.headers,
-      });
+    try {
+      const source = await readFile(file, "utf-8");
+      const route = toApiRoute(file);
+      const methods = parseMethods(source);
+      const meta = endpointMeta.get(route);
+      for (const method of methods) {
+        endpoints.push({
+          method,
+          route,
+          auth: meta?.auth,
+          headers: meta?.headers,
+        });
+      }
+    } catch {
+      continue;
     }
   }
 
@@ -145,7 +154,12 @@ export default async function ReliabilityPage() {
     },
   ];
 
-  const libFiles = new Set<string>((await readdir(reliabilityLibDir)).filter((f) => f.endsWith(".ts")));
+  let libFiles = new Set<string>();
+  try {
+    libFiles = new Set<string>((await readdir(reliabilityLibDir)).filter((f) => f.endsWith(".ts")));
+  } catch {
+    libFiles = new Set<string>();
+  }
   const capabilities = [
     libFiles.has("classifier.ts") ? "Failure type classification and pattern tracking." : null,
     libFiles.has("metrics.ts") ? "Rolling reliability metrics (success, latency, cost, hallucination, retry, dispute)." : null,

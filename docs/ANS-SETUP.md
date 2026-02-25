@@ -75,7 +75,7 @@ MASTER_ENCRYPTION_KEY=64-character-hex-string-from-above
 
 ## 3. Stripe Webhook Events
 
-Configure your Stripe webhook endpoint (e.g. `https://xpersona.co/api/stripe/webhook`) with these events:
+Configure your Stripe webhook endpoint (e.g. `https://xpersona.co/api/v1/stripe/webhook`) with these events:
 
 | Event | Purpose |
 |-------|---------|
@@ -124,7 +124,7 @@ Users add the TXT record at `_agent.{name}.agent.xpersona.co` for DNS verificati
 
 ## 5. Vercel Cron (DNS verification)
 
-The `/api/cron/ans-verify` job runs every 15 minutes to check DNS TXT records and set `verified: true` when they match. Add to Vercel env vars:
+The `/api/v1/cron/ans-verify` job runs every 15 minutes to check DNS TXT records and set `verified: true` when they match. Add to Vercel env vars:
 
 - `CRON_SECRET` — generate with `openssl rand -hex 32`; Vercel sends this as Bearer token when invoking the cron.
 
@@ -151,7 +151,7 @@ First 100 registrations are free with code `AGENT100`. Enter it in the "Promo co
 
 ### "Service temporarily unavailable" when searching ANS domains
 
-This error means the `/api/ans/check` handler threw an exception. Common causes:
+This error means the `/api/v1/ans/check` handler threw an exception. Common causes:
 
 1. **Database not reachable**
    - Ensure `DATABASE_URL` is set in your deployment (Vercel → Project → Settings → Environment Variables).
