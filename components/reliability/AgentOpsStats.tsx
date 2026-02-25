@@ -17,6 +17,19 @@ type TopResponse = {
   count: number;
 };
 
+type KpiResponse = {
+  ok: boolean;
+  timestamp: string;
+  kpi: {
+    searchRequests: { success: number; noResults: number; error: number; fallback: number; total: number };
+    searchExecutionOutcomes: { success: number; failure: number; timeout: number; total: number };
+    graphFallbacks: { recommend: number; plan: number; top: number; related: number; total: number };
+    clickThroughRate: number | null;
+    noResultRate: number | null;
+    top404: Array<{ route: string; method: string; count: number }>;
+  };
+};
+
 function formatNumber(value: number | null, suffix = "") {
   if (value == null || Number.isNaN(value)) return "--";
   return `${value}${suffix}`;
@@ -30,6 +43,7 @@ function formatPct(value: number | null) {
 export function AgentOpsStats() {
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   const [top, setTop] = useState<TopResponse | null>(null);
+  const [kpi, setKpi] = useState<KpiResponse["kpi"] | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -39,15 +53,19 @@ export function AgentOpsStats() {
           fetch(apiV1("/reliability/graph"), { cache: "no-store" }),
           fetch(apiV1("/reliability/top?limit=5"), { cache: "no-store" }),
         ]);
+        const kpiRes = await fetch("/api/metrics/kpi", { cache: "no-store" });
         const graphJson = graphRes.ok ? ((await graphRes.json()) as GraphResponse) : null;
         const topJson = topRes.ok ? ((await topRes.json()) as TopResponse) : null;
+        const kpiJson = kpiRes.ok ? ((await kpiRes.json()) as KpiResponse) : null;
         if (!active) return;
         setGraph(graphJson);
         setTop(topJson);
+        setKpi(kpiJson?.kpi ?? null);
       } catch {
         if (!active) return;
         setGraph(null);
         setTop(null);
+        setKpi(null);
       }
     }
     load();
@@ -107,6 +125,33 @@ export function AgentOpsStats() {
           <span>Top-5 SR: {formatPct(aggregate.success)}</span>
           <span>Avg Lat: {formatNumber(aggregate.latency ? Math.round(aggregate.latency) : null, "ms")}</span>
           <span>Avg Cost: {aggregate.cost == null ? "--" : `$${aggregate.cost.toFixed(3)}`}</span>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-white bg-black p-4 lg:col-span-3">
+        <p className="text-xs uppercase tracking-[0.2em] text-white">Search KPI Snapshot</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-4 text-xs text-white">
+          <span>Requests: {kpi?.searchRequests.total ?? 0}</span>
+          <span>CTR: {formatPct(kpi?.clickThroughRate ?? null)}</span>
+          <span>No-result rate: {formatPct(kpi?.noResultRate ?? null)}</span>
+          <span>Graph fallbacks: {kpi?.graphFallbacks.total ?? 0}</span>
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-3 text-xs text-white">
+          <span>Exec success: {kpi?.searchExecutionOutcomes.success ?? 0}</span>
+          <span>Exec failure: {kpi?.searchExecutionOutcomes.failure ?? 0}</span>
+          <span>Exec timeout: {kpi?.searchExecutionOutcomes.timeout ?? 0}</span>
+        </div>
+        <div className="mt-3 rounded-lg border border-white bg-black p-3">
+          <p className="text-[11px] text-white/80 uppercase tracking-[0.16em]">Top 404 Endpoints</p>
+          <div className="mt-2 space-y-1 text-[11px] text-white">
+            {(kpi?.top404 ?? []).length === 0 && <div>No 404s recorded yet.</div>}
+            {(kpi?.top404 ?? []).slice(0, 5).map((item) => (
+              <div key={`${item.method}:${item.route}`} className="flex items-center justify-between gap-2">
+                <span className="font-mono">{item.method} {item.route}</span>
+                <span>{item.count}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

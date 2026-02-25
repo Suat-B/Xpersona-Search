@@ -1,0 +1,81 @@
+{
+  "title": "Xpersona API Observability",
+  "uid": "xpersona-api-observability",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Search Success Rate (%)",
+      "targets": [
+        {
+          "expr": "100 * sum(rate(xpersona_search_requests_total{outcome=\"success\"}[5m])) / clamp_min(sum(rate(xpersona_search_requests_total[5m])), 1e-9)",
+          "legendFormat": "success_rate"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Search No-Result Rate (%)",
+      "targets": [
+        {
+          "expr": "100 * sum(rate(xpersona_search_requests_total{outcome=\"no_results\"}[5m])) / clamp_min(sum(rate(xpersona_search_requests_total[5m])), 1e-9)",
+          "legendFormat": "no_result_rate"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Graph Fallback Rate (%)",
+      "targets": [
+        {
+          "expr": "100 * sum(rate(xpersona_graph_fallback_total[5m])) / clamp_min(sum(rate(xpersona_http_requests_total{route=~\"/api/graph/.*\"}[5m])), 1e-9)",
+          "legendFormat": "fallback_rate"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Search CTR Proxy (%)",
+      "targets": [
+        {
+          "expr": "100 * sum(rate(xpersona_search_click_total[5m])) / clamp_min(sum(rate(xpersona_search_requests_total{outcome=\"success\"}[5m])), 1e-9)",
+          "legendFormat": "ctr_proxy"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Top 404 Endpoints (RPS)",
+      "targets": [
+        {
+          "expr": "topk(10, sum by (route, method) (rate(xpersona_http_not_found_total[5m])))",
+          "legendFormat": "{{method}} {{route}}"
+        }
+      ],
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 16 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Search Execution Outcomes (RPS)",
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(xpersona_search_execution_outcome_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 25 }
+    }
+  ]
+}
+

@@ -46,6 +46,13 @@ export default async function SearchApiPage() {
   const aiSearchCurl = `curl "${baseUrl}/api/v1/search/ai?q=best+agents+for+multistep+research&limit=3"`;
   const snapshotCurl = `curl "${baseUrl}/api/v1/agents/my-agent-slug/snapshot"`;
   const toolDescriptorCurl = `curl "${baseUrl}/api/v1/search/tool"`;
+  const metricsCurl = `curl "${baseUrl}/api/metrics/prometheus"`;
+  const sdkInstall = `npm install @xpersona-search/search-sdk`;
+  const sdkSnippet = `import { Xpersona } from "@xpersona-search/search-sdk";
+
+const xp = new Xpersona({ baseUrl: "${baseUrl}" });
+const result = await xp.aiSearch({ q: "best agents for research", limit: 3 });
+console.log(result.topAgents);`;
 
   const searchResponseJson = `{
   "success": true,
@@ -238,6 +245,76 @@ export default async function SearchApiPage() {
               <strong className="text-white">Prometheus metrics:</strong>{" "}
               <code className="rounded bg-white/10 px-1 font-mono text-xs">/api/metrics/prometheus</code>
               {" "}exports request counts and latency histograms.
+            </p>
+            <p className="mt-3">
+              <strong className="text-white">Observability setup:</strong>{" "}
+              <code className="rounded bg-white/10 px-1 font-mono text-xs">docs/OBSERVABILITY-SETUP.md</code>
+            </p>
+          </div>
+        </section>
+
+        <section className="mb-12">
+          <h2 className="text-lg font-semibold text-white mb-3">Quickstart in 3 Steps</h2>
+          <div className="rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
+            <ol className="list-decimal pl-5 space-y-3 text-sm text-[var(--text-secondary)]">
+              <li>
+                Try search immediately:
+                <code className="ml-1 rounded bg-white/10 px-1 py-0.5 font-mono text-xs">GET /api/v1/search</code>
+              </li>
+              <li>
+                Integrate SDK:
+                <code className="ml-1 rounded bg-white/10 px-1 py-0.5 font-mono text-xs">@xpersona-search/search-sdk</code>
+              </li>
+              <li>
+                Validate with AI mode + snapshot:
+                <code className="ml-1 rounded bg-white/10 px-1 py-0.5 font-mono text-xs">/api/v1/search/ai</code>
+                <span className="mx-1">+</span>
+                <code className="rounded bg-white/10 px-1 py-0.5 font-mono text-xs">/api/v1/agents/{"{slug}"}/snapshot</code>
+              </li>
+            </ol>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="relative rounded-lg bg-black/50 p-3 font-mono text-[11px] overflow-x-auto">
+                <CopyButton text={sdkInstall} />
+                <pre className="text-emerald-300/90 break-all">{sdkInstall}</pre>
+              </div>
+              <div className="relative rounded-lg bg-black/50 p-3 font-mono text-[11px] overflow-x-auto">
+                <CopyButton text={sdkSnippet} />
+                <pre className="text-cyan-300/90 whitespace-pre">{sdkSnippet}</pre>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="mb-12">
+          <h2 className="text-lg font-semibold text-white mb-3">Playground</h2>
+          <div className="rounded-2xl border border-white/5 bg-[var(--bg-card)] p-6">
+            <p className="text-sm text-[var(--text-secondary)] mb-3">
+              Use these copy-paste commands as a fast interactive playground.
+            </p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="relative rounded-lg bg-black/50 p-3 font-mono text-[11px] overflow-x-auto">
+                <CopyButton text={searchCurl} />
+                <pre className="text-emerald-300/90 break-all">{searchCurl}</pre>
+              </div>
+              <div className="relative rounded-lg bg-black/50 p-3 font-mono text-[11px] overflow-x-auto">
+                <CopyButton text={aiSearchCurl} />
+                <pre className="text-emerald-300/90 break-all">{aiSearchCurl}</pre>
+              </div>
+              <div className="relative rounded-lg bg-black/50 p-3 font-mono text-[11px] overflow-x-auto">
+                <CopyButton text={snapshotCurl} />
+                <pre className="text-emerald-300/90 break-all">{snapshotCurl}</pre>
+              </div>
+              <div className="relative rounded-lg bg-black/50 p-3 font-mono text-[11px] overflow-x-auto">
+                <CopyButton text={metricsCurl} />
+                <pre className="text-emerald-300/90 break-all">{metricsCurl}</pre>
+              </div>
+            </div>
+            <p className="mt-4 text-xs text-[var(--text-tertiary)]">
+              Postman:
+              <a href="/postman.xpersona.v1.collection.json" className="ml-1 text-[var(--accent-heart)] hover:underline">
+                /postman.xpersona.v1.collection.json
+              </a>
             </p>
           </div>
         </section>

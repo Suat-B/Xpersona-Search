@@ -93,6 +93,109 @@ function formatLabels(labels: Record<string, string | number>): string {
   return `{${entries.map(([k, v]) => `${k}="${String(v)}"`).join(",")}}`;
 }
 
+export type KpiSnapshot = {
+  searchRequests: {
+    success: number;
+    noResults: number;
+    error: number;
+    fallback: number;
+    total: number;
+  };
+  searchExecutionOutcomes: {
+    success: number;
+    failure: number;
+    timeout: number;
+    total: number;
+  };
+  graphFallbacks: {
+    recommend: number;
+    plan: number;
+    top: number;
+    related: number;
+    total: number;
+  };
+  clickThroughRate: number | null;
+  noResultRate: number | null;
+  top404: Array<{ route: string; method: string; count: number }>;
+};
+
+function readNamedCounter(metric: string, labels: Record<string, string>): number {
+  const byLabel = namedCounters.get(metric);
+  if (!byLabel) return 0;
+  const key = labelKey(labels);
+  return byLabel.get(key) ?? 0;
+}
+
+export function getKpiSnapshot(top404Limit = 10): KpiSnapshot {
+  const searchSuccess = readNamedCounter("xpersona_search_requests_total", { outcome: "success" });
+  const searchNoResults = readNamedCounter("xpersona_search_requests_total", { outcome: "no_results" });
+  const searchError = readNamedCounter("xpersona_search_requests_total", { outcome: "error" });
+  const searchFallback = readNamedCounter("xpersona_search_requests_total", { outcome: "fallback" });
+  const searchTotal = searchSuccess + searchNoResults + searchError + searchFallback;
+
+  const execSuccess = readNamedCounter("xpersona_search_execution_outcome_total", { outcome: "success" });
+  const execFailure = readNamedCounter("xpersona_search_execution_outcome_total", { outcome: "failure" });
+  const execTimeout = readNamedCounter("xpersona_search_execution_outcome_total", { outcome: "timeout" });
+  const execTotal = execSuccess + execFailure + execTimeout;
+
+  const graphRecommend = readNamedCounter("xpersona_graph_fallback_total", { endpoint: "recommend", reason: "circuit_open" })
+    + readNamedCounter("xpersona_graph_fallback_total", { endpoint: "recommend", reason: "internal_error" })
+    + readNamedCounter("xpersona_graph_fallback_total", { endpoint: "recommend", reason: "upstream_error" })
+    + readNamedCounter("xpersona_graph_fallback_total", { endpoint: "recommend", reason: "stale_cache" });
+  const graphPlan = readNamedCounter("xpersona_graph_fallback_total", { endpoint: "plan", reason: "circuit_open" })
+    + readNamedCounter("xpersona_graph_fallback_total", { endpoint: "plan", reason: "internal_error" })
+    + readNamedCounter("xpersona_graph_fallback_total", { endpoint: "plan", reason: "upstream_error" })
+    + readNamedCounter("xpersona_graph_fallback_total", { endpoint: "plan", reason: "stale_cache" });
+  const graphTop = readNamedCounter("xpersona_graph_fallback_total", { endpoint: "top", reason: "circuit_open" })
+    + readNamedCounter("xpersona_graph_fallback_total", { endpoint: "top", reason: "internal_error" })
+    + readNamedCounter("xpersona_graph_fallback_total", { endpoint: "top", reason: "upstream_error" })
+    + readNamedCounter("xpersona_graph_fallback_total", { endpoint: "top", reason: "stale_cache" });
+  const graphRelated = readNamedCounter("xpersona_graph_fallback_total", { endpoint: "related", reason: "circuit_open" })
+    + readNamedCounter("xpersona_graph_fallback_total", { endpoint: "related", reason: "internal_error" })
+    + readNamedCounter("xpersona_graph_fallback_total", { endpoint: "related", reason: "upstream_error" })
+    + readNamedCounter("xpersona_graph_fallback_total", { endpoint: "related", reason: "stale_cache" });
+  const graphTotal = graphRecommend + graphPlan + graphTop + graphRelated;
+
+  const clicks = readNamedCounter("xpersona_search_click_total", {});
+
+  const top404 = [...requestCounter.byLabel.entries()]
+    .map(([key, count]) => ({ labels: parseLabelKey(key), count }))
+    .filter((entry) => entry.labels.status === "404")
+    .sort((a, b) => b.count - a.count)
+    .slice(0, top404Limit)
+    .map((entry) => ({
+      route: entry.labels.route ?? "",
+      method: entry.labels.method ?? "",
+      count: entry.count,
+    }));
+
+  return {
+    searchRequests: {
+      success: searchSuccess,
+      noResults: searchNoResults,
+      error: searchError,
+      fallback: searchFallback,
+      total: searchTotal,
+    },
+    searchExecutionOutcomes: {
+      success: execSuccess,
+      failure: execFailure,
+      timeout: execTimeout,
+      total: execTotal,
+    },
+    graphFallbacks: {
+      recommend: graphRecommend,
+      plan: graphPlan,
+      top: graphTop,
+      related: graphRelated,
+      total: graphTotal,
+    },
+    clickThroughRate: searchTotal > 0 ? clicks / searchTotal : null,
+    noResultRate: searchTotal > 0 ? searchNoResults / searchTotal : null,
+    top404,
+  };
+}
+
 export function renderPrometheus(): string {
   const lines: string[] = [];
 

@@ -1,0 +1,59 @@
+groups:
+  - name: xpersona-search-slo
+    rules:
+      - alert: XpersonaSearchSuccessRateLow
+        expr: |
+          (
+            sum(rate(xpersona_search_requests_total{outcome="success"}[15m]))
+            /
+            clamp_min(sum(rate(xpersona_search_requests_total[15m])), 1e-9)
+          ) < 0.70
+        for: 15m
+        labels:
+          severity: warning
+          service: xpersona-search
+        annotations:
+          summary: "Search success rate below 70%"
+          description: "Search success rate dropped below 70% for 15m."
+
+      - alert: XpersonaSearchNoResultRateHigh
+        expr: |
+          (
+            sum(rate(xpersona_search_requests_total{outcome="no_results"}[15m]))
+            /
+            clamp_min(sum(rate(xpersona_search_requests_total[15m])), 1e-9)
+          ) > 0.35
+        for: 20m
+        labels:
+          severity: warning
+          service: xpersona-search
+        annotations:
+          summary: "No-result rate above 35%"
+          description: "Search no-result rate is elevated for 20m."
+
+      - alert: XpersonaGraphFallbackRateHigh
+        expr: |
+          (
+            sum(rate(xpersona_graph_fallback_total[15m]))
+            /
+            clamp_min(sum(rate(xpersona_http_requests_total{route=~"/api/graph/.*"}[15m])), 1e-9)
+          ) > 0.10
+        for: 10m
+        labels:
+          severity: critical
+          service: xpersona-graph
+        annotations:
+          summary: "Graph fallback rate above 10%"
+          description: "Graph endpoints are using fallback too frequently."
+
+      - alert: Xpersona404Spike
+        expr: |
+          sum(rate(xpersona_http_not_found_total[10m])) > 2
+        for: 10m
+        labels:
+          severity: warning
+          service: xpersona-api
+        annotations:
+          summary: "404 rate spike detected"
+          description: "Aggregate 404 rate is above 2 req/s for 10m."
+
