@@ -1,1 +1,1 @@
-export { GET } from "@/app/api/reliability/run-benchmark/route";
+export { POST } from "@/app/api/reliability/run-benchmark/route";
