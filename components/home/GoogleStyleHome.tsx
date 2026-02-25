@@ -211,9 +211,6 @@ export function GoogleStyleHome({
               className="h-10 sm:h-12 md:h-14 w-auto select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75"
             />
           </span>
-          <span className="mt-2 block text-xs sm:text-sm font-medium tracking-wide text-[var(--text-tertiary)]">
-            Currently in Beta
-          </span>
         </Link>
 
         <form onSubmit={handleSearch} className="relative z-50 w-full max-w-2xl mt-4 sm:mt-6 animate-fade-in-up animate-delay-225">
