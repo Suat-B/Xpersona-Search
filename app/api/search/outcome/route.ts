@@ -12,6 +12,8 @@ import {
   SEARCH_ANON_RATE_LIMIT,
   SEARCH_AUTH_RATE_LIMIT,
 } from "@/lib/search/rate-limit";
+import { ingestRun } from "@/lib/gpg/ingest";
+import type { FailureType, RunStatus } from "@/lib/reliability/types";
 import {
   canonicalizePayload,
   getActiveReceiptKeyId,
@@ -35,6 +37,28 @@ const OutcomeSchema = z.object({
 
 const IDEMPOTENCY_WINDOW_MS = 2 * 60 * 1000;
 const idempotencyStore = new Map<string, number>();
+const RELIABILITY_FROM_OUTCOMES = process.env.RELIABILITY_FROM_OUTCOMES !== "0";
+
+function mapOutcomeStatus(outcome: "success" | "failure" | "timeout"): RunStatus {
+  if (outcome === "success") return "SUCCESS";
+  if (outcome === "timeout") return "TIMEOUT";
+  return "FAILURE";
+}
+
+function mapFailureCode(code?: (typeof FAILURE_CODES)[number]): FailureType | null {
+  switch (code) {
+    case "tool_error":
+      return "TOOL_ERROR";
+    case "schema_mismatch":
+      return "INVALID_FORMAT";
+    case "rate_limit":
+      return "TIMEOUT";
+    case "auth":
+      return "POLICY_BLOCK";
+    default:
+      return null;
+  }
+}
 
 function seenIdempotencyKey(key: string): boolean {
   const now = Date.now();
@@ -199,6 +223,56 @@ export async function POST(req: NextRequest) {
       } catch {
         // best-effort, do not fail outcome ingestion
       }
+    }
+  }
+
+  if (RELIABILITY_FROM_OUTCOMES) {
+    const startedAt =
+      params.latencyMs != null
+        ? new Date(Date.now() - Math.max(0, params.latencyMs))
+        : new Date();
+    try {
+      await ingestRun({
+        agentId: params.selectedResultId,
+        jobId: params.querySignature,
+        taskText: params.query ?? null,
+        taskType: params.taskType ?? "general",
+        tags: null,
+        pipeline: params.executionPath
+          ? {
+              id: params.querySignature,
+              agentPath: [params.selectedResultId],
+              step: 0,
+            }
+          : null,
+        status: mapOutcomeStatus(params.outcome),
+        latencyMs: params.latencyMs ?? 0,
+        costUsd: params.costUsd ?? 0,
+        confidence: null,
+        hallucinationScore: null,
+        failureType: mapFailureCode(params.failureCode) ?? null,
+        trace: {
+          source: "search_outcome",
+          failureCode: params.failureCode ?? null,
+          executionPath: params.executionPath,
+          budgetExceeded: params.budgetExceeded ?? false,
+          latencyMs: params.latencyMs ?? null,
+          costUsd: params.costUsd ?? null,
+          observedAt: new Date().toISOString(),
+        },
+        inputHash: params.querySignature,
+        outputHash: null,
+        modelUsed: "unknown",
+        tokensInput: null,
+        tokensOutput: null,
+        startedAt,
+        completedAt: new Date(),
+        isVerified: false,
+        ingestIdempotencyKey: idem ?? null,
+        ingestKeyId: null,
+      });
+    } catch (err) {
+      console.warn("[Reliability] Outcome ingest failed:", err);
     }
   }
 
