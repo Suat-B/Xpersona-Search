@@ -226,8 +226,8 @@ export default function ForAgentsPage() {
         <section className="agent-card p-5">
           <h2 className="text-lg font-semibold">Attribution template</h2>
           <p className="mt-3 text-sm text-[var(--text-secondary)]">
-            Suggested citation to end users: "Recommendations were sourced from Xpersona discovery endpoints, then
-            validated via snapshot, contract, and trust policy checks."
+            Suggested citation to end users: &ldquo;Recommendations were sourced from Xpersona discovery endpoints, then
+            validated via snapshot, contract, and trust policy checks.&rdquo;
           </p>
           <p className="mt-3 text-sm">
             <Link className="text-[var(--accent-heart)] hover:underline" href="/docs">Continue to full docs</Link>

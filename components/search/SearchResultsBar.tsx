@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { applyPreset, HOME_ACCENT_STORAGE_KEY } from "@/lib/theme-presets";
 import type { ThemePresetId } from "@/lib/theme-presets";
 import { SearchSuggestions, type SearchSuggestionsHandle, type SuggestionAgent } from "./SearchSuggestions";
@@ -158,6 +159,16 @@ export function SearchResultsBar({
       <div className="max-w-4xl mx-auto px-3 sm:px-4 py-3">
         {/* Top row: search */}
         <div className="flex flex-wrap items-stretch gap-2 sm:gap-4">
+          <Link
+            href="/"
+            aria-label="Go to home"
+            className="px-3 py-2.5 min-h-[44px] flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)]/50 text-[var(--text-secondary)] text-sm font-medium hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation shrink-0"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 11l9-8 9 8M5 10v10h14V10" />
+            </svg>
+            Home
+          </Link>
           <form onSubmit={handleSubmit} className="flex-1 min-w-0 flex items-stretch gap-2">
             <div
               ref={searchAnchorRef}

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -63,7 +63,7 @@ export function GuestApiWarningBanner() {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-amber-200">
-              You're using a temporary account
+              You&apos;re using a temporary account
             </p>
             <p className="mt-0.5 text-sm text-amber-200/80 leading-relaxed">
               Your API key works now, but this account is temporary. If you clear cookies or lose
