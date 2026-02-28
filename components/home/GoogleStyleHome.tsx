@@ -222,7 +222,7 @@ export function GoogleStyleHome({
                 : "border-white/[0.1] hover:border-white/[0.15] shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
             }`}
           >
-            <div className="absolute left-3 sm:left-5 w-4 h-4 sm:w-5 sm:h-5 text-[var(--text-tertiary)] pointer-events-none" aria-hidden>
+            <div className="absolute left-4 sm:left-5 w-4 h-4 sm:w-5 sm:h-5 text-[var(--text-tertiary)] pointer-events-none" aria-hidden>
               <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
@@ -246,7 +246,7 @@ export function GoogleStyleHome({
               aria-expanded={showSuggestions}
               autoComplete="off"
               enterKeyHint="search"
-              className="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-3.5 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-lg rounded-xl sm:rounded-2xl focus:outline-none min-h-[46px] touch-manipulation"
+              className="w-full pl-14 sm:pl-14 pr-4 py-3 sm:py-3.5 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-lg rounded-xl sm:rounded-2xl focus:outline-none min-h-[46px] touch-manipulation appearance-none"
             />
             <SearchSuggestions
               ref={suggestionsRef}

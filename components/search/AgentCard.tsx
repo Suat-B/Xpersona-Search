@@ -29,6 +29,15 @@ interface Agent {
     verificationFreshnessHours?: number | null;
     reputationScore?: number | null;
   } | null;
+  contentMeta?: {
+    hasEditorialContent: boolean;
+    qualityScore: number | null;
+    lastReviewedAt: string | null;
+    bestFor: string | null;
+    setupComplexity: "low" | "medium" | "high";
+    hasFaq: boolean;
+    hasPlaybook: boolean;
+  } | null;
 }
 
 interface Props {
@@ -39,14 +48,14 @@ interface Props {
 function getPopularityLabel(agent: Agent): string {
   const github = agent.githubData ?? {};
   const npm = agent.npmData ?? {};
-  if (github.stars != null && github.stars > 0) return `⭐ ${github.stars}`;
+  if (github.stars != null && github.stars > 0) return `${github.stars} stars`;
   if (typeof npm.downloads === "number" && npm.downloads > 0) {
     const n = npm.downloads;
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M downloads`;
     if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k downloads`;
     return `${n} downloads`;
   }
-  return `⭐ ${agent.githubData?.stars ?? 0}`;
+  return `${agent.githubData?.stars ?? 0} stars`;
 }
 
 export function AgentCard({ agent, rank }: Props) {
@@ -61,13 +70,16 @@ export function AgentCard({ agent, rank }: Props) {
   const protos = Array.isArray(agent.protocols) ? agent.protocols : [];
   const popularityLabel = getPopularityLabel(agent);
   const trust = agent.trust ?? null;
+  const contentMeta = agent.contentMeta ?? null;
 
   return (
     <article className="agent-card neural-glass-hover p-6 rounded-xl border border-[var(--border)] hover:border-[var(--accent-heart)]/40 transition-all duration-200">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-3 mb-2">
-            <span className="text-2xl font-bold text-[var(--text-tertiary)]" aria-hidden>#{rank}</span>
+            <span className="text-2xl font-bold text-[var(--text-tertiary)]" aria-hidden>
+              #{rank}
+            </span>
             <Link
               href={agentHref}
               onClick={handleAgentNavigate}
@@ -93,9 +105,14 @@ export function AgentCard({ agent, rank }: Props) {
               <ProtocolBadge key={p} protocol={p} />
             ))}
           </div>
-          <p className="text-[var(--text-secondary)] mb-4 line-clamp-2">
+          <p className="text-[var(--text-secondary)] mb-3 line-clamp-2">
             {agent.description || "No description"}
           </p>
+          {contentMeta?.bestFor && (
+            <p className="text-xs text-[var(--text-tertiary)] mb-3">
+              <span className="font-medium text-[var(--text-secondary)]">Best for:</span> {contentMeta.bestFor}
+            </p>
+          )}
           <div className="flex flex-wrap gap-2 mb-4">
             {caps.slice(0, 5).map((cap) => (
               <span
@@ -106,24 +123,31 @@ export function AgentCard({ agent, rank }: Props) {
               </span>
             ))}
           </div>
-          <div className="flex items-center gap-4 text-sm">
+          <div className="flex items-center gap-3 text-sm flex-wrap">
             <SafetyBadge score={agent.safetyScore} />
-            <span className="text-[var(--text-quaternary)]">·</span>
+            <span className="text-[var(--text-quaternary)]">|</span>
             <span className="text-[var(--text-tertiary)]">{popularityLabel}</span>
+            {contentMeta && (
+              <>
+                <span className="text-[var(--text-quaternary)]">|</span>
+                <span className="text-[var(--text-tertiary)]">Setup {contentMeta.setupComplexity}</span>
+                {contentMeta.hasFaq && <span className="text-[var(--text-tertiary)]">| FAQ</span>}
+                {contentMeta.hasPlaybook && <span className="text-[var(--text-tertiary)]">| Playbook</span>}
+                {contentMeta.qualityScore != null && (
+                  <span className="text-[var(--text-tertiary)]">| Content {contentMeta.qualityScore}/100</span>
+                )}
+              </>
+            )}
             {trust?.handshakeStatus && (
               <>
-                <span className="text-[var(--text-quaternary)]">·</span>
-                <span className="text-[var(--text-tertiary)]">
-                  Handshake {trust.handshakeStatus}
-                </span>
+                <span className="text-[var(--text-quaternary)]">|</span>
+                <span className="text-[var(--text-tertiary)]">Handshake {trust.handshakeStatus}</span>
               </>
             )}
             {trust?.reputationScore != null && (
               <>
-                <span className="text-[var(--text-quaternary)]">·</span>
-                <span className="text-[var(--text-tertiary)]">
-                  Reputation {trust.reputationScore}
-                </span>
+                <span className="text-[var(--text-quaternary)]">|</span>
+                <span className="text-[var(--text-tertiary)]">Reputation {trust.reputationScore}</span>
               </>
             )}
           </div>
@@ -145,3 +169,4 @@ export function AgentCard({ agent, rank }: Props) {
     </article>
   );
 }
+

@@ -57,6 +57,15 @@ interface Agent {
     freshnessScore: number;
     finalScore: number;
   };
+  contentMeta?: {
+    hasEditorialContent: boolean;
+    qualityScore: number | null;
+    lastReviewedAt: string | null;
+    bestFor: string | null;
+    setupComplexity: "low" | "medium" | "high";
+    hasFaq: boolean;
+    hasPlaybook: boolean;
+  };
 }
 
 interface Facets {
@@ -237,6 +246,9 @@ export function SearchLanding() {
       params.set("sort", nextSort);
       params.set("limit", "30");
       params.set("vertical", nextVertical);
+      if (nextVertical === "agents") {
+        params.set("include", "content");
+      }
       params.set("recall", nextRecall);
       if (nextIncludeSources.length > 0) {
         params.set("includeSources", nextIncludeSources.join(","));

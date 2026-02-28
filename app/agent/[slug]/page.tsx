@@ -1,12 +1,18 @@
 import React from "react";
+import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AgentPageClient } from "@/components/agent/AgentPageClient";
-import type { Metadata } from "next";
 import {
   getPublicAgentPageData,
   shouldEnableMachineBlocks,
   type PublicAgentPageData,
 } from "@/lib/agents/public-agent-page";
+import {
+  isThinContent,
+  resolveEditorialContent,
+} from "@/lib/agents/editorial-content";
+import { getAgentsByProtocol, sourceSlugFromValue } from "@/lib/agents/hub-data";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -14,11 +20,34 @@ interface Props {
 
 export const revalidate = 300;
 
-function buildJsonLdGraph(data: PublicAgentPageData) {
+type EditorialData = Awaited<ReturnType<typeof resolveEditorialContent>>;
+
+async function getEditorial(data: PublicAgentPageData): Promise<EditorialData> {
+  const clientData = (data.agentForClient ?? {}) as Record<string, unknown>;
+  const openclawData =
+    (clientData.openclawData as Record<string, unknown> | null | undefined) ?? null;
+
+  return resolveEditorialContent({
+    agentId: data.id,
+    name: data.name,
+    description: data.description,
+    capabilities: data.capabilities,
+    protocols: data.protocols,
+    source: data.source,
+    readmeExcerpt: data.readmeExcerpt,
+    updatedAtIso: data.updatedAtIso,
+    openclawData,
+    sourceUrl: data.sourceUrl,
+    homepage: data.homepage,
+  });
+}
+
+function buildJsonLdGraph(data: PublicAgentPageData, editorial: EditorialData) {
   const pageId = `${data.canonicalUrl}#webpage`;
   const appId = `${data.canonicalUrl}#software`;
   const machineDatasetId = `${data.canonicalUrl}#machine-dataset`;
   const invocationWorkId = `${data.canonicalUrl}#invocation-templates`;
+  const faqId = `${data.canonicalUrl}#faq`;
 
   return {
     "@context": "https://schema.org",
@@ -55,6 +84,7 @@ function buildJsonLdGraph(data: PublicAgentPageData) {
         },
         about: { "@id": appId },
         isBasedOn: [data.snapshotUrl, data.contractUrl, data.trustUrl],
+        mainEntity: { "@id": faqId },
       },
       {
         "@type": "Dataset",
@@ -78,6 +108,18 @@ function buildJsonLdGraph(data: PublicAgentPageData) {
         about: { "@id": appId },
         isBasedOn: [data.contractUrl, data.snapshotUrl],
         dateModified: data.machineBlocks.generatedAt,
+      },
+      {
+        "@type": "FAQPage",
+        "@id": faqId,
+        mainEntity: editorial.sections.faq.map((item) => ({
+          "@type": "Question",
+          name: item.q,
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: item.a,
+          },
+        })),
       },
       {
         "@type": "BreadcrumbList",
@@ -117,6 +159,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     };
   }
 
+  const editorial = await getEditorial(data);
   const title = `${data.name} | Xpersona Agent`;
   const description = data.description.slice(0, 160);
 
@@ -134,7 +177,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       type: "website",
     },
     robots: {
-      index: true,
+      index: !isThinContent(editorial.quality),
       follow: true,
     },
   };
@@ -153,11 +196,17 @@ function renderJsonBlock(id: string, payload: unknown) {
 export default async function AgentPage({ params }: Props) {
   const { slug } = await params;
   const data = await getPublicAgentPageData(slug);
-
   if (!data) notFound();
 
+  const editorial = await getEditorial(data);
   const machineEnabled = shouldEnableMachineBlocks(slug);
-  const jsonLd = buildJsonLdGraph(data);
+  const jsonLd = buildJsonLdGraph(data, editorial);
+  const relatedByProtocol =
+    data.protocols.length > 0
+      ? (await getAgentsByProtocol(data.protocols[0], 8))
+          .filter((item) => item.slug !== data.slug)
+          .slice(0, 4)
+      : [];
 
   return (
     <>
@@ -172,7 +221,161 @@ export default async function AgentPage({ params }: Props) {
             <p className="text-xs uppercase tracking-wide text-[var(--text-tertiary)]">AI Agent Profile</p>
             <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text-primary)]">{data.name}</h1>
             <p className="mt-3 text-[var(--text-secondary)] leading-relaxed">{data.description}</p>
+            <div className="mt-4 flex flex-wrap gap-2 text-xs">
+              <span className="rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-1 text-[var(--text-tertiary)]">
+                Content quality: {editorial.quality.score}/100
+              </span>
+              <span className="rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-1 text-[var(--text-tertiary)]">
+                Setup: {editorial.setupComplexity}
+              </span>
+              <span className="rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-1 text-[var(--text-tertiary)]">
+                Last reviewed: {new Date(editorial.lastReviewedAt).toLocaleDateString("en-US")}
+              </span>
+            </div>
           </header>
+
+          <section id="overview" className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">What This Agent Does</h2>
+            <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+              {editorial.sections.overview}
+            </p>
+          </section>
+
+          <section className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">Best For</h2>
+              <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+                {editorial.sections.bestFor}
+              </p>
+            </div>
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">Not Ideal For</h2>
+              <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+                {editorial.sections.notFor}
+              </p>
+            </div>
+          </section>
+
+          <section id="setup" className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">Setup Path</h2>
+            <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+              {editorial.sections.setup}
+            </p>
+          </section>
+
+          <section id="workflows" className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">Real Workflows</h2>
+            <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-[var(--text-secondary)]">
+              {editorial.sections.workflows.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ol>
+          </section>
+
+          <section className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">Limitations And Failure Modes</h2>
+              <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+                {editorial.sections.limitations}
+              </p>
+            </div>
+            <div id="alternatives" className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">Alternatives</h2>
+              <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+                {editorial.sections.alternatives}
+              </p>
+              {relatedByProtocol.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2 text-sm">
+                  {relatedByProtocol.map((item) => (
+                    <Link
+                      key={item.id}
+                      href={`/agent/compare/${encodeURIComponent(`${data.slug}-vs-${item.slug}`)}`}
+                      className="text-[var(--accent-heart)] hover:underline"
+                    >
+                      Compare with {item.name}
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {editorial.sections.releaseHighlights.length > 0 && (
+            <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">Release And Freshness Highlights</h2>
+              <ul className="mt-3 space-y-2 text-sm text-[var(--text-secondary)]">
+                {editorial.sections.releaseHighlights.slice(0, 6).map((item) => (
+                  <li key={`${item.version}-${item.createdAt ?? "n/a"}`}>
+                    <span className="font-medium text-[var(--text-primary)]">v{item.version}</span>
+                    {item.createdAt ? ` - ${new Date(item.createdAt).toLocaleDateString("en-US")}` : ""}
+                    {item.fileCount != null ? ` - ${item.fileCount} files` : ""}
+                    {item.changelog ? ` - ${item.changelog}` : ""}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          <section id="faq" className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">FAQ</h2>
+            <div className="mt-3 space-y-3">
+              {editorial.sections.faq.map((item) => (
+                <details key={item.q} className="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-3">
+                  <summary className="cursor-pointer font-medium text-[var(--text-primary)]">{item.q}</summary>
+                  <p className="mt-2 text-sm text-[var(--text-secondary)]">{item.a}</p>
+                </details>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">Data Sources And Page Health</h2>
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-[var(--text-secondary)]">
+              {editorial.dataSources.map((source) => (
+                <li key={source}>
+                  <a className="text-[var(--accent-heart)] hover:underline" href={source} target="_blank" rel="noopener noreferrer">
+                    {source}
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--text-tertiary)]">
+              <span>Word count: {editorial.quality.wordCount}</span>
+              <span>| Uniqueness: {editorial.quality.uniquenessScore}/100</span>
+              <span>| Quality status: {editorial.quality.status}</span>
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">Explore Related Pages</h2>
+            <div className="mt-3 flex flex-wrap gap-3 text-sm">
+              <Link href="/agent" className="text-[var(--accent-heart)] hover:underline">Agent hub</Link>
+              <Link
+                href={`/agent/source/${encodeURIComponent(sourceSlugFromValue(data.source))}`}
+                className="text-[var(--accent-heart)] hover:underline"
+              >
+                More from {data.source}
+              </Link>
+              {data.protocols.map((protocol) => (
+                <Link
+                  key={protocol}
+                  href={`/agent/protocol/${encodeURIComponent(protocol.toLowerCase())}`}
+                  className="text-[var(--accent-heart)] hover:underline"
+                >
+                  {protocol} agents
+                </Link>
+              ))}
+              {editorial.useCases.map((useCase) => (
+                <Link
+                  key={useCase}
+                  href={`/agent/use-case/${encodeURIComponent(useCase)}`}
+                  className="text-[var(--accent-heart)] hover:underline"
+                >
+                  {useCase.replace(/-/g, " ")}
+                </Link>
+              ))}
+            </div>
+          </section>
 
           {machineEnabled && (
             <>
@@ -322,15 +525,6 @@ export default async function AgentPage({ params }: Props) {
             <p className="mt-3 text-xs text-[var(--text-tertiary)]">Machine endpoint: {data.snapshotUrl}</p>
           </section>
 
-          {data.hasCustomPage && (
-            <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
-              <h2 className="text-lg font-semibold text-[var(--text-primary)]">Developer Custom Experience</h2>
-              <p className="mt-2 text-sm text-[var(--text-tertiary)]">
-                The custom page remains available below as an interactive enhancement.
-              </p>
-            </section>
-          )}
-
           <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
             <h2 className="text-lg font-semibold text-[var(--text-primary)]">Interactive View</h2>
             <div className="mt-4">
@@ -344,3 +538,4 @@ export default async function AgentPage({ params }: Props) {
     </>
   );
 }
+

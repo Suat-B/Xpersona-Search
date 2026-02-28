@@ -345,9 +345,15 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
     );
   }
 
-  const caps = Array.isArray(agent.capabilities) ? agent.capabilities : [];
-  const protos = Array.isArray(agent.protocols) ? agent.protocols : [];
-  const langs = Array.isArray(agent.languages) ? agent.languages : [];
+  const caps = Array.isArray(agent.capabilities)
+    ? Array.from(new Set(agent.capabilities.filter(Boolean)))
+    : [];
+  const protos = Array.isArray(agent.protocols)
+    ? Array.from(new Set(agent.protocols.filter(Boolean)))
+    : [];
+  const langs = Array.isArray(agent.languages)
+    ? Array.from(new Set(agent.languages.filter(Boolean)))
+    : [];
   const openclaw = agent.openclawData ?? {};
   const params = openclaw.parameters && Object.keys(openclaw.parameters).length > 0
     ? openclaw.parameters
@@ -574,15 +580,15 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
               </span>
             </div>
             <div className="grid gap-4 md:grid-cols-2 text-xs text-[var(--text-tertiary)]">
-              <div className="relative">
+              <div className="relative min-w-0">
                 <p className="mb-2">Fetch trust snapshot</p>
-                <pre className="p-3 rounded-lg bg-black/50 border border-[var(--border)] font-mono text-xs text-[var(--text-secondary)] overflow-x-auto whitespace-pre">
+                <pre className="w-full p-3 rounded-lg bg-black/50 border border-[var(--border)] font-mono text-xs text-[var(--text-secondary)] overflow-x-auto whitespace-pre-wrap break-words">
                   {trustCurl}
                 </pre>
               </div>
-              <div className="relative">
+              <div className="relative min-w-0">
                 <p className="mb-2">Trigger handshake verification</p>
-                <pre className="p-3 rounded-lg bg-black/50 border border-[var(--border)] font-mono text-xs text-[var(--text-secondary)] overflow-x-auto whitespace-pre">
+                <pre className="w-full p-3 rounded-lg bg-black/50 border border-[var(--border)] font-mono text-xs text-[var(--text-secondary)] overflow-x-auto whitespace-pre-wrap break-words">
                   {verifyCurl}
                 </pre>
               </div>

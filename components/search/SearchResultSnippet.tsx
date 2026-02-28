@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { saveScrollPosition } from "@/lib/search/scroll-memory";
+import { inferWhyRankLabel, toRelativeUpdatedLabel } from "@/lib/agents/content-format";
 
 interface Agent {
   id: string;
@@ -53,13 +54,20 @@ interface Agent {
     reputationScore?: number | null;
     receiptSupport?: boolean;
   } | null;
+  contentMeta?: {
+    hasEditorialContent: boolean;
+    qualityScore: number | null;
+    lastReviewedAt: string | null;
+    bestFor: string | null;
+    setupComplexity: "low" | "medium" | "high";
+    hasFaq: boolean;
+    hasPlaybook: boolean;
+  } | null;
 }
 
 interface Props {
   agent: Agent;
-  /** When true, render the sitelinks block. Only first result should pass true. */
   showSitelinks?: boolean;
-  /** Optional animation classes for staggered entrance */
   className?: string;
 }
 
@@ -89,7 +97,7 @@ function getSitelinks(agent: Agent, agentHref: string): Sitelink[] {
   add({
     title: "Full agent page",
     href: agentHref,
-    snippet: "Documentation, install commands, parameters, and examples.",
+    snippet: "Documentation, setup guidance, workflows, FAQ, and alternatives.",
   });
 
   const ghBase = agent.url?.replace(/\.git$/, "").replace(/\/$/, "");
@@ -117,7 +125,7 @@ function getSitelinks(agent: Agent, agentHref: string): Sitelink[] {
   }
   if (agent.source === "NPM" && (agent.npmData?.packageName ?? agent.name)) {
     const pkg = agent.npmData?.packageName ?? agent.name;
-    const ver = agent.npmData?.version ? ` — latest v${agent.npmData.version}` : "";
+    const ver = agent.npmData?.version ? ` - latest v${agent.npmData.version}` : "";
     add({
       title: "npm package",
       href: `https://www.npmjs.com/package/${encodeURIComponent(pkg)}`,
@@ -163,6 +171,12 @@ function getSitelinks(agent: Agent, agentHref: string): Sitelink[] {
   return links.slice(0, 10);
 }
 
+function setupComplexityLabel(value: "low" | "medium" | "high"): string {
+  if (value === "high") return "Setup: high";
+  if (value === "low") return "Setup: low";
+  return "Setup: medium";
+}
+
 export function SearchResultSnippet({ agent, showSitelinks = false, className }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -188,6 +202,13 @@ export function SearchResultSnippet({ agent, showSitelinks = false, className }:
     : null;
   const trust = agent.trust ?? null;
   const trustFreshness = trust?.verificationFreshnessHours ?? null;
+  const contentMeta = agent.contentMeta ?? null;
+  const updatedLabel = toRelativeUpdatedLabel(contentMeta?.lastReviewedAt ?? null);
+  const whyRank = inferWhyRankLabel({
+    trustScore: trust?.reputationScore ?? null,
+    overallRank: agent.overallRank,
+    qualityScore: contentMeta?.qualityScore ?? null,
+  });
 
   return (
     <article className={`py-4 sm:py-5 border-b border-[var(--border)] last:border-b-0 group min-w-0 ${className ?? ""}`}>
@@ -200,24 +221,28 @@ export function SearchResultSnippet({ agent, showSitelinks = false, className }:
           {agent.name}
         </h3>
       </Link>
-      <p className="text-sm text-[var(--text-tertiary)] mt-0.5 truncate">
-        {displayUrl}
-      </p>
+      <p className="text-sm text-[var(--text-tertiary)] mt-0.5 truncate">{displayUrl}</p>
       <p className="text-[var(--text-secondary)] text-sm mt-1.5 line-clamp-2">
         {agent.description || "No description available."}
       </p>
 
+      {contentMeta?.bestFor && (
+        <p className="mt-2 text-xs text-[var(--text-tertiary)]">
+          <span className="font-medium text-[var(--text-secondary)]">Best for:</span> {contentMeta.bestFor}
+        </p>
+      )}
+
       {caps.length > 0 && (
         <p className="text-xs text-[var(--text-quaternary)] mt-2">
           <span className="font-medium text-[var(--text-tertiary)]">Capabilities:</span>{" "}
-          {caps.slice(0, 5).join(", ")}{caps.length > 5 ? "..." : ""}
+          {caps.slice(0, 5).join(", ")}
+          {caps.length > 5 ? "..." : ""}
         </p>
       )}
 
       {langs.length > 0 && (
         <p className="text-xs text-[var(--text-quaternary)] mt-1">
-          <span className="font-medium text-[var(--text-tertiary)]">Languages:</span>{" "}
-          {langs.join(", ")}
+          <span className="font-medium text-[var(--text-tertiary)]">Languages:</span> {langs.join(", ")}
         </p>
       )}
 
@@ -238,19 +263,29 @@ export function SearchResultSnippet({ agent, showSitelinks = false, className }:
           </span>
         )}
         {protos.map((p) => (
-          <span
-            key={p}
-            className="px-2 py-0.5 rounded bg-[var(--bg-elevated)] border border-white/[0.06]"
-          >
+          <span key={p} className="px-2 py-0.5 rounded bg-[var(--bg-elevated)] border border-white/[0.06]">
             {p}
           </span>
         ))}
-        {agent.safetyScore < 40 && (
-          <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
-            Pending review
-          </span>
+        {contentMeta && (
+          <>
+            <span className="text-[var(--text-quaternary)]">|</span>
+            <span>{setupComplexityLabel(contentMeta.setupComplexity)}</span>
+            {contentMeta.hasFaq && <span>| Has FAQ</span>}
+            {contentMeta.hasPlaybook && <span>| Has playbook</span>}
+            {contentMeta.qualityScore != null && <span>| Content {contentMeta.qualityScore}/100</span>}
+            {updatedLabel && <span>| {updatedLabel}</span>}
+          </>
         )}
-        <span className="text-[var(--text-quaternary)]">·</span>
+        {agent.safetyScore < 40 && (
+          <>
+            <span className="text-[var(--text-quaternary)]">|</span>
+            <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+              Pending review
+            </span>
+          </>
+        )}
+        <span className="text-[var(--text-quaternary)]">|</span>
         <span>
           Safety{" "}
           {agent.safetyScore >= 25 && agent.safetyScore <= 55
@@ -260,13 +295,13 @@ export function SearchResultSnippet({ agent, showSitelinks = false, className }:
         </span>
         {(agent.githubData?.stars ?? 0) > 0 && (
           <>
-            <span className="text-[var(--text-quaternary)]">·</span>
-            <span>⭐ {agent.githubData?.stars} stars</span>
+            <span className="text-[var(--text-quaternary)]">|</span>
+            <span>{agent.githubData?.stars} stars</span>
           </>
         )}
         {exec?.execReady && (
           <>
-            <span className="text-[var(--text-quaternary)]">·</span>
+            <span className="text-[var(--text-quaternary)]">|</span>
             <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
               Exec Ready
             </span>
@@ -274,52 +309,66 @@ export function SearchResultSnippet({ agent, showSitelinks = false, className }:
         )}
         {exec?.observedLatencyMsP95 != null && (
           <>
-            <span className="text-[var(--text-quaternary)]">·</span>
+            <span className="text-[var(--text-quaternary)]">|</span>
             <span>P95 {exec.observedLatencyMsP95}ms</span>
           </>
         )}
         {exec?.estimatedCostUsd != null && (
           <>
-            <span className="text-[var(--text-quaternary)]">·</span>
+            <span className="text-[var(--text-quaternary)]">|</span>
             <span>${exec.estimatedCostUsd.toFixed(3)}</span>
           </>
         )}
         {trust?.handshakeStatus && (
           <>
-            <span className="text-[var(--text-quaternary)]">·</span>
+            <span className="text-[var(--text-quaternary)]">|</span>
             <span>Handshake {trust.handshakeStatus}</span>
           </>
         )}
         {trust?.reputationScore != null && (
           <>
-            <span className="text-[var(--text-quaternary)]">·</span>
+            <span className="text-[var(--text-quaternary)]">|</span>
             <span>Reputation {trust.reputationScore}</span>
           </>
         )}
         {trustFreshness != null && trustFreshness <= 24 && (
           <>
-            <span className="text-[var(--text-quaternary)]">·</span>
-            <span>Fresh &lt;24h</span>
+            <span className="text-[var(--text-quaternary)]">|</span>
+            <span>Fresh under 24h</span>
           </>
         )}
         {successPct != null && (
           <>
-            <span className="text-[var(--text-quaternary)]">·</span>
+            <span className="text-[var(--text-quaternary)]">|</span>
             <span>Success {successPct}%</span>
           </>
         )}
         {reliabilityPct != null && (
           <>
-            <span className="text-[var(--text-quaternary)]">·</span>
+            <span className="text-[var(--text-quaternary)]">|</span>
             <span>Reliability {reliabilityPct}%</span>
           </>
         )}
         {Array.isArray(agent.fallbacks) && agent.fallbacks.length > 0 && (
           <>
-            <span className="text-[var(--text-quaternary)]">·</span>
+            <span className="text-[var(--text-quaternary)]">|</span>
             <span>{agent.fallbacks.length} fallback{agent.fallbacks.length === 1 ? "" : "s"}</span>
           </>
         )}
+      </div>
+
+      <p className="mt-2 text-xs text-[var(--text-tertiary)]">{whyRank}</p>
+
+      <div className="mt-2 flex flex-wrap gap-3 text-xs">
+        <Link href={`${agentHref}#setup`} onClick={handleAgentNavigate} className="text-[var(--accent-heart)] hover:underline">
+          Setup
+        </Link>
+        <Link href={`${agentHref}#faq`} onClick={handleAgentNavigate} className="text-[var(--accent-heart)] hover:underline">
+          FAQ
+        </Link>
+        <Link href={`${agentHref}#alternatives`} onClick={handleAgentNavigate} className="text-[var(--accent-heart)] hover:underline">
+          Alternatives
+        </Link>
       </div>
 
       {(agent.policyMatch || agent.rankingSignals || (agent.fallbacks && agent.fallbacks.length > 0)) && (
@@ -371,7 +420,7 @@ export function SearchResultSnippet({ agent, showSitelinks = false, className }:
                       {link.title}
                     </span>
                     <span className="text-[var(--text-quaternary)] flex-shrink-0 group-hover/link:text-[var(--accent-heart)]">
-                      &gt;
+                      {">"}
                     </span>
                   </div>
                   <p className="text-xs text-[var(--text-quaternary)] mt-0.5 group-hover/link:text-[var(--text-tertiary)] line-clamp-2">
@@ -393,7 +442,7 @@ export function SearchResultSnippet({ agent, showSitelinks = false, className }:
                     {link.title}
                   </span>
                   <span className="text-[var(--text-quaternary)] flex-shrink-0 group-hover/link:text-[var(--accent-heart)]">
-                    &gt;
+                    {">"}
                   </span>
                 </div>
                 <p className="text-xs text-[var(--text-quaternary)] mt-0.5 group-hover/link:text-[var(--text-tertiary)] line-clamp-2">
@@ -407,7 +456,7 @@ export function SearchResultSnippet({ agent, showSitelinks = false, className }:
             onClick={handleAgentNavigate}
             className="inline-block text-xs text-[var(--text-quaternary)] hover:text-[var(--accent-heart)] mt-1 font-medium"
           >
-            More from this agent →
+            {"More from this agent ->"}
           </Link>
         </div>
       )}

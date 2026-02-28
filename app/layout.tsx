@@ -1,5 +1,12 @@
 import type { Metadata, Viewport } from "next";
+import { Outfit, Inter } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
+import { AuthProvider } from "@/components/auth/AuthProvider";
+import { ServiceProvider } from "@/components/providers/ServiceProvider";
+import { HelpFrame } from "@/components/help/HelpFrame";
+import { getService } from "@/lib/service";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -13,7 +20,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Xpersona – AI Search Engine",
+  title: "Xpersona - AI Search Engine",
   description: "AI Search Engine. Search and discover 100,000 AI agents.",
   metadataBase: new URL(process.env.NEXTAUTH_URL ?? "https://xpersona.co"),
   icons: {
@@ -21,16 +28,11 @@ export const metadata: Metadata = {
     shortcut: "/xpersona-logo-1.png",
     apple: "/xpersona-logo-1.png",
   },
-  openGraph: { title: "Xpersona – AI Search Engine", description: "AI Search Engine. Search and discover 100,000 AI agents." },
+  openGraph: {
+    title: "Xpersona - AI Search Engine",
+    description: "AI Search Engine. Search and discover 100,000 AI agents.",
+  },
 };
-
-import { Outfit, Inter } from "next/font/google";
-import { Analytics } from "@vercel/analytics/next";
-import { SpeedInsights } from "@vercel/speed-insights/next";
-import { AuthProvider } from "@/components/auth/AuthProvider";
-import { ServiceProvider } from "@/components/providers/ServiceProvider";
-import { HelpFrame } from "@/components/help/HelpFrame";
-import { getService } from "@/lib/service";
 
 const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -72,3 +74,4 @@ export default async function RootLayout({
     </html>
   );
 }
+

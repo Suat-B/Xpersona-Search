@@ -557,3 +557,85 @@ export const agentReputationSnapshots = pgTable(
     uniqueIndex("agent_reputation_agent_unique_idx").on(table.agentId),
   ]
 );
+
+/** Human-readable editorial content for agent detail pages. */
+export const agentEditorialContent = pgTable(
+  "agent_editorial_content",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id").notNull().unique(),
+    overviewMd: text("overview_md"),
+    bestForMd: text("best_for_md"),
+    notForMd: text("not_for_md"),
+    setupMd: text("setup_md"),
+    workflowsMd: text("workflows_md"),
+    limitationsMd: text("limitations_md"),
+    alternativesMd: text("alternatives_md"),
+    faqJson: jsonb("faq_json").$type<Array<{ q: string; a: string }>>().default([]),
+    releaseHighlights: jsonb("release_highlights").$type<
+      Array<{
+        version: string;
+        createdAt: string | null;
+        changelog: string | null;
+        fileCount: number | null;
+        zipByteSize: number | null;
+      }>
+    >(),
+    qualityScore: integer("quality_score").notNull().default(0),
+    wordCount: integer("word_count").notNull().default(0),
+    uniquenessScore: integer("uniqueness_score").notNull().default(0),
+    lastReviewedAt: timestamp("last_reviewed_at", { withTimezone: true }),
+    status: varchar("status", { length: 16 }).notNull().default("DRAFT"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("agent_editorial_content_agent_id_idx").on(table.agentId),
+    index("agent_editorial_content_quality_idx").on(table.qualityScore),
+    index("agent_editorial_content_status_idx").on(table.status),
+    index("agent_editorial_content_last_reviewed_idx").on(table.lastReviewedAt),
+  ]
+);
+
+/** Content snapshots for editorial versioning and audits. */
+export const agentContentVersions = pgTable(
+  "agent_content_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id").notNull(),
+    versionHash: varchar("version_hash", { length: 64 }).notNull(),
+    source: varchar("source", { length: 32 }).notNull().default("GENERATED"),
+    contentSnapshot: jsonb("content_snapshot").$type<Record<string, unknown>>(),
+    publishedAt: timestamp("published_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("agent_content_versions_agent_hash_idx").on(table.agentId, table.versionHash),
+    index("agent_content_versions_agent_idx").on(table.agentId),
+    index("agent_content_versions_published_at_idx").on(table.publishedAt),
+  ]
+);
+
+/** Editorial content for taxonomy and comparison pages. */
+export const taxonomyPageContent = pgTable(
+  "taxonomy_page_content",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: varchar("slug", { length: 255 }).notNull().unique(),
+    type: varchar("type", { length: 32 }).notNull(),
+    title: varchar("title", { length: 255 }).notNull(),
+    introMd: text("intro_md"),
+    faqJson: jsonb("faq_json").$type<Array<{ q: string; a: string }>>().default([]),
+    qualityScore: integer("quality_score").notNull().default(0),
+    status: varchar("status", { length: 16 }).notNull().default("DRAFT"),
+    lastReviewedAt: timestamp("last_reviewed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("taxonomy_page_content_slug_idx").on(table.slug),
+    index("taxonomy_page_content_type_idx").on(table.type),
+    index("taxonomy_page_content_quality_idx").on(table.qualityScore),
+    index("taxonomy_page_content_status_idx").on(table.status),
+  ]
+);

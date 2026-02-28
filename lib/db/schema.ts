@@ -1147,4 +1147,7 @@ export {
   agentCapabilityHandshakes,
   trustReceipts,
   agentReputationSnapshots,
+  agentEditorialContent,
+  agentContentVersions,
+  taxonomyPageContent,
 } from "./search-schema";

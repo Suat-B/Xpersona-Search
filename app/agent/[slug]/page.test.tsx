@@ -9,6 +9,40 @@ vi.mock("@/lib/agents/public-agent-page", () => ({
   shouldEnableMachineBlocks: () => true,
 }));
 
+vi.mock("@/lib/agents/editorial-content", () => ({
+  resolveEditorialContent: async () => ({
+    sections: {
+      overview: "Overview text",
+      bestFor: "Best for text",
+      notFor: "Not for text",
+      setup: "Setup text",
+      workflows: ["One", "Two", "Three"],
+      limitations: "Limitations text",
+      alternatives: "Alternatives text",
+      faq: [{ q: "Q1", a: "A1" }],
+      releaseHighlights: [],
+    },
+    quality: {
+      score: 82,
+      threshold: 65,
+      status: "ready",
+      wordCount: 420,
+      uniquenessScore: 71,
+      reasons: [],
+    },
+    setupComplexity: "medium",
+    lastReviewedAt: "2026-02-25T10:00:30.000Z",
+    dataSources: ["https://github.com/example/docker-jumpserver-node"],
+    useCases: ["developer-automation"],
+  }),
+  isThinContent: () => false,
+}));
+
+vi.mock("@/lib/agents/hub-data", () => ({
+  getAgentsByProtocol: async () => [],
+  sourceSlugFromValue: (value: string) => value.toLowerCase(),
+}));
+
 vi.mock("@/components/agent/AgentPageClient", () => ({
   AgentPageClient: () => <div data-testid="agent-page-client">Interactive Agent Content</div>,
 }));

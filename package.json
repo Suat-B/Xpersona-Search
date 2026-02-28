@@ -32,6 +32,7 @@
     "search:embeddings:backfill": "tsx scripts/backfill-agent-embeddings.ts",
     "search:contracts:backfill": "tsx scripts/backfill-agent-contracts.ts",
     "search:metrics:backfill": "tsx scripts/backfill-agent-execution-metrics.ts",
+    "search:content:backfill": "tsx scripts/backfill-agent-editorial-content.ts",
     "search:staleness:decay": "tsx scripts/decay-execute-staleness.ts",
     "search:phase4": "npm run search:contracts:backfill && npm run search:metrics:backfill && npm run search:staleness:decay",
     "trust:handshake": "tsx scripts/run-trust-handshake.ts",

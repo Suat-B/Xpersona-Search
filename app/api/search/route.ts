@@ -54,6 +54,10 @@ import { TASK_TYPES } from "@/lib/search/taxonomy";
 import { blendExecuteScore } from "@/lib/gpg/execute-blend";
 import { recommendAgents } from "@/lib/gpg/recommend";
 import { ensureTaskSignature } from "@/lib/gpg/task-canonicalization";
+import {
+  buildFallbackContentMetaFromSearchResult,
+  getEditorialContentMetaMap,
+} from "@/lib/agents/editorial-content";
 
 let hasSearchClaimColumnsCache: boolean | null = null;
 let hasSearchClicksTableCache: boolean | null = null;
@@ -192,6 +196,17 @@ const SearchSchema = z.object({
     .string()
     .optional()
     .transform((s) => s === "1" || s === "true"),
+  include: z
+    .string()
+    .optional()
+    .transform((s) =>
+      s
+        ? s
+            .split(",")
+            .map((item) => item.trim().toLowerCase())
+            .filter(Boolean)
+        : []
+    ),
 });
 
 type SearchParams = z.infer<typeof SearchSchema>;
@@ -766,6 +781,7 @@ export async function GET(req: NextRequest) {
   const strictContracts =
     params.intent === "execute" &&
     (Boolean(params.strictContracts) || isStrictContractsEnabled(clientType));
+  const includeContent = params.include.includes("content");
 
   // --- Cache check ---
   const cacheKey = buildCacheKey({
@@ -800,6 +816,7 @@ export async function GET(req: NextRequest) {
     explain: Boolean(params.explain),
     strictContracts,
     returnPlan: Boolean(params.returnPlan),
+    include: params.include.join(","),
     executeBias,
     clientType: clientType ?? "",
   });
@@ -1276,6 +1293,9 @@ export async function GET(req: NextRequest) {
     // --- Diversify results: max 2 from same source in top 10 ---
     let diversified = diversifyResults(resultRows);
     const agentIds = diversified.map((r) => String(r.id));
+    const editorialMetaByAgent = includeContent
+      ? await getEditorialContentMetaMap(agentIds)
+      : new Map();
 
     const contractsByAgent = new Map<string, Record<string, unknown>>();
     const metricsByAgent = new Map<string, Record<string, unknown>>();
@@ -1610,6 +1630,16 @@ export async function GET(req: NextRequest) {
         handshakesByAgent.get(agentId),
         reputationByAgent.get(agentId)
       );
+      const contentMeta = includeContent
+        ? editorialMetaByAgent.get(agentId) ??
+          buildFallbackContentMetaFromSearchResult({
+            description: (r.description as string | null) ?? null,
+            capabilities: (r.capabilities as string[] | null) ?? null,
+            openclawData: (r.openclaw_data as Record<string, unknown> | null) ?? null,
+            createdAt: (r.created_at as Date | null) ?? null,
+            updatedAt: (r.updated_at as Date | null) ?? null,
+          })
+        : undefined;
       const executionFit = {
         score: item.policyMatch.score,
         reasons: item.policyMatch.matched,
@@ -1622,6 +1652,7 @@ export async function GET(req: NextRequest) {
           claimStatus: (r.claim_status as string | null) ?? "UNCLAIMED",
           verificationTier: (r.verification_tier as string | null) ?? "NONE",
           trust,
+          ...(includeContent ? { contentMeta } : {}),
           ...(executeParams.intent === "execute"
             ? {
                 agentExecution,
@@ -1660,6 +1691,7 @@ export async function GET(req: NextRequest) {
           hasCustomPage: Boolean(r.has_custom_page),
           createdAt: r.created_at as Date | null,
           trust,
+          ...(includeContent ? { contentMeta } : {}),
           ...(executeParams.intent === "execute"
             ? {
                 agentExecution,
@@ -1692,6 +1724,21 @@ export async function GET(req: NextRequest) {
           : {}),
       };
     });
+
+    if (includeContent) {
+      results.sort((a, b) => {
+        const aRank = Number((a as { overallRank?: number }).overallRank ?? 0);
+        const bRank = Number((b as { overallRank?: number }).overallRank ?? 0);
+        if (Math.round(aRank * 1000) !== Math.round(bRank * 1000)) return 0;
+        const aQuality = Number(
+          (a as { contentMeta?: { qualityScore?: number | null } }).contentMeta?.qualityScore ?? 0
+        );
+        const bQuality = Number(
+          (b as { contentMeta?: { qualityScore?: number | null } }).contentMeta?.qualityScore ?? 0
+        );
+        return bQuality - aQuality;
+      });
+    }
 
     const nextCursor = hasMore
       ? (executionDecorated[executionDecorated.length - 1]?.row?.id as string) ?? null
