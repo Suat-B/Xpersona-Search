@@ -34,16 +34,6 @@ export default async function HomePage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  let session = null;
-  try {
-    session = await auth();
-  } catch {}
-
-  const cookieStore = await cookies();
-  const agentCookie = cookieStore.get(getAgentCookieName())?.value;
-  const agentUserId = agentCookie ? verifyAgentToken(agentCookie) : null;
-  const isAuthenticated = !!(session?.user || agentUserId);
-
   const params = await searchParams;
   const hasSearchQuery = !!params?.q?.trim();
   const hasProtocolFilter = !!params?.protocols?.trim();
@@ -71,6 +61,33 @@ export default async function HomePage({
     ([key, value]) => searchStateKeys.has(key) && typeof value === "string" && value.trim().length > 0
   );
 
+  // Fast path: search views do not need server-side auth to render results.
+  // Skipping auth here removes a blocking round-trip after submitting a query.
+  if (hasSearchQuery || hasProtocolFilter || hasBrowse || hasSearchState) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <ANSMinimalHeader isAuthenticated={false} variant="dark" />
+        <div className="flex-1">
+          <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center text-[var(--text-tertiary)]">Loading search...</div>}>
+            <SearchLanding />
+          </Suspense>
+        </div>
+        <AiAgentIntroStrip />
+        <ANSMinimalFooter variant="dark" />
+      </div>
+    );
+  }
+
+  let session = null;
+  try {
+    session = await auth();
+  } catch {}
+
+  const cookieStore = await cookies();
+  const agentCookie = cookieStore.get(getAgentCookieName())?.value;
+  const agentUserId = agentCookie ? verifyAgentToken(agentCookie) : null;
+  const isAuthenticated = !!(session?.user || agentUserId);
+
   const capabilityMetadata = {
     "@context": ["https://schema.org", "https://xpersona.co/context/v1"],
     "@type": "WebSite",
@@ -89,34 +106,19 @@ export default async function HomePage({
     },
   };
 
-  if (!hasSearchQuery && !hasProtocolFilter && !hasBrowse && !hasSearchState) {
-    return (
-      <>
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(capabilityMetadata) }}
-        />
-        <GoogleStyleHome
-          isAuthenticated={isAuthenticated}
-          privacyUrl="/privacy-policy-1"
-          termsUrl="/terms-of-service"
-          bottomContent={<AiAgentIntroStrip compact />}
-        />
-      </>
-    );
-  }
-
   return (
-    <div className="min-h-screen flex flex-col">
-      <ANSMinimalHeader isAuthenticated={isAuthenticated} variant="dark" />
-      <div className="flex-1">
-        <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center text-[var(--text-tertiary)]">Loading search...</div>}>
-          <SearchLanding />
-        </Suspense>
-      </div>
-      <AiAgentIntroStrip />
-      <ANSMinimalFooter variant="dark" />
-    </div>
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(capabilityMetadata) }}
+      />
+      <GoogleStyleHome
+        isAuthenticated={isAuthenticated}
+        privacyUrl="/privacy-policy-1"
+        termsUrl="/terms-of-service"
+        bottomContent={<AiAgentIntroStrip compact />}
+      />
+    </>
   );
 }
 

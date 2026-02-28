@@ -27,7 +27,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   debug: process.env.NODE_ENV === "development",
   useSecureCookies: process.env.NODE_ENV === "production",
   session: {
-    strategy: process.env.NODE_ENV === "development" ? "jwt" : "database",
+    // Credentials auth is backed by our own users table and works reliably with JWT sessions.
+    // Using database sessions here can cause sign-in failures in production.
+    strategy: "jwt",
   },
   cookies: cookieDomain
     ? {
