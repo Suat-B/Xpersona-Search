@@ -149,7 +149,7 @@ const SSL_ERROR_PATTERNS = [
 ];
 const RESILIENT_MAX_RETRIES = 5;
 const RESILIENT_BASE_BACKOFF_MS = 800;
-const RESILIENT_FETCH_TIMEOUT_MS = 30_000; // 30s hard timeout per attempt
+const RESILIENT_FETCH_TIMEOUT_MS = 15_000; // 15s hard timeout per attempt
 
 function isSslOrNetworkError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
@@ -954,132 +954,157 @@ async function crawlClawHubApi(maxResults: number): Promise<number> {
     console.log(`[CRAWL] CLAWHUB page ${pageNum} returned ${page.items.length} skills, processing...`);
 
     const slice = page.items.slice(0, Math.max(0, maxResults - totalFound));
+    let pageProcessed = 0;
+    const pageTotal = slice.length;
     const results = await Promise.all(
-      slice.map((item) =>
+      slice.map((item, idx) =>
         limit(async () => {
-          const detail = await fetchClawHubSkillDetail(item.slug);
-          const versions = await fetchAllClawHubSkillVersions(item.slug);
-          const archives = await fetchClawHubVersionArchives(item.slug, versions);
-          const ownerHandle = detail?.owner?.handle ?? null;
-          const ownerId = detail?.owner?.userId ?? null;
-          const ownerKey = ownerHandle ?? ownerId ?? "unknown";
-          const pageMeta = await fetchClawHubSkillPageMeta(ownerKey, item.slug);
-          const sourceId = buildClawhubSourceId(
-            ownerId ?? ownerHandle ?? "unknown",
-            item.slug
-          );
-          const displayName = normalizeAgentName(
-            detail?.skill?.displayName ?? item.displayName ?? item.slug,
-            item.slug
-          );
-          const summary = detail?.skill?.summary ?? item.summary ?? null;
-          const url = `${CLAWHUB_SITE_BASE}/${encodeURIComponent(
-            ownerKey
-          )}/${encodeURIComponent(item.slug)}`;
-          const rawSlug =
-            generateSlug(
-              `clawhub-${ownerKey}-${item.slug}`
-            ) || `clawhub-${totalFound}`;
-          const slug = normalizeAgentSlug(rawSlug, "clawhub", totalFound);
-          const readme = buildClawHubSearchText({
-            skill: item,
-            detail,
-            versions,
-            archives,
-          });
+          const skillLabel = `[${totalFound + idx + 1}] ${item.slug}`;
+          try {
+            console.log(`[CRAWL] CLAWHUB ${skillLabel} — fetching detail...`);
+            const detailStart = Date.now();
+            const detail = await fetchClawHubSkillDetail(item.slug);
+            console.log(`[CRAWL] CLAWHUB ${skillLabel} — detail ${Date.now() - detailStart}ms, fetching versions...`);
+            const versions = await fetchAllClawHubSkillVersions(item.slug);
+            console.log(`[CRAWL] CLAWHUB ${skillLabel} — ${versions.length} versions found`);
 
-          const popularityScore = computePopularityScore(item.stats?.downloads);
-          const now = new Date();
-          const agentData = {
-            sourceId: truncateVarchar(sourceId, 255),
-            source: "CLAWHUB" as const,
-            name: displayName,
-            slug,
-            description: summary,
-            url,
-            homepage: pageMeta?.canonicalUrl ?? url,
-            capabilities: [],
-            protocols: ["OPENCLEW"],
-            languages: [] as string[],
-            openclawData: {
-              clawhub: {
-                owner: detail?.owner ?? null,
-                stats: item.stats ?? null,
-                tags: detail?.skill?.tags ?? item.tags ?? null,
-                latestVersion: detail?.latestVersion ?? item.latestVersion ?? null,
-                createdAt: item.createdAt ?? null,
-                updatedAt: item.updatedAt ?? null,
-                metadata: detail?.metadata ?? item.metadata ?? null,
-                moderation: detail?.moderation ?? null,
-                versions,
-                archives,
-                pageMeta,
-                listItem: item,
-                detail,
-                crawlContext: {
-                  sourceListUrl: `${CLAWHUB_SITE_BASE}/skills?sort=${encodeURIComponent(CLAWHUB_SORT)}&dir=${encodeURIComponent(CLAWHUB_DIR)}`,
-                  apiBase: CLAWHUB_API_BASE,
-                  sort: CLAWHUB_SORT,
-                  dir: CLAWHUB_DIR,
-                  archiveEnabled: CLAWHUB_ARCHIVE_ENABLED,
-                  archiveMaxVersions: CLAWHUB_ARCHIVE_MAX_VERSIONS,
-                  archiveMaxDownloadBytes: CLAWHUB_ARCHIVE_MAX_DOWNLOAD_BYTES,
-                  fetchedAt: now.toISOString(),
+            let archives: ClawHubVersionArchive[] = [];
+            if (CLAWHUB_ARCHIVE_ENABLED && versions.length > 0) {
+              console.log(`[CRAWL] CLAWHUB ${skillLabel} — downloading archives...`);
+              archives = await fetchClawHubVersionArchives(item.slug, versions);
+              console.log(`[CRAWL] CLAWHUB ${skillLabel} — ${archives.length} archives fetched`);
+            }
+
+            const ownerHandle = detail?.owner?.handle ?? null;
+            const ownerId = detail?.owner?.userId ?? null;
+            const ownerKey = ownerHandle ?? ownerId ?? "unknown";
+            const pageMeta = await fetchClawHubSkillPageMeta(ownerKey, item.slug);
+            const sourceId = buildClawhubSourceId(
+              ownerId ?? ownerHandle ?? "unknown",
+              item.slug
+            );
+            const displayName = normalizeAgentName(
+              detail?.skill?.displayName ?? item.displayName ?? item.slug,
+              item.slug
+            );
+            const summary = detail?.skill?.summary ?? item.summary ?? null;
+            const url = `${CLAWHUB_SITE_BASE}/${encodeURIComponent(
+              ownerKey
+            )}/${encodeURIComponent(item.slug)}`;
+            const rawSlug =
+              generateSlug(
+                `clawhub-${ownerKey}-${item.slug}`
+              ) || `clawhub-${totalFound}`;
+            const slug = normalizeAgentSlug(rawSlug, "clawhub", totalFound);
+            const readme = buildClawHubSearchText({
+              skill: item,
+              detail,
+              versions,
+              archives,
+            });
+
+            const popularityScore = computePopularityScore(item.stats?.downloads);
+            const now = new Date();
+            const agentData = {
+              sourceId: truncateVarchar(sourceId, 255),
+              source: "CLAWHUB" as const,
+              name: displayName,
+              slug,
+              description: summary,
+              url,
+              homepage: pageMeta?.canonicalUrl ?? url,
+              capabilities: [],
+              protocols: ["OPENCLEW"],
+              languages: [] as string[],
+              openclawData: {
+                clawhub: {
+                  owner: detail?.owner ?? null,
+                  stats: item.stats ?? null,
+                  tags: detail?.skill?.tags ?? item.tags ?? null,
+                  latestVersion: detail?.latestVersion ?? item.latestVersion ?? null,
+                  createdAt: item.createdAt ?? null,
+                  updatedAt: item.updatedAt ?? null,
+                  metadata: detail?.metadata ?? item.metadata ?? null,
+                  moderation: detail?.moderation ?? null,
+                  versions,
+                  archives,
+                  pageMeta,
+                  listItem: item,
+                  detail,
+                  crawlContext: {
+                    sourceListUrl: `${CLAWHUB_SITE_BASE}/skills?sort=${encodeURIComponent(CLAWHUB_SORT)}&dir=${encodeURIComponent(CLAWHUB_DIR)}`,
+                    apiBase: CLAWHUB_API_BASE,
+                    sort: CLAWHUB_SORT,
+                    dir: CLAWHUB_DIR,
+                    archiveEnabled: CLAWHUB_ARCHIVE_ENABLED,
+                    archiveMaxVersions: CLAWHUB_ARCHIVE_MAX_VERSIONS,
+                    archiveMaxDownloadBytes: CLAWHUB_ARCHIVE_MAX_DOWNLOAD_BYTES,
+                    fetchedAt: now.toISOString(),
+                  },
+                  normalized: {
+                    versions: normalizeVersionsForUi(versions),
+                    archives: normalizeArchivesForUi(archives),
+                    pageMeta: pageMeta
+                      ? {
+                        title: pageMeta.title,
+                        description: pageMeta.description,
+                        canonicalUrl: pageMeta.canonicalUrl,
+                        image: pageMeta.ogImage,
+                      }
+                      : null,
+                    setupComplexity: inferSetupComplexity(versions, archives),
+                  },
                 },
-                normalized: {
-                  versions: normalizeVersionsForUi(versions),
-                  archives: normalizeArchivesForUi(archives),
-                  pageMeta: pageMeta
-                    ? {
-                      title: pageMeta.title,
-                      description: pageMeta.description,
-                      canonicalUrl: pageMeta.canonicalUrl,
-                      image: pageMeta.ogImage,
-                    }
-                    : null,
-                  setupComplexity: inferSetupComplexity(versions, archives),
-                },
-              },
-            } as Record<string, unknown>,
-            readme,
-            safetyScore: 80,
-            popularityScore,
-            freshnessScore: 70,
-            performanceScore: 0,
-            overallRank: 62,
-            status: "ACTIVE" as const,
-            lastCrawledAt: now,
-            nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-          };
+              } as Record<string, unknown>,
+              readme,
+              safetyScore: 80,
+              popularityScore,
+              freshnessScore: 70,
+              performanceScore: 0,
+              overallRank: 62,
+              status: "ACTIVE" as const,
+              lastCrawledAt: now,
+              nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            };
 
-          await upsertAgent(agentData, {
-            name: agentData.name,
-            slug: agentData.slug,
-            description: agentData.description,
-            url: agentData.url,
-            homepage: agentData.homepage,
-            openclawData: agentData.openclawData,
-            readme: agentData.readme,
-            lastCrawledAt: agentData.lastCrawledAt,
-            nextCrawlAt: agentData.nextCrawlAt,
-          });
+            await upsertAgent(agentData, {
+              name: agentData.name,
+              slug: agentData.slug,
+              description: agentData.description,
+              url: agentData.url,
+              homepage: agentData.homepage,
+              openclawData: agentData.openclawData,
+              readme: agentData.readme,
+              lastCrawledAt: agentData.lastCrawledAt,
+              nextCrawlAt: agentData.nextCrawlAt,
+            });
 
-          await ingestAgentMedia({
-            agentSourceId: sourceId,
-            agentUrl: url,
-            homepageUrl: pageMeta?.canonicalUrl ?? url,
-            source: "CLAWHUB",
-            readmeOrHtml: readme,
-            isHtml: false,
-            allowHomepageFetch: true,
-          });
+            await ingestAgentMedia({
+              agentSourceId: sourceId,
+              agentUrl: url,
+              homepageUrl: pageMeta?.canonicalUrl ?? url,
+              source: "CLAWHUB",
+              readmeOrHtml: readme,
+              isHtml: false,
+              allowHomepageFetch: true,
+            });
 
-          return true;
+            pageProcessed++;
+            console.log(`[CRAWL] CLAWHUB ✅ ${skillLabel} — done (${pageProcessed}/${pageTotal} on page ${pageNum})`);
+            return true;
+          } catch (err) {
+            pageProcessed++;
+            console.error(
+              `[CRAWL] CLAWHUB ❌ ${skillLabel} — FAILED (${pageProcessed}/${pageTotal}): ${err instanceof Error ? err.message.slice(0, 150) : String(err).slice(0, 150)}`
+            );
+            return false;
+          }
         })
       )
     );
 
     totalFound += results.filter(Boolean).length;
+    console.log(`[CRAWL] CLAWHUB page ${pageNum} complete — ${results.filter(Boolean).length} upserted, ${totalFound} total so far`);
     if (!page.nextCursor) break;
     cursor = page.nextCursor;
     await sleep(CLAWHUB_API_PAGE_DELAY_MS);
