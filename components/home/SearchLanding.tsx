@@ -489,7 +489,7 @@ export function SearchLanding() {
   }, [search]);
 
   return (
-    <section className="min-h-screen text-[var(--text-primary)] bg-[#1e1e1e] relative">
+    <div className="min-h-screen text-[var(--text-primary)] bg-[#1e1e1e] relative">
       <div className="fixed inset-0 pointer-events-none z-0" aria-hidden>
         <div className="absolute inset-0 bg-gradient-radial from-[var(--accent-heart)]/[0.08] via-transparent to-transparent" />
         <div className="absolute top-0 right-1/4 w-[24rem] h-[24rem] bg-[var(--accent-neural)]/[0.06] rounded-full blur-3xl" />
@@ -544,8 +544,8 @@ export function SearchLanding() {
                 type="button"
                 onClick={() => setRecall("normal")}
                 className={`px-2.5 py-1 rounded border ${recall === "normal"
-                    ? "border-[var(--accent-heart)] text-[var(--accent-heart)]"
-                    : "border-[var(--border)] text-[var(--text-tertiary)]"
+                  ? "border-[var(--accent-heart)] text-[var(--accent-heart)]"
+                  : "border-[var(--border)] text-[var(--text-tertiary)]"
                   }`}
               >
                 Normal
@@ -554,8 +554,8 @@ export function SearchLanding() {
                 type="button"
                 onClick={() => setRecall("high")}
                 className={`px-2.5 py-1 rounded border ${recall === "high"
-                    ? "border-[var(--accent-heart)] text-[var(--accent-heart)]"
-                    : "border-[var(--border)] text-[var(--text-tertiary)]"
+                  ? "border-[var(--accent-heart)] text-[var(--accent-heart)]"
+                  : "border-[var(--border)] text-[var(--text-tertiary)]"
                   }`}
               >
                 High recall
@@ -575,8 +575,8 @@ export function SearchLanding() {
                       )
                     }
                     className={`px-2.5 py-1 rounded border ${active
-                        ? "border-[var(--accent-heart)] text-[var(--accent-heart)]"
-                        : "border-[var(--border)] text-[var(--text-tertiary)]"
+                      ? "border-[var(--accent-heart)] text-[var(--accent-heart)]"
+                      : "border-[var(--border)] text-[var(--text-tertiary)]"
                       }`}
                   >
                     {src}
@@ -780,6 +780,6 @@ export function SearchLanding() {
           </main>
         </div>
       </div>
-    </section>
+    </div>
   );
 }

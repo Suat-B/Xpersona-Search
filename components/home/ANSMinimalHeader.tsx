@@ -5,7 +5,10 @@ interface ANSMinimalHeaderProps {
   variant?: "light" | "dark";
 }
 
-export function ANSMinimalHeader({ isAuthenticated = false, variant = "light" }: ANSMinimalHeaderProps) {
+export function ANSMinimalHeader({
+  isAuthenticated = false,
+  variant = "light",
+}: ANSMinimalHeaderProps) {
   const isDark = variant === "dark";
 
   const headerClasses = isDark
@@ -35,16 +38,6 @@ export function ANSMinimalHeader({ isAuthenticated = false, variant = "light" }:
           <span className={logoClasses}>Xpersona</span>
         </Link>
         <nav className="flex items-center gap-1 sm:gap-4 flex-shrink-0" aria-label="Main navigation">
-          {!isAuthenticated && (
-            <>
-              <Link href="/auth/signin?callbackUrl=/dashboard" className={`${signInClasses} min-h-[44px] flex items-center touch-manipulation rounded-lg`}>
-                Sign in
-              </Link>
-              <Link href="/auth/signup" className={`${signUpClasses} min-h-[44px] flex items-center touch-manipulation`}>
-                Sign up
-              </Link>
-            </>
-          )}
         </nav>
       </div>
     </header>

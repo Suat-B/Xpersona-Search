@@ -4,7 +4,6 @@ import { cookies } from "next/headers";
 import { getAgentCookieName, verifyAgentToken } from "@/lib/auth-utils";
 import { SearchLanding } from "@/components/home/SearchLanding";
 import { GoogleStyleHomeClient as GoogleStyleHome } from "@/components/home/GoogleStyleHomeClient";
-import { ANSMinimalHeader } from "@/components/home/ANSMinimalHeader";
 import { ANSMinimalFooter } from "@/components/home/ANSMinimalFooter";
 
 export const dynamic = "force-dynamic";
@@ -46,7 +45,6 @@ export default async function HomePage({
   if (hasSearchQuery || hasProtocolFilter || hasBrowse || hasSearchState) {
     return (
       <div className="min-h-screen flex flex-col">
-        <ANSMinimalHeader isAuthenticated={false} variant="dark" />
         <div className="flex-1">
           <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center text-[var(--text-tertiary)]">Loading search...</div>}>
             <SearchLanding />
@@ -99,4 +97,3 @@ export default async function HomePage({
     </>
   );
 }
-

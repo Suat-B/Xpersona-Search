@@ -171,28 +171,11 @@ export function GoogleStyleHome({
       </div>
 
       <header className="relative flex justify-end items-center px-4 sm:px-6 py-3 sm:py-4 gap-3 sm:gap-4 shrink-0 z-20 safe-area-inset-top">
-        {!isAuthenticated && (
-          <>
-            <Link
-              href="/auth/signin?callbackUrl=/dashboard"
-              className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[#1e1e1e] rounded-full px-3 py-2.5 min-h-[44px] flex items-center touch-manipulation"
-            >
-              Sign in
-            </Link>
-            <Link
-              href="/auth/signup"
-              className="text-sm font-medium text-white bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 active:bg-[var(--accent-heart)]/80 px-5 py-2.5 rounded-full min-h-[44px] flex items-center transition-all hover:shadow-lg hover:shadow-[var(--accent-heart)]/20 focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/50 focus:ring-offset-2 focus:ring-offset-[#1e1e1e] touch-manipulation"
-            >
-              Sign up
-            </Link>
-          </>
-        )}
       </header>
 
       <main
-        className={`relative z-30 flex flex-1 flex-col items-center justify-center px-4 py-5 sm:px-6 sm:py-0 sm:-mt-24 md:-mt-28 ${
-          bottomContent ? "pb-24 sm:pb-28" : ""
-        }`}
+        className={`relative z-30 flex flex-1 flex-col items-center justify-center px-4 py-5 sm:px-6 sm:py-0 sm:-mt-24 md:-mt-28 ${bottomContent ? "pb-24 sm:pb-28" : ""
+          }`}
       >
         <Link
           href="/"
@@ -217,8 +200,8 @@ export function GoogleStyleHome({
           <div
             ref={searchAnchorRef}
             className={`relative z-40 flex items-center w-full rounded-xl sm:rounded-2xl neural-glass neural-glass-hover border transition-all duration-300 ${isFocused
-                ? "border-[var(--accent-heart)]/50 shadow-[0_0_24px_var(--border-glow)] ring-2 ring-[var(--accent-heart)]/25"
-                : "border-white/[0.1] hover:border-white/[0.15] shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
+              ? "border-[var(--accent-heart)]/50 shadow-[0_0_24px_var(--border-glow)] ring-2 ring-[var(--accent-heart)]/25"
+              : "border-white/[0.1] hover:border-white/[0.15] shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
               }`}
           >
             <div className="absolute left-4 sm:left-5 w-4 h-4 sm:w-5 sm:h-5 text-[var(--text-tertiary)] pointer-events-none" aria-hidden>
