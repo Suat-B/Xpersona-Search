@@ -413,8 +413,8 @@ asyncio.run(main())`}</code></pre>
           <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
             <h2 className="text-lg font-semibold text-[var(--text-primary)]">Data Sources And Page Health</h2>
             <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-[var(--text-secondary)]">
-              {editorial.dataSources.map((source) => (
-                <li key={source}>
+              {editorial.dataSources.map((source, index) => (
+                <li key={`${source}-${index}`}>
                   <a className="text-[var(--accent-heart)] hover:underline" href={source} target="_blank" rel="noopener noreferrer">
                     {source}
                   </a>

@@ -463,12 +463,13 @@ export function SearchLanding() {
         <SearchResultsBar
           query={query}
           setQuery={setQuery}
-          onSearch={() => {
-            if (!query.trim()) {
+          onSearch={(overrideQuery) => {
+            const resolvedQuery = (overrideQuery ?? query).trim();
+            if (!resolvedQuery) {
               void handleExploreAllAgents();
               return;
             }
-            void search(true);
+            void search(true, { query: resolvedQuery });
           }}
           loading={loading}
           selectedProtocols={selectedProtocols}

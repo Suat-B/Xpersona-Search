@@ -11,7 +11,7 @@ import { saveScrollPosition } from "@/lib/search/scroll-memory";
 interface SearchResultsBarProps {
   query: string;
   setQuery: (q: string) => void;
-  onSearch: () => void;
+  onSearch: (overrideQuery?: string) => void;
   loading: boolean;
   selectedProtocols: string[];
   onProtocolChange: (p: string[]) => void;
@@ -90,8 +90,9 @@ export function SearchResultsBar({
   };
 
   const handleQuerySelect = (text: string) => {
+    const trimmed = text.trim();
     setQuery(text);
-    addRecentSearch(text.trim());
+    addRecentSearch(trimmed);
     if (blurTimeoutRef.current) {
       clearTimeout(blurTimeoutRef.current);
       blurTimeoutRef.current = undefined;
@@ -99,7 +100,7 @@ export function SearchResultsBar({
     setShowSuggestions(false);
     setIsFocused(false);
     inputRef.current?.blur();
-    onSearch();
+    onSearch(trimmed);
   };
 
   const handleFocus = () => {
