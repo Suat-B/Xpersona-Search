@@ -19,7 +19,7 @@ const CONCURRENCY =
   Number.isFinite(CONCURRENCY_RAW) && CONCURRENCY_RAW > 0
     ? Math.min(10, Math.floor(CONCURRENCY_RAW))
     : 2;
-const RATE_LIMIT_DELAY_MS = 800;
+const RATE_LIMIT_DELAY_MS = 150;
 const CLAWHUB_API_BASE =
   process.env.CLAWHUB_API_BASE?.trim() || "https://wry-manatee-359.convex.site";
 const CLAWHUB_SITE_BASE = process.env.CLAWHUB_SITE_BASE?.trim() || "https://clawhub.ai";

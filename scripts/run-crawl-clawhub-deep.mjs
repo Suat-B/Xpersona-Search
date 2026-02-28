@@ -17,6 +17,14 @@ const env = {
   ...process.env,
   // TLS compatibility for Windows — prevent session corruption
   NODE_OPTIONS: [process.env.NODE_OPTIONS ?? "", "--tls-min-v1.2"].filter(Boolean).join(" "),
+  // ── Aggressive performance tuning ──
+  CLAWHUB_DETAIL_CONCURRENCY: process.env.CLAWHUB_DETAIL_CONCURRENCY ?? "8",
+  CLAWHUB_API_PAGE_DELAY_MS: process.env.CLAWHUB_API_PAGE_DELAY_MS ?? "100",
+  CLAWHUB_API_BASE_BACKOFF_MS: process.env.CLAWHUB_API_BASE_BACKOFF_MS ?? "500",
+  CLAWHUB_PAGE_LIMIT: process.env.CLAWHUB_PAGE_LIMIT ?? "500",
+  CLAWHUB_PAGE_META_TIMEOUT_MS: process.env.CLAWHUB_PAGE_META_TIMEOUT_MS ?? "8000",
+  CLAWHUB_API_MAX_RETRIES: process.env.CLAWHUB_API_MAX_RETRIES ?? "4",
+  // ── Sort + Archive config ──
   CLAWHUB_SORT: process.env.CLAWHUB_SORT ?? "downloads",
   CLAWHUB_DIR: process.env.CLAWHUB_DIR ?? "desc",
   CLAWHUB_ARCHIVE_ENABLED: process.env.CLAWHUB_ARCHIVE_ENABLED ?? "1",
