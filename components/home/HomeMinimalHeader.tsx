@@ -9,7 +9,7 @@ import { getTradingUrl } from "@/lib/service-urls";
  */
 export function HomeMinimalHeader() {
   return (
-    <header className="scroll-stable-layer sticky top-0 z-20 border-b border-[var(--border)] bg-black/80 backdrop-blur-xl">
+    <header className="scroll-stable-layer sticky top-0 z-20 border-b border-[var(--border)] bg-[#1e1e1e]/80 backdrop-blur-xl">
       <div className="container mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 py-4 min-w-0">
         <Link href="/" className="group inline-flex items-center">
           <Image src="/xpersona-logo-1.png" alt="Xpersona" width={124} height={32} className="h-8 w-auto" />

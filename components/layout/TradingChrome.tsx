@@ -50,7 +50,7 @@ export function TradingChrome({
           <TradingSidebarNav />
         </div>
       </aside>
-      <main className="scroll-contain-paint relative z-0 flex-1 min-h-0 overflow-y-auto overscroll-y-contain bg-black">
+      <main className="scroll-contain-paint relative z-0 flex-1 min-h-0 overflow-y-auto bg-black">
         <div className="w-full max-w-7xl mx-auto px-4 py-4 sm:px-6 sm:py-6 md:px-8 md:py-8 space-y-6 min-w-0 sm:overflow-x-hidden">
           {children}
         </div>

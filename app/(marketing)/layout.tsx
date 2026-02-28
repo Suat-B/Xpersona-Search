@@ -113,9 +113,9 @@ export default async function MarketingLayout({
   }
 
   return (
-    <div className="flex h-[100dvh] min-h-dvh w-full flex-col overflow-hidden bg-black">
+    <div className="flex h-[100dvh] min-h-dvh w-full flex-col overflow-hidden bg-[#1e1e1e]">
       <HomeMinimalHeader />
-      <main className="scroll-contain-paint flex-1 min-h-0 overflow-y-auto overscroll-y-contain">
+      <main className="scroll-contain-paint flex-1 min-h-0 overflow-y-auto">
         <div className="w-full max-w-7xl mx-auto px-4 py-6 sm:p-6 md:p-8 space-y-6 min-w-0">{children}</div>
       </main>
     </div>

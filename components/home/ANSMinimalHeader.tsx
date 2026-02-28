@@ -9,7 +9,7 @@ export function ANSMinimalHeader({ isAuthenticated = false, variant = "light" }:
   const isDark = variant === "dark";
 
   const headerClasses = isDark
-    ? "sticky top-0 z-20 bg-[var(--bg-card)]/90 backdrop-blur-md border-b border-[var(--border)] shadow-sm shadow-black/20"
+    ? "sticky top-0 z-20 bg-[#1e1e1e]/90 backdrop-blur-md border-b border-[var(--border)] shadow-sm shadow-black/20"
     : "sticky top-0 z-20 bg-white border-b border-[var(--light-border)]";
 
   const logoClasses = isDark

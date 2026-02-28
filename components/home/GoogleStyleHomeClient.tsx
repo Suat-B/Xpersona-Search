@@ -7,7 +7,7 @@ const GoogleStyleHome = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="min-h-dvh flex flex-col overflow-hidden bg-[var(--bg-deep)] animate-pulse">
+      <div className="min-h-dvh flex flex-col overflow-hidden bg-[#1e1e1e] animate-pulse">
         <div className="flex-1 flex items-center justify-center">
           <span className="text-[var(--text-tertiary)] text-lg">Loading...</span>
         </div>

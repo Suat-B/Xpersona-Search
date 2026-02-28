@@ -7,7 +7,6 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { SearchResultSnippet } from "@/components/search/SearchResultSnippet";
 import { SearchResultsBar } from "@/components/search/SearchResultsBar";
-import { restoreScrollPosition } from "@/lib/search/scroll-memory";
 import {
   extractClientErrorMessage,
   unwrapClientResponse,
@@ -75,11 +74,11 @@ interface Facets {
 interface SearchMeta {
   fallbackApplied: boolean;
   matchMode:
-    | "strict_lexical"
-    | "relaxed_lexical"
-    | "semantic"
-    | "filter_only_fallback"
-    | "global_fallback";
+  | "strict_lexical"
+  | "relaxed_lexical"
+  | "semantic"
+  | "filter_only_fallback"
+  | "global_fallback";
   queryOriginal: string;
   queryInterpreted: string;
   filtersHonored: boolean;
@@ -120,7 +119,7 @@ interface SearchOverrides {
   selectedProtocols?: string[];
   minSafety?: number;
   sort?: string;
-  vertical?: "agents" | "artifacts";
+  vertical?: "agents" | "skills" | "artifacts";
   intent?: "discover" | "execute";
   taskType?: string;
   maxLatencyMs?: string;
@@ -185,8 +184,11 @@ export function SearchLanding() {
   const [intent, setIntent] = useState<"discover" | "execute">(
     searchParams.get("intent") === "execute" ? "execute" : "discover"
   );
-  const [vertical, setVertical] = useState<"agents" | "artifacts">(
-    searchParams.get("vertical") === "artifacts" ? "artifacts" : "agents"
+  const [vertical, setVertical] = useState<"agents" | "skills" | "artifacts">(() => {
+    const urlVertical = searchParams.get("vertical");
+    if (urlVertical === "artifacts" || urlVertical === "skills") return urlVertical;
+    return "agents";
+  }
   );
   const [taskType, setTaskType] = useState(searchParams.get("taskType") ?? "");
   const [maxLatencyMs, setMaxLatencyMs] = useState(searchParams.get("maxLatencyMs") ?? "");
@@ -239,40 +241,60 @@ export function SearchLanding() {
       const nextRecall = overrides?.recall ?? recall;
       const nextIncludeSources = overrides?.includeSources ?? includeSources;
 
-      const params = new URLSearchParams();
-      if (nextQuery.trim()) params.set("q", nextQuery.trim());
-      if (nextSelectedProtocols.length) params.set("protocols", nextSelectedProtocols.join(","));
-      if (nextMinSafety > 0) params.set("minSafety", String(nextMinSafety));
-      params.set("sort", nextSort);
-      params.set("limit", "30");
-      params.set("vertical", nextVertical);
-      if (nextVertical === "agents") {
-        params.set("include", "content");
+      const requestVertical = nextVertical === "skills" ? "agents" : nextVertical;
+      const requestSkillsOnly = nextVertical === "skills";
+      const urlIncludeSources = nextVertical === "skills" ? [] : nextIncludeSources;
+      const requestIncludeSources = nextVertical === "skills"
+        ? ["GITHUB_OPENCLEW", "CLAWHUB", "GITHUB_REPOS"]
+        : nextIncludeSources;
+
+      const urlParams = new URLSearchParams();
+      if (nextQuery.trim()) urlParams.set("q", nextQuery.trim());
+      if (nextSelectedProtocols.length) urlParams.set("protocols", nextSelectedProtocols.join(","));
+      if (nextMinSafety > 0) urlParams.set("minSafety", String(nextMinSafety));
+      urlParams.set("sort", nextSort);
+      urlParams.set("limit", "30");
+      urlParams.set("vertical", nextVertical);
+      if (requestVertical === "agents") {
+        urlParams.set("include", "content");
       }
-      params.set("recall", nextRecall);
-      if (nextIncludeSources.length > 0) {
-        params.set("includeSources", nextIncludeSources.join(","));
+      urlParams.set("recall", nextRecall);
+      if (urlIncludeSources.length > 0) {
+        urlParams.set("includeSources", urlIncludeSources.join(","));
       }
-      params.set("intent", nextIntent);
-      if (nextTaskType.trim()) params.set("taskType", nextTaskType.trim());
-      if (nextMaxLatencyMs.trim()) params.set("maxLatencyMs", nextMaxLatencyMs.trim());
-      if (nextMaxCostUsd.trim()) params.set("maxCostUsd", nextMaxCostUsd.trim());
-      if (nextDataRegion && nextDataRegion !== "global") params.set("dataRegion", nextDataRegion);
-      if (nextRequires.trim()) params.set("requires", nextRequires);
-      if (nextForbidden.trim()) params.set("forbidden", nextForbidden);
-      if (nextBundle) params.set("bundle", "1");
-      if (nextExplain) params.set("explain", "1");
+      urlParams.set("intent", nextIntent);
+      if (nextTaskType.trim()) urlParams.set("taskType", nextTaskType.trim());
+      if (nextMaxLatencyMs.trim()) urlParams.set("maxLatencyMs", nextMaxLatencyMs.trim());
+      if (nextMaxCostUsd.trim()) urlParams.set("maxCostUsd", nextMaxCostUsd.trim());
+      if (nextDataRegion && nextDataRegion !== "global") urlParams.set("dataRegion", nextDataRegion);
+      if (nextRequires.trim()) urlParams.set("requires", nextRequires);
+      if (nextForbidden.trim()) urlParams.set("forbidden", nextForbidden);
+      if (nextBundle) urlParams.set("bundle", "1");
+      if (nextExplain) urlParams.set("explain", "1");
       if (!reset) {
-        if (nextVertical === "agents" && cursor) params.set("cursor", cursor);
+        if (nextVertical !== "artifacts" && cursor) urlParams.set("cursor", cursor);
         if (nextVertical === "artifacts" && mediaCursor) {
-          params.set("mediaCursor", mediaCursor);
+          urlParams.set("mediaCursor", mediaCursor);
         }
       }
 
-      router.replace(`/?${params.toString()}`, { scroll: false });
+      const requestParams = new URLSearchParams(urlParams.toString());
+      requestParams.set("vertical", requestVertical);
+      if (requestSkillsOnly) {
+        requestParams.set("skillsOnly", "1");
+      } else {
+        requestParams.delete("skillsOnly");
+      }
+      if (requestIncludeSources.length > 0) {
+        requestParams.set("includeSources", requestIncludeSources.join(","));
+      } else {
+        requestParams.delete("includeSources");
+      }
+
+      router.replace(`/?${urlParams.toString()}`, { scroll: false });
 
       try {
-        const res = await fetch(`/api/v1/search?${params}`);
+        const res = await fetch(`/api/v1/search?${requestParams}`);
         const payload = await res.json();
         if (!res.ok) throw new Error(extractClientErrorMessage(payload, "Search failed"));
         const data = unwrapClientResponse<SearchResponsePayload>(payload);
@@ -286,7 +308,7 @@ export function SearchLanding() {
           setMediaResults((prev) => [...prev, ...(data.mediaResults ?? [])]);
         }
         setHasMore(data.pagination?.hasMore ?? false);
-        if (nextVertical === "agents") {
+        if (requestVertical === "agents") {
           setCursor(data.pagination?.nextCursor ?? null);
           setMediaCursor(null);
         } else {
@@ -296,11 +318,11 @@ export function SearchLanding() {
         if (data.facets) setFacets(data.facets);
         setSearchMeta(data.searchMeta ?? null);
 
-        if (reset && nextVertical === "artifacts") {
+        if (reset && requestVertical === "artifacts") {
           if ((data.mediaResults ?? []).length > 0) {
             setFallbackAgents([]);
           } else {
-            const fallbackParams = new URLSearchParams(params.toString());
+            const fallbackParams = new URLSearchParams(requestParams.toString());
             fallbackParams.set("vertical", "agents");
             fallbackParams.delete("mediaCursor");
             fallbackParams.set("limit", "24");
@@ -313,7 +335,7 @@ export function SearchLanding() {
               setFallbackAgents([]);
             }
           }
-        } else if (nextVertical === "agents") {
+        } else if (requestVertical === "agents") {
           setFallbackAgents([]);
         }
       } catch (err) {
@@ -352,6 +374,16 @@ export function SearchLanding() {
     ]
   );
 
+  const handleVerticalChange = useCallback(
+    (v: "agents" | "skills" | "artifacts") => {
+      setVertical(v);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("vertical", v);
+      router.replace(`/?${params.toString()}`, { scroll: false });
+    },
+    [searchParams, router]
+  );
+
   useEffect(() => {
     search(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -379,7 +411,8 @@ export function SearchLanding() {
     setQuery(urlQ);
     setSelectedProtocols(urlProtocols);
     setIntent(searchParams.get("intent") === "execute" ? "execute" : "discover");
-    setVertical(searchParams.get("vertical") === "artifacts" ? "artifacts" : "agents");
+    const urlVertical = searchParams.get("vertical");
+    setVertical(urlVertical === "artifacts" || urlVertical === "skills" ? urlVertical : "agents");
     setTaskType(searchParams.get("taskType") ?? "");
     setMaxLatencyMs(searchParams.get("maxLatencyMs") ?? "");
     setMaxCostUsd(searchParams.get("maxCostUsd") ?? "");
@@ -398,10 +431,12 @@ export function SearchLanding() {
   }, [searchParams]);
 
   useEffect(() => {
-    const currentSearch = searchParams.toString();
-    const fromPath = currentSearch ? `/?${currentSearch}` : "/";
-    restoreScrollPosition(fromPath);
+    if (typeof window === "undefined") return;
+    requestAnimationFrame(() => window.scrollTo(0, 0));
   }, [searchParams]);
+
+  const currentSearch = searchParams.toString();
+  const fromPath = currentSearch ? `/?${currentSearch}` : "/";
 
   useEffect(() => {
     try {
@@ -412,7 +447,7 @@ export function SearchLanding() {
     }
   }, []);
 
-  const hasResults = vertical === "agents" ? agents.length > 0 : mediaResults.length > 0;
+  const hasResults = vertical === "artifacts" ? mediaResults.length > 0 : agents.length > 0;
   const hasFallbackAgents = fallbackAgents.length > 0;
 
   const handleExploreAllAgents = useCallback(async () => {
@@ -454,7 +489,7 @@ export function SearchLanding() {
   }, [search]);
 
   return (
-    <section className="min-h-screen text-[var(--text-primary)] bg-[var(--bg-deep)] relative">
+    <section className="min-h-screen text-[var(--text-primary)] bg-[#1e1e1e] relative">
       <div className="fixed inset-0 pointer-events-none z-0" aria-hidden>
         <div className="absolute inset-0 bg-gradient-radial from-[var(--accent-heart)]/[0.08] via-transparent to-transparent" />
         <div className="absolute top-0 right-1/4 w-[24rem] h-[24rem] bg-[var(--accent-neural)]/[0.06] rounded-full blur-3xl" />
@@ -472,6 +507,8 @@ export function SearchLanding() {
             void search(true, { query: resolvedQuery });
           }}
           loading={loading}
+          vertical={vertical}
+          onVerticalChange={handleVerticalChange}
           selectedProtocols={selectedProtocols}
           onProtocolChange={handleProtocolChange}
           sort={sort}
@@ -500,49 +537,26 @@ export function SearchLanding() {
         />
 
         <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-6">
-          <div className="mb-4 flex items-center gap-2">
-            {(["agents", "artifacts"] as const).map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => {
-                  setVertical(v);
-                  const params = new URLSearchParams(searchParams.toString());
-                  params.set("vertical", v);
-                  router.replace(`/?${params.toString()}`, { scroll: false });
-                }}
-                className={`px-3 py-1.5 rounded-lg border text-sm ${
-                  vertical === v
-                    ? "border-[var(--accent-heart)] text-[var(--accent-heart)] bg-[var(--accent-heart)]/10"
-                    : "border-[var(--border)] text-[var(--text-tertiary)]"
-                }`}
-              >
-                {v === "agents" ? "Agents" : "Artifacts"}
-              </button>
-            ))}
-          </div>
           {vertical === "artifacts" && (
             <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-[var(--text-tertiary)]">Density:</span>
               <button
                 type="button"
                 onClick={() => setRecall("normal")}
-                className={`px-2.5 py-1 rounded border ${
-                  recall === "normal"
+                className={`px-2.5 py-1 rounded border ${recall === "normal"
                     ? "border-[var(--accent-heart)] text-[var(--accent-heart)]"
                     : "border-[var(--border)] text-[var(--text-tertiary)]"
-                }`}
+                  }`}
               >
                 Normal
               </button>
               <button
                 type="button"
                 onClick={() => setRecall("high")}
-                className={`px-2.5 py-1 rounded border ${
-                  recall === "high"
+                className={`px-2.5 py-1 rounded border ${recall === "high"
                     ? "border-[var(--accent-heart)] text-[var(--accent-heart)]"
                     : "border-[var(--border)] text-[var(--text-tertiary)]"
-                }`}
+                  }`}
               >
                 High recall
               </button>
@@ -560,11 +574,10 @@ export function SearchLanding() {
                           : [...prev, src]
                       )
                     }
-                    className={`px-2.5 py-1 rounded border ${
-                      active
+                    className={`px-2.5 py-1 rounded border ${active
                         ? "border-[var(--accent-heart)] text-[var(--accent-heart)]"
                         : "border-[var(--border)] text-[var(--text-tertiary)]"
-                    }`}
+                      }`}
                   >
                     {src}
                   </button>
@@ -587,9 +600,11 @@ export function SearchLanding() {
             ) : !hasResults ? (
               <div className="py-12 text-center" role="status">
                 <p className="text-[var(--text-secondary)] font-medium">
-                  {vertical === "agents"
-                    ? "No agents found. Try different filters or search terms."
-                    : "No machine-usable visual assets found for this query."}
+                  {vertical === "artifacts"
+                    ? "No machine-usable visual assets found for this query."
+                    : vertical === "skills"
+                      ? "No skills found. Try different filters or search terms."
+                      : "No agents found. Try different filters or search terms."}
                 </p>
                 {vertical === "artifacts" && hasFallbackAgents && (
                   <p className="mt-2 text-xs text-[var(--text-quaternary)]">
@@ -618,11 +633,15 @@ export function SearchLanding() {
             ) : (
               <>
                 <p className="mb-4 text-sm text-[var(--text-tertiary)]" role="status" aria-live="polite">
-                  {vertical === "agents"
-                    ? total > 0
-                      ? `About ${total} agent${total === 1 ? "" : "s"}`
-                      : `${agents.length} agent${agents.length === 1 ? "" : "s"} found`
-                    : `${mediaResults.length} visual asset${mediaResults.length === 1 ? "" : "s"} found`}
+                  {vertical === "artifacts"
+                    ? `${mediaResults.length} visual asset${mediaResults.length === 1 ? "" : "s"} found`
+                    : vertical === "skills"
+                      ? total > 0
+                        ? `About ${total} skill${total === 1 ? "" : "s"}`
+                        : `${agents.length} skill${agents.length === 1 ? "" : "s"} found`
+                      : total > 0
+                        ? `About ${total} agent${total === 1 ? "" : "s"}`
+                        : `${agents.length} agent${agents.length === 1 ? "" : "s"} found`}
                 </p>
                 {vertical === "artifacts" && (
                   <p className="mb-4 text-xs text-[var(--text-quaternary)]">
@@ -630,7 +649,51 @@ export function SearchLanding() {
                   </p>
                 )}
 
-                {vertical === "agents" ? (
+                {vertical === "skills" ? (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {agents.map((agent) => {
+                      const protos = Array.isArray(agent.protocols) ? agent.protocols : [];
+                      const caps = Array.isArray(agent.capabilities) ? agent.capabilities : [];
+                      const href = `/agent/${agent.slug}?from=${encodeURIComponent(fromPath)}`;
+                      return (
+                        <article
+                          key={agent.id}
+                          className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]/70 p-5 hover:border-[var(--accent-heart)]/40 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <Link
+                                href={href}
+                                className="text-base font-semibold text-[var(--accent-neural)] hover:underline truncate block"
+                              >
+                                {agent.name}
+                              </Link>
+                              <p className="text-xs text-[var(--text-quaternary)] mt-1">SKILL.md</p>
+                            </div>
+                            <span className="text-[10px] uppercase tracking-wider rounded-full px-2 py-1 border border-[var(--accent-heart)]/40 text-[var(--accent-heart)]">
+                              Skill
+                            </span>
+                          </div>
+                          <p className="mt-2 text-sm text-[var(--text-secondary)] line-clamp-3">
+                            {agent.description || "No description available."}
+                          </p>
+                          <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-[var(--text-tertiary)]">
+                            {protos.slice(0, 3).map((p) => (
+                              <span key={`proto-${agent.id}-${p}`} className="rounded border border-[var(--border)] px-1.5 py-0.5">
+                                {p}
+                              </span>
+                            ))}
+                            {caps.slice(0, 3).map((c) => (
+                              <span key={`cap-${agent.id}-${c}`} className="rounded border border-[var(--border)] px-1.5 py-0.5">
+                                {c}
+                              </span>
+                            ))}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : vertical !== "artifacts" ? (
                   <div className="divide-y-0">
                     {agents.map((agent, i) => {
                       const delay = ["animate-delay-75", "animate-delay-150", "animate-delay-225", "animate-delay-300"][i % 4];

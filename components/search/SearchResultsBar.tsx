@@ -13,6 +13,8 @@ interface SearchResultsBarProps {
   setQuery: (q: string) => void;
   onSearch: (overrideQuery?: string) => void;
   loading: boolean;
+  vertical: "agents" | "skills" | "artifacts";
+  onVerticalChange: (v: "agents" | "skills" | "artifacts") => void;
   selectedProtocols: string[];
   onProtocolChange: (p: string[]) => void;
   sort: string;
@@ -47,6 +49,8 @@ export function SearchResultsBar({
   setQuery,
   onSearch,
   loading,
+  vertical,
+  onVerticalChange,
   selectedProtocols,
   onProtocolChange,
   sort,
@@ -243,6 +247,30 @@ export function SearchResultsBar({
                   className="absolute right-0 top-full mt-1 w-[min(calc(100vw-2rem),16rem)] sm:w-64 p-4 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-xl z-20 space-y-4 max-h-[70vh] overflow-y-auto"
                   role="menu"
                 >
+                  <div>
+                    <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-2">
+                      Results
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {(["agents", "skills", "artifacts"] as const).map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => {
+                            onVerticalChange(v);
+                            setShowTools(false);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg border text-xs font-semibold ${
+                            vertical === v
+                              ? "border-[var(--accent-heart)] text-[var(--accent-heart)] bg-[var(--accent-heart)]/10"
+                              : "border-[var(--border)] text-[var(--text-tertiary)]"
+                          }`}
+                        >
+                          {v === "agents" ? "Agents" : v === "skills" ? "Skills" : "Artifacts"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div>
                     <label
                       htmlFor="search-intent"

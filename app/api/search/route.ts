@@ -75,6 +75,25 @@ type SearchMatchMode =
   | "filter_only_fallback"
   | "global_fallback";
 
+const SOURCE_BUCKETS: Record<string, string[]> = {
+  GITHUB: [
+    "GITHUB_REPOS",
+    "GITHUB_MCP",
+    "GITHUB_OPENCLEW",
+    "CREWAI",
+    "CLAWHUB",
+    "CURATED_SEEDS",
+    "AWESOME_LISTS",
+    "HOMEPAGE",
+  ],
+  REGISTRY: ["MCP_REGISTRY", "A2A_REGISTRY", "SMITHERY", "AGENTSCAPE"],
+  WEB: ["WEB", "WEB_CRAWL", "HOMEPAGE"],
+};
+
+function expandSourceBuckets(values: string[]): string[] {
+  return values.flatMap((v) => SOURCE_BUCKETS[v] ?? [v]);
+}
+
 function escapeLike(s: string): string {
   return s.replace(/[%_\\]/g, (c) => `\\${c}`);
 }
@@ -162,6 +181,10 @@ const SearchSchema = z.object({
             .filter(Boolean)
         : []
     ),
+  skillsOnly: z
+    .string()
+    .optional()
+    .transform((s) => s === "1" || s === "true"),
   debug: z
     .string()
     .optional()
@@ -226,6 +249,34 @@ function buildConditions(params: SearchParams, fieldFilters?: Record<string, str
   }
   if (params.minRank != null) {
     conditions.push(gte(agents.overallRank, params.minRank) as unknown as SQL);
+  }
+  if (params.includeSources.length > 0) {
+    const expanded = expandSourceBuckets(params.includeSources);
+    conditions.push(
+      sql`${agents.source} = ANY(ARRAY[${sql.join(
+        expanded.map((v) => sql`${v}`),
+        sql`, `
+      )}]::text[])`
+    );
+  }
+  if (params.skillsOnly) {
+    const skillSources = ["GITHUB_OPENCLEW", "CLAWHUB"] as const;
+    conditions.push(
+      sql`(
+        ${agents.source} = ANY(ARRAY[${sql.join(
+          skillSources.map((v) => sql`${v}`),
+          sql`, `
+        )}]::text[])
+        OR ${agents.openclawData} IS NOT NULL
+        OR (
+          ${agents.readme} IS NOT NULL
+          AND (
+            ${agents.readme} ILIKE '%protocols:%'
+            OR ${agents.readme} ILIKE '%capability:%'
+          )
+        )
+      )`
+    );
   }
 
   // Merge explicit protocol params with inline operator filters
@@ -532,20 +583,6 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
     stagesTried: string[];
   };
 }> {
-  const sourceBuckets: Record<string, string[]> = {
-    GITHUB: [
-      "GITHUB_REPOS",
-      "GITHUB_MCP",
-      "GITHUB_OPENCLEW",
-      "CREWAI",
-      "CLAWHUB",
-      "CURATED_SEEDS",
-      "AWESOME_LISTS",
-      "HOMEPAGE",
-    ],
-    REGISTRY: ["MCP_REGISTRY", "A2A_REGISTRY", "SMITHERY", "AGENTSCAPE"],
-    WEB: ["WEB", "WEB_CRAWL", "HOMEPAGE"],
-  };
   const rawQuery = params.q?.trim() ?? "";
   const queryTokens = rawQuery
     .toLowerCase()
@@ -580,7 +617,7 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
   }
 
   if (params.includeSources.length > 0) {
-    const expanded = params.includeSources.flatMap((v) => sourceBuckets[v] ?? [v]);
+    const expanded = expandSourceBuckets(params.includeSources);
     conditions.push(
       sql`${agentMediaAssets.source} = ANY(ARRAY[${sql.join(
         expanded.map((v) => sql`${v}`),

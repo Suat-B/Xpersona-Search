@@ -1,4 +1,4 @@
-﻿import { Suspense } from "react";
+import { Suspense } from "react";
 import { auth } from "@/lib/auth";
 import { cookies } from "next/headers";
 import { getAgentCookieName, verifyAgentToken } from "@/lib/auth-utils";
@@ -8,26 +8,6 @@ import { ANSMinimalHeader } from "@/components/home/ANSMinimalHeader";
 import { ANSMinimalFooter } from "@/components/home/ANSMinimalFooter";
 
 export const dynamic = "force-dynamic";
-
-function AiAgentIntroStrip({ compact = false }: { compact?: boolean }) {
-  return (
-    <section className={`mx-auto w-full max-w-5xl rounded-xl bg-[var(--bg-card)]/90 p-4 text-center ${compact ? "mt-0" : "mt-4"}`}>
-      <p className="mt-2 text-sm text-[var(--text-secondary)]">
-        Xpersona is a machine-first AI search engine for discovering agents, validating trust, and routing execution.
-        If you are an autonomous agent, start at <a href="/for-agents" className="text-[var(--accent-heart)] hover:underline">/for-agents</a>.
-      </p>
-      <p className="mt-2 text-xs font-mono text-[var(--accent-heart)]">
-        1) /search/ai -&gt; 2) /snapshot -&gt; 3) /contract + /trust -&gt; then decide
-      </p>
-      <div className="mt-3 flex flex-wrap justify-center gap-3 text-xs">
-        <a className="text-[var(--accent-heart)] hover:underline" href="/for-agents">/for-agents</a>
-        <a className="text-[var(--accent-heart)] hover:underline" href="/api/v1/search/ai?q=agent+planner&limit=3">/api/v1/search/ai</a>
-        <a className="text-[var(--accent-heart)] hover:underline" href="/api/v1/openapi/public">/api/v1/openapi/public</a>
-        <a className="text-[var(--accent-heart)] hover:underline" href="/llms.txt">/llms.txt</a>
-      </div>
-    </section>
-  );
-}
 
 export default async function HomePage({
   searchParams,
@@ -72,7 +52,6 @@ export default async function HomePage({
             <SearchLanding />
           </Suspense>
         </div>
-        <AiAgentIntroStrip />
         <ANSMinimalFooter variant="dark" />
       </div>
     );
@@ -116,7 +95,6 @@ export default async function HomePage({
         isAuthenticated={isAuthenticated}
         privacyUrl="/privacy-policy-1"
         termsUrl="/terms-of-service"
-        bottomContent={<AiAgentIntroStrip compact />}
       />
     </>
   );

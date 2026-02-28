@@ -23,10 +23,10 @@
     --text-quaternary: rgba(255, 255, 255, 0.28);
     
     /* Xpersona Accent System — cyan (matches dashboard panels) */
-    --accent-heart: #0a84ff;
-    --accent-neural: #5e5ce6;
-    --accent-blue: #0a84ff;
-    --accent-cyber: #0a84ff;
+    --accent-heart: #0ea5e9;
+    --accent-neural: #38bdf8;
+    --accent-blue: #0ea5e9;
+    --accent-cyber: #0ea5e9;
     --accent-success: #30d158;
     --accent-warning: #ff9f0a;
     --accent-danger: #ff453a;
@@ -34,15 +34,15 @@
     --accent-teal: #64d2ff;
     
     /* Neural Glow Colors */
-    --glow-pink: rgba(10, 132, 255, 0.4);
-    --glow-purple: rgba(94, 92, 230, 0.4);
-    --glow-blue: rgba(10, 132, 255, 0.4);
+    --glow-pink: rgba(14, 165, 233, 0.4);
+    --glow-purple: rgba(56, 189, 248, 0.4);
+    --glow-blue: rgba(14, 165, 233, 0.4);
     --glow-green: rgba(48, 209, 88, 0.4);
     
     /* Borders & Dividers */
     --border: rgba(255, 255, 255, 0.06);
     --border-strong: rgba(255, 255, 255, 0.12);
-    --border-glow: rgba(10, 132, 255, 0.2);
+    --border-glow: rgba(14, 165, 233, 0.2);
     --divider: rgba(255, 255, 255, 0.04);
     
     /* Premium Shadows */
@@ -50,8 +50,8 @@
     --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.03);
     --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
     --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
-    --shadow-glow: 0 0 60px rgba(10, 132, 255, 0.15);
-    --shadow-neural: 0 0 80px rgba(94, 92, 230, 0.2);
+    --shadow-glow: 0 0 60px rgba(14, 165, 233, 0.15);
+    --shadow-neural: 0 0 80px rgba(56, 189, 248, 0.2);
     
     /* Border Radius - Ultra Modern */
     --radius-sm: 10px;
@@ -209,8 +209,8 @@ body::before {
 
 /* Stable scroll root for app layouts — avoids nested-scroll flicker */
 .scroll-contain-paint {
-  -webkit-overflow-scrolling: auto;
-  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: auto;
   scrollbar-gutter: stable both-edges;
 }
 
