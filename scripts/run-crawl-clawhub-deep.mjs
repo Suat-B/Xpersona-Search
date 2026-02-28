@@ -15,6 +15,8 @@ const passthrough = argv[0] && !argv[0].startsWith("--") ? argv.slice(1) : argv;
 
 const env = {
   ...process.env,
+  // TLS compatibility for Windows — prevent session corruption
+  NODE_OPTIONS: [process.env.NODE_OPTIONS ?? "", "--tls-min-v1.2"].filter(Boolean).join(" "),
   CLAWHUB_SORT: process.env.CLAWHUB_SORT ?? "downloads",
   CLAWHUB_DIR: process.env.CLAWHUB_DIR ?? "desc",
   CLAWHUB_ARCHIVE_ENABLED: process.env.CLAWHUB_ARCHIVE_ENABLED ?? "1",

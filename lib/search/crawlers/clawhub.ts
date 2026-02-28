@@ -1,6 +1,7 @@
 /**
  * ClawHub crawler - discovers OpenClaw skills from the ClawHub public API.
- * Falls back to openclaw/skills GitHub repo (archives ClawHub) if API is unavailable.
+ * Scrapes strictly from https://clawhub.ai via its Convex API.
+ * No GitHub fallback.
  */
 import pLimit from "p-limit";
 import { createHash } from "node:crypto";
@@ -8,13 +9,11 @@ import { inflateRawSync } from "node:zlib";
 import { db } from "@/lib/db";
 import { crawlJobs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { octokit, fetchFileContent, withGithubRetry } from "../utils/github";
-import { parseSkillMd } from "../parsers/skill-md";
 import { generateSlug } from "../utils/slug";
 import { upsertAgent } from "../agent-upsert";
 import { ingestAgentMedia } from "./media-ingestion";
 
-const SKILLS_REPO = "openclaw/skills";
+
 const CONCURRENCY_RAW = Number(process.env.CLAWHUB_DETAIL_CONCURRENCY ?? "2");
 const CONCURRENCY =
   Number.isFinite(CONCURRENCY_RAW) && CONCURRENCY_RAW > 0
@@ -81,7 +80,7 @@ const CLAWHUB_ARCHIVE_MAX_DOWNLOAD_BYTES_RAW = Number(
 );
 const CLAWHUB_ARCHIVE_MAX_DOWNLOAD_BYTES =
   Number.isFinite(CLAWHUB_ARCHIVE_MAX_DOWNLOAD_BYTES_RAW) &&
-  CLAWHUB_ARCHIVE_MAX_DOWNLOAD_BYTES_RAW > 0
+    CLAWHUB_ARCHIVE_MAX_DOWNLOAD_BYTES_RAW > 0
     ? Math.floor(CLAWHUB_ARCHIVE_MAX_DOWNLOAD_BYTES_RAW)
     : 10000000;
 const CLAWHUB_ARCHIVE_MAX_FILES_PER_VERSION_RAW = Number(
@@ -89,7 +88,7 @@ const CLAWHUB_ARCHIVE_MAX_FILES_PER_VERSION_RAW = Number(
 );
 const CLAWHUB_ARCHIVE_MAX_FILES_PER_VERSION =
   Number.isFinite(CLAWHUB_ARCHIVE_MAX_FILES_PER_VERSION_RAW) &&
-  CLAWHUB_ARCHIVE_MAX_FILES_PER_VERSION_RAW > 0
+    CLAWHUB_ARCHIVE_MAX_FILES_PER_VERSION_RAW > 0
     ? Math.min(5000, Math.floor(CLAWHUB_ARCHIVE_MAX_FILES_PER_VERSION_RAW))
     : 400;
 const CLAWHUB_ARCHIVE_MAX_TEXT_FILES_PER_VERSION_RAW = Number(
@@ -97,7 +96,7 @@ const CLAWHUB_ARCHIVE_MAX_TEXT_FILES_PER_VERSION_RAW = Number(
 );
 const CLAWHUB_ARCHIVE_MAX_TEXT_FILES_PER_VERSION =
   Number.isFinite(CLAWHUB_ARCHIVE_MAX_TEXT_FILES_PER_VERSION_RAW) &&
-  CLAWHUB_ARCHIVE_MAX_TEXT_FILES_PER_VERSION_RAW > 0
+    CLAWHUB_ARCHIVE_MAX_TEXT_FILES_PER_VERSION_RAW > 0
     ? Math.min(500, Math.floor(CLAWHUB_ARCHIVE_MAX_TEXT_FILES_PER_VERSION_RAW))
     : 12;
 const CLAWHUB_ARCHIVE_MAX_TEXT_BYTES_PER_FILE_RAW = Number(
@@ -105,7 +104,7 @@ const CLAWHUB_ARCHIVE_MAX_TEXT_BYTES_PER_FILE_RAW = Number(
 );
 const CLAWHUB_ARCHIVE_MAX_TEXT_BYTES_PER_FILE =
   Number.isFinite(CLAWHUB_ARCHIVE_MAX_TEXT_BYTES_PER_FILE_RAW) &&
-  CLAWHUB_ARCHIVE_MAX_TEXT_BYTES_PER_FILE_RAW > 0
+    CLAWHUB_ARCHIVE_MAX_TEXT_BYTES_PER_FILE_RAW > 0
     ? Math.floor(CLAWHUB_ARCHIVE_MAX_TEXT_BYTES_PER_FILE_RAW)
     : 250000;
 const CLAWHUB_ARCHIVE_MAX_TEXT_CHARS_PER_FILE_RAW = Number(
@@ -113,7 +112,7 @@ const CLAWHUB_ARCHIVE_MAX_TEXT_CHARS_PER_FILE_RAW = Number(
 );
 const CLAWHUB_ARCHIVE_MAX_TEXT_CHARS_PER_FILE =
   Number.isFinite(CLAWHUB_ARCHIVE_MAX_TEXT_CHARS_PER_FILE_RAW) &&
-  CLAWHUB_ARCHIVE_MAX_TEXT_CHARS_PER_FILE_RAW > 0
+    CLAWHUB_ARCHIVE_MAX_TEXT_CHARS_PER_FILE_RAW > 0
     ? Math.floor(CLAWHUB_ARCHIVE_MAX_TEXT_CHARS_PER_FILE_RAW)
     : 50000;
 const CLAWHUB_ARCHIVE_MAX_TOTAL_TEXT_CHARS_PER_SKILL_RAW = Number(
@@ -121,12 +120,70 @@ const CLAWHUB_ARCHIVE_MAX_TOTAL_TEXT_CHARS_PER_SKILL_RAW = Number(
 );
 const CLAWHUB_ARCHIVE_MAX_TOTAL_TEXT_CHARS_PER_SKILL =
   Number.isFinite(CLAWHUB_ARCHIVE_MAX_TOTAL_TEXT_CHARS_PER_SKILL_RAW) &&
-  CLAWHUB_ARCHIVE_MAX_TOTAL_TEXT_CHARS_PER_SKILL_RAW > 0
+    CLAWHUB_ARCHIVE_MAX_TOTAL_TEXT_CHARS_PER_SKILL_RAW > 0
     ? Math.floor(CLAWHUB_ARCHIVE_MAX_TOTAL_TEXT_CHARS_PER_SKILL_RAW)
     : 140000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * SSL-resilient fetch wrapper.
+ * On Windows, long-lived TLS sessions to the Convex API can trigger
+ * "sslv3 alert bad record mac" errors. This wrapper:
+ *   1. Sets `Connection: close` to prevent TLS session reuse/corruption.
+ *   2. Detects SSL/network errors and retries with exponential backoff.
+ */
+const SSL_ERROR_PATTERNS = [
+  "ssl",
+  "SSL",
+  "bad record mac",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "socket hang up",
+  "network",
+  "fetch failed",
+  "UND_ERR",
+];
+const RESILIENT_MAX_RETRIES = 4;
+const RESILIENT_BASE_BACKOFF_MS = 2000;
+
+function isSslOrNetworkError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return SSL_ERROR_PATTERNS.some((p) => msg.includes(p));
+}
+
+async function resilientFetch(
+  input: string | URL,
+  init?: RequestInit
+): Promise<Response> {
+  const headers = new Headers(init?.headers ?? {});
+  // Force fresh TCP+TLS connection each time to avoid session corruption
+  headers.set("Connection", "close");
+  const mergedInit: RequestInit = { ...init, headers };
+
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= RESILIENT_MAX_RETRIES; attempt++) {
+    try {
+      return await fetch(input.toString(), mergedInit);
+    } catch (err) {
+      lastErr = err;
+      if (!isSslOrNetworkError(err) || attempt >= RESILIENT_MAX_RETRIES) {
+        throw err;
+      }
+      const backoff = Math.min(
+        CLAWHUB_API_MAX_BACKOFF_MS,
+        RESILIENT_BASE_BACKOFF_MS * 2 ** attempt + Math.floor(Math.random() * 500)
+      );
+      console.warn(
+        `[CRAWL] CLAWHUB resilientFetch retry attempt=${attempt + 1} err=${err instanceof Error ? err.message.slice(0, 120) : String(err).slice(0, 120)} backoff=${backoff}ms`
+      );
+      await sleep(backoff);
+    }
+  }
+  throw lastErr;
 }
 
 function parseRetryAfterMs(headers: Headers): number | null {
@@ -278,7 +335,7 @@ async function fetchClawHubSkillListPage(params: {
   if (params.cursor) url.searchParams.set("cursor", params.cursor);
   let lastErr = "unknown";
   for (let attempt = 0; attempt <= CLAWHUB_API_MAX_RETRIES; attempt++) {
-    const res = await fetch(url.toString(), {
+    const res = await resilientFetch(url.toString(), {
       headers: {
         Accept: "application/json",
         "User-Agent": "xpersona-crawler",
@@ -306,7 +363,7 @@ async function fetchClawHubSkillDetail(slug: string): Promise<ClawHubSkillDetail
   const url = new URL(`/api/v1/skills/${encodeURIComponent(slug)}`, CLAWHUB_API_BASE);
   let lastStatus = 0;
   for (let attempt = 0; attempt <= CLAWHUB_API_MAX_RETRIES; attempt++) {
-    const res = await fetch(url.toString(), {
+    const res = await resilientFetch(url.toString(), {
       headers: {
         Accept: "application/json",
         "User-Agent": "xpersona-crawler",
@@ -336,7 +393,7 @@ async function fetchClawHubSkillVersionsPage(params: {
   }
   let lastStatus = 0;
   for (let attempt = 0; attempt <= CLAWHUB_API_MAX_RETRIES; attempt++) {
-    const res = await fetch(url.toString(), {
+    const res = await resilientFetch(url.toString(), {
       headers: {
         Accept: "application/json",
         "User-Agent": "xpersona-crawler",
@@ -520,7 +577,7 @@ async function fetchClawHubVersionArchiveBytes(
   url.searchParams.set("version", version);
 
   for (let attempt = 0; attempt <= CLAWHUB_API_MAX_RETRIES; attempt++) {
-    const res = await fetch(url.toString(), {
+    const res = await resilientFetch(url.toString(), {
       headers: {
         Accept: "application/zip",
         "User-Agent": "xpersona-crawler",
@@ -690,7 +747,7 @@ async function fetchClawHubSkillPageMeta(ownerOrId: string, slug: string): Promi
   try {
     const ctrl = new AbortController();
     const timeout = setTimeout(() => ctrl.abort(), CLAWHUB_PAGE_META_TIMEOUT_MS);
-    const res = await fetch(pageUrl, {
+    const res = await resilientFetch(pageUrl, {
       headers: { Accept: "text/html", "User-Agent": "xpersona-crawler" },
       signal: ctrl.signal,
     });
@@ -796,6 +853,53 @@ function computePopularityScore(downloads: number | undefined): number {
   return Math.max(40, score);
 }
 
+function toIso(value: number | undefined): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const ms = value > 1_000_000_000_000 ? value : value * 1000;
+  return new Date(ms).toISOString();
+}
+
+function normalizeVersionsForUi(versions: ClawHubSkillVersion[]): Array<{
+  version: string;
+  createdAt: string | null;
+  changelog: string | null;
+}> {
+  return versions
+    .filter((item) => typeof item.version === "string" && item.version.length > 0)
+    .slice(0, 20)
+    .map((item) => ({
+      version: item.version ?? "unknown",
+      createdAt: toIso(item.createdAt),
+      changelog:
+        typeof item.changelog === "string" && item.changelog.trim().length > 0
+          ? truncateText(item.changelog.trim(), 500)
+          : null,
+    }));
+}
+
+function normalizeArchivesForUi(archives: ClawHubVersionArchive[]): Array<{
+  version: string;
+  fileCount: number;
+  zipByteSize: number;
+  textFileCount: number;
+  topFiles: string[];
+}> {
+  return archives.slice(0, 20).map((archive) => ({
+    version: archive.version,
+    fileCount: archive.fileCount,
+    zipByteSize: archive.zipByteSize,
+    textFileCount: archive.textFiles.length,
+    topFiles: archive.files.slice(0, 15).map((file) => file.path),
+  }));
+}
+
+function inferSetupComplexity(versions: ClawHubSkillVersion[], archives: ClawHubVersionArchive[]): "low" | "medium" | "high" {
+  const archiveFiles = archives.reduce((sum, item) => sum + item.fileCount, 0);
+  if (archiveFiles > 600 || versions.length > 12) return "high";
+  if (archiveFiles > 160 || versions.length > 4) return "medium";
+  return "low";
+}
+
 async function crawlClawHubApi(maxResults: number): Promise<number> {
   const limit = pLimit(CONCURRENCY);
   let totalFound = 0;
@@ -884,6 +988,19 @@ async function crawlClawHubApi(maxResults: number): Promise<number> {
                   archiveMaxDownloadBytes: CLAWHUB_ARCHIVE_MAX_DOWNLOAD_BYTES,
                   fetchedAt: now.toISOString(),
                 },
+                normalized: {
+                  versions: normalizeVersionsForUi(versions),
+                  archives: normalizeArchivesForUi(archives),
+                  pageMeta: pageMeta
+                    ? {
+                      title: pageMeta.title,
+                      description: pageMeta.description,
+                      canonicalUrl: pageMeta.canonicalUrl,
+                      image: pageMeta.ogImage,
+                    }
+                    : null,
+                  setupComplexity: inferSetupComplexity(versions, archives),
+                },
               },
             } as Record<string, unknown>,
             readme,
@@ -933,98 +1050,7 @@ async function crawlClawHubApi(maxResults: number): Promise<number> {
   return totalFound;
 }
 
-async function crawlClawHubGitHub(maxResults: number): Promise<number> {
-  const limit = pLimit(CONCURRENCY);
-  let totalFound = 0;
 
-  const { data: treeData } = await withGithubRetry(
-    () =>
-      octokit.rest.git.getTree({
-        owner: "openclaw",
-        repo: "skills",
-        tree_sha: "main",
-        recursive: "1",
-      }),
-    "git.getTree openclaw/skills"
-  );
-
-  const tree = treeData.tree as Array<{ path?: string; type?: string }>;
-  const skillPaths = tree
-    .filter((n) => n.path?.endsWith("/SKILL.md") && n.type === "blob")
-    .map((n) => n.path!)
-    .slice(0, maxResults);
-
-  for (const path of skillPaths) {
-    if (totalFound >= maxResults) break;
-
-    const pathBase = path.replace(/\/SKILL\.md$/, "");
-    const parts = pathBase.split("/");
-    const slugFromPath = parts[parts.length - 1] ?? "skill";
-    const sourceId = truncateVarchar(`clawhub:${pathBase.replace(/\//g, ":")}`, 255);
-
-    const skillContent = await limit(() =>
-      fetchFileContent(SKILLS_REPO, path, "main")
-    );
-    if (!skillContent) continue;
-
-    const skillData = parseSkillMd(skillContent);
-    const name = normalizeAgentName(skillData.name ?? slugFromPath, slugFromPath);
-    const rawSlug =
-      generateSlug(`clawhub-${pathBase.replace(/\//g, "-")}`) ||
-      `clawhub-${totalFound}`;
-    const slug = normalizeAgentSlug(rawSlug, "clawhub", totalFound);
-    const url = `https://github.com/${SKILLS_REPO}/tree/main/${pathBase}`;
-
-    const agentData = {
-      sourceId,
-      source: "CLAWHUB" as const,
-      name,
-      slug,
-      description: skillData.description ?? null,
-      url,
-      homepage: skillData.homepage ?? null,
-      capabilities: skillData.capabilities ?? [],
-      protocols: skillData.protocols,
-      languages: ["typescript"] as string[],
-      openclawData: skillData as unknown as Record<string, unknown>,
-      readme: skillContent,
-      safetyScore: 80,
-      popularityScore: 50,
-      freshnessScore: 70,
-      performanceScore: 0,
-      overallRank: 62,
-      status: "ACTIVE" as const,
-      lastCrawledAt: new Date(),
-      nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-    };
-
-    await upsertAgent(agentData, {
-      name: agentData.name,
-      slug: agentData.slug,
-      description: agentData.description,
-      url: agentData.url,
-      homepage: agentData.homepage,
-      openclawData: agentData.openclawData,
-      readme: agentData.readme,
-      lastCrawledAt: agentData.lastCrawledAt,
-      nextCrawlAt: agentData.nextCrawlAt,
-    });
-    await ingestAgentMedia({
-      agentSourceId: sourceId,
-      agentUrl: url,
-      homepageUrl: skillData.homepage ?? null,
-      source: "CLAWHUB",
-      readmeOrHtml: skillContent,
-      isHtml: false,
-      allowHomepageFetch: true,
-    });
-
-    totalFound++;
-    if (totalFound % 100 === 0) await sleep(RATE_LIMIT_DELAY_MS);
-  }
-
-  return totalFound;
-}
 
 export async function crawlClawHub(
   maxResults: number = 5000
@@ -1042,15 +1068,7 @@ export async function crawlClawHub(
   let totalFound = 0;
 
   try {
-    try {
-      totalFound = await crawlClawHubApi(maxResults);
-    } catch (err) {
-      console.warn(
-        "[CRAWL] CLAWHUB API failed, falling back to GitHub repo:",
-        err instanceof Error ? err.message : String(err)
-      );
-      totalFound = await crawlClawHubGitHub(maxResults);
-    }
+    totalFound = await crawlClawHubApi(maxResults);
 
     await db
       .update(crawlJobs)

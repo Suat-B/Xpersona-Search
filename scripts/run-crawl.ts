@@ -58,11 +58,11 @@ const maxResults = scale250k ? 250000 : fullScale ? 100000 : parseInt(arg, 10) |
 
 const selectedSources = sourcesStr
   ? new Set(
-      sourcesStr
-        .split(",")
-        .map((s) => s.trim().toUpperCase())
-        .filter(Boolean)
-    )
+    sourcesStr
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean)
+  )
   : null;
 
 if (fullScale) {
@@ -71,69 +71,69 @@ if (fullScale) {
 
 const limits = scale250k
   ? {
-      openClaw: 5000,
-      mcp: 2000,
-      clawhub: 15000,
-      githubRepos: 30000,
-      mcpRegistry: 2000,
-      a2a: 1000,
-      pypi: 15000,
-      npm: 15000,
-      curated: 5000,
-      huggingface: 50000,
-      docker: 5000,
-      agentscape: 1000,
-      replicate: 5000,
-      awesomeLists: 10000,
-      smithery: 5000,
-      langchainHub: 5000,
-      crewai: 3000,
-      vercelTemplates: 2000,
-      ollama: 3000,
-    }
+    openClaw: 5000,
+    mcp: 2000,
+    clawhub: 15000,
+    githubRepos: 30000,
+    mcpRegistry: 2000,
+    a2a: 1000,
+    pypi: 15000,
+    npm: 15000,
+    curated: 5000,
+    huggingface: 50000,
+    docker: 5000,
+    agentscape: 1000,
+    replicate: 5000,
+    awesomeLists: 10000,
+    smithery: 5000,
+    langchainHub: 5000,
+    crewai: 3000,
+    vercelTemplates: 2000,
+    ollama: 3000,
+  }
   : fullScale
     ? {
-        openClaw: 2000,
-        mcp: 800,
-        clawhub: 10000,
-        githubRepos: 15000,
-        mcpRegistry: 1000,
-        a2a: 500,
-        pypi: 5000,
-        npm: 5000,
-        curated: 5000,
-        huggingface: 20000,
-        docker: 2000,
-        agentscape: 500,
-        replicate: 3000,
-        awesomeLists: 5000,
-        smithery: 2000,
-        langchainHub: 2000,
-        crewai: 1000,
-        vercelTemplates: 1000,
-        ollama: 1000,
-      }
+      openClaw: 2000,
+      mcp: 800,
+      clawhub: 10000,
+      githubRepos: 15000,
+      mcpRegistry: 1000,
+      a2a: 500,
+      pypi: 5000,
+      npm: 5000,
+      curated: 5000,
+      huggingface: 20000,
+      docker: 2000,
+      agentscape: 500,
+      replicate: 3000,
+      awesomeLists: 5000,
+      smithery: 2000,
+      langchainHub: 2000,
+      crewai: 1000,
+      vercelTemplates: 1000,
+      ollama: 1000,
+    }
     : {
-        openClaw: maxResults,
-        mcp: 400,
-        clawhub: 5000,
-        githubRepos: 2000,
-        mcpRegistry: 500,
-        a2a: 200,
-        pypi: 500,
-        npm: 250,
-        curated: 2000,
-        huggingface: 2000,
-        docker: 300,
-        agentscape: 200,
-        replicate: 500,
-        awesomeLists: 2000,
-        smithery: 500,
-        langchainHub: 500,
-        crewai: 300,
-        vercelTemplates: 200,
-        ollama: 500,
-      };
+      openClaw: maxResults,
+      mcp: 400,
+      clawhub: 5000,
+      githubRepos: 2000,
+      mcpRegistry: 500,
+      a2a: 200,
+      pypi: 500,
+      npm: 250,
+      curated: 2000,
+      huggingface: 2000,
+      docker: 300,
+      agentscape: 200,
+      replicate: 500,
+      awesomeLists: 2000,
+      smithery: 500,
+      langchainHub: 500,
+      crewai: 300,
+      vercelTemplates: 200,
+      ollama: 500,
+    };
 
 function log(source: string, msg: string, ...rest: unknown[]) {
   const ts = new Date().toISOString();
@@ -168,8 +168,8 @@ function hasGitHubAuth(): boolean {
   if (process.env.GITHUB_TOKEN) return true;
   return Boolean(
     process.env.GITHUB_APP_ID &&
-      process.env.GITHUB_APP_PRIVATE_KEY &&
-      process.env.GITHUB_APP_INSTALLATION_ID
+    process.env.GITHUB_APP_PRIVATE_KEY &&
+    process.env.GITHUB_APP_INSTALLATION_ID
   );
 }
 
@@ -323,16 +323,6 @@ async function main() {
         }),
       });
     }
-    if (shouldRun("CLAWHUB")) {
-      tasks.push({
-        source: "CLAWHUB",
-        bucket: "github",
-        fn: withStartLog("CLAWHUB", async () => {
-          const { crawlClawHub } = await import("@/lib/search/crawlers/clawhub");
-          return crawlClawHub(limits.clawhub);
-        }),
-      });
-    }
     if (shouldRun("GITHUB_REPOS")) {
       tasks.push({
         source: "GITHUB_REPOS",
@@ -346,10 +336,21 @@ async function main() {
   } else if (
     shouldRun("GITHUB_OPENCLEW") ||
     shouldRun("GITHUB_MCP") ||
-    shouldRun("CLAWHUB") ||
     shouldRun("GITHUB_REPOS")
   ) {
     log("CRAWL", "GitHub auth not configured — skipping GitHub crawlers");
+  }
+
+  // ClawHub uses its own Convex API — no GitHub auth needed
+  if (shouldRun("CLAWHUB")) {
+    tasks.push({
+      source: "CLAWHUB",
+      bucket: "registry",
+      fn: withStartLog("CLAWHUB", async () => {
+        const { crawlClawHub } = await import("@/lib/search/crawlers/clawhub");
+        return crawlClawHub(limits.clawhub);
+      }),
+    });
   }
 
   if (shouldRun("MCP_REGISTRY")) {
