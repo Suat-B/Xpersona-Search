@@ -218,6 +218,15 @@ export default async function AgentPage({ params }: Props) {
 
       <main className="mx-auto w-full max-w-5xl px-4 py-8 md:py-10">
         <article className="space-y-6">
+          <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">Agent Experience</h2>
+            <div className="mt-4">
+              <AgentPageClient
+                agent={data.agentForClient as unknown as Parameters<typeof AgentPageClient>[0]["agent"]}
+              />
+            </div>
+          </section>
+
           <header className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
             <p className="text-xs uppercase tracking-wide text-[var(--text-tertiary)]">AI Agent Profile</p>
             <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text-primary)]">{data.name}</h1>
@@ -270,6 +279,56 @@ export default async function AgentPage({ params }: Props) {
               ))}
             </ul>
           </section>
+
+          {data.protocols.some(p => p.toUpperCase() === "MCP") && (
+            <section id="integration" className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">Developer Integration (MCP)</h2>
+              <p className="mt-2 mb-3 text-sm text-[var(--text-secondary)]">Connect to this agent programmatically using the official Model Context Protocol (MCP) SDKs.</p>
+
+              <div className="space-y-4">
+                <div className="rounded-lg border border-[var(--border)] overflow-hidden">
+                  <div className="bg-[var(--bg-elevated)] border-b border-[var(--border)] px-4 py-2 text-xs font-semibold text-[var(--text-primary)]">TypeScript (Node.js)</div>
+                  <pre className="p-4 overflow-x-auto text-[13px] leading-relaxed text-[var(--text-primary)]"><code>{`import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+
+const transport = new StdioClientTransport({
+  command: "npx",
+  args: ["-y", "${data.name}"]
+});
+
+const client = new Client({
+  name: "xpersona-client",
+  version: "1.0.0"
+}, {
+  capabilities: { tools: {} }
+});
+
+await client.connect(transport);
+console.log("Connected to ${data.name} via MCP!");`}</code></pre>
+                </div>
+
+                <div className="rounded-lg border border-[var(--border)] overflow-hidden">
+                  <div className="bg-[var(--bg-elevated)] border-b border-[var(--border)] px-4 py-2 text-xs font-semibold text-[var(--text-primary)]">Python</div>
+                  <pre className="p-4 overflow-x-auto text-[13px] leading-relaxed text-[var(--text-primary)]"><code>{`import asyncio
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+server_params = StdioServerParameters(
+    command="npx",
+    args=["-y", "${data.name}"]
+)
+
+async def main():
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            print("Connected to ${data.name} via MCP!")
+
+asyncio.run(main())`}</code></pre>
+                </div>
+              </div>
+            </section>
+          )}
 
           <section id="workflows" className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
             <h2 className="text-lg font-semibold text-[var(--text-primary)]">Real Workflows</h2>
@@ -550,17 +609,8 @@ export default async function AgentPage({ params }: Props) {
             <p className="mt-3 text-xs text-[var(--text-tertiary)]">Machine endpoint: {data.snapshotUrl}</p>
           </section>
 
-          <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
-            <h2 className="text-lg font-semibold text-[var(--text-primary)]">Interactive View</h2>
-            <div className="mt-4">
-              <AgentPageClient
-                agent={data.agentForClient as unknown as Parameters<typeof AgentPageClient>[0]["agent"]}
-              />
-            </div>
-          </section>
         </article >
       </main >
     </>
   );
 }
-

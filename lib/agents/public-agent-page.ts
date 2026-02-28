@@ -240,21 +240,7 @@ function buildCapabilityMatrix(protocols: string[], capabilities: string[], cont
 }
 
 export function shouldEnableMachineBlocks(slug: string): boolean {
-  const flag = process.env.AGENT_PAGE_MACHINE_BLOCKS_V1;
-  if (flag !== "1" && flag?.toLowerCase() !== "true") return false;
-
-  const percentRaw = process.env.AGENT_PAGE_MACHINE_BLOCKS_PERCENT ?? "100";
-  const percent = Math.max(0, Math.min(100, Number(percentRaw)));
-  if (!Number.isFinite(percent)) return true;
-  if (percent >= 100) return true;
-  if (percent <= 0) return false;
-
-  let hash = 0;
-  for (let i = 0; i < slug.length; i += 1) {
-    hash = (hash * 31 + slug.charCodeAt(i)) % 1000;
-  }
-  const bucket = hash % 100;
-  return bucket < percent;
+  return true;
 }
 
 export async function getPublicAgentPageData(slug: string): Promise<PublicAgentPageData | null> {
@@ -327,49 +313,49 @@ export async function getPublicAgentPageData(slug: string): Promise<PublicAgentP
 
   const [contractRow] = hasContracts
     ? await db
-        .select({
-          authModes: agentCapabilityContracts.authModes,
-          requires: agentCapabilityContracts.requires,
-          forbidden: agentCapabilityContracts.forbidden,
-          dataRegion: agentCapabilityContracts.dataRegion,
-          inputSchemaRef: agentCapabilityContracts.inputSchemaRef,
-          outputSchemaRef: agentCapabilityContracts.outputSchemaRef,
-          supportsStreaming: agentCapabilityContracts.supportsStreaming,
-          supportsMcp: agentCapabilityContracts.supportsMcp,
-          supportsA2a: agentCapabilityContracts.supportsA2a,
-          updatedAt: agentCapabilityContracts.updatedAt,
-        })
-        .from(agentCapabilityContracts)
-        .where(eq(agentCapabilityContracts.agentId, rawAgent.id))
-        .limit(1)
+      .select({
+        authModes: agentCapabilityContracts.authModes,
+        requires: agentCapabilityContracts.requires,
+        forbidden: agentCapabilityContracts.forbidden,
+        dataRegion: agentCapabilityContracts.dataRegion,
+        inputSchemaRef: agentCapabilityContracts.inputSchemaRef,
+        outputSchemaRef: agentCapabilityContracts.outputSchemaRef,
+        supportsStreaming: agentCapabilityContracts.supportsStreaming,
+        supportsMcp: agentCapabilityContracts.supportsMcp,
+        supportsA2a: agentCapabilityContracts.supportsA2a,
+        updatedAt: agentCapabilityContracts.updatedAt,
+      })
+      .from(agentCapabilityContracts)
+      .where(eq(agentCapabilityContracts.agentId, rawAgent.id))
+      .limit(1)
     : [];
 
   const [handshakeRow] = hasHandshake
     ? await db
-        .select({
-          status: agentCapabilityHandshakes.status,
-          verifiedAt: agentCapabilityHandshakes.verifiedAt,
-        })
-        .from(agentCapabilityHandshakes)
-        .where(eq(agentCapabilityHandshakes.agentId, rawAgent.id))
-        .orderBy(desc(agentCapabilityHandshakes.verifiedAt))
-        .limit(1)
+      .select({
+        status: agentCapabilityHandshakes.status,
+        verifiedAt: agentCapabilityHandshakes.verifiedAt,
+      })
+      .from(agentCapabilityHandshakes)
+      .where(eq(agentCapabilityHandshakes.agentId, rawAgent.id))
+      .orderBy(desc(agentCapabilityHandshakes.verifiedAt))
+      .limit(1)
     : [];
 
   const [reputationRow] = hasReputation
     ? await db
-        .select({
-          scoreTotal: agentReputationSnapshots.scoreTotal,
-          attempts30d: agentReputationSnapshots.attempts30d,
-          successRate30d: agentReputationSnapshots.successRate30d,
-          p95LatencyMs: agentReputationSnapshots.p95LatencyMs,
-          fallbackRate: agentReputationSnapshots.fallbackRate,
-          computedAt: agentReputationSnapshots.computedAt,
-        })
-        .from(agentReputationSnapshots)
-        .where(eq(agentReputationSnapshots.agentId, rawAgent.id))
-        .orderBy(desc(agentReputationSnapshots.computedAt))
-        .limit(1)
+      .select({
+        scoreTotal: agentReputationSnapshots.scoreTotal,
+        attempts30d: agentReputationSnapshots.attempts30d,
+        successRate30d: agentReputationSnapshots.successRate30d,
+        p95LatencyMs: agentReputationSnapshots.p95LatencyMs,
+        fallbackRate: agentReputationSnapshots.fallbackRate,
+        computedAt: agentReputationSnapshots.computedAt,
+      })
+      .from(agentReputationSnapshots)
+      .where(eq(agentReputationSnapshots.agentId, rawAgent.id))
+      .orderBy(desc(agentReputationSnapshots.computedAt))
+      .limit(1)
     : [];
 
   let customPage: {
