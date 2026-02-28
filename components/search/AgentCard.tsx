@@ -58,6 +58,21 @@ function getPopularityLabel(agent: Agent): string {
   return `${agent.githubData?.stars ?? 0} stars`;
 }
 
+function formatFreshness(hours: number | null | undefined): string | null {
+  if (hours == null || Number.isNaN(hours)) return null;
+  if (hours < 1) return "freshness under 1h";
+  if (hours < 24) return `freshness ${Math.round(hours)}h`;
+  const days = Math.max(1, Math.round(hours / 24));
+  return `freshness ${days}d`;
+}
+
+function getWhySummary(agent: Agent, protocols: string[], hasEditorial: boolean): string {
+  const source = agent.source ? `${agent.source} source` : "multi-source signals";
+  const protocolLabel = protocols.length > 0 ? `${protocols.length} protocol match` : "protocol coverage pending";
+  const editorial = hasEditorial ? "editorial review" : "community signals";
+  return `${source}, ${protocolLabel}, ${editorial}`;
+}
+
 export function AgentCard({ agent, rank }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -71,6 +86,8 @@ export function AgentCard({ agent, rank }: Props) {
   const popularityLabel = getPopularityLabel(agent);
   const trust = agent.trust ?? null;
   const contentMeta = agent.contentMeta ?? null;
+  const freshnessLabel = formatFreshness(trust?.verificationFreshnessHours);
+  const whySummary = getWhySummary(agent, protos, contentMeta?.hasEditorialContent ?? false);
 
   return (
     <article className="agent-card neural-glass-hover p-6 rounded-xl border border-[var(--border)] hover:border-[var(--accent-heart)]/40 transition-all duration-200">
@@ -111,6 +128,25 @@ export function AgentCard({ agent, rank }: Props) {
           {contentMeta?.bestFor && (
             <p className="text-xs text-[var(--text-tertiary)] mb-3">
               <span className="font-medium text-[var(--text-secondary)]">Best for:</span> {contentMeta.bestFor}
+            </p>
+          )}
+          <p className="text-xs text-[var(--text-tertiary)] mb-3">
+            <span className="font-medium text-[var(--text-secondary)]">Why this agent:</span> {whySummary}
+          </p>
+          {contentMeta?.setupComplexity && (
+            <p className="text-xs text-[var(--text-tertiary)] mb-3">
+              <span className="font-medium text-[var(--text-secondary)]">Setup:</span>{" "}
+              {contentMeta.setupComplexity} complexity,{" "}
+              {contentMeta.hasFaq ? "FAQ available" : "FAQ pending"},{" "}
+              {contentMeta.hasPlaybook ? "playbook available" : "playbook pending"}
+            </p>
+          )}
+          {(trust?.handshakeStatus || trust?.reputationScore != null || freshnessLabel) && (
+            <p className="text-xs text-[var(--text-tertiary)] mb-3">
+              <span className="font-medium text-[var(--text-secondary)]">Trust snapshot:</span>{" "}
+              {trust?.handshakeStatus ? `handshake ${trust.handshakeStatus.toLowerCase()}` : "handshake pending"}
+              {freshnessLabel ? `, ${freshnessLabel}` : ""}
+              {trust?.reputationScore != null ? `, reputation ${trust.reputationScore}` : ""}
             </p>
           )}
           <div className="flex flex-wrap gap-2 mb-4">
@@ -169,4 +205,3 @@ export function AgentCard({ agent, rank }: Props) {
     </article>
   );
 }
-

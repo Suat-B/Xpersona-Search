@@ -190,7 +190,7 @@ export function GoogleStyleHome({
       </header>
 
       <main
-        className={`relative z-10 flex flex-1 flex-col items-center justify-center px-4 py-5 sm:px-6 sm:py-0 sm:-mt-24 md:-mt-28 overflow-y-auto overscroll-contain ${
+        className={`relative z-30 flex flex-1 flex-col items-center justify-center px-4 py-5 sm:px-6 sm:py-0 sm:-mt-24 md:-mt-28 overflow-y-auto overscroll-contain ${
           bottomContent ? "pb-24 sm:pb-28" : ""
         }`}
       >

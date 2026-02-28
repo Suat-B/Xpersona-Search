@@ -35,8 +35,11 @@ describe("editorial-content", () => {
       bestFor:
         "Best for teams building repeatable research pipelines with quality checks and machine-readable outputs.",
       notFor: "Not ideal for zero-configuration environments with strict no-code constraints.",
-      setup:
-        "Setup requires environment variables, protocol compatibility checks, and one smoke execution before production.",
+      setup: [
+        "Set environment variables and required auth keys.",
+        "Confirm protocol compatibility and required permissions.",
+        "Run a smoke execution before production rollout.",
+      ],
       workflows: [
         "Discover candidates, validate trust, and select protocol fit.",
         "Run snapshot/contract/trust preflight before invocation.",
@@ -46,6 +49,13 @@ describe("editorial-content", () => {
         "Limitations include varying source documentation quality and incomplete metadata for some third-party listings.",
       alternatives:
         "Compare alternatives in same protocol and use-case pages and prioritize fresher trust evidence.",
+      extractedFiles: [
+        {
+          path: "README.md",
+          content:
+            "This agent provides structured workflows, protocol compatibility, and trust verification guidance.",
+        },
+      ],
       faq: [
         { q: "What does this agent do?", a: "It automates multi-step workflows." },
         { q: "How do I validate safety?", a: "Use trust and contract endpoints." },
@@ -75,4 +85,3 @@ describe("editorial-content", () => {
     expect(meta.qualityScore).not.toBeNull();
   });
 });
-

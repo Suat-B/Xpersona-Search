@@ -18,7 +18,7 @@ function formatDownloads(downloads: number | null): string | null {
   if (downloads == null || downloads <= 0) return null;
   if (downloads >= 1_000_000) return `${(downloads / 1_000_000).toFixed(1)}M downloads`;
   if (downloads >= 1_000) return `${(downloads / 1_000).toFixed(1)}k downloads`;
-  return `${downloads} downloads`;
+  return `${downloads.toLocaleString()} downloads`;
 }
 
 export function AgentMiniCard({ agent }: AgentMiniCardProps) {

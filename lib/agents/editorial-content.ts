@@ -22,12 +22,13 @@ export type AgentEditorialSections = {
   overview: string;
   bestFor: string;
   notFor: string;
-  setup: string;
+  setup: string[];
   workflows: string[];
   limitations: string;
   alternatives: string;
   faq: AgentFaqItem[];
   releaseHighlights: AgentReleaseHighlight[];
+  extractedFiles: { path: string; content: string }[];
 };
 
 export type AgentContentQuality = {
@@ -56,6 +57,7 @@ export type ClawhubNormalizedPayload = {
   pageTitle: string | null;
   setupComplexity: SetupComplexity;
   sourceListUrl: string | null;
+  extractedFiles: { path: string; content: string }[];
 };
 
 export type EditorialSeed = {
@@ -183,6 +185,16 @@ export function normalizeClawhubPayload(
     });
   }
 
+  const latestArchive = archivesRaw[0] as Record<string, unknown> | undefined;
+  const rawTextFiles = Array.isArray(latestArchive?.textFiles) ? latestArchive.textFiles : [];
+  const extractedFiles = rawTextFiles
+    .filter((f) => f && typeof f === "object" && typeof (f as any).path === "string" && typeof (f as any).content === "string")
+    .map((f: any) => ({
+      path: f.path,
+      content: f.content.slice(0, 3000), // Expose up to 3000 chars of the most important files
+    }))
+    .slice(0, 5);
+
   const versions: AgentReleaseHighlight[] = versionsRaw
     .filter((item) => item && typeof item === "object")
     .slice(0, 8)
@@ -226,6 +238,7 @@ export function normalizeClawhubPayload(
       typeof crawlContext.sourceListUrl === "string" && crawlContext.sourceListUrl.length > 0
         ? crawlContext.sourceListUrl
         : null,
+    extractedFiles,
   };
 }
 
@@ -258,14 +271,41 @@ function inferNotFor(seed: EditorialSeed): string {
   return `${seed.name} is not ideal for teams that need fully managed, zero-configuration workflows without any integration setup.`;
 }
 
-function inferSetup(seed: EditorialSeed, setupComplexity: SetupComplexity): string {
+function inferSetup(
+  seed: EditorialSeed,
+  setupComplexity: SetupComplexity,
+  extractedFiles: { path: string; content: string }[]
+): string[] {
+  const steps: string[] = [];
+  const filePaths = extractedFiles.map((f) => f.path.toLowerCase());
+
+  if (filePaths.some((p) => p.includes("docker-compose"))) {
+    steps.push(`Docker environment detected. We recommend running \`docker compose up -d\` in an isolated bridge network rather than host mode.`);
+  } else if (filePaths.some((p) => p.includes("dockerfile"))) {
+    steps.push(`Dockerfile detected. Build the image locally (\`docker build -t ${seed.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')} .\`) to inspect the base layers before executing.`);
+  }
+
+  if (filePaths.some((p) => p.includes("package.json") || p.includes("pnpm-workspace.yaml"))) {
+    steps.push(`Node.js workspace detected. Install dependencies securely: run \`npm ci --ignore-scripts\` to prevent post-install lifecycle triggers from running arbitrary code, then selectively audit the dependency tree.`);
+  } else if (filePaths.some((p) => p.includes("requirements.txt") || p.includes("pyproject.toml"))) {
+    steps.push(`Python environment detected. Create a strict virtual environment (\`python -m venv .venv\`) before installing dependencies to prevent system-level package conflicts.`);
+  }
+
+  if (filePaths.some((p) => p.includes(".env"))) {
+    steps.push(`Environment variables required. Review the exposed \`.env\` template and provision short-lived API keys with least-privilege scoping rather than root accounts.`);
+  }
+
   if (setupComplexity === "high") {
-    return `Setup is high complexity: plan for environment isolation, credentials management, and staged validation before production rollout.`;
+    steps.push(`Setup complexity is classified as HIGH. You must provision dedicated cloud infrastructure or an isolated VM. Do not run this directly on your local workstation.`);
+  } else if (setupComplexity === "medium") {
+    steps.push(`Setup complexity is MEDIUM. Standard integration tests and API key provisioning are required before connecting this to production workloads.`);
+  } else {
+    steps.push(`Setup complexity is LOW. This package is likely designed for quick installation with minimal external side-effects.`);
   }
-  if (setupComplexity === "medium") {
-    return `Setup is medium complexity: configure runtime credentials, verify protocol compatibility, and run at least one smoke invocation before launch.`;
-  }
-  return `Setup is low complexity: install, add required environment variables, and validate one test request through snapshot/contract/trust checks.`;
+
+  steps.push(`Final validation: Expose the agent to a mock request payload inside a sandbox and trace the network egress before allowing access to real customer data.`);
+
+  return steps;
 }
 
 function inferLimitations(seed: EditorialSeed): string {
@@ -337,12 +377,13 @@ function buildGeneratedSections(seed: EditorialSeed): AgentEditorialSections {
     overview,
     bestFor,
     notFor: inferNotFor(seed),
-    setup: inferSetup(seed, setupComplexity),
+    setup: inferSetup(seed, setupComplexity, normalized?.extractedFiles ?? []),
     workflows: inferWorkflows(seed),
     limitations: inferLimitations(seed),
     alternatives: inferAlternatives(seed, useCases),
     faq: inferFaq(seed),
     releaseHighlights,
+    extractedFiles: normalized?.extractedFiles ?? [],
   };
 }
 
@@ -351,7 +392,7 @@ export function evaluateEditorialContent(sections: AgentEditorialSections): Agen
     sections.overview,
     sections.bestFor,
     sections.notFor,
-    sections.setup,
+    sections.setup.join(" "),
     sections.workflows.join(" "),
     sections.limitations,
     sections.alternatives,
@@ -373,7 +414,7 @@ export function evaluateEditorialContent(sections: AgentEditorialSections): Agen
     (sections.overview ? 10 : 0) +
     (sections.bestFor ? 10 : 0) +
     (sections.notFor ? 8 : 0) +
-    (sections.setup ? 10 : 0) +
+    (sections.setup.length > 0 ? 10 : 0) +
     (sections.workflows.length >= 3 ? 12 : sections.workflows.length * 3) +
     (sections.limitations ? 8 : 0) +
     (sections.alternatives ? 8 : 0) +
@@ -458,7 +499,7 @@ function contentMetaFromSections(input: {
   lastReviewedAt: string | null;
 }): AgentContentMeta {
   const bestFor = firstSentence(input.sections.bestFor);
-  const setupComplexity = parseSetupComplexityFromText(input.sections.setup);
+  const setupComplexity = parseSetupComplexityFromText(input.sections.setup.join(" "));
   return {
     hasEditorialContent: input.quality.status !== "draft",
     qualityScore: input.quality.score,
@@ -575,7 +616,10 @@ export async function resolveEditorialContent(seed: EditorialSeed): Promise<Reso
         overview: normalizeWhitespace(row.overviewMd ?? sections.overview),
         bestFor: normalizeWhitespace(row.bestForMd ?? sections.bestFor),
         notFor: normalizeWhitespace(row.notForMd ?? sections.notFor),
-        setup: normalizeWhitespace(row.setupMd ?? sections.setup),
+        setup: normalizeWhitespace(row.setupMd ?? sections.setup.join("\n"))
+          .split(/\n+/)
+          .map((item) => normalizeWhitespace(item.replace(/^[-*\d.]+\s*/, "")))
+          .filter(Boolean),
         workflows: normalizeWhitespace(row.workflowsMd ?? "")
           .split(/\n+/)
           .map((item) => normalizeWhitespace(item.replace(/^[-*\d.]+\s*/, "")))
@@ -585,6 +629,7 @@ export async function resolveEditorialContent(seed: EditorialSeed): Promise<Reso
         alternatives: normalizeWhitespace(row.alternativesMd ?? sections.alternatives),
         faq: parseFaqJson(row.faqJson),
         releaseHighlights: parseReleaseHighlights(row.releaseHighlights),
+        extractedFiles: sections.extractedFiles,
       };
       if (sections.workflows.length === 0) {
         sections.workflows = inferWorkflows(seed);
@@ -603,7 +648,7 @@ export async function resolveEditorialContent(seed: EditorialSeed): Promise<Reso
   return {
     sections,
     quality,
-    setupComplexity: parseSetupComplexityFromText(sections.setup),
+    setupComplexity: parseSetupComplexityFromText(sections.setup.join(" ")),
     lastReviewedAt,
     dataSources,
     useCases,

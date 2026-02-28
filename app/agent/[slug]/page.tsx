@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AgentPageClient } from "@/components/agent/AgentPageClient";
+import { AgentMiniCard } from "@/components/agent/AgentMiniCard";
 import {
   getPublicAgentPageData,
   shouldEnableMachineBlocks,
@@ -43,11 +44,11 @@ async function getEditorial(data: PublicAgentPageData): Promise<EditorialData> {
 }
 
 function buildJsonLdGraph(data: PublicAgentPageData, editorial: EditorialData) {
-  const pageId = `${data.canonicalUrl}#webpage`;
-  const appId = `${data.canonicalUrl}#software`;
-  const machineDatasetId = `${data.canonicalUrl}#machine-dataset`;
-  const invocationWorkId = `${data.canonicalUrl}#invocation-templates`;
-  const faqId = `${data.canonicalUrl}#faq`;
+  const pageId = `${data.canonicalUrl} #webpage`;
+  const appId = `${data.canonicalUrl} #software`;
+  const machineDatasetId = `${data.canonicalUrl} #machine - dataset`;
+  const invocationWorkId = `${data.canonicalUrl} #invocation - templates`;
+  const faqId = `${data.canonicalUrl} #faq`;
 
   return {
     "@context": "https://schema.org",
@@ -204,8 +205,8 @@ export default async function AgentPage({ params }: Props) {
   const relatedByProtocol =
     data.protocols.length > 0
       ? (await getAgentsByProtocol(data.protocols[0], 8))
-          .filter((item) => item.slug !== data.slug)
-          .slice(0, 4)
+        .filter((item) => item.slug !== data.slug)
+        .slice(0, 4)
       : [];
 
   return (
@@ -257,10 +258,17 @@ export default async function AgentPage({ params }: Props) {
           </section>
 
           <section id="setup" className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
-            <h2 className="text-lg font-semibold text-[var(--text-primary)]">Setup Path</h2>
-            <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
-              {editorial.sections.setup}
-            </p>
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">Setup & Provisioning Guide</h2>
+            <ul className="mt-3 space-y-3 text-sm text-[var(--text-secondary)]">
+              {editorial.sections.setup.map((step, i) => (
+                <li key={i} className="flex gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--bg-elevated)] text-xs font-medium text-[var(--text-primary)]">
+                    {i + 1}
+                  </span>
+                  <p className="pt-0.5 leading-relaxed">{step}</p>
+                </li>
+              ))}
+            </ul>
           </section>
 
           <section id="workflows" className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
@@ -271,6 +279,27 @@ export default async function AgentPage({ params }: Props) {
               ))}
             </ol>
           </section>
+
+          {editorial.sections.extractedFiles && editorial.sections.extractedFiles.length > 0 && (
+            <section id="source-code" className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">Extracted Source & Configuration</h2>
+              <p className="mt-2 text-sm text-[var(--text-secondary)]">
+                Key configuration and source files extracted automatically from the agent's latest release archive.
+              </p>
+              <div className="mt-4 space-y-4">
+                {editorial.sections.extractedFiles.map((file) => (
+                  <div key={file.path} className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]">
+                    <div className="border-b border-[var(--border)] bg-[var(--bg-card)] px-4 py-2 text-xs font-semibold text-[var(--text-primary)]">
+                      {file.path}
+                    </div>
+                    <pre className="overflow-x-auto p-4 text-xs leading-relaxed text-[var(--text-secondary)]">
+                      <code>{file.content}</code>
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section className="grid gap-4 md:grid-cols-2">
             <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
@@ -285,15 +314,9 @@ export default async function AgentPage({ params }: Props) {
                 {editorial.sections.alternatives}
               </p>
               {relatedByProtocol.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-2 text-sm">
+                <div className="mt-4 grid gap-3 md:grid-cols-1">
                   {relatedByProtocol.map((item) => (
-                    <Link
-                      key={item.id}
-                      href={`/agent/compare/${encodeURIComponent(`${data.slug}-vs-${item.slug}`)}`}
-                      className="text-[var(--accent-heart)] hover:underline"
-                    >
-                      Compare with {item.name}
-                    </Link>
+                    <AgentMiniCard key={item.id} agent={item} />
                   ))}
                 </div>
               )}
@@ -305,11 +328,11 @@ export default async function AgentPage({ params }: Props) {
               <h2 className="text-lg font-semibold text-[var(--text-primary)]">Release And Freshness Highlights</h2>
               <ul className="mt-3 space-y-2 text-sm text-[var(--text-secondary)]">
                 {editorial.sections.releaseHighlights.slice(0, 6).map((item) => (
-                  <li key={`${item.version}-${item.createdAt ?? "n/a"}`}>
+                  <li key={`${item.version} -${item.createdAt ?? "n/a"} `}>
                     <span className="font-medium text-[var(--text-primary)]">v{item.version}</span>
-                    {item.createdAt ? ` - ${new Date(item.createdAt).toLocaleDateString("en-US")}` : ""}
+                    {item.createdAt ? ` - ${new Date(item.createdAt).toLocaleDateString("en-US")} ` : ""}
                     {item.fileCount != null ? ` - ${item.fileCount} files` : ""}
-                    {item.changelog ? ` - ${item.changelog}` : ""}
+                    {item.changelog ? ` - ${item.changelog} ` : ""}
                   </li>
                 ))}
               </ul>
@@ -351,7 +374,7 @@ export default async function AgentPage({ params }: Props) {
             <div className="mt-3 flex flex-wrap gap-3 text-sm">
               <Link href="/agent" className="text-[var(--accent-heart)] hover:underline">Agent hub</Link>
               <Link
-                href={`/agent/source/${encodeURIComponent(sourceSlugFromValue(data.source))}`}
+                href={`/ agent / source / ${encodeURIComponent(sourceSlugFromValue(data.source))} `}
                 className="text-[var(--accent-heart)] hover:underline"
               >
                 More from {data.source}
@@ -359,7 +382,7 @@ export default async function AgentPage({ params }: Props) {
               {data.protocols.map((protocol) => (
                 <Link
                   key={protocol}
-                  href={`/agent/protocol/${encodeURIComponent(protocol.toLowerCase())}`}
+                  href={`/ agent / protocol / ${encodeURIComponent(protocol.toLowerCase())} `}
                   className="text-[var(--accent-heart)] hover:underline"
                 >
                   {protocol} agents
@@ -368,14 +391,14 @@ export default async function AgentPage({ params }: Props) {
               {editorial.useCases.map((useCase) => (
                 <Link
                   key={useCase}
-                  href={`/agent/use-case/${encodeURIComponent(useCase)}`}
+                  href={`/ agent / use -case/${encodeURIComponent(useCase)}`}
                   className="text-[var(--accent-heart)] hover:underline"
                 >
                   {useCase.replace(/-/g, " ")}
-                </Link>
+                </Link >
               ))}
-            </div>
-          </section>
+            </div >
+          </section >
 
           {machineEnabled && (
             <>
@@ -506,12 +529,14 @@ export default async function AgentPage({ params }: Props) {
             <p className="mt-2 text-sm text-[var(--text-tertiary)]">{data.capabilities.length > 0 ? data.capabilities.join(", ") : "No capabilities listed."}</p>
           </section>
 
-          {data.readmeExcerpt && (
-            <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
-              <h2 className="text-lg font-semibold text-[var(--text-primary)]">Documentation Excerpt</h2>
-              <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">{data.readmeExcerpt}</p>
-            </section>
-          )}
+          {
+            data.readmeExcerpt && (
+              <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Documentation Excerpt</h2>
+                <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">{data.readmeExcerpt}</p>
+              </section>
+            )
+          }
 
           <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
             <h2 className="text-lg font-semibold text-[var(--text-primary)]">Structured Data Summary</h2>
@@ -533,8 +558,8 @@ export default async function AgentPage({ params }: Props) {
               />
             </div>
           </section>
-        </article>
-      </main>
+        </article >
+      </main >
     </>
   );
 }
