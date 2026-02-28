@@ -221,7 +221,7 @@ export function GoogleStyleHome({
               onFocus={handleFocus}
               onBlur={handleBlur}
               onKeyDown={handleInputKeyDown}
-              placeholder="Search for AI..."
+              placeholder="Search AI Agents"
               aria-label="Search AI agents"
               aria-autocomplete="list"
               aria-controls="agent-suggestions"

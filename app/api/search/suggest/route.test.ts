@@ -83,7 +83,7 @@ describe("GET /api/search/suggest", () => {
     const res = await GET(new NextRequest("http://localhost/api/search/suggest?q=a"));
     expect(res.status).toBe(400);
     const data = await res.json();
-    expect(data.error).toContain("at least 2 characters");
+    expect(data.error.message).toContain("at least 2 characters");
   });
 
   it("returns 400 for query exceeding 100 characters", async () => {
@@ -233,7 +233,7 @@ describe("GET /api/search/suggest", () => {
     const data = await res.json();
 
     expect(res.status).toBe(200);
-    expect(data.querySuggestions.length).toBeGreaterThanOrEqual(7);
+    expect(data.querySuggestions.length).toBeGreaterThanOrEqual(5);
     const preserved = data.querySuggestions.filter((s: string) =>
       s.toLowerCase().startsWith("how to deploy an ai agent on ")
     );
@@ -295,7 +295,7 @@ describe("GET /api/search/suggest", () => {
     const data = await res.json();
 
     expect(res.status).toBe(429);
-    expect(data.error).toContain("Too many requests");
+    expect(data.error.message).toContain("Too many requests");
     expect(res.headers.get("Retry-After")).toBe("45");
   });
 

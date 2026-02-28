@@ -397,6 +397,7 @@ export function evaluateEditorialContent(sections: AgentEditorialSections): Agen
     sections.limitations,
     sections.alternatives,
     sections.faq.map((item) => `${item.q} ${item.a}`).join(" "),
+    sections.extractedFiles.map((file) => file.content).join(" "),
     sections.releaseHighlights
       .map((item) => `${item.version} ${item.changelog ?? ""}`)
       .join(" "),

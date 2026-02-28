@@ -31,9 +31,9 @@ describe("editorial-content", () => {
   it("scores complete editorial content as ready", () => {
     const score = evaluateEditorialContent({
       overview:
-        "This agent orchestrates multi-step research workflows with structured result validation and source citations.",
+        "This agent orchestrates multi-step research workflows with structured result validation and source citations. It emphasizes auditable steps, deterministic checks, and a repeatable checklist for validation, rollout, and post-deploy review across multiple data sources and team handoffs.",
       bestFor:
-        "Best for teams building repeatable research pipelines with quality checks and machine-readable outputs.",
+        "Best for teams building repeatable research pipelines with quality checks and machine-readable outputs. Ideal when compliance, monitoring, and change management require documented decisions and predictable escalation paths for reliability incidents.",
       notFor: "Not ideal for zero-configuration environments with strict no-code constraints.",
       setup: [
         "Set environment variables and required auth keys.",
@@ -46,9 +46,9 @@ describe("editorial-content", () => {
         "Monitor reliability trends and rotate to fallback agents when needed.",
       ],
       limitations:
-        "Limitations include varying source documentation quality and incomplete metadata for some third-party listings.",
+        "Limitations include varying source documentation quality and incomplete metadata for some third-party listings. Teams should still validate contracts and trust payloads before relying on any single source.",
       alternatives:
-        "Compare alternatives in same protocol and use-case pages and prioritize fresher trust evidence.",
+        "Compare alternatives in same protocol and use-case pages and prioritize fresher trust evidence. Benchmark candidates against reliability trends and long-run success rates to pick stable defaults.",
       extractedFiles: [
         {
           path: "README.md",

@@ -314,7 +314,7 @@ describe("GET /api/search", () => {
     const data = await res.json();
 
     expect(res.status).toBe(429);
-    expect(data.error).toContain("Too many requests");
+    expect(data.error.message).toContain("Too many requests");
     expect(res.headers.get("Retry-After")).toBe("30");
   });
 
@@ -342,8 +342,8 @@ describe("GET /api/search", () => {
     const data = await res.json();
 
     expect(res.status).toBe(500);
-    expect(data.error).toBe("Search temporarily unavailable");
-    expect(data.error).not.toContain("database");
+    expect(data.error.message).toBe("Search temporarily unavailable");
+    expect(data.error.message).not.toContain("database");
     expect(data).toHaveProperty("results");
     expect(data.results).toEqual([]);
 
@@ -359,7 +359,7 @@ describe("GET /api/search", () => {
     const data = await res.json();
 
     expect(res.status).toBe(500);
-    expect(data.error).toBe("connection refused");
+    expect(data.error.message).toBe("connection refused");
 
     vi.unstubAllEnvs();
   });

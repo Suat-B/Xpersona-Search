@@ -8,6 +8,7 @@ import { BackToSearchLink } from "@/components/agent/BackToSearchLink";
 import { SafetyBadge } from "@/components/search/SafetyBadge";
 import { SourceBadge } from "@/components/agent/SourceBadge";
 import { InstallCommand } from "@/components/agent/InstallCommand";
+import { CustomAgentPage } from "@/components/agent/CustomAgentPage";
 import { SkillMarkdown } from "./SkillMarkdown";
 import { ClaimBanner } from "./ClaimBanner";
 import { OwnerBadge } from "./OwnerBadge";
@@ -240,6 +241,11 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
   >("idle");
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    requestAnimationFrame(() => window.scrollTo(0, 0));
+  }, [agent.slug]);
+
+  useEffect(() => {
     const base = `${window.location.protocol}//${window.location.host}`;
     setAgentApiUrl(`${base}/api/v1/agents/${agent.slug}`);
     setCapabilityContractUrl(`${base}/api/agents/${agent.slug}/contract`);
@@ -315,6 +321,15 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
     : [];
 
   const hasNpmInfo = agent.source === "NPM" && agent.npmData;
+  const customPage = agent.customPage ?? null;
+  const hasCustomPageContent = Boolean(
+    customPage &&
+    (customPage.html || customPage.css || customPage.js ||
+      (Array.isArray(customPage.widgetLayout) && customPage.widgetLayout.length > 0))
+  );
+  const customPageUpdatedAt = customPage?.updatedAt
+    ? new Date(customPage.updatedAt).toLocaleString()
+    : null;
 
   return (
     <div className="min-h-screen bg-[var(--bg-deep)]">
@@ -457,6 +472,54 @@ export function AgentPageClient({ agent }: AgentPageClientProps) {
             </a>
           </div>
         </header>
+
+        {hasCustomPageContent && customPage && (
+          <section className="mb-10">
+            <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+              <div>
+                <h2 className="text-xl font-semibold text-[var(--text-primary)]">Custom Page</h2>
+                <p className="text-xs text-[var(--text-tertiary)]">
+                  Published by verified owner
+                  {customPageUpdatedAt ? ` • Updated ${customPageUpdatedAt}` : ""}
+                </p>
+              </div>
+              {agent.isOwner && (
+                <Link
+                  href={`/agent/${agent.slug}/manage`}
+                  className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/40 bg-[var(--accent-heart)]/10 px-3 py-1.5 text-xs font-semibold text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/15 transition-colors"
+                >
+                  Edit Custom Page
+                </Link>
+              )}
+            </div>
+            <CustomAgentPage
+              agentSlug={agent.slug}
+              code={{ html: customPage.html, css: customPage.css, js: customPage.js }}
+              className="w-full min-h-[70vh] rounded-xl border border-[var(--border)] bg-white"
+            />
+          </section>
+        )}
+
+        {agent.isOwner && !hasCustomPageContent && (
+          <section className="mb-10">
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6 flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+                  Publish a custom page
+                </h2>
+                <p className="text-sm text-[var(--text-secondary)]">
+                  Build a custom layout, add HTML/CSS/JS, then publish for everyone.
+                </p>
+              </div>
+              <Link
+                href={`/agent/${agent.slug}/manage`}
+                className="inline-flex items-center gap-2 rounded-lg bg-[var(--accent-heart)] px-4 py-2 text-xs font-semibold text-white hover:opacity-90 transition-opacity shadow-sm"
+              >
+                Customize Page
+              </Link>
+            </div>
+          </section>
+        )}
 
         {/* Custom links from owner */}
           {agent.customLinks && agent.customLinks.length > 0 && (

@@ -666,7 +666,15 @@ export async function GET(req: NextRequest) {
       if (fallbackQueue.length === 0) {
         const suffixes = questionMode
           ? QUESTION_TAILS
-          : ["tutorial", "guide", "step by step", "best practices", "for beginners", "without coding"];
+          : [
+              "tutorial",
+              "guide",
+              "step by step",
+              "best practices",
+              "for beginners",
+              "without coding",
+              "examples",
+            ];
         for (const suffix of suffixes) {
           const candidateText = `${params.q} ${suffix}`.trim();
           if (questionMode && !candidateText.toLowerCase().startsWith(qLower)) continue;

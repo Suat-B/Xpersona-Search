@@ -151,7 +151,7 @@ describe("GET /api/search/trending", () => {
     const data = await res.json();
 
     expect(res.status).toBe(429);
-    expect(data.error).toContain("Too many requests");
+    expect(data.error.message).toContain("Too many requests");
   });
 
   // --- Circuit breaker ---

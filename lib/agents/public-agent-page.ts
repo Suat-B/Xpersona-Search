@@ -240,10 +240,22 @@ function buildCapabilityMatrix(protocols: string[], capabilities: string[], cont
 }
 
 export function shouldEnableMachineBlocks(slug: string): boolean {
-  return true;
+  if (process.env.AGENT_PAGE_MACHINE_BLOCKS_V1 !== "1") return false;
+  const rawPercent = Number(process.env.AGENT_PAGE_MACHINE_BLOCKS_PERCENT ?? "100");
+  const percent = Number.isFinite(rawPercent) ? Math.max(0, Math.min(100, Math.floor(rawPercent))) : 0;
+  if (percent >= 100) return true;
+  if (percent <= 0) return false;
+  let hash = 0;
+  for (let i = 0; i < slug.length; i += 1) {
+    hash = (hash * 31 + slug.charCodeAt(i)) % 100;
+  }
+  return hash < percent;
 }
 
-export async function getPublicAgentPageData(slug: string): Promise<PublicAgentPageData | null> {
+export async function getPublicAgentPageData(
+  slug: string,
+  viewerUserId?: string | null
+): Promise<PublicAgentPageData | null> {
   const rows = await db
     .select({
       id: agents.id,
@@ -303,6 +315,11 @@ export async function getPublicAgentPageData(slug: string): Promise<PublicAgentP
       .limit(1);
     claimedByName = owner?.name ?? "Verified Owner";
   }
+
+  const isOwner =
+    viewerUserId != null &&
+    rawAgent.claimedByUserId != null &&
+    rawAgent.claimedByUserId === viewerUserId;
 
   const trust = await getTrustSummary(rawAgent.id);
   const trustScore = toTrustScore(trust?.reputationScore ?? null);
@@ -580,7 +597,7 @@ export async function getPublicAgentPageData(slug: string): Promise<PublicAgentP
     verificationTier: String(merged.verificationTier ?? "NONE"),
     hasCustomPage: Boolean(merged.hasCustomPage),
     claimedByName,
-    isOwner: false,
+    isOwner,
     trust,
     customPage,
   } as Record<string, unknown>;

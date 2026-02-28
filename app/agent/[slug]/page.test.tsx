@@ -15,7 +15,7 @@ vi.mock("@/lib/agents/editorial-content", () => ({
       overview: "Overview text",
       bestFor: "Best for text",
       notFor: "Not for text",
-      setup: "Setup text",
+      setup: ["Setup text"],
       workflows: ["One", "Two", "Three"],
       limitations: "Limitations text",
       alternatives: "Alternatives text",
@@ -45,6 +45,10 @@ vi.mock("@/lib/agents/hub-data", () => ({
 
 vi.mock("@/components/agent/AgentPageClient", () => ({
   AgentPageClient: () => <div data-testid="agent-page-client">Interactive Agent Content</div>,
+}));
+
+vi.mock("@/lib/auth", () => ({
+  auth: vi.fn().mockResolvedValue(null),
 }));
 
 const mockNotFound = vi.hoisted(() => vi.fn(() => {

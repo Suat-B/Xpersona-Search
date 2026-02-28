@@ -1,9 +1,12 @@
 import React from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { AgentPageClient } from "@/components/agent/AgentPageClient";
 import { AgentMiniCard } from "@/components/agent/AgentMiniCard";
+import { auth } from "@/lib/auth";
+import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import {
   getPublicAgentPageData,
   shouldEnableMachineBlocks,
@@ -196,7 +199,18 @@ function renderJsonBlock(id: string, payload: unknown) {
 
 export default async function AgentPage({ params }: Props) {
   const { slug } = await params;
-  const data = await getPublicAgentPageData(slug);
+  let session = null;
+  try {
+    session = await auth();
+  } catch {}
+  let viewerUserId = session?.user?.id ?? null;
+  if (!viewerUserId) {
+    try {
+      const cookieStore = await cookies();
+      viewerUserId = getAuthUserFromCookie(cookieStore);
+    } catch {}
+  }
+  const data = await getPublicAgentPageData(slug, viewerUserId ?? null);
   if (!data) notFound();
 
   const editorial = await getEditorial(data);

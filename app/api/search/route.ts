@@ -1060,6 +1060,14 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    async function getTotalCount(activeConditions: SQL[]): Promise<number> {
+      const [row] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(agents)
+        .where(and(...activeConditions));
+      return Number(row?.count ?? 0);
+    }
+
     // --- Main query with ts_headline snippets ---
     async function runMainQuery(
       includeClaimColumns: boolean
@@ -1324,6 +1332,7 @@ export async function GET(req: NextRequest) {
 
     // Extract total from window function (avoids separate count query)
     const totalFromWindow = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+    const totalMatches = params.cursor ? await getTotalCount(conditions) : totalFromWindow;
     const hasMore = rows.length > params.limit;
     const resultRows = hasMore ? rows.slice(0, -1) : rows;
 
@@ -1823,7 +1832,7 @@ export async function GET(req: NextRequest) {
 
     const responseBody = {
       results,
-      pagination: { hasMore, nextCursor, total: totalFromWindow },
+      pagination: { hasMore, nextCursor, total: totalMatches },
       facets,
       searchMeta,
       ...(params.returnPlan && executeParams.intent === "execute"
