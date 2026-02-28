@@ -1063,6 +1063,7 @@ async function crawlClawHubApi(maxResults: number): Promise<number> {
               performanceScore: 0,
               overallRank: 62,
               status: "ACTIVE" as const,
+              publicSearchable: true,
               lastCrawledAt: now,
               nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
             };
@@ -1075,6 +1076,8 @@ async function crawlClawHubApi(maxResults: number): Promise<number> {
               homepage: agentData.homepage,
               openclawData: agentData.openclawData,
               readme: agentData.readme,
+              status: agentData.status,
+              publicSearchable: agentData.publicSearchable,
               lastCrawledAt: agentData.lastCrawledAt,
               nextCrawlAt: agentData.nextCrawlAt,
             });
