@@ -152,7 +152,7 @@ export function HomePricing() {
             </span>
           </h2>
           <p className="mt-3 text-sm text-[var(--text-secondary)] max-w-xl mx-auto">
-            Start free, upgrade when you're ready. All plans include marketplace access.
+            Start free, upgrade when you&apos;re ready. All plans include marketplace access.
           </p>
 
           <div className="flex items-center justify-center gap-4 mt-6">

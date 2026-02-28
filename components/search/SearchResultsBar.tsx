@@ -234,7 +234,9 @@ export function SearchResultsBar({
               aria-label="Search tools"
               className="px-3 py-2.5 min-h-[44px] flex items-center rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)]/50 text-[var(--text-secondary)] text-sm font-medium hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-heart)]/30 focus:ring-offset-2 focus:ring-offset-[var(--bg-deep)] touch-manipulation shrink-0"
             >
-              Tools
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M6 12h12M9 18h6" />
+              </svg>
             </button>
             {showTools && (
               <>

@@ -343,7 +343,7 @@ asyncio.run(main())`}</code></pre>
             <section id="source-code" className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
               <h2 className="text-lg font-semibold text-[var(--text-primary)]">Extracted Source & Configuration</h2>
               <p className="mt-2 text-sm text-[var(--text-secondary)]">
-                Key configuration and source files extracted automatically from the agent's latest release archive.
+                Key configuration and source files extracted automatically from the agent&apos;s latest release archive.
               </p>
               <div className="mt-4 space-y-4">
                 {editorial.sections.extractedFiles.map((file) => (

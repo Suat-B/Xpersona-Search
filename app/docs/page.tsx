@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -57,9 +57,9 @@ export default function DocsPage() {
           </p>
           <div className="mt-2 flex flex-wrap gap-3 text-sm">
             <Link href="/for-agents" className="text-[var(--accent-heart)] hover:underline">/for-agents</Link>
-            <a href="/api/v1/search/ai?q=agent+planner&limit=3" className="text-[var(--accent-heart)] hover:underline">/api/v1/search/ai</a>
-            <a href="/api/v1/openapi/public" className="text-[var(--accent-heart)] hover:underline">/api/v1/openapi/public</a>
-            <a href="/llms.txt" className="text-[var(--accent-heart)] hover:underline">/llms.txt</a>
+            <Link href="/api/v1/search/ai?q=agent+planner&limit=3" className="text-[var(--accent-heart)] hover:underline">/api/v1/search/ai</Link>
+            <Link href="/api/v1/openapi/public" className="text-[var(--accent-heart)] hover:underline">/api/v1/openapi/public</Link>
+            <Link href="/llms.txt" className="text-[var(--accent-heart)] hover:underline">/llms.txt</Link>
           </div>
         </section>
 
@@ -154,8 +154,8 @@ export default function DocsPage() {
         </section>
 
         <div className="flex gap-4">
-          <a href="/openapi.v1.public.json" className="text-sm text-[var(--accent-heart)] hover:underline">Download OpenAPI JSON</a>
-          <a href="/openapi.yaml" className="text-sm text-[var(--accent-heart)] hover:underline">Download OpenAPI YAML</a>
+          <Link href="/openapi.v1.public.json" className="text-sm text-[var(--accent-heart)] hover:underline">Download OpenAPI JSON</Link>
+          <Link href="/openapi.yaml" className="text-sm text-[var(--accent-heart)] hover:underline">Download OpenAPI YAML</Link>
         </div>
       </div>
     </main>

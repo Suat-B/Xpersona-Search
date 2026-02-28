@@ -133,6 +133,38 @@ interface SearchOverrides {
   includeSources?: string[];
 }
 
+const PAGE_SIZE = 30;
+
+type PageKey = "agents" | "artifacts";
+type PageCache = Record<number, Agent[]>;
+type MediaPageCache = Record<number, MediaResult[]>;
+type PageCursorMap = Record<number, string | null>;
+
+function dedupeById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
+function buildPageItems(current: number, totalPages: number): Array<number | "ellipsis"> {
+  const items: Array<number | "ellipsis"> = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i += 1) items.push(i);
+    return items;
+  }
+  const left = Math.max(2, current - 1);
+  const right = Math.min(totalPages - 1, current + 1);
+  items.push(1);
+  if (left > 2) items.push("ellipsis");
+  for (let i = left; i <= right; i += 1) items.push(i);
+  if (right < totalPages - 1) items.push("ellipsis");
+  items.push(totalPages);
+  return items;
+}
+
 function isImageAsset(asset: MediaResult) {
   if (asset.mimeType?.startsWith("image/")) return true;
   const url = asset.url?.toLowerCase() ?? "";
@@ -172,7 +204,6 @@ export function SearchLanding() {
   const [mediaResults, setMediaResults] = useState<MediaResult[]>([]);
   const [fallbackAgents, setFallbackAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(false);
-  const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [total, setTotal] = useState<number>(0);
   const [selectedProtocols, setSelectedProtocols] = useState<string[]>(() =>
@@ -199,7 +230,6 @@ export function SearchLanding() {
   const [bundle, setBundle] = useState(parseBoolFromUrl(searchParams.get("bundle")));
   const [explain, setExplain] = useState(parseBoolFromUrl(searchParams.get("explain")));
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null);
-  const [mediaCursor, setMediaCursor] = useState<string | null>(null);
   const [recall, setRecall] = useState<"normal" | "high">(
     searchParams.get("recall") === "high" ? "high" : "normal"
   );
@@ -209,6 +239,15 @@ export function SearchLanding() {
       .map((s) => s.trim().toUpperCase())
       .filter(Boolean)
   );
+  const [page, setPage] = useState(1);
+  const [pageCursors, setPageCursors] = useState<{
+    agents: PageCursorMap;
+    artifacts: PageCursorMap;
+  }>({ agents: { 1: null }, artifacts: { 1: null } });
+  const [pageCache, setPageCache] = useState<{
+    agents: PageCache;
+    artifacts: MediaPageCache;
+  }>({ agents: {}, artifacts: {} });
 
   const handleProtocolChange = useCallback(
     (protocols: string[]) => {
@@ -221,8 +260,8 @@ export function SearchLanding() {
     [searchParams, router]
   );
 
-  const search = useCallback(
-    async (reset = true, overrides?: SearchOverrides) => {
+  const loadPage = useCallback(
+    async (pageIndex: number, overrides?: SearchOverrides & { resetCaches?: boolean }) => {
       setLoading(true);
       const nextQuery = overrides?.query ?? query;
       const nextSelectedProtocols = overrides?.selectedProtocols ?? selectedProtocols;
@@ -247,14 +286,19 @@ export function SearchLanding() {
       const requestIncludeSources = nextVertical === "skills"
         ? ["GITHUB_OPENCLEW", "CLAWHUB", "GITHUB_REPOS"]
         : nextIncludeSources;
+      const paginationKey: PageKey = requestVertical === "artifacts" ? "artifacts" : "agents";
+      const cached = overrides?.resetCaches ? undefined : pageCache[paginationKey][pageIndex];
+      const cursorMap = pageCursors[paginationKey];
+      const pageCursor = pageIndex === 1 ? null : cursorMap[pageIndex] ?? null;
 
       const urlParams = new URLSearchParams();
       if (nextQuery.trim()) urlParams.set("q", nextQuery.trim());
       if (nextSelectedProtocols.length) urlParams.set("protocols", nextSelectedProtocols.join(","));
       if (nextMinSafety > 0) urlParams.set("minSafety", String(nextMinSafety));
       urlParams.set("sort", nextSort);
-      urlParams.set("limit", "30");
+      urlParams.set("limit", String(PAGE_SIZE));
       urlParams.set("vertical", nextVertical);
+      urlParams.set("page", String(pageIndex));
       if (requestVertical === "agents") {
         urlParams.set("include", "content");
       }
@@ -271,13 +315,6 @@ export function SearchLanding() {
       if (nextForbidden.trim()) urlParams.set("forbidden", nextForbidden);
       if (nextBundle) urlParams.set("bundle", "1");
       if (nextExplain) urlParams.set("explain", "1");
-      if (!reset) {
-        if (nextVertical !== "artifacts" && cursor) urlParams.set("cursor", cursor);
-        if (nextVertical === "artifacts" && mediaCursor) {
-          urlParams.set("mediaCursor", mediaCursor);
-        }
-      }
-
       const requestParams = new URLSearchParams(urlParams.toString());
       requestParams.set("vertical", requestVertical);
       if (requestSkillsOnly) {
@@ -290,42 +327,72 @@ export function SearchLanding() {
       } else {
         requestParams.delete("includeSources");
       }
+      if (requestVertical !== "artifacts" && pageCursor) {
+        requestParams.set("cursor", pageCursor);
+      }
+      if (requestVertical === "artifacts" && pageCursor) {
+        requestParams.set("mediaCursor", pageCursor);
+      }
 
       router.replace(`/?${urlParams.toString()}`, { scroll: false });
 
       try {
+        if (cached) {
+          if (requestVertical === "artifacts") {
+            setMediaResults(cached as MediaResult[]);
+            setAgents([]);
+          } else {
+            setAgents(cached as Agent[]);
+            setMediaResults([]);
+          }
+          setPage(pageIndex);
+          setHasMore(Boolean(pageCursors[paginationKey][pageIndex + 1]));
+          setSearchMeta(null);
+          setFallbackAgents([]);
+          return;
+        }
+        if (pageIndex > 1 && !pageCursor) return;
         const res = await fetch(`/api/v1/search?${requestParams}`);
         const payload = await res.json();
         if (!res.ok) throw new Error(extractClientErrorMessage(payload, "Search failed"));
         const data = unwrapClientResponse<SearchResponsePayload>(payload);
-
-        if (reset) {
-          setAgents(data.results ?? []);
-          setMediaResults(data.mediaResults ?? []);
-          setTotal(data.pagination?.total ?? 0);
-        } else {
-          setAgents((prev) => [...prev, ...(data.results ?? [])]);
-          setMediaResults((prev) => [...prev, ...(data.mediaResults ?? [])]);
-        }
+        const nextAgents = dedupeById(data.results ?? []);
+        const nextMedia = dedupeById(data.mediaResults ?? []);
+        setAgents(nextAgents);
+        setMediaResults(nextMedia);
+        setTotal(data.pagination?.total ?? 0);
         setHasMore(data.pagination?.hasMore ?? false);
-        if (requestVertical === "agents") {
-          setCursor(data.pagination?.nextCursor ?? null);
-          setMediaCursor(null);
-        } else {
-          setMediaCursor(data.pagination?.nextCursor ?? null);
-          setCursor(null);
-        }
         if (data.facets) setFacets(data.facets);
         setSearchMeta(data.searchMeta ?? null);
+        setPage(pageIndex);
 
-        if (reset && requestVertical === "artifacts") {
+        const nextCursor = data.pagination?.nextCursor ?? null;
+        if (nextCursor) {
+          setPageCursors((prev) => ({
+            ...prev,
+            [paginationKey]: { ...prev[paginationKey], [pageIndex + 1]: nextCursor },
+          }));
+        }
+        if (requestVertical === "artifacts") {
+          setPageCache((prev) => ({
+            ...prev,
+            artifacts: { ...prev.artifacts, [pageIndex]: nextMedia },
+          }));
+        } else {
+          setPageCache((prev) => ({
+            ...prev,
+            agents: { ...prev.agents, [pageIndex]: nextAgents },
+          }));
+        }
+
+        if (pageIndex === 1 && requestVertical === "artifacts") {
           if ((data.mediaResults ?? []).length > 0) {
             setFallbackAgents([]);
           } else {
             const fallbackParams = new URLSearchParams(requestParams.toString());
             fallbackParams.set("vertical", "agents");
             fallbackParams.delete("mediaCursor");
-            fallbackParams.set("limit", "24");
+            fallbackParams.set("limit", String(PAGE_SIZE));
             const fallbackRes = await fetch(`/api/v1/search?${fallbackParams}`);
             const fallbackPayload = await fallbackRes.json();
             if (fallbackRes.ok) {
@@ -340,11 +407,9 @@ export function SearchLanding() {
         }
       } catch (err) {
         console.error(err);
-        if (reset) {
-          setAgents([]);
-          setMediaResults([]);
-          setTotal(0);
-        }
+        setAgents([]);
+        setMediaResults([]);
+        setTotal(0);
         setSearchMeta(null);
         setFallbackAgents([]);
       } finally {
@@ -357,7 +422,6 @@ export function SearchLanding() {
       minSafety,
       sort,
       vertical,
-      cursor,
       intent,
       taskType,
       maxLatencyMs,
@@ -369,23 +433,31 @@ export function SearchLanding() {
       explain,
       recall,
       includeSources,
-      mediaCursor,
       router,
+      pageCache,
+      pageCursors,
     ]
   );
 
   const handleVerticalChange = useCallback(
     (v: "agents" | "skills" | "artifacts") => {
       setVertical(v);
+      setPage(1);
+      setPageCursors({ agents: { 1: null }, artifacts: { 1: null } });
+      setPageCache({ agents: {}, artifacts: {} });
       const params = new URLSearchParams(searchParams.toString());
       params.set("vertical", v);
+      params.set("page", "1");
       router.replace(`/?${params.toString()}`, { scroll: false });
     },
     [searchParams, router]
   );
 
   useEffect(() => {
-    search(true);
+    setPage(1);
+    setPageCursors({ agents: { 1: null }, artifacts: { 1: null } });
+    setPageCache({ agents: {}, artifacts: {} });
+    loadPage(1, { resetCaches: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     selectedProtocols,
@@ -408,6 +480,7 @@ export function SearchLanding() {
   useEffect(() => {
     const urlQ = searchParams.get("q") ?? "";
     const urlProtocols = parseProtocolsFromUrl(searchParams.get("protocols"));
+    const urlPage = Number(searchParams.get("page") ?? "1");
     setQuery(urlQ);
     setSelectedProtocols(urlProtocols);
     setIntent(searchParams.get("intent") === "execute" ? "execute" : "discover");
@@ -428,6 +501,7 @@ export function SearchLanding() {
         .map((s) => s.trim().toUpperCase())
         .filter(Boolean)
     );
+    if (Number.isFinite(urlPage) && urlPage > 0) setPage(urlPage);
   }, [searchParams]);
 
   useEffect(() => {
@@ -468,7 +542,7 @@ export function SearchLanding() {
     setRecall("normal");
     setIncludeSources([]);
 
-    await search(true, {
+    await loadPage(1, {
       query: "",
       selectedProtocols: [],
       minSafety: 0,
@@ -485,8 +559,17 @@ export function SearchLanding() {
       explain: false,
       recall: "normal",
       includeSources: [],
+      resetCaches: true,
     });
-  }, [search]);
+  }, [loadPage]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const paginationKey: PageKey = vertical === "artifacts" ? "artifacts" : "agents";
+  const maxNavigablePage = Math.max(
+    1,
+    ...Object.keys(pageCursors[paginationKey]).map((p) => Number(p))
+  );
+  const pageItems = buildPageItems(page, totalPages);
 
   return (
     <div className="min-h-screen text-[var(--text-primary)] bg-[#1e1e1e] relative">
@@ -504,7 +587,10 @@ export function SearchLanding() {
               void handleExploreAllAgents();
               return;
             }
-            void search(true, { query: resolvedQuery });
+            setPage(1);
+            setPageCursors({ agents: { 1: null }, artifacts: { 1: null } });
+            setPageCache({ agents: {}, artifacts: {} });
+            void loadPage(1, { query: resolvedQuery, resetCaches: true });
           }}
           loading={loading}
           vertical={vertical}
@@ -761,18 +847,56 @@ export function SearchLanding() {
                   </div>
                 )}
 
-                {hasMore && (
-                  <div className="flex justify-center pt-8">
-                    <button
-                      type="button"
-                      onClick={() => search(false)}
-                      disabled={loading}
-                      aria-busy={loading}
-                      aria-label={loading ? "Loading more" : "Load more results"}
-                      className="w-full sm:w-auto px-8 py-3.5 min-h-[48px] bg-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/90 disabled:opacity-50 rounded-xl font-semibold text-white"
-                    >
-                      {loading ? "Loading..." : "Load more"}
-                    </button>
+                {totalPages > 1 && (
+                  <div className="flex flex-col items-center gap-4 pt-8">
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => loadPage(Math.max(1, page - 1))}
+                        disabled={loading || page <= 1}
+                        aria-label="Previous page"
+                        className="px-3 py-2 min-h-[40px] rounded-lg border border-[var(--border)] text-sm text-[var(--text-primary)] disabled:opacity-50"
+                      >
+                        Prev
+                      </button>
+                      {pageItems.map((item, i) =>
+                        item === "ellipsis" ? (
+                          <span
+                            key={`ellipsis-${i}`}
+                            className="px-2 text-[var(--text-tertiary)]"
+                          >
+                            …
+                          </span>
+                        ) : (
+                          <button
+                            key={`page-${item}`}
+                            type="button"
+                            onClick={() => loadPage(item)}
+                            disabled={loading || item === page || item > maxNavigablePage}
+                            aria-label={`Page ${item}`}
+                            className={`px-3 py-2 min-h-[40px] rounded-lg border text-sm ${
+                              item === page
+                                ? "border-[var(--accent-heart)] text-[var(--accent-heart)] bg-[var(--accent-heart)]/10"
+                                : "border-[var(--border)] text-[var(--text-primary)]"
+                            } disabled:opacity-50`}
+                          >
+                            {item}
+                          </button>
+                        )
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => loadPage(page + 1)}
+                        disabled={loading || !hasMore || page + 1 > maxNavigablePage}
+                        aria-label="Next page"
+                        className="px-3 py-2 min-h-[40px] rounded-lg border border-[var(--border)] text-sm text-[var(--text-primary)] disabled:opacity-50"
+                      >
+                        Next
+                      </button>
+                    </div>
+                    <p className="text-xs text-[var(--text-tertiary)]">
+                      Page {page} of {totalPages}
+                    </p>
                   </div>
                 )}
               </>

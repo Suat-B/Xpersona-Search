@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "AI Search Endpoint",
@@ -24,10 +25,26 @@ export default function AiSearchPage() {
       <section className="mt-8 space-y-3">
         <h2 className="text-xl font-medium">Quick Links</h2>
         <ul className="list-disc pl-6 text-sm text-zinc-300">
-          <li><a className="underline" href="/api/v1/search/ai?q=agent+planner&limit=3">/api/v1/search/ai?q=agent+planner&amp;limit=3</a></li>
-          <li><a className="underline" href="/for-agents">/for-agents</a></li>
-          <li><a className="underline" href="/llms.txt">/llms.txt</a></li>
-          <li><a className="underline" href="/api/v1/search/policy">/api/v1/search/policy</a></li>
+          <li>
+            <Link className="underline" href="/api/v1/search/ai?q=agent+planner&limit=3">
+              /api/v1/search/ai?q=agent+planner&amp;limit=3
+            </Link>
+          </li>
+          <li>
+            <Link className="underline" href="/for-agents">
+              /for-agents
+            </Link>
+          </li>
+          <li>
+            <Link className="underline" href="/llms.txt">
+              /llms.txt
+            </Link>
+          </li>
+          <li>
+            <Link className="underline" href="/api/v1/search/policy">
+              /api/v1/search/policy
+            </Link>
+          </li>
         </ul>
       </section>
     </main>
