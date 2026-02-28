@@ -147,8 +147,9 @@ const SSL_ERROR_PATTERNS = [
   "fetch failed",
   "UND_ERR",
 ];
-const RESILIENT_MAX_RETRIES = 4;
-const RESILIENT_BASE_BACKOFF_MS = 2000;
+const RESILIENT_MAX_RETRIES = 5;
+const RESILIENT_BASE_BACKOFF_MS = 800;
+const RESILIENT_FETCH_TIMEOUT_MS = 30_000; // 30s hard timeout per attempt
 
 function isSslOrNetworkError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
@@ -159,23 +160,51 @@ async function resilientFetch(
   input: string | URL,
   init?: RequestInit
 ): Promise<Response> {
+  const urlStr = input.toString();
+  const shortUrl = urlStr.length > 80 ? urlStr.slice(0, 77) + "..." : urlStr;
   const headers = new Headers(init?.headers ?? {});
   // Force fresh TCP+TLS connection each time to avoid session corruption
   headers.set("Connection", "close");
-  const mergedInit: RequestInit = { ...init, headers };
 
   let lastErr: unknown;
   for (let attempt = 0; attempt <= RESILIENT_MAX_RETRIES; attempt++) {
+    // Create a per-attempt abort controller with hard timeout
+    const ctrl = new AbortController();
+    // Chain with any existing signal from init
+    const existingSignal = init?.signal;
+    if (existingSignal?.aborted) {
+      throw existingSignal.reason ?? new Error("Aborted");
+    }
+    const timeoutId = setTimeout(() => ctrl.abort(new Error(`resilientFetch timeout after ${RESILIENT_FETCH_TIMEOUT_MS}ms`)), RESILIENT_FETCH_TIMEOUT_MS);
+    // If caller provided a signal, forward its abort
+    const onExternalAbort = () => ctrl.abort(existingSignal?.reason);
+    existingSignal?.addEventListener("abort", onExternalAbort, { once: true });
+
     try {
-      return await fetch(input.toString(), mergedInit);
-    } catch (err) {
-      lastErr = err;
-      if (!isSslOrNetworkError(err) || attempt >= RESILIENT_MAX_RETRIES) {
-        throw err;
+      if (attempt > 0) {
+        console.log(`[CRAWL] CLAWHUB fetch attempt=${attempt + 1}/${RESILIENT_MAX_RETRIES + 1} → ${shortUrl}`);
       }
+      const res = await fetch(urlStr, {
+        ...init,
+        headers,
+        signal: ctrl.signal,
+      });
+      clearTimeout(timeoutId);
+      existingSignal?.removeEventListener("abort", onExternalAbort);
+      return res;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      existingSignal?.removeEventListener("abort", onExternalAbort);
+      lastErr = err;
+      // If caller explicitly aborted, don't retry
+      if (existingSignal?.aborted) throw err;
+      if (!isSslOrNetworkError(err) && !(err instanceof Error && err.message.includes("timeout"))) {
+        if (attempt >= RESILIENT_MAX_RETRIES) throw err;
+      }
+      if (attempt >= RESILIENT_MAX_RETRIES) throw err;
       const backoff = Math.min(
         CLAWHUB_API_MAX_BACKOFF_MS,
-        RESILIENT_BASE_BACKOFF_MS * 2 ** attempt + Math.floor(Math.random() * 500)
+        RESILIENT_BASE_BACKOFF_MS * 2 ** attempt + Math.floor(Math.random() * 300)
       );
       console.warn(
         `[CRAWL] CLAWHUB resilientFetch retry attempt=${attempt + 1} err=${err instanceof Error ? err.message.slice(0, 120) : String(err).slice(0, 120)} backoff=${backoff}ms`
@@ -904,16 +933,25 @@ async function crawlClawHubApi(maxResults: number): Promise<number> {
   const limit = pLimit(CONCURRENCY);
   let totalFound = 0;
   let cursor: string | null | undefined = null;
+  let pageNum = 0;
+
+  console.log(`[CRAWL] CLAWHUB crawlClawHubApi starting (maxResults=${maxResults}, concurrency=${CONCURRENCY}, pageLimit=${CLAWHUB_PAGE_LIMIT})`);
 
   while (totalFound < maxResults) {
+    pageNum++;
     const pageLimit = Math.max(1, Math.min(CLAWHUB_PAGE_LIMIT, maxResults - totalFound));
+    console.log(`[CRAWL] CLAWHUB fetching page ${pageNum} (limit=${pageLimit}, cursor=${cursor ? "yes" : "none"})...`);
     const page = await fetchClawHubSkillListPage({
       cursor,
       limit: pageLimit,
       sort: CLAWHUB_SORT,
       dir: CLAWHUB_DIR,
     });
-    if (!page.items || page.items.length === 0) break;
+    if (!page.items || page.items.length === 0) {
+      console.log(`[CRAWL] CLAWHUB page ${pageNum} returned 0 items — done listing`);
+      break;
+    }
+    console.log(`[CRAWL] CLAWHUB page ${pageNum} returned ${page.items.length} skills, processing...`);
 
     const slice = page.items.slice(0, Math.max(0, maxResults - totalFound));
     const results = await Promise.all(
