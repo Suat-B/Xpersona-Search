@@ -5,12 +5,12 @@ const FAQS = [
   {
     question: "What\u2019s the difference between simple and advanced strategies?",
     answer:
-      "Simple strategies are quick dice settings. Advanced strategies use the rule builder with execution modes and multiple conditions.",
+      "Simple strategies are quick setup presets. Advanced strategies use the rule builder with execution modes and multi-condition logic.",
   },
   {
     question: "How do I run a strategy?",
     answer:
-      "Use the Run button on a strategy card to launch the dice game in run mode with that configuration.",
+      "Use the Run button on a strategy card to launch an execution run with that configuration.",
   },
   {
     question: "Where are strategies saved?",
@@ -33,8 +33,8 @@ export default function StrategiesPage() {
           Strategies
         </h1>
         <p className="mt-2 text-sm text-[var(--dash-text-secondary)] max-w-2xl">
-          Build, save, and run your dice strategies. Combine quick presets with the advanced rule
-          builder to test ideas fast.
+          Build, save, and run your strategies. Combine quick presets with the advanced rule
+          builder to validate ideas faster.
         </p>
       </header>
 

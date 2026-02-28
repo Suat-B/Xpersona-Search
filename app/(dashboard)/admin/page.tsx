@@ -5,7 +5,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { unwrapClientResponse } from "@/lib/api/client-response";
 
-type Tab = "overview" | "users" | "claims" | "agent_submissions" | "custom_pages";
+type Tab = "overview" | "users" | "claims" | "claimed_agents" | "agent_submissions" | "custom_pages";
 
 type OverviewData = {
   usersTotal: number;
@@ -54,6 +54,24 @@ type CustomPageRow = {
   updatedAt: string | null;
 };
 
+type ClaimedAgentRow = {
+  id: string;
+  name: string;
+  slug: string;
+  source: string;
+  sourceUrl: string;
+  homepage: string | null;
+  claimStatus: string;
+  claimedAt: string | null;
+  claimedByUserId: string | null;
+  ownerEmail: string | null;
+  ownerName: string | null;
+  verificationTier: string;
+  verificationMethod: string | null;
+  hasCustomPage: boolean;
+  updatedAt: string | null;
+};
+
 export default function AdminPage() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
@@ -63,6 +81,7 @@ export default function AdminPage() {
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [usersData, setUsersData] = useState<UserRow[]>([]);
   const [claimsData, setClaimsData] = useState<ClaimRow[]>([]);
+  const [claimedAgents, setClaimedAgents] = useState<ClaimedAgentRow[]>([]);
   const [submissions, setSubmissions] = useState<AgentSubmissionRow[]>([]);
   const [customPages, setCustomPages] = useState<CustomPageRow[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -105,6 +124,12 @@ export default function AdminPage() {
           const json = await res.json();
           const data = unwrapClientResponse<{ claims?: ClaimRow[] }>(json);
           if (isActive) setClaimsData(data.claims ?? []);
+        }
+        if (tab === "claimed_agents") {
+          const res = await fetch("/api/v1/admin/claimed-agents?limit=250", { cache: "no-store" });
+          const json = await res.json();
+          const data = unwrapClientResponse<{ items?: ClaimedAgentRow[] }>(json);
+          if (isActive) setClaimedAgents(data.items ?? []);
         }
         if (tab === "agent_submissions") {
           const res = await fetch("/api/v1/admin/agents/submissions?limit=100", { cache: "no-store" });
@@ -158,6 +183,7 @@ export default function AdminPage() {
     { id: "overview", label: "Overview" },
     { id: "users", label: "Users" },
     { id: "claims", label: "Claims" },
+    { id: "claimed_agents", label: "Claimed Agents" },
     { id: "agent_submissions", label: "Agent Submissions" },
     { id: "custom_pages", label: "Custom Pages" },
   ];
@@ -236,6 +262,90 @@ export default function AdminPage() {
             <thead><tr className="text-left text-[var(--text-secondary)]"><th className="p-3">Agent</th><th className="p-3">Source</th><th className="p-3">Status</th><th className="p-3">Claimed By</th><th className="p-3">Created</th></tr></thead>
             <tbody>{submissions.map((a) => <tr key={a.id} className="border-t border-[var(--border)]"><td className="p-3">{a.name} ({a.slug})</td><td className="p-3">{a.source}</td><td className="p-3">{a.status}</td><td className="p-3">{a.claimedByUserEmail ?? "-"}</td><td className="p-3">{a.createdAt ? new Date(a.createdAt).toLocaleString() : "-"}</td></tr>)}</tbody>
           </table>
+        </div>
+      )}
+
+      {tab === "claimed_agents" && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="agent-card p-4">
+              <p className="text-xs text-[var(--text-tertiary)]">Claimed Agent Count</p>
+              <p className="text-2xl font-semibold text-[var(--text-primary)]">{claimedAgents.length}</p>
+            </div>
+            <div className="agent-card p-4">
+              <p className="text-xs text-[var(--text-tertiary)]">With Custom Page</p>
+              <p className="text-2xl font-semibold text-[var(--text-primary)]">
+                {claimedAgents.filter((a) => a.hasCustomPage).length}
+              </p>
+            </div>
+            <div className="agent-card p-4">
+              <p className="text-xs text-[var(--text-tertiary)]">Unique Owners</p>
+              <p className="text-2xl font-semibold text-[var(--text-primary)]">
+                {new Set(claimedAgents.map((a) => a.claimedByUserId).filter(Boolean)).size}
+              </p>
+            </div>
+          </div>
+
+          <div className="agent-card p-0 overflow-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[var(--text-secondary)]">
+                  <th className="p-3">Agent</th>
+                  <th className="p-3">Owner</th>
+                  <th className="p-3">Verification</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3">Links</th>
+                  <th className="p-3">Claimed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {claimedAgents.map((agent) => (
+                  <tr key={agent.id} className="border-t border-[var(--border)] align-top">
+                    <td className="p-3">
+                      <p className="font-medium text-[var(--text-primary)]">{agent.name}</p>
+                      <p className="text-xs text-[var(--text-secondary)]">{agent.slug}</p>
+                      <p className="mt-1 text-[11px] text-[var(--text-tertiary)]">{agent.source}</p>
+                    </td>
+                    <td className="p-3">
+                      <p className="text-[var(--text-primary)]">{agent.ownerEmail ?? "Unknown owner"}</p>
+                      <p className="text-xs text-[var(--text-secondary)]">{agent.ownerName ?? "-"}</p>
+                    </td>
+                    <td className="p-3">
+                      <p className="text-[var(--text-primary)]">{agent.verificationTier}</p>
+                      <p className="text-xs text-[var(--text-secondary)]">{agent.verificationMethod ?? "Not specified"}</p>
+                    </td>
+                    <td className="p-3">
+                      <p className="text-[var(--text-primary)]">{agent.claimStatus}</p>
+                      <p className="text-xs text-[var(--text-secondary)]">
+                        {agent.hasCustomPage ? "Custom page enabled" : "No custom page"}
+                      </p>
+                    </td>
+                    <td className="p-3">
+                      <div className="flex flex-wrap gap-2">
+                        <Link href={`/agent/${agent.slug}`} target="_blank" className="rounded-md border border-[var(--border)] px-2 py-1 text-xs hover:bg-white/[0.04]">
+                          Profile
+                        </Link>
+                        <Link href={`/agent/${agent.slug}/manage`} target="_blank" className="rounded-md border border-[var(--border)] px-2 py-1 text-xs hover:bg-white/[0.04]">
+                          Manage
+                        </Link>
+                        <a href={agent.sourceUrl} target="_blank" rel="noreferrer" className="rounded-md border border-[var(--border)] px-2 py-1 text-xs hover:bg-white/[0.04]">
+                          Source
+                        </a>
+                        {agent.homepage && (
+                          <a href={agent.homepage} target="_blank" rel="noreferrer" className="rounded-md border border-[var(--border)] px-2 py-1 text-xs hover:bg-white/[0.04]">
+                            Homepage
+                          </a>
+                        )}
+                      </div>
+                    </td>
+                    <td className="p-3 text-xs text-[var(--text-secondary)]">
+                      {agent.claimedAt ? new Date(agent.claimedAt).toLocaleString() : "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

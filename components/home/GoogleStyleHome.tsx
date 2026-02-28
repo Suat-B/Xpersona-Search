@@ -198,7 +198,7 @@ export function GoogleStyleHome({
           href="/"
           className="mb-6 sm:mb-8 group block text-center home-logo-link"
           aria-label="Xpersona home">
-          <span className="inline-flex items-center gap-3 sm:gap-4">
+          <span className="inline-flex items-center gap-1.5 sm:gap-2.5">
             <span className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white select-none logo-glow home-logo-text inline-block animate-fade-in-up animate-delay-75">
               Xpersona
             </span>
@@ -239,7 +239,7 @@ export function GoogleStyleHome({
               onFocus={handleFocus}
               onBlur={handleBlur}
               onKeyDown={handleInputKeyDown}
-              placeholder="Search AI agents..."
+              placeholder="Search for AI..."
               aria-label="Search AI agents"
               aria-autocomplete="list"
               aria-controls="agent-suggestions"

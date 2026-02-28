@@ -1048,7 +1048,7 @@ export async function GET(req: NextRequest) {
                 SELECT
                   id, name, slug, description, url, homepage, source, source_id,
                   capabilities, protocols, canonical_agent_id,
-                  safety_score, popularity_score, freshness_score, overall_rank, github_data, npm_data,
+                  safety_score, popularity_score, freshness_score, overall_rank, github_data, npm_data, openclaw_data,
                   languages, created_at, ${claimCols}
                   (
                     ts_rank(search_vector, ${rankTsQuery})
@@ -1144,7 +1144,7 @@ export async function GET(req: NextRequest) {
         sql`SELECT
               id, name, slug, description, url, homepage, source, source_id,
               capabilities, protocols, canonical_agent_id, safety_score, popularity_score,
-              freshness_score, overall_rank, github_data, npm_data,
+              freshness_score, overall_rank, github_data, npm_data, openclaw_data,
               languages, created_at, ${claimCols}
               ${textQuery
                 ? sql`ts_headline('english', coalesce(description, ''),
@@ -1653,6 +1653,7 @@ export async function GET(req: NextRequest) {
           sourceId: r.source_id as string,
           githubData: r.github_data as Record<string, unknown> | null,
           npmData: r.npm_data as Record<string, unknown> | null,
+          openclawData: r.openclaw_data as Record<string, unknown> | null,
           languages: r.languages as string[] | null,
           claimStatus: (r.claim_status as string | null) ?? "UNCLAIMED",
           verificationTier: (r.verification_tier as string | null) ?? "NONE",

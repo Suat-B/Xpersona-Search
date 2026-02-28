@@ -4,6 +4,7 @@
  */
 import pLimit from "p-limit";
 import { createHash } from "node:crypto";
+import { inflateRawSync } from "node:zlib";
 import { db } from "@/lib/db";
 import { crawlJobs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -54,6 +55,75 @@ const CLAWHUB_API_PAGE_DELAY_MS =
   Number.isFinite(CLAWHUB_API_PAGE_DELAY_MS_RAW) && CLAWHUB_API_PAGE_DELAY_MS_RAW >= 0
     ? Math.floor(CLAWHUB_API_PAGE_DELAY_MS_RAW)
     : 1000;
+const CLAWHUB_VERSIONS_PAGE_LIMIT_RAW = Number(process.env.CLAWHUB_VERSIONS_PAGE_LIMIT ?? "200");
+const CLAWHUB_VERSIONS_PAGE_LIMIT =
+  Number.isFinite(CLAWHUB_VERSIONS_PAGE_LIMIT_RAW) && CLAWHUB_VERSIONS_PAGE_LIMIT_RAW > 0
+    ? Math.min(500, Math.floor(CLAWHUB_VERSIONS_PAGE_LIMIT_RAW))
+    : 200;
+const CLAWHUB_VERSIONS_MAX_PAGES_RAW = Number(process.env.CLAWHUB_VERSIONS_MAX_PAGES ?? "20");
+const CLAWHUB_VERSIONS_MAX_PAGES =
+  Number.isFinite(CLAWHUB_VERSIONS_MAX_PAGES_RAW) && CLAWHUB_VERSIONS_MAX_PAGES_RAW > 0
+    ? Math.min(200, Math.floor(CLAWHUB_VERSIONS_MAX_PAGES_RAW))
+    : 20;
+const CLAWHUB_PAGE_META_TIMEOUT_MS_RAW = Number(process.env.CLAWHUB_PAGE_META_TIMEOUT_MS ?? "15000");
+const CLAWHUB_PAGE_META_TIMEOUT_MS =
+  Number.isFinite(CLAWHUB_PAGE_META_TIMEOUT_MS_RAW) && CLAWHUB_PAGE_META_TIMEOUT_MS_RAW > 0
+    ? Math.floor(CLAWHUB_PAGE_META_TIMEOUT_MS_RAW)
+    : 15000;
+const CLAWHUB_ARCHIVE_ENABLED = process.env.CLAWHUB_ARCHIVE_ENABLED !== "0";
+const CLAWHUB_ARCHIVE_MAX_VERSIONS_RAW = Number(process.env.CLAWHUB_ARCHIVE_MAX_VERSIONS ?? "10");
+const CLAWHUB_ARCHIVE_MAX_VERSIONS =
+  Number.isFinite(CLAWHUB_ARCHIVE_MAX_VERSIONS_RAW) && CLAWHUB_ARCHIVE_MAX_VERSIONS_RAW > 0
+    ? Math.min(200, Math.floor(CLAWHUB_ARCHIVE_MAX_VERSIONS_RAW))
+    : 10;
+const CLAWHUB_ARCHIVE_MAX_DOWNLOAD_BYTES_RAW = Number(
+  process.env.CLAWHUB_ARCHIVE_MAX_DOWNLOAD_BYTES ?? "10000000"
+);
+const CLAWHUB_ARCHIVE_MAX_DOWNLOAD_BYTES =
+  Number.isFinite(CLAWHUB_ARCHIVE_MAX_DOWNLOAD_BYTES_RAW) &&
+  CLAWHUB_ARCHIVE_MAX_DOWNLOAD_BYTES_RAW > 0
+    ? Math.floor(CLAWHUB_ARCHIVE_MAX_DOWNLOAD_BYTES_RAW)
+    : 10000000;
+const CLAWHUB_ARCHIVE_MAX_FILES_PER_VERSION_RAW = Number(
+  process.env.CLAWHUB_ARCHIVE_MAX_FILES_PER_VERSION ?? "400"
+);
+const CLAWHUB_ARCHIVE_MAX_FILES_PER_VERSION =
+  Number.isFinite(CLAWHUB_ARCHIVE_MAX_FILES_PER_VERSION_RAW) &&
+  CLAWHUB_ARCHIVE_MAX_FILES_PER_VERSION_RAW > 0
+    ? Math.min(5000, Math.floor(CLAWHUB_ARCHIVE_MAX_FILES_PER_VERSION_RAW))
+    : 400;
+const CLAWHUB_ARCHIVE_MAX_TEXT_FILES_PER_VERSION_RAW = Number(
+  process.env.CLAWHUB_ARCHIVE_MAX_TEXT_FILES_PER_VERSION ?? "12"
+);
+const CLAWHUB_ARCHIVE_MAX_TEXT_FILES_PER_VERSION =
+  Number.isFinite(CLAWHUB_ARCHIVE_MAX_TEXT_FILES_PER_VERSION_RAW) &&
+  CLAWHUB_ARCHIVE_MAX_TEXT_FILES_PER_VERSION_RAW > 0
+    ? Math.min(500, Math.floor(CLAWHUB_ARCHIVE_MAX_TEXT_FILES_PER_VERSION_RAW))
+    : 12;
+const CLAWHUB_ARCHIVE_MAX_TEXT_BYTES_PER_FILE_RAW = Number(
+  process.env.CLAWHUB_ARCHIVE_MAX_TEXT_BYTES_PER_FILE ?? "250000"
+);
+const CLAWHUB_ARCHIVE_MAX_TEXT_BYTES_PER_FILE =
+  Number.isFinite(CLAWHUB_ARCHIVE_MAX_TEXT_BYTES_PER_FILE_RAW) &&
+  CLAWHUB_ARCHIVE_MAX_TEXT_BYTES_PER_FILE_RAW > 0
+    ? Math.floor(CLAWHUB_ARCHIVE_MAX_TEXT_BYTES_PER_FILE_RAW)
+    : 250000;
+const CLAWHUB_ARCHIVE_MAX_TEXT_CHARS_PER_FILE_RAW = Number(
+  process.env.CLAWHUB_ARCHIVE_MAX_TEXT_CHARS_PER_FILE ?? "50000"
+);
+const CLAWHUB_ARCHIVE_MAX_TEXT_CHARS_PER_FILE =
+  Number.isFinite(CLAWHUB_ARCHIVE_MAX_TEXT_CHARS_PER_FILE_RAW) &&
+  CLAWHUB_ARCHIVE_MAX_TEXT_CHARS_PER_FILE_RAW > 0
+    ? Math.floor(CLAWHUB_ARCHIVE_MAX_TEXT_CHARS_PER_FILE_RAW)
+    : 50000;
+const CLAWHUB_ARCHIVE_MAX_TOTAL_TEXT_CHARS_PER_SKILL_RAW = Number(
+  process.env.CLAWHUB_ARCHIVE_MAX_TOTAL_TEXT_CHARS_PER_SKILL ?? "140000"
+);
+const CLAWHUB_ARCHIVE_MAX_TOTAL_TEXT_CHARS_PER_SKILL =
+  Number.isFinite(CLAWHUB_ARCHIVE_MAX_TOTAL_TEXT_CHARS_PER_SKILL_RAW) &&
+  CLAWHUB_ARCHIVE_MAX_TOTAL_TEXT_CHARS_PER_SKILL_RAW > 0
+    ? Math.floor(CLAWHUB_ARCHIVE_MAX_TOTAL_TEXT_CHARS_PER_SKILL_RAW)
+    : 140000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -140,6 +210,7 @@ type ClawHubSkillListItem = {
   createdAt?: number;
   updatedAt?: number;
   latestVersion?: { version?: string; createdAt?: number; changelog?: string };
+  metadata?: Record<string, unknown> | null;
 };
 
 type ClawHubSkillDetail = {
@@ -147,6 +218,51 @@ type ClawHubSkillDetail = {
   latestVersion?: { version?: string; createdAt?: number; changelog?: string };
   owner?: { handle?: string | null; userId?: string | null; displayName?: string | null };
   moderation?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+type ClawHubSkillVersion = {
+  version?: string;
+  createdAt?: number;
+  changelog?: string;
+  changelogSource?: string;
+};
+
+type ClawHubSkillVersionsResponse = {
+  items?: ClawHubSkillVersion[];
+  nextCursor?: string | null;
+};
+
+type ClawHubArchiveFileRecord = {
+  path: string;
+  size: number;
+  compressedSize: number;
+  compression: "stored" | "deflate" | "other";
+};
+
+type ClawHubArchiveTextFile = {
+  path: string;
+  content: string;
+  truncated: boolean;
+};
+
+type ClawHubVersionArchive = {
+  version: string;
+  zipByteSize: number;
+  fileCount: number;
+  filesOmitted: number;
+  files: ClawHubArchiveFileRecord[];
+  textFiles: ClawHubArchiveTextFile[];
+  fetchedAt: string;
+};
+
+type ZipEntryMeta = {
+  path: string;
+  flags: number;
+  compressionMethod: number;
+  compressedSize: number;
+  uncompressedSize: number;
+  localHeaderOffset: number;
 };
 
 async function fetchClawHubSkillListPage(params: {
@@ -208,6 +324,471 @@ async function fetchClawHubSkillDetail(slug: string): Promise<ClawHubSkillDetail
   return null;
 }
 
+async function fetchClawHubSkillVersionsPage(params: {
+  slug: string;
+  cursor?: string | null;
+  limit: number;
+}): Promise<ClawHubSkillVersionsResponse> {
+  const url = new URL(`/api/v1/skills/${encodeURIComponent(params.slug)}/versions`, CLAWHUB_API_BASE);
+  url.searchParams.set("limit", String(params.limit));
+  if (params.cursor) {
+    url.searchParams.set("cursor", params.cursor);
+  }
+  let lastStatus = 0;
+  for (let attempt = 0; attempt <= CLAWHUB_API_MAX_RETRIES; attempt++) {
+    const res = await fetch(url.toString(), {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "xpersona-crawler",
+      },
+    });
+    if (res.ok) {
+      return (await res.json()) as ClawHubSkillVersionsResponse;
+    }
+    lastStatus = res.status;
+    if (res.status === 404) return { items: [], nextCursor: null };
+    if (attempt >= CLAWHUB_API_MAX_RETRIES || !isRetryableStatus(res.status)) {
+      break;
+    }
+    const retryAfterMs = parseRetryAfterMs(res.headers);
+    const waitMs = clampWaitMs(retryAfterMs ?? computeBackoffMs(attempt + 1));
+    await sleep(waitMs);
+  }
+  console.warn(`[CRAWL] CLAWHUB versions exhausted retries slug=${params.slug} lastStatus=${lastStatus}`);
+  return { items: [], nextCursor: null };
+}
+
+async function fetchAllClawHubSkillVersions(slug: string): Promise<ClawHubSkillVersion[]> {
+  const versions: ClawHubSkillVersion[] = [];
+  let cursor: string | null | undefined = null;
+  for (let page = 0; page < CLAWHUB_VERSIONS_MAX_PAGES; page++) {
+    const chunk = await fetchClawHubSkillVersionsPage({
+      slug,
+      cursor,
+      limit: CLAWHUB_VERSIONS_PAGE_LIMIT,
+    });
+    const items = Array.isArray(chunk.items) ? chunk.items : [];
+    if (items.length === 0) break;
+    versions.push(...items);
+    if (!chunk.nextCursor) break;
+    cursor = chunk.nextCursor;
+    if (CLAWHUB_API_PAGE_DELAY_MS > 0) {
+      await sleep(Math.min(250, CLAWHUB_API_PAGE_DELAY_MS));
+    }
+  }
+  return versions;
+}
+
+function readUInt16LE(bytes: Uint8Array, offset: number): number | null {
+  if (offset < 0 || offset + 2 > bytes.length) return null;
+  return bytes[offset] + bytes[offset + 1] * 0x100;
+}
+
+function readUInt32LE(bytes: Uint8Array, offset: number): number | null {
+  if (offset < 0 || offset + 4 > bytes.length) return null;
+  return (
+    bytes[offset] +
+    bytes[offset + 1] * 0x100 +
+    bytes[offset + 2] * 0x10000 +
+    bytes[offset + 3] * 0x1000000
+  );
+}
+
+function decodeZipPath(raw: Uint8Array, utf8: boolean): string {
+  const decoded = Buffer.from(raw).toString(utf8 ? "utf8" : "latin1");
+  return decoded.replace(/\\/g, "/").replace(/^\.\//, "").trim();
+}
+
+function parseZipEntries(bytes: Uint8Array): ZipEntryMeta[] {
+  const EOCD_SIG = 0x06054b50;
+  const CENTRAL_SIG = 0x02014b50;
+  const minEocdSize = 22;
+  if (bytes.length < minEocdSize) return [];
+
+  const searchStart = Math.max(0, bytes.length - 65557);
+  let eocdOffset = -1;
+  for (let i = bytes.length - minEocdSize; i >= searchStart; i--) {
+    if (readUInt32LE(bytes, i) === EOCD_SIG) {
+      eocdOffset = i;
+      break;
+    }
+  }
+  if (eocdOffset < 0) return [];
+
+  const totalEntries = readUInt16LE(bytes, eocdOffset + 10) ?? 0;
+  const centralDirSize = readUInt32LE(bytes, eocdOffset + 12) ?? 0;
+  const centralDirOffset = readUInt32LE(bytes, eocdOffset + 16) ?? 0;
+  if (centralDirOffset < 0 || centralDirOffset + centralDirSize > bytes.length) return [];
+
+  const out: ZipEntryMeta[] = [];
+  let cursor = centralDirOffset;
+  for (let i = 0; i < totalEntries; i++) {
+    if (cursor + 46 > bytes.length) break;
+    const sig = readUInt32LE(bytes, cursor);
+    if (sig !== CENTRAL_SIG) break;
+    const flags = readUInt16LE(bytes, cursor + 8) ?? 0;
+    const method = readUInt16LE(bytes, cursor + 10) ?? 0;
+    const compressedSize = readUInt32LE(bytes, cursor + 20) ?? 0;
+    const uncompressedSize = readUInt32LE(bytes, cursor + 24) ?? 0;
+    const nameLen = readUInt16LE(bytes, cursor + 28) ?? 0;
+    const extraLen = readUInt16LE(bytes, cursor + 30) ?? 0;
+    const commentLen = readUInt16LE(bytes, cursor + 32) ?? 0;
+    const localHeaderOffset = readUInt32LE(bytes, cursor + 42) ?? 0;
+    const nameStart = cursor + 46;
+    const nameEnd = nameStart + nameLen;
+    if (nameEnd > bytes.length) break;
+    const utf8 = (flags & 0x0800) !== 0;
+    const path = decodeZipPath(bytes.subarray(nameStart, nameEnd), utf8);
+    out.push({
+      path,
+      flags,
+      compressionMethod: method,
+      compressedSize,
+      uncompressedSize,
+      localHeaderOffset,
+    });
+    cursor = nameEnd + extraLen + commentLen;
+  }
+  return out;
+}
+
+function extractZipEntry(bytes: Uint8Array, entry: ZipEntryMeta): Uint8Array | null {
+  const LOCAL_SIG = 0x04034b50;
+  if (entry.localHeaderOffset < 0 || entry.localHeaderOffset + 30 > bytes.length) return null;
+  if (readUInt32LE(bytes, entry.localHeaderOffset) !== LOCAL_SIG) return null;
+  const localNameLen = readUInt16LE(bytes, entry.localHeaderOffset + 26) ?? 0;
+  const localExtraLen = readUInt16LE(bytes, entry.localHeaderOffset + 28) ?? 0;
+  const dataStart = entry.localHeaderOffset + 30 + localNameLen + localExtraLen;
+  const dataEnd = dataStart + entry.compressedSize;
+  if (dataStart < 0 || dataEnd > bytes.length || dataEnd < dataStart) return null;
+  const compressed = bytes.subarray(dataStart, dataEnd);
+  if (entry.compressionMethod === 0) {
+    return compressed;
+  }
+  if (entry.compressionMethod === 8) {
+    try {
+      return inflateRawSync(Buffer.from(compressed));
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function isLikelyTextFile(path: string): boolean {
+  const lower = path.toLowerCase();
+  if (lower.endsWith("/")) return false;
+  return (
+    lower.endsWith(".md") ||
+    lower.endsWith(".txt") ||
+    lower.endsWith(".json") ||
+    lower.endsWith(".yaml") ||
+    lower.endsWith(".yml") ||
+    lower.endsWith(".toml") ||
+    lower.endsWith(".ini") ||
+    lower.endsWith(".cfg") ||
+    lower.endsWith("license") ||
+    lower.endsWith("readme")
+  );
+}
+
+function scoreArchiveTextPath(path: string): number {
+  const lower = path.toLowerCase();
+  if (/(^|\/)skill\.md$/.test(lower)) return 1000;
+  if (/(^|\/)readme(\.[a-z0-9]+)?$/.test(lower)) return 900;
+  if (/(^|\/)_meta\.json$/.test(lower)) return 800;
+  if (/(^|\/)references\//.test(lower)) return 700;
+  if (/(^|\/)scripts\//.test(lower)) return 650;
+  if (lower.endsWith(".md")) return 600;
+  if (lower.endsWith(".json")) return 550;
+  if (lower.endsWith(".yaml") || lower.endsWith(".yml") || lower.endsWith(".toml")) return 500;
+  return 300;
+}
+
+function toCompressionLabel(method: number): "stored" | "deflate" | "other" {
+  if (method === 0) return "stored";
+  if (method === 8) return "deflate";
+  return "other";
+}
+
+async function fetchClawHubVersionArchiveBytes(
+  slug: string,
+  version: string
+): Promise<Uint8Array | null> {
+  const url = new URL("/api/v1/download", CLAWHUB_API_BASE);
+  url.searchParams.set("slug", slug);
+  url.searchParams.set("version", version);
+
+  for (let attempt = 0; attempt <= CLAWHUB_API_MAX_RETRIES; attempt++) {
+    const res = await fetch(url.toString(), {
+      headers: {
+        Accept: "application/zip",
+        "User-Agent": "xpersona-crawler",
+      },
+    });
+    if (res.ok) {
+      const contentLength = Number(res.headers.get("content-length") ?? "0");
+      if (Number.isFinite(contentLength) && contentLength > CLAWHUB_ARCHIVE_MAX_DOWNLOAD_BYTES) {
+        console.warn(
+          `[CRAWL] CLAWHUB archive skipped (size limit) slug=${slug} version=${version} size=${contentLength}`
+        );
+        return null;
+      }
+      const buffer = new Uint8Array(await res.arrayBuffer());
+      if (buffer.byteLength > CLAWHUB_ARCHIVE_MAX_DOWNLOAD_BYTES) {
+        console.warn(
+          `[CRAWL] CLAWHUB archive skipped (size limit) slug=${slug} version=${version} size=${buffer.byteLength}`
+        );
+        return null;
+      }
+      return buffer;
+    }
+    if (res.status === 404) return null;
+    if (attempt >= CLAWHUB_API_MAX_RETRIES || !isRetryableStatus(res.status)) {
+      return null;
+    }
+    const retryAfterMs = parseRetryAfterMs(res.headers);
+    const waitMs = clampWaitMs(retryAfterMs ?? computeBackoffMs(attempt + 1));
+    await sleep(waitMs);
+  }
+  return null;
+}
+
+async function fetchClawHubVersionArchive(
+  slug: string,
+  version: string
+): Promise<ClawHubVersionArchive | null> {
+  const bytes = await fetchClawHubVersionArchiveBytes(slug, version);
+  if (!bytes) return null;
+
+  const entries = parseZipEntries(bytes);
+  if (entries.length === 0) return null;
+
+  const filesLimited = entries.slice(0, CLAWHUB_ARCHIVE_MAX_FILES_PER_VERSION);
+  const filesOmitted = Math.max(0, entries.length - filesLimited.length);
+  let remainingCharsBudget =
+    CLAWHUB_ARCHIVE_MAX_TEXT_CHARS_PER_FILE * CLAWHUB_ARCHIVE_MAX_TEXT_FILES_PER_VERSION;
+
+  const textCandidates = filesLimited
+    .filter((entry) => {
+      if (!isLikelyTextFile(entry.path)) return false;
+      return (
+        entry.uncompressedSize > 0 &&
+        entry.uncompressedSize <= CLAWHUB_ARCHIVE_MAX_TEXT_BYTES_PER_FILE
+      );
+    })
+    .sort((a, b) => scoreArchiveTextPath(b.path) - scoreArchiveTextPath(a.path))
+    .slice(0, CLAWHUB_ARCHIVE_MAX_TEXT_FILES_PER_VERSION);
+
+  const textFiles: ClawHubArchiveTextFile[] = [];
+  for (const entry of textCandidates) {
+    if (remainingCharsBudget <= 0) break;
+    const raw = extractZipEntry(bytes, entry);
+    if (!raw) continue;
+    let content = Buffer.from(raw).toString("utf8").replace(/\u0000/g, "").trim();
+    if (!content) continue;
+    let truncated = false;
+    const maxChars = Math.min(CLAWHUB_ARCHIVE_MAX_TEXT_CHARS_PER_FILE, remainingCharsBudget);
+    if (content.length > maxChars) {
+      content = content.slice(0, maxChars);
+      truncated = true;
+    }
+    remainingCharsBudget = Math.max(0, remainingCharsBudget - content.length);
+    textFiles.push({
+      path: entry.path,
+      content,
+      truncated,
+    });
+  }
+
+  return {
+    version,
+    zipByteSize: bytes.byteLength,
+    fileCount: entries.length,
+    filesOmitted,
+    files: filesLimited.map((entry) => ({
+      path: entry.path,
+      size: entry.uncompressedSize,
+      compressedSize: entry.compressedSize,
+      compression: toCompressionLabel(entry.compressionMethod),
+    })),
+    textFiles,
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+async function fetchClawHubVersionArchives(
+  slug: string,
+  versions: ClawHubSkillVersion[]
+): Promise<ClawHubVersionArchive[]> {
+  if (!CLAWHUB_ARCHIVE_ENABLED) return [];
+
+  const ordered = versions
+    .map((v) => ({ version: (v.version ?? "").trim() }))
+    .filter((v) => v.version.length > 0);
+  const uniqueVersions: string[] = [];
+  const seen = new Set<string>();
+  for (const v of ordered) {
+    if (seen.has(v.version)) continue;
+    seen.add(v.version);
+    uniqueVersions.push(v.version);
+  }
+  const targetVersions = uniqueVersions.slice(0, CLAWHUB_ARCHIVE_MAX_VERSIONS);
+  const archives: ClawHubVersionArchive[] = [];
+  let skillCharsBudget = CLAWHUB_ARCHIVE_MAX_TOTAL_TEXT_CHARS_PER_SKILL;
+  for (const version of targetVersions) {
+    const archive = await fetchClawHubVersionArchive(slug, version);
+    if (!archive) continue;
+    if (skillCharsBudget <= 0) {
+      archive.textFiles = [];
+      archives.push(archive);
+      continue;
+    }
+    for (const textFile of archive.textFiles) {
+      if (skillCharsBudget <= 0) {
+        textFile.content = "";
+        textFile.truncated = true;
+        continue;
+      }
+      if (textFile.content.length > skillCharsBudget) {
+        textFile.content = textFile.content.slice(0, skillCharsBudget);
+        textFile.truncated = true;
+      }
+      skillCharsBudget = Math.max(0, skillCharsBudget - textFile.content.length);
+    }
+    archive.textFiles = archive.textFiles.filter((t) => t.content.length > 0);
+    archives.push(archive);
+  }
+  return archives;
+}
+
+function decodeHtmlEntities(input: string): string {
+  return input
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .trim();
+}
+
+function matchFirst(input: string, regex: RegExp): string | null {
+  const m = input.match(regex);
+  if (!m || !m[1]) return null;
+  return decodeHtmlEntities(m[1].replace(/\s+/g, " "));
+}
+
+async function fetchClawHubSkillPageMeta(ownerOrId: string, slug: string): Promise<{
+  title: string | null;
+  description: string | null;
+  ogImage: string | null;
+  canonicalUrl: string | null;
+  pageUrl: string;
+} | null> {
+  const pageUrl = `${CLAWHUB_SITE_BASE}/${encodeURIComponent(ownerOrId)}/${encodeURIComponent(slug)}`;
+  try {
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), CLAWHUB_PAGE_META_TIMEOUT_MS);
+    const res = await fetch(pageUrl, {
+      headers: { Accept: "text/html", "User-Agent": "xpersona-crawler" },
+      signal: ctrl.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    const html = await res.text();
+    const title = matchFirst(html, /<title>([^<]+)<\/title>/i);
+    const description = matchFirst(
+      html,
+      /<meta\s+name=["']description["']\s+content=["']([^"']+)["']/i
+    );
+    const ogImage = matchFirst(
+      html,
+      /<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i
+    );
+    const canonicalUrl = matchFirst(
+      html,
+      /<link\s+rel=["']canonical["']\s+href=["']([^"']+)["']/i
+    );
+    return {
+      title,
+      description,
+      ogImage,
+      canonicalUrl,
+      pageUrl,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function truncateText(value: string, maxLen: number): string {
+  if (value.length <= maxLen) return value;
+  return `${value.slice(0, Math.max(0, maxLen - 3))}...`;
+}
+
+function buildClawHubSearchText(input: {
+  skill: ClawHubSkillListItem;
+  detail: ClawHubSkillDetail | null;
+  versions: ClawHubSkillVersion[];
+  archives: ClawHubVersionArchive[];
+}): string {
+  const lines: string[] = [];
+  const skillName = input.detail?.skill?.displayName ?? input.skill.displayName ?? input.skill.slug;
+  const summary = input.detail?.skill?.summary ?? input.skill.summary ?? "";
+  const ownerHandle = input.detail?.owner?.handle ?? input.detail?.owner?.userId ?? "";
+  const tagPairs = Object.entries(input.detail?.skill?.tags ?? input.skill.tags ?? {});
+
+  lines.push(`Skill: ${skillName}`);
+  if (ownerHandle) lines.push(`Owner: ${ownerHandle}`);
+  if (summary) lines.push(`Summary: ${summary}`);
+  if (tagPairs.length > 0) {
+    lines.push(
+      `Tags: ${tagPairs
+        .map(([k, v]) => `${k}:${v}`)
+        .join(", ")}`
+    );
+  }
+
+  if (input.versions.length > 0) {
+    lines.push("Version history:");
+    for (const v of input.versions) {
+      const ver = (v.version ?? "").trim();
+      if (!ver) continue;
+      const changelog = (v.changelog ?? "").trim();
+      const createdAt = typeof v.createdAt === "number" ? new Date(v.createdAt).toISOString() : null;
+      const parts = [`v${ver}`];
+      if (createdAt) parts.push(createdAt);
+      if (v.changelogSource) parts.push(v.changelogSource);
+      lines.push(parts.join(" | "));
+      if (changelog) lines.push(changelog);
+    }
+  }
+
+  if (input.archives.length > 0) {
+    lines.push("Archive index:");
+    for (const archive of input.archives) {
+      lines.push(
+        `Archive v${archive.version}: ${archive.fileCount} files, ${archive.zipByteSize} bytes`
+      );
+      if (archive.files.length > 0) {
+        lines.push(
+          `Files: ${archive.files
+            .slice(0, 80)
+            .map((f) => `${f.path} (${f.size}b)`)
+            .join(", ")}${archive.filesOmitted > 0 ? ` (+${archive.filesOmitted} more)` : ""}`
+        );
+      }
+      for (const textFile of archive.textFiles) {
+        lines.push(`File v${archive.version}:${textFile.path}`);
+        lines.push(textFile.content);
+      }
+    }
+  }
+
+  return truncateText(lines.join("\n\n").trim(), 160000);
+}
+
 function computePopularityScore(downloads: number | undefined): number {
   const count = Math.max(0, downloads ?? 0);
   if (count === 0) return 40;
@@ -235,8 +816,12 @@ async function crawlClawHubApi(maxResults: number): Promise<number> {
       slice.map((item) =>
         limit(async () => {
           const detail = await fetchClawHubSkillDetail(item.slug);
+          const versions = await fetchAllClawHubSkillVersions(item.slug);
+          const archives = await fetchClawHubVersionArchives(item.slug, versions);
           const ownerHandle = detail?.owner?.handle ?? null;
           const ownerId = detail?.owner?.userId ?? null;
+          const ownerKey = ownerHandle ?? ownerId ?? "unknown";
+          const pageMeta = await fetchClawHubSkillPageMeta(ownerKey, item.slug);
           const sourceId = buildClawhubSourceId(
             ownerId ?? ownerHandle ?? "unknown",
             item.slug
@@ -247,15 +832,22 @@ async function crawlClawHubApi(maxResults: number): Promise<number> {
           );
           const summary = detail?.skill?.summary ?? item.summary ?? null;
           const url = `${CLAWHUB_SITE_BASE}/${encodeURIComponent(
-            ownerHandle ?? ownerId ?? "unknown"
+            ownerKey
           )}/${encodeURIComponent(item.slug)}`;
           const rawSlug =
             generateSlug(
-              `clawhub-${ownerHandle ?? ownerId ?? "unknown"}-${item.slug}`
+              `clawhub-${ownerKey}-${item.slug}`
             ) || `clawhub-${totalFound}`;
           const slug = normalizeAgentSlug(rawSlug, "clawhub", totalFound);
+          const readme = buildClawHubSearchText({
+            skill: item,
+            detail,
+            versions,
+            archives,
+          });
 
           const popularityScore = computePopularityScore(item.stats?.downloads);
+          const now = new Date();
           const agentData = {
             sourceId: truncateVarchar(sourceId, 255),
             source: "CLAWHUB" as const,
@@ -263,28 +855,45 @@ async function crawlClawHubApi(maxResults: number): Promise<number> {
             slug,
             description: summary,
             url,
-            homepage: null,
+            homepage: pageMeta?.canonicalUrl ?? url,
             capabilities: [],
-            protocols: [],
+            protocols: ["OPENCLEW"],
             languages: [] as string[],
             openclawData: {
               clawhub: {
                 owner: detail?.owner ?? null,
                 stats: item.stats ?? null,
-                tags: item.tags ?? null,
+                tags: detail?.skill?.tags ?? item.tags ?? null,
                 latestVersion: detail?.latestVersion ?? item.latestVersion ?? null,
                 createdAt: item.createdAt ?? null,
                 updatedAt: item.updatedAt ?? null,
+                metadata: detail?.metadata ?? item.metadata ?? null,
+                moderation: detail?.moderation ?? null,
+                versions,
+                archives,
+                pageMeta,
+                listItem: item,
+                detail,
+                crawlContext: {
+                  sourceListUrl: `${CLAWHUB_SITE_BASE}/skills?sort=${encodeURIComponent(CLAWHUB_SORT)}&dir=${encodeURIComponent(CLAWHUB_DIR)}`,
+                  apiBase: CLAWHUB_API_BASE,
+                  sort: CLAWHUB_SORT,
+                  dir: CLAWHUB_DIR,
+                  archiveEnabled: CLAWHUB_ARCHIVE_ENABLED,
+                  archiveMaxVersions: CLAWHUB_ARCHIVE_MAX_VERSIONS,
+                  archiveMaxDownloadBytes: CLAWHUB_ARCHIVE_MAX_DOWNLOAD_BYTES,
+                  fetchedAt: now.toISOString(),
+                },
               },
             } as Record<string, unknown>,
-            readme: summary ?? "",
+            readme,
             safetyScore: 80,
             popularityScore,
             freshnessScore: 70,
             performanceScore: 0,
             overallRank: 62,
             status: "ACTIVE" as const,
-            lastCrawledAt: new Date(),
+            lastCrawledAt: now,
             nextCrawlAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
           };
 
@@ -303,11 +912,11 @@ async function crawlClawHubApi(maxResults: number): Promise<number> {
           await ingestAgentMedia({
             agentSourceId: sourceId,
             agentUrl: url,
-            homepageUrl: null,
+            homepageUrl: pageMeta?.canonicalUrl ?? url,
             source: "CLAWHUB",
-            readmeOrHtml: summary ?? "",
+            readmeOrHtml: readme,
             isHtml: false,
-            allowHomepageFetch: false,
+            allowHomepageFetch: true,
           });
 
           return true;
