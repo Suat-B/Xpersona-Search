@@ -647,15 +647,15 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
           />
         </header>
 
-        <section className="w-full pb-20 sm:pb-16" aria-label="Search results layout">
-          <div className="mx-auto w-full max-w-[1260px] px-4 sm:px-6">
+        <section className="w-full pt-4 pb-20 sm:pb-16" aria-label="Search results layout">
+          <div className="mx-auto w-full max-w-none px-4 sm:px-6">
             <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
               <aside className="hidden lg:block lg:sticky lg:top-24 h-fit">
                 {filtersSidebar}
               </aside>
 
-              <div className="min-w-0">
-              {vertical === "artifacts" && (
+              <div className="min-w-0 w-full max-w-[960px] mx-auto">
+                {vertical === "artifacts" && (
                 <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
                   <span className="text-[var(--text-tertiary)]">Density:</span>
                   <button
@@ -753,7 +753,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
                     )}
 
                     {vertical !== "artifacts" ? (
-                      <div className="space-y-3">
+                      <div className="grid gap-3 lg:grid-cols-2 auto-rows-[64px] items-stretch pt-4">
                         {agents.map((agent) => (
                           <HFModelCard key={agent.id} agent={agent} />
                         ))}
@@ -868,6 +868,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
                 )}
               </main>
             </div>
+          </div>
           </div>
         </section>
       </div>

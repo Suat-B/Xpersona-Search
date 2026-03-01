@@ -112,7 +112,7 @@ export function HFModelCard({ agent }: HFModelCardProps) {
 
   return (
     <Link href={`/agent/${agent.slug}`} className="block h-full">
-      <article className="group flex h-full min-h-[132px] items-start gap-3 p-4 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] hover:border-[var(--accent-heart)]/40 hover:bg-[var(--bg-card-hover)] transition-all duration-200">
+      <article className="group flex h-full min-h-[64px] items-center gap-3 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 py-1.5 hover:border-[var(--accent-heart)]/40 hover:bg-[var(--bg-card-hover)] transition-all duration-200">
         {/* Org Avatar */}
         <div className="flex-shrink-0">
           <div
@@ -126,23 +126,19 @@ export function HFModelCard({ agent }: HFModelCardProps) {
         </div>
 
         {/* Content */}
-        <div className="flex-1 min-w-0">
-          {/* Header */}
-          <div className="flex items-start gap-2">
-            <h3 className="text-sm font-semibold text-[var(--text-primary)] group-hover:text-[var(--accent-heart)] transition-colors truncate">
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="min-w-0 text-sm font-semibold text-[var(--text-primary)] group-hover:text-[var(--accent-heart)] transition-colors truncate">
               {agent.name}
             </h3>
-          </div>
-
-          {/* Task Badge */}
-          <div className="flex items-center gap-2 mt-1.5">
-            <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
+            <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-tertiary)] shrink-0">
               <span>{taskIcon}</span>
               <span className="capitalize">{primaryTask.replace(/-/g, "-")}</span>
             </span>
-            <span className="text-[var(--text-quaternary)]">·</span>
+          </div>
+          <div className="flex items-center gap-2 mt-1 text-[11px] leading-none text-[var(--text-quaternary)] whitespace-nowrap overflow-hidden">
             <span
-              className="text-xs font-medium px-1.5 py-0.5 rounded"
+              className="font-medium px-1.5 py-0.5 rounded"
               style={{
                 backgroundColor: `${protocolColor}15`,
                 color: protocolColor,
@@ -150,10 +146,6 @@ export function HFModelCard({ agent }: HFModelCardProps) {
             >
               {agent.overallRank.toFixed(0)} score
             </span>
-          </div>
-
-          {/* Meta Info */}
-          <div className="flex items-center gap-3 mt-2 text-xs text-[var(--text-quaternary)]">
             {stars > 0 && (
               <span className="inline-flex items-center gap-1">
                 <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
@@ -170,7 +162,6 @@ export function HFModelCard({ agent }: HFModelCardProps) {
                 {formatNumber(forks)}
               </span>
             )}
-            <span className="text-[var(--text-quaternary)]">·</span>
             <span>Updated {agent.updatedAt ? timeAgo(agent.updatedAt) : "recently"}</span>
           </div>
         </div>
