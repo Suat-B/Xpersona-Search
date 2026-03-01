@@ -146,7 +146,7 @@ export function HomeDeveloperCTA() {
 
             <div className="flex flex-wrap gap-3">
               <Link
-                href="/trading/developer"
+                href="/dashboard/strategies"
                 className="inline-flex items-center gap-2 rounded-lg bg-[#30d158] px-6 py-3 text-sm font-semibold text-black hover:bg-[#30d158]/90 transition-colors"
               >
                 Developer Dashboard
@@ -155,7 +155,7 @@ export function HomeDeveloperCTA() {
                 </svg>
               </Link>
               <Link
-                href="/trading/developer/list"
+                href="/dashboard/strategies"
                 className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-6 py-3 text-sm font-medium text-[var(--text-primary)] hover:bg-white/5 transition-colors"
               >
                 List a Strategy

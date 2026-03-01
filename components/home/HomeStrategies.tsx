@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -75,7 +75,7 @@ function StrategyCard({ strategy }: { strategy: MarketplaceStrategy }) {
   const sparkColor = isProfitable ? "#30d158" : "#f48771";
 
   return (
-    <Link href={`/trading/strategy/${strategy.id}`}>
+    <Link href="/trading">
       <div className="agent-card p-5 border-[var(--border)] group hover:border-[#30d158]/30 transition-all duration-300 cursor-pointer h-full flex flex-col">
         <div className="flex items-start justify-between gap-3 mb-3">
           <h3 className="font-semibold text-[var(--text-primary)] group-hover:text-[#30d158] transition-colors">
@@ -143,7 +143,7 @@ export function HomeStrategies() {
     if (activeFilter) params.set("category", activeFilter);
     params.set("limit", "6");
     
-    fetch(`/api/v1/trading/strategies?${params.toString()}`, { credentials: "include" })
+    fetch(`/api/v1/marketplace/strategies?${params.toString()}`, { credentials: "include" })
       .then((r) => r.json())
       .then((res) => {
         if (res.success && Array.isArray(res.data)) {
@@ -215,7 +215,7 @@ export function HomeStrategies() {
             Be the first to list a strategy on the marketplace!
           </p>
           <Link
-            href="/trading/developer"
+            href="/dashboard/strategies"
             className="inline-flex items-center gap-2 rounded-lg bg-[#30d158]/20 text-[#30d158] px-5 py-2.5 text-sm font-medium hover:bg-[#30d158]/30 transition-colors"
           >
             List your strategy

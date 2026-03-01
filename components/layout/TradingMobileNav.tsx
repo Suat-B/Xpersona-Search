@@ -60,7 +60,7 @@ const ICONS = {
 
 const TRADING_LINKS = [
   { href: "/trading", label: "Marketplace", icon: "trading" as const, exact: false },
-  { href: "/trading/developer", label: "Developer", icon: "developer" as const, exact: false },
+  { href: "/dashboard/strategies", label: "Developer", icon: "developer" as const, exact: false },
   { href: "/dashboard/profile", label: "Profile", icon: "profile" as const, exact: true },
   { href: "/dashboard/deposit", label: "Deposit", icon: "deposit" as const, exact: true },
   { href: "/dashboard/withdraw", label: "Withdraw", icon: "withdraw" as const, exact: true },

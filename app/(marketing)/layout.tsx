@@ -7,7 +7,9 @@ import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getService } from "@/lib/service";
 import { GameChrome } from "@/components/layout/GameChrome";
+import { TradingChrome } from "@/components/layout/TradingChrome";
 import { HomeMinimalHeader } from "@/components/home/HomeMinimalHeader";
+import { TradingMinimalHeader } from "@/components/layout/TradingMinimalHeader";
 
 export default async function MarketingLayout({
   children,
@@ -91,7 +93,7 @@ export default async function MarketingLayout({
       );
     }
     return (
-      <GameChrome
+      <TradingChrome
         displayName={displayName}
         userEmail={userEmail}
         isAdmin={isAdmin}
@@ -99,7 +101,7 @@ export default async function MarketingLayout({
         accountType={accountType}
       >
         {children}
-      </GameChrome>
+      </TradingChrome>
     );
   }
 
@@ -114,7 +116,7 @@ export default async function MarketingLayout({
 
   return (
     <div className="flex h-[100dvh] min-h-dvh w-full flex-col overflow-hidden bg-[#1e1e1e]">
-      <HomeMinimalHeader />
+      {service === "trading" ? <TradingMinimalHeader /> : <HomeMinimalHeader />}
       <main className="scroll-contain-paint flex-1 min-h-0 overflow-y-auto">
         <div className="w-full max-w-7xl mx-auto px-4 py-6 sm:p-6 md:p-8 space-y-6 min-w-0">{children}</div>
       </main>

@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { getServiceBaseUrl } from "@/lib/subdomain";
+import { getPathForService, getServiceBaseUrl, getServiceFromHost, isAllowedRoute, type Service } from "@/lib/subdomain";
 
 const X_SERVICE_HEADER = "x-service";
 const X_REQUEST_ID_HEADER = "x-request-id";
 const INTERNAL_V1_PROXY_HEADER = "x-internal-api-proxy";
-const REMOVED_PREFIXES = ["/games", "/trading", "/casino", "/faucet", "/register", "/ans"] as const;
+const REMOVED_PREFIXES = ["/casino", "/faucet", "/register", "/ans"] as const;
 const API_LEGACY_EXCEPTIONS = ["/api/v1", "/api/auth"] as const;
 const AGENT_COOKIE_NAME = "xp_agent_session";
 const AI_CONTACT_COOKIE = "xpersona_ai_contact";
@@ -30,6 +30,26 @@ function wantsHtml(req: NextRequest): boolean {
 function buildMigrationPath(pathname: string, search: string): string {
   if (pathname === "/api") return `/api/v1${search}`;
   return `${pathname.replace(/^\/api/, "/api/v1")}${search}`;
+}
+
+function getServiceForPathname(pathname: string): Service | null {
+  const normalized = pathname.replace(/\/$/, "") || "/";
+  if (normalized === "/trading" || normalized.startsWith("/trading/")) return "trading";
+  if (
+    normalized === "/dashboard" ||
+    normalized.startsWith("/dashboard/") ||
+    normalized === "/games" ||
+    normalized.startsWith("/games/") ||
+    normalized === "/docs" ||
+    normalized.startsWith("/docs/") ||
+    normalized === "/embed" ||
+    normalized.startsWith("/embed/") ||
+    normalized === "/admin" ||
+    normalized.startsWith("/admin/")
+  ) {
+    return "game";
+  }
+  return null;
 }
 
 export async function middleware(req: NextRequest) {
@@ -83,14 +103,21 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (
-    hostname === "game.xpersona.co" ||
-    hostname === "trading.xpersona.co" ||
-    hostname === "game.localhost" ||
-    hostname === "trading.localhost"
-  ) {
-    const target = new URL(`${getServiceBaseUrl("hub")}${url.pathname}${url.search}`);
-    return NextResponse.redirect(target);
+  const hostService = getServiceFromHost(host, url.searchParams);
+  const pathService = getServiceForPathname(url.pathname);
+  const serviceForHeader = hostService === "hub" && pathService ? pathService : hostService;
+
+  if (hostService !== "hub") {
+    if (pathService && pathService !== hostService) {
+      const targetPath = getPathForService(url.pathname, pathService);
+      const target = new URL(`${getServiceBaseUrl(pathService)}${targetPath}${url.search}`);
+      return NextResponse.redirect(target);
+    }
+    if (!isAllowedRoute(hostService, url.pathname)) {
+      const targetPath = getPathForService(url.pathname, "hub");
+      const target = new URL(`${getServiceBaseUrl("hub")}${targetPath}${url.search}`);
+      return NextResponse.redirect(target);
+    }
   }
 
   if (isRemovedPath(url.pathname)) {
@@ -99,7 +126,7 @@ export async function middleware(req: NextRequest) {
   }
 
   const requestHeaders = new Headers(req.headers);
-  requestHeaders.set(X_SERVICE_HEADER, "hub");
+  requestHeaders.set(X_SERVICE_HEADER, serviceForHeader);
 
   const res = NextResponse.next({
     request: { headers: requestHeaders },

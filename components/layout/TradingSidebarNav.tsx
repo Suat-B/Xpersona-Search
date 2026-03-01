@@ -54,7 +54,7 @@ const TRADING_NAV_GROUPS = [
     label: "Marketplace",
     links: [
       { href: "/trading", label: "Browse strategies", icon: "trading" as const, exact: false },
-      { href: "/trading/developer", label: "Developer", icon: "developer" as const, exact: false },
+      { href: "/dashboard/strategies", label: "Developer", icon: "developer" as const, exact: false },
     ],
   },
   {
