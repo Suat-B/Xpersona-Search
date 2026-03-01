@@ -1932,3 +1932,58 @@ select option {
   background: var(--light-accent-light);
   color: var(--light-text-primary);
 }
+
+/* ════════════════════════════════════════════════════════════════════
+LIGHT MODE OVERRIDES - Applied when .light-mode class is present
+════════════════════════════════════════════════════════════════════ */
+
+.light-mode {
+  /* Override dark theme variables with light theme values */
+  --bg-deep: var(--light-bg-primary);
+  --bg-matte: var(--light-bg-secondary);
+  --bg-card: var(--light-bg-card);
+  --bg-card-hover: var(--light-bg-hover);
+  --bg-elevated: var(--light-bg-tertiary);
+  
+  --text-primary: var(--light-text-primary);
+  --text-secondary: var(--light-text-secondary);
+  --text-tertiary: var(--light-text-tertiary);
+  --text-quaternary: var(--light-text-quaternary);
+  
+  --accent-heart: var(--light-accent);
+  --accent-neural: var(--light-accent-hover);
+  --accent-blue: var(--light-accent);
+  --accent-cyber: var(--light-accent);
+  
+  --border: var(--light-border);
+  --border-strong: var(--light-border-strong);
+  --border-glow: var(--light-border-focus);
+  --divider: var(--light-border);
+  
+  --shadow-sm: var(--light-shadow-sm);
+  --shadow-md: var(--light-shadow-md);
+  --shadow-lg: var(--light-shadow-lg);
+  --shadow-xl: var(--light-shadow-xl);
+  
+  --glow-blue: rgba(37, 99, 235, 0.2);
+  --glow-pink: rgba(37, 99, 235, 0.15);
+  --glow-purple: rgba(124, 58, 237, 0.15);
+  
+  --quant-bg-primary: var(--light-bg-primary);
+  --quant-bg-surface: var(--light-bg-secondary);
+  --quant-bg-card: var(--light-bg-card);
+  --quant-bg-hover: var(--light-bg-hover);
+  --quant-bg-active: var(--light-bg-active);
+  --quant-border: var(--light-border);
+  --quant-border-strong: var(--light-border-strong);
+  --quant-border-glow: rgba(37, 99, 235, 0.3);
+  --quant-accent: var(--light-accent);
+  --quant-accent-glow: rgba(37, 99, 235, 0.3);
+  --quant-text-primary: var(--light-text-primary);
+  --quant-text-secondary: var(--light-text-secondary);
+  --quant-text-muted: var(--light-text-tertiary);
+  --quant-bullish: #16a34a;
+  --quant-bullish-glow: rgba(22, 163, 74, 0.3);
+  --quant-bearish: #dc2626;
+  --quant-bearish-glow: rgba(220, 38, 38, 0.3);
+}

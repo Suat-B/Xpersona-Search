@@ -5,6 +5,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { ServiceProvider } from "@/components/providers/ServiceProvider";
+import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { HelpFrame } from "@/components/help/HelpFrame";
 import { getService } from "@/lib/service";
 import { TopNavHF } from "@/components/nav/TopNavHF";
@@ -57,37 +58,39 @@ export default async function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script
-          suppressHydrationWarning
-          dangerouslySetInnerHTML={{
-            __html: `(function(){var t=localStorage.getItem("theme")||"dark";if(t==="system")t=window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.setAttribute("data-theme",t);})();`,
-          }}
-        />
+      <script
+        suppressHydrationWarning
+        dangerouslySetInnerHTML={{
+          __html: `(function(){var t=localStorage.getItem("xpersona-theme")||"system";if(t==="system")t=window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";if(t==="light")document.documentElement.classList.add("light-mode");})();`,
+        }}
+      />
         <script
           async
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6090164906593135"
           crossOrigin="anonymous"
         />
       </head>
-      <body
-        className={`${outfit.variable} ${inter.variable} min-h-dvh bg-[var(--bg-deep)] font-sans text-[var(--text-primary)] antialiased`}
-      >
-        <ServiceProvider service={service}>
-          <AuthProvider>
-            {variant === "hf" ? (
-              <div className="min-h-dvh flex flex-col">
-                <TopNavHF />
-                <div className="flex-1">{children}</div>
-              </div>
-            ) : (
-              children
-            )}
-            <HelpFrame />
-            <Analytics />
-            <SpeedInsights />
-          </AuthProvider>
-        </ServiceProvider>
-      </body>
+  <body
+    className={`${outfit.variable} ${inter.variable} min-h-dvh bg-[var(--bg-deep)] font-sans text-[var(--text-primary)] antialiased`}
+  >
+    <ThemeProvider>
+      <ServiceProvider service={service}>
+        <AuthProvider>
+          {variant === "hf" ? (
+            <div className="min-h-dvh flex flex-col">
+              <TopNavHF />
+              <div className="flex-1">{children}</div>
+            </div>
+          ) : (
+            children
+          )}
+          <HelpFrame />
+          <Analytics />
+          <SpeedInsights />
+        </AuthProvider>
+      </ServiceProvider>
+    </ThemeProvider>
+  </body>
     </html>
   );
 }

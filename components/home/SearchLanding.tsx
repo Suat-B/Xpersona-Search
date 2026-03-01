@@ -5,12 +5,14 @@ import { applyPreset, HOME_ACCENT_STORAGE_KEY } from "@/lib/theme-presets";
 import type { ThemePresetId } from "@/lib/theme-presets";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { SearchResultSnippet } from "@/components/search/SearchResultSnippet";
-import { SearchResultsBar } from "@/components/search/SearchResultsBar";
+import { SearchTopControlsBar } from "@/components/search/SearchTopControlsBar";
+import { SearchFiltersSidebar } from "@/components/search/SearchFiltersSidebar";
+import { HFModelCard } from "@/components/search/HFModelCard";
 import {
   extractClientErrorMessage,
   unwrapClientResponse,
 } from "@/lib/api/client-response";
+import { safeFetchJson } from "@/lib/safeFetch";
 
 const BROWSE_PROTOCOLS = [
   { id: "MCP", label: "MCP" },
@@ -360,21 +362,22 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
           return;
         }
         if (pageIndex > 1 && !pageCursor) return;
-        const res = await fetch(`/api/v1/search?${requestParams}`);
-        const payload = await res.json();
-        if (!res.ok) throw new Error(extractClientErrorMessage(payload, "Search failed"));
-        const data = unwrapClientResponse<SearchResponsePayload>(payload);
-        const nextAgents = dedupeById(data.results ?? []);
-        const nextMedia = dedupeById(data.mediaResults ?? []);
+        const searchResponse = await safeFetchJson(`/api/v1/search?${requestParams}`);
+        if (!searchResponse.ok) {
+          throw new Error(extractClientErrorMessage(searchResponse.data, "Search failed"));
+        }
+        const searchData = unwrapClientResponse<SearchResponsePayload>(searchResponse.data);
+        const nextAgents = dedupeById(searchData.results ?? []);
+        const nextMedia = dedupeById(searchData.mediaResults ?? []);
         setAgents(nextAgents);
         setMediaResults(nextMedia);
-        setTotal(data.pagination?.total ?? 0);
-        setHasMore(data.pagination?.hasMore ?? false);
-        if (data.facets) setFacets(data.facets);
-        setSearchMeta(data.searchMeta ?? null);
+        setTotal(searchData.pagination?.total ?? 0);
+        setHasMore(searchData.pagination?.hasMore ?? false);
+        if (searchData.facets) setFacets(searchData.facets);
+        setSearchMeta(searchData.searchMeta ?? null);
         setPage(pageIndex);
 
-        const nextCursor = data.pagination?.nextCursor ?? null;
+        const nextCursor = searchData.pagination?.nextCursor ?? null;
         if (nextCursor) {
           setPageCursors((prev) => ({
             ...prev,
@@ -394,17 +397,16 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
         }
 
         if (pageIndex === 1 && requestVertical === "artifacts") {
-          if ((data.mediaResults ?? []).length > 0) {
+          if ((searchData.mediaResults ?? []).length > 0) {
             setFallbackAgents([]);
           } else {
             const fallbackParams = new URLSearchParams(requestParams.toString());
             fallbackParams.set("vertical", "agents");
             fallbackParams.delete("mediaCursor");
             fallbackParams.set("limit", String(PAGE_SIZE));
-            const fallbackRes = await fetch(`/api/v1/search?${fallbackParams}`);
-            const fallbackPayload = await fallbackRes.json();
-            if (fallbackRes.ok) {
-              const fallbackData = unwrapClientResponse<SearchResponsePayload>(fallbackPayload);
+            const fallbackResponse = await safeFetchJson(`/api/v1/search?${fallbackParams}`);
+            if (fallbackResponse.ok) {
+              const fallbackData = unwrapClientResponse<SearchResponsePayload>(fallbackResponse.data);
               setFallbackAgents(fallbackData.results ?? []);
             } else {
               setFallbackAgents([]);
@@ -532,6 +534,11 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
 
   const hasResults = vertical === "artifacts" ? mediaResults.length > 0 : agents.length > 0;
   const hasFallbackAgents = fallbackAgents.length > 0;
+  const countValue = vertical === "artifacts" ? mediaResults.length : agents.length;
+  const totalValue = total > 0 ? total : countValue;
+  const totalLabel = totalValue > 0
+    ? `${totalValue} ${vertical === "artifacts" ? "assets" : vertical === "skills" ? "skills" : "agents"}`
+    : undefined;
 
   const handleExploreAllAgents = useCallback(async () => {
     setQuery("");
@@ -579,6 +586,34 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
     ...Object.keys(pageCursors[paginationKey]).map((p) => Number(p))
   );
   const pageItems = buildPageItems(page, totalPages);
+  const filtersSidebar = (
+    <SearchFiltersSidebar
+      facets={facets}
+      protocolOptions={BROWSE_PROTOCOLS}
+      selectedProtocols={selectedProtocols}
+      onProtocolChange={handleProtocolChange}
+      minSafety={minSafety}
+      onSafetyChange={setMinSafety}
+      intent={intent}
+      onIntentChange={setIntent}
+      taskType={taskType}
+      onTaskTypeChange={setTaskType}
+      maxLatencyMs={maxLatencyMs}
+      onMaxLatencyMsChange={setMaxLatencyMs}
+      maxCostUsd={maxCostUsd}
+      onMaxCostUsdChange={setMaxCostUsd}
+      dataRegion={dataRegion}
+      onDataRegionChange={setDataRegion}
+      requires={requires}
+      onRequiresChange={setRequires}
+      forbidden={forbidden}
+      onForbiddenChange={setForbidden}
+      bundle={bundle}
+      onBundleChange={setBundle}
+      explain={explain}
+      onExplainChange={setExplain}
+    />
+  );
 
   return (
     <div className="min-h-screen text-[var(--text-primary)] bg-[#1e1e1e] relative">
@@ -587,331 +622,254 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
         <div className="absolute top-0 right-1/4 w-[24rem] h-[24rem] bg-[var(--accent-neural)]/[0.06] rounded-full blur-3xl" />
       </div>
       <div className="relative z-10">
-        <SearchResultsBar
-          query={query}
-          setQuery={setQuery}
-          onSearch={(overrideQuery) => {
-            const resolvedQuery = (overrideQuery ?? query).trim();
-            if (!resolvedQuery) {
-              void handleExploreAllAgents();
-              return;
-            }
-            setPage(1);
-            setPageCursors({ agents: { 1: null }, artifacts: { 1: null } });
-            setPageCache({ agents: {}, artifacts: {} });
-            void loadPage(1, { query: resolvedQuery, resetCaches: true });
-          }}
-          loading={loading}
-          vertical={vertical}
-          onVerticalChange={handleVerticalChange}
-          selectedProtocols={selectedProtocols}
-          onProtocolChange={handleProtocolChange}
-          sort={sort}
-          onSortChange={setSort}
-          minSafety={minSafety}
-          onSafetyChange={setMinSafety}
-          facets={facets}
-          intent={intent}
-          onIntentChange={setIntent}
-          taskType={taskType}
-          onTaskTypeChange={setTaskType}
-          maxLatencyMs={maxLatencyMs}
-          onMaxLatencyMsChange={setMaxLatencyMs}
-          maxCostUsd={maxCostUsd}
-          onMaxCostUsdChange={setMaxCostUsd}
-          dataRegion={dataRegion}
-          onDataRegionChange={setDataRegion}
-          requires={requires}
-          onRequiresChange={setRequires}
-          forbidden={forbidden}
-          onForbiddenChange={setForbidden}
-          bundle={bundle}
-          onBundleChange={setBundle}
-          explain={explain}
-          onExplainChange={setExplain}
-        />
+        <header>
+          <SearchTopControlsBar
+            query={query}
+            setQuery={setQuery}
+            onSearch={(overrideQuery) => {
+              const resolvedQuery = (overrideQuery ?? query).trim();
+              if (!resolvedQuery) {
+                void handleExploreAllAgents();
+                return;
+              }
+              setPage(1);
+              setPageCursors({ agents: { 1: null }, artifacts: { 1: null } });
+              setPageCache({ agents: {}, artifacts: {} });
+              void loadPage(1, { query: resolvedQuery, resetCaches: true });
+            }}
+            loading={loading}
+            vertical={vertical}
+            onVerticalChange={handleVerticalChange}
+            sort={sort}
+            onSortChange={setSort}
+            totalLabel={totalLabel}
+            filtersSidebar={filtersSidebar}
+          />
+        </header>
 
-        <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-6">
-          {vertical === "artifacts" && (
-            <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-[var(--text-tertiary)]">Density:</span>
-              <button
-                type="button"
-                onClick={() => setRecall("normal")}
-                className={`px-2.5 py-1 rounded border ${recall === "normal"
-                  ? "border-[var(--accent-heart)] text-[var(--accent-heart)]"
-                  : "border-[var(--border)] text-[var(--text-tertiary)]"
-                  }`}
-              >
-                Normal
-              </button>
-              <button
-                type="button"
-                onClick={() => setRecall("high")}
-                className={`px-2.5 py-1 rounded border ${recall === "high"
-                  ? "border-[var(--accent-heart)] text-[var(--accent-heart)]"
-                  : "border-[var(--border)] text-[var(--text-tertiary)]"
-                  }`}
-              >
-                High recall
-              </button>
-              <span className="ml-2 text-[var(--text-tertiary)]">Sources:</span>
-              {["GITHUB", "REGISTRY", "WEB"].map((src) => {
-                const active = includeSources.includes(src);
-                return (
+        <section className="w-full pb-20 sm:pb-16" aria-label="Search results layout">
+          <div className="mx-auto w-full max-w-[1260px] px-4 sm:px-6">
+            <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+              <aside className="hidden lg:block lg:sticky lg:top-24 h-fit">
+                {filtersSidebar}
+              </aside>
+
+              <div className="min-w-0">
+              {vertical === "artifacts" && (
+                <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-[var(--text-tertiary)]">Density:</span>
                   <button
-                    key={src}
                     type="button"
-                    onClick={() =>
-                      setIncludeSources((prev) =>
-                        prev.includes(src)
-                          ? prev.filter((v) => v !== src)
-                          : [...prev, src]
-                      )
-                    }
-                    className={`px-2.5 py-1 rounded border ${active
+                    onClick={() => setRecall("normal")}
+                    className={`px-2.5 py-1 rounded border ${recall === "normal"
                       ? "border-[var(--accent-heart)] text-[var(--accent-heart)]"
                       : "border-[var(--border)] text-[var(--text-tertiary)]"
                       }`}
                   >
-                    {src}
+                    Normal
                   </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div
-          className="max-w-4xl mx-auto px-3 sm:px-6 pb-20 sm:pb-16"
-        >
-          <main aria-label="Search results">
-            {loading && !hasResults ? (
-              <div className="space-y-0" aria-busy="true" aria-live="polite">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <SkeletonSnippet key={i} />
-                ))}
-              </div>
-            ) : !hasResults ? (
-              <div className="py-12 text-center" role="status">
-                <p className="text-[var(--text-secondary)] font-medium">
-                  {vertical === "artifacts"
-                    ? "No machine-usable visual assets found for this query."
-                    : vertical === "skills"
-                      ? "No skills found. Try different filters or search terms."
-                      : "No agents found. Try different filters or search terms."}
-                </p>
-                {vertical === "artifacts" && hasFallbackAgents && (
-                  <p className="mt-2 text-xs text-[var(--text-quaternary)]">
-                    Showing agent thumbnails instead.
-                  </p>
-                )}
-                <div className="mt-6 flex flex-wrap justify-center gap-3">
                   <button
                     type="button"
-                    onClick={handleExploreAllAgents}
-                    className="inline-flex items-center gap-2 px-4 py-3 min-h-[44px] rounded-lg neural-glass border border-white/[0.08]"
+                    onClick={() => setRecall("high")}
+                    className={`px-2.5 py-1 rounded border ${recall === "high"
+                      ? "border-[var(--accent-heart)] text-[var(--accent-heart)]"
+                      : "border-[var(--border)] text-[var(--text-tertiary)]"
+                      }`}
                   >
-                    Explore all agents
+                    High recall
                   </button>
-                  {BROWSE_PROTOCOLS.map(({ id, label }) => (
-                    <Link
-                      key={id}
-                      href={`/?protocols=${id}`}
-                      className="inline-flex items-center px-4 py-3 min-h-[44px] rounded-lg border border-[var(--border)]"
-                    >
-                      Browse {label}
-                    </Link>
-                  ))}
+                  <span className="ml-2 text-[var(--text-tertiary)]">Sources:</span>
+                  {["GITHUB", "REGISTRY", "WEB"].map((src) => {
+                    const active = includeSources.includes(src);
+                    return (
+                      <button
+                        key={src}
+                        type="button"
+                        onClick={() =>
+                          setIncludeSources((prev) =>
+                            prev.includes(src)
+                              ? prev.filter((v) => v !== src)
+                              : [...prev, src]
+                          )
+                        }
+                        className={`px-2.5 py-1 rounded border ${active
+                          ? "border-[var(--accent-heart)] text-[var(--accent-heart)]"
+                          : "border-[var(--border)] text-[var(--text-tertiary)]"
+                          }`}
+                      >
+                        {src}
+                      </button>
+                    );
+                  })}
                 </div>
-              </div>
-            ) : (
-              <>
-                <p className="mb-4 text-sm text-[var(--text-tertiary)]" role="status" aria-live="polite">
-                  {vertical === "artifacts"
-                    ? `${mediaResults.length} visual asset${mediaResults.length === 1 ? "" : "s"} found`
-                    : vertical === "skills"
-                      ? total > 0
-                        ? `About ${total} skill${total === 1 ? "" : "s"}`
-                        : `${agents.length} skill${agents.length === 1 ? "" : "s"} found`
-                      : total > 0
-                        ? `About ${total} agent${total === 1 ? "" : "s"}`
-                        : `${agents.length} agent${agents.length === 1 ? "" : "s"} found`}
-                </p>
-                {vertical === "artifacts" && (
-                  <p className="mb-4 text-xs text-[var(--text-quaternary)]">
-                    Searching visual index with {recall} recall.
-                  </p>
-                )}
+              )}
 
-                {vertical === "skills" ? (
-                  <div className="grid gap-4 sm:grid-cols-2 w-full min-w-0">
-                    {agents.map((agent) => {
-                      const protos = Array.isArray(agent.protocols) ? agent.protocols : [];
-                      const caps = Array.isArray(agent.capabilities) ? agent.capabilities : [];
-                      const href = `/agent/${agent.slug}?from=${encodeURIComponent(fromPath)}`;
-                      return (
-                        <article
-                          key={agent.id}
-                          className="w-full min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]/70 p-5 hover:border-[var(--accent-heart)]/40 transition-colors"
-                        >
-                          <div className="flex items-start justify-between gap-3 min-w-0">
-                            <div className="min-w-0">
-                              <Link
-                                href={href}
-                                className="text-base font-semibold text-[var(--accent-neural)] hover:underline truncate block"
-                              >
-                                {agent.name}
-                              </Link>
-                              <p className="text-xs text-[var(--text-quaternary)] mt-1">SKILL.md</p>
-                            </div>
-                            <span className="text-[10px] uppercase tracking-wider rounded-full px-2 py-1 border border-[var(--accent-heart)]/40 text-[var(--accent-heart)]">
-                              Skill
-                            </span>
-                          </div>
-                          <p className="mt-2 text-sm text-[var(--text-secondary)] line-clamp-3 break-words">
-                            {agent.description || "No description available."}
-                          </p>
-                          <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-[var(--text-tertiary)] min-w-0 break-words">
-                            {protos.slice(0, 3).map((p) => (
-                              <span key={`proto-${agent.id}-${p}`} className="rounded border border-[var(--border)] px-1.5 py-0.5 break-words max-w-full">
-                                {p}
-                              </span>
-                            ))}
-                            {caps.slice(0, 3).map((c) => (
-                              <span key={`cap-${agent.id}-${c}`} className="rounded border border-[var(--border)] px-1.5 py-0.5 break-words max-w-full">
-                                {c}
-                              </span>
-                            ))}
-                          </div>
-                        </article>
-                      );
-                    })}
+              <main aria-label="Search results">
+                {loading && !hasResults ? (
+                  <div className="space-y-0" aria-busy="true" aria-live="polite">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <SkeletonSnippet key={i} />
+                    ))}
                   </div>
-                ) : vertical !== "artifacts" ? (
-                  <div className="divide-y-0">
-                    {agents.map((agent, i) => {
-                      const delay = ["animate-delay-75", "animate-delay-150", "animate-delay-225", "animate-delay-300"][i % 4];
-                      return (
-                        <SearchResultSnippet
-                          key={agent.id}
-                          agent={agent}
-                          showSitelinks={i === 0}
-                          className={`animate-slide-in-from-bottom ${delay}`}
-                        />
-                      );
-                    })}
+                ) : !hasResults ? (
+                  <div className="py-12 text-center" role="status">
+                    <p className="text-[var(--text-secondary)] font-medium">
+                      {vertical === "artifacts"
+                        ? "No machine-usable visual assets found for this query."
+                        : vertical === "skills"
+                          ? "No skills found. Try different filters or search terms."
+                          : "No agents found. Try different filters or search terms."}
+                    </p>
+                    {vertical === "artifacts" && hasFallbackAgents && (
+                      <p className="mt-2 text-xs text-[var(--text-quaternary)]">
+                        Showing agent thumbnails instead.
+                      </p>
+                    )}
+                    <div className="mt-6 flex flex-wrap justify-center gap-3">
+                      <button
+                        type="button"
+                        onClick={handleExploreAllAgents}
+                        className="inline-flex items-center gap-2 px-4 py-3 min-h-[44px] rounded-lg neural-glass border border-white/[0.08]"
+                      >
+                        Explore all agents
+                      </button>
+                      {BROWSE_PROTOCOLS.map(({ id, label }) => (
+                        <Link
+                          key={id}
+                          href={`/?protocols=${id}`}
+                          className="inline-flex items-center px-4 py-3 min-h-[44px] rounded-lg border border-[var(--border)]"
+                        >
+                          Browse {label}
+                        </Link>
+                      ))}
+                    </div>
                   </div>
                 ) : (
-                  <div className="columns-1 sm:columns-2 lg:columns-3 gap-4">
-                    {mediaResults.map((asset) => {
-                      const preview = isImageAsset(asset) ? asset.url : null;
-                      return (
-                        <article
-                          key={asset.id}
-                          className="mb-4 break-inside-avoid rounded-xl border border-[var(--border)] bg-[var(--bg-card)]/80 p-3 hover:border-[var(--accent-heart)]/30 transition-colors"
-                        >
-                          {preview ? (
-                            <a href={asset.sourcePageUrl ?? asset.url} target="_blank" rel="noreferrer">
-                              <img
-                                src={preview}
-                                alt={asset.title ?? asset.caption ?? "Artifact preview"}
-                                className="w-full h-auto rounded-lg border border-[var(--border)]"
-                              />
-                            </a>
-                          ) : (
-                            <div className="w-full min-h-28 rounded-lg border border-[var(--border)] flex items-center justify-center text-xs text-[var(--text-quaternary)] px-3 py-10 text-center">
-                              No preview available
-                            </div>
-                          )}
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-secondary)]">
-                            <Link href={`/agent/${asset.agentSlug}`} className="text-[var(--accent-heart)] hover:underline">
-                              {asset.agentName}
-                            </Link>
-                            {asset.artifactType ? (
-                              <span className="rounded border border-[var(--border)] px-1.5 py-0.5">
-                                {asset.artifactType.replace(/_/g, " ")}
-                              </span>
-                            ) : null}
-                            {asset.source ? (
-                              <span className="rounded border border-[var(--border)] px-1.5 py-0.5 text-[var(--text-quaternary)]">
-                                {asset.source}
-                              </span>
-                            ) : null}
-                          </div>
-                          <p className="mt-1 text-xs text-[var(--text-tertiary)] line-clamp-2">
-                            {asset.title ?? asset.caption ?? asset.url.split("/").pop() ?? "Untitled asset"}
-                          </p>
-                          <a
-                            href={asset.sourcePageUrl ?? asset.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="mt-1 text-[11px] text-[var(--text-quaternary)] truncate block"
-                          >
-                            {asset.sourcePageUrl ?? asset.url}
-                          </a>
-                        </article>
-                      );
-                    })}
-                  </div>
-                )}
+                  <>
+                    {vertical === "artifacts" && (
+                      <p className="mb-4 text-xs text-[var(--text-quaternary)]">
+                        Searching visual index with {recall} recall.
+                      </p>
+                    )}
 
-                {totalPages > 1 && (
-                  <div className="flex flex-col items-center gap-4 pt-8">
-                    <div className="flex flex-wrap items-center justify-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => loadPage(Math.max(1, page - 1))}
-                        disabled={loading || page <= 1}
-                        aria-label="Previous page"
-                        className="px-3 py-2 min-h-[40px] rounded-lg border border-[var(--border)] text-sm text-[var(--text-primary)] disabled:opacity-50"
-                      >
-                        Prev
-                      </button>
-                      {pageItems.map((item, i) =>
-                        item === "ellipsis" ? (
-                          <span
-                            key={`ellipsis-${i}`}
-                            className="px-2 text-[var(--text-tertiary)]"
-                          >
-                            …
-                          </span>
-                        ) : (
+                    {vertical !== "artifacts" ? (
+                      <div className="space-y-3">
+                        {agents.map((agent) => (
+                          <HFModelCard key={agent.id} agent={agent} />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="columns-1 sm:columns-2 lg:columns-3 gap-4">
+                        {mediaResults.map((asset) => {
+                          const preview = isImageAsset(asset) ? asset.url : null;
+                          return (
+                            <article
+                              key={asset.id}
+                              className="mb-4 break-inside-avoid rounded-xl border border-[var(--border)] bg-[var(--bg-card)]/80 p-3 hover:border-[var(--accent-heart)]/30 transition-colors"
+                            >
+                              {preview ? (
+                                <a href={asset.sourcePageUrl ?? asset.url} target="_blank" rel="noreferrer">
+                                  <img
+                                    src={preview}
+                                    alt={asset.title ?? asset.caption ?? "Artifact preview"}
+                                    className="w-full h-auto rounded-lg border border-[var(--border)]"
+                                  />
+                                </a>
+                              ) : (
+                                <div className="w-full min-h-28 rounded-lg border border-[var(--border)] flex items-center justify-center text-xs text-[var(--text-quaternary)] px-3 py-10 text-center">
+                                  No preview available
+                                </div>
+                              )}
+                              <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+                                <Link href={`/agent/${asset.agentSlug}`} className="text-[var(--accent-heart)] hover:underline">
+                                  {asset.agentName}
+                                </Link>
+                                {asset.artifactType ? (
+                                  <span className="rounded border border-[var(--border)] px-1.5 py-0.5">
+                                    {asset.artifactType.replace(/_/g, " ")}
+                                  </span>
+                                ) : null}
+                                {asset.source ? (
+                                  <span className="rounded border border-[var(--border)] px-1.5 py-0.5 text-[var(--text-quaternary)]">
+                                    {asset.source}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className="mt-1 text-xs text-[var(--text-tertiary)] line-clamp-2">
+                                {asset.title ?? asset.caption ?? asset.url.split("/").pop() ?? "Untitled asset"}
+                              </p>
+                              <a
+                                href={asset.sourcePageUrl ?? asset.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-1 text-[11px] text-[var(--text-quaternary)] truncate block"
+                              >
+                                {asset.sourcePageUrl ?? asset.url}
+                              </a>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {totalPages > 1 && (
+                      <div className="flex flex-col items-center gap-4 pt-8">
+                        <div className="flex flex-wrap items-center justify-center gap-2">
                           <button
-                            key={`page-${item}`}
                             type="button"
-                            onClick={() => loadPage(item)}
-                            disabled={loading || item === page || item > maxNavigablePage}
-                            aria-label={`Page ${item}`}
-                            className={`px-3 py-2 min-h-[40px] rounded-lg border text-sm ${
-                              item === page
-                                ? "border-[var(--accent-heart)] text-[var(--accent-heart)] bg-[var(--accent-heart)]/10"
-                                : "border-[var(--border)] text-[var(--text-primary)]"
-                            } disabled:opacity-50`}
+                            onClick={() => loadPage(Math.max(1, page - 1))}
+                            disabled={loading || page <= 1}
+                            aria-label="Previous page"
+                            className="px-3 py-2 min-h-[40px] rounded-lg border border-[var(--border)] text-sm text-[var(--text-primary)] disabled:opacity-50"
                           >
-                            {item}
+                            Prev
                           </button>
-                        )
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => loadPage(page + 1)}
-                        disabled={loading || !hasMore || page + 1 > maxNavigablePage}
-                        aria-label="Next page"
-                        className="px-3 py-2 min-h-[40px] rounded-lg border border-[var(--border)] text-sm text-[var(--text-primary)] disabled:opacity-50"
-                      >
-                        Next
-                      </button>
-                    </div>
-                    <p className="text-xs text-[var(--text-tertiary)]">
-                      Page {page} of {totalPages}
-                    </p>
-                  </div>
+                          {pageItems.map((item, i) =>
+                            item === "ellipsis" ? (
+                              <span
+                                key={`ellipsis-${i}`}
+                                className="px-2 text-[var(--text-tertiary)]"
+                              >
+                                …
+                              </span>
+                            ) : (
+                              <button
+                                key={`page-${item}`}
+                                type="button"
+                                onClick={() => loadPage(item)}
+                                disabled={loading || item === page || item > maxNavigablePage}
+                                aria-label={`Page ${item}`}
+                                className={`px-3 py-2 min-h-[40px] rounded-lg border text-sm ${
+                                  item === page
+                                    ? "border-[var(--accent-heart)] text-[var(--accent-heart)] bg-[var(--accent-heart)]/10"
+                                    : "border-[var(--border)] text-[var(--text-primary)]"
+                                } disabled:opacity-50`}
+                              >
+                                {item}
+                              </button>
+                            )
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => loadPage(page + 1)}
+                            disabled={loading || !hasMore || page + 1 > maxNavigablePage}
+                            aria-label="Next page"
+                            className="px-3 py-2 min-h-[40px] rounded-lg border border-[var(--border)] text-sm text-[var(--text-primary)] disabled:opacity-50"
+                          >
+                            Next
+                          </button>
+                        </div>
+                        <p className="text-xs text-[var(--text-tertiary)]">
+                          Page {page} of {totalPages}
+                        </p>
+                      </div>
+                    )}
+                  </>
                 )}
-              </>
-            )}
-          </main>
-        </div>
+              </main>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   );
