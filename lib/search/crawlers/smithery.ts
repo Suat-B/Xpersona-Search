@@ -116,7 +116,7 @@ export async function crawlSmithery(
             connectionTypes: server.connections?.map((c) => c.type),
           } as Record<string, unknown>,
           readme: server.description ?? "",
-          safetyScore: 73,
+          safetyScore: 82,
           popularityScore,
           freshnessScore,
           performanceScore: 0,

@@ -5,6 +5,7 @@ import { agents } from "@/lib/db/schema";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 import { recordApiResponse } from "@/lib/metrics/record";
 import { getTrustSummary } from "@/lib/trust/summary";
+import { calibrateSafetyScore } from "@/lib/search/scoring/safety";
 
 function toExternalProtocolName(protocol: unknown): string {
   if (typeof protocol !== "string") return "";
@@ -54,6 +55,10 @@ export async function GET(
   }
 
   const trust = await getTrustSummary(agent.id);
+  const safetyScore = calibrateSafetyScore({
+    baseScore: agent.safetyScore,
+    trust,
+  });
   const response = NextResponse.json({
     id: agent.id,
     slug: agent.slug,
@@ -63,7 +68,7 @@ export async function GET(
     protocols: ((agent.protocols as string[] | null) ?? [])
       .map((p) => toExternalProtocolName(p))
       .filter((p) => p.length > 0),
-    safetyScore: agent.safetyScore,
+    safetyScore,
     overallRank: agent.overallRank,
     trustScore: toTrustScore(trust?.reputationScore ?? null),
     trust,

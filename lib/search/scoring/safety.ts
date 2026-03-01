@@ -45,25 +45,59 @@ function applyIssuePenalties(
   for (const issue of issues) {
     switch (issue.severity) {
       case "critical":
-        score -= 35;
+        score -= 30;
         break;
       case "high":
-        score -= 12;
+        score -= 10;
         break;
       case "medium":
-        score -= 6;
+        score -= 4;
         break;
       case "low":
-        score -= 3;
+        score -= 2;
         break;
     }
   }
-  if (checks.hasLicense) score = Math.min(100, score + 8);
-  if (checks.hasTests) score = Math.min(100, score + 12);
-  if (checks.isOriginal) score = Math.min(100, score + 5);
-  if (checks.isMaintained) score = Math.min(100, score + 4);
-  if (checks.hasReadme) score = Math.min(100, score + 3);
+  if (checks.hasLicense) score = Math.min(100, score + 10);
+  if (checks.hasTests) score = Math.min(100, score + 14);
+  if (checks.isOriginal) score = Math.min(100, score + 6);
+  if (checks.isMaintained) score = Math.min(100, score + 5);
+  if (checks.hasReadme) score = Math.min(100, score + 4);
+  if (issues.length > 0) score = Math.min(98, score);
   return Math.min(100, Math.max(25, Math.round(score)));
+}
+
+function clampScore(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+export function calibrateSafetyScore(input: {
+  baseScore: number;
+  trust?: { reputationScore?: number | null; verificationFreshnessHours?: number | null } | null;
+  verificationTier?: string | null;
+  claimStatus?: string | null;
+}): number {
+  const base = clampScore(input.baseScore);
+  let score = base * 0.9 + 12;
+  const tier = (input.verificationTier ?? "NONE").toString().toUpperCase();
+  if (tier === "GOLD") score += 10;
+  else if (tier === "SILVER") score += 7;
+  else if (tier === "BRONZE") score += 4;
+  if ((input.claimStatus ?? "").toString().toUpperCase() === "CLAIMED") score += 3;
+  const trustScore = input.trust?.reputationScore;
+  if (typeof trustScore === "number" && Number.isFinite(trustScore)) {
+    if (trustScore >= 90) score += 8;
+    else if (trustScore >= 80) score += 6;
+    else if (trustScore >= 65) score += 4;
+    else if (trustScore >= 50) score += 2;
+  }
+  const freshness = input.trust?.verificationFreshnessHours;
+  if (typeof freshness === "number" && Number.isFinite(freshness)) {
+    if (freshness <= 24) score += 3;
+    else if (freshness <= 168) score += 2;
+  }
+  return clampScore(score);
 }
 
 function buildBaseSignals(
@@ -125,8 +159,8 @@ export function calculateSafetyScoreFast(
   skillContent: string
 ): number {
   const { checks, issues } = buildBaseSignals(repo, skillContent);
-  let score = applyIssuePenalties(76, issues, checks);
-  if (repo.stargazers_count > 50) score = Math.min(100, score + 8);
+  let score = applyIssuePenalties(80, issues, checks);
+  if (repo.stargazers_count > 50) score = Math.min(100, score + 10);
   return Math.max(25, Math.min(100, Math.round(score)));
 }
 
@@ -159,8 +193,8 @@ export async function calculateSafetyScoreDeep(
   const hasTestFiles = await checkGlobExists(repo.full_name, "*.test.ts", context);
   checks.hasTests = hasTestDir || hasTestFiles;
 
-  let score = applyIssuePenalties(88, issues, checks);
-  if (repo.stargazers_count > 50) score = Math.min(100, score + 6);
+  let score = applyIssuePenalties(92, issues, checks);
+  if (repo.stargazers_count > 50) score = Math.min(100, score + 8);
   return Math.max(25, Math.min(100, Math.round(score)));
 }
 

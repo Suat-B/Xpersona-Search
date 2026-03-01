@@ -1,11 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchWithTimeout } from "@/lib/api/fetch-timeout";
-import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { applyRequestIdHeader } from "@/lib/api/errors";
 import { buildCacheKey } from "@/lib/search/cache";
 import { graphTopCache } from "@/lib/graph/cache";
 import { graphCircuitBreaker } from "@/lib/search/circuit-breaker";
 import { recordApiResponse } from "@/lib/metrics/record";
 import { recordGraphFallback } from "@/lib/metrics/kpi";
+
+function fallbackTopResponse(
+  req: NextRequest,
+  startedAt: number,
+  cacheKey: string,
+  reason: "CIRCUIT_OPEN" | "INTERNAL_ERROR" | "UPSTREAM_ERROR",
+  details?: unknown
+) {
+  const payload = {
+    results: [],
+    count: 0,
+    _fallback: true,
+    fallbackReason: reason,
+    ...(details !== undefined ? { error: details } : {}),
+  };
+  graphTopCache.set(cacheKey, payload);
+  const response = NextResponse.json(payload, {
+    status: 200,
+    headers: { "X-Graph-Top-Fallback": "1", "X-Cache": "MISS" },
+  });
+  recordGraphFallback(
+    "top",
+    reason === "CIRCUIT_OPEN" ? "circuit_open" : reason === "UPSTREAM_ERROR" ? "upstream_error" : "internal_error"
+  );
+  applyRequestIdHeader(response, req);
+  recordApiResponse("/api/graph/top", req, response, startedAt);
+  return response;
+}
 
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
@@ -54,15 +82,7 @@ export async function GET(req: NextRequest) {
       recordApiResponse("/api/graph/top", req, response, startedAt);
       return response;
     }
-    const response = jsonError(req, {
-      code: "CIRCUIT_OPEN",
-      message: "Graph top is temporarily unavailable",
-      status: 503,
-      retryAfterMs: 20_000,
-    });
-    recordGraphFallback("top", "circuit_open");
-    recordApiResponse("/api/graph/top", req, response, startedAt);
-    return response;
+    return fallbackTopResponse(req, startedAt, cacheKey, "CIRCUIT_OPEN");
   }
 
   try {
@@ -73,20 +93,10 @@ export async function GET(req: NextRequest) {
     );
     const json = await upstream.json().catch(() => ({}));
     if (!upstream.ok) {
-      const response = NextResponse.json(
-        {
-          results: [],
-          count: 0,
-          _fallback: true,
-          upstreamStatus: upstream.status,
-          upstream: json,
-        },
-        { status: 200, headers: { "X-Graph-Top-Fallback": "1" } }
-      );
-      recordGraphFallback("top", "upstream_error");
-      applyRequestIdHeader(response, req);
-      recordApiResponse("/api/graph/top", req, response, startedAt);
-      return response;
+      return fallbackTopResponse(req, startedAt, cacheKey, "UPSTREAM_ERROR", {
+        upstreamStatus: upstream.status,
+        upstream: json,
+      });
     }
     graphTopCache.set(cacheKey, json);
     graphCircuitBreaker.recordSuccess();
@@ -107,18 +117,12 @@ export async function GET(req: NextRequest) {
       recordApiResponse("/api/graph/top", req, response, startedAt);
       return response;
     }
-    const response = NextResponse.json(
-      {
-        results: [],
-        count: 0,
-        _fallback: true,
-        error: process.env.NODE_ENV === "production" ? undefined : String(err),
-      },
-      { status: 200, headers: { "X-Graph-Top-Fallback": "1" } }
+    return fallbackTopResponse(
+      req,
+      startedAt,
+      cacheKey,
+      "INTERNAL_ERROR",
+      process.env.NODE_ENV === "production" ? undefined : String(err)
     );
-    recordGraphFallback("top", "internal_error");
-    applyRequestIdHeader(response, req);
-    recordApiResponse("/api/graph/top", req, response, startedAt);
-    return response;
   }
 }

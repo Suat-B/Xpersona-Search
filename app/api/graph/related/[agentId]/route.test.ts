@@ -45,13 +45,15 @@ describe("GET /api/graph/related/:agentId", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns 503 when circuit is open", async () => {
+  it("returns fallback payload when circuit is open", async () => {
     mockResolveAgent.mockResolvedValue({ id: "agent-1", slug: "agent-1" });
     mockGraphCircuitBreaker.isAllowed.mockReturnValue(false);
     const res = await GET(new NextRequest("http://localhost/api/graph/related/agent-1"), {
       params: Promise.resolve({ agentId: "agent-1" }),
     });
-    expect(res.status).toBe(503);
+    const data = await res.json();
+    expect(res.status).toBe(200);
+    expect(data._fallback).toBe(true);
+    expect(res.headers.get("X-Graph-Related-Fallback")).toBe("1");
   });
 });
-

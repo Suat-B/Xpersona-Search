@@ -34,10 +34,13 @@ describe("GET /api/graph/top", () => {
     mockGraphCircuitBreaker.isAllowed.mockReturnValue(true);
   });
 
-  it("returns 503 when circuit is open", async () => {
+  it("returns fallback payload when circuit is open", async () => {
     mockGraphCircuitBreaker.isAllowed.mockReturnValue(false);
     const res = await GET(new NextRequest("http://localhost/api/graph/top"));
-    expect(res.status).toBe(503);
+    const data = await res.json();
+    expect(res.status).toBe(200);
+    expect(data._fallback).toBe(true);
+    expect(res.headers.get("X-Graph-Top-Fallback")).toBe("1");
   });
 
   it("returns upstream fallback when upstream fails", async () => {
@@ -66,4 +69,3 @@ describe("GET /api/graph/top", () => {
     expect(res.headers.get("X-Cache")).toBe("MISS");
   });
 });
-

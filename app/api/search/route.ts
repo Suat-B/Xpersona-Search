@@ -28,6 +28,7 @@ import {
 import { searchCircuitBreaker } from "@/lib/search/circuit-breaker";
 import { hashQuery } from "@/lib/search/click-tracking";
 import { getEngagementParams, getRankingWeights } from "@/lib/search/scoring/hybrid-rank";
+import { calibrateSafetyScore } from "@/lib/search/scoring/safety";
 import { getAuthUser } from "@/lib/auth-utils";
 import { isAdmin } from "@/lib/admin";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
@@ -1609,19 +1610,6 @@ export async function GET(req: NextRequest) {
       const protocols = protocolsRaw
         ?.map((p) => toExternalProtocolName(p))
         .filter((p) => p.length > 0) ?? null;
-      const base = {
-        id: r.id as string,
-        name: r.name as string,
-        slug: r.slug as string,
-        description: r.description as string | null,
-        snippet: (r.snippet as string | null) || null,
-        capabilities: r.capabilities as string[] | null,
-        protocols,
-        safetyScore: r.safety_score as number,
-        popularityScore: r.popularity_score as number,
-        freshnessScore: r.freshness_score as number,
-        overallRank: r.overall_rank as number,
-      };
       const contract = item.contract;
       const metrics = item.metrics;
       const hasExecReady = Boolean(
@@ -1676,6 +1664,25 @@ export async function GET(req: NextRequest) {
         handshakesByAgent.get(agentId),
         reputationByAgent.get(agentId)
       );
+      const safetyScore = calibrateSafetyScore({
+        baseScore: r.safety_score as number,
+        trust,
+        verificationTier: (r.verification_tier as string | null) ?? "NONE",
+        claimStatus: (r.claim_status as string | null) ?? "UNCLAIMED",
+      });
+      const base = {
+        id: r.id as string,
+        name: r.name as string,
+        slug: r.slug as string,
+        description: r.description as string | null,
+        snippet: (r.snippet as string | null) || null,
+        capabilities: r.capabilities as string[] | null,
+        protocols,
+        safetyScore,
+        popularityScore: r.popularity_score as number,
+        freshnessScore: r.freshness_score as number,
+        overallRank: r.overall_rank as number,
+      };
       const contentMeta = includeContent
         ? editorialMetaByAgent.get(agentId) ??
           buildFallbackContentMetaFromSearchResult({

@@ -12,6 +12,7 @@ import { buildPermanentAccountRequiredPayload, resolveUpgradeCallbackPath } from
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 import { recordApiResponse } from "@/lib/metrics/record";
 import { getPublicAgentPageData } from "@/lib/agents/public-agent-page";
+import { calibrateSafetyScore } from "@/lib/search/scoring/safety";
 
 let hasAgentCustomizationColumnsCache: boolean | null = null;
 
@@ -187,6 +188,12 @@ export async function GET(
   merged.verificationTier = (agent.verificationTier as string | null) ?? "NONE";
   merged.hasCustomPage = Boolean(agent.hasCustomPage ?? false);
   merged.trust = await getTrustSummary(agent.id as string);
+  merged.safetyScore = calibrateSafetyScore({
+    baseScore: Number(merged.safetyScore ?? 0),
+    trust: (merged.trust as { reputationScore?: number | null; verificationFreshnessHours?: number | null } | null) ?? null,
+    verificationTier: String(merged.verificationTier ?? "NONE"),
+    claimStatus: String(merged.claimStatus ?? "UNCLAIMED"),
+  });
 
   const hasReadme =
     typeof merged.readme === "string" && merged.readme.trim().length > 0;

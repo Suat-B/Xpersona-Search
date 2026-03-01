@@ -10,6 +10,32 @@ import { graphCircuitBreaker } from "@/lib/search/circuit-breaker";
 import { recordApiResponse } from "@/lib/metrics/record";
 import { recordGraphFallback } from "@/lib/metrics/kpi";
 
+function fallbackRelatedResponse(
+  req: NextRequest,
+  startedAt: number,
+  cacheKey: string,
+  agentId: string,
+  reason: "CIRCUIT_OPEN" | "INTERNAL_ERROR",
+  details?: unknown
+) {
+  const payload = {
+    agentId,
+    related: [],
+    _fallback: true,
+    fallbackReason: reason,
+    ...(details !== undefined ? { error: details } : {}),
+  };
+  graphRelatedCache.set(cacheKey, payload);
+  const response = NextResponse.json(payload, {
+    status: 200,
+    headers: { "X-Graph-Related-Fallback": "1", "X-Cache": "MISS" },
+  });
+  recordGraphFallback("related", reason === "CIRCUIT_OPEN" ? "circuit_open" : "internal_error");
+  applyRequestIdHeader(response, req);
+  recordApiResponse("/api/graph/related/:agentId", req, response, startedAt);
+  return response;
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ agentId: string }> }
@@ -57,15 +83,7 @@ export async function GET(
       recordApiResponse("/api/graph/related/:agentId", req, response, startedAt);
       return response;
     }
-    const response = jsonError(req, {
-      code: "CIRCUIT_OPEN",
-      message: "Graph related is temporarily unavailable",
-      status: 503,
-      retryAfterMs: 20_000,
-    });
-    recordGraphFallback("related", "circuit_open");
-    recordApiResponse("/api/graph/related/:agentId", req, response, startedAt);
-    return response;
+    return fallbackRelatedResponse(req, startedAt, cacheKey, agent.id, "CIRCUIT_OPEN");
   }
 
   try {
@@ -149,14 +167,13 @@ export async function GET(
       recordApiResponse("/api/graph/related/:agentId", req, response, startedAt);
       return response;
     }
-    const response = jsonError(req, {
-      code: "INTERNAL_ERROR",
-      message: "Graph related failed",
-      status: 500,
-      details: process.env.NODE_ENV === "production" ? undefined : String(err),
-    });
-    recordGraphFallback("related", "internal_error");
-    recordApiResponse("/api/graph/related/:agentId", req, response, startedAt);
-    return response;
+    return fallbackRelatedResponse(
+      req,
+      startedAt,
+      cacheKey,
+      agent.id,
+      "INTERNAL_ERROR",
+      process.env.NODE_ENV === "production" ? undefined : String(err)
+    );
   }
 }

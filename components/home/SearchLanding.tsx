@@ -196,9 +196,17 @@ function parseBoolFromUrl(value: string | null): boolean {
   return value === "1" || value === "true";
 }
 
-export function SearchLanding() {
+export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const normalizedBasePath = basePath.startsWith("/") ? basePath : `/${basePath}`;
+  const buildPath = useCallback(
+    (params: URLSearchParams) => {
+      const query = params.toString();
+      return query ? `${normalizedBasePath}?${query}` : normalizedBasePath;
+    },
+    [normalizedBasePath]
+  );
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
   const [agents, setAgents] = useState<Agent[]>([]);
   const [mediaResults, setMediaResults] = useState<MediaResult[]>([]);
@@ -255,9 +263,9 @@ export function SearchLanding() {
       const params = new URLSearchParams(searchParams.toString());
       if (protocols.length) params.set("protocols", protocols.join(","));
       else params.delete("protocols");
-      router.replace(`/?${params.toString()}`, { scroll: false });
+      router.replace(buildPath(params), { scroll: false });
     },
-    [searchParams, router]
+    [searchParams, router, buildPath]
   );
 
   const loadPage = useCallback(
@@ -334,7 +342,7 @@ export function SearchLanding() {
         requestParams.set("mediaCursor", pageCursor);
       }
 
-      router.replace(`/?${urlParams.toString()}`, { scroll: false });
+      router.replace(buildPath(urlParams), { scroll: false });
 
       try {
         if (cached) {
@@ -436,6 +444,7 @@ export function SearchLanding() {
       router,
       pageCache,
       pageCursors,
+      buildPath,
     ]
   );
 
@@ -448,9 +457,9 @@ export function SearchLanding() {
       const params = new URLSearchParams(searchParams.toString());
       params.set("vertical", v);
       params.set("page", "1");
-      router.replace(`/?${params.toString()}`, { scroll: false });
+      router.replace(buildPath(params), { scroll: false });
     },
-    [searchParams, router]
+    [searchParams, router, buildPath]
   );
 
   useEffect(() => {
@@ -510,7 +519,7 @@ export function SearchLanding() {
   }, [searchParams]);
 
   const currentSearch = searchParams.toString();
-  const fromPath = currentSearch ? `/?${currentSearch}` : "/";
+  const fromPath = currentSearch ? `${normalizedBasePath}?${currentSearch}` : normalizedBasePath;
 
   useEffect(() => {
     try {

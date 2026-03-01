@@ -9,6 +9,7 @@ import {
   users,
 } from "@/lib/db/schema";
 import { getTrustSummary } from "@/lib/trust/summary";
+import { calibrateSafetyScore } from "@/lib/search/scoring/safety";
 import { hasTrustTable } from "@/lib/trust/db";
 
 export type ContractStatus = "ready" | "missing" | "unavailable";
@@ -323,6 +324,12 @@ export async function getPublicAgentPageData(
 
   const trust = await getTrustSummary(rawAgent.id);
   const trustScore = toTrustScore(trust?.reputationScore ?? null);
+  const safetyScore = calibrateSafetyScore({
+    baseScore: Number(merged.safetyScore ?? 0),
+    trust,
+    verificationTier: String(merged.verificationTier ?? "NONE"),
+    claimStatus,
+  });
 
   const hasContracts = await hasTrustTable("agent_capability_contracts");
   const hasHandshake = await hasTrustTable("agent_capability_handshakes");
@@ -612,7 +619,7 @@ export async function getPublicAgentPageData(
     source: String(merged.source ?? "UNKNOWN"),
     capabilities,
     protocols,
-    safetyScore: Number(merged.safetyScore ?? 0),
+    safetyScore,
     overallRank: Number(merged.overallRank ?? 0),
     claimStatus,
     verificationTier: String(merged.verificationTier ?? "NONE"),

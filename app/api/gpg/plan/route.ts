@@ -9,6 +9,10 @@ import { buildGpgReceiptPayload, signGpgReceipt } from "@/lib/gpg/receipts";
 import { db } from "@/lib/db";
 import { trustReceipts } from "@/lib/db/schema";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { buildCacheKey, LRUCache } from "@/lib/search/cache";
+import { gpgCircuitBreaker } from "@/lib/search/circuit-breaker";
+
+const gpgPlanCache = new LRUCache<unknown>(150, 60_000);
 
 const PlanSchema = z.object({
   task: z.string().min(1).max(500),
@@ -29,6 +33,34 @@ const PlanSchema = z.object({
     .optional(),
 });
 
+function fallbackPlanResponse(
+  req: NextRequest,
+  cacheKey: string,
+  reason: "CIRCUIT_OPEN" | "INTERNAL_ERROR",
+  details?: unknown
+) {
+  const payload = {
+    success: true,
+    _fallback: true,
+    fallbackReason: reason,
+    data: {
+      clusterId: null,
+      clusterName: null,
+      taskType: "general",
+      plan: null,
+      alternatives: [],
+    },
+    ...(details !== undefined ? { error: details } : {}),
+  };
+  gpgPlanCache.set(cacheKey, payload);
+  const response = NextResponse.json(payload, {
+    status: 200,
+    headers: { "X-Gpg-Plan-Fallback": "1", "X-Cache": "MISS" },
+  });
+  applyRequestIdHeader(response, req);
+  return response;
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const parsed = PlanSchema.safeParse(body);
@@ -41,17 +73,68 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const signature = await ensureTaskSignature({
-    rawText: parsed.data.task,
-    taskType: parsed.data.taskType,
-    tags: parsed.data.tags,
+  const cacheKey = buildCacheKey({
+    endpoint: "gpg-plan",
+    task: parsed.data.task,
+    taskType: parsed.data.taskType ?? "",
+    tags: (parsed.data.tags ?? []).join(","),
+    budget: parsed.data.constraints?.budget ?? "",
+    maxLatencyMs: parsed.data.constraints?.maxLatencyMs ?? "",
+    minSuccessProb: parsed.data.constraints?.minSuccessProb ?? "",
+    minQuality: parsed.data.constraints?.minQuality ?? "",
+    optimizeFor: parsed.data.preferences?.optimizeFor ?? "",
   });
 
-  const response = await planPipeline({
-    clusterId: signature.clusterId,
-    constraints: parsed.data.constraints,
-    preferences: parsed.data.preferences,
-  });
+  const cached = gpgPlanCache.get(cacheKey);
+  if (cached) {
+    const response = NextResponse.json(cached);
+    response.headers.set("Cache-Control", "public, s-maxage=30, stale-while-revalidate=60");
+    response.headers.set("X-Cache", "HIT");
+    applyRequestIdHeader(response, req);
+    return response;
+  }
+
+  if (!gpgCircuitBreaker.isAllowed()) {
+    const stale = gpgPlanCache.get(cacheKey);
+    if (stale) {
+      const response = NextResponse.json({ ...(stale as Record<string, unknown>), _stale: true });
+      response.headers.set("X-Cache", "STALE");
+      applyRequestIdHeader(response, req);
+      return response;
+    }
+    return fallbackPlanResponse(req, cacheKey, "CIRCUIT_OPEN");
+  }
+
+  let response;
+  try {
+    const signature = await ensureTaskSignature({
+      rawText: parsed.data.task,
+      taskType: parsed.data.taskType,
+      tags: parsed.data.tags,
+    });
+
+    response = await planPipeline({
+      clusterId: signature.clusterId,
+      constraints: parsed.data.constraints,
+      preferences: parsed.data.preferences,
+    });
+    gpgCircuitBreaker.recordSuccess();
+  } catch (err) {
+    gpgCircuitBreaker.recordFailure();
+    const stale = gpgPlanCache.get(cacheKey);
+    if (stale) {
+      const response = NextResponse.json({ ...(stale as Record<string, unknown>), _stale: true });
+      response.headers.set("X-Cache", "STALE");
+      applyRequestIdHeader(response, req);
+      return response;
+    }
+    return fallbackPlanResponse(
+      req,
+      cacheKey,
+      "INTERNAL_ERROR",
+      process.env.NODE_ENV === "production" ? undefined : String(err)
+    );
+  }
 
   const idempotencyKey = req.headers.get("idempotency-key")?.trim() ?? null;
   const leadAgentId = response.plan?.agents?.[0] ?? null;
@@ -93,7 +176,11 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const res = NextResponse.json({ success: true, data: response });
+  const payload = { success: true, data: response };
+  gpgPlanCache.set(cacheKey, payload);
+  const res = NextResponse.json(payload);
+  res.headers.set("Cache-Control", "public, s-maxage=30, stale-while-revalidate=60");
+  res.headers.set("X-Cache", "MISS");
   applyRequestIdHeader(res, req);
   return res;
 }

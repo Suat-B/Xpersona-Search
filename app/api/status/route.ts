@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { applyRequestIdHeader } from "@/lib/api/errors";
+import { graphCircuitBreaker, gpgCircuitBreaker } from "@/lib/search/circuit-breaker";
+import { graphPlanCache, graphRecommendCache, graphRelatedCache, graphTopCache } from "@/lib/graph/cache";
 
 const startedAt = Date.now();
 
@@ -10,6 +12,20 @@ export async function GET(req: NextRequest) {
     status: "ok",
     uptimeSeconds,
     timestamp: new Date().toISOString(),
+    services: {
+      graph: {
+        circuit: graphCircuitBreaker.getState(),
+        caches: {
+          recommend: graphRecommendCache.size,
+          plan: graphPlanCache.size,
+          related: graphRelatedCache.size,
+          top: graphTopCache.size,
+        },
+      },
+      gpg: {
+        circuit: gpgCircuitBreaker.getState(),
+      },
+    },
   });
   applyRequestIdHeader(response, req);
   return response;

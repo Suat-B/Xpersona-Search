@@ -49,9 +49,9 @@ export async function calculateDynamicScores(opts: {
   freshnessScore: number;
   overallRank: number;
 }> {
-  let safetyScore = 65;
+  let safetyScore = 72;
   let popularityScore = 50;
-  let freshnessScore = 60;
+  let freshnessScore = 65;
 
   const urls = [opts.url, opts.homepage].filter(Boolean) as string[];
 
@@ -66,8 +66,8 @@ export async function calculateDynamicScores(opts: {
         popularityScore = Math.min(100, Math.round(Math.log10(repoData.stars + 1) * 25));
         const daysSince = (Date.now() - new Date(repoData.pushedAt).getTime()) / (24 * 60 * 60 * 1000);
         freshnessScore = Math.round(100 * Math.exp(-daysSince / 30));
-        safetyScore = repoData.stars > 100 ? 80 : repoData.stars > 10 ? 70 : 60;
-        if (!repoData.fork) safetyScore += 5;
+        safetyScore = repoData.stars > 100 ? 86 : repoData.stars > 10 ? 76 : 68;
+        if (!repoData.fork) safetyScore += 6;
         safetyScore = Math.min(100, safetyScore);
       }
     } catch {

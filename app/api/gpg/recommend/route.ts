@@ -9,6 +9,10 @@ import { buildGpgReceiptPayload, signGpgReceipt } from "@/lib/gpg/receipts";
 import { db } from "@/lib/db";
 import { trustReceipts } from "@/lib/db/schema";
 import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
+import { buildCacheKey, LRUCache } from "@/lib/search/cache";
+import { gpgCircuitBreaker } from "@/lib/search/circuit-breaker";
+
+const gpgRecommendCache = new LRUCache<unknown>(200, 60_000);
 
 const RecommendSchema = z.object({
   task: z.string().min(1).max(500),
@@ -21,7 +25,37 @@ const RecommendSchema = z.object({
   limit: z.number().int().min(1).max(50).optional(),
 });
 
+function fallbackRecommendResponse(
+  req: NextRequest,
+  startedAt: number,
+  cacheKey: string,
+  reason: "CIRCUIT_OPEN" | "INTERNAL_ERROR",
+  details?: unknown
+) {
+  const payload = {
+    success: true,
+    _fallback: true,
+    fallbackReason: reason,
+    data: {
+      clusterId: null,
+      clusterName: null,
+      taskType: "general",
+      topAgents: [],
+      alternatives: [],
+    },
+    ...(details !== undefined ? { error: details } : {}),
+  };
+  gpgRecommendCache.set(cacheKey, payload);
+  const response = NextResponse.json(payload, {
+    status: 200,
+    headers: { "X-Gpg-Recommend-Fallback": "1", "X-Cache": "MISS" },
+  });
+  applyRequestIdHeader(response, req);
+  return response;
+}
+
 export async function GET(req: NextRequest) {
+  const startedAt = Date.now();
   const url = new URL(req.url);
   const parsed = RecommendSchema.safeParse({
     task: url.searchParams.get("task"),
@@ -42,22 +76,74 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const signature = await ensureTaskSignature({
-    rawText: parsed.data.task,
-    taskType: parsed.data.taskType,
-    tags: parsed.data.tags,
+  const cacheKey = buildCacheKey({
+    endpoint: "gpg-recommend",
+    task: parsed.data.task,
+    taskType: parsed.data.taskType ?? "",
+    tags: (parsed.data.tags ?? []).join(","),
+    budget: parsed.data.budget ?? "",
+    maxLatencyMs: parsed.data.maxLatencyMs ?? "",
+    minSuccessProb: parsed.data.minSuccessProb ?? "",
+    minQuality: parsed.data.minQuality ?? "",
+    limit: parsed.data.limit ?? "",
   });
 
-  const response = await recommendAgents({
-    clusterId: signature.clusterId,
-    constraints: {
-      budget: parsed.data.budget,
-      maxLatencyMs: parsed.data.maxLatencyMs,
-      minSuccessProb: parsed.data.minSuccessProb,
-      minQuality: parsed.data.minQuality,
-    },
-    limit: parsed.data.limit,
-  });
+  const cached = gpgRecommendCache.get(cacheKey);
+  if (cached) {
+    const response = NextResponse.json(cached);
+    response.headers.set("Cache-Control", "public, s-maxage=30, stale-while-revalidate=60");
+    response.headers.set("X-Cache", "HIT");
+    applyRequestIdHeader(response, req);
+    return response;
+  }
+
+  if (!gpgCircuitBreaker.isAllowed()) {
+    const stale = gpgRecommendCache.get(cacheKey);
+    if (stale) {
+      const response = NextResponse.json({ ...(stale as Record<string, unknown>), _stale: true });
+      response.headers.set("X-Cache", "STALE");
+      applyRequestIdHeader(response, req);
+      return response;
+    }
+    return fallbackRecommendResponse(req, startedAt, cacheKey, "CIRCUIT_OPEN");
+  }
+
+  let response;
+  try {
+    const signature = await ensureTaskSignature({
+      rawText: parsed.data.task,
+      taskType: parsed.data.taskType,
+      tags: parsed.data.tags,
+    });
+
+    response = await recommendAgents({
+      clusterId: signature.clusterId,
+      constraints: {
+        budget: parsed.data.budget,
+        maxLatencyMs: parsed.data.maxLatencyMs,
+        minSuccessProb: parsed.data.minSuccessProb,
+        minQuality: parsed.data.minQuality,
+      },
+      limit: parsed.data.limit,
+    });
+    gpgCircuitBreaker.recordSuccess();
+  } catch (err) {
+    gpgCircuitBreaker.recordFailure();
+    const stale = gpgRecommendCache.get(cacheKey);
+    if (stale) {
+      const response = NextResponse.json({ ...(stale as Record<string, unknown>), _stale: true });
+      response.headers.set("X-Cache", "STALE");
+      applyRequestIdHeader(response, req);
+      return response;
+    }
+    return fallbackRecommendResponse(
+      req,
+      startedAt,
+      cacheKey,
+      "INTERNAL_ERROR",
+      process.env.NODE_ENV === "production" ? undefined : String(err)
+    );
+  }
 
   const idempotencyKey = req.headers.get("idempotency-key")?.trim() ?? null;
   const topAgentId = response.topAgents[0]?.agentId ?? null;
@@ -103,7 +189,11 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const res = NextResponse.json({ success: true, data: response });
+  const payload = { success: true, data: response };
+  gpgRecommendCache.set(cacheKey, payload);
+  const res = NextResponse.json(payload);
+  res.headers.set("Cache-Control", "public, s-maxage=30, stale-while-revalidate=60");
+  res.headers.set("X-Cache", "MISS");
   applyRequestIdHeader(res, req);
   return res;
 }
