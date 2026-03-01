@@ -7,6 +7,7 @@ import { AuthProvider } from "@/components/auth/AuthProvider";
 import { ServiceProvider } from "@/components/providers/ServiceProvider";
 import { HelpFrame } from "@/components/help/HelpFrame";
 import { getService } from "@/lib/service";
+import { TopNavHF } from "@/components/nav/TopNavHF";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -43,6 +44,7 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const service = await getService();
+  const variant = process.env.NEXT_PUBLIC_HOME_VARIANT?.toLowerCase();
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -64,7 +66,14 @@ export default async function RootLayout({
       >
         <ServiceProvider service={service}>
           <AuthProvider>
-            {children}
+            {variant === "hf" ? (
+              <div className="min-h-dvh flex flex-col">
+                <TopNavHF />
+                <div className="flex-1">{children}</div>
+              </div>
+            ) : (
+              children
+            )}
             <HelpFrame />
             <Analytics />
             <SpeedInsights />
