@@ -430,6 +430,22 @@ export function SearchResultsBar({
             )}
           </div>
         </div>
+        <div className="mt-2 grid grid-cols-3 gap-2 sm:hidden">
+          {(["agents", "skills", "artifacts"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => onVerticalChange(v)}
+              className={`px-2.5 py-2 min-h-[40px] rounded-lg border text-xs font-semibold transition-colors touch-manipulation ${
+                vertical === v
+                  ? "border-[var(--accent-heart)] text-[var(--accent-heart)] bg-[var(--accent-heart)]/10"
+                  : "border-[var(--border)] text-[var(--text-tertiary)]"
+              }`}
+            >
+              {v === "agents" ? "Agents" : v === "skills" ? "Skills" : "Artifacts"}
+            </button>
+          ))}
+        </div>
 
       </div>
     </div>

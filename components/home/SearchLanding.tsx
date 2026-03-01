@@ -736,7 +736,7 @@ export function SearchLanding() {
                 )}
 
                 {vertical === "skills" ? (
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-4 sm:grid-cols-2 w-full min-w-0">
                     {agents.map((agent) => {
                       const protos = Array.isArray(agent.protocols) ? agent.protocols : [];
                       const caps = Array.isArray(agent.capabilities) ? agent.capabilities : [];
@@ -744,9 +744,9 @@ export function SearchLanding() {
                       return (
                         <article
                           key={agent.id}
-                          className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]/70 p-5 hover:border-[var(--accent-heart)]/40 transition-colors"
+                          className="w-full min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]/70 p-5 hover:border-[var(--accent-heart)]/40 transition-colors"
                         >
-                          <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start justify-between gap-3 min-w-0">
                             <div className="min-w-0">
                               <Link
                                 href={href}
@@ -760,17 +760,17 @@ export function SearchLanding() {
                               Skill
                             </span>
                           </div>
-                          <p className="mt-2 text-sm text-[var(--text-secondary)] line-clamp-3">
+                          <p className="mt-2 text-sm text-[var(--text-secondary)] line-clamp-3 break-words">
                             {agent.description || "No description available."}
                           </p>
-                          <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-[var(--text-tertiary)]">
+                          <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-[var(--text-tertiary)] min-w-0 break-words">
                             {protos.slice(0, 3).map((p) => (
-                              <span key={`proto-${agent.id}-${p}`} className="rounded border border-[var(--border)] px-1.5 py-0.5">
+                              <span key={`proto-${agent.id}-${p}`} className="rounded border border-[var(--border)] px-1.5 py-0.5 break-words max-w-full">
                                 {p}
                               </span>
                             ))}
                             {caps.slice(0, 3).map((c) => (
-                              <span key={`cap-${agent.id}-${c}`} className="rounded border border-[var(--border)] px-1.5 py-0.5">
+                              <span key={`cap-${agent.id}-${c}`} className="rounded border border-[var(--border)] px-1.5 py-0.5 break-words max-w-full">
                                 {c}
                               </span>
                             ))}
