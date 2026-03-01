@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const upstream = await fetchWithTimeout(
-      new URL(`/api/reliability/top?${params.toString()}`, req.nextUrl.origin),
+      new URL(`/api/v1/reliability/top?${params.toString()}`, req.nextUrl.origin),
       { method: "GET" },
       Number(process.env.API_UPSTREAM_TIMEOUT_MS ?? "8000")
     );

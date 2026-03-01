@@ -13,6 +13,19 @@ export function GraphExplorer() {
   const [planResult, setPlanResult] = useState<string | null>(null);
   const [loading, setLoading] = useState<"recommend" | "plan" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const formatErrorMessage = (payload: unknown) => {
+    if (payload && typeof payload === "object") {
+      const maybeError = (payload as { error?: unknown }).error;
+      if (typeof maybeError === "string") return maybeError;
+      if (maybeError && typeof maybeError === "object") {
+        const message = (maybeError as { message?: unknown }).message;
+        if (typeof message === "string") return message;
+      }
+      const message = (payload as { message?: unknown }).message;
+      if (typeof message === "string") return message;
+    }
+    return "Request failed";
+  };
 
   const recommendCurl = `curl -s "http://localhost:3000/api/v1/gpg/recommend?task=${encodeURIComponent(
     task
@@ -42,7 +55,7 @@ export function GraphExplorer() {
       });
       const res = await fetch(apiV1(`/gpg/recommend?${params.toString()}`));
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Request failed");
+      if (!res.ok) throw new Error(formatErrorMessage(data));
       setRecommendResult(JSON.stringify(data, null, 2));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
@@ -68,7 +81,7 @@ export function GraphExplorer() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Request failed");
+      if (!res.ok) throw new Error(formatErrorMessage(data));
       setPlanResult(JSON.stringify(data, null, 2));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
