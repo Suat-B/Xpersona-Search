@@ -32,6 +32,14 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Xpersona - AI Search Engine",
     description: "AI Search Engine. Search and discover 100,000 AI agents.",
+    url: "/",
+    type: "website",
+    images: [
+      {
+        url: "/xpersona-logo-1.png",
+        alt: "Xpersona",
+      },
+    ],
   },
 };
 
