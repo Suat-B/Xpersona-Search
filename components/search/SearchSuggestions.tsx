@@ -194,10 +194,11 @@ function highlightMatch(text: string, query: string): ReactNode {
 
 function SectionHeader({ label }: { label: string }) {
   return (
-    <li className="px-4 pt-2 pb-1" aria-hidden>
-      <span className="text-xs font-semibold text-[var(--text-tertiary)]">
-        {label}
-      </span>
+    <li
+      className="px-4 py-2 text-[10px] uppercase tracking-[0.28em] text-[var(--text-tertiary)] bg-[var(--bg-elevated)] border-y border-white/5"
+      aria-hidden
+    >
+      {label}
     </li>
   );
 }
@@ -499,8 +500,10 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
               data-index={idx}
               role="option"
               aria-selected={idx === highlightedIndex}
-              className={`flex items-center gap-3 w-full px-3 py-2 text-left rounded-md hover:bg-[var(--bg-elevated)] focus:bg-[var(--bg-elevated)] focus:outline-none focus:ring-0 text-[var(--text-primary)] group ${
-                idx === highlightedIndex ? "bg-[var(--bg-elevated)]" : ""
+              className={`flex items-center gap-3 w-full px-4 py-2.5 text-left border-l-2 border-transparent hover:bg-white/5 focus:bg-white/5 focus:outline-none focus:ring-0 text-[var(--text-primary)] group ${
+                idx === highlightedIndex
+                  ? "bg-white/10 border-[var(--accent-neural)]"
+                  : ""
               }`}
             >
               <ClockIcon />
@@ -538,8 +541,10 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
               data-index={idx}
               role="option"
               aria-selected={idx === highlightedIndex}
-              className={`flex items-center gap-3 w-full px-3 py-2 text-left rounded-md hover:bg-[var(--bg-elevated)] focus:bg-[var(--bg-elevated)] focus:outline-none focus:ring-0 text-[var(--text-primary)] ${
-                idx === highlightedIndex ? "bg-[var(--bg-elevated)]" : ""
+              className={`flex items-center gap-3 w-full px-4 py-2.5 text-left border-l-2 border-transparent hover:bg-white/5 focus:bg-white/5 focus:outline-none focus:ring-0 text-[var(--text-primary)] ${
+                idx === highlightedIndex
+                  ? "bg-white/10 border-[var(--accent-neural)]"
+                  : ""
               }`}
             >
               <TrendingIcon />
@@ -567,8 +572,10 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
               data-index={idx}
               role="option"
               aria-selected={idx === highlightedIndex}
-              className={`flex items-center gap-3 w-full px-3 py-2 text-left rounded-md hover:bg-[var(--bg-elevated)] focus:bg-[var(--bg-elevated)] focus:outline-none focus:ring-0 text-[var(--text-primary)] ${
-                idx === highlightedIndex ? "bg-[var(--bg-elevated)]" : ""
+              className={`flex items-center gap-3 w-full px-4 py-2.5 text-left border-l-2 border-transparent hover:bg-white/5 focus:bg-white/5 focus:outline-none focus:ring-0 text-[var(--text-primary)] ${
+                idx === highlightedIndex
+                  ? "bg-white/10 border-[var(--accent-neural)]"
+                  : ""
               }`}
             >
               <MagnifierIcon />
@@ -596,8 +603,10 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
               data-index={idx}
               role="option"
               aria-selected={idx === highlightedIndex}
-              className={`flex items-start gap-3 w-full px-3 py-2 rounded-md hover:bg-[var(--bg-elevated)] focus:bg-[var(--bg-elevated)] focus:outline-none focus:ring-0 text-[var(--text-primary)] ${
-                idx === highlightedIndex ? "bg-[var(--bg-elevated)]" : ""
+              className={`flex items-start gap-3 w-full px-4 py-2.5 border-l-2 border-transparent hover:bg-white/5 focus:bg-white/5 focus:outline-none focus:ring-0 text-[var(--text-primary)] ${
+                idx === highlightedIndex
+                  ? "bg-white/10 border-[var(--accent-neural)]"
+                  : ""
               }`}
             >
               <span className="w-5 h-5 mt-0.5 flex-shrink-0 rounded-full bg-[var(--accent-heart)]/20 flex items-center justify-center text-[var(--accent-heart)] text-[10px] font-bold">
@@ -618,7 +627,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
                   {item.agent.protocols.slice(0, 2).map((p) => (
                     <span
                       key={p}
-                      className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--accent-neural)]/10 text-[var(--accent-neural)] font-medium"
+                      className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] text-[var(--text-secondary)] font-medium"
                     >
                       {PROTOCOL_LABELS[p] ?? p}
                     </span>
@@ -650,8 +659,10 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
               data-index={idx}
               role="option"
               aria-selected={idx === highlightedIndex}
-              className={`flex items-center gap-3 w-full px-3 py-2 text-left rounded-md hover:bg-[var(--bg-elevated)] focus:bg-[var(--bg-elevated)] focus:outline-none focus:ring-0 text-[var(--text-primary)] ${
-                idx === highlightedIndex ? "bg-[var(--bg-elevated)]" : ""
+              className={`flex items-center gap-3 w-full px-4 py-2.5 text-left border-l-2 border-transparent hover:bg-white/5 focus:bg-white/5 focus:outline-none focus:ring-0 text-[var(--text-primary)] ${
+                idx === highlightedIndex
+                  ? "bg-white/10 border-[var(--accent-neural)]"
+                  : ""
               }`}
             >
               <ArrowRightIcon />
@@ -670,7 +681,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
     return (
       <div
         id={id}
-        className={`left-0 right-0 z-50 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-xl overflow-hidden overflow-y-auto overscroll-contain ${
+        className={`left-0 right-0 z-50 rounded-2xl border border-white/10 bg-[var(--bg-deep)]/95 shadow-2xl overflow-hidden overflow-y-auto overscroll-contain ${
           mobileInline
             ? `absolute top-full mt-2 sm:mt-0 ${panelPlacement === "top" ? "sm:bottom-full sm:top-auto sm:mb-1" : "sm:top-full sm:mt-1"}`
             : `absolute ${panelPlacement === "top" ? "bottom-full mb-1" : "top-full mt-1"}`
@@ -682,7 +693,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
         aria-expanded={visible}
         aria-label="Search suggestions"
       >
-        <ul ref={listRef} className="py-1 px-1">
+        <ul ref={listRef} className="py-1">
           {loading ? (
             <li className="px-4 py-6 text-center text-[var(--text-tertiary)] text-sm">
               <span className="inline-block w-4 h-4 border-2 border-[var(--accent-heart)] border-t-transparent rounded-full animate-spin" />
