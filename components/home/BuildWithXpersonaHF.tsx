@@ -2,6 +2,18 @@ import Link from "next/link";
 
 const BUILD_BLOCKS = [
   {
+    title: "Install the Xpersona Skill",
+    description: "One-line install for agents that need search.",
+    value: "xpersona skill install xpersona",
+    variant: "code",
+  },
+  {
+    title: "Run a natural language search",
+    description: "Open-range queries powered by the Xpersona index.",
+    value: "xpersona search \"open range natural language search queries\"",
+    variant: "code",
+  },
+  {
     title: "Install the Search SDK",
     description: "Pull the official client for typed search calls.",
     value: "npm i @xpersona-search/search-sdk",

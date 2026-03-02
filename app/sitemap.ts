@@ -7,6 +7,8 @@ import { USE_CASES, sourceSlugFromValue } from "@/lib/agents/hub-data";
 const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
 const MAX_AGENT_URLS = 50000;
 const MAX_COMPARE_URLS = 120;
+const CAPABILITY_QUERIES = ["PDF", "Research", "Web browsing", "Codegen", "Voice"] as const;
+const SEARCH_PROTOCOLS = ["MCP", "A2A", "ANP", "OPENCLEW"] as const;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticEntries: MetadataRoute.Sitemap = [
@@ -14,6 +16,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       url: baseUrl,
       changeFrequency: "daily",
       priority: 0.95,
+      lastModified: new Date(),
+    },
+    {
+      url: `${baseUrl}/search`,
+      changeFrequency: "daily",
+      priority: 0.9,
+      lastModified: new Date(),
+    },
+    {
+      url: `${baseUrl}/search/hf`,
+      changeFrequency: "daily",
+      priority: 0.78,
       lastModified: new Date(),
     },
     {
@@ -155,6 +169,29 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     lastModified: new Date(),
   }));
 
+  const capabilityEntries: MetadataRoute.Sitemap = CAPABILITY_QUERIES.map((capability) => ({
+    url: `${baseUrl}/search?capabilities=${encodeURIComponent(capability)}`,
+    changeFrequency: "daily",
+    priority: 0.86,
+    lastModified: new Date(),
+  }));
+
+  const protocolSearchEntries: MetadataRoute.Sitemap = SEARCH_PROTOCOLS.map((protocol) => ({
+    url: `${baseUrl}/search?protocols=${encodeURIComponent(protocol)}`,
+    changeFrequency: "daily",
+    priority: 0.84,
+    lastModified: new Date(),
+  }));
+
+  const protocolCapabilityEntries: MetadataRoute.Sitemap = SEARCH_PROTOCOLS.flatMap((protocol) =>
+    CAPABILITY_QUERIES.map((capability) => ({
+      url: `${baseUrl}/search?protocols=${encodeURIComponent(protocol)}&capabilities=${encodeURIComponent(capability)}`,
+      changeFrequency: "daily",
+      priority: 0.88,
+      lastModified: new Date(),
+    }))
+  );
+
   const topSlugs = rows
     .slice(0, 24)
     .map((row) => row.slug)
@@ -179,6 +216,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...protocolEntries,
     ...sourceEntries,
     ...useCaseEntries,
+    ...capabilityEntries,
+    ...protocolSearchEntries,
+    ...protocolCapabilityEntries,
     ...compareEntries,
   ];
 }

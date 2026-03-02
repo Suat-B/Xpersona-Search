@@ -215,8 +215,9 @@ export async function TrendingGridHF() {
                   const freshness = cap.count >= 6 ? "Freshness: High" : cap.count >= 3 ? "Freshness: Medium" : "Freshness: Low";
                   const capKey = `${columnIndex}-${cap.name}-${rowIndex}`;
                   return (
-                    <div
+                    <Link
                       key={capKey}
+                      href={`/search?capabilities=${encodeURIComponent(cap.name)}`}
                       className={cardBase}
                     >
                       <div className="flex w-full items-center justify-between gap-3">
@@ -243,7 +244,7 @@ export async function TrendingGridHF() {
                           </span>
                         </div>
                       </div>
-                    </div>
+                    </Link>
                   );
                 })}
               </div>

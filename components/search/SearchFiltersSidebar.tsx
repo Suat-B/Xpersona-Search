@@ -42,7 +42,7 @@ function buildProtocolCounts(facets?: Facets) {
   const counts = new Map<string, number>();
   facets?.protocols?.forEach(({ protocol, count }) => {
     protocol
-      .map((p) => p.trim().toUpperCase())
+      .map((p) => p.trim().toUpperCase().replace(/OPENCLAW/i, "OPENCLEW"))
       .filter(Boolean)
       .forEach((p) => {
         counts.set(p, (counts.get(p) ?? 0) + count);

@@ -300,6 +300,15 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
       const cached = overrides?.resetCaches ? undefined : pageCache[paginationKey][pageIndex];
       const cursorMap = pageCursors[paginationKey];
       const pageCursor = pageIndex === 1 ? null : cursorMap[pageIndex] ?? null;
+      const previousPageCached = pageIndex > 1 ? pageCache[paginationKey][pageIndex - 1] : undefined;
+      const derivedCursor =
+        requestVertical !== "artifacts" &&
+        !pageCursor &&
+        Array.isArray(previousPageCached) &&
+        previousPageCached.length > 0
+          ? previousPageCached[previousPageCached.length - 1]?.id ?? null
+          : null;
+      const effectiveCursor = pageCursor ?? derivedCursor;
 
       const urlParams = new URLSearchParams();
       if (nextQuery.trim()) urlParams.set("q", nextQuery.trim());
@@ -337,8 +346,8 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
       } else {
         requestParams.delete("includeSources");
       }
-      if (requestVertical !== "artifacts" && pageCursor) {
-        requestParams.set("cursor", pageCursor);
+      if (requestVertical !== "artifacts" && effectiveCursor) {
+        requestParams.set("cursor", effectiveCursor);
       }
       if (requestVertical === "artifacts" && pageCursor) {
         requestParams.set("mediaCursor", pageCursor);
@@ -361,7 +370,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
           setFallbackAgents([]);
           return;
         }
-        if (pageIndex > 1 && !pageCursor) return;
+        if (pageIndex > 1 && requestVertical !== "artifacts" && !effectiveCursor) return;
         const searchResponse = await safeFetchJson(`/api/v1/search?${requestParams}`);
         if (!searchResponse.ok) {
           throw new Error(extractClientErrorMessage(searchResponse.data, "Search failed"));
@@ -378,10 +387,14 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
         setPage(pageIndex);
 
         const nextCursor = searchData.pagination?.nextCursor ?? null;
-        if (nextCursor) {
+        const fallbackNextCursor =
+          hasMore && requestVertical !== "artifacts" && !nextCursor
+            ? nextAgents[nextAgents.length - 1]?.id ?? null
+            : nextCursor;
+        if (fallbackNextCursor) {
           setPageCursors((prev) => ({
             ...prev,
-            [paginationKey]: { ...prev[paginationKey], [pageIndex + 1]: nextCursor },
+            [paginationKey]: { ...prev[paginationKey], [pageIndex + 1]: fallbackNextCursor },
           }));
         }
         if (requestVertical === "artifacts") {
@@ -443,6 +456,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
       explain,
       recall,
       includeSources,
+      hasMore,
       router,
       pageCache,
       pageCursors,
@@ -583,7 +597,8 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
   const paginationKey: PageKey = vertical === "artifacts" ? "artifacts" : "agents";
   const maxNavigablePage = Math.max(
     1,
-    ...Object.keys(pageCursors[paginationKey]).map((p) => Number(p))
+    ...Object.keys(pageCursors[paginationKey]).map((p) => Number(p)),
+    hasMore ? page + 1 : 1
   );
   const pageItems = buildPageItems(page, totalPages);
   const filtersSidebar = (
