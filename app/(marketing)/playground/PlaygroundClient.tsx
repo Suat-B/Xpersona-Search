@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BenchmarkCharts } from "../../components/playground/BenchmarkCharts";
+import { BenchmarkCharts } from "@/components/playground/BenchmarkCharts";
 
 function CheckIcon({ className }: { className?: string }) {
   return (
