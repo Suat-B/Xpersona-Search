@@ -42,11 +42,23 @@ export function activate(context: vscode.ExtensionContext) {
       await vscode.env.openExternal(vscode.Uri.parse(url));
     }
   );
-  context.subscriptions.push(openPlayground, newPrompt, openWithSelection);
+  const viewProvider = new PlaygroundViewProvider();
+  const viewRegistration = vscode.window.registerWebviewViewProvider(
+    "xpersona.playgroundView",
+    viewProvider
+  );
+  context.subscriptions.push(openPlayground, newPrompt, openWithSelection, viewRegistration);
 }
 
 export function deactivate() {
   return;
+}
+
+class PlaygroundViewProvider implements vscode.WebviewViewProvider {
+  resolveWebviewView(webviewView: vscode.WebviewView): void {
+    webviewView.webview.options = { enableCommandUris: true };
+    webviewView.webview.html = getPlaygroundViewHtml();
+  }
 }
 
 function getBaseUrl(): string {
@@ -56,6 +68,70 @@ function getBaseUrl(): string {
     return configured.trim();
   }
   return "https://xpersona.co/playground";
+}
+
+function getPlaygroundViewHtml(): string {
+  const baseUrl = getBaseUrl();
+  const escapedBaseUrl = baseUrl.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      body {
+        font-family: var(--vscode-font-family);
+        color: var(--vscode-foreground);
+        padding: 16px;
+      }
+      .card {
+        border: 1px solid var(--vscode-panel-border);
+        border-radius: 8px;
+        padding: 12px;
+        background: var(--vscode-sideBar-background);
+      }
+      .title {
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+      .subtitle {
+        opacity: 0.8;
+        margin-bottom: 12px;
+        word-break: break-all;
+      }
+      .actions {
+        display: grid;
+        gap: 8px;
+      }
+      a.button {
+        display: inline-block;
+        text-decoration: none;
+        color: var(--vscode-button-foreground);
+        background: var(--vscode-button-background);
+        padding: 8px 10px;
+        border-radius: 6px;
+        text-align: center;
+      }
+      a.button.secondary {
+        background: var(--vscode-button-secondaryBackground);
+        color: var(--vscode-button-secondaryForeground);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="title">Xpersona Playground</div>
+      <div class="subtitle">${escapedBaseUrl}</div>
+      <div class="actions">
+        <a class="button" href="command:xpersona.playground.run">Open Playground</a>
+        <a class="button secondary" href="command:xpersona.playground.prompt">New Prompt</a>
+        <a class="button secondary" href="command:xpersona.playground.openWithSelection">
+          Open With Selection
+        </a>
+      </div>
+    </div>
+  </body>
+</html>`;
 }
 
 function getSelectionOrLine(): string | undefined {

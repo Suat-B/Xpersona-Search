@@ -11,22 +11,61 @@
   "activationEvents": [
     "onCommand:xpersona.playground.run",
     "onCommand:xpersona.playground.prompt",
-    "onCommand:xpersona.playground.openWithSelection"
+    "onCommand:xpersona.playground.openWithSelection",
+    "onView:xpersona.playgroundView"
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "views": {
+      "explorer": [
+        {
+          "id": "xpersona.playgroundView",
+          "name": "Xpersona Playground",
+          "when": "true"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "xpersona.playground.run",
-        "title": "Xpersona: Open Playground"
+        "title": "Open Playground",
+        "category": "Xpersona"
       },
       {
         "command": "xpersona.playground.prompt",
-        "title": "Xpersona: New Playground Prompt"
+        "title": "New Playground Prompt",
+        "category": "Xpersona"
       },
       {
         "command": "xpersona.playground.openWithSelection",
-        "title": "Xpersona: Open Playground With Selection"
+        "title": "Open Playground With Selection",
+        "category": "Xpersona"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "xpersona.playground.run"
+        },
+        {
+          "command": "xpersona.playground.prompt"
+        },
+        {
+          "command": "xpersona.playground.openWithSelection"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "xpersona.playground.openWithSelection",
+          "group": "2_xpersona@1",
+          "when": "editorHasSelection"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "xpersona.playgroundView",
+        "contents": "Open Xpersona Playground to start working with AI agents.\n[Open Playground](command:xpersona.playground.run)\n[New Prompt](command:xpersona.playground.prompt)"
       }
     ],
     "configuration": {
@@ -42,7 +81,9 @@
   },
   "scripts": {
     "compile": "tsc -p .",
-    "watch": "tsc -p . -w"
+    "watch": "tsc -p . -w",
+    "build": "tsc -p .",
+    "package": "vsce package"
   },
   "devDependencies": {
     "@types/vscode": "^1.90.0",

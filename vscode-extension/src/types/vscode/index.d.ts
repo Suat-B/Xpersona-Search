@@ -1,8 +1,12 @@
 declare module "vscode" {
   export interface Thenable<T> extends PromiseLike<T> {}
 
+  export interface Disposable {
+    dispose(): any;
+  }
+
   export interface ExtensionContext {
-    subscriptions: { push: (...items: unknown[]) => unknown };
+    subscriptions: { push: (...items: Disposable[]) => unknown };
   }
 
   export interface TextDocument {
@@ -22,11 +26,26 @@ declare module "vscode" {
     static parse(value: string): Uri;
   }
 
+  export interface Webview {
+    html: string;
+    options?: {
+      enableCommandUris?: boolean;
+    };
+  }
+
+  export interface WebviewView {
+    webview: Webview;
+  }
+
+  export interface WebviewViewProvider {
+    resolveWebviewView(webviewView: WebviewView): void | Thenable<void>;
+  }
+
   export namespace commands {
     function registerCommand(
       command: string,
       callback: (...args: unknown[]) => unknown
-    ): unknown;
+    ): Disposable;
   }
 
   export namespace env {
@@ -50,5 +69,9 @@ declare module "vscode" {
       options?: { preview?: boolean }
     ): Thenable<TextEditor>;
     function showErrorMessage(message: string): Thenable<string | undefined>;
+    function registerWebviewViewProvider(
+      viewId: string,
+      provider: WebviewViewProvider
+    ): Disposable;
   }
 }
