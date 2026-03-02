@@ -251,6 +251,38 @@ export async function getAgentsByProtocol(protocol: string, limit = 24): Promise
   return rows.map((row) => rowToHubAgent(row as unknown as Record<string, unknown>));
 }
 
+export async function getAgentsByCapability(capability: string, limit = 36): Promise<HubAgent[]> {
+  const normalized = capability.trim().toLowerCase();
+  if (!normalized) return [];
+  const rows = await db
+    .select({
+      id: agents.id,
+      slug: agents.slug,
+      name: agents.name,
+      description: agents.description,
+      source: agents.source,
+      protocols: agents.protocols,
+      capabilities: agents.capabilities,
+      safetyScore: agents.safetyScore,
+      overallRank: agents.overallRank,
+      updatedAt: agents.updatedAt,
+      createdAt: agents.createdAt,
+      npmData: agents.npmData,
+      openclawData: agents.openclawData,
+    })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.status, "ACTIVE"),
+        eq(agents.publicSearchable, true),
+        sql`EXISTS (SELECT 1 FROM jsonb_array_elements_text(${agents.capabilities}) AS cap WHERE lower(cap) = ${normalized})`
+      )
+    )
+    .orderBy(desc(agents.overallRank), desc(agents.updatedAt))
+    .limit(limit);
+  return rows.map((row) => rowToHubAgent(row as unknown as Record<string, unknown>));
+}
+
 export async function getAgentsBySource(sourceSlug: string, limit = 24): Promise<HubAgent[]> {
   const sourceNormalized = sourceSlug.trim().toUpperCase();
   const rows = await db
