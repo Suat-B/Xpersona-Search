@@ -649,7 +649,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
 
         <section className="w-full pt-4 pb-20 sm:pb-16" aria-label="Search results layout">
           <div className="mx-auto w-full max-w-none px-4 sm:px-6">
-            <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[480px_minmax(0,1fr)]">
               <aside className="hidden lg:block lg:sticky lg:top-24 h-fit">
                 {filtersSidebar}
               </aside>
@@ -753,7 +753,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
                     )}
 
                     {vertical !== "artifacts" ? (
-                      <div className="grid gap-3 lg:grid-cols-2 auto-rows-[64px] items-stretch pt-4">
+                      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 auto-rows-[64px] items-stretch pt-4">
                         {agents.map((agent) => (
                           <HFModelCard key={agent.id} agent={agent} />
                         ))}

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import path from "path";
+import { TrendingGridHF } from "@/components/home/TrendingGridHF";
 import { GraphExplorer } from "@/components/graph/GraphExplorer";
 import { buildApiSurface, type ApiEndpoint } from "@/lib/docs/api-surface";
 import { readdir } from "fs/promises";
@@ -226,7 +227,7 @@ export default async function GraphPage() {
             </div>
           </div>
 
-          {capabilities.length > 0 && (
+        {capabilities.length > 0 && (
             <div className="mt-12">
               <h3 className="text-2xl font-bold text-white tracking-tight mb-2">GPG Capabilities</h3>
               <p className="text-base text-[var(--text-secondary)] max-w-3xl mb-8">
@@ -241,6 +242,9 @@ export default async function GraphPage() {
               </div>
             </div>
           )}
+          <div className="mt-12">
+            <TrendingGridHF />
+          </div>
         </div>
       </div>
     </section>

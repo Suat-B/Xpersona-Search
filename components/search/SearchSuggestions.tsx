@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   useState,
@@ -42,7 +42,8 @@ type SuggestionItem =
   | { type: "recent"; text: string }
   | { type: "trending"; text: string }
   | { type: "query"; text: string }
-  | { type: "agent"; agent: SuggestionAgent };
+  | { type: "agent"; agent: SuggestionAgent }
+  | { type: "fulltext"; text: string };
 
 interface Props {
   query: string;
@@ -146,24 +147,43 @@ function RemoveIcon() {
   );
 }
 
+function ArrowRightIcon() {
+  return (
+    <svg
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      className="w-4 h-4 flex-shrink-0 text-[var(--text-tertiary)]"
+      aria-hidden
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M13 7l5 5m0 0l-5 5m5-5H6"
+      />
+    </svg>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Highlight matching text                                            */
 /* ------------------------------------------------------------------ */
 
 function highlightMatch(text: string, query: string): ReactNode {
-  if (!query || query.length < 2) return <span className="font-medium">{text}</span>;
+  if (!query || query.length < 2) return <span>{text}</span>;
   const idx = text.toLowerCase().indexOf(query.toLowerCase());
-  if (idx === -1) return <span className="font-medium">{text}</span>;
+  if (idx === -1) return <span>{text}</span>;
 
   const before = text.slice(0, idx);
   const match = text.slice(idx, idx + query.length);
   const after = text.slice(idx + query.length);
 
   return (
-    <span>
-      {before && <span className="font-medium">{before}</span>}
-      <span className="font-normal text-[var(--text-tertiary)]">{match}</span>
-      {after && <span className="font-medium">{after}</span>}
+    <span className="text-[var(--text-secondary)]">
+      {before && <span>{before}</span>}
+      <span className="font-semibold text-[var(--text-primary)]">{match}</span>
+      {after && <span>{after}</span>}
     </span>
   );
 }
@@ -174,8 +194,8 @@ function highlightMatch(text: string, query: string): ReactNode {
 
 function SectionHeader({ label }: { label: string }) {
   return (
-    <li className="px-4 pt-3 pb-1.5" aria-hidden>
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">
+    <li className="px-4 pt-2 pb-1" aria-hidden>
+      <span className="text-xs font-semibold text-[var(--text-tertiary)]">
         {label}
       </span>
     </li>
@@ -365,7 +385,11 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
             (agent: SuggestionAgent) => ({ type: "agent" as const, agent })
           ),
         ];
-        setItems(merged);
+        const withFullText =
+          onQuerySelect && q.trim().length >= MIN_QUERY_LENGTH
+            ? [...merged, { type: "fulltext" as const, text: q.trim() }]
+            : merged;
+        setItems(withFullText);
         setHighlightedIndex(0);
       } catch (err) {
         if ((err as Error).name === "AbortError") return;
@@ -455,6 +479,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
     const hasTrending = items.some((i) => i.type === "trending");
     const hasQuery = items.some((i) => i.type === "query");
     const hasAgent = items.some((i) => i.type === "agent");
+    const hasFullText = items.some((i) => i.type === "fulltext");
 
     let flatIndex = 0;
     const sections: ReactNode[] = [];
@@ -474,7 +499,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
               data-index={idx}
               role="option"
               aria-selected={idx === highlightedIndex}
-              className={`flex items-center gap-3 w-full px-4 py-2.5 text-left hover:bg-[var(--bg-elevated)] focus:bg-[var(--bg-elevated)] focus:outline-none focus:ring-0 text-[var(--text-primary)] group ${
+              className={`flex items-center gap-3 w-full px-3 py-2 text-left rounded-md hover:bg-[var(--bg-elevated)] focus:bg-[var(--bg-elevated)] focus:outline-none focus:ring-0 text-[var(--text-primary)] group ${
                 idx === highlightedIndex ? "bg-[var(--bg-elevated)]" : ""
               }`}
             >
@@ -513,7 +538,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
               data-index={idx}
               role="option"
               aria-selected={idx === highlightedIndex}
-              className={`flex items-center gap-3 w-full px-4 py-2.5 text-left hover:bg-[var(--bg-elevated)] focus:bg-[var(--bg-elevated)] focus:outline-none focus:ring-0 text-[var(--text-primary)] ${
+              className={`flex items-center gap-3 w-full px-3 py-2 text-left rounded-md hover:bg-[var(--bg-elevated)] focus:bg-[var(--bg-elevated)] focus:outline-none focus:ring-0 text-[var(--text-primary)] ${
                 idx === highlightedIndex ? "bg-[var(--bg-elevated)]" : ""
               }`}
             >
@@ -542,12 +567,12 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
               data-index={idx}
               role="option"
               aria-selected={idx === highlightedIndex}
-              className={`flex items-center gap-3 w-full px-4 py-2.5 text-left hover:bg-[var(--bg-elevated)] focus:bg-[var(--bg-elevated)] focus:outline-none focus:ring-0 text-[var(--text-primary)] ${
+              className={`flex items-center gap-3 w-full px-3 py-2 text-left rounded-md hover:bg-[var(--bg-elevated)] focus:bg-[var(--bg-elevated)] focus:outline-none focus:ring-0 text-[var(--text-primary)] ${
                 idx === highlightedIndex ? "bg-[var(--bg-elevated)]" : ""
               }`}
             >
               <MagnifierIcon />
-              <span className="truncate">
+              <span className="truncate font-medium">
                 {highlightMatch(item.text, query)}
               </span>
             </button>
@@ -571,7 +596,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
               data-index={idx}
               role="option"
               aria-selected={idx === highlightedIndex}
-              className={`flex items-start gap-3 w-full px-4 py-2.5 hover:bg-[var(--bg-elevated)] focus:bg-[var(--bg-elevated)] focus:outline-none focus:ring-0 text-[var(--text-primary)] ${
+              className={`flex items-start gap-3 w-full px-3 py-2 rounded-md hover:bg-[var(--bg-elevated)] focus:bg-[var(--bg-elevated)] focus:outline-none focus:ring-0 text-[var(--text-primary)] ${
                 idx === highlightedIndex ? "bg-[var(--bg-elevated)]" : ""
               }`}
             >
@@ -606,6 +631,42 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
       }
     }
 
+    if (hasFullText) {
+      sections.push(
+        <li key="sh-fulltext" className="px-2 pt-1.5" aria-hidden>
+          <div className="h-px w-full bg-[var(--border)]" />
+        </li>
+      );
+      for (const item of items) {
+        if (item.type !== "fulltext") continue;
+        const idx = flatIndex++;
+        sections.push(
+          <li key={`ft-${idx}-${item.text}`} data-index={idx}>
+            <button
+              type="button"
+              onClick={(e) => handleClickSelect(e, item)}
+              onMouseDown={handleMouseDownOnly}
+              onMouseEnter={() => setHighlightedIndex(idx)}
+              data-index={idx}
+              role="option"
+              aria-selected={idx === highlightedIndex}
+              className={`flex items-center gap-3 w-full px-3 py-2 text-left rounded-md hover:bg-[var(--bg-elevated)] focus:bg-[var(--bg-elevated)] focus:outline-none focus:ring-0 text-[var(--text-primary)] ${
+                idx === highlightedIndex ? "bg-[var(--bg-elevated)]" : ""
+              }`}
+            >
+              <ArrowRightIcon />
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm font-medium">Use full-text search</span>
+                <span className="block text-xs text-[var(--text-tertiary)] truncate">
+                  {item.text}
+                </span>
+              </span>
+            </button>
+          </li>
+        );
+      }
+    }
+
     return (
       <div
         id={id}
@@ -621,7 +682,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
         aria-expanded={visible}
         aria-label="Search suggestions"
       >
-        <ul ref={listRef} className="py-1">
+        <ul ref={listRef} className="py-1 px-1">
           {loading ? (
             <li className="px-4 py-6 text-center text-[var(--text-tertiary)] text-sm">
               <span className="inline-block w-4 h-4 border-2 border-[var(--accent-heart)] border-t-transparent rounded-full animate-spin" />

@@ -1,99 +1,64 @@
-import { Suspense } from "react";
-import { auth } from "@/lib/auth";
-import { cookies } from "next/headers";
-import { getAgentCookieName, verifyAgentToken } from "@/lib/auth-utils";
-import { SearchLanding } from "@/components/home/SearchLanding";
-import { GoogleStyleHomeClient as GoogleStyleHome } from "@/components/home/GoogleStyleHomeClient";
-import { ANSMinimalFooter } from "@/components/home/ANSMinimalFooter";
+import HomeClassic from "@/components/home/HomeClassic";
+import HomeHF from "@/components/home/HomeHF";
 
-export const dynamic = "force-dynamic";
+const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
+export const revalidate = 60;
 
 export default async function HomePage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const params = await searchParams;
-  const hasSearchQuery = !!params?.q?.trim();
-  const hasProtocolFilter = !!params?.protocols?.trim();
-  const hasBrowse = params?.browse === "1" || params?.browse === "true";
-  const searchStateKeys = new Set([
-    "q",
-    "protocols",
-    "browse",
-    "minSafety",
-    "sort",
-    "limit",
-    "vertical",
-    "intent",
-    "taskType",
-    "maxLatencyMs",
-    "maxCostUsd",
-    "dataRegion",
-    "requires",
-    "forbidden",
-    "bundle",
-    "explain",
-    "cursor",
-  ]);
-  const hasSearchState = Object.entries(params ?? {}).some(
-    ([key, value]) => searchStateKeys.has(key) && typeof value === "string" && value.trim().length > 0
-  );
-
-  // Fast path: search views do not need server-side auth to render results.
-  // Skipping auth here removes a blocking round-trip after submitting a query.
-  if (hasSearchQuery || hasProtocolFilter || hasBrowse || hasSearchState) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <div className="flex-1">
-          <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center text-[var(--text-tertiary)]">Loading search...</div>}>
-            <SearchLanding />
-          </Suspense>
-        </div>
-        <ANSMinimalFooter variant="dark" />
-      </div>
-    );
-  }
-
-  let session = null;
-  try {
-    session = await auth();
-  } catch {}
-
-  const cookieStore = await cookies();
-  const agentCookie = cookieStore.get(getAgentCookieName())?.value;
-  const agentUserId = agentCookie ? verifyAgentToken(agentCookie) : null;
-  const isAuthenticated = !!(session?.user || agentUserId);
-
-  const capabilityMetadata = {
-    "@context": ["https://schema.org", "https://xpersona.co/context/v1"],
-    "@type": "WebSite",
-    name: "Xpersona",
-    url: "https://xpersona.co",
-    description: "Xpersona is an AI search engine for discovering AI agents, skills, and tools.",
-    publisher: {
-      "@type": "Organization",
-      name: "Xpersona",
-      url: "https://xpersona.co",
-    },
-    potentialAction: {
-      "@type": "SearchAction",
-      target: "https://xpersona.co/?q={search_term_string}",
-      "query-input": "required name=search_term_string",
-    },
+  const variant = process.env.NEXT_PUBLIC_HOME_VARIANT?.toLowerCase();
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": `${baseUrl}#org`,
+        name: "Xpersona",
+        url: baseUrl,
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": `${baseUrl}#software`,
+        name: "Xpersona",
+        description: "AI Search Engine. Search and discover AI agents.",
+        applicationCategory: "AI Search Engine",
+        operatingSystem: "Web",
+        url: baseUrl,
+      },
+      {
+        "@type": "Dataset",
+        "@id": `${baseUrl}#dataset`,
+        name: "Xpersona Agent Index",
+        description: "Index of AI agents, tool packs, and capability signals.",
+        url: `${baseUrl}/search`,
+        creator: { "@id": `${baseUrl}#org` },
+      },
+      {
+        "@type": "WebAPI",
+        "@id": `${baseUrl}#api`,
+        name: "Xpersona Search API",
+        description: "Public API for searching AI agents with trust context.",
+        documentation: `${baseUrl}/api`,
+        endpointUrl: `${baseUrl}/api/v1/search`,
+        provider: { "@id": `${baseUrl}#org` },
+      },
+    ],
   };
+
+  const content = variant === "hf"
+    ? <HomeHF />
+    : <HomeClassic searchParams={searchParams} />;
 
   return (
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(capabilityMetadata) }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <GoogleStyleHome
-        isAuthenticated={isAuthenticated}
-        privacyUrl="/privacy-policy-1"
-        termsUrl="/terms-of-service"
-      />
+      {content}
     </>
   );
 }

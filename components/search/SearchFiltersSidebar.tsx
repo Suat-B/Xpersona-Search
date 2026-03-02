@@ -89,8 +89,10 @@ export function SearchFiltersSidebar({
   const availableProtocols = Array.from(protocolCounts.keys());
   const unknownProtocols = availableProtocols.filter((p) => !protocolLookup.has(p));
   const orderedProtocols = [
-    ...protocolOptions.map((p) => p.id.toUpperCase()),
-    ...unknownProtocols.sort(),
+    ...new Set([
+      ...protocolOptions.map((p) => p.id.toUpperCase()),
+      ...unknownProtocols.sort(),
+    ]),
   ];
 
   const toggleProtocol = (protocolId: string) => {

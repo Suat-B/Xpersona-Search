@@ -105,15 +105,17 @@ export function HFModelCard({ agent }: HFModelCardProps) {
   const stars = agent.githubData?.stars || 0;
   const forks = agent.githubData?.forks || 0;
 
-  // Extract org and name from full name
   const nameParts = agent.name.split("/");
   const orgName = nameParts.length > 1 ? nameParts[0] : "";
   const modelName = nameParts.length > 1 ? nameParts[1] : agent.name;
+  const nameTokens = agent.name.split(/[\s/]+/).map((token) => token.trim()).filter(Boolean);
+  const firstLetter = nameTokens[0]?.[0] ?? "";
+  const lastLetter = nameTokens.length > 1 ? (nameTokens[nameTokens.length - 1]?.[0] ?? "") : "";
+  const avatarText = (firstLetter + (lastLetter && lastLetter !== firstLetter ? lastLetter : "")).toUpperCase() || "X";
 
   return (
     <Link href={`/agent/${agent.slug}`} className="block h-full">
       <article className="group flex h-full min-h-[64px] items-center gap-3 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 py-1.5 hover:border-[var(--accent-heart)]/40 hover:bg-[var(--bg-card-hover)] transition-all duration-200">
-        {/* Org Avatar */}
         <div className="flex-shrink-0">
           <div
             className="w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold text-white"
@@ -121,11 +123,10 @@ export function HFModelCard({ agent }: HFModelCardProps) {
               background: `linear-gradient(135deg, ${protocolColor}80 0%, ${protocolColor}40 100%)`,
             }}
           >
-            {orgName ? orgName.charAt(0).toUpperCase() : "X"}
+            {avatarText}
           </div>
         </div>
 
-        {/* Content */}
         <div className="flex-1 min-w-0 overflow-hidden">
           <div className="flex items-center justify-between gap-3">
             <h3 className="min-w-0 text-sm font-semibold text-[var(--text-primary)] group-hover:text-[var(--accent-heart)] transition-colors truncate">
@@ -166,25 +167,8 @@ export function HFModelCard({ agent }: HFModelCardProps) {
           </div>
         </div>
 
-        {/* Safety Score Badge */}
         <div className="flex-shrink-0">
-          <div
-            className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium"
-            style={{
-              backgroundColor:
-                agent.safetyScore >= 80
-                  ? "rgba(16, 185, 129, 0.15)"
-                  : agent.safetyScore >= 50
-                  ? "rgba(245, 158, 11, 0.15)"
-                  : "rgba(239, 68, 68, 0.15)",
-              color:
-                agent.safetyScore >= 80
-                  ? "#10b981"
-                  : agent.safetyScore >= 50
-                  ? "#f59e0b"
-                  : "#ef4444",
-            }}
-          >
+          <div className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium border border-[var(--border)] text-[var(--text-tertiary)] bg-[var(--bg-elevated)]/40">
             <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
             </svg>

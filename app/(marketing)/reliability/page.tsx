@@ -1,6 +1,7 @@
 import Link from "next/link";
 import path from "path";
 import { readdir } from "fs/promises";
+import { TrendingGridHF } from "@/components/home/TrendingGridHF";
 import { ReliabilityDashboard } from "@/components/reliability/ReliabilityDashboard";
 import { GlobalPerformanceGraph } from "@/components/reliability/GlobalPerformanceGraph";
 import { AgentOpsStats } from "@/components/reliability/AgentOpsStats";
@@ -278,6 +279,9 @@ export default async function ReliabilityPage() {
               </div>
             ))}
           </div>
+        </div>
+        <div className="mt-12">
+          <TrendingGridHF />
         </div>
       </div>
     </section>
