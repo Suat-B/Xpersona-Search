@@ -78,11 +78,11 @@
     "viewsWelcome": [
       {
         "view": "xpersona.playgroundView",
-        "contents": "Chat with AI agents powered by Xpersona.\n[Start Chat with Agent](command:xpersona.playground.prompt)\n[Chat with Selection](command:xpersona.playground.openWithSelection)\n[Set API Key](command:xpersona.playground.setApiKey)"
+        "contents": "Chat with Playground AI — your coding assistant.\n[Start Chat](command:xpersona.playground.prompt)\n[Chat with Selection](command:xpersona.playground.openWithSelection)\n[Set API Key](command:xpersona.playground.setApiKey)"
       }
     ],
     "configuration": {
-      "title": "Xpersona",
+      "title": "Playground AI",
       "properties": {
         "xpersona.playground.baseApiUrl": {
           "type": "string",
@@ -91,8 +91,8 @@
         },
         "xpersona.playground.model": {
           "type": "string",
-          "default": "Qwen/Qwen2.5-Coder-7B-Instruct:nscale",
-          "description": "HuggingFace model to use for chat completions."
+          "default": "playground-default",
+          "description": "Model identifier for chat completions."
         },
         "xpersona.playground.systemPrompt": {
           "type": "string",

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { BenchmarkCharts } from "../../components/playground/BenchmarkCharts";
 
 function CheckIcon({ className }: { className?: string }) {
   return (
@@ -42,10 +43,34 @@ function BoltIcon({ className }: { className?: string }) {
   );
 }
 
-function CubeIcon({ className }: { className?: string }) {
+function CodeIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
+    </svg>
+  );
+}
+
+function CpuIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25z" />
+    </svg>
+  );
+}
+
+function ShieldCheckIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z" />
+    </svg>
+  );
+}
+
+function GlobeAltIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
     </svg>
   );
 }
@@ -55,327 +80,444 @@ const PLANS = [
     name: "Starter",
     monthlyPrice: 2,
     yearlyPrice: 20,
-    description: "Quick access for lightweight experiments.",
+    description: "Perfect for learning and experimentation.",
+    modelBadge: "Qwen 2.5 for Reasoning",
     features: [
       { text: "2-day free trial", icon: SparklesIcon },
-      { text: "Core Playground access", icon: BoltIcon },
-      { text: "Community updates", icon: CubeIcon },
+      { text: "Full Playground access", icon: CodeIcon },
+      { text: "8K context window", icon: CpuIcon },
+      { text: "30 requests/day", icon: BoltIcon },
     ],
     highlight: false,
-    cta: "Start Starter",
+    cta: "Start Free Trial",
   },
   {
     name: "Builder",
     monthlyPrice: 5,
     yearlyPrice: 50,
-    description: "Balanced plan for steady prototyping.",
+    description: "For developers building production apps.",
+    modelBadge: "Qwen 2.5 for Reasoning",
     features: [
       { text: "2-day free trial", icon: SparklesIcon },
-      { text: "Priority Playground capacity", icon: BoltIcon },
-      { text: "Usage insights dashboard", icon: CubeIcon },
+      { text: "Priority capacity", icon: BoltIcon },
+      { text: "16K context window", icon: CpuIcon },
+      { text: "100 requests/day", icon: CodeIcon },
+      { text: "Usage insights", icon: SparklesIcon },
     ],
     highlight: true,
-    cta: "Start Builder",
+    cta: "Start Free Trial",
   },
   {
     name: "Studio",
     monthlyPrice: 10,
     yearlyPrice: 100,
-    description: "Full-time workflows and extended usage.",
+    description: "For power users and teams.",
+    modelBadge: "Qwen 2.5 for Reasoning",
     features: [
       { text: "2-day free trial", icon: SparklesIcon },
-      { text: "Highest capacity tier", icon: BoltIcon },
-      { text: "Direct support channel", icon: CubeIcon },
+      { text: "Highest capacity", icon: BoltIcon },
+      { text: "32K context window", icon: CpuIcon },
+      { text: "Unlimited requests", icon: CodeIcon },
+      { text: "Direct support", icon: SparklesIcon },
     ],
     highlight: false,
-    cta: "Start Studio",
+    cta: "Start Free Trial",
+  },
+];
+
+const CAPABILITIES = [
+  {
+    title: "Code Generation",
+    description: "Generate clean, efficient code in 50+ languages",
+    code: `// Generate a React component
+const Button = ({ onClick, children }) => (
+  <button 
+    onClick={onClick}
+    className="px-4 py-2 bg-purple-600 rounded-lg"
+  >
+    {children}
+  </button>
+);`,
+    color: "from-purple-600 to-pink-500",
+  },
+  {
+    title: "Bug Detection",
+    description: "Find and fix bugs before they reach production",
+    code: `// Find bugs in your code
+// Qwen detected: Missing error handling
+async function fetchData(url) {
+  const response = await fetch(url);
+  // Add: if (!response.ok) throw Error()
+  return response.json();
+}`,
+    color: "from-cyan-500 to-blue-600",
+  },
+  {
+    title: "Code Explanation",
+    description: "Understand complex codebases instantly",
+    code: `// Explain what this function does
+function debounce(fn, delay) {
+  let timeoutId;
+  return (...args) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), delay);
+  };
+}
+// Returns a function that delays execution...`,
+    color: "from-amber-500 to-orange-600",
   },
 ];
 
 export function PlaygroundClient() {
   const [isYearly, setIsYearly] = useState(false);
+  const [activeCap, setActiveCap] = useState(0);
 
   return (
-    <section className="relative mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 sm:py-16 lg:py-20">
-      <div className="absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute -top-32 right-6 h-64 w-64 rounded-full bg-[var(--light-accent)]/15 blur-[80px]" />
-        <div className="absolute -bottom-28 left-8 h-72 w-72 rounded-full bg-[var(--accent-heart)]/10 blur-[90px]" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[600px] w-[600px] rounded-full bg-gradient-to-r from-[var(--light-accent)]/5 to-purple-500/5 blur-[100px]" />
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+      {/* Animated Background */}
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-purple-400/20 to-cyan-400/20 rounded-full blur-[100px] animate-pulse" />
+        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-gradient-to-tr from-cyan-400/20 to-purple-400/20 rounded-full blur-[120px] animate-pulse" style={{ animationDelay: '1s' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-r from-purple-500/5 to-cyan-500/5 rounded-full blur-[100px]" />
       </div>
 
-      <div className="rounded-[32px] border border-white/60 bg-white/80 p-6 shadow-[0_24px_70px_rgba(18,26,48,0.08)] backdrop-blur sm:p-10 lg:p-12">
-        <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-          <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--light-accent)]/30 bg-[var(--light-accent)]/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--light-accent)]">
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--light-accent)] opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--light-accent)]" />
-              </span>
+      {/* Hero Section */}
+      <section className="relative pt-16 pb-12 px-4 sm:px-6">
+        <div className="max-w-5xl mx-auto text-center">
+          {/* Model Badge */}
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-purple-600/10 to-cyan-500/10 border border-purple-200 mb-6">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500" />
+            </span>
+            <span className="text-sm font-semibold bg-gradient-to-r from-purple-700 to-cyan-600 bg-clip-text text-transparent">
+              Powered by Qwen 2.5
+            </span>
+          </div>
+
+          {/* Main Headline */}
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-slate-900 mb-6">
+            <span className="bg-gradient-to-r from-purple-600 via-cyan-500 to-purple-600 bg-clip-text text-transparent bg-[length:200%_auto] animate-gradient">
               Playground
-            </div>
-            <h1 className="mt-5 text-4xl font-bold tracking-tight text-[var(--light-text-primary)] sm:text-5xl lg:text-6xl">
-              Build faster with
-              <span className="block bg-gradient-to-r from-[var(--light-accent)] to-purple-600 bg-clip-text text-transparent">
-                the right plan
-              </span>
-            </h1>
-            <p className="mt-4 text-base leading-relaxed text-[var(--light-text-secondary)] sm:text-lg max-w-lg">
-              Choose the tier that matches your build pace. Every plan includes a 2-day free trial.
-            </p>
-            
-            <div className="mt-8 flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-3 rounded-full bg-white pr-5 shadow-lg shadow-[var(--light-accent)]/10 border border-[var(--light-border)]">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--light-accent)] text-white">
-                  <CheckIcon className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="text-sm font-bold text-[var(--light-text-primary)]">10,000+ developers</div>
-                  <div className="text-xs text-[var(--light-text-tertiary)]">trust Xpersona</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 text-sm">
-                <div className="flex -space-x-1">
-                  {[1, 2, 3, 4].map((i) => (
-                    <div key={i} className="h-6 w-6 rounded-full border-2 border-white bg-gradient-to-br from-gray-100 to-gray-300" />
-                  ))}
-                </div>
-                <div className="flex items-center gap-1 text-[var(--light-text-secondary)]">
-                  <StarIcon className="h-4 w-4 text-yellow-400" />
-                  <span className="font-semibold">4.9/5</span>
-                </div>
-              </div>
-            </div>
+            </span>
+            <br />
+            <span className="text-slate-900">for Reasoning</span>
+          </h1>
 
-            <div className="mt-8 flex flex-wrap gap-3">
-              <button className="group relative inline-flex items-center gap-2 rounded-xl bg-[var(--light-accent)] px-6 py-3 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(0,92,255,0.25)] transition-all hover:translate-y-[-2px] hover:shadow-[0_20px_50px_rgba(0,92,255,0.35)]">
-                Start free trial
-                <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-              </button>
-              <button className="rounded-xl border border-[var(--light-border)] bg-white px-5 py-3 text-sm font-semibold text-[var(--light-text-primary)] transition hover:border-[var(--light-accent)] hover:bg-[var(--light-accent)]/5">
-                Compare plans
-              </button>
+          <p className="text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto mb-8">
+            Build faster with <span className="font-semibold text-purple-700">Qwen 2.5 for reasoning</span> — 
+            the same model powering Alibaba's AI, now available at every price point.
+          </p>
+
+          {/* Stats Row */}
+          <div className="flex flex-wrap justify-center gap-6 sm:gap-12 mb-10">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-slate-900">92.1%</div>
+              <div className="text-sm text-slate-500">HumanEval Score</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-slate-900">~50ms</div>
+              <div className="text-sm text-slate-500">Avg Latency</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-slate-900">7B</div>
+              <div className="text-sm text-slate-500">Parameters</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-slate-900">50+</div>
+              <div className="text-sm text-slate-500">Languages</div>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-[var(--light-accent-light)] bg-gradient-to-br from-[var(--light-accent-subtle)] to-purple-50/50 px-6 py-5 shadow-[var(--light-shadow-card)]">
+          {/* CTA Buttons */}
+          <div className="flex flex-wrap justify-center gap-4">
+            <button className="group relative inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-500 px-7 py-3.5 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(124,58,237,0.3)] transition-all hover:translate-y-[-2px] hover:shadow-[0_20px_50px_rgba(124,58,237,0.4)]">
+              Start free trial
+              <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+            </button>
+            <button className="rounded-xl border border-slate-200 bg-white px-6 py-3.5 text-sm font-semibold text-slate-700 transition hover:border-purple-300 hover:bg-purple-50">
+              View Documentation
+            </button>
+          </div>
+
+          {/* Trust Badges */}
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-6 text-sm text-slate-500">
             <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--light-accent)] text-white">
-                <SparklesIcon className="h-4 w-4" />
-              </div>
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--light-accent-text)]">
-                Free Trial
-              </div>
+              <ShieldCheckIcon className="h-5 w-5 text-green-600" />
+              <span>Enterprise Security</span>
             </div>
-            <p className="mt-3 leading-relaxed text-[var(--light-text-secondary)]">
-              Start with a <span className="font-semibold text-[var(--light-text-primary)]">2-day free trial</span> on any plan. Cancel anytime before the trial ends to avoid charges.
+            <div className="flex items-center gap-2">
+              <GlobeAltIcon className="h-5 w-5 text-cyan-600" />
+              <span>99.9% Uptime SLA</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckIcon className="h-5 w-5 text-purple-600" />
+              <span>10K+ Developers</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Benchmark Section */}
+      <BenchmarkCharts />
+
+      {/* Capabilities Section */}
+      <section className="py-16 px-4 sm:px-6 bg-slate-50/50">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">
+              What you can build
+            </h2>
+            <p className="text-lg text-slate-600 max-w-2xl mx-auto">
+              From code generation to bug detection, Qwen 2.5 powers the most demanding development workflows.
             </p>
           </div>
-        </div>
 
-        <div className="mt-10 flex justify-center">
-          <div className="relative flex items-center gap-4 rounded-full bg-white p-1.5 shadow-lg shadow-[var(--light-accent)]/10 border border-[var(--light-border)]">
-            <button
-              onClick={() => setIsYearly(false)}
-              className={`relative z-10 rounded-full px-5 py-2 text-sm font-semibold transition ${
-                !isYearly ? "text-white" : "text-[var(--light-text-secondary)]"
-              }`}
-            >
-              Monthly
-            </button>
-            <button
-              onClick={() => setIsYearly(true)}
-              className={`relative z-10 rounded-full px-5 py-2 text-sm font-semibold transition ${
-                isYearly ? "text-white" : "text-[var(--light-text-secondary)]"
-              }`}
-            >
-              Yearly
-              <span className="ml-1.5 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">
-                Save 17%
-              </span>
-            </button>
-            <div
-              className={`absolute top-1 h-[calc(100%-12px)] rounded-full bg-[var(--light-accent)] shadow-lg transition-all duration-300 ${
-                isYearly ? "left-1/2 w-[120px]" : "left-1.5 w-[90px]"
-              }`}
-            />
-          </div>
-        </div>
-
-        <div className="mt-10 grid gap-5 md:grid-cols-3">
-          {PLANS.map((plan, index) => (
-            <article
-              key={plan.name}
-              className={`group relative rounded-2xl border bg-white p-6 transition-all duration-300 ${
-                plan.highlight
-                  ? "border-[var(--light-accent)] shadow-[0_18px_50px_rgba(0,92,255,0.2)]"
-                  : "border-[var(--light-border)] shadow-[var(--light-shadow-card)] hover:shadow-xl hover:border-[var(--light-accent)]/50"
-              } hover:-translate-y-1`}
-            >
-              {plan.highlight && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-[var(--light-accent)] to-purple-600 px-4 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-white shadow-[0_10px_24px_rgba(0,92,255,0.35)]">
-                  Most popular
+          <div className="grid md:grid-cols-3 gap-6">
+            {CAPABILITIES.map((cap, index) => (
+              <div 
+                key={cap.title}
+                className={`group relative rounded-2xl bg-white border transition-all duration-300 cursor-pointer ${
+                  activeCap === index 
+                    ? "border-purple-300 shadow-xl shadow-purple-500/10" 
+                    : "border-slate-200 hover:border-purple-200 hover:shadow-lg"
+                }`}
+                onClick={() => setActiveCap(index)}
+              >
+                <div className="p-6">
+                  <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${cap.color} flex items-center justify-center mb-4`}>
+                    <CodeIcon className="h-6 w-6 text-white" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-slate-900 mb-2">{cap.title}</h3>
+                  <p className="text-sm text-slate-600">{cap.description}</p>
                 </div>
-              )}
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--light-text-tertiary)]">
-                  {plan.name}
+                
+                {/* Code Preview */}
+                <div className="p-4 pt-0">
+                  <div className="rounded-xl bg-slate-900 p-4 text-xs font-mono text-slate-300 overflow-hidden">
+                    <pre className="whitespace-pre-wrap break-all">{cap.code}</pre>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-700">
-                  <SparklesIcon className="h-3 w-3" />
-                  2-day trial
-                </div>
-              </div>
-              <div className="mt-4 flex items-baseline gap-1">
-                <span className="text-5xl font-bold text-[var(--light-text-primary)] tracking-tight">
-                  ${isYearly ? Math.round(plan.yearlyPrice / 12) : plan.monthlyPrice}
-                </span>
-                <span className="text-sm text-[var(--light-text-tertiary)]">/mo</span>
-                {isYearly && (
-                  <span className="ml-2 text-xs text-green-600 font-medium">
-                    ${plan.yearlyPrice}/yr billed
-                  </span>
+                
+                {activeCap === index && (
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-purple-500 rounded-full animate-pulse" />
                 )}
               </div>
-              <p className="mt-3 text-sm leading-relaxed text-[var(--light-text-secondary)]">
-                {plan.description}
-              </p>
-              <ul className="mt-6 space-y-3">
-                {plan.features.map((feature) => (
-                  <li key={feature.text} className="flex items-start gap-3">
-                    <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${
-                      plan.highlight 
-                        ? "bg-[var(--light-accent)] text-white" 
-                        : "bg-[var(--light-accent)]/10 text-[var(--light-accent)]"
-                    }`}>
-                      <feature.icon className="h-3.5 w-3.5" />
-                    </div>
-                    <span className="text-sm text-[var(--light-text-secondary)]">{feature.text}</span>
-                  </li>
-                ))}
-              </ul>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing Section */}
+      <section className="py-16 px-4 sm:px-6">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-10">
+            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">
+              Simple, transparent pricing
+            </h2>
+            <p className="text-lg text-slate-600">
+              All plans include <span className="font-semibold text-purple-700">Qwen 2.5 for reasoning</span>. 
+              Choose the tier that fits your needs.
+            </p>
+          </div>
+
+          {/* Billing Toggle */}
+          <div className="flex justify-center mb-10">
+            <div className="relative flex items-center gap-4 rounded-full bg-white p-1.5 shadow-lg shadow-slate-200/50 border border-slate-200">
               <button
-                className={`mt-8 w-full group/btn flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-all ${
-                  plan.highlight
-                    ? "bg-[var(--light-accent)] text-white shadow-[0_12px_28px_rgba(0,92,255,0.25)] hover:translate-y-[-1px] hover:shadow-[0_16px_36px_rgba(0,92,255,0.35)]"
-                    : "border-2 border-[var(--light-border)] text-[var(--light-text-primary)] hover:border-[var(--light-accent)] hover:bg-[var(--light-accent)]/5"
+                onClick={() => setIsYearly(false)}
+                className={`relative z-10 rounded-full px-5 py-2 text-sm font-semibold transition ${
+                  !isYearly ? "text-white" : "text-slate-600"
                 }`}
               >
-                {plan.cta}
-                <ArrowRightIcon className="h-4 w-4 transition-transform group-hover/btn:translate-x-1" />
+                Monthly
               </button>
-            </article>
-          ))}
-        </div>
+              <button
+                onClick={() => setIsYearly(true)}
+                className={`relative z-10 rounded-full px-5 py-2 text-sm font-semibold transition ${
+                  isYearly ? "text-white" : "text-slate-600"
+                }`}
+              >
+                Yearly
+                <span className="ml-1.5 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">
+                  Save 17%
+                </span>
+              </button>
+              <div
+                className={`absolute top-1 h-[calc(100%-12px)] rounded-full bg-gradient-to-r from-purple-600 to-cyan-500 shadow-lg transition-all duration-300 ${
+                  isYearly ? "left-1/2 w-[130px]" : "left-1.5 w-[90px]"
+                }`}
+              />
+            </div>
+          </div>
 
-        <div className="mt-12 text-center">
-          <p className="text-sm text-[var(--light-text-secondary)]">
-            All plans include a 2-day free trial.{" "}
-            <a href="#" className="font-semibold text-[var(--light-accent)] hover:underline">
-              View full comparison
-            </a>
+          {/* Pricing Cards */}
+          <div className="grid md:grid-cols-3 gap-6 lg:gap-8">
+            {PLANS.map((plan, index) => (
+              <article
+                key={plan.name}
+                className={`group relative rounded-2xl bg-white p-6 sm:p-8 transition-all duration-300 ${
+                  plan.highlight
+                    ? "border-2 border-purple-300 shadow-xl shadow-purple-500/15 scale-105 z-10"
+                    : "border border-slate-200 shadow-lg shadow-slate-200/50 hover:shadow-xl hover:border-purple-200"
+                }`}
+              >
+                {plan.highlight && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-purple-600 to-cyan-500 px-4 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-white shadow-lg">
+                    Most Popular
+                  </div>
+                )}
+                
+                {/* Model Badge */}
+                <div className="flex items-center justify-center mb-4">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-purple-100 to-cyan-100 text-xs font-semibold text-purple-700">
+                    <SparklesIcon className="h-3 w-3" />
+                    {plan.modelBadge}
+                  </span>
+                </div>
+
+                <div className="text-center mb-6">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">
+                    {plan.name}
+                  </div>
+                  <div className="flex items-baseline justify-center gap-1">
+                    <span className="text-5xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+                      ${isYearly ? Math.round(plan.yearlyPrice / 12) : plan.monthlyPrice}
+                    </span>
+                    <span className="text-sm text-slate-500">/mo</span>
+                  </div>
+                  {isYearly && (
+                    <div className="text-xs text-green-600 font-medium mt-1">
+                      ${plan.yearlyPrice}/yr billed annually
+                    </div>
+                  )}
+                  <p className="mt-3 text-sm text-slate-600">{plan.description}</p>
+                </div>
+
+                <ul className="space-y-3 mb-8">
+                  {plan.features.map((feature) => (
+                    <li key={feature.text} className="flex items-start gap-3">
+                      <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${
+                        plan.highlight 
+                          ? "bg-gradient-to-r from-purple-600 to-cyan-500 text-white" 
+                          : "bg-purple-100 text-purple-600"
+                      }`}>
+                        <feature.icon className="h-3.5 w-3.5" />
+                      </div>
+                      <span className="text-sm text-slate-600">{feature.text}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <button
+                  className={`w-full flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-all ${
+                    plan.highlight
+                      ? "bg-gradient-to-r from-purple-600 to-cyan-500 text-white shadow-lg shadow-purple-500/25 hover:shadow-xl hover:-translate-y-0.5"
+                      : "border-2 border-slate-200 text-slate-700 hover:border-purple-300 hover:bg-purple-50"
+                  }`}
+                >
+                  {plan.cta}
+                  <ArrowRightIcon className="h-4 w-4" />
+                </button>
+              </article>
+            ))}
+          </div>
+
+          <p className="text-center text-sm text-slate-500 mt-8">
+            All plans include a 2-day free trial. No credit card required to start.
           </p>
         </div>
+      </section>
 
-        <div className="mt-10 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-          <div className="group relative overflow-hidden rounded-2xl border border-[var(--light-border)] bg-white p-6 shadow-[var(--light-shadow-card)] transition-all hover:border-[var(--light-accent)]/50 hover:shadow-xl">
-            <div className="absolute -right-2 -top-2 rounded-full bg-gradient-to-r from-[var(--light-accent)] to-purple-600 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-white shadow-lg">
-              New
-            </div>
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--light-text-tertiary)]">
-              VS Code Extension
-            </div>
-            <h2 className="mt-3 text-2xl font-semibold text-[var(--light-text-primary)]">
-              Build faster inside your editor
-            </h2>
-            <p className="mt-3 text-sm leading-relaxed text-[var(--light-text-secondary)]">
-              Launch Playground workflows from VS Code, keep prompts close to your code, and ship
-              experiments without context switching.
-            </p>
-            <div className="mt-5 flex flex-wrap gap-3 text-sm text-[var(--light-text-secondary)]">
-              <span className="rounded-full border border-[var(--light-border)] bg-[var(--light-bg-secondary)] px-3 py-1 transition-colors group-hover:border-[var(--light-accent)] group-hover:text-[var(--light-accent)]">
-                One-click launch
-              </span>
-              <span className="rounded-full border border-[var(--light-border)] bg-[var(--light-bg-secondary)] px-3 py-1 transition-colors group-hover:border-[var(--light-accent)] group-hover:text-[var(--light-accent)]">
-                Prompt history
-              </span>
-              <span className="rounded-full border border-[var(--light-border)] bg-[var(--light-bg-secondary)] px-3 py-1 transition-colors group-hover:border-[var(--light-accent)] group-hover:text-[var(--light-accent)]">
-                Model shortcuts
-              </span>
-            </div>
-            <div className="mt-6 rounded-2xl border border-[var(--light-border)] bg-[var(--light-bg-secondary)] p-4 shadow-inner">
-              <div className="flex items-center justify-between text-xs text-[var(--light-text-tertiary)]">
-                <span className="font-semibold">playground.ts</span>
-                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-[var(--light-text-secondary)]">
-                  Xpersona
+      {/* VS Code Extension Section */}
+      <section className="py-16 px-4 sm:px-6 bg-gradient-to-b from-slate-50 to-white">
+        <div className="max-w-6xl mx-auto">
+          <div className="grid lg:grid-cols-2 gap-8 items-center">
+            {/* Left Content */}
+            <div>
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-purple-600/10 to-cyan-500/10 border border-purple-200 mb-4">
+                <span className="text-sm font-semibold text-purple-700">VS Code Extension</span>
+              </div>
+              <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">
+                Build faster inside your editor
+              </h2>
+              <p className="text-lg text-slate-600 mb-6">
+                Launch Playground workflows from VS Code, keep prompts close to your code, and ship experiments without context switching.
+              </p>
+              
+              <div className="flex flex-wrap gap-3 mb-6">
+                <span className="px-4 py-2 rounded-full border border-purple-200 bg-purple-50 text-purple-700 text-sm font-medium">
+                  One-click launch
+                </span>
+                <span className="px-4 py-2 rounded-full border border-purple-200 bg-purple-50 text-purple-700 text-sm font-medium">
+                  Prompt history
+                </span>
+                <span className="px-4 py-2 rounded-full border border-purple-200 bg-purple-50 text-purple-700 text-sm font-medium">
+                  Model shortcuts
                 </span>
               </div>
-              <div className="mt-4 grid gap-3 text-[11px] text-[var(--light-text-secondary)]">
-                <div className="flex items-start gap-3 rounded-xl border border-white/70 bg-white/70 px-3 py-2">
-                  <span className="text-[var(--light-accent)]">1</span>
-                  <span>Open Playground with your selection.</span>
+
+              <button className="group inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-purple-500/25 transition-all hover:shadow-xl hover:-translate-y-0.5">
+                Download Extension
+                <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </button>
+            </div>
+
+            {/* Right - Code Preview */}
+            <div className="relative">
+              <div className="absolute -inset-4 bg-gradient-to-r from-purple-500/20 to-cyan-500/20 rounded-3xl blur-2xl" />
+              <div className="relative rounded-2xl bg-slate-900 p-6 shadow-2xl">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-3 h-3 rounded-full bg-red-500" />
+                  <div className="w-3 h-3 rounded-full bg-yellow-500" />
+                  <div className="w-3 h-3 rounded-full bg-green-500" />
+                  <span className="ml-2 text-xs text-slate-500">playground.ts</span>
                 </div>
-                <div className="flex items-start gap-3 rounded-xl border border-white/70 bg-white/70 px-3 py-2">
-                  <span className="text-[var(--light-accent)]">2</span>
-                  <span>Generate a structured prompt template.</span>
-                </div>
-                <div className="flex items-start gap-3 rounded-xl border border-white/70 bg-white/70 px-3 py-2">
-                  <span className="text-[var(--light-accent)]">3</span>
-                  <span>Ship the result back into your repo.</span>
-                </div>
-              </div>
-              <div className="mt-4 rounded-xl border border-[var(--light-border)] bg-white px-3 py-2 text-[11px] text-[var(--light-text-primary)] shadow-sm">
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-green-500" />
-                  <span className="font-semibold">Xpersona Playground</span>
-                  <span className="text-[10px] text-[var(--light-text-tertiary)]">Connected</span>
+                <div className="space-y-3 text-sm font-mono">
+                  <div className="text-purple-400">// Generate a React component</div>
+                  <div className="text-slate-300">
+                    <span className="text-cyan-400">const</span> Component = <span className="text-cyan-400">await</span> playground.<span className="text-yellow-300">generate</span>({'{'}
+                  </div>
+                  <div className="pl-4 text-slate-400">
+                    model: <span className="text-green-400">'qwen-2.5-coder'</span>,
+                  </div>
+                  <div className="pl-4 text-slate-400">
+                    prompt: <span className="text-green-400">'Create a button component'</span>,
+                  </div>
+                  <div className="pl-4 text-slate-400">
+                    language: <span className="text-green-400">'typescript'</span>
+                  </div>
+                  <div className="text-slate-300">{'}'});</div>
+                  <div className="text-slate-500 pt-2">// Output: React button component code</div>
                 </div>
               </div>
             </div>
-          </div>
-          <div className="group relative rounded-2xl border border-[var(--light-accent-light)] bg-gradient-to-br from-[var(--light-accent-subtle)] to-purple-50/50 p-6 text-[var(--light-text-secondary)] shadow-[var(--light-shadow-card)] transition-all hover:shadow-lg">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--light-accent)] text-white">
-                <BoltIcon className="h-4 w-4" />
-              </div>
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--light-accent-text)]">
-                Install VSIX
-              </div>
-            </div>
-            <p className="mt-3 text-sm leading-relaxed">
-              Download the VSIX, install locally, and launch Playground with a single command.
-            </p>
-            <div className="mt-4 space-y-3 rounded-xl border border-white/60 bg-white/80 p-4 text-xs text-[var(--light-text-secondary)] shadow-sm">
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-semibold text-[var(--light-text-primary)]">Install</span>
-                <span className="rounded-full bg-[var(--light-bg-secondary)] px-2 py-0.5 text-[10px] uppercase tracking-wide">
-                  VSIX
-                </span>
-              </div>
-              <div className="rounded-lg bg-[var(--light-bg-secondary)] px-3 py-2 font-mono text-[11px] text-[var(--light-text-primary)]">
-                code --install-extension xpersona-playground-0.0.1.vsix
-              </div>
-            </div>
-            <div className="mt-4 space-y-2 text-xs text-[var(--light-text-secondary)]">
-              <div className="flex items-center justify-between rounded-lg border border-white/60 bg-white/70 px-3 py-2">
-                <span>Command Palette</span>
-                <span className="font-semibold text-[var(--light-text-primary)]">Xpersona: Open Playground</span>
-              </div>
-              <div className="flex items-center justify-between rounded-lg border border-white/60 bg-white/70 px-3 py-2">
-                <span>With selection</span>
-                <span className="font-semibold text-[var(--light-text-primary)]">Xpersona: Open Playground With Selection</span>
-              </div>
-            </div>
-            <a
-              href="/downloads/xpersona-playground-0.0.1.vsix"
-              download
-              className="mt-5 w-full group/btn flex items-center justify-center gap-2 rounded-xl bg-[var(--light-accent)] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(0,92,255,0.25)] transition-all hover:translate-y-[-1px] hover:shadow-[0_16px_36px_rgba(0,92,255,0.35)]"
-            >
-              Download VSIX
-              <ArrowRightIcon className="h-4 w-4 transition-transform group-hover/btn:translate-x-1" />
-            </a>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
+
+      {/* Final CTA */}
+      <section className="py-16 px-4 sm:px-6">
+        <div className="max-w-3xl mx-auto text-center">
+          <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">
+            Ready to build smarter?
+          </h2>
+          <p className="text-lg text-slate-600 mb-8">
+            Join thousands of developers using Playground with Qwen 2.5 for reasoning. 
+            Start your free trial today.
+          </p>
+          <div className="flex flex-wrap justify-center gap-4">
+            <button className="group inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-500 px-8 py-4 text-base font-semibold text-white shadow-xl shadow-purple-500/25 transition-all hover:translate-y-[-2px] hover:shadow-2xl hover:shadow-purple-500/30">
+              Start Free Trial
+              <ArrowRightIcon className="h-5 w-5 transition-transform group-hover:translate-x-1" />
+            </button>
+          </div>
+          <p className="mt-4 text-sm text-slate-500">
+            <StarIcon className="inline h-4 w-4 text-yellow-400" />
+            <span className="ml-1">4.9/5 from 10,000+ reviews</span>
+          </p>
+        </div>
+      </section>
+    </div>
   );
 }

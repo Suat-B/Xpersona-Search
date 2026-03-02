@@ -79,7 +79,7 @@ function deactivate() {
     return;
 }
 function openChatPanel(context, initialHistory) {
-    const panel = vscode.window.createWebviewPanel("xpersonaChat", "Xpersona Agent Chat", vscode.ViewColumn.One, {
+    const panel = vscode.window.createWebviewPanel("xpersonaChat", "Playground AI Chat", vscode.ViewColumn.One, {
         enableScripts: true,
         retainContextWhenHidden: true,
     });
@@ -135,7 +135,7 @@ async function handleChatMessage(context, webview, userContent, history) {
     // Get config
     const config = vscode.workspace.getConfiguration("xpersona.playground");
     const baseApiUrl = (config.get("baseApiUrl") || "https://xpersona.co").replace(/\/$/, "");
-    const model = config.get("model") || "Qwen/Qwen2.5-Coder-7B-Instruct:nscale";
+    const model = config.get("model") || "playground-default";
     const systemPrompt = config.get("systemPrompt") ||
         "You are an expert software engineer and coding assistant. Help the user with their code, answer questions clearly, and provide working examples.";
     // Build messages array
@@ -164,7 +164,16 @@ async function handleChatMessage(context, webview, userContent, history) {
         webview.postMessage({ type: "streamEnd" });
     }
     catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
+        let errorMsg;
+        if (err instanceof Error) {
+            errorMsg = err.message;
+        }
+        else if (typeof err === "object" && err !== null) {
+            errorMsg = JSON.stringify(err);
+        }
+        else {
+            errorMsg = String(err);
+        }
         webview.postMessage({ type: "error", content: errorMsg });
         // Remove the user message we added since the request failed
         history.pop();
@@ -317,8 +326,8 @@ function getSidebarHtml() {
   </head>
   <body>
     <div class="card">
-      <div class="title">Xpersona Agent Chat</div>
-      <div class="subtitle">Powered by Qwen2.5-Coder via HuggingFace</div>
+      <div class="title">Playground AI Chat</div>
+      <div class="subtitle">Your AI coding assistant</div>
       <div class="actions">
         <a class="button" href="command:xpersona.playground.prompt">Start Chat</a>
         <a class="button secondary" href="command:xpersona.playground.openWithSelection">Chat with Selection</a>
@@ -336,7 +345,7 @@ function getChatInterfaceHtml(nonce) {
     <meta charset="UTF-8">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Xpersona Agent Chat</title>
+    <title>Playground AI Chat</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -524,7 +533,7 @@ function getChatInterfaceHtml(nonce) {
     <!-- Chat Screen -->
     <div id="chatScreen">
         <div class="chat-header">
-            <span>Xpersona Agent Chat</span>
+            <span>Playground AI Chat</span>
             <div class="header-actions">
                 <button class="icon-btn" id="clearBtn" title="Clear conversation">Clear</button>
                 <button class="icon-btn" id="keyBtn" title="Change API key">API Key</button>
@@ -532,7 +541,7 @@ function getChatInterfaceHtml(nonce) {
         </div>
         <div class="messages" id="messages">
             <div class="message assistant">
-                Hello! I'm your Xpersona AI coding assistant powered by Qwen2.5-Coder. Ask me anything about your code!
+                Hello! I'm your Playground AI coding assistant. Ask me anything about your code!
             </div>
         </div>
         <div class="input-container">
