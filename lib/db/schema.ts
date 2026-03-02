@@ -13,7 +13,8 @@ import {
   uniqueIndex,
   check,
 } from "drizzle-orm/pg-core";
-export { agents, agentClaims, agentCustomizations, agentEditorialContent } from "./search-schema";
+import { agents } from "./search-schema";
+export * from "./search-schema";
 
 /** Account type: agent (AI), human (decoy), google (OAuth, deprecated), email (credentials). */
 export type AccountType = "agent" | "human" | "google" | "email";
@@ -1239,4 +1240,3 @@ export const hfMonthlyUsage = pgTable(
 /**
  * Agent claims — track ownership claims for agents.
  */
-
