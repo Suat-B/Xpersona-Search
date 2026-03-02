@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { GlobalSearchBar } from "@/components/search/GlobalSearchBar";
 
 const NAV_LINKS = [
+  { href: "/playground", label: "Playground" },
   { href: "/search", label: "Search" },
   { href: "/marketplace", label: "Marketplace" },
   { href: "/graph", label: "Graph" },

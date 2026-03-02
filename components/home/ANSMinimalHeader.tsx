@@ -10,6 +10,14 @@ export function ANSMinimalHeader({
   variant = "light",
 }: ANSMinimalHeaderProps) {
   const isDark = variant === "dark";
+  const navLinks = [
+    { href: "/playground", label: "Playground" },
+    { href: "/search", label: "Search" },
+    { href: "/marketplace", label: "Marketplace" },
+    { href: "/graph", label: "Graph" },
+    { href: "/reliability", label: "Reliability" },
+    { href: "/tool-pack", label: "Tool Pack" },
+  ];
 
   const headerClasses = isDark
     ? "sticky top-0 z-20 bg-[#1e1e1e]/90 backdrop-blur-md border-b border-[var(--border)] shadow-sm shadow-black/20"
@@ -38,6 +46,21 @@ export function ANSMinimalHeader({
           <span className={logoClasses}>Xpersona</span>
         </Link>
         <nav className="flex items-center gap-1 sm:gap-4 flex-shrink-0" aria-label="Main navigation">
+          {navLinks.map((link) => (
+            <Link key={link.href} href={link.href} className={navLinkClasses}>
+              {link.label}
+            </Link>
+          ))}
+          {!isAuthenticated && (
+            <>
+              <Link href="/auth/signin?callbackUrl=/dashboard" className={signInClasses}>
+                Sign in
+              </Link>
+              <Link href="/auth/signup" className={signUpClasses}>
+                Sign up
+              </Link>
+            </>
+          )}
         </nav>
       </div>
     </header>

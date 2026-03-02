@@ -1,0 +1,51 @@
+{
+  "name": "xpersona-playground",
+  "displayName": "Xpersona Playground",
+  "description": "Playground workflow helpers for Xpersona.",
+  "version": "0.0.1",
+  "publisher": "xpersona",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onCommand:xpersona.playground.run",
+    "onCommand:xpersona.playground.prompt",
+    "onCommand:xpersona.playground.openWithSelection"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "xpersona.playground.run",
+        "title": "Xpersona: Open Playground"
+      },
+      {
+        "command": "xpersona.playground.prompt",
+        "title": "Xpersona: New Playground Prompt"
+      },
+      {
+        "command": "xpersona.playground.openWithSelection",
+        "title": "Xpersona: Open Playground With Selection"
+      }
+    ],
+    "configuration": {
+      "title": "Xpersona Playground",
+      "properties": {
+        "xpersona.playground.baseUrl": {
+          "type": "string",
+          "default": "https://xpersona.co/playground",
+          "description": "Base URL used when opening Playground."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -p . -w"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.0.0"
+  }
+}
