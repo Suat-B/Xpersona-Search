@@ -205,8 +205,8 @@ export function PlaygroundClient() {
           </h1>
 
           <p className="text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto mb-8">
-            Build faster with <span className="font-semibold text-purple-700">Qwen 2.5 for reasoning</span> — 
-            the same model powering Alibaba's AI, now available at every price point.
+            Build faster with <span className="font-semibold text-purple-700">Qwen 2.5 for reasoning</span> —
+            the same model powering Alibaba&apos;s AI, now available at every price point.
           </p>
 
           {/* Stats Row */}
@@ -473,22 +473,22 @@ export function PlaygroundClient() {
                   <div className="w-3 h-3 rounded-full bg-green-500" />
                   <span className="ml-2 text-xs text-slate-500">playground.ts</span>
                 </div>
-                <div className="space-y-3 text-sm font-mono">
-                  <div className="text-purple-400">// Generate a React component</div>
+        <div className="space-y-3 text-sm font-mono">
+          <div className="text-purple-400">{'// Generate a React component'}</div>
                   <div className="text-slate-300">
                     <span className="text-cyan-400">const</span> Component = <span className="text-cyan-400">await</span> playground.<span className="text-yellow-300">generate</span>({'{'}
                   </div>
                   <div className="pl-4 text-slate-400">
-                    model: <span className="text-green-400">'qwen-2.5-coder'</span>,
+                    model: <span className="text-green-400">{`'qwen-2.5-coder'`}</span>,
                   </div>
                   <div className="pl-4 text-slate-400">
-                    prompt: <span className="text-green-400">'Create a button component'</span>,
+                    prompt: <span className="text-green-400">{`'Create a button component'`}</span>,
                   </div>
                   <div className="pl-4 text-slate-400">
-                    language: <span className="text-green-400">'typescript'</span>
+                    language: <span className="text-green-400">{`'typescript'`}</span>
                   </div>
                   <div className="text-slate-300">{'}'});</div>
-                  <div className="text-slate-500 pt-2">// Output: React button component code</div>
+                  <div className="text-slate-500 pt-2">{'// Output: React button component code'}</div>
                 </div>
               </div>
             </div>
