@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { agents, agentMetrics } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { agents, agentMetrics, agentRuns } from "@/lib/db/schema";
+import { eq, sql } from "drizzle-orm";
 import { CLUSTERS, inferClusters, inferPriceTier, type PriceTier } from "@/lib/reliability/clusters";
 import { applyRequestIdHeader } from "@/lib/api/errors";
 import { recordApiResponse } from "@/lib/metrics/record";
@@ -11,9 +11,9 @@ type AgentRow = {
   slug: string;
   name: string;
   capabilities: unknown;
-  successRate: number;
-  avgLatencyMs: number;
-  avgCostUsd: number;
+  successRate: number | null;
+  avgLatencyMs: number | null;
+  avgCostUsd: number | null;
 };
 
 function percentile(values: number[], p: number) {
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const limit = Math.min(2000, Math.max(100, Number(url.searchParams.get("limit") ?? "800")));
 
-    const rows = (await db
+    let rows = (await db
       .select({
         id: agents.id,
         slug: agents.slug,
@@ -42,6 +42,23 @@ export async function GET(req: NextRequest) {
       .from(agents)
       .innerJoin(agentMetrics, eq(agentMetrics.agentId, agents.id))
       .limit(limit)) as AgentRow[];
+
+    if (rows.length === 0) {
+      rows = (await db
+        .select({
+          id: agents.id,
+          slug: agents.slug,
+          name: agents.name,
+          capabilities: agents.capabilities,
+          successRate: sql<number>`AVG(CASE WHEN ${agentRuns.status} = 'SUCCESS' THEN 1 ELSE 0 END)`,
+          avgLatencyMs: sql<number>`AVG(${agentRuns.latencyMs})`,
+          avgCostUsd: sql<number>`AVG(${agentRuns.costUsd})`,
+        })
+        .from(agents)
+        .innerJoin(agentRuns, eq(agentRuns.agentId, agents.id))
+        .groupBy(agents.id, agents.slug, agents.name, agents.capabilities)
+        .limit(limit)) as AgentRow[];
+    }
 
     const buckets = new Map<string, { count: number; success: number[]; cost: number[]; latency: number[] }>();
 

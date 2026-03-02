@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { agents, agentMetrics } from "@/lib/db/schema";
+import { agents, agentMetrics, agentRuns } from "@/lib/db/schema";
 import { and, desc, eq, sql, type SQL } from "drizzle-orm";
 import { inferClusters, inferPriceTier, type PriceTier } from "@/lib/reliability/clusters";
 import { applyRequestIdHeader } from "@/lib/api/errors";
@@ -17,20 +17,22 @@ export async function GET(req: NextRequest) {
     const tier = url.searchParams.get("tier")?.toLowerCase() as PriceTier | null;
     const limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit") ?? "10")));
 
-    const conditions: SQL[] = [];
+    const baseConditions: SQL[] = [];
+    const maxCost = Number(budget);
+    const budgetLimit = Number.isFinite(maxCost) ? maxCost : null;
     if (capability) {
-      conditions.push(
+      baseConditions.push(
         sql`${agents.capabilities} ? ${capability.toLowerCase()}`
       );
     }
+    const metricConditions = [...baseConditions];
     if (budget) {
-      const maxCost = Number(budget);
       if (Number.isFinite(maxCost)) {
-        conditions.push(sql`${agentMetrics.avgCostUsd} <= ${maxCost}`);
+        metricConditions.push(sql`${agentMetrics.avgCostUsd} <= ${maxCost}`);
       }
     }
 
-    const rows = await db
+    let rows = (await db
       .select({
         agentId: agents.id,
         slug: agents.slug,
@@ -42,20 +44,58 @@ export async function GET(req: NextRequest) {
       })
       .from(agents)
       .innerJoin(agentMetrics, eq(agentMetrics.agentId, agents.id))
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .where(metricConditions.length > 0 ? and(...metricConditions) : undefined)
       .orderBy(desc(agentMetrics.successRate), desc(agentMetrics.p95Latency))
-      .limit(Math.max(limit * 5, 50));
+      .limit(Math.max(limit * 5, 50))) as Array<{
+      agentId: string;
+      slug: string;
+      name: string;
+      capabilities: unknown;
+      successRate: number | null;
+      avgLatencyMs: number | null;
+      avgCostUsd: number | null;
+    }>;
+
+    if (rows.length === 0) {
+      rows = (await db
+        .select({
+          agentId: agents.id,
+          slug: agents.slug,
+          name: agents.name,
+          capabilities: agents.capabilities,
+          successRate: sql<number>`AVG(CASE WHEN ${agentRuns.status} = 'SUCCESS' THEN 1 ELSE 0 END)`,
+          avgLatencyMs: sql<number>`AVG(${agentRuns.latencyMs})`,
+          avgCostUsd: sql<number>`AVG(${agentRuns.costUsd})`,
+        })
+        .from(agents)
+        .innerJoin(agentRuns, eq(agentRuns.agentId, agents.id))
+        .where(baseConditions.length > 0 ? and(...baseConditions) : undefined)
+        .groupBy(agents.id, agents.slug, agents.name, agents.capabilities)
+        .limit(Math.max(limit * 5, 50))) as Array<{
+        agentId: string;
+        slug: string;
+        name: string;
+        capabilities: unknown;
+        successRate: number | null;
+        avgLatencyMs: number | null;
+        avgCostUsd: number | null;
+      }>;
+    }
 
     const filtered = rows.filter((row) => {
       const clusters = inferClusters(Array.isArray(row.capabilities) ? row.capabilities : []);
-      const costTier = inferPriceTier(row.avgCostUsd as number | null);
+      const avgCost = Number(row.avgCostUsd ?? 0);
+      const costTier = inferPriceTier(Number.isFinite(avgCost) ? avgCost : null);
       if (cluster && !clusters.includes(cluster as typeof clusters[number])) return false;
       if (taskType && !clusters.includes(taskType as typeof clusters[number])) return false;
       if (tier && costTier !== tier) return false;
+      if (budgetLimit != null && Number(row.avgCostUsd ?? 0) > budgetLimit) return false;
       return true;
     });
 
-    const ranked = [...filtered].sort((a, b) => (b.successRate as number) - (a.successRate as number));
+    const ranked = [...filtered].sort(
+      (a, b) => Number(b.successRate ?? 0) - Number(a.successRate ?? 0)
+    );
     const withPercentile = ranked.map((row, idx) => {
       const percentile = ranked.length > 1 ? Math.round((idx / (ranked.length - 1)) * 100) : 100;
       return {

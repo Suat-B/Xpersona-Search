@@ -33,6 +33,9 @@ type ReliabilityMetrics = {
   hiring_score?: number | null;
   last_30_day_trend?: { success_rate_delta?: number; cost_delta?: number };
   last_updated?: string | null;
+  has_telemetry?: boolean;
+  run_count?: number;
+  metrics_unavailable?: boolean;
 };
 
 type SuggestionResponse = {
@@ -57,6 +60,18 @@ function formatNumber(value?: number | null, suffix = "") {
 function formatInt(value?: number | null, suffix = "") {
   if (value == null || Number.isNaN(value)) return "-";
   return `${Math.round(value)}${suffix}`;
+}
+
+function formatSignedPct(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return "-";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${(value * 100).toFixed(1)}%`;
+}
+
+function formatSignedNumber(value?: number | null, suffix = "") {
+  if (value == null || Number.isNaN(value)) return "-";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(2)}${suffix}`;
 }
 
 export function ReliabilityDashboard() {
@@ -186,6 +201,11 @@ export function ReliabilityDashboard() {
   }, [selectedAgent, router, searchParams, metricsReloadKey]);
 
   const topFailures = useMemo(() => metrics?.top_failure_modes ?? [], [metrics]);
+  const hasTelemetry = Boolean(metrics?.has_telemetry);
+  const telemetryActive = metricsLoading ? true : hasTelemetry;
+  const telemetryStatus = metricsLoading ? "Loading..." : hasTelemetry ? "Live Telemetry" : "No Telemetry Yet";
+  const successDelta = hasTelemetry ? metrics?.last_30_day_trend?.success_rate_delta ?? null : null;
+  const costDelta = hasTelemetry ? metrics?.last_30_day_trend?.cost_delta ?? null : null;
   const filteredAgents = useMemo(() => {
     const needle = browseFilter.trim().toLowerCase();
     if (!needle) return browseAgents;
@@ -354,14 +374,27 @@ export function ReliabilityDashboard() {
                   <h3 className="text-2xl font-bold text-white tracking-tight">{selectedAgent.name}</h3>
                   <p className="text-sm text-[var(--accent-heart)] font-mono">@{selectedAgent.slug}</p>
                 </div>
-                <div className="bg-[var(--accent-heart)]/10 border border-[var(--accent-heart)]/20 px-3 py-1 rounded-full">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--accent-heart)]">Live Telemetry</span>
+                <div
+                  className={`px-3 py-1 rounded-full border ${telemetryActive
+                    ? "bg-[var(--accent-heart)]/10 border-[var(--accent-heart)]/20"
+                    : "bg-white/5 border-[var(--border)]"
+                  }`}
+                >
+                  <span className={`text-[10px] font-bold uppercase tracking-widest ${telemetryActive ? "text-[var(--accent-heart)]" : "text-[var(--text-tertiary)]"}`}>
+                    {telemetryStatus}
+                  </span>
                 </div>
               </div>
 
               {metricsError && (
                 <div className="mt-4 rounded-xl border border-[var(--accent-danger)]/30 bg-[var(--accent-danger)]/5 p-4 text-sm text-[var(--accent-danger)]">
                   {metricsError}
+                </div>
+              )}
+
+              {!metricsLoading && !metricsError && metrics && !hasTelemetry && (
+                <div className="mt-4 rounded-xl border border-[var(--border)] bg-white/5 p-4 text-sm text-[var(--text-secondary)]">
+                  No telemetry yet for this agent. Metrics will appear after the first verified runs are ingested.
                 </div>
               )}
 
@@ -424,14 +457,14 @@ export function ReliabilityDashboard() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="flex flex-col">
                     <span className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-widest mb-1">Success Delta</span>
-                    <span className={`text-lg font-bold ${metrics?.last_30_day_trend?.success_rate_delta && metrics.last_30_day_trend.success_rate_delta > 0 ? 'text-[var(--accent-success)]' : 'text-white'}`}>
-                      {metricsLoading ? "..." : (metrics?.last_30_day_trend?.success_rate_delta ? `+${metrics.last_30_day_trend.success_rate_delta}%` : "0%")}
+                    <span className={`text-lg font-bold ${successDelta != null && successDelta > 0 ? 'text-[var(--accent-success)]' : 'text-white'}`}>
+                      {metricsLoading ? "..." : formatSignedPct(successDelta)}
                     </span>
                   </div>
                   <div className="flex flex-col">
                     <span className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-widest mb-1">Cost Delta</span>
-                    <span className={`text-lg font-bold ${metrics?.last_30_day_trend?.cost_delta && metrics.last_30_day_trend.cost_delta < 0 ? 'text-[var(--accent-success)]' : 'text-white'}`}>
-                      {metricsLoading ? "..." : (metrics?.last_30_day_trend?.cost_delta ? `${metrics.last_30_day_trend.cost_delta}%` : "0%")}
+                    <span className={`text-lg font-bold ${costDelta != null && costDelta < 0 ? 'text-[var(--accent-success)]' : 'text-white'}`}>
+                      {metricsLoading ? "..." : formatSignedNumber(costDelta, " USD")}
                     </span>
                   </div>
                 </div>
@@ -442,7 +475,10 @@ export function ReliabilityDashboard() {
                   <p className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-[0.2em] mb-4">Top Failure Modes</p>
                   <div className="space-y-3 text-sm text-white">
                     {metricsLoading && <div>Loading...</div>}
-                    {!metricsLoading && topFailures.length == 0 && <div className="text-[var(--text-tertiary)] italic">No failures recorded.</div>}
+                    {!metricsLoading && !hasTelemetry && <div className="text-[var(--text-tertiary)] italic">No telemetry yet.</div>}
+                    {!metricsLoading && hasTelemetry && topFailures.length == 0 && (
+                      <div className="text-[var(--text-tertiary)] italic">No failures recorded.</div>
+                    )}
                     {!metricsLoading &&
                       topFailures.map((failure) => (
                         <div key={failure.type} className="flex items-center justify-between p-2 rounded-lg bg-white/5">
@@ -456,9 +492,12 @@ export function ReliabilityDashboard() {
                   <p className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-[0.2em] mb-4">Self-Optimization Suggestions</p>
                   <div className="space-y-3 text-sm text-white">
                     {metricsLoading && <div>Loading...</div>}
-                    {!metricsLoading && (!suggestions?.recommended_actions || suggestions.recommended_actions.length == 0) && (
-                      <div className="text-[var(--text-tertiary)] italic">No suggestions yet.</div>
-                    )}
+                    {!metricsLoading && !hasTelemetry && <div className="text-[var(--text-tertiary)] italic">No telemetry yet.</div>}
+                    {!metricsLoading &&
+                      hasTelemetry &&
+                      (!suggestions?.recommended_actions || suggestions.recommended_actions.length == 0) && (
+                        <div className="text-[var(--text-tertiary)] italic">No suggestions yet.</div>
+                      )}
                     {!metricsLoading &&
                       suggestions?.recommended_actions?.map((action) => (
                         <div key={action} className="flex gap-3 p-3 rounded-lg bg-[var(--accent-heart)]/5 border border-[var(--accent-heart)]/20 animate-in fade-in slide-in-from-right-2">

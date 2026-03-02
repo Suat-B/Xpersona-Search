@@ -175,9 +175,10 @@ export async function TrendingGridHF() {
                   }`;
                   if ("name" in item) {
                     const agent = item as SearchAgent;
+                    const itemKey = agent.id || agent.slug || `${agent.name}-${rowIndex}`;
                     return (
                       <Link
-                        key={agent.id}
+                        key={`${columnIndex}-${itemKey}`}
                         href={`/agent/${agent.slug}`}
                         className={cardBase}
                       >
@@ -212,9 +213,10 @@ export async function TrendingGridHF() {
                   }
                   const cap = item as CapabilitySummary;
                   const freshness = cap.count >= 6 ? "Freshness: High" : cap.count >= 3 ? "Freshness: Medium" : "Freshness: Low";
+                  const capKey = `${columnIndex}-${cap.name}-${rowIndex}`;
                   return (
                     <div
-                      key={cap.name}
+                      key={capKey}
                       className={cardBase}
                     >
                       <div className="flex w-full items-center justify-between gap-3">
