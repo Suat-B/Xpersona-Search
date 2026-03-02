@@ -36,6 +36,13 @@ type ReliabilityMetrics = {
   has_telemetry?: boolean;
   run_count?: number;
   metrics_unavailable?: boolean;
+  ai_probe?: {
+    coverage?: number | null;
+    score?: number | null;
+    confidence?: number | null;
+    benchmark_count?: number | null;
+    outcomes_attempts?: number | null;
+  };
 };
 
 type SuggestionResponse = {
@@ -206,6 +213,11 @@ export function ReliabilityDashboard() {
   const telemetryStatus = metricsLoading ? "Loading..." : hasTelemetry ? "Live Telemetry" : "No Telemetry Yet";
   const successDelta = hasTelemetry ? metrics?.last_30_day_trend?.success_rate_delta ?? null : null;
   const costDelta = hasTelemetry ? metrics?.last_30_day_trend?.cost_delta ?? null : null;
+  const aiProbeCoverage = metrics?.ai_probe?.coverage ?? null;
+  const aiProbeScore = metrics?.ai_probe?.score ?? null;
+  const aiProbeConfidence = metrics?.ai_probe?.confidence ?? null;
+  const aiProbeBenchmarks = metrics?.ai_probe?.benchmark_count ?? null;
+  const aiProbeAttempts = metrics?.ai_probe?.outcomes_attempts ?? null;
   const filteredAgents = useMemo(() => {
     const needle = browseFilter.trim().toLowerCase();
     if (!needle) return browseAgents;
@@ -467,6 +479,41 @@ export function ReliabilityDashboard() {
                       {metricsLoading ? "..." : formatSignedNumber(costDelta, " USD")}
                     </span>
                   </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                <div className="rounded-2xl border border-[var(--border)] bg-white/5 p-5 hover:border-[var(--accent-heart)]/20 transition-colors">
+                  <p className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-[0.2em] mb-1">AI Coverage</p>
+                  <p className="text-3xl font-bold text-white tracking-tighter">
+                    {metricsLoading ? "..." : formatInt(aiProbeCoverage, "%")}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-[var(--border)] bg-white/5 p-5 hover:border-[var(--accent-heart)]/20 transition-colors">
+                  <p className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-[0.2em] mb-1">AI Probe Score</p>
+                  <p className="text-3xl font-bold text-white tracking-tighter">
+                    {metricsLoading ? "..." : formatNumber(aiProbeScore)}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-[var(--border)] bg-white/5 p-5 hover:border-[var(--accent-heart)]/20 transition-colors">
+                  <p className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-[0.2em] mb-1">AI Confidence</p>
+                  <p className="text-3xl font-bold text-white tracking-tighter">
+                    {metricsLoading ? "..." : formatInt(aiProbeConfidence, "%")}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <div className="rounded-2xl border border-[var(--border)] bg-black/20 p-5">
+                  <p className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-[0.2em] mb-1">AI Benchmarks</p>
+                  <p className="text-2xl font-bold text-white">
+                    {metricsLoading ? "..." : formatInt(aiProbeBenchmarks)}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-[var(--border)] bg-black/20 p-5">
+                  <p className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-[0.2em] mb-1">AI Outcomes</p>
+                  <p className="text-2xl font-bold text-white">
+                    {metricsLoading ? "..." : formatInt(aiProbeAttempts)}
+                  </p>
                 </div>
               </div>
 
