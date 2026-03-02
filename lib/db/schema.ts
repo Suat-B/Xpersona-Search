@@ -13,7 +13,7 @@ import {
   uniqueIndex,
   check,
 } from "drizzle-orm/pg-core";
-export { agents, agentCustomizations } from "./search-schema";
+export { agents, agentClaims, agentCustomizations, agentEditorialContent } from "./search-schema";
 
 /** Account type: agent (AI), human (decoy), google (OAuth, deprecated), email (credentials). */
 export type AccountType = "agent" | "human" | "google" | "email";
@@ -1237,78 +1237,6 @@ export const hfMonthlyUsage = pgTable(
 // ============================================================================
 
 /**
- * Agents table — represents AI agents in the marketplace.
- */
-export const agents = pgTable("agents", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: varchar("name", { length: 255 }).notNull(),
-  slug: varchar("slug", { length: 255 }).notNull().unique(),
-  source: varchar("source", { length: 100 }),
-  description: text("description"),
-  status: varchar("status", { length: 50 }).notNull().default("PENDING_REVIEW"),
-  // ACTIVE, PENDING_REVIEW, DISABLED, DELETED
-  claimStatus: varchar("claim_status", { length: 50 }).notNull().default("UNCLAIMED"),
-  // UNCLAIMED, CLAIMED, PENDING_CLAIM
-  claimedByUserId: uuid("claimed_by_user_id").references(() => users.id, { onDelete: "set null" }),
-  publicSearchable: boolean("public_searchable").notNull().default(true),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => [
-  index("agents_status_idx").on(table.status),
-  index("agents_slug_idx").on(table.slug),
-  index("agents_claimed_by_user_idx").on(table.claimedByUserId),
-]);
-
-/**
  * Agent claims — track ownership claims for agents.
  */
-export const agentClaims = pgTable("agent_claims", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  agentId: uuid("agent_id").notNull().references(() => agents.id, { onDelete: "cascade" }),
-  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  status: varchar("status", { length: 50 }).notNull().default("PENDING"),
-  // PENDING, APPROVED, REJECTED, EXPIRED
-  verificationMethod: varchar("verification_method", { length: 100 }),
-  verificationData: jsonb("verification_data"),
-  reviewNote: text("review_note"),
-  expiresAt: timestamp("expires_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => [
-  index("agent_claims_agent_idx").on(table.agentId),
-  index("agent_claims_user_idx").on(table.userId),
-  index("agent_claims_status_idx").on(table.status),
-]);
 
-/**
- * Agent customizations — custom pages for agents.
- */
-export const agentCustomizations = pgTable("agent_customizations", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  agentId: uuid("agent_id").notNull().references(() => agents.id, { onDelete: "cascade" }),
-  status: varchar("status", { length: 50 }).notNull().default("DRAFT"),
-  // DRAFT, PUBLISHED, DISABLED
-  customContent: jsonb("custom_content"),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => [
-  index("agent_customizations_agent_idx").on(table.agentId),
-  index("agent_customizations_status_idx").on(table.status),
-]);
-
-/**
- * Agent editorial content — AI-generated or curated content for agents.
- */
-export const agentEditorialContent = pgTable("agent_editorial_content", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  agentId: uuid("agent_id").notNull().references(() => agents.id, { onDelete: "cascade" }),
-  status: varchar("status", { length: 50 }).notNull().default("PENDING"),
-  // PENDING, READY, DISABLED
-  title: varchar("title", { length: 500 }),
-  shortDescription: text("short_description"),
-  longContent: text("long_content"),
-  tags: jsonb("tags"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => [
-  index("agent_editorial_content_agent_idx").on(table.agentId),
-  index("agent_editorial_content_status_idx").on(table.status),
-]);
