@@ -1,57 +1,70 @@
 {
   "name": "xpersona-playground",
-  "displayName": "Xpersona Playground",
-  "description": "Playground workflow helpers for Xpersona.",
-  "version": "0.0.1",
+  "displayName": "Xpersona",
+  "description": "Chat with AI agents powered by Xpersona — directly in VS Code.",
+  "version": "0.0.4",
   "publisher": "xpersona",
+  "license": "UNLICENSED",
   "engines": {
     "vscode": "^1.90.0"
   },
-  "categories": ["Other"],
+  "categories": [
+    "Other"
+  ],
   "activationEvents": [
-    "onCommand:xpersona.playground.run",
     "onCommand:xpersona.playground.prompt",
     "onCommand:xpersona.playground.openWithSelection",
+    "onCommand:xpersona.playground.setApiKey",
     "onView:xpersona.playgroundView"
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "xpersona",
+          "title": "Xpersona",
+          "icon": "media/xpersona.svg"
+        }
+      ]
+    },
     "views": {
-      "explorer": [
+      "xpersona": [
         {
           "id": "xpersona.playgroundView",
-          "name": "Xpersona Playground",
+          "name": "Agent Chat",
+          "type": "webview",
           "when": "true"
         }
       ]
     },
     "commands": [
       {
-        "command": "xpersona.playground.run",
-        "title": "Open Playground",
-        "category": "Xpersona"
-      },
-      {
         "command": "xpersona.playground.prompt",
-        "title": "New Playground Prompt",
+        "title": "Start Chat with Agent",
         "category": "Xpersona"
       },
       {
         "command": "xpersona.playground.openWithSelection",
-        "title": "Open Playground With Selection",
+        "title": "Chat with Selection",
+        "category": "Xpersona"
+      },
+      {
+        "command": "xpersona.playground.setApiKey",
+        "title": "Set API Key",
         "category": "Xpersona"
       }
     ],
     "menus": {
       "commandPalette": [
         {
-          "command": "xpersona.playground.run"
-        },
-        {
           "command": "xpersona.playground.prompt"
         },
         {
           "command": "xpersona.playground.openWithSelection"
+        },
+        {
+          "command": "xpersona.playground.setApiKey"
         }
       ],
       "editor/context": [
@@ -65,16 +78,26 @@
     "viewsWelcome": [
       {
         "view": "xpersona.playgroundView",
-        "contents": "Open Xpersona Playground to start working with AI agents.\n[Open Playground](command:xpersona.playground.run)\n[New Prompt](command:xpersona.playground.prompt)"
+        "contents": "Chat with AI agents powered by Xpersona.\n[Start Chat with Agent](command:xpersona.playground.prompt)\n[Chat with Selection](command:xpersona.playground.openWithSelection)\n[Set API Key](command:xpersona.playground.setApiKey)"
       }
     ],
     "configuration": {
-      "title": "Xpersona Playground",
+      "title": "Xpersona",
       "properties": {
-        "xpersona.playground.baseUrl": {
+        "xpersona.playground.baseApiUrl": {
           "type": "string",
-          "default": "https://xpersona.co/playground",
-          "description": "Base URL used when opening Playground."
+          "default": "https://xpersona.co",
+          "description": "Base URL for the Xpersona API. Use http://localhost:3000 for local development."
+        },
+        "xpersona.playground.model": {
+          "type": "string",
+          "default": "Qwen/Qwen2.5-Coder-7B-Instruct:nscale",
+          "description": "HuggingFace model to use for chat completions."
+        },
+        "xpersona.playground.systemPrompt": {
+          "type": "string",
+          "default": "You are an expert software engineer and coding assistant. Help the user with their code, answer questions clearly, and provide working examples.",
+          "description": "System prompt sent to the AI agent."
         }
       }
     }
@@ -83,9 +106,10 @@
     "compile": "tsc -p .",
     "watch": "tsc -p . -w",
     "build": "tsc -p .",
-    "package": "vsce package"
+    "package": "vsce package --allow-missing-repository"
   },
   "devDependencies": {
+    "@types/node": "^25.3.3",
     "@types/vscode": "^1.90.0",
     "typescript": "^5.0.0"
   }

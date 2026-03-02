@@ -1,8 +1,9 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { unwrapClientResponse } from "@/lib/api/client-response";
+import { PlaygroundQuotaCard } from "@/components/dashboard/PlaygroundQuotaCard";
 
 interface ClaimedAgent {
   id: string;
@@ -100,6 +101,8 @@ export default function DashboardPage() {
 
       {/* Stats Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <PlaygroundQuotaCard />
+        
         <div className="agent-card p-6">
           <div className="flex items-center gap-3 mb-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#30d158]/10 text-[#30d158] border border-[#30d158]/20">

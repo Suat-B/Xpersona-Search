@@ -1128,26 +1128,106 @@ export const economyJobMessages = pgTable(
   (table) => [index("economy_job_messages_job_created_idx").on(table.jobId, table.createdAt)]
 );
 
-// Search engine tables - re-exported from search-schema
-export {
-  agents,
-  agentMediaAssets,
-  mediaWebFrontier,
-  agentClaims,
-  agentCustomizations,
-  agentCustomizationVersions,
-  crawlFrontier,
-  crawlJobs,
-  crawlCheckpoints,
-  searchClicks,
-  agentEmbeddings,
-  searchOutcomes,
-  agentExecutionMetrics,
-  agentCapabilityContracts,
-  agentCapabilityHandshakes,
-  trustReceipts,
-  agentReputationSnapshots,
-  agentEditorialContent,
-  agentContentVersions,
-  taxonomyPageContent,
-} from "./search-schema";
+// Playground subscriptions — HF inference router billing
+export const playgroundSubscriptions = pgTable(
+  "playground_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
+    stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }).unique(),
+    /** 'trial' | 'paid' - simplified 2-tier system */
+    planTier: varchar("plan_tier", { length: 20 }).notNull().$type<"trial" | "paid">(),
+    /** 'active' | 'cancelled' | 'past_due' | 'trial' */
+    status: varchar("status", { length: 20 }).notNull().default("trial"),
+    trialStartedAt: timestamp("trial_started_at", { withTimezone: true }),
+    trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
+    currentPeriodStart: timestamp("current_period_start", { withTimezone: true }),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("playground_subscriptions_user_id_idx").on(table.userId),
+    index("playground_subscriptions_stripe_sub_idx").on(table.stripeSubscriptionId),
+    index("playground_subscriptions_status_idx").on(table.status),
+  ]
+);
+
+// HF usage logs — every inference request through the playground router
+export const hfUsageLogs = pgTable(
+  "hf_usage_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    subscriptionId: uuid("subscription_id").references(
+      () => playgroundSubscriptions.id
+    ),
+    model: varchar("model", { length: 100 }).notNull(),
+    /** Inference provider, e.g. 'nscale' */
+    provider: varchar("provider", { length: 50 }).notNull().default("nscale"),
+    tokensInput: integer("tokens_input").notNull().default(0),
+    tokensOutput: integer("tokens_output").notNull().default(0),
+    estimatedCostUsd: doublePrecision("estimated_cost_usd"),
+    latencyMs: integer("latency_ms"),
+    /** 'success' | 'error' | 'rate_limited' | 'quota_exceeded' | 'validation_error' */
+    status: varchar("status", { length: 20 }).notNull(),
+    errorMessage: text("error_message"),
+    requestHash: varchar("request_hash", { length: 64 }),
+    requestPayload: jsonb("request_payload"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("hf_usage_logs_user_created_idx").on(table.userId, table.createdAt),
+    index("hf_usage_logs_model_idx").on(table.model),
+    index("hf_usage_logs_status_idx").on(table.status),
+  ]
+);
+
+// Daily usage aggregates — fast quota checks per user per day
+export const hfDailyUsage = pgTable(
+  "hf_daily_usage",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    usageDate: timestamp("usage_date", { withTimezone: false }).notNull(),
+    requestsCount: integer("requests_count").notNull().default(0),
+    tokensInput: integer("tokens_input").notNull().default(0),
+    tokensOutput: integer("tokens_output").notNull().default(0),
+    estimatedCostUsd: doublePrecision("estimated_cost_usd").default(0),
+  },
+  (table) => [
+    uniqueIndex("hf_daily_usage_user_date_idx").on(table.userId, table.usageDate),
+  ]
+);
+
+// Monthly usage aggregates — monthly caps per user
+export const hfMonthlyUsage = pgTable(
+  "hf_monthly_usage",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    usageYear: integer("usage_year").notNull(),
+    usageMonth: integer("usage_month").notNull(),
+    requestsCount: integer("requests_count").notNull().default(0),
+    tokensOutput: integer("tokens_output").notNull().default(0),
+    estimatedCostUsd: doublePrecision("estimated_cost_usd").default(0),
+  },
+  (table) => [
+    uniqueIndex("hf_monthly_usage_user_year_month_idx").on(
+      table.userId,
+      table.usageYear,
+      table.usageMonth
+    ),
+    index("hf_monthly_usage_user_idx").on(table.userId),
+  ]
+);
