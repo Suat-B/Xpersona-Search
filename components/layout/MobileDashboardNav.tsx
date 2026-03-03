@@ -30,6 +30,11 @@ const ICONS = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 100-6 3 3 0 000 6zM20 19a4 4 0 00-8 0" />
     </svg>
   ),
+  playground: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 3l2.3 4.66L19.5 9l-3.75 3.65.88 5.16L12 15.37l-4.63 2.44.88-5.16L4.5 9l5.2-1.34L12 3z" />
+    </svg>
+  ),
   admin: (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -43,6 +48,7 @@ const MOBILE_LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: "dashboard" as const, exact: true },
   { href: "/dashboard/claimed-agents", label: "Claimed Agents", icon: "shield" as const, exact: false },
   { href: "/dashboard/strategies", label: "Strategies", icon: "strategy" as const, exact: false },
+  { href: "/dashboard/playground", label: "Playground AI", icon: "playground" as const, exact: false },
 ] as const;
 
 function isActive(pathname: string, href: string, exact: boolean): boolean {

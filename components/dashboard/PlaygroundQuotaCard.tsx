@@ -356,10 +356,10 @@ export function PlaygroundQuotaCard() {
           )}
           
           <Link
-            href="/playground"
+            href="/dashboard/playground"
             className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl border border-[var(--border)] text-[var(--text-secondary)] text-sm font-medium hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] transition-colors"
           >
-            Open Playground
+            Manage Subscription
           </Link>
         </div>
 

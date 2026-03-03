@@ -1,47 +1,13 @@
-import * as vscode from "vscode";
+﻿import * as vscode from "vscode";
 import * as https from "https";
 import * as http from "http";
 import { URL } from "url";
 
 const API_KEY_SECRET = "xpersona.apiKey";
 
-// ─── Activation ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ Activation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function activate(context: vscode.ExtensionContext) {
-  // Command: Start Chat
-  const newPrompt = vscode.commands.registerCommand("xpersona.playground.prompt", async () => {
-    openChatPanel(context, []);
-  });
-
-  // Command: Chat with Selection
-  const openWithSelection = vscode.commands.registerCommand(
-    "xpersona.playground.openWithSelection",
-    async () => {
-      const selectedText = getSelectionOrLine();
-      const panel = openChatPanel(context, []);
-      if (selectedText) {
-        setTimeout(() => {
-          panel.webview.postMessage({ type: "prefill", content: selectedText });
-        }, 600);
-      }
-    }
-  );
-
-  // Command: Set API Key
-  const setApiKey = vscode.commands.registerCommand("xpersona.playground.setApiKey", async () => {
-    const key = await vscode.window.showInputBox({
-      title: "Xpersona API Key",
-      prompt: "Enter your Xpersona API key (from your dashboard → Settings → API Key)",
-      password: true,
-      placeHolder: "xp_...",
-      ignoreFocusOut: true,
-    });
-    if (key && key.trim().length > 0) {
-      await context.secrets.store(API_KEY_SECRET, key.trim());
-      vscode.window.showInformationMessage("✅ Xpersona API key saved securely.");
-    }
-  });
-
   // Sidebar view
   const viewProvider = new PlaygroundViewProvider(context);
   const viewRegistration = vscode.window.registerWebviewViewProvider(
@@ -49,14 +15,43 @@ export function activate(context: vscode.ExtensionContext) {
     viewProvider
   );
 
+  // Command: Start Chat
+  const newPrompt = vscode.commands.registerCommand("xpersona.playground.prompt", async () => {
+    await viewProvider.showChat();
+  });
+
+  // Command: Chat with Selection
+  const openWithSelection = vscode.commands.registerCommand(
+    "xpersona.playground.openWithSelection",
+    async () => {
+      const selectedText = getSelectionOrLine();
+      await viewProvider.showChat(selectedText);
+    }
+  );
+
+  // Command: Set API Key
+  const setApiKey = vscode.commands.registerCommand("xpersona.playground.setApiKey", async () => {
+    const key = await vscode.window.showInputBox({
+      title: "Xpersona API Key",
+      prompt: "Enter your Xpersona API key (from your dashboard -> Settings -> API Key)",
+      password: true,
+      placeHolder: "xp_...",
+      ignoreFocusOut: true,
+    });
+    if (key && key.trim().length > 0) {
+      await context.secrets.store(API_KEY_SECRET, key.trim());
+      viewProvider.notifyApiKeySaved();
+      vscode.window.showInformationMessage("Xpersona API key saved securely.");
+    }
+  });
+
   context.subscriptions.push(newPrompt, openWithSelection, setApiKey, viewRegistration);
 }
-
 export function deactivate() {
   return;
 }
 
-// ─── Chat Panel ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ Chat Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -92,7 +87,7 @@ function openChatPanel(
           if (message.key && message.key.trim().length > 0) {
             await context.secrets.store(API_KEY_SECRET, message.key.trim());
             panel.webview.postMessage({ type: "apiKeySaved" });
-            vscode.window.showInformationMessage("✅ Xpersona API key saved securely.");
+            vscode.window.showInformationMessage("âœ… Xpersona API key saved securely.");
           }
           break;
         case "clearHistory":
@@ -117,18 +112,97 @@ function openChatPanel(
   return panel;
 }
 
-// ─── Sidebar View ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Sidebar View â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class PlaygroundViewProvider implements vscode.WebviewViewProvider {
+  private webviewView: vscode.WebviewView | undefined;
+  private readonly conversationHistory: ChatMessage[] = [];
+  private pendingPrefill: string | undefined;
+
   constructor(private readonly context: vscode.ExtensionContext) {}
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
-    webviewView.webview.options = { enableCommandUris: true };
-    webviewView.webview.html = getSidebarHtml();
+    this.webviewView = webviewView;
+    webviewView.webview.options = {
+      enableScripts: true,
+      enableCommandUris: true,
+    };
+    webviewView.webview.html = getChatInterfaceHtml(getNonce());
+
+    webviewView.webview.onDidReceiveMessage(
+      async (message) => {
+        switch (message.type) {
+          case "sendMessage":
+            await handleChatMessage(
+              this.context,
+              webviewView.webview,
+              message.content,
+              this.conversationHistory
+            );
+            break;
+          case "saveApiKey":
+            if (message.key && message.key.trim().length > 0) {
+              await this.context.secrets.store(API_KEY_SECRET, message.key.trim());
+              webviewView.webview.postMessage({ type: "apiKeySaved" });
+              vscode.window.showInformationMessage("Xpersona API key saved securely.");
+            }
+            break;
+          case "clearHistory":
+            this.conversationHistory.length = 0;
+            break;
+          case "checkApiKey": {
+            const key = await this.context.secrets.get(API_KEY_SECRET);
+            webviewView.webview.postMessage({ type: "apiKeyStatus", hasKey: !!key });
+            break;
+          }
+        }
+      },
+      undefined,
+      this.context.subscriptions
+    );
+
+    this.context.secrets.get(API_KEY_SECRET).then((key) => {
+      webviewView.webview.postMessage({ type: "apiKeyStatus", hasKey: !!key });
+      if (this.pendingPrefill) {
+        webviewView.webview.postMessage({ type: "prefill", content: this.pendingPrefill });
+        this.pendingPrefill = undefined;
+      }
+    });
+
+    webviewView.onDidDispose(() => {
+      this.webviewView = undefined;
+    });
+  }
+
+  async showChat(prefill?: string): Promise<void> {
+    if (prefill) {
+      this.pendingPrefill = prefill;
+    }
+
+    try {
+      await vscode.commands.executeCommand("workbench.view.extension.xpersona");
+      await vscode.commands.executeCommand("xpersona.playgroundView.focus");
+    } catch {
+      // Best-effort focus.
+    }
+
+    if (this.webviewView) {
+      this.webviewView.show(true);
+      if (this.pendingPrefill) {
+        this.webviewView.webview.postMessage({ type: "prefill", content: this.pendingPrefill });
+        this.pendingPrefill = undefined;
+      }
+    }
+  }
+
+  notifyApiKeySaved(): void {
+    if (this.webviewView) {
+      this.webviewView.webview.postMessage({ type: "apiKeySaved" });
+      this.webviewView.webview.postMessage({ type: "apiKeyStatus", hasKey: true });
+    }
   }
 }
-
-// ─── Core: Handle Chat Message with Streaming ─────────────────────────────────
+// â”€â”€â”€ Core: Handle Chat Message with Streaming â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function handleChatMessage(
   context: vscode.ExtensionContext,
@@ -195,7 +269,7 @@ async function handleChatMessage(
   }
 }
 
-// ─── HTTP Streaming ───────────────────────────────────────────────────────────
+// â”€â”€â”€ HTTP Streaming â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface StreamOptions {
   baseApiUrl: string;
@@ -203,6 +277,57 @@ interface StreamOptions {
   model: string;
   messages: ChatMessage[];
   onToken: (token: string) => void;
+}
+
+function extractErrorMessage(value: unknown): string | undefined {
+  if (!value) return undefined;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => extractErrorMessage(item))
+      .filter((item): item is string => Boolean(item));
+    return parts.length > 0 ? parts.join(" | ") : undefined;
+  }
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    const nestedMessage =
+      extractErrorMessage(obj.message) ??
+      extractErrorMessage(obj.error) ??
+      extractErrorMessage(obj.detail) ??
+      extractErrorMessage(obj.reason);
+    if (nestedMessage) return nestedMessage;
+    try {
+      return JSON.stringify(obj);
+    } catch {
+      return "Unknown error";
+    }
+  }
+  return undefined;
+}
+
+function parseErrorFromResponseBody(errBody: string, statusCode?: number): string {
+  const fallback = `HTTP ${statusCode ?? "error"}`;
+  const trimmed = errBody.trim();
+  if (!trimmed) return fallback;
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    const message = extractErrorMessage(parsed);
+    if (message) {
+      return statusCode ? `HTTP ${statusCode}: ${message}` : message;
+    }
+  } catch {
+    // Non-JSON body, handled below.
+  }
+
+  const snippet = trimmed.slice(0, 300);
+  return statusCode ? `HTTP ${statusCode}: ${snippet}` : snippet;
 }
 
 function streamChatCompletion(opts: StreamOptions): Promise<string> {
@@ -251,12 +376,8 @@ function streamChatCompletion(opts: StreamOptions): Promise<string> {
           errBody += chunk.toString();
         });
         res.on("end", () => {
-          try {
-            const parsed = JSON.parse(errBody);
-            reject(new Error(parsed.error || parsed.message || `HTTP ${res.statusCode}`));
-          } catch {
-            reject(new Error(`HTTP ${res.statusCode}: ${errBody.slice(0, 200)}`));
-          }
+          const errorMessage = parseErrorFromResponseBody(errBody, res.statusCode);
+          reject(new Error(errorMessage));
         });
         return;
       }
@@ -319,7 +440,7 @@ function streamChatCompletion(opts: StreamOptions): Promise<string> {
   });
 }
 
-// ─── HTML: Sidebar ────────────────────────────────────────────────────────────
+// â”€â”€â”€ HTML: Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function getSidebarHtml(): string {
   return `<!DOCTYPE html>
@@ -373,7 +494,7 @@ function getSidebarHtml(): string {
 </html>`;
 }
 
-// ─── HTML: Chat Panel ─────────────────────────────────────────────────────────
+// â”€â”€â”€ HTML: Chat Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function getChatInterfaceHtml(nonce: string): string {
   return `<!DOCTYPE html>
@@ -395,7 +516,7 @@ function getChatInterfaceHtml(nonce: string): string {
             font-size: 13px;
         }
 
-        /* ── Setup Screen ── */
+        /* â”€â”€ Setup Screen â”€â”€ */
         #setupScreen {
             display: none;
             flex-direction: column;
@@ -433,7 +554,7 @@ function getChatInterfaceHtml(nonce: string): string {
         }
         #saveKeyBtn:hover { background: var(--vscode-button-hoverBackground); }
 
-        /* ── Chat Screen ── */
+        /* â”€â”€ Chat Screen â”€â”€ */
         #chatScreen {
             display: none;
             flex-direction: column;
@@ -494,7 +615,7 @@ function getChatInterfaceHtml(nonce: string): string {
             border-bottom-left-radius: 2px;
         }
         .message.assistant.streaming::after {
-            content: '▋';
+            content: 'â–‹';
             animation: blink 0.8s step-end infinite;
             margin-left: 1px;
         }
@@ -543,7 +664,7 @@ function getChatInterfaceHtml(nonce: string): string {
         #sendButton:disabled { opacity: 0.45; cursor: not-allowed; }
         .hint { font-size: 11px; opacity: 0.45; margin-top: 5px; }
 
-        /* ── No-key banner inside chat ── */
+        /* â”€â”€ No-key banner inside chat â”€â”€ */
         .no-key-banner {
             display: none;
             padding: 10px 14px;
@@ -561,8 +682,8 @@ function getChatInterfaceHtml(nonce: string): string {
 
     <!-- Setup Screen (shown when no API key) -->
     <div id="setupScreen">
-        <h2>🔑 Enter your Xpersona API Key</h2>
-        <p>Get your API key from your Xpersona dashboard<br>under <strong>Settings → API Key</strong>.</p>
+        <h2>ðŸ”‘ Enter your Xpersona API Key</h2>
+        <p>Get your API key from your Xpersona dashboard<br>under <strong>Settings â†’ API Key</strong>.</p>
         <input id="apiKeyInput" type="password" placeholder="xp_..." autocomplete="off" spellcheck="false" />
         <button id="saveKeyBtn">Save & Start Chatting</button>
     </div>
@@ -583,7 +704,7 @@ function getChatInterfaceHtml(nonce: string): string {
         </div>
         <div class="input-container">
             <div class="no-key-banner" id="noKeyBanner">
-                ⚠️ No API key set. <u>Click here to set your API key.</u>
+                âš ï¸ No API key set. <u>Click here to set your API key.</u>
             </div>
             <div class="input-row">
                 <textarea id="messageInput" placeholder="Type a message..." rows="1"></textarea>
@@ -609,7 +730,7 @@ function getChatInterfaceHtml(nonce: string): string {
         let isStreaming = false;
         let currentStreamEl = null;
 
-        // ── Show/hide screens ──
+        // â”€â”€ Show/hide screens â”€â”€
         function showChat() {
             setupScreen.classList.remove('visible');
             chatScreen.classList.add('visible');
@@ -622,7 +743,7 @@ function getChatInterfaceHtml(nonce: string): string {
             apiKeyInput.focus();
         }
 
-        // ── Messages ──
+        // â”€â”€ Messages â”€â”€
         function scrollToBottom() {
             messagesEl.scrollTop = messagesEl.scrollHeight;
         }
@@ -635,7 +756,7 @@ function getChatInterfaceHtml(nonce: string): string {
             return el;
         }
 
-        // ── Send ──
+        // â”€â”€ Send â”€â”€
         function sendMessage() {
             const content = messageInput.value.trim();
             if (!content || isStreaming) return;
@@ -669,7 +790,7 @@ function getChatInterfaceHtml(nonce: string): string {
             this.style.height = Math.min(this.scrollHeight, 120) + 'px';
         });
 
-        // ── Clear ──
+        // â”€â”€ Clear â”€â”€
         clearBtn.addEventListener('click', function() {
             while (messagesEl.children.length > 1) {
                 messagesEl.removeChild(messagesEl.lastChild);
@@ -677,7 +798,7 @@ function getChatInterfaceHtml(nonce: string): string {
             vscode.postMessage({ type: 'clearHistory' });
         });
 
-        // ── API Key ──
+        // â”€â”€ API Key â”€â”€
         keyBtn.addEventListener('click', showSetup);
         noKeyBanner.addEventListener('click', showSetup);
         saveKeyBtn.addEventListener('click', function() {
@@ -690,7 +811,7 @@ function getChatInterfaceHtml(nonce: string): string {
             if (e.key === 'Enter') saveKeyBtn.click();
         });
 
-        // ── Messages from extension ──
+        // â”€â”€ Messages from extension â”€â”€
         window.addEventListener('message', function(event) {
             const msg = event.data;
             switch (msg.type) {
@@ -757,14 +878,14 @@ function getChatInterfaceHtml(nonce: string): string {
             }
         });
 
-        // ── Init: check API key ──
+        // â”€â”€ Init: check API key â”€â”€
         vscode.postMessage({ type: 'checkApiKey' });
     </script>
 </body>
 </html>`;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function getSelectionOrLine(): string | undefined {
   const editor = vscode.window.activeTextEditor;
@@ -784,3 +905,5 @@ function getNonce(): string {
   }
   return text;
 }
+
+

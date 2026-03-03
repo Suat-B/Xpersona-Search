@@ -81,7 +81,7 @@ const PLANS = [
     monthlyPrice: 2,
     yearlyPrice: 20,
     description: "Perfect for learning and experimentation.",
-    modelBadge: "Qwen 2.5 for Reasoning",
+    modelBadge: "Playground AI",
     features: [
       { text: "2-day free trial", icon: SparklesIcon },
       { text: "Full Playground access", icon: CodeIcon },
@@ -96,7 +96,7 @@ const PLANS = [
     monthlyPrice: 5,
     yearlyPrice: 50,
     description: "For developers building production apps.",
-    modelBadge: "Qwen 2.5 for Reasoning",
+    modelBadge: "Playground AI",
     features: [
       { text: "2-day free trial", icon: SparklesIcon },
       { text: "Priority capacity", icon: BoltIcon },
@@ -112,7 +112,7 @@ const PLANS = [
     monthlyPrice: 10,
     yearlyPrice: 100,
     description: "For power users and teams.",
-    modelBadge: "Qwen 2.5 for Reasoning",
+    modelBadge: "Playground AI",
     features: [
       { text: "2-day free trial", icon: SparklesIcon },
       { text: "Highest capacity", icon: BoltIcon },
@@ -144,7 +144,7 @@ const Button = ({ onClick, children }) => (
     title: "Bug Detection",
     description: "Find and fix bugs before they reach production",
     code: `// Find bugs in your code
-// Qwen detected: Missing error handling
+// Playground AI detected: Missing error handling
 async function fetchData(url) {
   const response = await fetch(url);
   // Add: if (!response.ok) throw Error()
@@ -191,7 +191,7 @@ export function PlaygroundClient() {
               <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500" />
             </span>
             <span className="text-sm font-semibold bg-gradient-to-r from-purple-700 to-cyan-600 bg-clip-text text-transparent">
-              Powered by Qwen 2.5
+              Powered by Playground AI
             </span>
           </div>
 
@@ -201,12 +201,17 @@ export function PlaygroundClient() {
               Playground
             </span>
             <br />
-            <span className="text-slate-900">for Reasoning</span>
+            <span className="text-slate-900">for Coding</span>
           </h1>
 
           <p className="text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto mb-8">
-            Build faster with <span className="font-semibold text-purple-700">Qwen 2.5 for reasoning</span> —
-            the same model powering Alibaba&apos;s AI, now available at every price point.
+            A coding workspace like <span className="font-semibold text-purple-700">ChatGPT</span>,{" "}
+            <span className="font-semibold text-purple-700">Codex</span>, and{" "}
+            <span className="font-semibold text-purple-700">Claude Code</span> built for shipping real software.
+          </p>
+
+          <p className="text-sm sm:text-base text-slate-500 max-w-3xl mx-auto mb-8">
+            Generate code, debug issues, explain large codebases, and iterate in a fast chat-style workflow.
           </p>
 
           {/* Stats Row */}
@@ -261,53 +266,6 @@ export function PlaygroundClient() {
       {/* Benchmark Section */}
       <BenchmarkCharts />
 
-      {/* Capabilities Section */}
-      <section className="py-16 px-4 sm:px-6 bg-slate-50/50">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">
-              What you can build
-            </h2>
-            <p className="text-lg text-slate-600 max-w-2xl mx-auto">
-              From code generation to bug detection, Qwen 2.5 powers the most demanding development workflows.
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-6">
-            {CAPABILITIES.map((cap, index) => (
-              <div 
-                key={cap.title}
-                className={`group relative rounded-2xl bg-white border transition-all duration-300 cursor-pointer ${
-                  activeCap === index 
-                    ? "border-purple-300 shadow-xl shadow-purple-500/10" 
-                    : "border-slate-200 hover:border-purple-200 hover:shadow-lg"
-                }`}
-                onClick={() => setActiveCap(index)}
-              >
-                <div className="p-6">
-                  <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${cap.color} flex items-center justify-center mb-4`}>
-                    <CodeIcon className="h-6 w-6 text-white" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-slate-900 mb-2">{cap.title}</h3>
-                  <p className="text-sm text-slate-600">{cap.description}</p>
-                </div>
-                
-                {/* Code Preview */}
-                <div className="p-4 pt-0">
-                  <div className="rounded-xl bg-slate-900 p-4 text-xs font-mono text-slate-300 overflow-hidden">
-                    <pre className="whitespace-pre-wrap break-all">{cap.code}</pre>
-                  </div>
-                </div>
-                
-                {activeCap === index && (
-                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-purple-500 rounded-full animate-pulse" />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* Pricing Section */}
       <section className="py-16 px-4 sm:px-6">
         <div className="max-w-6xl mx-auto">
@@ -316,7 +274,7 @@ export function PlaygroundClient() {
               Simple, transparent pricing
             </h2>
             <p className="text-lg text-slate-600">
-              All plans include <span className="font-semibold text-purple-700">Qwen 2.5 for reasoning</span>. 
+              All plans include <span className="font-semibold text-purple-700">Playground AI</span>. 
               Choose the tier that fits your needs.
             </p>
           </div>
@@ -429,6 +387,53 @@ export function PlaygroundClient() {
         </div>
       </section>
 
+      {/* Capabilities Section */}
+      <section className="py-16 px-4 sm:px-6 bg-slate-50/50">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">
+              What you can build
+            </h2>
+            <p className="text-lg text-slate-600 max-w-2xl mx-auto">
+              From first draft to production fix, Playground AI supports the same workflows developers use in ChatGPT, Codex, and Claude Code.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            {CAPABILITIES.map((cap, index) => (
+              <div 
+                key={cap.title}
+                className={`group relative rounded-2xl bg-white border transition-all duration-300 cursor-pointer ${
+                  activeCap === index 
+                    ? "border-purple-300 shadow-xl shadow-purple-500/10" 
+                    : "border-slate-200 hover:border-purple-200 hover:shadow-lg"
+                }`}
+                onClick={() => setActiveCap(index)}
+              >
+                <div className="p-6">
+                  <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${cap.color} flex items-center justify-center mb-4`}>
+                    <CodeIcon className="h-6 w-6 text-white" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-slate-900 mb-2">{cap.title}</h3>
+                  <p className="text-sm text-slate-600">{cap.description}</p>
+                </div>
+                
+                {/* Code Preview */}
+                <div className="p-4 pt-0">
+                  <div className="rounded-xl bg-slate-900 p-4 text-xs font-mono text-slate-300 overflow-hidden">
+                    <pre className="whitespace-pre-wrap break-all">{cap.code}</pre>
+                  </div>
+                </div>
+                
+                {activeCap === index && (
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-purple-500 rounded-full animate-pulse" />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* VS Code Extension Section */}
       <section className="py-16 px-4 sm:px-6 bg-gradient-to-b from-slate-50 to-white">
         <div className="max-w-6xl mx-auto">
@@ -479,7 +484,7 @@ export function PlaygroundClient() {
                     <span className="text-cyan-400">const</span> Component = <span className="text-cyan-400">await</span> playground.<span className="text-yellow-300">generate</span>({'{'}
                   </div>
                   <div className="pl-4 text-slate-400">
-                    model: <span className="text-green-400">{`'qwen-2.5-coder'`}</span>,
+                    model: <span className="text-green-400">{`'playground-ai'`}</span>,
                   </div>
                   <div className="pl-4 text-slate-400">
                     prompt: <span className="text-green-400">{`'Create a button component'`}</span>,
@@ -503,7 +508,7 @@ export function PlaygroundClient() {
             Ready to build smarter?
           </h2>
           <p className="text-lg text-slate-600 mb-8">
-            Join thousands of developers using Playground with Qwen 2.5 for reasoning. 
+            If you already use ChatGPT, Codex, or Claude Code, you&apos;ll feel right at home in Playground.
             Start your free trial today.
           </p>
           <div className="flex flex-wrap justify-center gap-4">
@@ -521,3 +526,4 @@ export function PlaygroundClient() {
     </div>
   );
 }
+

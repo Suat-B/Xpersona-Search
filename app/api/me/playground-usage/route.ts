@@ -11,8 +11,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth-utils";
 import { getUserUsageStats, PLAN_LIMITS, type PlaygroundPlan } from "@/lib/hf-router/rate-limit";
 import { db } from "@/lib/db";
-import { playgroundSubscriptions } from "@/lib/db/playground-schema";
-import { eq } from "drizzle-orm";
+import { hfUsageLogs, playgroundSubscriptions } from "@/lib/db/playground-schema";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 
 export interface PlaygroundUsageResponse {
   plan: PlaygroundPlan | null;
@@ -42,6 +42,37 @@ export interface PlaygroundUsageResponse {
     tokensLimit: number;
     estimatedCostUsd: number;
   };
+  last24h: {
+    requests: number;
+    tokensOutput: number;
+    estimatedCostUsd: number;
+    successRate: number;
+    avgLatencyMs: number | null;
+  };
+  statusBreakdown: {
+    success: number;
+    error: number;
+    rateLimited: number;
+    quotaExceeded: number;
+    validationError: number;
+  };
+  topModels: Array<{
+    model: string;
+    requests: number;
+    tokensOutput: number;
+  }>;
+  recentRequests: Array<{
+    id: string;
+    createdAt: string;
+    model: string;
+    provider: string;
+    status: "success" | "error" | "rate_limited" | "quota_exceeded" | "validation_error";
+    tokensInput: number;
+    tokensOutput: number;
+    latencyMs: number | null;
+    estimatedCostUsd: number | null;
+    errorMessage: string | null;
+  }>;
   nextResetAt: string; // ISO string of next midnight UTC
 }
 
@@ -75,27 +106,94 @@ export async function GET(request: NextRequest): Promise<Response> {
   const { user } = authResult;
 
   try {
+    const now = new Date();
+    const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
     // Get usage stats
     const stats = await getUserUsageStats(user.id);
-    
-    // Get subscription details
-    const subscription = await db
-      .select({
-        planTier: playgroundSubscriptions.planTier,
-        status: playgroundSubscriptions.status,
-        trialEndsAt: playgroundSubscriptions.trialEndsAt,
-        currentPeriodEnd: playgroundSubscriptions.currentPeriodEnd,
-        cancelAtPeriodEnd: playgroundSubscriptions.cancelAtPeriodEnd,
-      })
-      .from(playgroundSubscriptions)
-      .where(eq(playgroundSubscriptions.userId, user.id))
-      .limit(1);
+
+    const [subscription, recentRequestsRaw, statusRows, topModelRows, last24hRows] = await Promise.all([
+      db
+        .select({
+          planTier: playgroundSubscriptions.planTier,
+          status: playgroundSubscriptions.status,
+          trialEndsAt: playgroundSubscriptions.trialEndsAt,
+          currentPeriodEnd: playgroundSubscriptions.currentPeriodEnd,
+          cancelAtPeriodEnd: playgroundSubscriptions.cancelAtPeriodEnd,
+        })
+        .from(playgroundSubscriptions)
+        .where(eq(playgroundSubscriptions.userId, user.id))
+        .limit(1),
+      db
+        .select({
+          id: hfUsageLogs.id,
+          createdAt: hfUsageLogs.createdAt,
+          model: hfUsageLogs.model,
+          provider: hfUsageLogs.provider,
+          status: hfUsageLogs.status,
+          tokensInput: hfUsageLogs.tokensInput,
+          tokensOutput: hfUsageLogs.tokensOutput,
+          latencyMs: hfUsageLogs.latencyMs,
+          estimatedCostUsd: hfUsageLogs.estimatedCostUsd,
+          errorMessage: hfUsageLogs.errorMessage,
+        })
+        .from(hfUsageLogs)
+        .where(eq(hfUsageLogs.userId, user.id))
+        .orderBy(desc(hfUsageLogs.createdAt))
+        .limit(12),
+      db
+        .select({
+          status: hfUsageLogs.status,
+          count: sql<number>`count(*)`,
+        })
+        .from(hfUsageLogs)
+        .where(eq(hfUsageLogs.userId, user.id))
+        .groupBy(hfUsageLogs.status),
+      db
+        .select({
+          model: hfUsageLogs.model,
+          requests: sql<number>`count(*)`,
+          tokensOutput: sql<number>`coalesce(sum(${hfUsageLogs.tokensOutput}), 0)`,
+        })
+        .from(hfUsageLogs)
+        .where(and(eq(hfUsageLogs.userId, user.id), gte(hfUsageLogs.createdAt, monthStart)))
+        .groupBy(hfUsageLogs.model)
+        .orderBy(desc(sql`count(*)`))
+        .limit(6),
+      db
+        .select({
+          requests: sql<number>`count(*)`,
+          tokensOutput: sql<number>`coalesce(sum(${hfUsageLogs.tokensOutput}), 0)`,
+          estimatedCostUsd: sql<number>`coalesce(sum(${hfUsageLogs.estimatedCostUsd}), 0)`,
+          avgLatencyMs: sql<number | null>`avg(${hfUsageLogs.latencyMs})`,
+          successCount: sql<number>`coalesce(sum(case when ${hfUsageLogs.status} = 'success' then 1 else 0 end), 0)`,
+        })
+        .from(hfUsageLogs)
+        .where(and(eq(hfUsageLogs.userId, user.id), gte(hfUsageLogs.createdAt, since24h))),
+    ]);
 
     const sub = subscription[0];
-    
+    const last24h = last24hRows[0];
+    const statusBreakdown = {
+      success: 0,
+      error: 0,
+      rateLimited: 0,
+      quotaExceeded: 0,
+      validationError: 0,
+    };
+    for (const row of statusRows) {
+      const count = Number(row.count ?? 0);
+      if (row.status === "success") statusBreakdown.success = count;
+      if (row.status === "error") statusBreakdown.error = count;
+      if (row.status === "rate_limited") statusBreakdown.rateLimited = count;
+      if (row.status === "quota_exceeded") statusBreakdown.quotaExceeded = count;
+      if (row.status === "validation_error") statusBreakdown.validationError = count;
+    }
+
     // Build response
     const response: PlaygroundUsageResponse = {
-      plan: sub?.planTier as PlaygroundPlan || null,
+      plan: (sub?.planTier as PlaygroundPlan) || null,
       status: sub?.status || "inactive",
       trial: sub?.trialEndsAt ? {
         endsAt: sub.trialEndsAt.toISOString(),
@@ -121,6 +219,34 @@ export async function GET(request: NextRequest): Promise<Response> {
         tokensLimit: stats?.thisMonth.tokensLimit || 50000,
         estimatedCostUsd: stats?.thisMonth.estimatedCost || 0,
       },
+      last24h: {
+        requests: Number(last24h?.requests ?? 0),
+        tokensOutput: Number(last24h?.tokensOutput ?? 0),
+        estimatedCostUsd: Number(last24h?.estimatedCostUsd ?? 0),
+        successRate:
+          Number(last24h?.requests ?? 0) > 0
+            ? Number(last24h?.successCount ?? 0) / Number(last24h?.requests ?? 1)
+            : 0,
+        avgLatencyMs: last24h?.avgLatencyMs == null ? null : Number(last24h.avgLatencyMs),
+      },
+      statusBreakdown,
+      topModels: topModelRows.map((row) => ({
+        model: row.model,
+        requests: Number(row.requests ?? 0),
+        tokensOutput: Number(row.tokensOutput ?? 0),
+      })),
+      recentRequests: recentRequestsRaw.map((row) => ({
+        id: row.id,
+        createdAt: row.createdAt?.toISOString?.() ?? new Date().toISOString(),
+        model: row.model,
+        provider: row.provider,
+        status: row.status,
+        tokensInput: row.tokensInput ?? 0,
+        tokensOutput: row.tokensOutput ?? 0,
+        latencyMs: row.latencyMs ?? null,
+        estimatedCostUsd: row.estimatedCostUsd ?? null,
+        errorMessage: row.errorMessage ?? null,
+      })),
       nextResetAt: getNextResetAt(),
     };
 

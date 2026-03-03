@@ -268,6 +268,9 @@ export default function DashboardPage() {
             <Link href="/dashboard/settings" className="text-[var(--dash-text-secondary)] hover:text-[var(--accent-heart)] transition-colors">
               Settings
             </Link>
+            <Link href="/dashboard/playground" className="text-[var(--dash-text-secondary)] hover:text-[var(--accent-heart)] transition-colors">
+              Playground AI
+            </Link>
           </nav>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-[var(--dash-divider)]">
             <p className="text-xs text-[var(--dash-text-secondary)] order-2 sm:order-1">

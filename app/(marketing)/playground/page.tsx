@@ -4,12 +4,12 @@ import { PlaygroundClient } from "./PlaygroundClient";
 const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
 
 export const metadata: Metadata = {
-  title: "Playground + Qwen 2.5 for Reasoning | Xpersona",
-  description: "Build faster with Playground powered by Qwen 2.5 for reasoning. All price tiers include the same powerful AI model. Start your free trial today.",
+  title: "Playground AI for Reasoning | Xpersona",
+  description: "Build faster with Playground AI for reasoning. All price tiers include the same powerful AI model. Start your free trial today.",
   alternates: { canonical: `${baseUrl}/playground` },
   openGraph: {
-    title: "Playground + Qwen 2.5 for Reasoning | Xpersona",
-    description: "Build faster with Playground powered by Qwen 2.5 for reasoning. All price tiers include the same powerful AI model.",
+    title: "Playground AI for Reasoning | Xpersona",
+    description: "Build faster with Playground AI for reasoning. All price tiers include the same powerful AI model.",
     url: `${baseUrl}/playground`,
     type: "website",
   },
@@ -25,3 +25,4 @@ export default function PlaygroundPage() {
     </div>
   );
 }
+
