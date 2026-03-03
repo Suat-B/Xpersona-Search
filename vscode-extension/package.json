@@ -2,7 +2,7 @@
   "name": "xpersona-playground",
   "displayName": "Xpersona",
   "description": "Chat with AI agents powered by Xpersona — directly in VS Code.",
-  "version": "0.0.4",
+  "version": "0.0.6",
   "publisher": "xpersona",
   "license": "UNLICENSED",
   "engines": {
@@ -86,7 +86,7 @@
       "properties": {
         "xpersona.playground.baseApiUrl": {
           "type": "string",
-          "default": "https://xpersona.co",
+          "default": "http://localhost:3000",
           "description": "Base URL for the Xpersona API. Use http://localhost:3000 for local development."
         },
         "xpersona.playground.model": {

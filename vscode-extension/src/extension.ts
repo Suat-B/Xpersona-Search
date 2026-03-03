@@ -219,7 +219,7 @@ async function handleChatMessage(
 
   // Get config
   const config = vscode.workspace.getConfiguration("xpersona.playground");
-  const baseApiUrl = (config.get<string>("baseApiUrl") || "https://xpersona.co").replace(/\/$/, "");
+  const baseApiUrl = (config.get<string>("baseApiUrl") || "http://localhost:3000").replace(/\/$/, "");
   const model = config.get<string>("model") || "Qwen/Qwen3-4B-Instruct-2507:nscale";
   const systemPrompt =
     config.get<string>("systemPrompt") ||
@@ -643,8 +643,8 @@ function getChatInterfaceHtml(nonce: string): string {
             font-family: inherit;
             font-size: 13px;
             resize: none;
-            min-height: 36px;
-            max-height: 120px;
+            min-height: 132px;
+            max-height: 280px;
             outline: none;
             line-height: 1.4;
         }
@@ -682,7 +682,7 @@ function getChatInterfaceHtml(nonce: string): string {
 
     <!-- Setup Screen (shown when no API key) -->
     <div id="setupScreen">
-        <h2>ðŸ”‘ Enter your Xpersona API Key</h2>
+        <h2>Enter your Playground API Key</h2>
         <p>Get your API key from your Xpersona dashboard<br>under <strong>Settings â†’ API Key</strong>.</p>
         <input id="apiKeyInput" type="password" placeholder="xp_..." autocomplete="off" spellcheck="false" />
         <button id="saveKeyBtn">Save & Start Chatting</button>
@@ -707,7 +707,7 @@ function getChatInterfaceHtml(nonce: string): string {
                 âš ï¸ No API key set. <u>Click here to set your API key.</u>
             </div>
             <div class="input-row">
-                <textarea id="messageInput" placeholder="Type a message..." rows="1"></textarea>
+                <textarea id="messageInput" placeholder="Type a message..." rows="4"></textarea>
                 <button id="sendButton" disabled>Send</button>
             </div>
             <div class="hint">Enter to send &bull; Shift+Enter for new line</div>
@@ -787,7 +787,7 @@ function getChatInterfaceHtml(nonce: string): string {
         messageInput.addEventListener('input', function() {
             sendButton.disabled = !this.value.trim() || isStreaming;
             this.style.height = 'auto';
-            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+            this.style.height = Math.min(this.scrollHeight, 280) + 'px';
         });
 
         // â”€â”€ Clear â”€â”€
@@ -873,7 +873,7 @@ function getChatInterfaceHtml(nonce: string): string {
                     sendButton.disabled = false;
                     messageInput.focus();
                     messageInput.style.height = 'auto';
-                    messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
+                    messageInput.style.height = Math.min(messageInput.scrollHeight, 280) + 'px';
                     break;
             }
         });

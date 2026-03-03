@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { HeroDemoPanel } from "@/components/home/HeroDemoPanel";
+import HeroDemoPanel from "@/components/home/HeroDemoPanel";
 
 export function HomeHeroHF() {
   return (

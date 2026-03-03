@@ -1,0 +1,136 @@
+import { NextRequest, NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
+import { z } from "zod";
+import { getAuthUser } from "@/lib/auth-utils";
+import { db } from "@/lib/db";
+import { users } from "@/lib/db/schema";
+import { requireStripe } from "@/lib/stripe";
+
+const checkoutSchema = z.object({
+  tier: z.enum(["starter", "builder", "studio"]).default("builder"),
+  billing: z.enum(["monthly", "yearly"]).default("monthly"),
+});
+
+function getBaseUrl() {
+  return (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.NEXTAUTH_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
+  );
+}
+
+function getPriceId(tier: "starter" | "builder" | "studio", billing: "monthly" | "yearly"): string | null {
+  const key = `STRIPE_PLAYGROUND_PRICE_ID_${tier.toUpperCase()}_${billing.toUpperCase()}` as const;
+  return process.env[key] || null;
+}
+
+export async function POST(request: NextRequest): Promise<Response> {
+  const authResult = await getAuthUser(request);
+  if ("error" in authResult) {
+    return NextResponse.json(
+      { success: false, error: "UNAUTHORIZED", message: "Sign in required" },
+      { status: 401 }
+    );
+  }
+
+  const parsed = checkoutSchema.safeParse(await request.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: "INVALID_BODY", message: "tier and billing are required" },
+      { status: 400 }
+    );
+  }
+
+  const { user } = authResult;
+  const { tier, billing } = parsed.data;
+  const priceId = getPriceId(tier, billing);
+
+  if (!priceId) {
+    return NextResponse.json(
+      { success: false, error: "PLAYGROUND_PRICE_NOT_CONFIGURED", message: `Missing Stripe price for ${tier}/${billing}` },
+      { status: 500 }
+    );
+  }
+
+  const stripe = requireStripe();
+
+  const [dbUser] = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      stripeCustomerId: users.stripeCustomerId,
+    })
+    .from(users)
+    .where(eq(users.id, user.id))
+    .limit(1);
+
+  if (!dbUser?.email) {
+    return NextResponse.json(
+      { success: false, error: "USER_EMAIL_REQUIRED", message: "User email is required for checkout" },
+      { status: 400 }
+    );
+  }
+
+  let customerId = dbUser.stripeCustomerId ?? null;
+  if (!customerId) {
+    const customer = await stripe.customers.create({
+      email: dbUser.email,
+      metadata: {
+        xpersona_user_id: dbUser.id,
+      },
+    });
+    customerId = customer.id;
+    await db
+      .update(users)
+      .set({ stripeCustomerId: customer.id })
+      .where(eq(users.id, dbUser.id));
+  }
+
+  const baseUrl = getBaseUrl();
+  const session = await stripe.checkout.sessions.create({
+    mode: "subscription",
+    customer: customerId,
+    line_items: [{ price: priceId, quantity: 1 }],
+    success_url: `${baseUrl}/dashboard/playground?checkout=success`,
+    cancel_url: `${baseUrl}/dashboard/playground?checkout=cancelled`,
+    allow_promotion_codes: true,
+    payment_method_collection: "if_required",
+    client_reference_id: dbUser.id,
+    metadata: {
+      xpersona_product: "playground_ai",
+      xpersona_user_id: dbUser.id,
+      xpersona_tier: tier,
+      xpersona_billing: billing,
+    },
+    subscription_data: {
+      trial_period_days: 2,
+      metadata: {
+        xpersona_product: "playground_ai",
+        xpersona_user_id: dbUser.id,
+      },
+      trial_settings: {
+        end_behavior: {
+          missing_payment_method: "cancel",
+        },
+      },
+    },
+  });
+
+  if (!session.url) {
+    return NextResponse.json(
+      { success: false, error: "CHECKOUT_URL_MISSING", message: "Stripe checkout session did not return a URL" },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      url: session.url,
+      sessionId: session.id,
+      trialDays: 2,
+      tier,
+      billing,
+    },
+  });
+}

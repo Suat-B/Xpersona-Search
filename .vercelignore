@@ -1,0 +1,5 @@
+.npm-cache-temp
+.next
+node_modules
+coverage
+*.log

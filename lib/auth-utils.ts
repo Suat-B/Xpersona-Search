@@ -202,15 +202,40 @@ export type AuthUser = {
   lastFaucetAt: Date | null;
 };
 
-/**
- * Resolve authenticated user from session (cookie) or Bearer API key.
- * Use in API routes that require auth.
- */
-export async function getAuthUser(
-  request: NextRequest
-): Promise<{ user: AuthUser } | { error: string }> {
-  const session = await auth();
-  if (session?.user?.id) {
+function toAuthUser(
+  row: {
+    id: string;
+    email: string;
+    name: string | null;
+    image: string | null;
+    credits: number;
+    faucetCredits: number;
+    apiKeyPrefix: string | null;
+    apiKeyViewedAt: Date | null;
+    agentId: string | null;
+    accountType: string;
+    passwordHash: string | null;
+    createdAt: Date | null;
+    lastFaucetAt: Date | null;
+  }
+): AuthUser {
+  const { passwordHash, ...rest } = row;
+  return {
+    ...rest,
+    isPermanent: row.accountType === "email" || !!passwordHash,
+  };
+}
+
+function isMissingApiKeyViewedAtColumnError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const code = (err as { code?: unknown }).code;
+  if (code === "42703") return true; // undefined_column (Postgres)
+  const msg = String((err as { message?: unknown }).message ?? "").toLowerCase();
+  return msg.includes("api_key_viewed_at") && msg.includes("does not exist");
+}
+
+async function selectAuthUserBy(whereClause: ReturnType<typeof eq>): Promise<AuthUser | null> {
+  try {
     const [row] = await db
       .select({
         id: users.id,
@@ -228,16 +253,55 @@ export async function getAuthUser(
         lastFaucetAt: users.lastFaucetAt,
       })
       .from(users)
-      .where(eq(users.id, session.user.id))
+      .where(whereClause)
       .limit(1);
-    if (row) {
-      const { passwordHash, ...rest } = row;
-      const user: AuthUser = {
-        ...rest,
-        isPermanent: row.accountType === "email" || !!passwordHash,
-      };
-      return { user };
-    }
+    return row ? toAuthUser(row) : null;
+  } catch (err) {
+    // Backward-compat for local DBs that haven't run migration adding users.api_key_viewed_at.
+    if (!isMissingApiKeyViewedAtColumnError(err)) throw err;
+    const [row] = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        name: users.name,
+        image: users.image,
+        credits: users.credits,
+        faucetCredits: users.faucetCredits,
+        apiKeyPrefix: users.apiKeyPrefix,
+        agentId: users.agentId,
+        accountType: users.accountType,
+        passwordHash: users.passwordHash,
+        createdAt: users.createdAt,
+        lastFaucetAt: users.lastFaucetAt,
+      })
+      .from(users)
+      .where(whereClause)
+      .limit(1);
+    if (!row) return null;
+    return toAuthUser({
+      ...row,
+      apiKeyViewedAt: null,
+    });
+  }
+}
+
+/**
+ * Resolve authenticated user from session (cookie) or Bearer API key.
+ * Use in API routes that require auth.
+ */
+export async function getAuthUser(
+  request: NextRequest
+): Promise<{ user: AuthUser } | { error: string }> {
+  let session = null;
+  try {
+    session = await auth();
+  } catch (err) {
+    // Continue to cookie/Bearer auth paths when NextAuth session resolution fails.
+    console.warn("[auth-utils] auth() failed, attempting fallback auth methods:", err);
+  }
+  if (session?.user?.id) {
+    const user = await selectAuthUserBy(eq(users.id, session.user.id));
+    if (user) return { user };
   }
 
   const authHeader = request.headers.get("Authorization");
@@ -245,33 +309,8 @@ export async function getAuthUser(
     const rawKey = authHeader.slice(7).trim();
     if (rawKey.length >= 32) {
       const hash = createHash("sha256").update(rawKey).digest("hex");
-      const [row] = await db
-        .select({
-          id: users.id,
-          email: users.email,
-          name: users.name,
-          image: users.image,
-          credits: users.credits,
-          faucetCredits: users.faucetCredits,
-          apiKeyPrefix: users.apiKeyPrefix,
-          apiKeyViewedAt: users.apiKeyViewedAt,
-          agentId: users.agentId,
-          accountType: users.accountType,
-          passwordHash: users.passwordHash,
-          createdAt: users.createdAt,
-          lastFaucetAt: users.lastFaucetAt,
-        })
-        .from(users)
-        .where(eq(users.apiKeyHash, hash))
-        .limit(1);
-      if (row) {
-        const { passwordHash, ...rest } = row;
-        const user: AuthUser = {
-          ...rest,
-          isPermanent: row.accountType === "email" || !!passwordHash,
-        };
-        return { user };
-      }
+      const user = await selectAuthUserBy(eq(users.apiKeyHash, hash));
+      if (user) return { user };
     }
   }
 
@@ -290,66 +329,16 @@ export async function getAuthUser(
   if (agentCookie) {
     const userId = verifyAgentToken(agentCookie);
     if (userId) {
-      const [row] = await db
-        .select({
-          id: users.id,
-          email: users.email,
-          name: users.name,
-          image: users.image,
-          credits: users.credits,
-          faucetCredits: users.faucetCredits,
-          apiKeyPrefix: users.apiKeyPrefix,
-          apiKeyViewedAt: users.apiKeyViewedAt,
-          agentId: users.agentId,
-          accountType: users.accountType,
-          passwordHash: users.passwordHash,
-          createdAt: users.createdAt,
-          lastFaucetAt: users.lastFaucetAt,
-        })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-      if (row) {
-        const { passwordHash, ...rest } = row;
-        const user: AuthUser = {
-          ...rest,
-          isPermanent: row.accountType === "email" || !!passwordHash,
-        };
-        return { user };
-      }
+      const user = await selectAuthUserBy(eq(users.id, userId));
+      if (user) return { user };
     }
   }
 
   if (guestCookie) {
     const userId = verifyGuestToken(guestCookie);
     if (userId) {
-      const [row] = await db
-        .select({
-          id: users.id,
-          email: users.email,
-          name: users.name,
-          image: users.image,
-          credits: users.credits,
-          faucetCredits: users.faucetCredits,
-          apiKeyPrefix: users.apiKeyPrefix,
-          apiKeyViewedAt: users.apiKeyViewedAt,
-          agentId: users.agentId,
-          accountType: users.accountType,
-          passwordHash: users.passwordHash,
-          createdAt: users.createdAt,
-          lastFaucetAt: users.lastFaucetAt,
-        })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-      if (row) {
-        const { passwordHash, ...rest } = row;
-        const user: AuthUser = {
-          ...rest,
-          isPermanent: row.accountType === "email" || !!passwordHash,
-        };
-        return { user };
-      }
+      const user = await selectAuthUserBy(eq(users.id, userId));
+      if (user) return { user };
     }
   }
 

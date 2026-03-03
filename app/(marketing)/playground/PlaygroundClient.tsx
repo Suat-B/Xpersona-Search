@@ -1,27 +1,43 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { BenchmarkCharts } from "@/components/playground/BenchmarkCharts";
+
+type MarketingFeature = {
+  title: string;
+  description: string;
+  tag: string;
+  priority?: "high" | "medium" | "low";
+};
+
+type PricingTier = {
+  name: string;
+  monthlyPrice: number;
+  yearlyPrice: number;
+  description: string;
+  features: string[];
+  highlight?: boolean;
+  cta: string;
+};
+
+type FaqItem = {
+  question: string;
+  answer: string;
+};
+
+type DemoTab = "generate" | "plan" | "debug";
 
 function CheckIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-    </svg>
-  );
-}
-
-function StarIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
     </svg>
   );
 }
 
 function ArrowRightIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
       <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
     </svg>
   );
@@ -29,81 +45,27 @@ function ArrowRightIcon({ className }: { className?: string }) {
 
 function SparklesIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
     </svg>
   );
 }
 
-function BoltIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-    </svg>
-  );
-}
-
-function CodeIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
-    </svg>
-  );
-}
-
-function CpuIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25z" />
-    </svg>
-  );
-}
-
-function ShieldCheckIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z" />
-    </svg>
-  );
-}
-
-function GlobeAltIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
-    </svg>
-  );
-}
-
-const PLANS = [
+const PRICING_TIERS: PricingTier[] = [
   {
     name: "Starter",
     monthlyPrice: 2,
     yearlyPrice: 20,
-    description: "Perfect for learning and experimentation.",
-    modelBadge: "Playground AI",
-    features: [
-      { text: "2-day free trial", icon: SparklesIcon },
-      { text: "Full Playground access", icon: CodeIcon },
-      { text: "8K context window", icon: CpuIcon },
-      { text: "30 requests/day", icon: BoltIcon },
-    ],
-    highlight: false,
+    description: "Great for learning, side-projects, and lightweight coding help.",
+    features: ["2-day free trial", "30 requests/day", "8K context", "Core coding workflows"],
     cta: "Start Free Trial",
   },
   {
     name: "Builder",
     monthlyPrice: 5,
     yearlyPrice: 50,
-    description: "For developers building production apps.",
-    modelBadge: "Playground AI",
-    features: [
-      { text: "2-day free trial", icon: SparklesIcon },
-      { text: "Priority capacity", icon: BoltIcon },
-      { text: "16K context window", icon: CpuIcon },
-      { text: "100 requests/day", icon: CodeIcon },
-      { text: "Usage insights", icon: SparklesIcon },
-    ],
+    description: "Best for active developers shipping weekly.",
+    features: ["2-day free trial", "100 requests/day", "16K context", "Priority capacity", "Usage insights"],
     highlight: true,
     cta: "Start Free Trial",
   },
@@ -111,480 +73,526 @@ const PLANS = [
     name: "Studio",
     monthlyPrice: 10,
     yearlyPrice: 100,
-    description: "For power users and teams.",
-    modelBadge: "Playground AI",
-    features: [
-      { text: "2-day free trial", icon: SparklesIcon },
-      { text: "Highest capacity", icon: BoltIcon },
-      { text: "32K context window", icon: CpuIcon },
-      { text: "Unlimited requests", icon: CodeIcon },
-      { text: "Direct support", icon: SparklesIcon },
-    ],
-    highlight: false,
+    description: "For advanced users and teams running heavy coding sessions.",
+    features: ["2-day free trial", "Unlimited requests", "32K context", "Highest capacity", "Direct support"],
     cta: "Start Free Trial",
   },
 ];
 
-const CAPABILITIES = [
-  {
-    title: "Code Generation",
-    description: "Generate clean, efficient code in 50+ languages",
-    code: `// Generate a React component
-const Button = ({ onClick, children }) => (
-  <button 
-    onClick={onClick}
-    className="px-4 py-2 bg-purple-600 rounded-lg"
-  >
-    {children}
-  </button>
-);`,
-    color: "from-purple-600 to-pink-500",
-  },
-  {
-    title: "Bug Detection",
-    description: "Find and fix bugs before they reach production",
-    code: `// Find bugs in your code
-// Playground AI detected: Missing error handling
-async function fetchData(url) {
-  const response = await fetch(url);
-  // Add: if (!response.ok) throw Error()
-  return response.json();
-}`,
-    color: "from-cyan-500 to-blue-600",
-  },
-  {
-    title: "Code Explanation",
-    description: "Understand complex codebases instantly",
-    code: `// Explain what this function does
-function debounce(fn, delay) {
-  let timeoutId;
-  return (...args) => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => fn(...args), delay);
-  };
-}
-// Returns a function that delays execution...`,
-    color: "from-amber-500 to-orange-600",
-  },
-];
-
-const VSCODE_EXTENSION_FEATURES = [
+const EXTENSION_FEATURES: MarketingFeature[] = [
   {
     title: "Auto Mode",
-    description: "Automatically routes each prompt to the best workflow so you can stay focused on shipping.",
-    tag: "Hands-free routing",
+    description: "Automatically picks the best workflow for each task so you can keep momentum.",
+    tag: "Hands-free",
+    priority: "high",
+  },
+  {
+    title: "Plan Mode",
+    description: "Creates step-by-step execution plans before coding to reduce mistakes and rework.",
+    tag: "Structured",
+    priority: "high",
   },
   {
     title: "YOLO Mode",
-    description: "Move at maximum speed with low-friction execution for rapid prototyping and iteration.",
-    tag: "Fastest path",
+    description: "High-speed execution for fast prototyping when you want maximal velocity.",
+    tag: "Rapid",
+    priority: "high",
   },
   {
     title: "IDE Context",
-    description: "Understands your open files, active selections, and project structure inside VS Code.",
+    description: "Understands your active files, selected code, and workspace state in real time.",
     tag: "Context-aware",
+    priority: "medium",
   },
   {
     title: "IDE Indexing",
-    description: "Indexes your codebase for smarter answers, deeper refactors, and better architectural guidance.",
+    description: "Indexes the repo for deeper code-aware answers, safer refactors, and architecture help.",
     tag: "Repo intelligence",
+    priority: "medium",
   },
   {
     title: "History",
-    description: "Revisit and reuse previous chats, prompts, and generated outputs across sessions.",
+    description: "Reopen prior chats, prompts, and outputs to continue work without losing flow.",
     tag: "Memory",
+    priority: "medium",
   },
   {
     title: "Multiple Agents",
-    description: "Run multiple specialized agents in parallel for planning, coding, debugging, and review.",
-    tag: "Parallel workflows",
+    description: "Run specialized agents in parallel for planning, implementation, and review.",
+    tag: "Parallel",
+    priority: "medium",
   },
   {
     title: "Add image",
-    description: "Drop screenshots and UI references directly into prompts for visual debugging and implementation.",
+    description: "Attach screenshots and mockups for UI debugging and multimodal prompt workflows.",
     tag: "Multimodal",
+    priority: "low",
   },
   {
     title: "262,144 context window",
-    description: "Work across huge files and long sessions without losing context or restarting your thread.",
-    tag: "Long-context",
+    description: "Handle huge files and long-running sessions without dropping important context.",
+    tag: "Long context",
+    priority: "high",
   },
 ];
 
-export function PlaygroundClient() {
-  const [isYearly, setIsYearly] = useState(false);
-  const [activeCap, setActiveCap] = useState(0);
+const FAQ_ITEMS: FaqItem[] = [
+  {
+    question: "Will this fit my workflow if I already use ChatGPT or Claude Code?",
+    answer:
+      "Yes. Playground is designed to feel familiar while adding stronger in-editor workflows and team-ready controls.",
+  },
+  {
+    question: "How fast can I start?",
+    answer:
+      "Most users can start in under five minutes. Begin the free trial, connect your editor, and run your first prompt.",
+  },
+  {
+    question: "Do I need to switch tools?",
+    answer:
+      "No. You can keep your current workflow and layer Playground into your existing VS Code setup.",
+  },
+  {
+    question: "Can it handle large repositories and long threads?",
+    answer:
+      "Yes. Playground is built for deep context with support for a 262,144 context window and indexed workspace assistance.",
+  },
+];
 
+const DEMO_CONTENT: Record<DemoTab, { title: string; caption: string; code: string }> = {
+  generate: {
+    title: "Generate",
+    caption: "Create production-ready code with clear constraints.",
+    code: `// Generate a secure API route\nconst endpoint = await playground.generate({\n  task: "Create a POST /api/invoice endpoint",\n  language: "typescript",\n  constraints: ["zod validation", "auth guard", "rate limit"]\n});`,
+  },
+  plan: {
+    title: "Plan",
+    caption: "Break complex features into executable steps.",
+    code: `// Plan a feature end-to-end\nconst plan = await playground.plan({\n  goal: "Ship multi-agent review workflow",\n  output: "milestones + acceptance tests"\n});\n\nconsole.log(plan.steps);`,
+  },
+  debug: {
+    title: "Debug",
+    caption: "Resolve defects faster with context-aware analysis.",
+    code: `// Debug with full IDE context\nconst fix = await playground.debug({\n  error: "Hydration mismatch on dashboard",\n  includeOpenFiles: true,\n  includeRecentChanges: true\n});`,
+  },
+};
+
+function fireAnalyticsEvent(eventName: string, payload?: Record<string, string | number | boolean>) {
+  if (typeof window === "undefined") return;
+  const gtag = (window as Window & { gtag?: (...args: unknown[]) => void }).gtag;
+  if (gtag) {
+    gtag("event", eventName, payload ?? {});
+  }
+}
+
+function HeroSection() {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-      {/* Animated Background */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-purple-400/20 to-cyan-400/20 rounded-full blur-[100px] animate-pulse" />
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-gradient-to-tr from-cyan-400/20 to-purple-400/20 rounded-full blur-[120px] animate-pulse" style={{ animationDelay: '1s' }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-r from-purple-500/5 to-cyan-500/5 rounded-full blur-[100px]" />
+    <section className="relative overflow-hidden px-4 pb-14 pt-14 sm:px-6 lg:pt-20">
+      <div className="pointer-events-none absolute inset-0 opacity-80">
+        <div className="absolute -left-24 top-8 h-64 w-64 rounded-full bg-cyan-400/20 blur-3xl" />
+        <div className="absolute right-0 top-20 h-72 w-72 rounded-full bg-blue-500/20 blur-3xl" />
       </div>
-
-      {/* Hero Section */}
-      <section className="relative pt-16 pb-12 px-4 sm:px-6">
-        <div className="max-w-5xl mx-auto text-center">
-          {/* Model Badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-purple-600/10 to-cyan-500/10 border border-purple-200 mb-6">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500" />
-            </span>
-            <span className="text-sm font-semibold bg-gradient-to-r from-purple-700 to-cyan-600 bg-clip-text text-transparent">
-              Powered by Playground AI
-            </span>
+      <div className="relative mx-auto grid max-w-6xl gap-8 lg:grid-cols-2 lg:items-center">
+        <div>
+          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-cyan-400/40 bg-slate-900/70 px-4 py-1.5 text-xs font-semibold text-cyan-200">
+            <SparklesIcon className="h-3.5 w-3.5" />
+            Playground AI for VS Code workflows
           </div>
-
-          {/* Main Headline */}
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-slate-900 mb-6">
-            <span className="bg-gradient-to-r from-purple-600 via-cyan-500 to-purple-600 bg-clip-text text-transparent bg-[length:200%_auto] animate-gradient">
-              Playground
-            </span>
-            <br />
-            <span className="text-slate-900">for Coding</span>
+          <h1 className="text-balance text-4xl font-black leading-tight text-white sm:text-5xl lg:text-6xl">
+            Your coding copilot workspace for shipping faster.
           </h1>
-
-          <p className="text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto mb-8">
-            A coding workspace like <span className="font-semibold text-purple-700">ChatGPT</span>,{" "}
-            <span className="font-semibold text-purple-700">Codex</span>, and{" "}
-            <span className="font-semibold text-purple-700">Claude Code</span> built for shipping real software.
+          <p className="mt-5 max-w-2xl text-base text-slate-300 sm:text-lg">
+            Built for developers who use ChatGPT, Codex, and Claude Code, but want stronger in-editor execution,
+            planning, and team-ready workflow control.
           </p>
-
-          <p className="text-sm sm:text-base text-slate-500 max-w-3xl mx-auto mb-8">
-            Generate code, debug issues, explain large codebases, and iterate in a fast chat-style workflow.
-          </p>
-
-          {/* Stats Row */}
-          <div className="flex flex-wrap justify-center gap-6 sm:gap-12 mb-10">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-slate-900">92.1%</div>
-              <div className="text-sm text-slate-500">HumanEval Score</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-slate-900">~50ms</div>
-              <div className="text-sm text-slate-500">Avg Latency</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-slate-900">7B</div>
-              <div className="text-sm text-slate-500">Parameters</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-slate-900">50+</div>
-              <div className="text-sm text-slate-500">Languages</div>
-            </div>
-          </div>
-
-          {/* CTA Buttons */}
-          <div className="flex flex-wrap justify-center gap-4">
-            <button className="group relative inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-500 px-7 py-3.5 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(124,58,237,0.3)] transition-all hover:translate-y-[-2px] hover:shadow-[0_20px_50px_rgba(124,58,237,0.4)]">
-              Start free trial
-              <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-            </button>
-            <button className="rounded-xl border border-slate-200 bg-white px-6 py-3.5 text-sm font-semibold text-slate-700 transition hover:border-purple-300 hover:bg-purple-50">
-              View Documentation
-            </button>
-          </div>
-
-          {/* Trust Badges */}
-          <div className="mt-10 flex flex-wrap items-center justify-center gap-6 text-sm text-slate-500">
-            <div className="flex items-center gap-2">
-              <ShieldCheckIcon className="h-5 w-5 text-green-600" />
-              <span>Enterprise Security</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <GlobeAltIcon className="h-5 w-5 text-cyan-600" />
-              <span>99.9% Uptime SLA</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckIcon className="h-5 w-5 text-purple-600" />
-              <span>10K+ Developers</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Benchmark Section */}
-      <BenchmarkCharts />
-
-      {/* Pricing Section */}
-      <section className="py-16 px-4 sm:px-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-10">
-            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">
-              Simple, transparent pricing
-            </h2>
-            <p className="text-lg text-slate-600">
-              All plans include <span className="font-semibold text-purple-700">Playground AI</span>. 
-              Choose the tier that fits your needs.
-            </p>
-          </div>
-
-          {/* Billing Toggle */}
-          <div className="flex justify-center mb-10">
-            <div className="relative flex items-center gap-4 rounded-full bg-white p-1.5 shadow-lg shadow-slate-200/50 border border-slate-200">
-              <button
-                onClick={() => setIsYearly(false)}
-                className={`relative z-10 rounded-full px-5 py-2 text-sm font-semibold transition ${
-                  !isYearly ? "text-white" : "text-slate-600"
-                }`}
-              >
-                Monthly
-              </button>
-              <button
-                onClick={() => setIsYearly(true)}
-                className={`relative z-10 rounded-full px-5 py-2 text-sm font-semibold transition ${
-                  isYearly ? "text-white" : "text-slate-600"
-                }`}
-              >
-                Yearly
-                <span className="ml-1.5 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">
-                  Save 17%
-                </span>
-              </button>
-              <div
-                className={`absolute top-1 h-[calc(100%-12px)] rounded-full bg-gradient-to-r from-purple-600 to-cyan-500 shadow-lg transition-all duration-300 ${
-                  isYearly ? "left-1/2 w-[130px]" : "left-1.5 w-[90px]"
-                }`}
-              />
-            </div>
-          </div>
-
-          {/* Pricing Cards */}
-          <div className="grid md:grid-cols-3 gap-6 lg:gap-8">
-            {PLANS.map((plan, index) => (
-              <article
-                key={plan.name}
-                className={`group relative rounded-2xl bg-white p-6 sm:p-8 transition-all duration-300 ${
-                  plan.highlight
-                    ? "border-2 border-purple-300 shadow-xl shadow-purple-500/15 scale-105 z-10"
-                    : "border border-slate-200 shadow-lg shadow-slate-200/50 hover:shadow-xl hover:border-purple-200"
-                }`}
-              >
-                {plan.highlight && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-purple-600 to-cyan-500 px-4 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-white shadow-lg">
-                    Most Popular
-                  </div>
-                )}
-                
-                {/* Model Badge */}
-                <div className="flex items-center justify-center mb-4">
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-purple-100 to-cyan-100 text-xs font-semibold text-purple-700">
-                    <SparklesIcon className="h-3 w-3" />
-                    {plan.modelBadge}
-                  </span>
-                </div>
-
-                <div className="text-center mb-6">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">
-                    {plan.name}
-                  </div>
-                  <div className="flex items-baseline justify-center gap-1">
-                    <span className="text-5xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
-                      ${isYearly ? Math.round(plan.yearlyPrice / 12) : plan.monthlyPrice}
-                    </span>
-                    <span className="text-sm text-slate-500">/mo</span>
-                  </div>
-                  {isYearly && (
-                    <div className="text-xs text-green-600 font-medium mt-1">
-                      ${plan.yearlyPrice}/yr billed annually
-                    </div>
-                  )}
-                  <p className="mt-3 text-sm text-slate-600">{plan.description}</p>
-                </div>
-
-                <ul className="space-y-3 mb-8">
-                  {plan.features.map((feature) => (
-                    <li key={feature.text} className="flex items-start gap-3">
-                      <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${
-                        plan.highlight 
-                          ? "bg-gradient-to-r from-purple-600 to-cyan-500 text-white" 
-                          : "bg-purple-100 text-purple-600"
-                      }`}>
-                        <feature.icon className="h-3.5 w-3.5" />
-                      </div>
-                      <span className="text-sm text-slate-600">{feature.text}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                <button
-                  className={`w-full flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-all ${
-                    plan.highlight
-                      ? "bg-gradient-to-r from-purple-600 to-cyan-500 text-white shadow-lg shadow-purple-500/25 hover:shadow-xl hover:-translate-y-0.5"
-                      : "border-2 border-slate-200 text-slate-700 hover:border-purple-300 hover:bg-purple-50"
-                  }`}
-                >
-                  {plan.cta}
-                  <ArrowRightIcon className="h-4 w-4" />
-                </button>
-              </article>
-            ))}
-          </div>
-
-          <p className="text-center text-sm text-slate-500 mt-8">
-            All plans include a 2-day free trial. No credit card required to start.
-          </p>
-        </div>
-      </section>
-
-      {/* Capabilities Section */}
-      <section className="py-16 px-4 sm:px-6 bg-slate-50/50">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">
-              What you can build
-            </h2>
-            <p className="text-lg text-slate-600 max-w-2xl mx-auto">
-              From first draft to production fix, Playground AI supports the same workflows developers use in ChatGPT, Codex, and Claude Code.
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-6">
-            {CAPABILITIES.map((cap, index) => (
-              <div 
-                key={cap.title}
-                className={`group relative rounded-2xl bg-white border transition-all duration-300 cursor-pointer ${
-                  activeCap === index 
-                    ? "border-purple-300 shadow-xl shadow-purple-500/10" 
-                    : "border-slate-200 hover:border-purple-200 hover:shadow-lg"
-                }`}
-                onClick={() => setActiveCap(index)}
-              >
-                <div className="p-6">
-                  <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${cap.color} flex items-center justify-center mb-4`}>
-                    <CodeIcon className="h-6 w-6 text-white" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-slate-900 mb-2">{cap.title}</h3>
-                  <p className="text-sm text-slate-600">{cap.description}</p>
-                </div>
-                
-                {/* Code Preview */}
-                <div className="p-4 pt-0">
-                  <div className="rounded-xl bg-slate-900 p-4 text-xs font-mono text-slate-300 overflow-hidden">
-                    <pre className="whitespace-pre-wrap break-all">{cap.code}</pre>
-                  </div>
-                </div>
-                
-                {activeCap === index && (
-                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-purple-500 rounded-full animate-pulse" />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* VS Code Extension Section */}
-      <section className="py-16 px-4 sm:px-6 bg-gradient-to-b from-slate-50 to-white">
-        <div className="max-w-6xl mx-auto">
-          <div className="grid lg:grid-cols-2 gap-8 items-center">
-            {/* Left Content */}
-            <div>
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-purple-600/10 to-cyan-500/10 border border-purple-200 mb-4">
-                <span className="text-sm font-semibold text-purple-700">VS Code Extension</span>
-              </div>
-              <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">
-                Build faster inside your editor
-              </h2>
-              <p className="text-lg text-slate-600 mb-6">
-                A full coding copilot experience in VS Code with the same depth developers expect from ChatGPT, Codex, and Claude Code.
-              </p>
-              
-              <div className="flex flex-wrap gap-3 mb-6">
-                <span className="px-4 py-2 rounded-full border border-purple-200 bg-purple-50 text-purple-700 text-sm font-medium">
-                  Auto + YOLO modes
-                </span>
-                <span className="px-4 py-2 rounded-full border border-purple-200 bg-purple-50 text-purple-700 text-sm font-medium">
-                  IDE context + indexing
-                </span>
-                <span className="px-4 py-2 rounded-full border border-purple-200 bg-purple-50 text-purple-700 text-sm font-medium">
-                  262,144 context window
-                </span>
-              </div>
-
-              <button className="group inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-purple-500/25 transition-all hover:shadow-xl hover:-translate-y-0.5">
-                Download Extension
-                <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-              </button>
-            </div>
-
-            {/* Right - Code Preview */}
-            <div className="relative">
-              <div className="absolute -inset-4 bg-gradient-to-r from-purple-500/20 to-cyan-500/20 rounded-3xl blur-2xl" />
-              <div className="relative rounded-2xl bg-slate-900 p-6 shadow-2xl">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-3 h-3 rounded-full bg-red-500" />
-                  <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                  <div className="w-3 h-3 rounded-full bg-green-500" />
-                  <span className="ml-2 text-xs text-slate-500">playground.ts</span>
-                </div>
-        <div className="space-y-3 text-sm font-mono">
-          <div className="text-purple-400">{'// Generate a React component'}</div>
-                  <div className="text-slate-300">
-                    <span className="text-cyan-400">const</span> Component = <span className="text-cyan-400">await</span> playground.<span className="text-yellow-300">generate</span>({'{'}
-                  </div>
-                  <div className="pl-4 text-slate-400">
-                    model: <span className="text-green-400">{`'playground-ai'`}</span>,
-                  </div>
-                  <div className="pl-4 text-slate-400">
-                    prompt: <span className="text-green-400">{`'Create a button component'`}</span>,
-                  </div>
-                  <div className="pl-4 text-slate-400">
-                    language: <span className="text-green-400">{`'typescript'`}</span>
-                  </div>
-                  <div className="text-slate-300">{'}'});</div>
-                  <div className="text-slate-500 pt-2">{'// Output: React button component code'}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {VSCODE_EXTENSION_FEATURES.map((feature) => (
-              <article
-                key={feature.title}
-                className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-lg shadow-slate-200/40 transition-all duration-300 hover:-translate-y-1 hover:border-purple-300 hover:shadow-xl hover:shadow-purple-200/40"
-              >
-                <div className="absolute -right-8 -top-8 h-20 w-20 rounded-full bg-gradient-to-br from-purple-200/40 to-cyan-200/40 blur-2xl transition-opacity duration-300 group-hover:opacity-100" />
-                <div className="relative">
-                  <div className="mb-3 inline-flex rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-[11px] font-semibold text-purple-700">
-                    {feature.tag}
-                  </div>
-                  <h3 className="mb-2 text-base font-semibold text-slate-900">{feature.title}</h3>
-                  <p className="text-sm leading-relaxed text-slate-600">{feature.description}</p>
-                </div>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Final CTA */}
-      <section className="py-16 px-4 sm:px-6">
-        <div className="max-w-3xl mx-auto text-center">
-          <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">
-            Ready to build smarter?
-          </h2>
-          <p className="text-lg text-slate-600 mb-8">
-            If you already use ChatGPT, Codex, or Claude Code, you&apos;ll feel right at home in Playground.
-            Start your free trial today.
-          </p>
-          <div className="flex flex-wrap justify-center gap-4">
-            <button className="group inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-500 px-8 py-4 text-base font-semibold text-white shadow-xl shadow-purple-500/25 transition-all hover:translate-y-[-2px] hover:shadow-2xl hover:shadow-purple-500/30">
+          <div className="mt-8 flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => fireAnalyticsEvent("playground_hero_cta_click", { location: "hero", action: "start_trial" })}
+              className="group inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-6 py-3 text-sm font-bold text-slate-950 shadow-[0_12px_35px_rgba(34,211,238,0.35)] transition hover:translate-y-[-1px] hover:shadow-[0_20px_45px_rgba(59,130,246,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+            >
               Start Free Trial
-              <ArrowRightIcon className="h-5 w-5 transition-transform group-hover:translate-x-1" />
+              <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            </button>
+            <button className="inline-flex items-center rounded-xl border border-slate-600 bg-slate-900/70 px-5 py-3 text-sm font-semibold text-slate-100 transition hover:border-cyan-300 hover:text-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
+              See It In VS Code
             </button>
           </div>
-          <p className="mt-4 text-sm text-slate-500">
-            <StarIcon className="inline h-4 w-4 text-yellow-400" />
-            <span className="ml-1">4.9/5 from 10,000+ reviews</span>
-          </p>
+          <p className="mt-3 text-sm text-emerald-300">2-day free trial - Credit card required to start</p>
         </div>
-      </section>
-    </div>
+
+        <div className="relative rounded-3xl border border-slate-700 bg-slate-900/80 p-5 shadow-[0_20px_80px_rgba(15,23,42,0.65)] backdrop-blur">
+          <div className="mb-4 flex items-center gap-2">
+            <div className="h-2.5 w-2.5 rounded-full bg-rose-400" />
+            <div className="h-2.5 w-2.5 rounded-full bg-amber-400" />
+            <div className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+            <span className="ml-2 text-xs text-slate-400">assistant-session.ts</span>
+          </div>
+          <div className="space-y-2 font-mono text-xs sm:text-sm">
+            <p className="text-cyan-300">// plan + generate + ship</p>
+            <p className="text-slate-200">const agent = playground.createAgent({'{'}</p>
+            <p className="pl-4 text-slate-400">mode: <span className="text-emerald-300">"plan"</span>,</p>
+            <p className="pl-4 text-slate-400">contextWindow: <span className="text-emerald-300">262144</span>,</p>
+            <p className="pl-4 text-slate-400">ideContext: <span className="text-emerald-300">true</span></p>
+            <p className="text-slate-200">{'}'});</p>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
+function TrustRail() {
+  const items = [
+    { label: "Reliability", value: "99.9% uptime SLA" },
+    { label: "Latency", value: "~50ms avg response" },
+    { label: "Developers", value: "10K+ active builders" },
+    { label: "Coverage", value: "50+ coding languages" },
+  ];
+
+  return (
+    <section className="px-4 py-4 sm:px-6">
+      <div className="mx-auto grid max-w-6xl gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {items.map((item) => (
+          <div key={item.label} className="rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-3 backdrop-blur">
+            <div className="text-xs uppercase tracking-[0.16em] text-slate-400">{item.label}</div>
+            <div className="mt-1 text-sm font-semibold text-slate-100">{item.value}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PricingCard({ tier, isYearly, compact = false }: { tier: PricingTier; isYearly: boolean; compact?: boolean }) {
+  const monthly = isYearly ? Math.round(tier.yearlyPrice / 12) : tier.monthlyPrice;
+
+  return (
+    <article
+      className={`relative rounded-2xl border p-5 transition ${
+        tier.highlight
+          ? "border-cyan-300/70 bg-slate-900 shadow-[0_14px_45px_rgba(14,165,233,0.25)]"
+          : "border-slate-700 bg-slate-900/70"
+      }`}
+    >
+      {tier.highlight && (
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-cyan-300 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-900">
+          Most Chosen
+        </div>
+      )}
+      <div className="text-xs uppercase tracking-[0.16em] text-slate-400">{tier.name}</div>
+      <div className="mt-2 flex items-end gap-1">
+        <span className="text-4xl font-black text-white">${monthly}</span>
+        <span className="pb-1 text-sm text-slate-400">/mo</span>
+      </div>
+      {isYearly && <p className="mt-1 text-xs text-emerald-300">${tier.yearlyPrice}/yr billed annually</p>}
+      <p className="mt-3 text-sm text-slate-300">{tier.description}</p>
+      {!compact && (
+        <ul className="mt-4 space-y-2">
+          {tier.features.map((feature) => (
+            <li key={feature} className="flex items-start gap-2 text-sm text-slate-300">
+              <CheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
+              {feature}
+            </li>
+          ))}
+        </ul>
+      )}
+      <button
+        onClick={() => fireAnalyticsEvent("playground_plan_cta_click", { plan_name: tier.name.toLowerCase() })}
+        className={`mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+          tier.highlight
+            ? "bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950"
+            : "border border-slate-600 bg-slate-800 text-slate-100 hover:border-cyan-300"
+        }`}
+      >
+        {tier.cta}
+        <ArrowRightIcon className="h-4 w-4" />
+      </button>
+    </article>
+  );
+}
+
+function PricingPreviewSection({ isYearly, setIsYearly }: { isYearly: boolean; setIsYearly: (value: boolean) => void }) {
+  return (
+    <section className="px-4 py-14 sm:px-6">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-8 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
+          <div>
+            <p className="text-xs uppercase tracking-[0.18em] text-cyan-300">Pricing Preview</p>
+            <h2 className="mt-2 text-3xl font-black text-white sm:text-4xl">Start small, scale as you ship</h2>
+            <p className="mt-2 max-w-2xl text-slate-300">Pricing is visible early so your team can evaluate fit quickly.</p>
+          </div>
+          <div className="rounded-full border border-slate-700 bg-slate-900 p-1">
+            <button
+              aria-label="Switch to monthly billing"
+              onClick={() => {
+                setIsYearly(false);
+                fireAnalyticsEvent("playground_pricing_toggle_change", { billing: "monthly", section: "preview" });
+              }}
+              className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
+                !isYearly ? "bg-cyan-300 text-slate-950" : "text-slate-300"
+              }`}
+            >
+              Monthly
+            </button>
+            <button
+              aria-label="Switch to yearly billing"
+              onClick={() => {
+                setIsYearly(true);
+                fireAnalyticsEvent("playground_pricing_toggle_change", { billing: "yearly", section: "preview" });
+              }}
+              className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
+                isYearly ? "bg-cyan-300 text-slate-950" : "text-slate-300"
+              }`}
+            >
+              Yearly
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-5 md:grid-cols-3">
+          {PRICING_TIERS.map((tier) => (
+            <PricingCard key={`preview-${tier.name}`} tier={tier} isYearly={isYearly} compact />
+          ))}
+        </div>
+
+        <div className="mt-5 grid gap-3 text-sm text-slate-300 sm:grid-cols-3">
+          <p className="rounded-lg border border-slate-700 bg-slate-900/50 p-3">All plans include Playground AI coding workflows.</p>
+          <p className="rounded-lg border border-slate-700 bg-slate-900/50 p-3">Trial starts in seconds. Credit card required.</p>
+          <p className="rounded-lg border border-slate-700 bg-slate-900/50 p-3">Upgrade only when your workload grows.</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FeatureGridSection() {
+  return (
+    <section className="px-4 py-14 sm:px-6">
+      <div className="mx-auto max-w-6xl">
+        <h2 className="text-3xl font-black text-white sm:text-4xl">VS Code extension features that convert work into shipped code</h2>
+        <p className="mt-3 max-w-3xl text-slate-300">Everything below is built to reduce context switching and increase trial-to-paid retention.</p>
+        <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {EXTENSION_FEATURES.map((feature) => (
+            <article
+              key={feature.title}
+              className={`rounded-2xl border p-5 transition hover:-translate-y-0.5 hover:border-cyan-300/70 ${
+                feature.priority === "high"
+                  ? "border-cyan-400/50 bg-gradient-to-b from-slate-900 to-slate-900/80"
+                  : "border-slate-700 bg-slate-900/70"
+              }`}
+            >
+              <div className="inline-flex rounded-full border border-slate-600 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-cyan-200">
+                {feature.tag}
+              </div>
+              <h3 className="mt-3 text-lg font-bold text-white">{feature.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-slate-300">{feature.description}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DemoSection() {
+  const [activeTab, setActiveTab] = useState<DemoTab>("generate");
+  const content = DEMO_CONTENT[activeTab];
+
+  return (
+    <section className="px-4 py-14 sm:px-6">
+      <div className="mx-auto max-w-6xl rounded-3xl border border-slate-700 bg-slate-900/70 p-6 sm:p-8">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.16em] text-cyan-300">Interactive Demo</p>
+            <h2 className="mt-2 text-3xl font-black text-white sm:text-4xl">Generate, plan, and debug in one flow</h2>
+          </div>
+          <div className="flex rounded-xl border border-slate-700 bg-slate-950/60 p-1" role="tablist" aria-label="Playground demo tabs">
+            {(["generate", "plan", "debug"] as DemoTab[]).map((tab) => (
+              <button
+                key={tab}
+                role="tab"
+                aria-selected={activeTab === tab}
+                onClick={() => setActiveTab(tab)}
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold capitalize transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+                  activeTab === tab ? "bg-cyan-300 text-slate-950" : "text-slate-300"
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="mt-3 text-slate-300">{content.caption}</p>
+        <div className="mt-5 rounded-2xl border border-slate-700 bg-slate-950 p-5">
+          <p className="mb-3 text-sm font-semibold text-cyan-300">{content.title}</p>
+          <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-slate-200 sm:text-sm">{content.code}</pre>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function UseCasesSection() {
+  const cards = [
+    {
+      title: "Solo Developer",
+      body: "Ship side projects and client work faster with plan-first coding and tight feedback loops.",
+    },
+    {
+      title: "Startup Team",
+      body: "Coordinate multiple contributors with shared context, indexed repos, and reusable history.",
+    },
+    {
+      title: "Agency / Consultancy",
+      body: "Move across client codebases quickly while maintaining consistency and delivery velocity.",
+    },
+  ];
+
+  return (
+    <section className="px-4 py-14 sm:px-6">
+      <div className="mx-auto max-w-6xl">
+        <h2 className="text-3xl font-black text-white sm:text-4xl">Built for every team shape</h2>
+        <div className="mt-6 grid gap-4 lg:grid-cols-3">
+          {cards.map((card) => (
+            <article key={card.title} className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
+              <h3 className="text-lg font-bold text-white">{card.title}</h3>
+              <p className="mt-2 text-sm text-slate-300">{card.body}</p>
+              <button className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-cyan-300 transition hover:text-cyan-200">
+                Start Free Trial
+                <ArrowRightIcon className="h-4 w-4" />
+              </button>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PricingSection({ isYearly, setIsYearly }: { isYearly: boolean; setIsYearly: (value: boolean) => void }) {
+  return (
+    <section className="px-4 py-14 sm:px-6">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-8 text-center">
+          <h2 className="text-3xl font-black text-white sm:text-4xl">Full pricing and plan details</h2>
+          <p className="mt-2 text-slate-300">Choose the plan that matches your coding throughput today.</p>
+        </div>
+        <div className="mb-8 flex justify-center">
+          <div className="rounded-full border border-slate-700 bg-slate-900 p-1">
+            <button
+              aria-label="Switch full pricing to monthly"
+              onClick={() => {
+                setIsYearly(false);
+                fireAnalyticsEvent("playground_pricing_toggle_change", { billing: "monthly", section: "full" });
+              }}
+              className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
+                !isYearly ? "bg-cyan-300 text-slate-950" : "text-slate-300"
+              }`}
+            >
+              Monthly
+            </button>
+            <button
+              aria-label="Switch full pricing to yearly"
+              onClick={() => {
+                setIsYearly(true);
+                fireAnalyticsEvent("playground_pricing_toggle_change", { billing: "yearly", section: "full" });
+              }}
+              className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
+                isYearly ? "bg-cyan-300 text-slate-950" : "text-slate-300"
+              }`}
+            >
+              Yearly
+            </button>
+          </div>
+        </div>
+        <div className="grid gap-5 md:grid-cols-3">
+          {PRICING_TIERS.map((tier) => (
+            <PricingCard key={`full-${tier.name}`} tier={tier} isYearly={isYearly} />
+          ))}
+        </div>
+        <p className="mt-6 text-center text-sm text-emerald-300">2-day free trial for every plan. Cancel any time.</p>
+      </div>
+    </section>
+  );
+}
+
+function FaqSection() {
+  const [openIndex, setOpenIndex] = useState(0);
+
+  return (
+    <section className="px-4 py-14 sm:px-6">
+      <div className="mx-auto max-w-4xl">
+        <h2 className="text-center text-3xl font-black text-white sm:text-4xl">Common objections, answered</h2>
+        <div className="mt-6 space-y-3">
+          {FAQ_ITEMS.map((item, index) => (
+            <div key={item.question} className="rounded-xl border border-slate-700 bg-slate-900/70">
+              <button
+                onClick={() => setOpenIndex(openIndex === index ? -1 : index)}
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+              >
+                {item.question}
+                <span className="text-cyan-300">{openIndex === index ? "-" : "+"}</span>
+              </button>
+              {openIndex === index && <p className="px-4 pb-4 text-sm text-slate-300">{item.answer}</p>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FinalCtaSection() {
+  return (
+    <section className="px-4 pb-24 pt-12 sm:px-6">
+      <div className="mx-auto max-w-4xl rounded-3xl border border-cyan-400/30 bg-gradient-to-r from-slate-900 to-slate-800 p-8 text-center shadow-[0_20px_60px_rgba(8,145,178,0.25)]">
+        <h2 className="text-3xl font-black text-white sm:text-4xl">Ready to turn prompts into shipped features?</h2>
+        <p className="mt-3 text-slate-300">Start your free trial and keep your existing developer workflow intact.</p>
+        <button
+          onClick={() => fireAnalyticsEvent("playground_final_cta_click", { location: "final_section" })}
+          className="mt-6 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-7 py-3.5 text-sm font-bold text-slate-950 transition hover:translate-y-[-1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+        >
+          Start Free Trial
+          <ArrowRightIcon className="h-4 w-4" />
+        </button>
+        <p className="mt-3 text-sm text-emerald-300">2-day free trial - credit card required to start</p>
+      </div>
+    </section>
+  );
+}
+
+export function PlaygroundClient() {
+  const [isYearly, setIsYearly] = useState(false);
+
+  const backgroundStyle = useMemo(
+    () => ({
+      background:
+        "radial-gradient(1200px 600px at 15% 10%, rgba(34,211,238,0.12), transparent 60%), radial-gradient(900px 500px at 90% 20%, rgba(59,130,246,0.14), transparent 55%), linear-gradient(180deg, #020617 0%, #0b1120 50%, #020617 100%)",
+    }),
+    [],
+  );
+
+  return (
+    <div className="relative min-h-screen overflow-x-hidden text-slate-100" style={backgroundStyle}>
+      <HeroSection />
+      <TrustRail />
+      <PricingPreviewSection isYearly={isYearly} setIsYearly={setIsYearly} />
+      <FeatureGridSection />
+      <DemoSection />
+      <BenchmarkCharts />
+      <UseCasesSection />
+      <PricingSection isYearly={isYearly} setIsYearly={setIsYearly} />
+      <FaqSection />
+      <FinalCtaSection />
+
+      <div className="fixed bottom-4 left-0 right-0 z-40 px-4 sm:hidden">
+        <button
+          onClick={() => fireAnalyticsEvent("playground_hero_cta_click", { location: "sticky_mobile", action: "start_trial" })}
+          className="w-full rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-4 py-3 text-sm font-bold text-slate-950 shadow-[0_12px_35px_rgba(56,189,248,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+        >
+          Start Free Trial
+        </button>
+      </div>
+    </div>
+  );
+}

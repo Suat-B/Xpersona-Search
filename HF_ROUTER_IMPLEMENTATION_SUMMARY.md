@@ -242,6 +242,7 @@ The website now markets the VS Code extension as supporting the feature set belo
 This list is also the official build checklist for implementation tracking.
 
 - [ ] **Auto Mode** - Automatically chooses the best workflow per prompt.
+- [ ] **Plan Mode** - Creates step-by-step plans before execution for complex tasks.
 - [ ] **YOLO Mode** - High-speed mode for rapid experimentation and execution.
 - [ ] **IDE Context** - Uses open files, selections, and workspace state in responses.
 - [ ] **IDE Indexing** - Indexes the repository for deeper code-aware assistance.

@@ -76,6 +76,44 @@ export interface PlaygroundUsageResponse {
   nextResetAt: string; // ISO string of next midnight UTC
 }
 
+function buildEmptyUsageResponse(): PlaygroundUsageResponse {
+  return {
+    plan: null,
+    status: "inactive",
+    trial: null,
+    billing: null,
+    limits: null,
+    today: {
+      requestsUsed: 0,
+      requestsRemaining: 0,
+      requestsLimit: 0,
+    },
+    thisMonth: {
+      tokensOutput: 0,
+      tokensRemaining: 0,
+      tokensLimit: 0,
+      estimatedCostUsd: 0,
+    },
+    last24h: {
+      requests: 0,
+      tokensOutput: 0,
+      estimatedCostUsd: 0,
+      successRate: 0,
+      avgLatencyMs: null,
+    },
+    statusBreakdown: {
+      success: 0,
+      error: 0,
+      rateLimited: 0,
+      quotaExceeded: 0,
+      validationError: 0,
+    },
+    topModels: [],
+    recentRequests: [],
+    nextResetAt: getNextResetAt(),
+  };
+}
+
 /**
  * Calculate next midnight UTC for daily reset
  */
@@ -254,9 +292,6 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   } catch (error) {
     console.error("Error fetching playground usage stats:", error);
-    return NextResponse.json(
-      { error: "Internal server error", message: "Failed to fetch usage stats" },
-      { status: 500 }
-    );
+    return NextResponse.json(buildEmptyUsageResponse());
   }
 }

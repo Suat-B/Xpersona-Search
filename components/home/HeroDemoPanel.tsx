@@ -22,7 +22,7 @@ const PROTOCOL_ALIASES = new Map([
   ["OPENCLAW", "OPENCLAW"],
 ]);
 
-export function HeroDemoPanel({ query = "mcp pdf" }: { query?: string }) {
+export default function HeroDemoPanel({ query = "mcp pdf" }: { query?: string }) {
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>("Main");
   const [loading, setLoading] = useState(true);
   const [results, setResults] = useState<DemoResult[]>([]);
@@ -153,18 +153,18 @@ export function HeroDemoPanel({ query = "mcp pdf" }: { query?: string }) {
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-sm font-semibold text-white">{item.name}</div>
                     <div className="text-[11px] text-white/50">
-                      {item.overallRank ? `Rank ${item.overallRank.toFixed(0)}` : "Rank —"}
+                      {item.overallRank ? `Rank ${item.overallRank.toFixed(0)}` : "Rank -"}
                     </div>
                   </div>
                   <div className="mt-1 text-[12px] text-white/60 line-clamp-2">
                     {item.description ?? "No description available yet."}
                   </div>
                   <div className="mt-2 flex items-center justify-between text-[11px] text-white/50">
-                    <span>{item.protocols?.join(", ") || "Protocols —"}</span>
+                    <span>{item.protocols?.join(", ") || "Protocols -"}</span>
                     <span>
                       {typeof item.safetyScore === "number"
                         ? `Trust ${item.safetyScore.toFixed(0)}`
-                        : "Trust —"}
+                        : "Trust -"}
                     </span>
                   </div>
                 </Link>

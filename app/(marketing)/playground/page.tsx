@@ -4,12 +4,14 @@ import { PlaygroundClient } from "./PlaygroundClient";
 const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
 
 export const metadata: Metadata = {
-  title: "Playground AI Coding Workspace | Xpersona",
-  description: "A coding workspace like ChatGPT, Codex, and Claude Code. Generate, debug, and ship faster with Playground AI.",
+  title: "Playground AI for VS Code | Start Free Trial",
+  description:
+    "Your coding copilot workspace for shipping faster. Generate, plan, and debug with Playground AI in a ChatGPT/Codex/Claude Code-style workflow.",
   alternates: { canonical: `${baseUrl}/playground` },
   openGraph: {
-    title: "Playground AI Coding Workspace | Xpersona",
-    description: "A coding workspace like ChatGPT, Codex, and Claude Code. Generate, debug, and ship faster with Playground AI.",
+    title: "Playground AI for VS Code | Start Free Trial",
+    description:
+      "Generate, plan, and debug faster with Playground AI. Premium coding workflows designed for developers and teams.",
     url: `${baseUrl}/playground`,
     type: "website",
   },

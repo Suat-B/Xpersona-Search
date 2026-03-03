@@ -16,6 +16,7 @@ import { hfUsageLogs } from "@/lib/db/playground-schema";
 import { eq } from "drizzle-orm";
 import { 
   checkRateLimits, 
+  getUserPlan,
   incrementUsage, 
   estimateMessagesTokens,
   PLAN_LIMITS,
@@ -309,6 +310,18 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
   
   const { userId } = auth;
+
+  // Explicit guard: only users with an active Playground subscription (trial/paid) can use HF routes.
+  const plan = await getUserPlan(userId);
+  if (!plan || !plan.isActive) {
+    return NextResponse.json(
+      {
+        error: "PLAYGROUND_SUBSCRIPTION_REQUIRED",
+        message: "Playground subscription required. Free dashboard plan keys cannot access Playground API endpoints.",
+      },
+      { status: 402 }
+    );
+  }
   
   // Parse request body
   let body: ChatCompletionRequest;
@@ -382,6 +395,28 @@ export async function POST(request: NextRequest): Promise<Response> {
         presence_penalty: body.presence_penalty,
       }),
     });
+
+    if (!hfResponse.ok) {
+      const errorText = await hfResponse.text();
+      const errorMessage = errorText?.trim() || `Upstream HF error (${hfResponse.status})`;
+
+      await logUsage({
+        userId,
+        model: body.model,
+        tokensInput: estimatedInputTokens,
+        tokensOutput: 0,
+        latencyMs: Date.now() - startTime,
+        status: "error",
+        errorMessage: `HF API error: ${hfResponse.status} - ${errorMessage}`,
+        estimatedCostUsd: 0,
+        requestPayload: body as unknown as Record<string, unknown>,
+      });
+
+      return NextResponse.json(
+        { error: "HF API error", message: errorMessage },
+        { status: hfResponse.status }
+      );
+    }
     
     // Handle streaming vs non-streaming
     if (body.stream) {

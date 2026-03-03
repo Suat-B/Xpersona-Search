@@ -164,6 +164,25 @@ export default function DashboardPage() {
             </p>
           </div>
         </Link>
+
+        <Link href="/dashboard/playground" className="group block sm:col-span-2">
+          <div className="agent-card p-6 transition-all group-hover:border-cyan-400/40">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-500/10 text-cyan-300 border border-cyan-400/20">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 3l2.3 4.66L19.5 9l-3.75 3.65.88 5.16L12 15.37l-4.63 2.44.88-5.16L4.5 9l5.2-1.34L12 3z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--dash-text-secondary)] uppercase tracking-wider font-medium">Playground AI</p>
+                <p className="text-lg font-semibold text-[var(--text-primary)]">Open Usage and Subscription</p>
+              </div>
+            </div>
+            <p className="text-sm text-[var(--text-tertiary)]">
+              View your Playground AI plan, usage limits, request history, and trial status.
+            </p>
+          </div>
+        </Link>
       </div>
 
       {/* Recent Claimed Agents */}
