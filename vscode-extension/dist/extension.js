@@ -36,818 +36,207 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
-const https = __importStar(require("https"));
 const http = __importStar(require("http"));
+const https = __importStar(require("https"));
 const url_1 = require("url");
+const crypto_1 = require("crypto");
 const API_KEY_SECRET = "xpersona.apiKey";
-// â”€â”€â”€ Activation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const MODE_KEY = "xpersona.playground.mode";
 function activate(context) {
-    // Sidebar view
-    const viewProvider = new PlaygroundViewProvider(context);
-    const viewRegistration = vscode.window.registerWebviewViewProvider("xpersona.playgroundView", viewProvider);
-    // Command: Start Chat
-    const newPrompt = vscode.commands.registerCommand("xpersona.playground.prompt", async () => {
-        await viewProvider.showChat();
-    });
-    // Command: Chat with Selection
-    const openWithSelection = vscode.commands.registerCommand("xpersona.playground.openWithSelection", async () => {
-        const selectedText = getSelectionOrLine();
-        await viewProvider.showChat(selectedText);
-    });
-    // Command: Set API Key
-    const setApiKey = vscode.commands.registerCommand("xpersona.playground.setApiKey", async () => {
-        const key = await vscode.window.showInputBox({
-            title: "Xpersona API Key",
-            prompt: "Enter your Xpersona API key (from your dashboard -> Settings -> API Key)",
-            password: true,
-            placeHolder: "xp_...",
-            ignoreFocusOut: true,
-        });
-        if (key && key.trim().length > 0) {
-            await context.secrets.store(API_KEY_SECRET, key.trim());
-            viewProvider.notifyApiKeySaved();
-            vscode.window.showInformationMessage("Xpersona API key saved securely.");
-        }
-    });
-    context.subscriptions.push(newPrompt, openWithSelection, setApiKey, viewRegistration);
-}
-function deactivate() {
-    return;
-}
-function openChatPanel(context, initialHistory) {
-    const panel = vscode.window.createWebviewPanel("xpersonaChat", "Playground AI Chat", vscode.ViewColumn.One, {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-    });
-    const nonce = getNonce();
-    const conversationHistory = [...initialHistory];
-    panel.webview.html = getChatInterfaceHtml(nonce);
-    panel.webview.onDidReceiveMessage(async (message) => {
-        switch (message.type) {
-            case "sendMessage":
-                await handleChatMessage(context, panel.webview, message.content, conversationHistory);
-                break;
-            case "saveApiKey":
-                if (message.key && message.key.trim().length > 0) {
-                    await context.secrets.store(API_KEY_SECRET, message.key.trim());
-                    panel.webview.postMessage({ type: "apiKeySaved" });
-                    vscode.window.showInformationMessage("âœ… Xpersona API key saved securely.");
-                }
-                break;
-            case "clearHistory":
-                conversationHistory.length = 0;
-                break;
-            case "checkApiKey": {
-                const key = await context.secrets.get(API_KEY_SECRET);
-                panel.webview.postMessage({ type: "apiKeyStatus", hasKey: !!key });
-                break;
-            }
-        }
-    }, undefined, context.subscriptions);
-    // Send initial API key status
-    context.secrets.get(API_KEY_SECRET).then((key) => {
-        panel.webview.postMessage({ type: "apiKeyStatus", hasKey: !!key });
-    });
-    return panel;
-}
-// â”€â”€â”€ Sidebar View â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-class PlaygroundViewProvider {
-    constructor(context) {
-        this.context = context;
-        this.conversationHistory = [];
-    }
-    resolveWebviewView(webviewView) {
-        this.webviewView = webviewView;
-        webviewView.webview.options = {
-            enableScripts: true,
-            enableCommandUris: true,
-        };
-        webviewView.webview.html = getChatInterfaceHtml(getNonce());
-        webviewView.webview.onDidReceiveMessage(async (message) => {
-            switch (message.type) {
-                case "sendMessage":
-                    await handleChatMessage(this.context, webviewView.webview, message.content, this.conversationHistory);
-                    break;
-                case "saveApiKey":
-                    if (message.key && message.key.trim().length > 0) {
-                        await this.context.secrets.store(API_KEY_SECRET, message.key.trim());
-                        webviewView.webview.postMessage({ type: "apiKeySaved" });
-                        vscode.window.showInformationMessage("Xpersona API key saved securely.");
-                    }
-                    break;
-                case "clearHistory":
-                    this.conversationHistory.length = 0;
-                    break;
-                case "checkApiKey": {
-                    const key = await this.context.secrets.get(API_KEY_SECRET);
-                    webviewView.webview.postMessage({ type: "apiKeyStatus", hasKey: !!key });
-                    break;
-                }
-            }
-        }, undefined, this.context.subscriptions);
-        this.context.secrets.get(API_KEY_SECRET).then((key) => {
-            webviewView.webview.postMessage({ type: "apiKeyStatus", hasKey: !!key });
-            if (this.pendingPrefill) {
-                webviewView.webview.postMessage({ type: "prefill", content: this.pendingPrefill });
-                this.pendingPrefill = undefined;
-            }
-        });
-        webviewView.onDidDispose(() => {
-            this.webviewView = undefined;
-        });
-    }
-    async showChat(prefill) {
-        if (prefill) {
-            this.pendingPrefill = prefill;
-        }
-        try {
-            await vscode.commands.executeCommand("workbench.view.extension.xpersona");
-            await vscode.commands.executeCommand("xpersona.playgroundView.focus");
-        }
-        catch {
-            // Best-effort focus.
-        }
-        if (this.webviewView) {
-            this.webviewView.show(true);
-            if (this.pendingPrefill) {
-                this.webviewView.webview.postMessage({ type: "prefill", content: this.pendingPrefill });
-                this.pendingPrefill = undefined;
-            }
-        }
-    }
-    notifyApiKeySaved() {
-        if (this.webviewView) {
-            this.webviewView.webview.postMessage({ type: "apiKeySaved" });
-            this.webviewView.webview.postMessage({ type: "apiKeyStatus", hasKey: true });
-        }
-    }
-}
-// â”€â”€â”€ Core: Handle Chat Message with Streaming â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-async function handleChatMessage(context, webview, userContent, history) {
-    // Get API key
-    const apiKey = await context.secrets.get(API_KEY_SECRET);
-    if (!apiKey) {
-        webview.postMessage({ type: "noApiKey" });
-        return;
-    }
-    // Get config
-    const config = vscode.workspace.getConfiguration("xpersona.playground");
-    const baseApiUrl = (config.get("baseApiUrl") || "http://localhost:3000").replace(/\/$/, "");
-    const model = config.get("model") || "Qwen/Qwen3-4B-Instruct-2507:nscale";
-    const systemPrompt = config.get("systemPrompt") ||
-        "You are an expert software engineer and coding assistant. Help the user with their code, answer questions clearly, and provide working examples.";
-    // Build messages array
-    const messages = [
-        { role: "system", content: systemPrompt },
-        ...history,
-        { role: "user", content: userContent },
+    const view = new Provider(context);
+    const reg = vscode.window.registerWebviewViewProvider("xpersona.playgroundView", view);
+    const cmds = [
+        vscode.commands.registerCommand("xpersona.playground.prompt", () => view.show()),
+        vscode.commands.registerCommand("xpersona.playground.openWithSelection", async () => {
+            const e = vscode.window.activeTextEditor;
+            if (!e)
+                return;
+            const t = e.selection.isEmpty ? e.document.lineAt(e.selection.active.line).text : e.document.getText(e.selection);
+            await view.show(t.trim());
+        }),
+        vscode.commands.registerCommand("xpersona.playground.setApiKey", () => view.setApiKey()),
+        vscode.commands.registerCommand("xpersona.playground.mode.auto", () => view.setMode("auto")),
+        vscode.commands.registerCommand("xpersona.playground.mode.plan", () => view.setMode("plan")),
+        vscode.commands.registerCommand("xpersona.playground.mode.yolo", () => view.setMode("yolo")),
+        vscode.commands.registerCommand("xpersona.playground.generate", async () => { const t = await vscode.window.showInputBox({ prompt: "Generate task" }); if (t)
+            view.ask(t, false); }),
+        vscode.commands.registerCommand("xpersona.playground.debug", async () => { const t = await vscode.window.showInputBox({ prompt: "Debug task" }); if (t)
+            view.ask(t, false); }),
+        vscode.commands.registerCommand("xpersona.playground.history.open", () => view.loadHistory()),
+        vscode.commands.registerCommand("xpersona.playground.image.attach", () => vscode.window.showInformationMessage("Attach image from panel button.")),
+        vscode.commands.registerCommand("xpersona.playground.agents.parallelRun", async () => { const t = await vscode.window.showInputBox({ prompt: "Parallel task" }); if (t)
+            view.ask(t, true); }),
+        vscode.commands.registerCommand("xpersona.playground.index.rebuild", () => view.post({ type: "indexState", data: { chunks: 0, freshness: "stale", lastQueryMatches: 0 } })),
+        vscode.commands.registerCommand("xpersona.playground.replay.session", () => view.replay()),
     ];
-    // Add user message to history
-    history.push({ role: "user", content: userContent });
-    // Signal streaming start
-    webview.postMessage({ type: "streamStart" });
-    try {
-        const fullResponse = await streamChatCompletion({
-            baseApiUrl,
-            apiKey,
-            model,
-            messages,
-            onToken: (token) => {
-                webview.postMessage({ type: "token", content: token });
-            },
+    context.subscriptions.push(reg, ...cmds);
+}
+function deactivate() { }
+class Provider {
+    constructor(ctx) {
+        this.ctx = ctx;
+        this.sessionId = null;
+        this.timeline = [];
+        this.mode = ctx.workspaceState.get(MODE_KEY) ?? "auto";
+    }
+    resolveWebviewView(v) {
+        this.view = v;
+        v.webview.options = { enableScripts: true };
+        v.webview.html = html();
+        v.webview.onDidReceiveMessage(async (m) => {
+            if (m.type === "check") {
+                const k = await this.ctx.secrets.get(API_KEY_SECRET);
+                this.post({ type: "api", ok: !!k });
+                this.post({ type: "mode", value: this.mode });
+                this.post({ type: "timeline", data: this.timeline });
+            }
+            else if (m.type === "saveKey") {
+                if (m.key?.trim())
+                    await this.ctx.secrets.store(API_KEY_SECRET, m.key.trim());
+                this.post({ type: "api", ok: true });
+            }
+            else if (m.type === "setMode")
+                await this.setMode(m.value);
+            else if (m.type === "send")
+                await this.ask(String(m.text || ""), Boolean(m.parallel));
+            else if (m.type === "history")
+                await this.loadHistory();
+            else if (m.type === "openSession")
+                await this.openSession(String(m.id || ""));
+            else if (m.type === "replay")
+                await this.replay();
+            else if (m.type === "clear") {
+                this.timeline = [];
+                this.sessionId = null;
+                this.post({ type: "timeline", data: this.timeline });
+            }
         });
-        // Add assistant response to history
-        history.push({ role: "assistant", content: fullResponse });
-        // Signal stream end
-        webview.postMessage({ type: "streamEnd" });
     }
-    catch (err) {
-        let errorMsg;
-        if (err instanceof Error) {
-            errorMsg = err.message;
-        }
-        else if (typeof err === "object" && err !== null) {
-            errorMsg = JSON.stringify(err);
-        }
-        else {
-            errorMsg = String(err);
-        }
-        webview.postMessage({ type: "error", content: errorMsg });
-        // Remove the user message we added since the request failed
-        history.pop();
-    }
-}
-function extractErrorMessage(value) {
-    if (!value)
-        return undefined;
-    if (typeof value === "string") {
-        const trimmed = value.trim();
-        return trimmed.length > 0 ? trimmed : undefined;
-    }
-    if (typeof value === "number" || typeof value === "boolean") {
-        return String(value);
-    }
-    if (Array.isArray(value)) {
-        const parts = value
-            .map((item) => extractErrorMessage(item))
-            .filter((item) => Boolean(item));
-        return parts.length > 0 ? parts.join(" | ") : undefined;
-    }
-    if (typeof value === "object") {
-        const obj = value;
-        const nestedMessage = extractErrorMessage(obj.message) ??
-            extractErrorMessage(obj.error) ??
-            extractErrorMessage(obj.detail) ??
-            extractErrorMessage(obj.reason);
-        if (nestedMessage)
-            return nestedMessage;
-        try {
-            return JSON.stringify(obj);
-        }
-        catch {
-            return "Unknown error";
-        }
-    }
-    return undefined;
-}
-function parseErrorFromResponseBody(errBody, statusCode) {
-    const fallback = `HTTP ${statusCode ?? "error"}`;
-    const trimmed = errBody.trim();
-    if (!trimmed)
-        return fallback;
-    try {
-        const parsed = JSON.parse(trimmed);
-        const message = extractErrorMessage(parsed);
-        if (message) {
-            return statusCode ? `HTTP ${statusCode}: ${message}` : message;
-        }
-    }
-    catch {
-        // Non-JSON body, handled below.
-    }
-    const snippet = trimmed.slice(0, 300);
-    return statusCode ? `HTTP ${statusCode}: ${snippet}` : snippet;
-}
-function streamChatCompletion(opts) {
-    return new Promise((resolve, reject) => {
-        const { baseApiUrl, apiKey, model, messages, onToken } = opts;
-        const body = JSON.stringify({
-            model,
-            messages,
-            stream: true,
-            max_tokens: 512,
-            temperature: 0.7,
-        });
-        let parsedUrl;
-        try {
-            parsedUrl = new url_1.URL(`${baseApiUrl}/api/v1/hf/chat/completions`);
-        }
-        catch {
-            reject(new Error(`Invalid API URL: ${baseApiUrl}`));
+    async show(prefill) { await vscode.commands.executeCommand("workbench.view.extension.xpersona").then(undefined, () => { }); await vscode.commands.executeCommand("xpersona.playgroundView.focus").then(undefined, () => { }); if (prefill)
+        this.post({ type: "prefill", text: prefill }); }
+    async setApiKey() { const k = await vscode.window.showInputBox({ title: "API key", password: true }); if (!k?.trim())
+        return; await this.ctx.secrets.store(API_KEY_SECRET, k.trim()); this.post({ type: "api", ok: true }); }
+    async setMode(m) { this.mode = m; await this.ctx.workspaceState.update(MODE_KEY, m); this.post({ type: "mode", value: m }); }
+    async ask(text, parallel) {
+        if (!text.trim())
             return;
+        const key = await this.ctx.secrets.get(API_KEY_SECRET);
+        if (!key)
+            return this.post({ type: "err", text: "No API key set" });
+        this.post({ type: "start" });
+        this.addTimeline("intent", text.slice(0, 120));
+        if (!this.sessionId) {
+            const s = await req("POST", `${base()}/api/v1/playground/sessions`, key, { title: text.slice(0, 60), mode: this.mode }).catch(() => ({}));
+            this.sessionId = s?.data?.id || null;
         }
-        const isHttps = parsedUrl.protocol === "https:";
-        const transport = isHttps ? https : http;
-        const options = {
-            hostname: parsedUrl.hostname,
-            port: parsedUrl.port || (isHttps ? 443 : 80),
-            path: parsedUrl.pathname + parsedUrl.search,
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Content-Length": Buffer.byteLength(body),
-                "X-API-Key": apiKey,
-                Accept: "text/event-stream",
-            },
-        };
-        let fullText = "";
-        let buffer = "";
-        const req = transport.request(options, (res) => {
-            if (res.statusCode && res.statusCode >= 400) {
-                let errBody = "";
-                res.on("data", (chunk) => {
-                    errBody += chunk.toString();
-                });
-                res.on("end", () => {
-                    const errorMessage = parseErrorFromResponseBody(errBody, res.statusCode);
-                    reject(new Error(errorMessage));
-                });
+        await stream(`${base()}/api/v1/playground/assist`, key, { mode: this.mode, task: text, stream: true, historySessionId: this.sessionId, agentConfig: parallel ? { strategy: "parallel", roles: ["planner", "implementer", "reviewer"] } : { strategy: "single" } }, async (ev, p) => {
+            if (ev === "final")
+                this.post({ type: "token", text: typeof p === "string" ? p : JSON.stringify(p) });
+            else if (ev === "decision") {
+                this.post({ type: "status", text: `Decision: ${p?.mode || "unknown"} (${p?.confidence ?? "?"})` });
+                this.addTimeline("decision", p?.mode || "unknown");
+            }
+            else if (ev === "phase")
+                this.addTimeline(p?.name || "phase", p?.name || "");
+            else if (ev === "meta")
+                this.post({ type: "meta", data: p });
+        }).catch((e) => this.post({ type: "err", text: err(e) }));
+        this.post({ type: "end" });
+    }
+    async loadHistory() {
+        const key = await this.ctx.secrets.get(API_KEY_SECRET);
+        if (!key)
+            return;
+        const r = await req("GET", `${base()}/api/v1/playground/sessions?limit=30`, key).catch(() => ({}));
+        const items = (r?.data?.data || []).map((x) => ({ id: x.id, title: x.title || "Untitled", mode: x.mode || "auto" }));
+        this.post({ type: "historyItems", data: items });
+    }
+    async openSession(id) {
+        const key = await this.ctx.secrets.get(API_KEY_SECRET);
+        if (!key || !id)
+            return;
+        this.sessionId = id;
+        const r = await req("GET", `${base()}/api/v1/playground/sessions/${encodeURIComponent(id)}/messages?includeAgentEvents=true`, key).catch(() => ({}));
+        const msgs = (r?.data || []).filter((m) => m.role === "user" || m.role === "assistant").map((m) => ({ role: m.role, content: m.content }));
+        this.post({ type: "load", data: msgs.reverse() });
+        this.addTimeline("history", `loaded ${id.slice(0, 8)}`);
+    }
+    async replay() {
+        const key = await this.ctx.secrets.get(API_KEY_SECRET);
+        if (!key || !this.sessionId)
+            return this.post({ type: "err", text: "No active session" });
+        const r = await req("POST", `${base()}/api/v1/playground/replay`, key, { sessionId: this.sessionId, workspaceFingerprint: "vscode", mode: this.mode }).catch(() => ({}));
+        const s = r?.data?.driftReport?.summary || "Replay prepared.";
+        const st = r?.data?.replayPlan?.steps || [];
+        this.post({ type: "assistant", text: `${s}\n\n${st.map((x, i) => `${i + 1}. ${x}`).join("\n")}` });
+        this.addTimeline("replay", s);
+    }
+    addTimeline(phase, detail) { this.timeline.push({ ts: Date.now(), phase, detail }); this.timeline = this.timeline.slice(-200); this.post({ type: "timeline", data: this.timeline }); }
+    post(m) { this.view?.webview.postMessage(m); }
+}
+function req(method, u, key, body) {
+    return new Promise((resolve, reject) => {
+        const x = new url_1.URL(u), c = x.protocol === "https:" ? https : http, p = body === undefined ? "" : JSON.stringify(body);
+        const r = c.request({ hostname: x.hostname, port: x.port || (x.protocol === "https:" ? 443 : 80), path: x.pathname + x.search, method, headers: { "X-API-Key": key, "Content-Type": "application/json", ...(body === undefined ? {} : { "Content-Length": Buffer.byteLength(p) }) } }, (res) => {
+            let t = "";
+            res.on("data", (d) => (t += d.toString("utf8")));
+            res.on("end", () => { if ((res.statusCode || 500) >= 400)
+                return reject(new Error(parseErr(t, res.statusCode))); try {
+                resolve((t ? JSON.parse(t) : {}));
+            }
+            catch {
+                resolve({});
+            } });
+        });
+        r.on("error", reject);
+        if (p)
+            r.write(p);
+        r.end();
+    });
+}
+function stream(u, key, body, onEvent) {
+    return new Promise((resolve, reject) => {
+        const x = new url_1.URL(u), c = x.protocol === "https:" ? https : http, p = JSON.stringify(body);
+        let b = "";
+        const r = c.request({ hostname: x.hostname, port: x.port || (x.protocol === "https:" ? 443 : 80), path: x.pathname + x.search, method: "POST", headers: { "X-API-Key": key, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(p), Accept: "text/event-stream" } }, (res) => {
+            if ((res.statusCode || 500) >= 400) {
+                let t = "";
+                res.on("data", (d) => (t += d.toString("utf8")));
+                res.on("end", () => reject(new Error(parseErr(t, res.statusCode))));
                 return;
             }
-            res.on("data", (chunk) => {
-                buffer += chunk.toString();
-                const lines = buffer.split("\n");
-                buffer = lines.pop() || "";
-                for (const line of lines) {
-                    const trimmed = line.trim();
-                    if (!trimmed || trimmed === "data: [DONE]")
-                        continue;
-                    if (!trimmed.startsWith("data: "))
-                        continue;
-                    const jsonStr = trimmed.slice(6);
-                    try {
-                        const parsed = JSON.parse(jsonStr);
-                        const delta = parsed?.choices?.[0]?.delta?.content;
-                        if (delta) {
-                            fullText += delta;
-                            onToken(delta);
-                        }
-                    }
-                    catch {
-                        // Skip malformed SSE lines
-                    }
+            res.on("data", (d) => { b += d.toString("utf8"); let i = b.indexOf("\n\n"); while (i >= 0) {
+                const e = b.slice(0, i);
+                b = b.slice(i + 2);
+                i = b.indexOf("\n\n");
+                const lines = e.split(/\r?\n/).filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim());
+                if (!lines.length)
+                    continue;
+                const raw = lines.join("\n");
+                if (raw === "[DONE]")
+                    continue;
+                try {
+                    const o = JSON.parse(raw);
+                    onEvent(o.event || "message", o.data ?? o.message ?? o);
                 }
-            });
-            res.on("end", () => {
-                // Process any remaining buffer
-                if (buffer.trim() && buffer.trim() !== "data: [DONE]") {
-                    const trimmed = buffer.trim();
-                    if (trimmed.startsWith("data: ")) {
-                        try {
-                            const parsed = JSON.parse(trimmed.slice(6));
-                            const delta = parsed?.choices?.[0]?.delta?.content;
-                            if (delta) {
-                                fullText += delta;
-                                onToken(delta);
-                            }
-                        }
-                        catch {
-                            // ignore
-                        }
-                    }
-                }
-                resolve(fullText);
-            });
-            res.on("error", reject);
+                catch { }
+            } });
+            res.on("end", () => resolve());
         });
-        req.on("error", reject);
-        req.setTimeout(60000, () => {
-            req.destroy();
-            reject(new Error("Request timed out after 60 seconds"));
-        });
-        req.write(body);
-        req.end();
+        r.on("error", reject);
+        r.write(p);
+        r.end();
     });
 }
-// â”€â”€â”€ HTML: Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function getSidebarHtml() {
-    return `<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <style>
-      body {
-        font-family: var(--vscode-font-family);
-        color: var(--vscode-foreground);
-        padding: 12px;
-        margin: 0;
-      }
-      .card {
-        border: 1px solid var(--vscode-panel-border);
-        border-radius: 8px;
-        padding: 12px;
-        background: var(--vscode-sideBar-background);
-      }
-      .title { font-weight: 600; margin-bottom: 4px; font-size: 14px; }
-      .subtitle { opacity: 0.7; margin-bottom: 12px; font-size: 12px; }
-      .actions { display: grid; gap: 8px; }
-      a.button {
-        display: inline-block;
-        text-decoration: none;
-        color: var(--vscode-button-foreground);
-        background: var(--vscode-button-background);
-        padding: 8px 10px;
-        border-radius: 6px;
-        text-align: center;
-        font-size: 13px;
-      }
-      a.button.secondary {
-        background: var(--vscode-button-secondaryBackground);
-        color: var(--vscode-button-secondaryForeground);
-      }
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <div class="title">Playground AI Chat</div>
-      <div class="subtitle">Your AI coding assistant</div>
-      <div class="actions">
-        <a class="button" href="command:xpersona.playground.prompt">Start Chat</a>
-        <a class="button secondary" href="command:xpersona.playground.openWithSelection">Chat with Selection</a>
-        <a class="button secondary" href="command:xpersona.playground.setApiKey">Set API Key</a>
-      </div>
-    </div>
-  </body>
-</html>`;
+function parseErr(text, code) { try {
+    const j = JSON.parse(text);
+    return `HTTP ${code}: ${j.error?.message || j.message || j.error || text}`;
 }
-// â”€â”€â”€ HTML: Chat Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function getChatInterfaceHtml(nonce) {
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Playground AI Chat</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: var(--vscode-font-family);
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            background: var(--vscode-editor-background);
-            color: var(--vscode-editor-foreground);
-            font-size: 13px;
-        }
-
-        /* â”€â”€ Setup Screen â”€â”€ */
-        #setupScreen {
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            flex: 1;
-            padding: 32px;
-            gap: 16px;
-            text-align: center;
-        }
-        #setupScreen.visible { display: flex; }
-        #setupScreen h2 { font-size: 16px; font-weight: 600; }
-        #setupScreen p { opacity: 0.7; font-size: 12px; line-height: 1.6; }
-        #apiKeyInput {
-            width: 100%;
-            max-width: 360px;
-            padding: 8px 12px;
-            border: 1px solid var(--vscode-input-border);
-            border-radius: 6px;
-            background: var(--vscode-input-background);
-            color: var(--vscode-input-foreground);
-            font-family: monospace;
-            font-size: 13px;
-            outline: none;
-        }
-        #apiKeyInput:focus { border-color: var(--vscode-focusBorder); }
-        #saveKeyBtn {
-            padding: 8px 20px;
-            background: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 13px;
-        }
-        #saveKeyBtn:hover { background: var(--vscode-button-hoverBackground); }
-
-        /* â”€â”€ Chat Screen â”€â”€ */
-        #chatScreen {
-            display: none;
-            flex-direction: column;
-            flex: 1;
-            overflow: hidden;
-        }
-        #chatScreen.visible { display: flex; }
-
-        .chat-header {
-            padding: 10px 16px;
-            border-bottom: 1px solid var(--vscode-panel-border);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            font-weight: 600;
-            font-size: 13px;
-        }
-        .header-actions { display: flex; gap: 8px; }
-        .icon-btn {
-            background: none;
-            border: none;
-            cursor: pointer;
-            color: var(--vscode-foreground);
-            opacity: 0.6;
-            font-size: 12px;
-            padding: 2px 6px;
-            border-radius: 4px;
-        }
-        .icon-btn:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
-
-        .messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-        .message {
-            padding: 10px 14px;
-            border-radius: 8px;
-            max-width: 88%;
-            word-wrap: break-word;
-            line-height: 1.55;
-            white-space: pre-wrap;
-            font-size: 13px;
-        }
-        .message.user {
-            background: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
-            align-self: flex-end;
-            border-bottom-right-radius: 2px;
-        }
-        .message.assistant {
-            background: var(--vscode-input-background);
-            border: 1px solid var(--vscode-input-border);
-            align-self: flex-start;
-            border-bottom-left-radius: 2px;
-        }
-        .message.assistant.streaming::after {
-            content: 'â–‹';
-            animation: blink 0.8s step-end infinite;
-            margin-left: 1px;
-        }
-        @keyframes blink { 50% { opacity: 0; } }
-        .message.error {
-            background: var(--vscode-inputValidation-errorBackground);
-            border: 1px solid var(--vscode-inputValidation-errorBorder);
-            color: var(--vscode-inputValidation-errorForeground);
-            align-self: flex-start;
-            font-size: 12px;
-        }
-
-        .input-container {
-            padding: 12px 16px;
-            border-top: 1px solid var(--vscode-panel-border);
-        }
-        .input-row { display: flex; gap: 8px; align-items: flex-end; }
-        #messageInput {
-            flex: 1;
-            padding: 8px 12px;
-            border: 1px solid var(--vscode-input-border);
-            border-radius: 6px;
-            background: var(--vscode-input-background);
-            color: var(--vscode-input-foreground);
-            font-family: inherit;
-            font-size: 13px;
-            resize: none;
-            min-height: 132px;
-            max-height: 280px;
-            outline: none;
-            line-height: 1.4;
-        }
-        #messageInput:focus { border-color: var(--vscode-focusBorder); }
-        #sendButton {
-            padding: 8px 14px;
-            background: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 13px;
-            white-space: nowrap;
-            min-width: 56px;
-        }
-        #sendButton:hover { background: var(--vscode-button-hoverBackground); }
-        #sendButton:disabled { opacity: 0.45; cursor: not-allowed; }
-        .hint { font-size: 11px; opacity: 0.45; margin-top: 5px; }
-
-        /* â”€â”€ No-key banner inside chat â”€â”€ */
-        .no-key-banner {
-            display: none;
-            padding: 10px 14px;
-            background: var(--vscode-inputValidation-warningBackground);
-            border: 1px solid var(--vscode-inputValidation-warningBorder);
-            border-radius: 6px;
-            font-size: 12px;
-            margin-bottom: 8px;
-            cursor: pointer;
-        }
-        .no-key-banner.visible { display: block; }
-    </style>
-</head>
-<body>
-
-    <!-- Setup Screen (shown when no API key) -->
-    <div id="setupScreen">
-        <h2>Enter your Playground API Key</h2>
-        <p>Get your API key from your Xpersona dashboard<br>under <strong>Settings â†’ API Key</strong>.</p>
-        <input id="apiKeyInput" type="password" placeholder="xp_..." autocomplete="off" spellcheck="false" />
-        <button id="saveKeyBtn">Save & Start Chatting</button>
-    </div>
-
-    <!-- Chat Screen -->
-    <div id="chatScreen">
-        <div class="chat-header">
-            <span>Playground AI Chat</span>
-            <div class="header-actions">
-                <button class="icon-btn" id="clearBtn" title="Clear conversation">Clear</button>
-                <button class="icon-btn" id="keyBtn" title="Change API key">API Key</button>
-            </div>
-        </div>
-        <div class="messages" id="messages">
-            <div class="message assistant">
-                Hello! I'm your Playground AI coding assistant. Ask me anything about your code!
-            </div>
-        </div>
-        <div class="input-container">
-            <div class="no-key-banner" id="noKeyBanner">
-                âš ï¸ No API key set. <u>Click here to set your API key.</u>
-            </div>
-            <div class="input-row">
-                <textarea id="messageInput" placeholder="Type a message..." rows="4"></textarea>
-                <button id="sendButton" disabled>Send</button>
-            </div>
-            <div class="hint">Enter to send &bull; Shift+Enter for new line</div>
-        </div>
-    </div>
-
-    <script nonce="${nonce}">
-        const vscode = acquireVsCodeApi();
-        const setupScreen = document.getElementById('setupScreen');
-        const chatScreen = document.getElementById('chatScreen');
-        const messagesEl = document.getElementById('messages');
-        const messageInput = document.getElementById('messageInput');
-        const sendButton = document.getElementById('sendButton');
-        const noKeyBanner = document.getElementById('noKeyBanner');
-        const apiKeyInput = document.getElementById('apiKeyInput');
-        const saveKeyBtn = document.getElementById('saveKeyBtn');
-        const clearBtn = document.getElementById('clearBtn');
-        const keyBtn = document.getElementById('keyBtn');
-
-        let isStreaming = false;
-        let currentStreamEl = null;
-
-        // â”€â”€ Show/hide screens â”€â”€
-        function showChat() {
-            setupScreen.classList.remove('visible');
-            chatScreen.classList.add('visible');
-            noKeyBanner.classList.remove('visible');
-            messageInput.focus();
-        }
-        function showSetup() {
-            chatScreen.classList.remove('visible');
-            setupScreen.classList.add('visible');
-            apiKeyInput.focus();
-        }
-
-        // â”€â”€ Messages â”€â”€
-        function scrollToBottom() {
-            messagesEl.scrollTop = messagesEl.scrollHeight;
-        }
-        function addMessage(content, role) {
-            const el = document.createElement('div');
-            el.className = 'message ' + role;
-            el.textContent = content;
-            messagesEl.appendChild(el);
-            scrollToBottom();
-            return el;
-        }
-
-        // â”€â”€ Send â”€â”€
-        function sendMessage() {
-            const content = messageInput.value.trim();
-            if (!content || isStreaming) return;
-
-            addMessage(content, 'user');
-            messageInput.value = '';
-            messageInput.style.height = 'auto';
-            sendButton.disabled = true;
-            isStreaming = true;
-
-            // Create empty assistant bubble for streaming
-            currentStreamEl = document.createElement('div');
-            currentStreamEl.className = 'message assistant streaming';
-            currentStreamEl.textContent = '';
-            messagesEl.appendChild(currentStreamEl);
-            scrollToBottom();
-
-            vscode.postMessage({ type: 'sendMessage', content });
-        }
-
-        sendButton.addEventListener('click', sendMessage);
-        messageInput.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                if (!sendButton.disabled) sendMessage();
-            }
-        });
-        messageInput.addEventListener('input', function() {
-            sendButton.disabled = !this.value.trim() || isStreaming;
-            this.style.height = 'auto';
-            this.style.height = Math.min(this.scrollHeight, 280) + 'px';
-        });
-
-        // â”€â”€ Clear â”€â”€
-        clearBtn.addEventListener('click', function() {
-            while (messagesEl.children.length > 1) {
-                messagesEl.removeChild(messagesEl.lastChild);
-            }
-            vscode.postMessage({ type: 'clearHistory' });
-        });
-
-        // â”€â”€ API Key â”€â”€
-        keyBtn.addEventListener('click', showSetup);
-        noKeyBanner.addEventListener('click', showSetup);
-        saveKeyBtn.addEventListener('click', function() {
-            const key = apiKeyInput.value.trim();
-            if (key) {
-                vscode.postMessage({ type: 'saveApiKey', key });
-            }
-        });
-        apiKeyInput.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') saveKeyBtn.click();
-        });
-
-        // â”€â”€ Messages from extension â”€â”€
-        window.addEventListener('message', function(event) {
-            const msg = event.data;
-            switch (msg.type) {
-                case 'apiKeyStatus':
-                    if (msg.hasKey) {
-                        showChat();
-                    } else {
-                        showSetup();
-                    }
-                    break;
-
-                case 'apiKeySaved':
-                    showChat();
-                    break;
-
-                case 'streamStart':
-                    // bubble already created in sendMessage
-                    break;
-
-                case 'token':
-                    if (currentStreamEl) {
-                        currentStreamEl.textContent += msg.content;
-                        scrollToBottom();
-                    }
-                    break;
-
-                case 'streamEnd':
-                    if (currentStreamEl) {
-                        currentStreamEl.classList.remove('streaming');
-                        currentStreamEl = null;
-                    }
-                    isStreaming = false;
-                    sendButton.disabled = !messageInput.value.trim();
-                    messageInput.focus();
-                    break;
-
-                case 'noApiKey':
-                    if (currentStreamEl) {
-                        currentStreamEl.remove();
-                        currentStreamEl = null;
-                    }
-                    isStreaming = false;
-                    sendButton.disabled = !messageInput.value.trim();
-                    noKeyBanner.classList.add('visible');
-                    break;
-
-                case 'error':
-                    if (currentStreamEl) {
-                        currentStreamEl.remove();
-                        currentStreamEl = null;
-                    }
-                    isStreaming = false;
-                    sendButton.disabled = !messageInput.value.trim();
-                    addMessage('Error: ' + msg.content, 'error');
-                    break;
-
-                case 'prefill':
-                    messageInput.value = msg.content;
-                    sendButton.disabled = false;
-                    messageInput.focus();
-                    messageInput.style.height = 'auto';
-                    messageInput.style.height = Math.min(messageInput.scrollHeight, 280) + 'px';
-                    break;
-            }
-        });
-
-        // â”€â”€ Init: check API key â”€â”€
-        vscode.postMessage({ type: 'checkApiKey' });
-    </script>
-</body>
-</html>`;
-}
-// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function getSelectionOrLine() {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor)
-        return undefined;
-    const selection = editor.selection;
-    const selected = selection.isEmpty ? "" : editor.document.getText(selection).trim();
-    if (selected)
-        return selected;
-    const lineText = editor.document.lineAt(selection.active.line).text.trim();
-    return lineText.length > 0 ? lineText : undefined;
-}
-function getNonce() {
-    let text = "";
-    const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    for (let i = 0; i < 32; i++) {
-        text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
-    return text;
-}
+catch {
+    return `HTTP ${code}: ${text.slice(0, 300)}`;
+} }
+function err(e) { return e instanceof Error ? e.message : String(e); }
+function base() { return (vscode.workspace.getConfiguration("xpersona.playground").get("baseApiUrl") || "http://localhost:3000").replace(/\/$/, ""); }
+function nonce() { return (0, crypto_1.createHash)("sha256").update(String(Math.random())).digest("hex").slice(0, 16); }
+function html() { return `<!doctype html><html><head><meta charset="UTF-8"><style>body{font-family:var(--vscode-font-family);margin:0;height:100vh;display:flex;flex-direction:column;background:var(--vscode-editor-background);color:var(--vscode-editor-foreground)}.top{padding:8px;border-bottom:1px solid var(--vscode-panel-border);display:flex;gap:6px;flex-wrap:wrap;align-items:center}.tabs{display:flex;border-bottom:1px solid var(--vscode-panel-border)}.tab{border:0;background:transparent;color:inherit;padding:7px 9px;cursor:pointer;border-right:1px solid var(--vscode-panel-border)}.tab.active{background:var(--vscode-input-background)}.panel{display:none;flex:1;overflow:auto;padding:8px;white-space:pre-wrap}.panel.active{display:block}.m{padding:8px;border-radius:8px;margin-bottom:8px;max-width:95%}.u{margin-left:auto;background:var(--vscode-button-background);color:var(--vscode-button-foreground)}.a{background:var(--vscode-input-background);border:1px solid var(--vscode-input-border)}.e{background:var(--vscode-inputValidation-errorBackground);border:1px solid var(--vscode-inputValidation-errorBorder)}.chip{font-size:11px;padding:2px 6px;border:1px solid var(--vscode-panel-border);border-radius:999px;margin-right:6px}.item{border:1px solid var(--vscode-panel-border);padding:8px;border-radius:8px;margin-bottom:8px}.input{border-top:1px solid var(--vscode-panel-border);padding:8px}textarea{width:100%;min-height:90px}#setup{display:none;flex:1;align-items:center;justify-content:center;flex-direction:column;gap:8px}#app{display:none;flex:1;flex-direction:column;min-height:0}</style></head><body><div id="setup"><h3>Set API key</h3><input id="k" type="password" placeholder="xp_..."><button id="ks">Save</button></div><div id="app"><div class="top"><strong>Playground</strong><select id="mode"><option value="auto">Auto</option><option value="plan">Plan</option><option value="yolo">YOLO</option></select><select id="safety"><option value="standard">Safety: Standard</option><option value="aggressive">Safety: Aggressive</option></select><label><input id="parallel" type="checkbox"> Parallel agents</label><button id="hist">History</button><button id="rep">Replay</button><button id="idx">Rebuild Index</button><span id="ac">images:0</span></div><div class="tabs"><button class="tab active" data-p="chat">Chat</button><button class="tab" data-p="timeline">Timeline</button><button class="tab" data-p="history">History</button><button class="tab" data-p="index">Index</button><button class="tab" data-p="agents">Agents</button><button class="tab" data-p="exec">Execution</button></div><div id="chat" class="panel active"><div id="chips"></div><div id="msgs"><div class="m a">Hello! I'm your Playground AI coding assistant.</div></div></div><div id="timeline" class="panel"></div><div id="history" class="panel"></div><div id="index" class="panel"></div><div id="agents" class="panel"></div><div id="exec" class="panel"></div><div class="input"><textarea id="t" placeholder="Type a message"></textarea><button id="s">Send</button><button id="c">Clear</button></div></div><script>const v=acquireVsCodeApi(),setup=document.getElementById("setup"),app=document.getElementById("app"),msgs=document.getElementById("msgs"),chips=document.getElementById("chips"),timeline=document.getElementById("timeline"),history=document.getElementById("history"),index=document.getElementById("index"),agents=document.getElementById("agents"),exec=document.getElementById("exec");let sb=null,streaming=false;function add(x,cls){const d=document.createElement("div");d.className="m "+cls;d.textContent=x;msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight;return d;}function tab(p){document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));document.querySelectorAll(".panel").forEach(t=>t.classList.remove("active"));document.querySelector('.tab[data-p="'+p+'"]').classList.add("active");document.getElementById(p).classList.add("active");}document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>tab(b.dataset.p));document.getElementById("ks").onclick=()=>{const key=document.getElementById("k").value.trim();if(key)v.postMessage({type:"saveKey",key});};document.getElementById("s").onclick=()=>{const t=document.getElementById("t"),x=t.value.trim();if(!x||streaming)return;add(x,"u");t.value="";streaming=true;sb=add("","a");v.postMessage({type:"send",text:x,parallel:document.getElementById("parallel").checked});tab("chat");};document.getElementById("c").onclick=()=>{while(msgs.firstChild)msgs.removeChild(msgs.firstChild);chips.innerHTML="";v.postMessage({type:"clear"});};document.getElementById("mode").onchange=e=>v.postMessage({type:"setMode",value:e.target.value});document.getElementById("safety").onchange=e=>v.postMessage({type:"setSafety",value:e.target.value});document.getElementById("hist").onclick=()=>{v.postMessage({type:"history"});tab("history");};document.getElementById("rep").onclick=()=>v.postMessage({type:"replay"});document.getElementById("idx").onclick=()=>{v.postMessage({type:"indexRebuild"});tab("index");};window.addEventListener("message",ev=>{const m=ev.data;if(m.type==="api"){if(m.ok){setup.style.display="none";app.style.display="flex";}else{setup.style.display="flex";app.style.display="none";}}else if(m.type==="mode"){document.getElementById("mode").value=m.value;}else if(m.type==="att"){document.getElementById("ac").textContent="images:"+m.count;}else if(m.type==="start"){streaming=true;}else if(m.type==="token"){if(sb)sb.textContent+=(m.text||"");else sb=add(m.text||"","a");}else if(m.type==="end"){streaming=false;sb=null;}else if(m.type==="status"){add("[status] "+m.text,"a");}else if(m.type==="assistant"){add(m.text||"","a");}else if(m.type==="meta"){chips.innerHTML="";if(m.data?.confidence!==undefined){const c=document.createElement("span");c.className="chip";c.textContent="Confidence "+Math.round(m.data.confidence*100)+"%";chips.appendChild(c);}if(m.data?.risk){const r=document.createElement("span");r.className="chip";r.textContent="Risk "+m.data.risk.blastRadius+" / rollback "+m.data.risk.rollbackComplexity;chips.appendChild(r);}}else if(m.type==="timeline"){timeline.innerHTML=(m.data||[]).map(x=>'<div class="item"><strong>'+new Date(x.ts).toLocaleTimeString()+'</strong><div>'+x.phase+'</div><div>'+x.detail+'</div></div>').join("")||"No timeline";}else if(m.type==="historyItems"){history.innerHTML=(m.data||[]).map(x=>'<div class="item" data-id="'+x.id+'"><strong>'+x.title+'</strong><div>'+x.mode+' · '+x.id.slice(0,8)+'</div></div>').join("")||"No history";history.querySelectorAll(".item").forEach(el=>el.onclick=()=>v.postMessage({type:"openSession",id:el.getAttribute("data-id")}));}else if(m.type==="indexState"){index.innerHTML='<div class="item">chunks: '+(m.data?.chunks||0)+'</div><div class="item">freshness: '+(m.data?.freshness||"stale")+'</div><div class="item">last matches: '+(m.data?.lastQueryMatches||0)+'</div><div class="item">last rebuild: '+(m.data?.lastRebuildAt||"n/a")+'</div>';}else if(m.type==="roundtable"){agents.textContent=JSON.stringify(m.data||{},null,2);}else if(m.type==="execLogs"){exec.innerHTML=(m.data||[]).map(x=>'<div class="item"><strong>'+x.level.toUpperCase()+'</strong> '+new Date(x.ts).toLocaleTimeString()+'<div>'+x.message+'</div></div>').join("")||"No execution logs";}else if(m.type==="err"){streaming=false;sb=null;add("Error: "+m.text,"e");}else if(m.type==="prefill"){document.getElementById("t").value=m.text||"";}else if(m.type==="load"){while(msgs.firstChild)msgs.removeChild(msgs.firstChild);(m.data||[]).forEach(x=>add(x.content,x.role==="user"?"u":"a"));tab("chat");}});v.postMessage({type:"check"});</script></body></html>`; }
 //# sourceMappingURL=extension.js.map

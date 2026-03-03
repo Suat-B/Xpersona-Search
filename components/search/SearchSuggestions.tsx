@@ -398,7 +398,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
       } finally {
         setLoading(false);
       }
-    }, []);
+    }, [onQuerySelect]);
 
     /* ---- fetch trending + recent for empty query ---- */
     const fetchEmptyState = useCallback(async () => {

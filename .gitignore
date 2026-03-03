@@ -36,3 +36,6 @@ next-env.d.ts
 
 # drizzle
 drizzle/meta/
+.npm-cache-temp/
+playground_ai/__pycache__/
+next-*.tgz

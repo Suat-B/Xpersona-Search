@@ -199,7 +199,7 @@ export default function ManagePage() {
     } finally {
       setSavingStructured(false);
     }
-  }, [slug, description, homepage, capabilities, readme, customLinks]);
+  }, [slug, description, homepage, capabilities, readme, customLinks, redirectToUpgradeIfNeeded]);
 
   const saveCustomization = useCallback(
     async (status: "DRAFT" | "PUBLISHED" | "DISABLED") => {
@@ -243,7 +243,7 @@ export default function ManagePage() {
         setSavingCustomization(false);
       }
     },
-    [slug, customHtml, customCss, customJs]
+    [slug, customHtml, customCss, customJs, redirectToUpgradeIfNeeded]
   );
 
   const loadPreview = useCallback(async () => {
@@ -275,7 +275,7 @@ export default function ManagePage() {
     } finally {
       setPreviewLoading(false);
     }
-  }, [slug, customHtml, customCss, customJs]);
+  }, [slug, customHtml, customCss, customJs, redirectToUpgradeIfNeeded]);
 
   const addLink = () => {
     if (!newLinkLabel.trim() || !newLinkUrl.trim()) return;

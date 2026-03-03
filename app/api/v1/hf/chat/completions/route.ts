@@ -14,16 +14,20 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { hfUsageLogs } from "@/lib/db/playground-schema";
 import { eq } from "drizzle-orm";
+import { isAdminEmail } from "@/lib/admin";
 import { 
   checkRateLimits, 
   getUserPlan,
   incrementUsage, 
   estimateMessagesTokens,
-  PLAN_LIMITS,
-  type PlaygroundPlan 
+  PLAN_LIMITS
 } from "@/lib/hf-router/rate-limit";
 
 const HF_ROUTER_BASE_URL = "https://router.huggingface.co/v1";
+const UNLIMITED_PLAYGROUND_EMAILS = new Set([
+  "suat.bastug@icloud.com",
+  "kiraaimoto@gmail.com",
+]);
 
 function getHfRouterToken(): string | undefined {
   return process.env.HF_ROUTER_TOKEN || process.env.HF_TOKEN || process.env.HUGGINGFACE_TOKEN;
@@ -48,7 +52,9 @@ interface ChatCompletionRequest {
 /**
  * Authenticate request using X-API-Key header
  */
-async function authenticateRequest(request: NextRequest): Promise<{ userId: string; apiKeyPrefix: string } | null> {
+async function authenticateRequest(
+  request: NextRequest
+): Promise<{ userId: string; email: string; apiKeyPrefix: string } | null> {
   const apiKey = request.headers.get("X-API-Key") || request.headers.get("Authorization")?.replace("Bearer ", "");
   
   if (!apiKey) {
@@ -62,6 +68,7 @@ async function authenticateRequest(request: NextRequest): Promise<{ userId: stri
   const user = await db
     .select({
       id: users.id,
+      email: users.email,
       apiKeyPrefix: users.apiKeyPrefix,
     })
     .from(users)
@@ -74,8 +81,14 @@ async function authenticateRequest(request: NextRequest): Promise<{ userId: stri
 
   return { 
     userId: user[0].id, 
+    email: user[0].email,
     apiKeyPrefix: user[0].apiKeyPrefix || "unknown" 
   };
+}
+
+function hasUnlimitedPlaygroundAccess(email: string): boolean {
+  const normalized = email.trim().toLowerCase();
+  return isAdminEmail(normalized) || UNLIMITED_PLAYGROUND_EMAILS.has(normalized);
 }
 
 /**
@@ -309,18 +322,21 @@ export async function POST(request: NextRequest): Promise<Response> {
     );
   }
   
-  const { userId } = auth;
+  const { userId, email } = auth;
+  const unlimitedAccess = hasUnlimitedPlaygroundAccess(email);
 
   // Explicit guard: only users with an active Playground subscription (trial/paid) can use HF routes.
-  const plan = await getUserPlan(userId);
-  if (!plan || !plan.isActive) {
-    return NextResponse.json(
-      {
-        error: "PLAYGROUND_SUBSCRIPTION_REQUIRED",
-        message: "Playground subscription required. Free dashboard plan keys cannot access Playground API endpoints.",
-      },
-      { status: 402 }
-    );
+  if (!unlimitedAccess) {
+    const plan = await getUserPlan(userId);
+    if (!plan || !plan.isActive) {
+      return NextResponse.json(
+        {
+          error: "PLAYGROUND_SUBSCRIPTION_REQUIRED",
+          message: "Playground subscription required. Free dashboard plan keys cannot access Playground API endpoints.",
+        },
+        { status: 402 }
+      );
+    }
   }
   
   // Parse request body
@@ -347,32 +363,38 @@ export async function POST(request: NextRequest): Promise<Response> {
   const requestedMaxTokens = body.max_tokens || 256;
   
   // Check rate limits
-  const rateLimitCheck = await checkRateLimits(userId, requestedMaxTokens, estimatedInputTokens);
-  
-  if (!rateLimitCheck.allowed) {
-    // Log the rate limit violation
-    await logUsage({
-      userId,
-      model: body.model,
-      tokensInput: estimatedInputTokens,
-      tokensOutput: 0,
-      latencyMs: Date.now() - startTime,
-      status: rateLimitCheck.reason?.includes("quota") ? "quota_exceeded" : "rate_limited",
-      errorMessage: rateLimitCheck.reason,
-      estimatedCostUsd: 0,
-      requestPayload: body as unknown as Record<string, unknown>,
-    });
-    
-    // Return appropriate status code
-    const status = rateLimitCheck.reason?.includes("subscription") ? 402 : 429;
-    return NextResponse.json(
-      { 
-        error: status === 402 ? "Payment Required" : "Rate Limit Exceeded", 
-        message: rateLimitCheck.reason,
-        usage: rateLimitCheck.currentUsage,
-        limits: rateLimitCheck.limits,
-      },
-      { status }
+  let maxTokensForUpstream = requestedMaxTokens;
+  if (!unlimitedAccess) {
+    const rateLimitCheck = await checkRateLimits(userId, requestedMaxTokens, estimatedInputTokens);
+    if (!rateLimitCheck.allowed) {
+      // Log the rate limit violation
+      await logUsage({
+        userId,
+        model: body.model,
+        tokensInput: estimatedInputTokens,
+        tokensOutput: 0,
+        latencyMs: Date.now() - startTime,
+        status: rateLimitCheck.reason?.includes("quota") ? "quota_exceeded" : "rate_limited",
+        errorMessage: rateLimitCheck.reason,
+        estimatedCostUsd: 0,
+        requestPayload: body as unknown as Record<string, unknown>,
+      });
+
+      // Return appropriate status code
+      const status = rateLimitCheck.reason?.includes("subscription") ? 402 : 429;
+      return NextResponse.json(
+        {
+          error: status === 402 ? "Payment Required" : "Rate Limit Exceeded",
+          message: rateLimitCheck.reason,
+          usage: rateLimitCheck.currentUsage,
+          limits: rateLimitCheck.limits,
+        },
+        { status }
+      );
+    }
+    maxTokensForUpstream = Math.min(
+      requestedMaxTokens,
+      rateLimitCheck.limits?.maxOutputTokens || PLAN_LIMITS.paid.maxOutputTokens
     );
   }
   
@@ -388,7 +410,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         model: body.model,
         messages: body.messages,
         stream: body.stream ?? false,
-        max_tokens: Math.min(requestedMaxTokens, rateLimitCheck.limits?.maxOutputTokens || 256),
+        max_tokens: maxTokensForUpstream,
         temperature: body.temperature,
         top_p: body.top_p,
         frequency_penalty: body.frequency_penalty,

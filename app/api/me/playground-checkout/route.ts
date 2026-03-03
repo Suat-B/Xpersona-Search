@@ -21,116 +21,133 @@ function getBaseUrl() {
 
 function getPriceId(tier: "starter" | "builder" | "studio", billing: "monthly" | "yearly"): string | null {
   const key = `STRIPE_PLAYGROUND_PRICE_ID_${tier.toUpperCase()}_${billing.toUpperCase()}` as const;
-  return process.env[key] || null;
+  const exact = process.env[key];
+  if (exact && exact.trim().length > 0) return exact;
+
+  // Backward compatibility: older setups only provide STRIPE_PLAYGROUND_PRICE_ID.
+  if (tier === "builder" && billing === "monthly") {
+    const legacy = process.env.STRIPE_PLAYGROUND_PRICE_ID;
+    if (legacy && legacy.trim().length > 0) return legacy;
+  }
+
+  return null;
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
-  const authResult = await getAuthUser(request);
-  if ("error" in authResult) {
-    return NextResponse.json(
-      { success: false, error: "UNAUTHORIZED", message: "Sign in required" },
-      { status: 401 }
-    );
-  }
+  try {
+    const authResult = await getAuthUser(request);
+    if ("error" in authResult) {
+      return NextResponse.json(
+        { success: false, error: "UNAUTHORIZED", message: "Sign in required" },
+        { status: 401 }
+      );
+    }
 
-  const parsed = checkoutSchema.safeParse(await request.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json(
-      { success: false, error: "INVALID_BODY", message: "tier and billing are required" },
-      { status: 400 }
-    );
-  }
+    const parsed = checkoutSchema.safeParse(await request.json().catch(() => ({})));
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: "INVALID_BODY", message: "tier and billing are required" },
+        { status: 400 }
+      );
+    }
 
-  const { user } = authResult;
-  const { tier, billing } = parsed.data;
-  const priceId = getPriceId(tier, billing);
+    const { user } = authResult;
+    const { tier, billing } = parsed.data;
+    const priceId = getPriceId(tier, billing);
 
-  if (!priceId) {
-    return NextResponse.json(
-      { success: false, error: "PLAYGROUND_PRICE_NOT_CONFIGURED", message: `Missing Stripe price for ${tier}/${billing}` },
-      { status: 500 }
-    );
-  }
+    if (!priceId) {
+      return NextResponse.json(
+        { success: false, error: "PLAYGROUND_PRICE_NOT_CONFIGURED", message: `Missing Stripe price for ${tier}/${billing}` },
+        { status: 500 }
+      );
+    }
 
-  const stripe = requireStripe();
+    const stripe = requireStripe();
 
-  const [dbUser] = await db
-    .select({
-      id: users.id,
-      email: users.email,
-      stripeCustomerId: users.stripeCustomerId,
-    })
-    .from(users)
-    .where(eq(users.id, user.id))
-    .limit(1);
+    const [dbUser] = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        stripeCustomerId: users.stripeCustomerId,
+      })
+      .from(users)
+      .where(eq(users.id, user.id))
+      .limit(1);
 
-  if (!dbUser?.email) {
-    return NextResponse.json(
-      { success: false, error: "USER_EMAIL_REQUIRED", message: "User email is required for checkout" },
-      { status: 400 }
-    );
-  }
+    if (!dbUser?.email) {
+      return NextResponse.json(
+        { success: false, error: "USER_EMAIL_REQUIRED", message: "User email is required for checkout" },
+        { status: 400 }
+      );
+    }
 
-  let customerId = dbUser.stripeCustomerId ?? null;
-  if (!customerId) {
-    const customer = await stripe.customers.create({
-      email: dbUser.email,
-      metadata: {
-        xpersona_user_id: dbUser.id,
-      },
-    });
-    customerId = customer.id;
-    await db
-      .update(users)
-      .set({ stripeCustomerId: customer.id })
-      .where(eq(users.id, dbUser.id));
-  }
+    let customerId = dbUser.stripeCustomerId ?? null;
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: dbUser.email,
+        metadata: {
+          xpersona_user_id: dbUser.id,
+        },
+      });
+      customerId = customer.id;
+      await db
+        .update(users)
+        .set({ stripeCustomerId: customer.id })
+        .where(eq(users.id, dbUser.id));
+    }
 
-  const baseUrl = getBaseUrl();
-  const session = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    customer: customerId,
-    line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${baseUrl}/dashboard/playground?checkout=success`,
-    cancel_url: `${baseUrl}/dashboard/playground?checkout=cancelled`,
-    allow_promotion_codes: true,
-    payment_method_collection: "if_required",
-    client_reference_id: dbUser.id,
-    metadata: {
-      xpersona_product: "playground_ai",
-      xpersona_user_id: dbUser.id,
-      xpersona_tier: tier,
-      xpersona_billing: billing,
-    },
-    subscription_data: {
-      trial_period_days: 2,
+    const baseUrl = getBaseUrl();
+    const session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      customer: customerId,
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: `${baseUrl}/dashboard/playground?checkout=success`,
+      cancel_url: `${baseUrl}/dashboard/playground?checkout=cancelled`,
+      allow_promotion_codes: true,
+      payment_method_collection: "if_required",
+      client_reference_id: dbUser.id,
       metadata: {
         xpersona_product: "playground_ai",
         xpersona_user_id: dbUser.id,
+        xpersona_tier: tier,
+        xpersona_billing: billing,
       },
-      trial_settings: {
-        end_behavior: {
-          missing_payment_method: "cancel",
+      subscription_data: {
+        trial_period_days: 2,
+        metadata: {
+          xpersona_product: "playground_ai",
+          xpersona_user_id: dbUser.id,
+        },
+        trial_settings: {
+          end_behavior: {
+            missing_payment_method: "cancel",
+          },
         },
       },
-    },
-  });
+    });
 
-  if (!session.url) {
+    if (!session.url) {
+      return NextResponse.json(
+        { success: false, error: "CHECKOUT_URL_MISSING", message: "Stripe checkout session did not return a URL" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        url: session.url,
+        sessionId: session.id,
+        trialDays: 2,
+        tier,
+        billing,
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to create checkout session";
     return NextResponse.json(
-      { success: false, error: "CHECKOUT_URL_MISSING", message: "Stripe checkout session did not return a URL" },
+      { success: false, error: "PLAYGROUND_CHECKOUT_FAILED", message },
       { status: 500 }
     );
   }
-
-  return NextResponse.json({
-    success: true,
-    data: {
-      url: session.url,
-      sessionId: session.id,
-      trialDays: 2,
-      tier,
-      billing,
-    },
-  });
 }

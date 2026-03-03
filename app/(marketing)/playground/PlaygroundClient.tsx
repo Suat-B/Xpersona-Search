@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { BenchmarkCharts } from "@/components/playground/BenchmarkCharts";
 
 type MarketingFeature = {
@@ -57,7 +57,7 @@ const PRICING_TIERS: PricingTier[] = [
     monthlyPrice: 2,
     yearlyPrice: 20,
     description: "Great for learning, side-projects, and lightweight coding help.",
-    features: ["2-day free trial", "30 requests/day", "8K context", "Core coding workflows"],
+    features: ["2-day free trial", "1x usage", "30 requests/day", "8K context", "Core coding workflows"],
     cta: "Start Free Trial",
   },
   {
@@ -65,7 +65,7 @@ const PRICING_TIERS: PricingTier[] = [
     monthlyPrice: 5,
     yearlyPrice: 50,
     description: "Best for active developers shipping weekly.",
-    features: ["2-day free trial", "100 requests/day", "16K context", "Priority capacity", "Usage insights"],
+    features: ["2-day free trial", "3x usage", "100 requests/day", "16K context", "Priority capacity", "Usage insights"],
     highlight: true,
     cta: "Start Free Trial",
   },
@@ -74,7 +74,7 @@ const PRICING_TIERS: PricingTier[] = [
     monthlyPrice: 10,
     yearlyPrice: 100,
     description: "For advanced users and teams running heavy coding sessions.",
-    features: ["2-day free trial", "Unlimited requests", "32K context", "Highest capacity", "Direct support"],
+    features: ["2-day free trial", "10x usage", "Unlimited requests", "32K context", "Highest capacity", "Direct support"],
     cta: "Start Free Trial",
   },
 ];
@@ -185,7 +185,7 @@ function fireAnalyticsEvent(eventName: string, payload?: Record<string, string |
   }
 }
 
-function HeroSection() {
+function HeroSection({ onStartTrial }: { onStartTrial: () => void }) {
   return (
     <section className="relative overflow-hidden px-4 pb-14 pt-14 sm:px-6 lg:pt-20">
       <div className="pointer-events-none absolute inset-0 opacity-80">
@@ -207,7 +207,10 @@ function HeroSection() {
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <button
-              onClick={() => fireAnalyticsEvent("playground_hero_cta_click", { location: "hero", action: "start_trial" })}
+              onClick={() => {
+                fireAnalyticsEvent("playground_hero_cta_click", { location: "hero", action: "start_trial" });
+                onStartTrial();
+              }}
               className="group inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-6 py-3 text-sm font-bold text-slate-950 shadow-[0_12px_35px_rgba(34,211,238,0.35)] transition hover:translate-y-[-1px] hover:shadow-[0_20px_45px_rgba(59,130,246,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
             >
               Start Free Trial
@@ -228,9 +231,9 @@ function HeroSection() {
             <span className="ml-2 text-xs text-slate-400">assistant-session.ts</span>
           </div>
           <div className="space-y-2 font-mono text-xs sm:text-sm">
-            <p className="text-cyan-300">// plan + generate + ship</p>
+            <p className="text-cyan-300">{"// plan + generate + ship"}</p>
             <p className="text-slate-200">const agent = playground.createAgent({'{'}</p>
-            <p className="pl-4 text-slate-400">mode: <span className="text-emerald-300">"plan"</span>,</p>
+            <p className="pl-4 text-slate-400">mode: <span className="text-emerald-300">&quot;plan&quot;</span>,</p>
             <p className="pl-4 text-slate-400">contextWindow: <span className="text-emerald-300">262144</span>,</p>
             <p className="pl-4 text-slate-400">ideContext: <span className="text-emerald-300">true</span></p>
             <p className="text-slate-200">{'}'});</p>
@@ -263,8 +266,21 @@ function TrustRail() {
   );
 }
 
-function PricingCard({ tier, isYearly, compact = false }: { tier: PricingTier; isYearly: boolean; compact?: boolean }) {
+function PricingCard({
+  tier,
+  isYearly,
+  compact = false,
+  onStartTrial,
+  isBusy,
+}: {
+  tier: PricingTier;
+  isYearly: boolean;
+  compact?: boolean;
+  onStartTrial: (tier: "starter" | "builder" | "studio") => void;
+  isBusy: boolean;
+}) {
   const monthly = isYearly ? Math.round(tier.yearlyPrice / 12) : tier.monthlyPrice;
+  const tierKey = tier.name.toLowerCase() as "starter" | "builder" | "studio";
 
   return (
     <article
@@ -297,12 +313,16 @@ function PricingCard({ tier, isYearly, compact = false }: { tier: PricingTier; i
         </ul>
       )}
       <button
-        onClick={() => fireAnalyticsEvent("playground_plan_cta_click", { plan_name: tier.name.toLowerCase() })}
+        onClick={() => {
+          fireAnalyticsEvent("playground_plan_cta_click", { plan_name: tier.name.toLowerCase() });
+          onStartTrial(tierKey);
+        }}
+        disabled={isBusy}
         className={`mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
           tier.highlight
             ? "bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950"
             : "border border-slate-600 bg-slate-800 text-slate-100 hover:border-cyan-300"
-        }`}
+        } disabled:cursor-not-allowed disabled:opacity-60`}
       >
         {tier.cta}
         <ArrowRightIcon className="h-4 w-4" />
@@ -311,7 +331,17 @@ function PricingCard({ tier, isYearly, compact = false }: { tier: PricingTier; i
   );
 }
 
-function PricingPreviewSection({ isYearly, setIsYearly }: { isYearly: boolean; setIsYearly: (value: boolean) => void }) {
+function PricingPreviewSection({
+  isYearly,
+  setIsYearly,
+  onStartTrial,
+  isBusy,
+}: {
+  isYearly: boolean;
+  setIsYearly: (value: boolean) => void;
+  onStartTrial: (tier: "starter" | "builder" | "studio") => void;
+  isBusy: boolean;
+}) {
   return (
     <section className="px-4 py-14 sm:px-6">
       <div className="mx-auto max-w-6xl">
@@ -351,7 +381,7 @@ function PricingPreviewSection({ isYearly, setIsYearly }: { isYearly: boolean; s
 
         <div className="grid gap-5 md:grid-cols-3">
           {PRICING_TIERS.map((tier) => (
-            <PricingCard key={`preview-${tier.name}`} tier={tier} isYearly={isYearly} compact />
+            <PricingCard key={`preview-${tier.name}`} tier={tier} isYearly={isYearly} compact onStartTrial={onStartTrial} isBusy={isBusy} />
           ))}
         </div>
 
@@ -432,7 +462,7 @@ function DemoSection() {
   );
 }
 
-function UseCasesSection() {
+function UseCasesSection({ onStartTrial }: { onStartTrial: () => void }) {
   const cards = [
     {
       title: "Solo Developer",
@@ -457,7 +487,7 @@ function UseCasesSection() {
             <article key={card.title} className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
               <h3 className="text-lg font-bold text-white">{card.title}</h3>
               <p className="mt-2 text-sm text-slate-300">{card.body}</p>
-              <button className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-cyan-300 transition hover:text-cyan-200">
+              <button onClick={onStartTrial} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-cyan-300 transition hover:text-cyan-200">
                 Start Free Trial
                 <ArrowRightIcon className="h-4 w-4" />
               </button>
@@ -469,7 +499,17 @@ function UseCasesSection() {
   );
 }
 
-function PricingSection({ isYearly, setIsYearly }: { isYearly: boolean; setIsYearly: (value: boolean) => void }) {
+function PricingSection({
+  isYearly,
+  setIsYearly,
+  onStartTrial,
+  isBusy,
+}: {
+  isYearly: boolean;
+  setIsYearly: (value: boolean) => void;
+  onStartTrial: (tier: "starter" | "builder" | "studio") => void;
+  isBusy: boolean;
+}) {
   return (
     <section className="px-4 py-14 sm:px-6">
       <div className="mx-auto max-w-6xl">
@@ -507,7 +547,7 @@ function PricingSection({ isYearly, setIsYearly }: { isYearly: boolean; setIsYea
         </div>
         <div className="grid gap-5 md:grid-cols-3">
           {PRICING_TIERS.map((tier) => (
-            <PricingCard key={`full-${tier.name}`} tier={tier} isYearly={isYearly} />
+            <PricingCard key={`full-${tier.name}`} tier={tier} isYearly={isYearly} onStartTrial={onStartTrial} isBusy={isBusy} />
           ))}
         </div>
         <p className="mt-6 text-center text-sm text-emerald-300">2-day free trial for every plan. Cancel any time.</p>
@@ -542,14 +582,18 @@ function FaqSection() {
   );
 }
 
-function FinalCtaSection() {
+function FinalCtaSection({ onStartTrial, isBusy }: { onStartTrial: () => void; isBusy: boolean }) {
   return (
     <section className="px-4 pb-24 pt-12 sm:px-6">
       <div className="mx-auto max-w-4xl rounded-3xl border border-cyan-400/30 bg-gradient-to-r from-slate-900 to-slate-800 p-8 text-center shadow-[0_20px_60px_rgba(8,145,178,0.25)]">
         <h2 className="text-3xl font-black text-white sm:text-4xl">Ready to turn prompts into shipped features?</h2>
         <p className="mt-3 text-slate-300">Start your free trial and keep your existing developer workflow intact.</p>
         <button
-          onClick={() => fireAnalyticsEvent("playground_final_cta_click", { location: "final_section" })}
+          onClick={() => {
+            fireAnalyticsEvent("playground_final_cta_click", { location: "final_section" });
+            onStartTrial();
+          }}
+          disabled={isBusy}
           className="mt-6 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-7 py-3.5 text-sm font-bold text-slate-950 transition hover:translate-y-[-1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
         >
           Start Free Trial
@@ -563,6 +607,47 @@ function FinalCtaSection() {
 
 export function PlaygroundClient() {
   const [isYearly, setIsYearly] = useState(false);
+  const [isCheckoutStarting, setIsCheckoutStarting] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+
+  const startCheckout = useCallback(
+    async (tier: "starter" | "builder" | "studio") => {
+      if (isCheckoutStarting) return;
+      setIsCheckoutStarting(true);
+      setCheckoutError(null);
+      try {
+        const res = await fetch("/api/v1/me/playground-checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ tier, billing: isYearly ? "yearly" : "monthly" }),
+        });
+        const json = (await res.json().catch(() => ({}))) as {
+          success?: boolean;
+          data?: { url?: string };
+          error?: string;
+          message?: string;
+        };
+
+        if (res.status === 401) {
+          window.location.href = "/api/v1/auth/play";
+          return;
+        }
+
+        if (!res.ok || !json.success || !json.data?.url) {
+          setCheckoutError(json.message || "Could not start checkout. Please try again.");
+          return;
+        }
+
+        window.location.href = json.data.url;
+      } catch {
+        setCheckoutError("Could not start checkout. Please try again.");
+      } finally {
+        setIsCheckoutStarting(false);
+      }
+    },
+    [isCheckoutStarting, isYearly],
+  );
 
   const backgroundStyle = useMemo(
     () => ({
@@ -574,23 +659,30 @@ export function PlaygroundClient() {
 
   return (
     <div className="relative min-h-screen overflow-x-hidden text-slate-100" style={backgroundStyle}>
-      <HeroSection />
+      <HeroSection onStartTrial={() => startCheckout("builder")} />
       <TrustRail />
-      <PricingPreviewSection isYearly={isYearly} setIsYearly={setIsYearly} />
+      <PricingPreviewSection isYearly={isYearly} setIsYearly={setIsYearly} onStartTrial={startCheckout} isBusy={isCheckoutStarting} />
+      {checkoutError ? (
+        <div className="mx-auto mt-4 max-w-6xl px-4 text-sm text-rose-300 sm:px-6">{checkoutError}</div>
+      ) : null}
       <FeatureGridSection />
       <DemoSection />
       <BenchmarkCharts />
-      <UseCasesSection />
-      <PricingSection isYearly={isYearly} setIsYearly={setIsYearly} />
+      <UseCasesSection onStartTrial={() => startCheckout("builder")} />
+      <PricingSection isYearly={isYearly} setIsYearly={setIsYearly} onStartTrial={startCheckout} isBusy={isCheckoutStarting} />
       <FaqSection />
-      <FinalCtaSection />
+      <FinalCtaSection onStartTrial={() => startCheckout("builder")} isBusy={isCheckoutStarting} />
 
       <div className="fixed bottom-4 left-0 right-0 z-40 px-4 sm:hidden">
         <button
-          onClick={() => fireAnalyticsEvent("playground_hero_cta_click", { location: "sticky_mobile", action: "start_trial" })}
+          onClick={() => {
+            fireAnalyticsEvent("playground_hero_cta_click", { location: "sticky_mobile", action: "start_trial" });
+            startCheckout("builder");
+          }}
+          disabled={isCheckoutStarting}
           className="w-full rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-4 py-3 text-sm font-bold text-slate-950 shadow-[0_12px_35px_rgba(56,189,248,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
         >
-          Start Free Trial
+          {isCheckoutStarting ? "Starting checkout..." : "Start Free Trial"}
         </button>
       </div>
     </div>

@@ -171,6 +171,34 @@ export function GoogleStyleHome({
       </div>
 
       <header className="relative flex justify-end items-center px-4 sm:px-6 py-3 sm:py-4 gap-3 sm:gap-4 shrink-0 z-20 safe-area-inset-top">
+        {isAuthenticated ? (
+          <>
+            <span className="inline-flex items-center rounded-full border border-emerald-300/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-medium text-emerald-200">
+              Signed in
+            </span>
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center rounded-full bg-white px-4 py-2 text-sm font-medium text-black hover:bg-white/90 transition-colors"
+            >
+              Dashboard
+            </Link>
+          </>
+        ) : (
+          <>
+            <Link
+              href="/auth/signin?callbackUrl=/dashboard"
+              className="inline-flex items-center rounded-full border border-white/20 px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:border-white/35 hover:bg-white/10 transition-all"
+            >
+              Sign in
+            </Link>
+            <Link
+              href="/auth/signup"
+              className="inline-flex items-center rounded-full bg-[var(--accent-heart)] px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-[var(--accent-heart)]/25 hover:bg-[var(--accent-heart)]/90 transition-colors"
+            >
+              Sign up
+            </Link>
+          </>
+        )}
       </header>
 
       <main

@@ -177,7 +177,7 @@ export function PlaygroundQuotaCard() {
 
   const fetchUsage = useCallback(async () => {
     try {
-      const res = await fetch("/api/me/playground-usage", {
+      const res = await fetch("/api/v1/me/playground-usage", {
         credentials: "include",
         cache: "no-store",
       });

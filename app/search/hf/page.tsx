@@ -94,12 +94,12 @@ export default function HFSearchPage() {
   // Initial load
   useEffect(() => {
     search(false);
-  }, []);
+  }, [search]);
 
   // Search on filter changes
   useEffect(() => {
     search(false);
-  }, [selectedTasks, selectedProtocols, selectedCapabilities, minRank, sortBy]);
+  }, [search, selectedTasks, selectedProtocols, selectedCapabilities, minRank, sortBy]);
 
   const loadMore = () => {
     if (hasMore && !loading) {

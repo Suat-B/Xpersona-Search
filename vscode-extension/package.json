@@ -2,7 +2,7 @@
   "name": "xpersona-playground",
   "displayName": "Xpersona",
   "description": "Chat with AI agents powered by Xpersona — directly in VS Code.",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "publisher": "xpersona",
   "license": "UNLICENSED",
   "engines": {
@@ -15,6 +15,16 @@
     "onCommand:xpersona.playground.prompt",
     "onCommand:xpersona.playground.openWithSelection",
     "onCommand:xpersona.playground.setApiKey",
+    "onCommand:xpersona.playground.mode.auto",
+    "onCommand:xpersona.playground.mode.plan",
+    "onCommand:xpersona.playground.mode.yolo",
+    "onCommand:xpersona.playground.generate",
+    "onCommand:xpersona.playground.debug",
+    "onCommand:xpersona.playground.history.open",
+    "onCommand:xpersona.playground.image.attach",
+    "onCommand:xpersona.playground.agents.parallelRun",
+    "onCommand:xpersona.playground.index.rebuild",
+    "onCommand:xpersona.playground.replay.session",
     "onView:xpersona.playgroundView"
   ],
   "main": "./dist/extension.js",
@@ -53,6 +63,56 @@
         "command": "xpersona.playground.setApiKey",
         "title": "Set API Key",
         "category": "Xpersona"
+      },
+      {
+        "command": "xpersona.playground.mode.auto",
+        "title": "Set Mode: Auto",
+        "category": "Xpersona"
+      },
+      {
+        "command": "xpersona.playground.mode.plan",
+        "title": "Set Mode: Plan",
+        "category": "Xpersona"
+      },
+      {
+        "command": "xpersona.playground.mode.yolo",
+        "title": "Set Mode: YOLO",
+        "category": "Xpersona"
+      },
+      {
+        "command": "xpersona.playground.generate",
+        "title": "Generate Code",
+        "category": "Xpersona"
+      },
+      {
+        "command": "xpersona.playground.debug",
+        "title": "Debug with Playground",
+        "category": "Xpersona"
+      },
+      {
+        "command": "xpersona.playground.history.open",
+        "title": "Open Playground History",
+        "category": "Xpersona"
+      },
+      {
+        "command": "xpersona.playground.image.attach",
+        "title": "Attach Image to Playground",
+        "category": "Xpersona"
+      },
+      {
+        "command": "xpersona.playground.agents.parallelRun",
+        "title": "Run Parallel Agents",
+        "category": "Xpersona"
+      },
+      {
+        "command": "xpersona.playground.index.rebuild",
+        "title": "Rebuild Workspace Index",
+        "category": "Xpersona"
+      },
+      {
+        "command": "xpersona.playground.replay.session",
+        "title": "Replay Latest Session",
+        "category": "Xpersona"
       }
     ],
     "menus": {
@@ -65,6 +125,36 @@
         },
         {
           "command": "xpersona.playground.setApiKey"
+        },
+        {
+          "command": "xpersona.playground.mode.auto"
+        },
+        {
+          "command": "xpersona.playground.mode.plan"
+        },
+        {
+          "command": "xpersona.playground.mode.yolo"
+        },
+        {
+          "command": "xpersona.playground.generate"
+        },
+        {
+          "command": "xpersona.playground.debug"
+        },
+        {
+          "command": "xpersona.playground.history.open"
+        },
+        {
+          "command": "xpersona.playground.image.attach"
+        },
+        {
+          "command": "xpersona.playground.agents.parallelRun"
+        },
+        {
+          "command": "xpersona.playground.index.rebuild"
+        },
+        {
+          "command": "xpersona.playground.replay.session"
         }
       ],
       "editor/context": [

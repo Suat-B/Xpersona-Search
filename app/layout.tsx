@@ -2,12 +2,15 @@ import type { Metadata, Viewport } from "next";
 import { Outfit, Inter } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { cookies } from "next/headers";
 import "./globals.css";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { ServiceProvider } from "@/components/providers/ServiceProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { HelpFrame } from "@/components/help/HelpFrame";
 import { getService } from "@/lib/service";
+import { auth } from "@/lib/auth";
+import { getAuthUserFromCookie } from "@/lib/auth-utils";
 import { TopNavHF } from "@/components/nav/TopNavHF";
 
 export const viewport: Viewport = {
@@ -54,6 +57,19 @@ export default async function RootLayout({
 }>) {
   const service = await getService();
   const variant = process.env.NEXT_PUBLIC_HOME_VARIANT?.toLowerCase();
+  let isAuthenticated = false;
+
+  if (variant === "hf") {
+    let session = null;
+    try {
+      session = await auth();
+    } catch {
+      // Fallback to cookie-based auth below
+    }
+    const cookieStore = await cookies();
+    const userIdFromCookie = getAuthUserFromCookie(cookieStore);
+    isAuthenticated = !!(session?.user || userIdFromCookie);
+  }
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -79,7 +95,7 @@ export default async function RootLayout({
         <AuthProvider>
           {variant === "hf" ? (
             <div className="min-h-dvh flex flex-col">
-              <TopNavHF />
+              <TopNavHF isAuthenticated={isAuthenticated} />
               <div className="flex-1">{children}</div>
             </div>
           ) : (

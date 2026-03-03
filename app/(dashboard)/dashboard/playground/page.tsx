@@ -74,7 +74,7 @@ export default function PlaygroundDashboardPage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/me/playground-usage", { credentials: "include", cache: "no-store" });
+      const res = await fetch("/api/v1/me/playground-usage", { credentials: "include", cache: "no-store" });
       if (!res.ok) {
         setData(emptyUsageData());
         setWarning("Live signal is temporarily unavailable. Showing a soft snapshot.");
@@ -96,7 +96,7 @@ export default function PlaygroundDashboardPage() {
       setCheckoutPlan(tier);
       setCheckoutError(null);
       try {
-        const res = await fetch("/api/me/playground-checkout", {
+        const res = await fetch("/api/v1/me/playground-checkout", {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -200,9 +200,9 @@ export default function PlaygroundDashboardPage() {
 
           <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
             {[
-              { tier: "starter" as const, name: "Starter", monthly: "$9", yearly: "$84", note: "Great for solo testing" },
-              { tier: "builder" as const, name: "Builder", monthly: "$19", yearly: "$180", note: "Most chosen for daily coding" },
-              { tier: "studio" as const, name: "Studio", monthly: "$39", yearly: "$372", note: "Teams and heavier workloads" },
+              { tier: "starter" as const, name: "Starter", monthly: "$2", yearly: "$20", note: "Great for solo testing" },
+              { tier: "builder" as const, name: "Builder", monthly: "$5", yearly: "$50", note: "Most chosen for daily coding" },
+              { tier: "studio" as const, name: "Studio", monthly: "$10", yearly: "$100", note: "Teams and heavier workloads" },
             ].map((plan) => (
               <div key={plan.tier} className={`rounded-2xl border p-4 ${plan.tier === "builder" ? "border-cyan-300/50 bg-cyan-500/10" : "border-white/15 bg-black/25"}`}>
                 <div className="flex items-center justify-between">
@@ -307,9 +307,6 @@ export default function PlaygroundDashboardPage() {
           <div className="mt-4 flex flex-wrap gap-2">
             <Link href="/playground" className="rounded-xl bg-cyan-500 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-500/90">
               Open Playground
-            </Link>
-            <Link href="/dashboard/connect-ai" className="rounded-xl border border-[var(--dash-divider)] px-3 py-2 text-sm text-[var(--text-primary)] hover:bg-white/[0.04]">
-              Connect AI
             </Link>
           </div>
         </div>

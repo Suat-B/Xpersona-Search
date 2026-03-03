@@ -5,6 +5,7 @@ import { applyPreset, HOME_ACCENT_STORAGE_KEY } from "@/lib/theme-presets";
 import type { ThemePresetId } from "@/lib/theme-presets";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { SearchTopControlsBar } from "@/components/search/SearchTopControlsBar";
 import { SearchFiltersSidebar } from "@/components/search/SearchFiltersSidebar";
 import { HFModelCard } from "@/components/search/HFModelCard";
@@ -784,9 +785,12 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
                             >
                               {preview ? (
                                 <a href={asset.sourcePageUrl ?? asset.url} target="_blank" rel="noreferrer">
-                                  <img
+                                  <Image
                                     src={preview}
                                     alt={asset.title ?? asset.caption ?? "Artifact preview"}
+                                    width={1200}
+                                    height={800}
+                                    unoptimized
                                     className="w-full h-auto rounded-lg border border-[var(--border)]"
                                   />
                                 </a>

@@ -51,7 +51,29 @@ export function ANSMinimalHeader({
               {link.label}
             </Link>
           ))}
-          {!isAuthenticated && (
+          {isAuthenticated ? (
+            <>
+              <span
+                className={
+                  isDark
+                    ? "inline-flex items-center rounded-full border border-emerald-300/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-medium text-emerald-200"
+                    : "inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700"
+                }
+              >
+                Signed in
+              </span>
+              <Link
+                href="/dashboard"
+                className={
+                  isDark
+                    ? "text-sm font-semibold text-white bg-white/10 hover:bg-white/20 px-4 py-2 rounded-xl transition-colors"
+                    : "text-sm font-semibold text-white bg-[var(--light-accent)] hover:bg-[var(--light-accent-hover)] px-4 py-2 rounded-xl transition-colors shadow-md shadow-blue-500/10"
+                }
+              >
+                Dashboard
+              </Link>
+            </>
+          ) : (
             <>
               <Link href="/auth/signin?callbackUrl=/dashboard" className={signInClasses}>
                 Sign in

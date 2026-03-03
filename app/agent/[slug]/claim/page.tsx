@@ -148,7 +148,7 @@ export default function ClaimPage() {
       }
       setLoading(false);
     },
-    [slug, notes, router, redirectToUpgradeIfNeeded]
+    [slug, notes, router, redirectToUpgradeIfNeeded, claimCallbackPath]
   );
 
   const verify = useCallback(async () => {
@@ -184,7 +184,7 @@ export default function ClaimPage() {
       setVerifyError("Network error. Please try again.");
     }
     setLoading(false);
-  }, [slug, selectedMethod, publicKey, signature, redirectToUpgradeIfNeeded, router]);
+  }, [slug, selectedMethod, publicKey, signature, redirectToUpgradeIfNeeded, router, claimCallbackPath]);
 
   if (step === "loading") {
     return (

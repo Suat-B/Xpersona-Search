@@ -209,7 +209,6 @@ export function SearchResultsBar({
                 aria-label="Search AI agents"
                 aria-autocomplete="list"
                 aria-controls="agent-suggestions-bar"
-                aria-expanded={showSuggestions}
                 autoComplete="off"
                 className="w-full min-w-0 pl-9 pr-4 py-3 sm:py-2.5 min-h-[44px] bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-sm rounded-xl focus:outline-none touch-manipulation"
               />

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 
 const CAPABILITIES = [
   {
@@ -59,9 +60,12 @@ export function ExploreCapabilitiesHF() {
             >
               <div className="flex h-full flex-col justify-between gap-4 rounded-xl border border-white/10 bg-white/5 p-4 transition hover:border-white/20 hover:bg-white/10">
                 <div className="flex items-center gap-3">
-                  <img
+                  <Image
                     src={capability.icon}
                     alt={`${capability.name} icon`}
+                    width={36}
+                    height={36}
+                    unoptimized
                     className="h-9 w-9"
                   />
                   <div className="min-w-0">

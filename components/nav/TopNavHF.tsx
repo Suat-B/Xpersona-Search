@@ -15,7 +15,11 @@ const NAV_LINKS = [
   { href: "/tool-pack", label: "Tool Pack" },
 ] as const;
 
-export function TopNavHF() {
+interface TopNavHFProps {
+  isAuthenticated?: boolean;
+}
+
+export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -59,18 +63,34 @@ export function TopNavHF() {
               {link.label}
             </Link>
           ))}
-          <Link
-            href="/auth/signin?callbackUrl=/dashboard"
-            className="px-2 py-1 text-sm text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          >
-            Sign in
-          </Link>
-          <Link
-            href="/auth/signup"
-            className="rounded-full bg-white text-black px-3 py-1 text-sm font-medium hover:bg-white/90 transition-colors"
-          >
-            Sign up
-          </Link>
+          {isAuthenticated ? (
+            <>
+              <span className="rounded-full border border-emerald-300/40 bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-200">
+                Signed in
+              </span>
+              <Link
+                href="/dashboard"
+                className="rounded-full bg-white text-black px-3 py-1 text-sm font-medium hover:bg-white/90 transition-colors"
+              >
+                Dashboard
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link
+                href="/auth/signin?callbackUrl=/dashboard"
+                className="px-2 py-1 text-sm text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                Sign in
+              </Link>
+              <Link
+                href="/auth/signup"
+                className="rounded-full bg-white text-black px-3 py-1 text-sm font-medium hover:bg-white/90 transition-colors"
+              >
+                Sign up
+              </Link>
+            </>
+          )}
         </nav>
 
         <div className="lg:hidden flex flex-none items-center">
@@ -109,18 +129,34 @@ export function TopNavHF() {
               </Link>
             ))}
             <div className="pt-2 border-t border-[var(--border)] space-y-2">
-              <Link
-                href="/auth/signin?callbackUrl=/dashboard"
-                className="block rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] hover:bg-white/5 transition-colors"
-              >
-                Sign in
-              </Link>
-              <Link
-                href="/auth/signup"
-                className="block rounded-lg px-3 py-2 text-sm font-medium bg-white text-black hover:bg-white/90 transition-colors"
-              >
-                Sign up
-              </Link>
+              {isAuthenticated ? (
+                <>
+                  <div className="rounded-lg px-3 py-2 text-xs font-medium text-emerald-200 bg-emerald-500/15 border border-emerald-300/40">
+                    Signed in
+                  </div>
+                  <Link
+                    href="/dashboard"
+                    className="block rounded-lg px-3 py-2 text-sm font-medium bg-white text-black hover:bg-white/90 transition-colors"
+                  >
+                    Dashboard
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <Link
+                    href="/auth/signin?callbackUrl=/dashboard"
+                    className="block rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] hover:bg-white/5 transition-colors"
+                  >
+                    Sign in
+                  </Link>
+                  <Link
+                    href="/auth/signup"
+                    className="block rounded-lg px-3 py-2 text-sm font-medium bg-white text-black hover:bg-white/90 transition-colors"
+                  >
+                    Sign up
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </div>
