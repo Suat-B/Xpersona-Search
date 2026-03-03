@@ -38,6 +38,13 @@ const DEV_LINKS = [
   { label: "OpenAPI", href: "/api/v1/openapi/public" },
 ] as const;
 
+const API_PILLARS = [
+  "Programmable API, not just chat UI",
+  "Policy-checked execution before risky actions",
+  "Session memory + context index for long workflows",
+  "OpenClaw-ready integration surface",
+] as const;
+
 export function GoogleStyleHome({
   isAuthenticated = false,
   privacyUrl = "/privacy-policy-1",
@@ -205,6 +212,56 @@ export function GoogleStyleHome({
         className={`relative z-30 flex flex-1 flex-col items-center justify-center px-4 py-5 sm:px-6 sm:py-0 sm:-mt-24 md:-mt-28 ${bottomContent ? "pb-24 sm:pb-28" : ""
           }`}
       >
+        <section className="w-full max-w-5xl mb-5 sm:mb-7 md:mb-9 animate-fade-in-up animate-delay-75">
+          <div className="relative overflow-hidden rounded-2xl border border-white/15 bg-black/35 px-4 py-4 sm:px-6 sm:py-5 shadow-[0_20px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl">
+            <div className="pointer-events-none absolute -top-20 -right-24 h-56 w-56 rounded-full bg-[var(--accent-heart)]/20 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-28 -left-20 h-56 w-56 rounded-full bg-[var(--accent-neural)]/20 blur-3xl" />
+            <div className="relative">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center rounded-full border border-[var(--accent-heart)]/40 bg-[var(--accent-heart)]/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent-heart)]">
+                  Agentic Coding API
+                </span>
+                <span className="inline-flex items-center rounded-full border border-emerald-300/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-medium text-emerald-200">
+                  Built for integrations
+                </span>
+              </div>
+
+              <h2 className="mt-3 text-lg sm:text-2xl font-bold tracking-tight text-[var(--text-primary)]">
+                The programmable runtime for coding agents
+              </h2>
+              <p className="mt-2 text-sm sm:text-base text-[var(--text-secondary)] max-w-3xl leading-relaxed">
+                Xpersona gives you one API surface to build, run, and govern coding agents across extension, web, and automation workflows.
+              </p>
+
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                {API_PILLARS.map((pillar) => (
+                  <div
+                    key={pillar}
+                    className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs sm:text-sm text-[var(--text-secondary)]"
+                  >
+                    {pillar}
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <Link
+                  href="/api"
+                  className="inline-flex items-center rounded-full bg-[var(--accent-heart)] px-4 py-2 text-xs sm:text-sm font-semibold text-white shadow-lg shadow-[var(--accent-heart)]/30 hover:bg-[var(--accent-heart)]/90 transition-colors"
+                >
+                  Explore API
+                </Link>
+                <Link
+                  href="/api/v1/openapi/public"
+                  className="inline-flex items-center rounded-full border border-white/20 px-4 py-2 text-xs sm:text-sm font-medium text-[var(--text-primary)] hover:bg-white/10 transition-colors"
+                >
+                  OpenAPI Spec
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <Link
           href="/"
           className="mb-6 sm:mb-8 group block text-center home-logo-link"
