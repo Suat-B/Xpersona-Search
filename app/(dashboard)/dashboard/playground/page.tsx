@@ -177,7 +177,7 @@ export default function PlaygroundDashboardPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[11px] uppercase tracking-[0.16em] text-cyan-100/80">Playground AI Access</p>
-              <h2 className="mt-1 text-xl sm:text-2xl font-semibold text-white">Start your 2-day free trial</h2>
+              <h2 className="mt-1 text-xl sm:text-2xl font-semibold text-white">Start your 2-day paid trial</h2>
               <p className="mt-1 text-sm text-slate-300">Unlock VS Code extension access, API routing, and higher limits.</p>
             </div>
             <div className="inline-flex rounded-xl border border-cyan-200/30 bg-black/35 p-1">
@@ -219,13 +219,19 @@ export default function PlaygroundDashboardPage() {
                   disabled={checkoutPlan !== null}
                   className="mt-4 w-full rounded-xl bg-cyan-500 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-400 disabled:opacity-60"
                 >
-                  {checkoutPlan === plan.tier ? "Starting checkout..." : "Start Free Trial"}
+                  {checkoutPlan === plan.tier ? "Starting checkout..." : "Start 2-Day Trial"}
                 </button>
               </div>
             ))}
           </div>
 
-          <p className="mt-3 text-xs text-cyan-100/80">2-day free trial. Free dashboard plan API keys cannot be used in the Playground API.</p>
+          <p className="mt-3 text-xs text-cyan-100/80">
+            2-day trial on every plan with the same trial quota (30 requests/day, 8K context, 256 max output).
+            Free dashboard plan API keys cannot be used in the Playground API.
+          </p>
+          <p className="mt-1 text-xs text-cyan-100/80">
+            Card is collected during checkout. Subscription billing starts on day 3 unless canceled before trial ends.
+          </p>
           {checkoutError ? <p className="mt-2 text-xs text-rose-300">{checkoutError}</p> : null}
         </div>
       </section>

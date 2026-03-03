@@ -57,25 +57,42 @@ const PRICING_TIERS: PricingTier[] = [
     monthlyPrice: 2,
     yearlyPrice: 20,
     description: "Great for learning, side-projects, and lightweight coding help.",
-    features: ["2-day free trial", "1x usage", "30 requests/day", "8K context", "Core coding workflows"],
-    cta: "Start Free Trial",
+    features: [
+      "2-day free trial",
+      "Trial quota: 30 requests/day, 8K context, 256 max output",
+      "Paid limits begin after trial",
+      "Core coding workflows",
+    ],
+    cta: "Start 2-Day Trial",
   },
   {
     name: "Builder",
     monthlyPrice: 5,
     yearlyPrice: 50,
     description: "Best for active developers shipping weekly.",
-    features: ["2-day free trial", "3x usage", "100 requests/day", "16K context", "Priority capacity", "Usage insights"],
+    features: [
+      "2-day free trial",
+      "Trial quota: 30 requests/day, 8K context, 256 max output",
+      "Paid limits begin after trial",
+      "Priority capacity",
+      "Usage insights",
+    ],
     highlight: true,
-    cta: "Start Free Trial",
+    cta: "Start 2-Day Trial",
   },
   {
     name: "Studio",
     monthlyPrice: 10,
     yearlyPrice: 100,
     description: "For advanced users and teams running heavy coding sessions.",
-    features: ["2-day free trial", "10x usage", "Unlimited requests", "32K context", "Highest capacity", "Direct support"],
-    cta: "Start Free Trial",
+    features: [
+      "2-day free trial",
+      "Trial quota: 30 requests/day, 8K context, 256 max output",
+      "Paid limits begin after trial",
+      "Highest capacity",
+      "Direct support",
+    ],
+    cta: "Start 2-Day Trial",
   },
 ];
 
@@ -145,7 +162,7 @@ const FAQ_ITEMS: FaqItem[] = [
   {
     question: "How fast can I start?",
     answer:
-      "Most users can start in under five minutes. Begin the free trial, connect your editor, and run your first prompt.",
+      "Most users can start in under five minutes. Begin the 2-day trial, connect your editor, and run your first prompt.",
   },
   {
     question: "Do I need to switch tools?",
@@ -213,14 +230,14 @@ function HeroSection({ onStartTrial }: { onStartTrial: () => void }) {
               }}
               className="group inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-6 py-3 text-sm font-bold text-slate-950 shadow-[0_12px_35px_rgba(34,211,238,0.35)] transition hover:translate-y-[-1px] hover:shadow-[0_20px_45px_rgba(59,130,246,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
             >
-              Start Free Trial
+              Start 2-Day Trial
               <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </button>
             <button className="inline-flex items-center rounded-xl border border-slate-600 bg-slate-900/70 px-5 py-3 text-sm font-semibold text-slate-100 transition hover:border-cyan-300 hover:text-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
               See It In VS Code
             </button>
           </div>
-          <p className="mt-3 text-sm text-emerald-300">2-day free trial - Credit card required to start</p>
+          <p className="mt-3 text-sm text-emerald-300">2-day trial with card required. Auto-charge starts on day 3 unless canceled before trial ends.</p>
         </div>
 
         <div className="relative rounded-3xl border border-slate-700 bg-slate-900/80 p-5 shadow-[0_20px_80px_rgba(15,23,42,0.65)] backdrop-blur">
@@ -550,7 +567,7 @@ function PricingSection({
             <PricingCard key={`full-${tier.name}`} tier={tier} isYearly={isYearly} onStartTrial={onStartTrial} isBusy={isBusy} />
           ))}
         </div>
-        <p className="mt-6 text-center text-sm text-emerald-300">2-day free trial for every plan. Cancel any time.</p>
+        <p className="mt-6 text-center text-sm text-emerald-300">2-day trial for every plan. Card required now, auto-charge starts on day 3 unless canceled.</p>
       </div>
     </section>
   );
@@ -587,7 +604,7 @@ function FinalCtaSection({ onStartTrial, isBusy }: { onStartTrial: () => void; i
     <section className="px-4 pb-24 pt-12 sm:px-6">
       <div className="mx-auto max-w-4xl rounded-3xl border border-cyan-400/30 bg-gradient-to-r from-slate-900 to-slate-800 p-8 text-center shadow-[0_20px_60px_rgba(8,145,178,0.25)]">
         <h2 className="text-3xl font-black text-white sm:text-4xl">Ready to turn prompts into shipped features?</h2>
-        <p className="mt-3 text-slate-300">Start your free trial and keep your existing developer workflow intact.</p>
+        <p className="mt-3 text-slate-300">Start your 2-day trial and keep your existing developer workflow intact.</p>
         <button
           onClick={() => {
             fireAnalyticsEvent("playground_final_cta_click", { location: "final_section" });
@@ -596,10 +613,10 @@ function FinalCtaSection({ onStartTrial, isBusy }: { onStartTrial: () => void; i
           disabled={isBusy}
           className="mt-6 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-7 py-3.5 text-sm font-bold text-slate-950 transition hover:translate-y-[-1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
         >
-          Start Free Trial
+          Start 2-Day Trial
           <ArrowRightIcon className="h-4 w-4" />
         </button>
-        <p className="mt-3 text-sm text-emerald-300">2-day free trial - credit card required to start</p>
+        <p className="mt-3 text-sm text-emerald-300">Card required at signup. You are charged on day 3 unless canceled during the trial.</p>
       </div>
     </section>
   );
@@ -682,7 +699,7 @@ export function PlaygroundClient() {
           disabled={isCheckoutStarting}
           className="w-full rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-4 py-3 text-sm font-bold text-slate-950 shadow-[0_12px_35px_rgba(56,189,248,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
         >
-          {isCheckoutStarting ? "Starting checkout..." : "Start Free Trial"}
+          {isCheckoutStarting ? "Starting checkout..." : "Start 2-Day Trial"}
         </button>
       </div>
     </div>

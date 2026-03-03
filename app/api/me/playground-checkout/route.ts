@@ -104,7 +104,8 @@ export async function POST(request: NextRequest): Promise<Response> {
       success_url: `${baseUrl}/dashboard/playground?checkout=success`,
       cancel_url: `${baseUrl}/dashboard/playground?checkout=cancelled`,
       allow_promotion_codes: true,
-      payment_method_collection: "if_required",
+      // Collect card details during checkout so trial users can be charged when trial ends.
+      payment_method_collection: "always",
       client_reference_id: dbUser.id,
       metadata: {
         xpersona_product: "playground_ai",
