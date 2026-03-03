@@ -91,7 +91,7 @@
         },
         "xpersona.playground.model": {
           "type": "string",
-          "default": "playground-default",
+          "default": "Qwen/Qwen3-4B-Instruct-2507:nscale",
           "description": "Model identifier for chat completions."
         },
         "xpersona.playground.systemPrompt": {

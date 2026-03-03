@@ -193,7 +193,7 @@ async function handleChatMessage(context, webview, userContent, history) {
     // Get config
     const config = vscode.workspace.getConfiguration("xpersona.playground");
     const baseApiUrl = (config.get("baseApiUrl") || "https://xpersona.co").replace(/\/$/, "");
-    const model = config.get("model") || "playground-default";
+    const model = config.get("model") || "Qwen/Qwen3-4B-Instruct-2507:nscale";
     const systemPrompt = config.get("systemPrompt") ||
         "You are an expert software engineer and coding assistant. Help the user with their code, answer questions clearly, and provide working examples.";
     // Build messages array

@@ -236,6 +236,25 @@ To complete the implementation:
      -d '{"model":"Qwen/Qwen2.5-Coder-7B-Instruct:nscale","messages":[{"role":"user","content":"Hello"}]}'
    ```
 
+## VS Code Extension Features (Marketing + Build List)
+
+The website now markets the VS Code extension as supporting the feature set below.  
+This list is also the official build checklist for implementation tracking.
+
+- [ ] **Auto Mode** - Automatically chooses the best workflow per prompt.
+- [ ] **YOLO Mode** - High-speed mode for rapid experimentation and execution.
+- [ ] **IDE Context** - Uses open files, selections, and workspace state in responses.
+- [ ] **IDE Indexing** - Indexes the repository for deeper code-aware assistance.
+- [ ] **History** - Saves and reuses previous chats, prompts, and outputs.
+- [ ] **Multiple Agents** - Runs several specialized agents in parallel.
+- [ ] **Add image** - Accepts image inputs (screenshots, mockups, diagrams) in prompt flows.
+- [ ] **262,144 context window** - Supports long-context sessions for large codebases and threads.
+
+### Rollout Notes
+
+- These features are now represented in the Playground marketing UI under the VS Code Extension section.
+- Engineering status should be updated by checking each item as implementation lands.
+
 ## Security Considerations
 
 - All requests authenticated via API key

@@ -4,12 +4,12 @@ import { PlaygroundClient } from "./PlaygroundClient";
 const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
 
 export const metadata: Metadata = {
-  title: "Playground AI for Reasoning | Xpersona",
-  description: "Build faster with Playground AI for reasoning. All price tiers include the same powerful AI model. Start your free trial today.",
+  title: "Playground AI Coding Workspace | Xpersona",
+  description: "A coding workspace like ChatGPT, Codex, and Claude Code. Generate, debug, and ship faster with Playground AI.",
   alternates: { canonical: `${baseUrl}/playground` },
   openGraph: {
-    title: "Playground AI for Reasoning | Xpersona",
-    description: "Build faster with Playground AI for reasoning. All price tiers include the same powerful AI model.",
+    title: "Playground AI Coding Workspace | Xpersona",
+    description: "A coding workspace like ChatGPT, Codex, and Claude Code. Generate, debug, and ship faster with Playground AI.",
     url: `${baseUrl}/playground`,
     type: "website",
   },

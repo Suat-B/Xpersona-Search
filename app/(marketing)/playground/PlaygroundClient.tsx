@@ -168,6 +168,49 @@ function debounce(fn, delay) {
   },
 ];
 
+const VSCODE_EXTENSION_FEATURES = [
+  {
+    title: "Auto Mode",
+    description: "Automatically routes each prompt to the best workflow so you can stay focused on shipping.",
+    tag: "Hands-free routing",
+  },
+  {
+    title: "YOLO Mode",
+    description: "Move at maximum speed with low-friction execution for rapid prototyping and iteration.",
+    tag: "Fastest path",
+  },
+  {
+    title: "IDE Context",
+    description: "Understands your open files, active selections, and project structure inside VS Code.",
+    tag: "Context-aware",
+  },
+  {
+    title: "IDE Indexing",
+    description: "Indexes your codebase for smarter answers, deeper refactors, and better architectural guidance.",
+    tag: "Repo intelligence",
+  },
+  {
+    title: "History",
+    description: "Revisit and reuse previous chats, prompts, and generated outputs across sessions.",
+    tag: "Memory",
+  },
+  {
+    title: "Multiple Agents",
+    description: "Run multiple specialized agents in parallel for planning, coding, debugging, and review.",
+    tag: "Parallel workflows",
+  },
+  {
+    title: "Add image",
+    description: "Drop screenshots and UI references directly into prompts for visual debugging and implementation.",
+    tag: "Multimodal",
+  },
+  {
+    title: "262,144 context window",
+    description: "Work across huge files and long sessions without losing context or restarting your thread.",
+    tag: "Long-context",
+  },
+];
+
 export function PlaygroundClient() {
   const [isYearly, setIsYearly] = useState(false);
   const [activeCap, setActiveCap] = useState(0);
@@ -447,18 +490,18 @@ export function PlaygroundClient() {
                 Build faster inside your editor
               </h2>
               <p className="text-lg text-slate-600 mb-6">
-                Launch Playground workflows from VS Code, keep prompts close to your code, and ship experiments without context switching.
+                A full coding copilot experience in VS Code with the same depth developers expect from ChatGPT, Codex, and Claude Code.
               </p>
               
               <div className="flex flex-wrap gap-3 mb-6">
                 <span className="px-4 py-2 rounded-full border border-purple-200 bg-purple-50 text-purple-700 text-sm font-medium">
-                  One-click launch
+                  Auto + YOLO modes
                 </span>
                 <span className="px-4 py-2 rounded-full border border-purple-200 bg-purple-50 text-purple-700 text-sm font-medium">
-                  Prompt history
+                  IDE context + indexing
                 </span>
                 <span className="px-4 py-2 rounded-full border border-purple-200 bg-purple-50 text-purple-700 text-sm font-medium">
-                  Model shortcuts
+                  262,144 context window
                 </span>
               </div>
 
@@ -497,6 +540,24 @@ export function PlaygroundClient() {
                 </div>
               </div>
             </div>
+          </div>
+
+          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {VSCODE_EXTENSION_FEATURES.map((feature) => (
+              <article
+                key={feature.title}
+                className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-lg shadow-slate-200/40 transition-all duration-300 hover:-translate-y-1 hover:border-purple-300 hover:shadow-xl hover:shadow-purple-200/40"
+              >
+                <div className="absolute -right-8 -top-8 h-20 w-20 rounded-full bg-gradient-to-br from-purple-200/40 to-cyan-200/40 blur-2xl transition-opacity duration-300 group-hover:opacity-100" />
+                <div className="relative">
+                  <div className="mb-3 inline-flex rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-[11px] font-semibold text-purple-700">
+                    {feature.tag}
+                  </div>
+                  <h3 className="mb-2 text-base font-semibold text-slate-900">{feature.title}</h3>
+                  <p className="text-sm leading-relaxed text-slate-600">{feature.description}</p>
+                </div>
+              </article>
+            ))}
           </div>
         </div>
       </section>

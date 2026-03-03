@@ -23,7 +23,10 @@ import {
 } from "@/lib/hf-router/rate-limit";
 
 const HF_ROUTER_BASE_URL = "https://router.huggingface.co/v1";
-const HF_TOKEN = process.env.HF_ROUTER_TOKEN;
+
+function getHfRouterToken(): string | undefined {
+  return process.env.HF_ROUTER_TOKEN || process.env.HF_TOKEN || process.env.HUGGINGFACE_TOKEN;
+}
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -282,11 +285,16 @@ async function handleNonStreamingResponse(
  */
 export async function POST(request: NextRequest): Promise<Response> {
   const startTime = Date.now();
+  const hfToken = getHfRouterToken();
   
   // Check HF token is configured
-  if (!HF_TOKEN) {
+  if (!hfToken) {
     return NextResponse.json(
-      { error: "HF router not configured" },
+      {
+        error: "HF router not configured",
+        message:
+          "Set HF_ROUTER_TOKEN (preferred), or HF_TOKEN, or HUGGINGFACE_TOKEN in .env.local and restart the Next.js server.",
+      },
       { status: 500 }
     );
   }
@@ -361,7 +369,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${HF_TOKEN}`,
+        "Authorization": `Bearer ${hfToken}`,
       },
       body: JSON.stringify({
         model: body.model,
