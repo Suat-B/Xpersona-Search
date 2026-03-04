@@ -1,0 +1,180 @@
+import { requestJson, requestSse, SseEvent } from "./http.js";
+import { AssistMode, BillingCycle, PlanTier } from "./types.js";
+
+type ClientOptions = {
+  baseUrl: string;
+  apiKey: string;
+};
+
+type AssistInput = {
+  task: string;
+  mode: AssistMode;
+  model?: string;
+  reasoning?: string;
+  historySessionId?: string;
+  stream?: boolean;
+};
+
+type ExecuteAction =
+  | { type: "command"; command: string; cwd?: string; timeoutMs?: number }
+  | { type: "edit"; path: string; patch?: string; diff?: string }
+  | { type: "rollback"; snapshotId: string };
+
+type IndexChunk = {
+  pathHash: string;
+  chunkHash: string;
+  pathDisplay: string;
+  content: string;
+  metadata?: Record<string, unknown>;
+};
+
+export class PlaygroundClient {
+  private readonly baseUrl: string;
+  private readonly apiKey: string;
+
+  constructor(options: ClientOptions) {
+    this.baseUrl = options.baseUrl.replace(/\/+$/, "");
+    this.apiKey = options.apiKey;
+  }
+
+  async createSession(title?: string, mode?: AssistMode): Promise<string | null> {
+    const res = await requestJson<{ success: true; data: { id: string } }>({
+      baseUrl: this.baseUrl,
+      apiKey: this.apiKey,
+      path: "/api/v1/playground/sessions",
+      method: "POST",
+      body: { title, mode },
+    });
+    return res.data?.id ?? null;
+  }
+
+  async assistStream(input: AssistInput, onEvent: (event: SseEvent) => void | Promise<void>): Promise<void> {
+    await requestSse({
+      baseUrl: this.baseUrl,
+      apiKey: this.apiKey,
+      path: "/api/v1/playground/assist",
+      body: {
+        task: input.task,
+        mode: input.mode,
+        model: input.model || "Playground AI",
+        stream: input.stream ?? true,
+        historySessionId: input.historySessionId,
+        contextBudget: {
+          strategy: "hybrid",
+          maxTokens: 16384,
+        },
+      },
+      onEvent,
+    });
+  }
+
+  async assist(input: AssistInput): Promise<unknown> {
+    return requestJson({
+      baseUrl: this.baseUrl,
+      apiKey: this.apiKey,
+      path: "/api/v1/playground/assist",
+      method: "POST",
+      body: {
+        task: input.task,
+        mode: input.mode,
+        model: input.model || "Playground AI",
+        stream: false,
+        historySessionId: input.historySessionId,
+      },
+    });
+  }
+
+  async listSessions(limit = 20): Promise<unknown> {
+    return requestJson({
+      baseUrl: this.baseUrl,
+      apiKey: this.apiKey,
+      path: `/api/v1/playground/sessions?limit=${encodeURIComponent(String(limit))}`,
+      method: "GET",
+    });
+  }
+
+  async getSessionMessages(sessionId: string, includeAgentEvents = true): Promise<unknown> {
+    return requestJson({
+      baseUrl: this.baseUrl,
+      apiKey: this.apiKey,
+      path: `/api/v1/playground/sessions/${encodeURIComponent(sessionId)}/messages?includeAgentEvents=${
+        includeAgentEvents ? "true" : "false"
+      }`,
+      method: "GET",
+    });
+  }
+
+  async replay(sessionId: string, workspaceFingerprint: string, mode: AssistMode = "plan"): Promise<unknown> {
+    return requestJson({
+      baseUrl: this.baseUrl,
+      apiKey: this.apiKey,
+      path: "/api/v1/playground/replay",
+      method: "POST",
+      body: {
+        sessionId,
+        workspaceFingerprint,
+        mode,
+      },
+    });
+  }
+
+  async execute(sessionId: string | undefined, workspaceFingerprint: string, actions: ExecuteAction[]): Promise<unknown> {
+    return requestJson({
+      baseUrl: this.baseUrl,
+      apiKey: this.apiKey,
+      path: "/api/v1/playground/execute",
+      method: "POST",
+      body: {
+        sessionId,
+        workspaceFingerprint,
+        actions,
+      },
+    });
+  }
+
+  async indexUpsert(projectKey: string, chunks: IndexChunk[]): Promise<unknown> {
+    return requestJson({
+      baseUrl: this.baseUrl,
+      apiKey: this.apiKey,
+      path: "/api/v1/playground/index/upsert",
+      method: "POST",
+      body: {
+        projectKey,
+        chunks,
+      },
+    });
+  }
+
+  async indexQuery(projectKey: string, query: string, limit = 8): Promise<unknown> {
+    return requestJson({
+      baseUrl: this.baseUrl,
+      apiKey: this.apiKey,
+      path: "/api/v1/playground/index/query",
+      method: "POST",
+      body: {
+        projectKey,
+        query,
+        limit,
+      },
+    });
+  }
+
+  async usage(): Promise<unknown> {
+    return requestJson({
+      baseUrl: this.baseUrl,
+      apiKey: this.apiKey,
+      path: "/api/v1/hf/usage",
+      method: "GET",
+    });
+  }
+
+  async checkout(tier: PlanTier = "builder", billing: BillingCycle = "monthly"): Promise<unknown> {
+    return requestJson({
+      baseUrl: this.baseUrl,
+      apiKey: this.apiKey,
+      path: "/api/v1/playground/checkout-link",
+      method: "POST",
+      body: { tier, billing },
+    });
+  }
+}

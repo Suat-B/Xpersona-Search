@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "playground-ai-cli"
+version = "0.1.0"
+description = "Playground AI CLI for terminal-first agentic coding workflows."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "Playground AI" }]
+dependencies = []
+
+[project.scripts]
+playground = "playground_ai_cli.cli:main"
+pgai = "playground_ai_cli.cli:main"
+
+[tool.setuptools]
+packages = ["playground_ai_cli"]

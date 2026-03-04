@@ -67,6 +67,11 @@
     "sdk:build:all": "node scripts/sdk-build-all.mjs",
     "sdk:publish:search": "node scripts/publish-search-sdk.mjs",
     "sdk:publish:search:dry": "node scripts/publish-search-sdk.mjs --dry-run",
+    "cli:parity": "node scripts/check-playground-cli-parity.mjs",
+    "sdk:publish:playground:node": "node scripts/publish-playground-cli-node.mjs",
+    "sdk:publish:playground:node:dry": "node scripts/publish-playground-cli-node.mjs --dry-run",
+    "sdk:publish:playground:python": "node scripts/publish-playground-cli-python.mjs",
+    "sdk:publish:playground:python:dry": "node scripts/publish-playground-cli-python.mjs --dry-run",
     "deploy": "node scripts/deploy.mjs",
     "smoke:reliability": "node scripts/smoke-reliability.mjs",
     "setup:prod": "node scripts/setup-production.mjs"

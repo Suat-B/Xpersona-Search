@@ -1,0 +1,80 @@
+name: Release Playground AI CLI
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Publish target: node, python, or both"
+        required: true
+        default: "both"
+      dry_run:
+        description: "Run publish in dry-run mode"
+        required: true
+        default: "true"
+      node_version:
+        description: "Optional Node CLI package version (example: 0.1.1)"
+        required: false
+        default: ""
+      python_version:
+        description: "Optional Python CLI package version (example: 0.1.1)"
+        required: false
+        default: ""
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Bump Node CLI version (optional)
+        if: ${{ inputs.node_version != '' }}
+        working-directory: sdk/playground-ai-cli
+        run: npm version ${{ inputs.node_version }} --no-git-tag-version
+
+      - name: Bump Python CLI version (optional)
+        if: ${{ inputs.python_version != '' }}
+        run: node scripts/bump-playground-python-cli-version.mjs ${{ inputs.python_version }}
+
+      - name: Run Node/Python CLI parity checks
+        run: npm run cli:parity
+
+      - name: Publish Playground AI Node CLI (dry run)
+        if: ${{ (inputs.target == 'node' || inputs.target == 'both') && inputs.dry_run == 'true' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: node scripts/publish-playground-cli-node.mjs --dry-run
+
+      - name: Publish Playground AI Node CLI
+        if: ${{ (inputs.target == 'node' || inputs.target == 'both') && inputs.dry_run != 'true' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: node scripts/publish-playground-cli-node.mjs
+
+      - name: Publish Playground AI Python CLI (dry run)
+        if: ${{ (inputs.target == 'python' || inputs.target == 'both') && inputs.dry_run == 'true' }}
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: node scripts/publish-playground-cli-python.mjs --dry-run
+
+      - name: Publish Playground AI Python CLI
+        if: ${{ (inputs.target == 'python' || inputs.target == 'both') && inputs.dry_run != 'true' }}
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: node scripts/publish-playground-cli-python.mjs
