@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { authenticatePlaygroundApiKey } from "@/lib/playground/auth";
 import { db } from "@/lib/db";
+import { playgroundSubscriptions } from "@/lib/db/playground-schema";
 import { users } from "@/lib/db/schema";
 import { requireStripe } from "@/lib/stripe";
 
@@ -70,6 +71,15 @@ export async function POST(request: NextRequest): Promise<Response> {
       .where(eq(users.id, auth.userId))
       .limit(1);
 
+    const [existingSub] = await db
+      .select({
+        stripeSubscriptionId: playgroundSubscriptions.stripeSubscriptionId,
+        status: playgroundSubscriptions.status,
+      })
+      .from(playgroundSubscriptions)
+      .where(eq(playgroundSubscriptions.userId, auth.userId))
+      .limit(1);
+
     if (!dbUser?.email) {
       return NextResponse.json(
         { success: false, error: "USER_EMAIL_REQUIRED", message: "User email is required for checkout" },
@@ -78,6 +88,10 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
 
     const stripe = requireStripe();
+    const hasExistingStripeSub =
+      !!existingSub?.stripeSubscriptionId &&
+      existingSub.status !== "cancelled";
+
     let customerId = dbUser.stripeCustomerId ?? null;
     if (!customerId) {
       const customer = await stripe.customers.create({
@@ -94,6 +108,21 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
 
     const baseUrl = getBaseUrl();
+    if (hasExistingStripeSub) {
+      const portal = await stripe.billingPortal.sessions.create({
+        customer: customerId,
+        return_url: `${baseUrl}/dashboard/playground`,
+      });
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          url: portal.url,
+          mode: "manage_existing_subscription",
+        },
+      });
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer: customerId,

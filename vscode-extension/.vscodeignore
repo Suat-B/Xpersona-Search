@@ -1,0 +1,7 @@
+*.vsix
+package-lock.json
+src/**
+tsconfig.json
+**/*.map
+_vsix_extract*/
+_vsix_extract_probe*/

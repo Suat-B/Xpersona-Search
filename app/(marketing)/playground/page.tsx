@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 
 export default function PlaygroundPage() {
   return (
-    <div className="min-h-screen flex flex-col bg-[#f6f7fb]">
+    <div className="min-h-screen flex flex-col bg-white">
       <main className="flex-1">
         <PlaygroundClient />
       </main>
