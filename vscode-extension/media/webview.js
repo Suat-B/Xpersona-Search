@@ -119,6 +119,8 @@
       const actionMenu = document.getElementById("actionMenu");
       const actionMenuClose = document.getElementById("actionMenuClose");
       const newThreadQuick = document.getElementById("newThreadQuick");
+      const historyQuick = document.getElementById("historyQuick");
+      const backToChatQuick = document.getElementById("backToChatQuick");
       const apiKeyInline = document.getElementById("apiKeyInline");
       const apiKeyInlineSave = document.getElementById("apiKeyInlineSave");
       const newThreadBtn = document.getElementById("newThreadBtn");
@@ -145,6 +147,7 @@
       let lastStatusAt = 0;
       let activeProgressState = "";
       let lastInferenceDigest = "";
+      let hostHandshakeReceived = false;
 
       function eventTargetElement(target) {
         if (!target) return null;
@@ -832,6 +835,8 @@
         const panel = document.getElementById(p);
         if (tab) tab.classList.add("active");
         if (panel) panel.classList.add("active");
+        if (historyQuick) historyQuick.classList.toggle("hidden", p !== "chat");
+        if (backToChatQuick) backToChatQuick.classList.toggle("hidden", p === "chat");
       }
 
       function showHistoryPanel(loadingText) {
@@ -1050,6 +1055,17 @@
       }
       if (newThreadQuick) {
         newThreadQuick.onclick = startNewChat;
+      }
+      if (historyQuick) {
+        historyQuick.onclick = () => {
+          showHistoryPanel("Loading chat history...");
+          v.postMessage({ type: "history" });
+        };
+      }
+      if (backToChatQuick) {
+        backToChatQuick.onclick = () => {
+          showTab("chat");
+        };
       }
       const saveKeyBtn = document.getElementById("ks");
       if (saveKeyBtn) {
@@ -1314,6 +1330,7 @@
         if (m.type === "sendAck") {
           if (runState) runState.textContent = "Working...";
         } else if (m.type === "api") {
+          hostHandshakeReceived = true;
           if (m.ok) {
             if (setup) setup.style.display = "none";
             if (app) app.style.display = "flex";
@@ -1575,3 +1592,28 @@
       renderThreadList();
       applyModeUI("auto");
       v.postMessage({ type: "check" });
+
+      // If host handshake is delayed/blocked, fail open to setup so the panel never appears blank.
+      setTimeout(() => {
+        if (hostHandshakeReceived) return;
+        if (setup) setup.style.display = "flex";
+        if (app) app.style.display = "none";
+        if (runState) runState.textContent = "Waiting for host";
+        try {
+          v.postMessage({ type: "check" });
+        } catch {
+          // no-op
+        }
+      }, 1800);
+
+      window.addEventListener("error", () => {
+        if (setup) setup.style.display = "flex";
+        if (app) app.style.display = "none";
+        if (runState) runState.textContent = "UI error";
+      });
+
+      window.addEventListener("unhandledrejection", () => {
+        if (setup) setup.style.display = "flex";
+        if (app) app.style.display = "none";
+        if (runState) runState.textContent = "UI error";
+      });

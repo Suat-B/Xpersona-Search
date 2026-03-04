@@ -642,7 +642,7 @@ export function PlaygroundClient() {
       setIsCheckoutStarting(true);
       setCheckoutError(null);
       try {
-        const res = await fetch("/api/me/playground-checkout", {
+        const res = await fetch("/api/v1/me/playground-checkout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",

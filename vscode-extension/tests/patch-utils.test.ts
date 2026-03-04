@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyUnifiedDiff, extractPatchTargetPath } from "./patch-utils";
+import { applyUnifiedDiff, extractPatchTargetPath } from "../src/patch-utils";
 
 describe("patch utils", () => {
   it("extracts target path from unified diff", () => {

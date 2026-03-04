@@ -2777,6 +2777,12 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         padding: 0;
         font-size: 14px;
       }
+      .panel-icon {
+        width: 32px;
+        min-width: 32px;
+        padding: 0;
+        font-size: 14px;
+      }
       .quick-new:hover {
         background: var(--vscode-button-hoverBackground, var(--accent));
       }
@@ -2975,6 +2981,8 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       <div class="global-top">
         <span class="chat-title">Playground Chat</span>
         <div class="global-actions">
+          <button id="historyQuick" type="button" class="menu-icon panel-icon" aria-label="Open chat history" title="Open chat history">&#128339;</button>
+          <button id="backToChatQuick" type="button" class="menu-icon panel-icon hidden" aria-label="Back to chat" title="Back to chat">&#8592;</button>
           <button id="newThreadQuick" type="button" class="menu-icon quick-new" aria-label="Start new chat">New chat</button>
           <button id="actionMenuBtn" type="button" class="menu-icon settings-icon" aria-label="Open settings" title="Settings" aria-expanded="false">&#9881;</button>
         </div>
