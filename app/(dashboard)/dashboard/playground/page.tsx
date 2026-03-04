@@ -7,7 +7,7 @@ import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
 type SubscriptionStatus = "active" | "trial" | "cancelled" | "past_due" | "inactive";
 
 interface PlaygroundUsageData {
-  plan: "trial" | "paid" | null;
+  plan: "trial" | "starter" | "builder" | "studio" | null;
   status: SubscriptionStatus;
   trial?: {
     endsAt: string;
@@ -18,10 +18,12 @@ interface PlaygroundUsageData {
     cancelAtPeriodEnd: boolean;
   } | null;
   limits: {
-    contextCap: number;
+    contextHardCap: number;
+    maxInputTokensPerRequest: number;
     maxOutputTokens: number;
-    maxRequestsPerDay: number;
-    maxOutputTokensPerMonth: number;
+    maxRequestsPerCycle: number;
+    maxTotalTokensPerCycle: number;
+    maxTotalTokensPerMonth: number;
   } | null;
   today: {
     requestsUsed: number;
@@ -29,7 +31,9 @@ interface PlaygroundUsageData {
     requestsLimit: number;
   };
   thisMonth: {
+    tokensInput?: number;
     tokensOutput: number;
+    tokensTotal?: number;
     tokensRemaining: number;
     tokensLimit: number;
     estimatedCostUsd?: number;

@@ -4,15 +4,62 @@ import * as https from "https";
 import { URL } from "url";
 import { createHash } from "crypto";
 import * as path from "path";
+import { execFile } from "child_process";
 
 const API_KEY_SECRET = "xpersona.apiKey";
 const MODE_KEY = "xpersona.playground.mode";
 const SAFETY_KEY = "xpersona.playground.safety";
+const OPEN_THREADS_KEY = "xpersona.playground.openThreads";
 
 type Mode = "auto" | "plan" | "yolo";
+type RequestMode = Mode | "generate" | "debug";
 type Safety = "standard" | "aggressive";
 type ReasoningLevel = "low" | "medium" | "high" | "max";
 type PendingAction = { type: "edit"; path: string; patch: string } | { type: "command"; command: string };
+type ContextLevel = "max";
+type AskOptions = { includeIdeContext?: boolean; workspaceContextLevel?: ContextLevel };
+type IdeContext = {
+  activeFile?: { path?: string; language?: string; selection?: string; content?: string };
+  openFiles?: Array<{ path: string; language?: string; excerpt?: string }>;
+  diagnostics?: Array<{ file?: string; severity?: string | number; message: string; line?: number }>;
+  git?: { status?: string[]; diffSummary?: string };
+  indexedSnippets?: Array<{ path?: string; score?: number; content: string }>;
+};
+type ContextStatus = {
+  enabled: boolean;
+  sections: number;
+  snippets: number;
+  indexFreshness: "fresh" | "stale" | "cold";
+  discoveryCommands: number;
+  preflightMs: number;
+  notes?: string[];
+};
+type ThreadState = {
+  id: string;
+  title: string;
+  mode: Mode;
+  updatedAt: string | null;
+  isOpen: boolean;
+};
+type OpenThreadsSnapshot = {
+  activeThreadId: string | null;
+  openChats: ThreadState[];
+};
+type IndexedChunk = {
+  pathHash: string;
+  chunkHash: string;
+  pathDisplay: string;
+  content: string;
+  metadata?: Record<string, unknown>;
+};
+
+const IDE_CONTEXT_FLAG = "xpersona.playground.ideContextV2";
+const MAX_TOTAL_CONTEXT_CHARS = 350_000;
+const INDEX_MAX_FILE_SIZE = 250 * 1024;
+const INDEX_CHUNK_SIZE = 1200;
+const INDEX_CHUNK_OVERLAP = 180;
+const INDEX_BATCH_SIZE = 400;
+const INDEX_AUTO_INTERVAL_MS = 5 * 60 * 1000;
 
 function normalizeWorkspaceRelativePath(input: string): string | null {
   const trimmed = input.replace(/\\/g, "/").trim();
@@ -45,6 +92,63 @@ function extractContentFromAddPatch(patch: string): string | null {
 
   if (!out.length) return null;
   return out.join("\n");
+}
+
+function chunkText(content: string, chunkSize: number, overlap: number): string[] {
+  const text = content.replace(/\r\n/g, "\n");
+  const chunks: string[] = [];
+  let i = 0;
+  while (i < text.length) {
+    const end = Math.min(text.length, i + chunkSize);
+    chunks.push(text.slice(i, end));
+    if (end >= text.length) break;
+    i = Math.max(i + 1, end - overlap);
+  }
+  return chunks;
+}
+
+function trimContextToMaxChars(ctx: IdeContext, maxChars: number): IdeContext {
+  const clone: IdeContext = {
+    activeFile: ctx.activeFile ? { ...ctx.activeFile } : undefined,
+    openFiles: [...(ctx.openFiles ?? [])],
+    diagnostics: [...(ctx.diagnostics ?? [])],
+    git: ctx.git ? { ...ctx.git } : undefined,
+    indexedSnippets: [...(ctx.indexedSnippets ?? [])],
+  };
+
+  const size = () => JSON.stringify(clone).length;
+  if (size() <= maxChars) return clone;
+
+  while ((clone.openFiles?.length ?? 0) > 0 && size() > maxChars) clone.openFiles?.pop();
+  while ((clone.indexedSnippets?.length ?? 0) > 0 && size() > maxChars) clone.indexedSnippets?.pop();
+  while ((clone.diagnostics?.length ?? 0) > 0 && size() > maxChars) clone.diagnostics?.pop();
+
+  if (size() > maxChars && clone.activeFile?.content) {
+    clone.activeFile.content = clone.activeFile.content.slice(0, 12000);
+  }
+  return clone;
+}
+
+function execFileReadOnly(cmd: string, args: string[], cwd: string, timeoutMs: number, maxBuffer: number): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    execFile(cmd, args, { cwd, timeout: timeoutMs, windowsHide: true, maxBuffer }, (error, stdout, stderr) => {
+      if (error) return resolve({ ok: false, stdout: String(stdout || ""), stderr: String(stderr || error.message || "") });
+      resolve({ ok: true, stdout: String(stdout || ""), stderr: String(stderr || "") });
+    });
+  });
+}
+
+function sha(input: string): string {
+  return createHash("sha1").update(input).digest("hex");
+}
+
+function toRelPath(root: vscode.Uri, file: vscode.Uri): string {
+  return path.posix.normalize(path.posix.relative(root.path, file.path)).replace(/^\/+/, "");
+}
+
+function languageFromPath(p: string): string {
+  const ext = (path.extname(p || "").replace(/^\./, "").toLowerCase() || "text");
+  return ext;
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -93,24 +197,370 @@ class Provider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
   private mode: Mode;
   private safety: Safety;
+  private activeThreadId: string | null = null;
+  private threads: Record<string, ThreadState> = {};
+  private openThreadOrder: string[] = [];
+  private recentHistory: ThreadState[] = [];
   private sessionId: string | null = null;
   private timeline: Array<{ ts: number; phase: string; detail: string }> = [];
   private pendingActions: PendingAction[] = [];
+  private activeStreamCancel: (() => void) | null = null;
+  private cancelRequested = false;
   private commandTerminal: vscode.Terminal | null = null;
+  private indexRunning = false;
+  private indexFreshness: "fresh" | "stale" | "cold" = "cold";
+  private lastIndexAt = 0;
+  private indexTimer: NodeJS.Timeout | null = null;
+  private indexDebounceTimer: NodeJS.Timeout | null = null;
   private hasExecutionIntent(task: string): boolean {
     return /\b(create|make|add|build|implement|refactor|fix|debug|run|test|lint|typecheck|command|file|patch|edit|ship)\b/i.test(task);
   }
+  private hasExplicitCommandRunIntent(task: string): boolean {
+    return /\b(run|execute|terminal|shell|command|test|tests|lint|typecheck|build|compile|install|npm|pnpm|yarn|pytest|jest|vitest|cargo|go test|mvn|gradle)\b/i.test(task);
+  }
+  private hasCodeTaskSignals(task: string): boolean {
+    return /\b(code|file|function|class|bug|error|fix|refactor|implement|build|test|lint|typecheck|stack trace|exception|module|api|endpoint|sql|schema|patch|edit)\b/i.test(task);
+  }
   private isConversationalPrompt(task: string): boolean {
     const t = task.trim().toLowerCase();
-    return (
+    const greetingOrSmallTalk =
       /^(hi|hello|hey|yo|sup|thanks|thank you|thx)\b/.test(t) ||
-      /\b(how are you|what can you do|who are you)\b/.test(t)
+      /\b(how are you|what can you do|who are you)\b/.test(t);
+    const directQuestion =
+      /\?$/.test(t) ||
+      /^(what|why|how|when|where|who|which|can|could|would|should|is|are|do|does|did)\b/.test(t) ||
+      /\b(explain|define|tell me)\b/.test(t);
+
+    return (
+      greetingOrSmallTalk ||
+      (directQuestion && !this.hasCodeTaskSignals(t))
     );
   }
 
   constructor(private ctx: vscode.ExtensionContext) {
     this.mode = (ctx.workspaceState.get(MODE_KEY) as Mode | undefined) ?? "auto";
     this.safety = (ctx.workspaceState.get(SAFETY_KEY) as Safety | undefined) ?? "standard";
+    const persisted = ctx.workspaceState.get<OpenThreadsSnapshot | null>(OPEN_THREADS_KEY, null);
+    if (persisted?.openChats?.length) {
+      for (const thread of persisted.openChats) {
+        if (!thread?.id) continue;
+        this.threads[thread.id] = {
+          id: thread.id,
+          title: thread.title || "New chat",
+          mode: (thread.mode as Mode) || "auto",
+          updatedAt: thread.updatedAt || null,
+          isOpen: true,
+        };
+      }
+      this.openThreadOrder = persisted.openChats.map((x) => x.id).filter((id) => this.threads[id]);
+      this.activeThreadId = persisted.activeThreadId && this.threads[persisted.activeThreadId]
+        ? persisted.activeThreadId
+        : (this.openThreadOrder[0] || null);
+    }
+    this.setupBackgroundIndexing();
+  }
+
+  private isIdeContextV2Enabled(): boolean {
+    return (
+      (vscode.workspace.getConfiguration().get<boolean>(IDE_CONTEXT_FLAG) ?? true) &&
+      (vscode.workspace.getConfiguration("xpersona.playground").get<boolean>("ideContextV2") ?? true)
+    );
+  }
+
+  private setupBackgroundIndexing() {
+    const triggerDebounced = () => {
+      if (this.indexDebounceTimer) clearTimeout(this.indexDebounceTimer);
+      this.indexDebounceTimer = setTimeout(() => {
+        void this.runBackgroundIndexing("debounced");
+      }, 1200);
+    };
+    this.ctx.subscriptions.push(
+      vscode.window.onDidChangeActiveTextEditor(() => triggerDebounced()),
+      vscode.workspace.onDidSaveTextDocument(() => triggerDebounced()),
+      vscode.workspace.onDidOpenTextDocument(() => triggerDebounced())
+    );
+    this.indexTimer = setInterval(() => {
+      void this.runBackgroundIndexing("interval");
+    }, INDEX_AUTO_INTERVAL_MS);
+    this.ctx.subscriptions.push({ dispose: () => this.indexTimer && clearInterval(this.indexTimer) });
+    void this.runBackgroundIndexing("startup");
+  }
+
+  private getWorkspaceRoot(): vscode.WorkspaceFolder | null {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) return null;
+    return folders[0];
+  }
+
+  private async collectIdeContext(query: string, workspaceHash: string, key: string): Promise<IdeContext> {
+    const root = this.getWorkspaceRoot();
+    const activeFile = await this.collectActiveFileContext(20_000);
+    const openFiles = await this.collectOpenEditorsContext(20, 6_000);
+    const diagnostics = this.collectDiagnostics(200);
+    const git = await this.collectGitSummary(root);
+    const discovery = await this.runSafeDiscovery(root);
+    const indexedSnippets = await this.queryIndexForPrompt(workspaceHash, query, key, 12);
+    const mergedSnippets = [...indexedSnippets];
+    if (discovery.rgFiles) {
+      mergedSnippets.push({
+        path: ".workspace/files",
+        score: 0.3,
+        content: discovery.rgFiles,
+      });
+    }
+    return trimContextToMaxChars(
+      {
+        activeFile: activeFile || undefined,
+        openFiles,
+        diagnostics,
+        git: {
+          status: [...(git.status || []), ...(discovery.gitStatus || [])].slice(0, 200),
+          diffSummary: [git.diffSummary, discovery.gitDiff].filter(Boolean).join("\n").slice(0, 120_000),
+        },
+        indexedSnippets: mergedSnippets,
+      },
+      MAX_TOTAL_CONTEXT_CHARS
+    );
+  }
+
+  private async collectActiveFileContext(maxChars: number): Promise<IdeContext["activeFile"] | null> {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return null;
+    const document = editor.document;
+    const fullText = document.getText();
+    const selected = editor.selection.isEmpty ? "" : document.getText(editor.selection).slice(0, 6000);
+    return {
+      path: document.uri.fsPath,
+      language: document.languageId,
+      selection: selected || undefined,
+      content: fullText.slice(0, maxChars),
+    };
+  }
+
+  private async collectOpenEditorsContext(maxEditors: number, maxCharsPerFile: number): Promise<Array<{ path: string; language?: string; excerpt?: string }>> {
+    const editors = vscode.window.visibleTextEditors.slice(0, maxEditors);
+    const unique = new Set<string>();
+    const out: Array<{ path: string; language?: string; excerpt?: string }> = [];
+    for (const e of editors) {
+      const p = e.document.uri.fsPath;
+      if (!p || unique.has(p)) continue;
+      unique.add(p);
+      out.push({
+        path: p,
+        language: e.document.languageId,
+        excerpt: e.document.getText().slice(0, maxCharsPerFile),
+      });
+    }
+    return out;
+  }
+
+  private collectDiagnostics(maxItems: number): Array<{ file?: string; severity?: string | number; message: string; line?: number }> {
+    const all = vscode.languages.getDiagnostics();
+    const out: Array<{ file?: string; severity?: string | number; message: string; line?: number }> = [];
+    for (const [uri, diagnostics] of all) {
+      for (const d of diagnostics) {
+        out.push({
+          file: uri.fsPath,
+          severity: d.severity,
+          message: d.message,
+          line: d.range.start.line + 1,
+        });
+        if (out.length >= maxItems) return out;
+      }
+    }
+    return out;
+  }
+
+  private async collectGitSummary(root: vscode.WorkspaceFolder | null): Promise<{ status: string[]; diffSummary: string }> {
+    if (!root) return { status: [], diffSummary: "" };
+    const cwd = root.uri.fsPath;
+    const status = await execFileReadOnly("git", ["status", "--short"], cwd, 2500, 12000);
+    const diff = await execFileReadOnly("git", ["diff", "--stat"], cwd, 2500, 12000);
+    return {
+      status: status.stdout.split(/\r?\n/).map((x) => x.trim()).filter(Boolean).slice(0, 200),
+      diffSummary: (diff.stdout || "").slice(0, 12000),
+    };
+  }
+
+  private async runSafeDiscovery(root: vscode.WorkspaceFolder | null): Promise<{ gitStatus?: string[]; gitDiff?: string; rgFiles?: string }> {
+    if (!root) return {};
+    const cwd = root.uri.fsPath;
+    const gitStatus = await execFileReadOnly("git", ["status", "--short"], cwd, 2500, 12000);
+    const gitDiff = await execFileReadOnly("git", ["diff", "--stat"], cwd, 2500, 12000);
+    const rgFiles = await execFileReadOnly("rg", ["--files", "--hidden", "-g", "!node_modules", "-g", "!.git"], cwd, 3000, 12000);
+    return {
+      gitStatus: gitStatus.ok ? gitStatus.stdout.split(/\r?\n/).filter(Boolean).slice(0, 200) : [],
+      gitDiff: gitDiff.ok ? gitDiff.stdout.slice(0, 12000) : "",
+      rgFiles: rgFiles.ok ? rgFiles.stdout.split(/\r?\n/).slice(0, 300).join("\n") : "",
+    };
+  }
+
+  private async queryIndexForPrompt(projectKey: string, query: string, key: string, limit: number): Promise<Array<{ path?: string; score?: number; content: string }>> {
+    try {
+      const response = await req<any>("POST", `${base()}/api/v1/playground/index/query`, key, {
+        projectKey,
+        query: query.slice(0, 2000),
+        limit: Math.max(1, Math.min(limit, 50)),
+      });
+      const rows = Array.isArray(response?.data) ? response.data : Array.isArray(response) ? response : [];
+      return rows
+        .map((r: any) => ({
+          path: String(r.pathDisplay || r.path || ""),
+          score: typeof r.score === "number" ? r.score : undefined,
+          content: String(r.content || "").slice(0, 60_000),
+        }))
+        .filter((x: { content: string }) => x.content.length > 0)
+        .slice(0, limit);
+    } catch {
+      return [];
+    }
+  }
+
+  private async runBackgroundIndexing(trigger: string): Promise<void> {
+    if (!this.isIdeContextV2Enabled()) return;
+    const root = this.getWorkspaceRoot();
+    if (!root) return;
+    if (this.indexRunning) return;
+    this.indexRunning = true;
+    try {
+      const include = "**/*.{ts,tsx,js,jsx,json,md,py,go,rs,java,cs,yaml,yml}";
+      const exclude = "**/{node_modules,.git,.next,dist,build}/**";
+      const files = await vscode.workspace.findFiles(
+        new vscode.RelativePattern(root, include),
+        new vscode.RelativePattern(root, exclude),
+        800
+      );
+      const chunks: IndexedChunk[] = [];
+      for (const file of files) {
+        try {
+          const stat = await vscode.workspace.fs.stat(file);
+          if (stat.type !== vscode.FileType.File || stat.size > INDEX_MAX_FILE_SIZE) continue;
+          const doc = await vscode.workspace.openTextDocument(file);
+          const rel = toRelPath(root.uri, file);
+          const relNorm = normalizeWorkspaceRelativePath(rel);
+          if (!relNorm) continue;
+          const text = doc.getText();
+          for (const chunk of chunkText(text, INDEX_CHUNK_SIZE, INDEX_CHUNK_OVERLAP)) {
+            const trimmed = chunk.trim();
+            if (!trimmed) continue;
+            chunks.push({
+              pathHash: sha(relNorm),
+              chunkHash: sha(`${relNorm}:${trimmed}`),
+              pathDisplay: relNorm,
+              content: trimmed,
+              metadata: { language: doc.languageId || languageFromPath(relNorm), trigger },
+            });
+          }
+        } catch {
+          // Ignore per-file failures.
+        }
+      }
+      if (!chunks.length) {
+        this.indexFreshness = "stale";
+        return;
+      }
+      const workspaceHash = this.computeWorkspaceHash(root);
+      const key = await this.ctx.secrets.get(API_KEY_SECRET);
+      if (!key) return;
+      for (let i = 0; i < chunks.length; i += INDEX_BATCH_SIZE) {
+        const batch = chunks.slice(i, i + INDEX_BATCH_SIZE);
+        await req("POST", `${base()}/api/v1/playground/index/upsert`, key, {
+          projectKey: workspaceHash,
+          chunks: batch,
+          cursor: `${Date.now()}:${i}`,
+          stats: { trigger, totalChunks: chunks.length },
+        }).catch(() => ({}));
+      }
+      this.lastIndexAt = Date.now();
+      this.indexFreshness = "fresh";
+      this.post({
+        type: "indexState",
+        data: {
+          chunks: chunks.length,
+          freshness: this.indexFreshness,
+          lastQueryMatches: 0,
+          lastRebuildAt: new Date(this.lastIndexAt).toLocaleTimeString(),
+        },
+      });
+    } finally {
+      this.indexRunning = false;
+      if (Date.now() - this.lastIndexAt > INDEX_AUTO_INTERVAL_MS * 2) {
+        this.indexFreshness = "stale";
+      }
+    }
+  }
+
+  private computeWorkspaceHash(root: vscode.WorkspaceFolder | null): string {
+    if (!root) return "single-file";
+    const seed = `${root.name}:${root.uri.fsPath}`;
+    return sha(seed).slice(0, 32);
+  }
+
+  private threadFromApiRow(x: any): ThreadState {
+    return {
+      id: String(x?.id || ""),
+      title: String(x?.title || "Untitled"),
+      mode: ((x?.mode || "auto") as Mode),
+      updatedAt: x?.updatedAt || x?.updated_at || x?.createdAt || x?.created_at || null,
+      isOpen: false,
+    };
+  }
+
+  private upsertThread(thread: ThreadState, open: boolean) {
+    const existing = this.threads[thread.id];
+    this.threads[thread.id] = {
+      id: thread.id,
+      title: thread.title || existing?.title || "New chat",
+      mode: thread.mode || existing?.mode || "auto",
+      updatedAt: thread.updatedAt || existing?.updatedAt || null,
+      isOpen: open || existing?.isOpen || false,
+    };
+    if (open && !this.openThreadOrder.includes(thread.id)) this.openThreadOrder.unshift(thread.id);
+    if (!open) this.threads[thread.id].isOpen = false;
+  }
+
+  private async persistOpenThreads() {
+    const openChats = this.openThreadOrder
+      .map((id) => this.threads[id])
+      .filter((x): x is ThreadState => Boolean(x))
+      .map((x) => ({ ...x, isOpen: true }));
+    await this.ctx.workspaceState.update(OPEN_THREADS_KEY, {
+      activeThreadId: this.activeThreadId,
+      openChats,
+    } satisfies OpenThreadsSnapshot);
+  }
+
+  private async postThreadState() {
+    this.post({
+      type: "threadState",
+      data: {
+        activeThreadId: this.activeThreadId,
+        openChats: this.openThreadOrder
+          .map((id) => this.threads[id])
+          .filter((x): x is ThreadState => Boolean(x))
+          .map((x) => ({ ...x, isOpen: true })),
+        recentHistory: this.recentHistory,
+      },
+    });
+    await this.persistOpenThreads();
+  }
+
+  private async ensureActiveThread(key: string, title: string): Promise<string | null> {
+    if (this.activeThreadId && this.threads[this.activeThreadId]) return this.activeThreadId;
+    const s = await req<any>("POST", `${base()}/api/v1/playground/sessions`, key, {
+      title: title.slice(0, 60) || "New chat",
+      mode: this.mode,
+    }).catch(() => ({}));
+    const id = s?.data?.id ? String(s.data.id) : null;
+    if (!id) return null;
+    this.upsertThread(
+      { id, title: title.slice(0, 60) || "New chat", mode: this.mode, updatedAt: new Date().toISOString(), isOpen: true },
+      true
+    );
+    this.activeThreadId = id;
+    this.sessionId = id;
+    await this.postThreadState();
+    return id;
   }
 
   resolveWebviewView(v: vscode.WebviewView): void {
@@ -133,9 +583,11 @@ class Provider implements vscode.WebviewViewProvider {
         this.post({ type: "safety", value: this.safety });
         this.post({ type: "timeline", data: this.timeline });
         this.post({ type: "pendingActions", count: this.pendingActions.length });
+        await this.postThreadState();
       } else if (m.type === "saveKey") {
         if (m.key?.trim()) await this.ctx.secrets.store(API_KEY_SECRET, m.key.trim());
         this.post({ type: "api", ok: true });
+        await this.loadHistory();
       } else if (m.type === "setMode") {
         await this.setMode(m.value as Mode);
       } else if (m.type === "setSafety") {
@@ -145,13 +597,31 @@ class Provider implements vscode.WebviewViewProvider {
         await this.ask(
           String(m.text || ""),
           Boolean(m.parallel),
-          String(m.model || "Playground"),
-          String(m.reasoning || "medium") as ReasoningLevel
+          String(m.model || "Playground 1"),
+          String(m.reasoning || "medium") as ReasoningLevel,
+          {
+            includeIdeContext: m.includeIdeContext !== undefined ? Boolean(m.includeIdeContext) : true,
+            workspaceContextLevel: (m.workspaceContextLevel === "max" ? "max" : "max") as ContextLevel,
+          }
         );
+      } else if (m.type === "cancel") {
+        if (!this.activeStreamCancel) {
+          this.post({ type: "status", text: "Nothing to cancel right now." });
+          return;
+        }
+        this.cancelRequested = true;
+        this.activeStreamCancel();
+        this.post({ type: "status", text: "Stopping response..." });
       } else if (m.type === "history") {
         await this.loadHistory();
       } else if (m.type === "openSession") {
         await this.openSession(String(m.id || ""));
+      } else if (m.type === "newThread") {
+        await this.newThread();
+      } else if (m.type === "switchThread") {
+        await this.switchThread(String(m.id || ""));
+      } else if (m.type === "closeThread") {
+        await this.closeThread(String(m.id || ""));
       } else if (m.type === "replay") {
         await this.replay();
       } else if (m.type === "indexRebuild") {
@@ -160,11 +630,9 @@ class Provider implements vscode.WebviewViewProvider {
           data: { chunks: 0, freshness: "rebuilding", lastQueryMatches: 0, lastRebuildAt: new Date().toLocaleTimeString() },
         });
       } else if (m.type === "clear") {
-        this.timeline = [];
-        this.sessionId = null;
         this.pendingActions = [];
-        this.post({ type: "timeline", data: this.timeline });
         this.post({ type: "pendingActions", count: 0 });
+        this.post({ type: "status", text: "Cleared current chat view." });
       } else if (m.type === "execute") {
         await this.executePendingActions();
       }
@@ -196,11 +664,22 @@ class Provider implements vscode.WebviewViewProvider {
     this.post({ type: "safety", value: s });
   }
 
-  async ask(text: string, parallel: boolean, model: string = "Playground AI", reasoning: ReasoningLevel = "medium") {
+  async ask(
+    text: string,
+    parallel: boolean,
+    model: string = "Playground 1",
+    reasoning: ReasoningLevel = "medium",
+    options: AskOptions = {}
+  ) {
     if (!text.trim()) return;
+    if (this.activeStreamCancel) {
+      this.post({ type: "status", text: "Already responding. Stop the current run before sending another message." });
+      return;
+    }
     const key = await this.ctx.secrets.get(API_KEY_SECRET);
     if (!key) return this.post({ type: "err", text: "No API key set" });
 
+    this.cancelRequested = false;
     this.pendingActions = [];
     this.post({ type: "pendingActions", count: 0 });
     this.post({ type: "start" });
@@ -210,22 +689,54 @@ class Provider implements vscode.WebviewViewProvider {
       this.post({ type: "status", text: `Model: ${model} • Reasoning: ${reasoning}` });
     }
 
-    const reasoningGuidance: Record<ReasoningLevel, string> = {
-      low: "Use lightweight reasoning and prioritize speed.",
-      medium: "Use balanced reasoning with concise planning.",
-      high: "Use thorough step-by-step reasoning before acting.",
-      max: "Use maximum deliberation, verify assumptions, and prioritize safety over speed.",
+    // Keep the user task clean so mode classification is based on intent,
+    // not runtime metadata injected into the prompt body.
+    const taskWithReasoning = text;
+    const requestMode: RequestMode = conversational ? "generate" : this.mode;
+    const ideContextEnabled = this.isIdeContextV2Enabled() && (options.includeIdeContext ?? true);
+    const root = this.getWorkspaceRoot();
+    const workspaceHash = this.computeWorkspaceHash(root);
+    const preflightStarted = Date.now();
+    let collectedContext: IdeContext | undefined;
+    let contextStatus: ContextStatus = {
+      enabled: ideContextEnabled,
+      sections: 0,
+      snippets: 0,
+      indexFreshness: this.indexFreshness,
+      discoveryCommands: 0,
+      preflightMs: 0,
+      notes: [],
     };
-    const taskWithReasoning = `${text}\n\n[Playground runtime]\nModel requested: Playground AI\nReasoning level: ${reasoning}\nInstruction: ${reasoningGuidance[reasoning]}`;
-    const requestMode: Mode | "generate" = conversational ? "generate" : this.mode;
 
-    if (!this.sessionId) {
-      const s = await req<any>("POST", `${base()}/api/v1/playground/sessions`, key, {
-        title: text.slice(0, 60),
-        mode: this.mode,
-      }).catch(() => ({}));
-      this.sessionId = s?.data?.id || null;
+    if (ideContextEnabled) {
+      try {
+        collectedContext = await this.collectIdeContext(text, workspaceHash, key);
+        const sectionCount = [
+          collectedContext.activeFile ? 1 : 0,
+          (collectedContext.openFiles?.length ?? 0) > 0 ? 1 : 0,
+          (collectedContext.diagnostics?.length ?? 0) > 0 ? 1 : 0,
+          collectedContext.git ? 1 : 0,
+          (collectedContext.indexedSnippets?.length ?? 0) > 0 ? 1 : 0,
+        ].reduce((acc, v) => acc + v, 0);
+        contextStatus = {
+          ...contextStatus,
+          sections: sectionCount,
+          snippets: collectedContext.indexedSnippets?.length ?? 0,
+          indexFreshness: this.indexFreshness,
+          discoveryCommands: (collectedContext.git?.status?.length ?? 0) > 0 || collectedContext.git?.diffSummary ? 3 : 0,
+        };
+      } catch (e) {
+        contextStatus.notes?.push(`context partial: ${err(e)}`);
+      }
     }
+    contextStatus.preflightMs = Date.now() - preflightStarted;
+    this.post({ type: "contextStatus", data: contextStatus });
+    if (contextStatus.notes?.length) {
+      this.post({ type: "status", text: contextStatus.notes.join(" | ") });
+    }
+
+    const activeThreadId = await this.ensureActiveThread(key, text);
+    if (!activeThreadId) return this.post({ type: "err", text: "Failed to create chat session." });
 
     const runStream = async (historySessionId: string | null) => {
       let sawTokenEvent = false;
@@ -237,12 +748,24 @@ class Provider implements vscode.WebviewViewProvider {
           mode: requestMode,
           task: taskWithReasoning,
           stream: true,
+          model,
+          ...(collectedContext ? { context: trimContextToMaxChars(collectedContext, MAX_TOTAL_CONTEXT_CHARS) } : {}),
           ...(historySessionId ? { historySessionId } : {}),
           workflowIntentId: `reasoning:${reasoning}`,
+          contextBudget: { maxTokens: 65536, strategy: "hybrid" },
+          clientTrace: {
+            extensionVersion: String(this.ctx.extension.packageJSON?.version || "0.0.0"),
+            workspaceHash,
+          },
           safetyProfile: this.safety,
           agentConfig: parallel
             ? { strategy: "parallel", roles: ["planner", "implementer", "reviewer"] }
             : { strategy: "single" },
+        },
+        {
+          onCancelReady: (cancel) => {
+            this.activeStreamCancel = cancel;
+          },
         },
         async (ev, p) => {
           if (ev === "token") {
@@ -324,28 +847,44 @@ class Provider implements vscode.WebviewViewProvider {
     };
 
     try {
-      await runStream(this.sessionId);
+      await runStream(activeThreadId);
     } catch (e) {
+      if (this.cancelRequested) {
+        this.post({ type: "status", text: "Response stopped." });
+      } else {
       const message = err(e);
-      if (this.sessionId && /historysessionid|unknown historysessionid/i.test(message)) {
+      if (activeThreadId && /historysessionid|unknown historysessionid/i.test(message)) {
         this.addTimeline("session", "stale history session recovered");
-        this.sessionId = null;
         await runStream(null).catch((inner) => this.post({ type: "err", text: err(inner) }));
       } else {
         this.post({ type: "err", text: message });
       }
+      }
+    } finally {
+      this.activeStreamCancel = null;
     }
+    if (this.threads[activeThreadId]) this.threads[activeThreadId].updatedAt = new Date().toISOString();
+    await this.loadHistory();
+    await this.postThreadState();
 
     this.post({ type: "end" });
+    if (this.cancelRequested) {
+      this.pendingActions = [];
+      this.post({ type: "pendingActions", count: 0 });
+      return;
+    }
     if (this.pendingActions.length > 0) {
-      if (this.hasExecutionIntent(text) || this.pendingActions.some((a) => a.type === "edit")) {
+      const hasEditActions = this.pendingActions.some((a) => a.type === "edit");
+      const hasCommandActions = this.pendingActions.some((a) => a.type === "command");
+      const shouldAutoExecute = hasEditActions || (hasCommandActions && this.hasExplicitCommandRunIntent(text));
+      if (shouldAutoExecute) {
         if (!conversational) {
           this.post({ type: "status", text: `Prepared ${this.pendingActions.length} tool action(s). Auto-executing now.` });
         }
         await this.executePendingActions();
       } else {
         if (!conversational) {
-          this.post({ type: "status", text: "Detected conversational prompt; skipped automatic tool execution." });
+          this.post({ type: "status", text: "Skipped auto-execution for command-only suggestions. I will prioritize code edits unless you explicitly ask to run commands." });
         }
         this.pendingActions = [];
         this.post({ type: "pendingActions", count: 0 });
@@ -355,20 +894,29 @@ class Provider implements vscode.WebviewViewProvider {
 
   async loadHistory() {
     const key = await this.ctx.secrets.get(API_KEY_SECRET);
-    if (!key) return;
+    if (!key) {
+      this.recentHistory = [];
+      await this.postThreadState();
+      return;
+    }
     const r = await req<any>("GET", `${base()}/api/v1/playground/sessions?limit=30`, key).catch(() => ({}));
-    const items = (r?.data?.data || []).map((x: any) => ({
-      id: x.id,
-      title: x.title || "Untitled",
-      mode: x.mode || "auto",
-      updatedAt: x.updatedAt || x.updated_at || x.createdAt || x.created_at || null,
-    }));
+    const items = (r?.data?.data || [])
+      .map((x: any) => this.threadFromApiRow(x))
+      .filter((x: ThreadState) => x.id);
+    this.recentHistory = items;
+    for (const item of items) {
+      if (!this.threads[item.id]) this.upsertThread(item, false);
+    }
     this.post({ type: "historyItems", data: items });
+    await this.postThreadState();
   }
 
   async openSession(id: string) {
     const key = await this.ctx.secrets.get(API_KEY_SECRET);
     if (!key || !id) return;
+    const existing = this.threads[id] || this.recentHistory.find((x) => x.id === id);
+    this.upsertThread(existing || { id, title: "Untitled", mode: this.mode, updatedAt: null, isOpen: true }, true);
+    this.activeThreadId = id;
     this.sessionId = id;
     const r = await req<any>(
       "GET",
@@ -378,15 +926,62 @@ class Provider implements vscode.WebviewViewProvider {
     const msgs = (r?.data || [])
       .filter((m: any) => m.role === "user" || m.role === "assistant")
       .map((m: any) => ({ role: m.role, content: m.content }));
-    this.post({ type: "load", data: msgs.reverse() });
+    this.post({ type: "load", data: msgs.reverse(), threadId: id });
     this.addTimeline("history", `loaded ${id.slice(0, 8)}`);
+    await this.postThreadState();
+  }
+
+  async newThread() {
+    const key = await this.ctx.secrets.get(API_KEY_SECRET);
+    if (!key) return this.post({ type: "err", text: "No API key set" });
+    const s = await req<any>("POST", `${base()}/api/v1/playground/sessions`, key, {
+      title: "New chat",
+      mode: this.mode,
+    }).catch(() => ({}));
+    const id = s?.data?.id ? String(s.data.id) : null;
+    if (!id) return this.post({ type: "err", text: "Failed to create chat session." });
+    this.upsertThread({ id, title: "New chat", mode: this.mode, updatedAt: new Date().toISOString(), isOpen: true }, true);
+    this.activeThreadId = id;
+    this.sessionId = id;
+    this.post({ type: "load", data: [], threadId: id });
+    await this.loadHistory();
+    await this.postThreadState();
+  }
+
+  async switchThread(id: string) {
+    if (!id) return;
+    if (!this.threads[id]) {
+      const fromHistory = this.recentHistory.find((x) => x.id === id);
+      if (fromHistory) this.upsertThread(fromHistory, true);
+    } else {
+      this.upsertThread(this.threads[id], true);
+    }
+    this.activeThreadId = id;
+    this.sessionId = id;
+    await this.openSession(id);
+  }
+
+  async closeThread(id: string) {
+    if (!id) return;
+    this.openThreadOrder = this.openThreadOrder.filter((x) => x !== id);
+    if (this.threads[id]) this.threads[id].isOpen = false;
+    if (this.activeThreadId === id) {
+      this.activeThreadId = this.openThreadOrder[0] || null;
+      this.sessionId = this.activeThreadId;
+      if (this.activeThreadId) {
+        await this.openSession(this.activeThreadId);
+      } else {
+        this.post({ type: "load", data: [], threadId: null });
+      }
+    }
+    await this.postThreadState();
   }
 
   async replay() {
     const key = await this.ctx.secrets.get(API_KEY_SECRET);
-    if (!key || !this.sessionId) return this.post({ type: "status", text: "No active session yet. Send a prompt first, then replay." });
+    if (!key || !this.activeThreadId) return this.post({ type: "status", text: "No active session yet. Send a prompt first, then replay." });
     const r = await req<any>("POST", `${base()}/api/v1/playground/replay`, key, {
-      sessionId: this.sessionId,
+      sessionId: this.activeThreadId,
       workspaceFingerprint: "vscode",
       mode: this.mode,
     }).catch(() => ({}));
@@ -404,7 +999,7 @@ class Provider implements vscode.WebviewViewProvider {
     this.post({ type: "status", text: `Executing ${this.pendingActions.length} action(s)...` });
 
     const r = await req<any>("POST", `${base()}/api/v1/playground/execute`, key, {
-      sessionId: this.sessionId || undefined,
+      sessionId: this.activeThreadId || undefined,
       workspaceFingerprint: "vscode",
       actions: this.pendingActions.map((a) =>
         a.type === "edit"
@@ -474,12 +1069,6 @@ class Provider implements vscode.WebviewViewProvider {
     this.addTimeline("execute", `approved ${approved}/${results.length}`);
     this.pendingActions = [];
     this.post({ type: "pendingActions", count: 0 });
-  }
-
-  private getWorkspaceRoot(): vscode.WorkspaceFolder | null {
-    const folders = vscode.workspace.workspaceFolders;
-    if (!folders || folders.length === 0) return null;
-    return folders[0];
   }
 
   private async applyEditAction(action: { path?: string; patch?: string; diff?: string }): Promise<{ ok: boolean; reason?: string }> {
@@ -564,12 +1153,71 @@ function req<T>(method: "GET" | "POST", u: string, key: string, body?: unknown):
   });
 }
 
-function stream(u: string, key: string, body: unknown, onEvent: (event: string, payload: any) => void): Promise<void> {
+function stream(
+  u: string,
+  key: string,
+  body: unknown,
+  options: { onCancelReady?: (cancel: () => void) => void } | undefined,
+  onEvent: (event: string, payload: any) => void
+): Promise<void> {
   return new Promise((resolve, reject) => {
+    const CONNECT_TIMEOUT_MS = 20_000;
+    const IDLE_TIMEOUT_MS = 45_000;
     const x = new URL(u);
     const c = x.protocol === "https:" ? https : http;
     const p = JSON.stringify(body);
     let b = "";
+    let done = false;
+    let idleTimer: NodeJS.Timeout | null = null;
+    const clearIdleTimer = () => {
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      }
+    };
+    const armIdleTimer = () => {
+      clearIdleTimer();
+      idleTimer = setTimeout(() => {
+        try {
+          r.destroy(new Error(`Stream idle timeout after ${IDLE_TIMEOUT_MS}ms`));
+        } catch {
+          // ignore destroy failures
+        }
+      }, IDLE_TIMEOUT_MS);
+    };
+    const finish = (cb: () => void) => {
+      if (done) return;
+      done = true;
+      clearIdleTimer();
+      cb();
+    };
+    const findSeparator = (value: string): { index: number; len: number } => {
+      const idxLf = value.indexOf("\n\n");
+      const idxCrlf = value.indexOf("\r\n\r\n");
+      if (idxLf < 0 && idxCrlf < 0) return { index: -1, len: 0 };
+      if (idxLf < 0) return { index: idxCrlf, len: 4 };
+      if (idxCrlf < 0) return { index: idxLf, len: 2 };
+      return idxLf < idxCrlf ? { index: idxLf, len: 2 } : { index: idxCrlf, len: 4 };
+    };
+    const handleSseChunk = (chunk: string): boolean => {
+      const lines = chunk
+        .split(/\r?\n/)
+        .filter((l) => l.startsWith("data:"))
+        .map((l) => l.slice(5).trim());
+      if (!lines.length) return false;
+      const raw = lines.join("\n");
+      if (raw === "[DONE]") {
+        finish(resolve);
+        return true;
+      }
+      try {
+        const o = JSON.parse(raw);
+        onEvent(o.event || "message", o.data ?? o.message ?? o);
+      } catch {
+        // ignore malformed SSE chunks
+      }
+      return false;
+    };
 
     const r = c.request(
       {
@@ -585,41 +1233,49 @@ function stream(u: string, key: string, body: unknown, onEvent: (event: string, 
         },
       },
       (res) => {
+        armIdleTimer();
         if ((res.statusCode || 500) >= 400) {
           let t = "";
           res.on("data", (d: Buffer) => (t += d.toString("utf8")));
-          res.on("end", () => reject(new Error(parseErr(t, res.statusCode))));
+          res.on("end", () => finish(() => reject(new Error(parseErr(t, res.statusCode)))));
           return;
         }
 
         res.on("data", (d: Buffer) => {
+          if (done) return;
+          armIdleTimer();
           b += d.toString("utf8");
-          let i = b.indexOf("\n\n");
-          while (i >= 0) {
-            const e = b.slice(0, i);
-            b = b.slice(i + 2);
-            i = b.indexOf("\n\n");
-            const lines = e
-              .split(/\r?\n/)
-              .filter((l) => l.startsWith("data:"))
-              .map((l) => l.slice(5).trim());
-            if (!lines.length) continue;
-            const raw = lines.join("\n");
-            if (raw === "[DONE]") continue;
-            try {
-              const o = JSON.parse(raw);
-              onEvent(o.event || "message", o.data ?? o.message ?? o);
-            } catch {
-              // ignore malformed SSE chunks
-            }
+          let sep = findSeparator(b);
+          while (sep.index >= 0) {
+            const e = b.slice(0, sep.index);
+            b = b.slice(sep.index + sep.len);
+            if (handleSseChunk(e)) return;
+            sep = findSeparator(b);
           }
         });
 
-        res.on("end", () => resolve());
+        res.on("end", () => {
+          if (!done && b.trim()) handleSseChunk(b);
+          finish(resolve);
+        });
       }
     );
 
-    r.on("error", reject);
+    options?.onCancelReady?.(() => {
+      try {
+        r.destroy(new Error("Request cancelled by user"));
+      } catch {
+        // ignore destroy failures
+      }
+    });
+    r.setTimeout(CONNECT_TIMEOUT_MS, () => {
+      try {
+        r.destroy(new Error(`Connection timeout after ${CONNECT_TIMEOUT_MS}ms`));
+      } catch {
+        // ignore destroy failures
+      }
+    });
+    r.on("error", (e) => finish(() => reject(e)));
     r.write(p);
     r.end();
   });
@@ -915,6 +1571,65 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         flex-direction: column;
         gap: 14px;
       }
+      .thread-list {
+        border: 1px solid #1c1c1c;
+        border-radius: 12px;
+        padding: 8px;
+        margin-bottom: 10px;
+        background: #070707;
+        display: grid;
+        gap: 8px;
+      }
+      .thread-section-title {
+        font-size: 11px;
+        color: #8d8d8d;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+      }
+      .thread-row {
+        border: 1px solid transparent;
+        border-radius: 10px;
+        padding: 7px 8px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        cursor: pointer;
+      }
+      .thread-row:hover {
+        border-color: #2b2b2b;
+        background: #0d0d0d;
+      }
+      .thread-row.active {
+        border-color: #345070;
+        background: #0e141d;
+      }
+      .thread-main {
+        min-width: 0;
+      }
+      .thread-title {
+        font-size: 12px;
+        color: #f0f0f0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .thread-meta {
+        font-size: 10px;
+        color: #8f8f8f;
+      }
+      .thread-close {
+        border: 1px solid #2c2c2c;
+        background: #0b0b0b;
+        color: #d7d7d7;
+        width: 20px;
+        height: 20px;
+        min-width: 20px;
+        border-radius: 999px;
+        padding: 0;
+        font-size: 12px;
+        line-height: 1;
+      }
       .m {
         border: none;
         border-radius: 0;
@@ -934,6 +1649,38 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         color: var(--muted);
         opacity: .85;
         text-align: right;
+      }
+      .plan-decision .m-time {
+        display: none;
+      }
+      .plan-card {
+        border: 1px solid #262626;
+        border-radius: 14px;
+        background: #090909;
+        padding: 12px;
+        display: grid;
+        gap: 8px;
+      }
+      .plan-card-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: #f2f2f2;
+        letter-spacing: .01em;
+      }
+      .plan-choice {
+        border: 1px solid #2d2d2d;
+        border-radius: 10px;
+        background: #101010;
+        color: #ededed;
+        padding: 9px 10px;
+        text-align: left;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .plan-choice:hover {
+        transform: none;
+        border-color: #3a3a3a;
+        background: #151515;
       }
       @keyframes pop {
         from { opacity: 0; transform: translateY(4px); }
@@ -1347,6 +2094,14 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         font-size: 12px;
         color: #ebebeb;
       }
+      .plan-toggle-main {
+        border: 1px solid #2a2a2a;
+        border-radius: 999px;
+        padding: 4px 8px;
+        background: #0c0c0c;
+        white-space: nowrap;
+        flex: 0 0 auto;
+      }
       .tool-toggle input {
         appearance: none;
         width: 30px;
@@ -1420,6 +2175,21 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         border: 1px solid #2e2e2e;
         color: #d9d9d9;
       }
+      .chat-icon-btn {
+        width: 28px;
+        height: 28px;
+        min-width: 28px;
+        border-radius: 999px;
+        padding: 0;
+        font-size: 14px;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: #0c0c0c;
+        border: 1px solid #2e2e2e;
+        color: #d9d9d9;
+      }
       .action-menu {
         position: fixed;
         inset: 0;
@@ -1485,6 +2255,38 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         font-size: 12px;
         font-weight: 600;
         color: #f1f1f1;
+      }
+      .api-key-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+      }
+      .api-key-input {
+        width: 100%;
+        border: 1px solid #2d2d2d;
+        border-radius: 8px;
+        background: #080808;
+        color: #efefef;
+        padding: 7px 9px;
+        font-size: 12px;
+      }
+      .api-key-input:focus {
+        outline: none;
+        border-color: #3f6ea0;
+      }
+      .api-key-save {
+        border: 1px solid #2e2e2e;
+        border-radius: 8px;
+        background: #111111;
+        color: #ececec;
+        padding: 7px 10px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .api-key-hint {
+        color: #8f8f8f;
+        font-size: 11px;
       }
       .action-item {
         border: none;
@@ -1569,20 +2371,27 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         flex: 0 0 auto;
       }
       .send-round {
-        width: 32px;
+        width: 52px;
         height: 32px;
-        min-width: 32px;
+        min-width: 52px;
         border-radius: 999px;
-        padding: 0;
+        padding: 0 10px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-size: 15px;
-        font-weight: 700;
+        font-size: 12px;
+        font-weight: 600;
         background: #111111 !important;
         border: 1px solid #303030 !important;
         color: #f4f4f4 !important;
         flex-shrink: 0;
+      }
+      .send-round.is-streaming {
+        min-width: 56px;
+        width: 56px;
+        background: #3a1012 !important;
+        border-color: #a63a40 !important;
+        color: #ffd8da !important;
       }
       #c {
         display: none;
@@ -1721,16 +2530,17 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         min-height: 64px;
         border-radius: 16px;
       }
-      .menu-icon {
+      .menu-icon,
+      .chat-icon-btn {
         width: 24px;
         height: 24px;
         min-width: 24px;
         font-size: 16px;
       }
       .send-round {
-        width: 34px;
+        width: 52px;
         height: 34px;
-        min-width: 34px;
+        min-width: 52px;
       }
       .footer-row {
         padding: 0;
@@ -1821,6 +2631,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
             Send: <span class="kbd">Enter</span> New line: <span class="kbd">Shift + Enter</span>
           </div>
         </div>
+        <div id="threadList" class="thread-list"></div>
         <div id="msgs" class="messages"></div>
         <div class="jump-wrap">
           <button id="jumpLatest" class="jump-btn" type="button">Jump to latest</button>
@@ -1856,9 +2667,12 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
             <div class="menu-anchor">
               <button id="actionMenuBtn" type="button" class="menu-icon" aria-label="Open actions" aria-expanded="false">+</button>
             </div>
+            <button id="newThreadBtn" type="button" class="chat-icon-btn" aria-label="Create new chat">+</button>
+            <button id="chatIconBtn" type="button" class="chat-icon-btn" aria-label="Show chat panel">&#128172;</button>
+            <button id="settingsIconBtn" type="button" class="chat-icon-btn" aria-label="Open settings">&#9881;</button>
             <button id="c" type="button" class="ghost">Clear</button>
             <select id="modelSel" class="composer-select">
-              <option value="Playground AI">Playground AI</option>
+              <option value="Playground 1">Playground 1</option>
             </select>
             <select id="reasonSel" class="composer-select">
               <option value="low">Low</option>
@@ -1867,7 +2681,11 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
               <option value="max">Extra High</option>
             </select>
             <span id="contextPill" class="context-pill">&#10023; IDE context</span>
-            <span id="modeHint" class="hint">Auto execution enabled</span>
+            <label class="tool-toggle plan-toggle-main" for="planToggleMain">
+              <span>Plan</span>
+              <input id="planToggleMain" type="checkbox" aria-label="Plan mode toggle" />
+            </label>
+            <span id="modeHint" class="hint">Plan mode OFF (Auto execution)</span>
             <div class="spacer"></div>
             <button id="s" type="button" class="primary send-round" aria-label="Send">&#8593;</button>
           </div>
@@ -1910,6 +2728,15 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
                       <input id="planToggle" type="checkbox" />
                     </label>
                   </div>
+                </div>
+
+                <div class="sheet-card">
+                  <div class="sheet-card-title">Your API Key</div>
+                  <div class="api-key-row">
+                    <input id="apiKeyInline" class="api-key-input" type="password" placeholder="xp_..." />
+                    <button id="apiKeyInlineSave" class="api-key-save" type="button">Save</button>
+                  </div>
+                  <div class="api-key-hint">Stored securely in VS Code secrets.</div>
                 </div>
 
                 <div class="sheet-card">

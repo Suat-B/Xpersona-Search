@@ -12,6 +12,7 @@ import {
 import { requireStripe } from "@/lib/stripe";
 
 type PlaygroundSubStatus = "active" | "trial" | "past_due" | "cancelled";
+type PlaygroundPaidTier = "starter" | "builder" | "studio";
 
 function mapPlaygroundStatus(status: Stripe.Subscription.Status): PlaygroundSubStatus {
   if (status === "trialing") return "trial";
@@ -23,6 +24,15 @@ function mapPlaygroundStatus(status: Stripe.Subscription.Status): PlaygroundSubS
 function toDate(unixSeconds?: number | null): Date | null {
   if (!unixSeconds || unixSeconds <= 0) return null;
   return new Date(unixSeconds * 1000);
+}
+
+function toPaidTier(value: string | null | undefined): PlaygroundPaidTier | null {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "starter" || normalized === "builder" || normalized === "studio") {
+    return normalized;
+  }
+  return null;
 }
 
 async function resolveUserIdForPlaygroundSubscription(subscription: Stripe.Subscription): Promise<string | null> {
@@ -54,6 +64,7 @@ async function upsertPlaygroundSubscriptionFromStripe(subscription: Stripe.Subsc
       : subscription.customer?.id || null;
 
   const mappedStatus = mapPlaygroundStatus(subscription.status);
+  const metadataTier = toPaidTier(subscription.metadata?.xpersona_tier);
   const trialEndsAt = toDate(subscription.trial_end);
   const trialStartsAt = toDate(subscription.trial_start);
   const subAny = subscription as unknown as {
@@ -66,7 +77,7 @@ async function upsertPlaygroundSubscriptionFromStripe(subscription: Stripe.Subsc
   const payload = {
     stripeCustomerId: customerId,
     stripeSubscriptionId: subscription.id,
-    planTier: mappedStatus === "trial" ? ("trial" as const) : ("paid" as const),
+    planTier: mappedStatus === "trial" ? ("trial" as const) : ("builder" as const),
     status: mappedStatus,
     trialStartedAt: trialStartsAt,
     trialEndsAt,
@@ -77,15 +88,22 @@ async function upsertPlaygroundSubscriptionFromStripe(subscription: Stripe.Subsc
   };
 
   const [existing] = await db
-    .select({ id: playgroundSubscriptions.id })
+    .select({ id: playgroundSubscriptions.id, planTier: playgroundSubscriptions.planTier })
     .from(playgroundSubscriptions)
     .where(eq(playgroundSubscriptions.userId, userId))
     .limit(1);
 
   if (existing) {
+    const existingTier =
+      existing.planTier === "starter" || existing.planTier === "builder" || existing.planTier === "studio"
+        ? existing.planTier
+        : "builder";
     await db
       .update(playgroundSubscriptions)
-      .set(payload)
+      .set({
+        ...payload,
+        planTier: mappedStatus === "trial" ? "trial" : (metadataTier ?? existingTier),
+      })
       .where(eq(playgroundSubscriptions.id, existing.id));
     return;
   }
@@ -93,6 +111,7 @@ async function upsertPlaygroundSubscriptionFromStripe(subscription: Stripe.Subsc
   await db.insert(playgroundSubscriptions).values({
     userId,
     ...payload,
+    planTier: mappedStatus === "trial" ? "trial" : (metadataTier ?? "builder"),
     createdAt: new Date(),
   });
 }

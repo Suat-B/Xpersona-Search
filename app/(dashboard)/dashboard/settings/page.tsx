@@ -222,7 +222,7 @@ type UserData = {
 };
 
 type PlaygroundSubscriptionSnapshot = {
-  plan: "trial" | "paid" | null;
+  plan: "trial" | "starter" | "builder" | "studio" | null;
   status: "active" | "trial" | "cancelled" | "past_due" | "inactive";
 };
 

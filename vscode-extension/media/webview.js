@@ -30,13 +30,17 @@
           const text = String(t.value || "").replace(/\r?\n+$/g, "").trim();
           if (!text) return;
           t.value = "";
+          const earlyCtxToggle = document.getElementById("ctxToggle");
+          const includeIdeContext = earlyCtxToggle ? Boolean(earlyCtxToggle.checked) : true;
           try {
             v.postMessage({
               type: "send",
               text,
               parallel: false,
-              model: "Playground AI",
+              model: "Playground 1",
               reasoning: "medium",
+              includeIdeContext,
+              workspaceContextLevel: "max",
               attachments: [],
             });
           } catch {
@@ -95,12 +99,14 @@
       const viewAllTasks = document.getElementById("viewAllTasks");
       const settingsToggle = document.getElementById("settingsToggle");
       const settingsGroup = document.getElementById("settingsGroup");
+      const threadList = document.getElementById("threadList");
       const modeQuick = document.getElementById("modeQuick");
       const safetyQuick = document.getElementById("safetyQuick");
       const parallelQuick = document.getElementById("parallelQuick");
       const uploadBtn = document.getElementById("uploadBtn");
       const uploadInput = document.getElementById("uploadInput");
       const uploadCount = document.getElementById("uploadCount");
+      const planToggleMain = document.getElementById("planToggleMain");
       const planToggle = document.getElementById("planToggle");
       const ctxToggle = document.getElementById("ctxToggle");
       const input = document.getElementById("t");
@@ -117,6 +123,11 @@
       const actionMenuBtn = document.getElementById("actionMenuBtn");
       const actionMenu = document.getElementById("actionMenu");
       const actionMenuClose = document.getElementById("actionMenuClose");
+      const apiKeyInline = document.getElementById("apiKeyInline");
+      const apiKeyInlineSave = document.getElementById("apiKeyInlineSave");
+      const chatIconBtn = document.getElementById("chatIconBtn");
+      const settingsIconBtn = document.getElementById("settingsIconBtn");
+      const newThreadBtn = document.getElementById("newThreadBtn");
 
       let streamBubble = null;
       let streaming = false;
@@ -128,11 +139,28 @@
       let lastSendAt = 0;
       let attachedFiles = [];
       let allowNextLineBreak = false;
+      let currentThreadId = null;
+      let openChats = [];
+      let recentHistory = [];
+      const threadDrafts = {};
+      let planDecisionBubble = null;
+      let lastStatusText = "";
+      let lastStatusAt = 0;
 
       function eventTargetElement(target) {
         if (!target) return null;
         if (target.nodeType === 1) return target;
         return target.parentElement || null;
+      }
+
+      function isDropdownTarget(target) {
+        const el = eventTargetElement(target);
+        if (!el || !el.closest) return false;
+        return Boolean(
+          el.closest("select") ||
+          el.closest("option") ||
+          el.closest(".composer-select")
+        );
       }
 
       function postSendFallback(rawText) {
@@ -142,12 +170,15 @@
         const parallelEnabled = Boolean(
           (parallelQuick && parallelQuick.checked) || (parallelToggle && parallelToggle.checked)
         );
+        const includeIdeContext = ctxToggle ? Boolean(ctxToggle.checked) : true;
         v.postMessage({
           type: "send",
           text,
           parallel: parallelEnabled,
-          model: modelSel ? modelSel.value : "Playground AI",
+          model: modelSel ? modelSel.value : "Playground 1",
           reasoning: reasonSel ? reasonSel.value : "medium",
+          includeIdeContext,
+          workspaceContextLevel: "max",
           attachments: attachedFiles.map((f) => ({ name: f.name, size: f.size, type: f.type })),
         });
       }
@@ -190,6 +221,7 @@
         triggerSendSafe(e);
       };
       const emergencyComposerBeforeInput = (e) => {
+        if (window.__playgroundComposerReady) return;
         const target = e.target;
         if (!target || target.id !== "t") return;
         if (e.inputType === "insertLineBreak" || e.inputType === "insertParagraph") {
@@ -201,6 +233,7 @@
         }
       };
       document.addEventListener("keydown", (e) => {
+        if (window.__playgroundComposerReady) return;
         const active = document.activeElement;
         if (!active || active.id !== "t") return;
         const isEnter =
@@ -218,10 +251,16 @@
         triggerSendSafe(e);
       }, true);
       document.addEventListener("click", (e) => {
+        if (window.__playgroundComposerReady) return;
+        if (isDropdownTarget(e.target)) return;
         const target = eventTargetElement(e.target);
         if (!target || !target.closest("#s")) return;
         triggerSendSafe(e);
       }, true);
+      const emergencySendButtonClick = (e) => {
+        if (window.__playgroundComposerReady) return;
+        triggerSendSafe(e);
+      };
       function bindEmergencyComposer() {
         const t = document.getElementById("t");
         const s = document.getElementById("s");
@@ -231,7 +270,7 @@
           t.dataset.sendBound = "1";
         }
         if (s && s.dataset.sendBound !== "1") {
-          s.addEventListener("click", triggerSendSafe, true);
+          s.addEventListener("click", emergencySendButtonClick, true);
           s.dataset.sendBound = "1";
         }
       }
@@ -256,6 +295,70 @@
         if (diffHours < 24) return diffHours + "h";
         const diffDays = Math.floor(diffHours / 24);
         return diffDays + "d";
+      }
+
+      function saveCurrentDraft() {
+        if (!input || !currentThreadId) return;
+        threadDrafts[currentThreadId] = input.value || "";
+      }
+
+      function restoreDraftForThread(id) {
+        if (!input) return;
+        input.value = (id && threadDrafts[id]) ? threadDrafts[id] : "";
+      }
+
+      function renderThreadRows(rows, kind) {
+        if (!rows.length) {
+          return '<div class="thread-meta">No ' + (kind === "open" ? "open chats" : "recent history") + ".</div>";
+        }
+        return rows.map((x) => (
+          '<div class="thread-row' + (String(x.id) === String(currentThreadId || "") ? " active" : "") + '" data-thread-id="' + esc(x.id) + '" data-kind="' + esc(kind) + '">' +
+            '<div class="thread-main">' +
+              '<div class="thread-title">' + esc(x.title || "Untitled") + '</div>' +
+              '<div class="thread-meta">' + esc(String(x.mode || "auto")) + " · " + esc(shortAgeLabel(x.updatedAt) || "now") + "</div>" +
+            "</div>" +
+            (kind === "open"
+              ? '<button class="thread-close" type="button" data-close-thread="' + esc(x.id) + '" aria-label="Close chat">×</button>'
+              : "") +
+          "</div>"
+        )).join("");
+      }
+
+      function renderThreadList() {
+        if (!threadList) return;
+        threadList.innerHTML =
+          '<div>' +
+            '<div class="thread-section-title">Open Chats</div>' +
+            renderThreadRows(openChats, "open") +
+          "</div>" +
+          '<div>' +
+            '<div class="thread-section-title">Recent History</div>' +
+            renderThreadRows(recentHistory, "history") +
+          "</div>";
+
+        threadList.querySelectorAll("[data-thread-id]").forEach((el) => {
+          el.addEventListener("click", (e) => {
+            const target = eventTargetElement(e.target);
+            if (target && target.closest("[data-close-thread]")) return;
+            const id = el.getAttribute("data-thread-id");
+            const kind = el.getAttribute("data-kind");
+            if (!id) return;
+            saveCurrentDraft();
+            if (kind === "open") v.postMessage({ type: "switchThread", id });
+            else v.postMessage({ type: "openSession", id });
+          });
+        });
+
+        threadList.querySelectorAll("[data-close-thread]").forEach((el) => {
+          el.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const id = el.getAttribute("data-close-thread");
+            if (!id) return;
+            if (id === currentThreadId) saveCurrentDraft();
+            v.postMessage({ type: "closeThread", id });
+          });
+        });
       }
 
       function esc(s) {
@@ -294,9 +397,10 @@
         if (modeQuick) modeQuick.value = normalized;
 
         const planActive = normalized === "plan";
+        if (planToggleMain) planToggleMain.checked = planActive;
         if (planToggle) planToggle.checked = planActive;
         if (modeBanner) modeBanner.classList.toggle("hidden", !planActive);
-        if (modeHint) modeHint.textContent = planActive ? "Plan mode enabled" : "Auto execution enabled";
+        if (modeHint) modeHint.textContent = planActive ? "Plan mode ON" : "Plan mode OFF (Auto execution)";
       }
 
       function updateAttachmentUI() {
@@ -354,6 +458,52 @@
         return d;
       }
 
+      function clearPlanDecisionCard() {
+        if (planDecisionBubble && planDecisionBubble.isConnected) {
+          planDecisionBubble.remove();
+        }
+        planDecisionBubble = null;
+      }
+
+      function showPlanDecisionCard() {
+        if (currentMode !== "plan" || streaming) return;
+        clearPlanDecisionCard();
+        const d = createBubble("a plan-decision");
+        const body = d.querySelector(".m-body");
+        if (!body) return;
+        body.innerHTML =
+          '<div class="plan-card">' +
+            '<div class="plan-card-title">IMPLEMENT THIS PLAN?</div>' +
+            '<button class="plan-choice" type="button" data-plan-choice="yes">YES, PLEASE IMPLEMENT</button>' +
+            '<button class="plan-choice" type="button" data-plan-choice="no">NO, I NEED MAKE SOME CHANGES</button>' +
+          "</div>";
+
+        const yesBtn = body.querySelector('[data-plan-choice="yes"]');
+        const noBtn = body.querySelector('[data-plan-choice="no"]');
+        if (yesBtn) {
+          yesBtn.addEventListener("click", () => {
+            if (streaming) return;
+            clearPlanDecisionCard();
+            if (input) input.value = "Please implement the plan you just provided exactly, end-to-end.";
+            v.postMessage({ type: "planDecision", decision: "yes", source: "postPlanCard" });
+            sendCurrent();
+          });
+        }
+        if (noBtn) {
+          noBtn.addEventListener("click", () => {
+            clearPlanDecisionCard();
+            if (input) {
+              input.value = "I need changes to this plan. Here are the updates I want:";
+              input.focus();
+              const len = input.value.length;
+              input.setSelectionRange(len, len);
+            }
+            v.postMessage({ type: "planDecision", decision: "no", source: "postPlanCard" });
+          });
+        }
+        planDecisionBubble = d;
+      }
+
       function addTypingBubble() {
         const d = createBubble("a typing");
         const body = d.querySelector(".m-body");
@@ -405,16 +555,56 @@
         return { status: String(m[1] || "").toUpperCase(), command: m[2] || "", exit: m[3] || "?", reason: m[4] || "" };
       }
 
+      function extractJsonCandidate(text) {
+        const trimmed = String(text || "").trim();
+        if (!trimmed) return null;
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
+        const fenced = trimmed.match(/```json\s*([\s\S]*?)```/i) || trimmed.match(/```\s*([\s\S]*?)```/i);
+        if (fenced && fenced[1]) {
+          const block = String(fenced[1]).trim();
+          if (block.startsWith("{") && block.endsWith("}")) return block;
+        }
+        const start = trimmed.indexOf("{");
+        const end = trimmed.lastIndexOf("}");
+        if (start >= 0 && end > start) return trimmed.slice(start, end + 1);
+        return null;
+      }
+
+      function parseFinalFromJson(candidate) {
+        try {
+          const parsed = JSON.parse(candidate);
+          if (parsed && typeof parsed.final === "string" && parsed.final.trim()) return parsed.final.trim();
+        } catch {
+          // ignore
+        }
+        return null;
+      }
+
       function normalizeAssistantText(raw) {
         const text = String(raw ?? "").trim();
-        if (!text.startsWith("{") || !text.includes('"final"')) return text;
-        const m = /"final"\\s*:\\s*"([\\s\\S]*?)"/i.exec(text);
-        if (!m || !m[1]) return text;
-        try {
-          return JSON.parse('"' + m[1].replace(/\\\\/g, "\\\\\\\\").replace(/"/g, '\\"') + '"');
-        } catch {
-          return m[1].replace(/\\\\n/g, "\\n").replace(/\\\\\"/g, '"');
+        if (!text) return "";
+
+        const candidate = extractJsonCandidate(text);
+        if (candidate) {
+          const parsed = parseFinalFromJson(candidate);
+          if (parsed) return parsed;
+          if (candidate.includes('\\"')) {
+            const deEscaped = candidate.replace(/\\"/g, '"');
+            const reparsed = parseFinalFromJson(deEscaped);
+            if (reparsed) return reparsed;
+          }
         }
+
+        const normalized = text.includes('\\"final\\"') ? text.replace(/\\"/g, '"') : text;
+        const m = normalized.match(/"final"\s*:\s*"([\s\S]*?)"/i);
+        if (m && m[1]) {
+          return m[1]
+            .replace(/\\n/g, "\n")
+            .replace(/\\"/g, '"')
+            .replace(/\\\\/g, "\\")
+            .trim();
+        }
+        return text;
       }
 
       function parseDiffStats(patchText) {
@@ -588,6 +778,9 @@
         actionMenu.classList.toggle("hidden", !open);
         actionMenu.setAttribute("aria-hidden", open ? "false" : "true");
         if (actionMenuBtn) actionMenuBtn.setAttribute("aria-expanded", open ? "true" : "false");
+        if (open && apiKeyInline) {
+          setTimeout(() => apiKeyInline.focus(), 0);
+        }
       }
 
       function onMenuAction(action) {
@@ -616,29 +809,55 @@
       function setStreaming(isBusy) {
         streaming = isBusy;
         const activeSendBtn = sendBtn || document.getElementById("s");
-        if (activeSendBtn) activeSendBtn.disabled = isBusy;
+        if (activeSendBtn) activeSendBtn.disabled = false;
         if (modelSel) modelSel.disabled = isBusy;
         if (reasonSel) reasonSel.disabled = isBusy;
         if (uploadBtn) uploadBtn.disabled = isBusy;
-        if (activeSendBtn) activeSendBtn.textContent = isBusy ? "..." : "â†‘";
+        if (activeSendBtn) {
+          activeSendBtn.textContent = isBusy ? "Stop" : "Send";
+          activeSendBtn.setAttribute("aria-label", isBusy ? "Stop response" : "Send");
+          activeSendBtn.title = isBusy ? "Stop response" : "Send";
+          activeSendBtn.classList.toggle("is-streaming", isBusy);
+        }
         if (runState) runState.textContent = isBusy ? "Working..." : "Local";
         if (!isBusy) updateJump();
         updateStartupVisibility();
+      }
+
+      function requestCancel() {
+        if (!streaming) return;
+        v.postMessage({ type: "cancel" });
+        if (runState) runState.textContent = "Stopping...";
       }
 
       function sendCurrent() {
         try {
           const composerInput = input || document.getElementById("t");
           if (!composerInput) return;
-          const text = String(composerInput.value || "").replace(/\r?\n+$/g, "").trim();
-          if (!text || streaming) return;
+          const rawText = String(composerInput.value || "").replace(/\r?\n+$/g, "").trim();
+          if (!rawText || streaming) return;
+
+          let text = rawText;
+          if (/^\/plan(?:\s+|$)/i.test(text)) {
+            if (currentMode !== "plan") {
+              applyModeUI("plan");
+              v.postMessage({ type: "setMode", value: "plan" });
+            }
+            text = text.replace(/^\/plan(?:\s+|$)/i, "").trim();
+            if (!text) {
+              addMessage("Plan mode enabled. Add your request after /plan.", "cmd");
+              return;
+            }
+          }
 
           const now = Date.now();
           if (now - lastSendAt < 120) return;
           lastSendAt = now;
 
+          clearPlanDecisionCard();
           addMessage(text, "u");
           composerInput.value = "";
+          if (currentThreadId) threadDrafts[currentThreadId] = "";
           setStreaming(true);
           streamBubble = addTypingBubble();
 
@@ -647,13 +866,16 @@
             (parallelQuick && parallelQuick.checked) || (parallelToggle && parallelToggle.checked)
           );
           const attachmentMeta = attachedFiles.map((f) => ({ name: f.name, size: f.size, type: f.type }));
+          const includeIdeContext = ctxToggle ? Boolean(ctxToggle.checked) : true;
 
           v.postMessage({
             type: "send",
             text,
             parallel: parallelEnabled,
-            model: modelSel ? modelSel.value : "Playground AI",
+            model: modelSel ? modelSel.value : "Playground 1",
             reasoning: reasonSel ? reasonSel.value : "medium",
+            includeIdeContext,
+            workspaceContextLevel: "max",
             attachments: attachmentMeta,
           });
           if (runState) runState.textContent = "Sent";
@@ -669,6 +891,24 @@
       }
 
       document.querySelectorAll(".tab").forEach((b) => (b.onclick = () => showTab(b.dataset.p)));
+      if (chatIconBtn) {
+        chatIconBtn.onclick = () => {
+          showTab("chat");
+          if (input) input.focus();
+        };
+      }
+      if (settingsIconBtn && settingsGroup) {
+        settingsIconBtn.onclick = () => {
+          showTab("chat");
+          setActionMenuOpen(true);
+        };
+      }
+      if (newThreadBtn) {
+        newThreadBtn.onclick = () => {
+          saveCurrentDraft();
+          v.postMessage({ type: "newThread" });
+        };
+      }
       const saveKeyBtn = document.getElementById("ks");
       if (saveKeyBtn) {
         saveKeyBtn.onclick = () => {
@@ -676,6 +916,24 @@
           const key = keyInput ? keyInput.value.trim() : "";
           if (key) v.postMessage({ type: "saveKey", key });
         };
+      }
+      if (apiKeyInlineSave) {
+        apiKeyInlineSave.onclick = () => {
+          const key = apiKeyInline ? apiKeyInline.value.trim() : "";
+          if (!key) return;
+          v.postMessage({ type: "saveKey", key });
+          if (apiKeyInline) apiKeyInline.value = "";
+          addMessage("API key updated.", "cmd");
+          setActionMenuOpen(false);
+        };
+      }
+      if (apiKeyInline) {
+        apiKeyInline.addEventListener("keydown", (e) => {
+          const isEnter = e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter";
+          if (!isEnter) return;
+          e.preventDefault();
+          if (apiKeyInlineSave) apiKeyInlineSave.click();
+        });
       }
       if (uploadBtn && uploadInput) {
         uploadBtn.onclick = (e) => {
@@ -693,6 +951,13 @@
         };
         ctxToggle.onchange = applyContextPill;
         applyContextPill();
+      }
+      if (planToggleMain) {
+        planToggleMain.onchange = () => {
+          const nextMode = planToggleMain.checked ? "plan" : "auto";
+          applyModeUI(nextMode);
+          v.postMessage({ type: "setMode", value: nextMode });
+        };
       }
       if (planToggle) {
         planToggle.onchange = () => {
@@ -733,12 +998,19 @@
       const sendBtnEl = document.getElementById("s");
       if (composerFormEl) composerFormEl.addEventListener("submit", triggerSendSafe, true);
       if (sendBtnEl) {
-        sendBtnEl.onclick = triggerSendSafe;
-        sendBtnEl.addEventListener("click", triggerSendSafe, true);
-        sendBtnEl.addEventListener("pointerup", triggerSendSafe, true);
+        sendBtnEl.addEventListener("click", (e) => {
+          if (streaming) {
+            e.preventDefault();
+            e.stopPropagation();
+            requestCancel();
+            return;
+          }
+          triggerSendSafe(e);
+        }, true);
       }
       // Hard fallback: capture send clicks globally in case local handlers are bypassed.
       document.addEventListener("click", (e) => {
+        if (isDropdownTarget(e.target)) return;
         const target = eventTargetElement(e.target);
         if (!target) return;
         if (actionMenu && actionMenuBtn) {
@@ -748,6 +1020,12 @@
         }
         const sendTarget = target.closest("#s");
         if (!sendTarget) return;
+        // Once full composer wiring is ready, let the dedicated send button handler own send/stop.
+        if (window.__playgroundComposerReady) return;
+        if (streaming) {
+          requestCancel();
+          return;
+        }
         triggerSendSafe(e);
       }, true);
       document.addEventListener("keydown", (e) => {
@@ -776,6 +1054,10 @@
           e.keyCode === 13 ||
           e.which === 13;
         if (!plainEnter) return;
+        if (streaming) {
+          requestCancel();
+          return;
+        }
         if (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) {
           allowNextLineBreak = true;
           return;
@@ -798,6 +1080,10 @@
       if (input) {
         input.addEventListener("keydown", onComposerKeydown, true);
         input.addEventListener("keypress", suppressLineBreak, true);
+        input.addEventListener("input", () => {
+          if (!currentThreadId) return;
+          threadDrafts[currentThreadId] = input.value || "";
+        });
         input.addEventListener("beforeinput", (e) => {
           if (e.inputType === "insertLineBreak" || e.inputType === "insertParagraph") {
             if (allowNextLineBreak) {
@@ -847,6 +1133,7 @@
 
       if (clearBtn) {
         clearBtn.onclick = () => {
+          clearPlanDecisionCard();
           while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
           chips.innerHTML = "";
           updateStartupVisibility();
@@ -855,25 +1142,29 @@
         };
       }
       if (modeSelect) {
-        modeSelect.onchange = (e) => {
+        modeSelect.addEventListener("change", (e) => {
           applyModeUI(e.target.value);
           v.postMessage({ type: "setMode", value: e.target.value });
-        };
+        });
       }
       if (safetySelect) {
-        safetySelect.onchange = (e) => {
+        safetySelect.addEventListener("change", (e) => {
           if (safetyQuick) safetyQuick.value = e.target.value;
           v.postMessage({ type: "setSafety", value: e.target.value });
-        };
+        });
       }
-      if (modeQuick) modeQuick.onchange = (e) => {
-        applyModeUI(e.target.value);
-        v.postMessage({ type: "setMode", value: e.target.value });
-      };
-      if (safetyQuick) safetyQuick.onchange = (e) => {
-        if (safetySelect) safetySelect.value = e.target.value;
-        v.postMessage({ type: "setSafety", value: e.target.value });
-      };
+      if (modeQuick) {
+        modeQuick.addEventListener("change", (e) => {
+          applyModeUI(e.target.value);
+          v.postMessage({ type: "setMode", value: e.target.value });
+        });
+      }
+      if (safetyQuick) {
+        safetyQuick.addEventListener("change", (e) => {
+          if (safetySelect) safetySelect.value = e.target.value;
+          v.postMessage({ type: "setSafety", value: e.target.value });
+        });
+      }
       if (parallelQuick) {
         parallelQuick.onchange = () => {
           if (parallelSelect) parallelSelect.checked = parallelQuick.checked;
@@ -979,15 +1270,24 @@
             streamBubble = addMessage(normalizeAssistantText(m.text || ""), "a");
           }
         } else if (m.type === "end") {
+          const shouldShowPlanDecision = Boolean(streamBubble) && currentMode === "plan";
           if (streamBubble) {
             const body = streamBubble.querySelector(".m-body");
             if (body) body.textContent = normalizeAssistantText(body.textContent || "");
           }
           setStreaming(false);
           streamBubble = null;
+          if (shouldShowPlanDecision) showPlanDecisionCard();
           if (followLatest) scrollToLatest();
         } else if (m.type === "status") {
           const statusText = String(m.text || "");
+          const now = Date.now();
+          if (statusText && statusText === lastStatusText && now - lastStatusAt < 2500) {
+            return;
+          }
+          lastStatusText = statusText;
+          lastStatusAt = now;
+
           if (/^Executing\s+\d+\s+action\(s\)\.\.\./i.test(statusText)) {
             terminalBubble = null;
             setTerminalState("Running");
@@ -997,13 +1297,18 @@
             setTerminalState("Done");
             addTerminalLine(statusText, "summary");
             if (runState) runState.textContent = "Local";
-          } else if (/^Thinking/i.test(statusText) || /^Ran\s+/i.test(statusText)) {
+          } else if (/^Thinking/i.test(statusText)) {
+            if (runState && streaming) runState.textContent = "Thinking...";
+          } else if (/^Model:/i.test(statusText) || /^Decision:/i.test(statusText) || /^Queued behind/i.test(statusText)) {
+            if (runState && streaming) runState.textContent = "Working...";
+          } else if (/^Ran\s+/i.test(statusText)) {
             addMessage(statusText, "cmd");
           } else {
             addMessage(statusText, "a");
           }
         } else if (m.type === "assistant") {
           addMessage(m.text || "", "a");
+          if (currentMode === "plan") showPlanDecisionCard();
         } else if (m.type === "editPreview") {
           addEditPreview(m.path || "unknown", m.patch || "");
         } else if (m.type === "terminalCommand") {
@@ -1053,8 +1358,17 @@
               '<div class="item-sub">' + esc(x.detail) + '</div>' +
             '</div>'
           )).join("") || "No timeline";
+        } else if (m.type === "threadState") {
+          const data = m.data || {};
+          currentThreadId = data.activeThreadId || null;
+          openChats = Array.isArray(data.openChats) ? data.openChats : [];
+          recentHistory = Array.isArray(data.recentHistory) ? data.recentHistory : [];
+          renderThreadList();
+          restoreDraftForThread(currentThreadId);
         } else if (m.type === "historyItems") {
           const rows = m.data || [];
+          recentHistory = rows;
+          renderThreadList();
           history.innerHTML = rows.map((x) => (
             '<div class="item" data-id="' + esc(x.id) + '">' +
               '<div class="item-title">' + esc(x.title) + '</div>' +
@@ -1062,7 +1376,10 @@
             '</div>'
           )).join("") || "No history";
           history.querySelectorAll(".item").forEach((el) => {
-            el.onclick = () => v.postMessage({ type: "openSession", id: el.getAttribute("data-id") });
+            el.onclick = () => {
+              saveCurrentDraft();
+              v.postMessage({ type: "openSession", id: el.getAttribute("data-id") });
+            };
           });
           if (taskList) {
             taskList.innerHTML = rows.slice(0, 8).map((x) => (
@@ -1077,7 +1394,10 @@
               '</div>'
             )).join("") || '<div class="task-meta">No task history yet.</div>';
             taskList.querySelectorAll(".task-entry").forEach((el) => {
-              el.onclick = () => v.postMessage({ type: "openSession", id: el.getAttribute("data-id") });
+              el.onclick = () => {
+                saveCurrentDraft();
+                v.postMessage({ type: "openSession", id: el.getAttribute("data-id") });
+              };
             });
           }
           if (viewAllTasks) viewAllTasks.textContent = "View all (" + rows.length + ")";
@@ -1087,6 +1407,15 @@
             '<div class="item"><div class="item-title">Freshness</div><div class="item-sub">' + esc(m.data?.freshness || "stale") + '</div></div>' +
             '<div class="item"><div class="item-title">Last matches</div><div class="item-sub">' + esc(m.data?.lastQueryMatches || 0) + '</div></div>' +
             '<div class="item"><div class="item-title">Last rebuild</div><div class="item-sub">' + esc(m.data?.lastRebuildAt || "n/a") + '</div></div>';
+        } else if (m.type === "contextStatus") {
+          if (contextPill) {
+            const enabled = m.data?.enabled !== false;
+            const fresh = String(m.data?.indexFreshness || "cold");
+            const snippets = Number(m.data?.snippets || 0);
+            contextPill.textContent = enabled
+              ? "IDE: on · Index: " + fresh + " · Snippets: " + snippets
+              : "IDE: off";
+          }
         } else if (m.type === "roundtable") {
           agents.textContent = JSON.stringify(m.data || {}, null, 2);
         } else if (m.type === "execLogs") {
@@ -1112,6 +1441,7 @@
         } else if (m.type === "pendingActions") {
           // Auto execution mode; pending count is reflected via status messages.
         } else if (m.type === "err") {
+          clearPlanDecisionCard();
           setStreaming(false);
           streamBubble = null;
           addMessage("Error: " + m.text, "e");
@@ -1119,9 +1449,16 @@
         } else if (m.type === "prefill") {
           input.value = m.text || "";
         } else if (m.type === "load") {
+          clearPlanDecisionCard();
+          if (m.threadId !== undefined) currentThreadId = m.threadId;
           while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
-          (m.data || []).forEach((x) => addMessage(x.content, x.role === "user" ? "u" : "a"));
+          (m.data || []).forEach((x) => {
+            const body = x.role === "assistant" ? normalizeAssistantText(x.content) : x.content;
+            addMessage(body, x.role === "user" ? "u" : "a");
+          });
           updateStartupVisibility();
+          renderThreadList();
+          restoreDraftForThread(currentThreadId);
           showTab("chat");
           followLatest = true;
           scrollToLatest(true);
@@ -1129,5 +1466,6 @@
       });
 
       updateStartupVisibility();
+      renderThreadList();
       applyModeUI("auto");
       v.postMessage({ type: "check" });

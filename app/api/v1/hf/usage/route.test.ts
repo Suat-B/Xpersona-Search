@@ -36,16 +36,20 @@ vi.mock("drizzle-orm", () => ({
 vi.mock("@/lib/hf-router/rate-limit", () => ({
   PLAN_LIMITS: {
     trial: {
-      contextCap: 8192,
+      contextHardCap: 8192,
+      maxInputTokensPerRequest: 8192,
       maxOutputTokens: 256,
-      maxRequestsPerDay: 30,
-      maxOutputTokensPerMonth: 50000,
+      maxRequestsPerCycle: 30,
+      maxTotalTokensPerCycle: 120000,
+      maxTotalTokensPerMonth: 1500000,
     },
-    paid: {
-      contextCap: 16384,
+    builder: {
+      contextHardCap: 32768,
+      maxInputTokensPerRequest: 32768,
       maxOutputTokens: 512,
-      maxRequestsPerDay: 100,
-      maxOutputTokensPerMonth: 300000,
+      maxRequestsPerCycle: 1000,
+      maxTotalTokensPerCycle: 1800000,
+      maxTotalTokensPerMonth: 25000000,
     },
   },
   getUserUsageStats: mockGetUserUsageStats,
@@ -101,15 +105,20 @@ describe("GET /api/v1/hf/usage", () => {
       );
 
     mockGetUserUsageStats.mockResolvedValueOnce({
-      plan: "paid",
-      today: {
+      plan: "builder",
+      cycle: {
         requestsUsed: 12,
-        requestsLimit: 100,
-        tokensOutput: 0,
+        requestsLimit: 1000,
+        tokensTotalUsed: 2400,
+        tokensTotalLimit: 1800000,
+        startsAt: "2026-03-03T10:00:00.000Z",
+        endsAt: "2026-03-03T15:00:00.000Z",
       },
       thisMonth: {
+        tokensInput: 5000,
         tokensOutput: 2400,
-        tokensLimit: 300000,
+        tokensTotal: 7400,
+        tokensLimit: 25000000,
         estimatedCost: 0.42,
       },
     });
@@ -121,9 +130,9 @@ describe("GET /api/v1/hf/usage", () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.plan).toBe("paid");
-    expect(body.today.requestsRemaining).toBe(88);
-    expect(body.thisMonth.tokensRemaining).toBe(297600);
+    expect(body.plan).toBe("builder");
+    expect(body.cycle.requestsRemaining).toBe(988);
+    expect(body.thisMonth.tokensRemaining).toBe(24992600);
   });
 });
 
@@ -133,4 +142,3 @@ describe("POST /api/v1/hf/usage", () => {
     expect(res.status).toBe(405);
   });
 });
-

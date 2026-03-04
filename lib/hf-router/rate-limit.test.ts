@@ -10,13 +10,13 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import {
+  PLAN_LIMITS,
   checkRateLimits,
   estimateMessagesTokens,
   estimateTokens,
   getUserPlan,
   getUserUsageStats,
   incrementUsage,
-  PLAN_LIMITS,
 } from "./rate-limit";
 
 function createSelectChain(rows: unknown[]) {
@@ -45,173 +45,150 @@ describe("hf-router/rate-limit", () => {
   });
 
   it("returns null plan when user has no subscription", async () => {
-    mockDb.select.mockImplementationOnce(() => createSelectChain([]));
     const result = await getUserPlan("user-1");
     expect(result).toBeNull();
   });
 
   it("marks expired trials as inactive", async () => {
     mockDb.select.mockImplementationOnce(() =>
-      createSelectChain([
-        {
-          planTier: "trial",
-          status: "trial",
-          trialEndsAt: new Date("2026-03-01T00:00:00.000Z"),
-        },
-      ])
+      createSelectChain([{ planTier: "trial", status: "trial", trialEndsAt: new Date("2026-03-01T00:00:00.000Z") }])
     );
-
     const result = await getUserPlan("user-1");
     expect(result).toEqual({ plan: "trial", isActive: false });
   });
 
-  it("rejects when there is no active playground subscription", async () => {
-    mockDb.select.mockImplementationOnce(() => createSelectChain([]));
-
-    const result = await checkRateLimits("user-1", 128, 200);
-    expect(result.allowed).toBe(false);
-    expect(result.reason).toContain("No active playground subscription");
+  it("accepts valid paid tier plans", async () => {
+    mockDb.select.mockImplementationOnce(() =>
+      createSelectChain([{ planTier: "builder", status: "active", trialEndsAt: null }])
+    );
+    const result = await getUserPlan("user-1");
+    expect(result).toEqual({ plan: "builder", isActive: true });
   });
 
-  it("rejects when request max_tokens exceeds plan cap", async () => {
+  it("rejects when max_tokens exceeds plan cap", async () => {
     mockDb.select.mockImplementationOnce(() =>
-      createSelectChain([
-        {
-          planTier: "trial",
-          status: "trial",
-          trialEndsAt: new Date("2026-03-05T00:00:00.000Z"),
-        },
-      ])
+      createSelectChain([{ planTier: "builder", status: "active", trialEndsAt: null }])
     );
-
-    const result = await checkRateLimits("user-1", PLAN_LIMITS.trial.maxOutputTokens + 1, 100);
+    const result = await checkRateLimits("user-1", PLAN_LIMITS.builder.maxOutputTokens + 1, 100);
     expect(result.allowed).toBe(false);
-    expect(result.reason).toContain("exceeds your plan limit");
+    expect(result.reason).toContain("max_tokens");
   });
 
-  it("rejects when context estimate exceeds plan cap", async () => {
+  it("rejects when context estimate exceeds input cap", async () => {
     mockDb.select.mockImplementationOnce(() =>
-      createSelectChain([
-        {
-          planTier: "trial",
-          status: "trial",
-          trialEndsAt: new Date("2026-03-05T00:00:00.000Z"),
-        },
-      ])
+      createSelectChain([{ planTier: "starter", status: "active", trialEndsAt: null }])
     );
-
-    const result = await checkRateLimits("user-1", 128, PLAN_LIMITS.trial.contextCap + 1);
+    const result = await checkRateLimits("user-1", 256, PLAN_LIMITS.starter.maxInputTokensPerRequest + 1);
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain("Context length");
   });
 
-  it("rejects when daily request limit is reached", async () => {
+  it("rejects when cycle request limit is reached", async () => {
     mockDb.select
       .mockImplementationOnce(() =>
-        createSelectChain([
-          {
-            planTier: "trial",
-            status: "trial",
-            trialEndsAt: new Date("2026-03-05T00:00:00.000Z"),
-          },
-        ])
+        createSelectChain([{ planTier: "trial", status: "trial", trialEndsAt: new Date("2026-03-05T00:00:00.000Z") }])
       )
       .mockImplementationOnce(() =>
-        createSelectChain([{ requestsCount: PLAN_LIMITS.trial.maxRequestsPerDay }])
+        createSelectChain([{ requestsCount: PLAN_LIMITS.trial.maxRequestsPerCycle, tokensInput: 0, tokensOutput: 0 }])
       );
 
     const result = await checkRateLimits("user-1", 128, 100);
     expect(result.allowed).toBe(false);
-    expect(result.reason).toContain("Daily request limit reached");
+    expect(result.reason).toContain("5-hour request limit reached");
   });
 
-  it("rejects when monthly output cap would be exceeded", async () => {
+  it("rejects when cycle total token budget would be exceeded", async () => {
     mockDb.select
       .mockImplementationOnce(() =>
-        createSelectChain([
-          {
-            planTier: "trial",
-            status: "trial",
-            trialEndsAt: new Date("2026-03-05T00:00:00.000Z"),
-          },
-        ])
+        createSelectChain([{ planTier: "trial", status: "trial", trialEndsAt: new Date("2026-03-05T00:00:00.000Z") }])
       )
-      .mockImplementationOnce(() => createSelectChain([{ requestsCount: 0 }]))
       .mockImplementationOnce(() =>
-        createSelectChain([{ tokensOutput: PLAN_LIMITS.trial.maxOutputTokensPerMonth - 20 }])
+        createSelectChain([{ requestsCount: 5, tokensInput: 119900, tokensOutput: 0 }])
       );
 
-    const result = await checkRateLimits("user-1", 50, 100);
+    const result = await checkRateLimits("user-1", 200, 200);
     expect(result.allowed).toBe(false);
-    expect(result.reason).toContain("Monthly output token limit would be exceeded");
+    expect(result.reason).toContain("5-hour total token budget");
   });
 
-  it("allows request when all limits pass", async () => {
+  it("rejects when monthly total token budget would be exceeded", async () => {
     mockDb.select
       .mockImplementationOnce(() =>
-        createSelectChain([
-          {
-            planTier: "paid",
-            status: "active",
-            trialEndsAt: null,
-          },
-        ])
+        createSelectChain([{ planTier: "trial", status: "trial", trialEndsAt: new Date("2026-03-05T00:00:00.000Z") }])
       )
-      .mockImplementationOnce(() => createSelectChain([{ requestsCount: 12 }]))
-      .mockImplementationOnce(() => createSelectChain([{ tokensOutput: 1000 }]));
+      .mockImplementationOnce(() =>
+        createSelectChain([{ requestsCount: 1, tokensInput: 1000, tokensOutput: 1000 }])
+      )
+      .mockImplementationOnce(() =>
+        createSelectChain([{ tokensInput: 1_499_900, tokensOutput: 0 }])
+      );
+
+    const result = await checkRateLimits("user-1", 200, 200);
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain("Monthly total token budget");
+  });
+
+  it("allows request when limits pass", async () => {
+    mockDb.select
+      .mockImplementationOnce(() =>
+        createSelectChain([{ planTier: "builder", status: "active", trialEndsAt: null }])
+      )
+      .mockImplementationOnce(() =>
+        createSelectChain([{ requestsCount: 12, tokensInput: 1000, tokensOutput: 2000 }])
+      )
+      .mockImplementationOnce(() =>
+        createSelectChain([{ tokensInput: 4000, tokensOutput: 5000 }])
+      );
 
     const result = await checkRateLimits("user-1", 300, 500);
     expect(result.allowed).toBe(true);
-    expect(result.currentUsage).toEqual({ dailyRequests: 12, monthlyOutputTokens: 1000 });
-    expect(result.limits).toEqual(PLAN_LIMITS.paid);
+    expect(result.limits).toEqual(PLAN_LIMITS.builder);
   });
 
-  it("returns usage stats with derived limits and monthly estimated cost", async () => {
+  it("returns usage stats from cycle + monthly totals", async () => {
     mockDb.select
       .mockImplementationOnce(() =>
-        createSelectChain([
-          {
-            planTier: "paid",
-            status: "active",
-            trialEndsAt: null,
-          },
-        ])
+        createSelectChain([{ planTier: "studio", status: "active", trialEndsAt: null }])
       )
-      .mockImplementationOnce(() => createSelectChain([{ requestsCount: 4 }]))
-      .mockImplementationOnce(() => createSelectChain([{ tokensOutput: 900 }]))
-      .mockImplementationOnce(() => createSelectChain([{ estimatedCostUsd: 0.123 }]));
+      .mockImplementationOnce(() =>
+        createSelectChain([{ requestsCount: 4, tokensInput: 700, tokensOutput: 1300 }])
+      )
+      .mockImplementationOnce(() =>
+        createSelectChain([{ tokensInput: 2000, tokensOutput: 5000 }])
+      )
+      .mockImplementationOnce(() =>
+        createSelectChain([{ estimatedCostUsd: 0.123 }])
+      );
 
     const stats = await getUserUsageStats("user-1");
     expect(stats).toEqual({
-      plan: "paid",
-      today: {
+      plan: "studio",
+      cycle: {
         requestsUsed: 4,
-        requestsLimit: PLAN_LIMITS.paid.maxRequestsPerDay,
-        tokensOutput: 0,
+        requestsLimit: PLAN_LIMITS.studio.maxRequestsPerCycle,
+        tokensTotalUsed: 2000,
+        tokensTotalLimit: PLAN_LIMITS.studio.maxTotalTokensPerCycle,
+        startsAt: "2026-03-03T10:00:00.000Z",
+        endsAt: "2026-03-03T15:00:00.000Z",
       },
       thisMonth: {
-        tokensOutput: 900,
-        tokensLimit: PLAN_LIMITS.paid.maxOutputTokensPerMonth,
+        tokensInput: 2000,
+        tokensOutput: 5000,
+        tokensTotal: 7000,
+        tokensLimit: PLAN_LIMITS.studio.maxTotalTokensPerMonth,
         estimatedCost: 0.123,
       },
     });
   });
 
-  it("updates both daily and monthly counters on incrementUsage", async () => {
+  it("updates both cycle and monthly counters on incrementUsage", async () => {
     await incrementUsage("user-1", 120, 80, 0.004);
     expect(mockDb.insert).toHaveBeenCalledTimes(2);
   });
 
-  it("estimates tokens and message tokens consistently", () => {
+  it("estimates tokens consistently", () => {
     expect(estimateTokens("abcd")).toBe(1);
     expect(estimateTokens("abcdefgh")).toBe(2);
-
-    const total = estimateMessagesTokens([
-      { content: "Hello" },
-      { content: "World" },
-    ]);
-    expect(total).toBeGreaterThan(0);
-    expect(total).toBe(15);
+    expect(estimateMessagesTokens([{ content: "Hello" }, { content: "World" }])).toBe(18);
   });
 });
-

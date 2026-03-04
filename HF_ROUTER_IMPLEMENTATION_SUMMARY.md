@@ -7,7 +7,7 @@ Audit date: March 3, 2026
 The core HF router is implemented and working:
 - API key auth
 - subscription gating
-- daily and monthly quota checks
+- 5-hour cycle + monthly total-token quota checks
 - OpenAI-compatible chat route
 - usage logging and aggregate counters
 - usage API for end users and dashboard
@@ -38,17 +38,41 @@ The core HF router is implemented and working:
 
 ## Plan Limits (Current Code)
 
-Trial:
-- Daily requests: `30`
-- Context cap: `8192`
-- Max output/request: `256`
-- Monthly output cap: `50000`
+Reset semantics:
+- 5-hour UTC cycle windows for request + cycle-token budgets
+- Monthly UTC calendar windows for monthly total-token budgets
 
-Paid:
-- Daily requests: `100`
-- Context cap: `16384`
+Trial:
+- Max requests/5h: `30`
+- Context hard cap/request: `8192`
+- Max input/request: `8192`
+- Max output/request: `256`
+- Max total tokens/5h: `120000`
+- Max total tokens/month: `1500000`
+
+Starter:
+- Max requests/5h: `300`
+- Context hard cap/request: `32768`
+- Max input/request: `32768`
 - Max output/request: `512`
-- Monthly output cap: `300000`
+- Max total tokens/5h: `600000`
+- Max total tokens/month: `8000000`
+
+Builder:
+- Max requests/5h: `1000`
+- Context hard cap/request: `32768`
+- Max input/request: `32768`
+- Max output/request: `512`
+- Max total tokens/5h: `1800000`
+- Max total tokens/month: `25000000`
+
+Studio:
+- Max requests/5h: `3000`
+- Context hard cap/request: `32768`
+- Max input/request: `32768`
+- Max output/request: `512`
+- Max total tokens/5h: `4500000`
+- Max total tokens/month: `60000000`
 
 Source: `PLAN_LIMITS` in `lib/hf-router/rate-limit.ts`.
 
@@ -86,7 +110,7 @@ Feature flags:
 ### P1
 - [ ] Add admin-level observability for HF router economics and abuse signals.
   - global request volume by day/week
-  - paid vs trial consumption
+  - trial vs starter/builder/studio consumption
   - error/rate-limit trends
   - top models and high-cost users
 
@@ -100,7 +124,7 @@ Feature flags:
 
 ### P2
 - [ ] Document and standardize reset semantics.
-  - Quota reset currently uses UTC date boundaries
+  - Quota reset currently uses UTC 5-hour boundaries
   - Add explicit docs in public API docs to avoid user confusion
 
 - [ ] Revisit request payload logging policy.
@@ -126,3 +150,13 @@ Specifically, `hf_daily_usage.usageDate` differs in type across the two files (`
 
 - Stripe integration is already implemented (checkout + webhook + subscription sync). The previous summary section that marked Stripe as "still needed" was outdated.
 - Dashboard usage UI and checkout wiring are already implemented and should no longer be listed as missing.
+
+## Cost Controls
+
+- "Unlimited context" is UX framing; enforced limits still cap per-request input tokens.
+- Spend protection uses layered controls:
+  - max input/request
+  - max output/request
+  - max total tokens/5h cycle
+  - max total tokens/month
+- Token accounting remains heuristic (`chars / 4`) and should be upgraded later for tighter cost prediction.

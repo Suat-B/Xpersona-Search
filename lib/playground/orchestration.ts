@@ -72,6 +72,32 @@ type StructuredAssistOutput = {
 const HF_ROUTER_BASE_URL = "https://router.huggingface.co/v1";
 const STANDARD_CONTEXT_LIMIT = 32_000;
 const LONG_CONTEXT_LIMIT = 262_144;
+const DEFAULT_PLAYGROUND_MODEL = "Qwen/Qwen3-4B-Instruct-2507:nscale";
+const HF_REQUEST_TIMEOUT_MS = Number(process.env.PLAYGROUND_HF_REQUEST_TIMEOUT_MS || 90_000);
+const HF_STREAM_IDLE_TIMEOUT_MS = Number(process.env.PLAYGROUND_HF_STREAM_IDLE_TIMEOUT_MS || 45_000);
+const STREAM_RAW_MODEL_TOKENS = process.env.PLAYGROUND_STREAM_MODEL_TOKENS === "1";
+
+function resolveModelAlias(model: string | undefined, fallbackModel: string): string {
+  const trimmed = (model || "").trim();
+  if (!trimmed) return fallbackModel;
+  const normalized = trimmed.toLowerCase();
+  if (normalized === "playground" || normalized === "playground ai" || normalized === "playground 1") {
+    return fallbackModel;
+  }
+  return trimmed;
+}
+
+function isLikelyInvalidModelError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("model") &&
+    (lower.includes("not found") ||
+      lower.includes("unknown") ||
+      lower.includes("invalid") ||
+      lower.includes("does not exist") ||
+      lower.includes("unrecognized"))
+  );
+}
 
 function getHfRouterToken(): string | undefined {
   return process.env.HF_ROUTER_TOKEN || process.env.HF_TOKEN || process.env.HUGGINGFACE_TOKEN;
@@ -153,21 +179,44 @@ function buildPlan(task: string, context?: AssistContext): AssistPlan {
   };
 }
 
+function hasCodeTaskSignals(task: string): boolean {
+  return /\b(code|file|function|class|bug|error|fix|refactor|implement|build|test|lint|typecheck|stack trace|exception|module|api|endpoint|sql|schema|patch|edit|debug|feature)\b/i.test(task);
+}
+
 function classifyMode(task: string): { mode: AssistDecisionMode; reason: string; confidence: number } {
-  const lower = task.toLowerCase();
+  const lower = task.toLowerCase().trim();
+  const questionLike =
+    /\?$/.test(lower) ||
+    /^(what|why|how|when|where|who|which|can|could|would|should|is|are|do|does|did)\b/.test(lower) ||
+    /\b(explain|define|tell me)\b/.test(lower);
+
   if (/\b(what model|which model|who are you|what are you)\b/.test(lower)) {
     return { mode: "generate", reason: "Task is conversational/identity and should answer directly.", confidence: 0.82 };
+  }
+  if (questionLike && !hasCodeTaskSignals(lower)) {
+    return { mode: "generate", reason: "Task is informational and should receive a direct answer.", confidence: 0.78 };
   }
   if (/\b(error|bug|fix|failing|crash|exception|trace|stack)\b/.test(lower)) {
     return { mode: "debug", reason: "Task appears defect-oriented.", confidence: 0.86 };
   }
-  if (/\bplan|design|architecture|roadmap|spec|approach\b/.test(lower)) {
+  if (/\b(plan|design|architecture|roadmap|spec|approach)\b/.test(lower)) {
     return { mode: "plan", reason: "Task asks for planning/specification.", confidence: 0.88 };
   }
   if (/\brefactor|implement|build|create|add|ship|feature\b/.test(lower)) {
     return { mode: "generate", reason: "Task asks for implementation output.", confidence: 0.74 };
   }
-  return { mode: "plan", reason: "Low confidence; fallback to planning first.", confidence: 0.49 };
+  return {
+    mode: "generate",
+    reason: "Ambiguous request; defaulting to direct response instead of plan-only output.",
+    confidence: 0.58,
+  };
+}
+
+function extractReasoningPreference(workflowIntentId?: string): "low" | "medium" | "high" | "max" | null {
+  if (!workflowIntentId) return null;
+  const m = /^reasoning:(low|medium|high|max)$/i.exec(workflowIntentId.trim());
+  if (!m?.[1]) return null;
+  return m[1].toLowerCase() as "low" | "medium" | "high" | "max";
 }
 
 function contextToPrompt(context?: AssistContext, attachments?: AssistAttachment[]): string {
@@ -214,26 +263,39 @@ async function callHfChat(params: {
     );
   }
 
-  const r = await fetch(`${HF_ROUTER_BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      model: params.model,
-      stream: true,
-      max_tokens: params.maxTokens,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are Playground AI. Be practical, concise, and execution-oriented. Return plain text suitable for a coding assistant.",
-        },
-        { role: "user", content: params.prompt },
-      ],
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), HF_REQUEST_TIMEOUT_MS);
+  let r: Response;
+  try {
+    r = await fetch(`${HF_ROUTER_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        model: params.model,
+        stream: true,
+        max_tokens: params.maxTokens,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are Playground AI. Be practical, concise, and execution-oriented. Return plain text suitable for a coding assistant.",
+          },
+          { role: "user", content: params.prompt },
+        ],
+      }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`HF router request timed out after ${HF_REQUEST_TIMEOUT_MS}ms.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!r.ok) {
     const msg = (await r.text().catch(() => "")) || `HF error ${r.status}`;
@@ -248,6 +310,22 @@ async function callHfChat(params: {
     const decoder = new TextDecoder();
     let buffer = "";
     let out = "";
+    const readWithIdleTimeout = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        return await Promise.race([
+          reader.read(),
+          new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error(`HF router stream idle timeout after ${HF_STREAM_IDLE_TIMEOUT_MS}ms.`)),
+              HF_STREAM_IDLE_TIMEOUT_MS
+            );
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
     const findSeparator = (value: string): { index: number; len: number } => {
       const idxLf = value.indexOf("\n\n");
       const idxCrlf = value.indexOf("\r\n\r\n");
@@ -289,7 +367,7 @@ async function callHfChat(params: {
 
     let streamDone = false;
     while (!streamDone) {
-      const { done, value } = await reader.read();
+      const { done, value } = await readWithIdleTimeout();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
 
@@ -319,21 +397,64 @@ async function callHfChat(params: {
   return text;
 }
 
+function extractBalancedJsonObject(text: string): string | null {
+  const source = text.trim();
+  if (!source) return null;
+
+  let start = source.indexOf("{");
+  while (start >= 0) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = start; i < source.length; i += 1) {
+      const ch = source[i];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (ch === "\\") {
+          escaped = true;
+          continue;
+        }
+        if (ch === '"') {
+          inString = false;
+        }
+        continue;
+      }
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+      if (ch === "{") {
+        depth += 1;
+        continue;
+      }
+      if (ch === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          return source.slice(start, i + 1);
+        }
+      }
+    }
+    start = source.indexOf("{", start + 1);
+  }
+  return null;
+}
+
 function extractJsonObjectCandidate(text: string): string | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
-  if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
 
-  const fenced = trimmed.match(/```json\s*([\s\S]*?)```/i) || trimmed.match(/```\s*([\s\S]*?)```/i);
-  if (fenced?.[1]) {
-    const block = fenced[1].trim();
-    if (block.startsWith("{") && block.endsWith("}")) return block;
-  }
+  const direct = extractBalancedJsonObject(trimmed);
+  if (direct) return direct;
 
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start >= 0 && end > start) {
-    return trimmed.slice(start, end + 1);
+  const fencedMatches = trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi);
+  for (const match of fencedMatches) {
+    const block = String(match?.[1] || "").trim();
+    if (!block) continue;
+    const fromFence = extractBalancedJsonObject(block);
+    if (fromFence) return fromFence;
   }
   return null;
 }
@@ -342,8 +463,8 @@ function parseStructuredAssistResponse(raw: string): StructuredAssistOutput | nu
   const candidate = extractJsonObjectCandidate(raw);
   if (!candidate) return null;
 
-  try {
-    const parsed = JSON.parse(candidate) as {
+  const parseCandidate = (value: string) => {
+    const parsed = JSON.parse(value) as {
       final?: unknown;
       edits?: unknown;
       commands?: unknown;
@@ -358,17 +479,17 @@ function parseStructuredAssistResponse(raw: string): StructuredAssistOutput | nu
 
     const edits = Array.isArray(parsed.edits)
       ? parsed.edits
-          .filter((e): e is { path: string; patch: string; rationale?: string } => {
+          .filter((e): e is { path: string; patch?: string; diff?: string; rationale?: string } => {
             return (
               !!e &&
               typeof e === "object" &&
               typeof (e as { path?: unknown }).path === "string" &&
-              typeof (e as { patch?: unknown }).patch === "string"
+              (typeof (e as { patch?: unknown }).patch === "string" || typeof (e as { diff?: unknown }).diff === "string")
             );
           })
           .map((e) => ({
             path: e.path.trim(),
-            patch: e.patch.trim(),
+            patch: String(e.patch ?? e.diff ?? "").trim(),
             ...(typeof e.rationale === "string" && e.rationale.trim() ? { rationale: e.rationale.trim() } : {}),
           }))
           .filter((e) => e.path && e.patch && !e.path.includes("..") && !e.path.startsWith("/") && !/^[a-z]:\\/i.test(e.path))
@@ -384,7 +505,20 @@ function parseStructuredAssistResponse(raw: string): StructuredAssistOutput | nu
       : [];
 
     return { final, edits, commands };
+  };
+
+  try {
+    return parseCandidate(candidate);
   } catch {
+    // Some models escape the full JSON body (e.g. {\"final\":\"...\"}).
+    const deEscaped = candidate.replace(/\\"/g, '"');
+    if (deEscaped !== candidate) {
+      try {
+        return parseCandidate(deEscaped);
+      } catch {
+        return null;
+      }
+    }
     return null;
   }
 }
@@ -401,6 +535,7 @@ function inferPathFromTask(task: string): string | null {
   const patterns = [
     /\b(?:create|make|add|write)\s+(?:a\s+)?(?:new\s+)?file\s+([^\s"'`]+)/i,
     /\b(?:create|make|add|write)\s+([^\s"'`]+\.[a-z0-9]+)\b/i,
+    /\b(?:in|into|to)\s+([^\s"'`]+\.[a-z0-9]+)\b/i,
   ];
   for (const rx of patterns) {
     const m = task.match(rx);
@@ -408,6 +543,11 @@ function inferPathFromTask(task: string): string | null {
       const normalized = normalizeRelativePath(m[1]);
       if (normalized) return normalized;
     }
+  }
+  const pathMentions = task.match(/\b[a-zA-Z0-9_./-]+\.[a-z0-9]+\b/g) || [];
+  for (const mention of pathMentions) {
+    const normalized = normalizeRelativePath(mention);
+    if (normalized) return normalized;
   }
   return null;
 }
@@ -448,39 +588,95 @@ function extractFencedCodeBlocks(text: string): string[] {
   return blocks;
 }
 
+function normalizeModelText(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  const asUnescaped = trimmed.includes("\\n") && !trimmed.includes("\n")
+    ? trimmed
+        .replace(/\\r/g, "")
+        .replace(/\\n/g, "\n")
+        .replace(/\\t/g, "\t")
+    : trimmed;
+  return asUnescaped;
+}
+
+function cleanCodeSnippet(text: string): string {
+  let out = normalizeModelText(text);
+  const fenced = out.match(/^```[a-zA-Z0-9_-]*\n([\s\S]*?)```$/);
+  if (fenced?.[1]) out = fenced[1].trim();
+
+  // Common path header emitted by some models: "# hello.py"
+  out = out.replace(/^\s*(?:#|\/\/)\s*[a-zA-Z0-9_./-]+\.[a-zA-Z0-9_-]+\s*\n/, "");
+  // Trim stray trailing escape artifacts.
+  out = out.replace(/\n?\\\s*$/, "").replace(/\n?\s*"\s*$/, "");
+  return out.trim();
+}
+
+function looksLikeCode(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (/^#!\/usr\/bin\/env\s+\w+/.test(t)) return true;
+  if (/^\s*(def|class|import|from|if __name__|print\(|return\b)\b/m.test(t)) return true;
+  if (/^\s*(const|let|var|function|export|import)\b/m.test(t)) return true;
+  if (/\n/.test(t) && /[{};]/.test(t)) return true;
+  return false;
+}
+
 function extractFinalFromJsonLike(raw: string): string | null {
-  const m = raw.match(/"final"\s*:\s*"([\s\S]*?)"/i);
+  const candidate = extractJsonObjectCandidate(raw);
+  if (candidate) {
+    const attempts = [candidate, candidate.replace(/\\"/g, '"')];
+    for (const attempt of attempts) {
+      try {
+        const parsed = JSON.parse(attempt) as { final?: unknown };
+        if (typeof parsed.final === "string" && parsed.final.trim()) return parsed.final.trim();
+      } catch {
+        // keep trying
+      }
+    }
+  }
+
+  const normalized = raw.includes('\\"final\\"') ? raw.replace(/\\"/g, '"') : raw;
+  const m = normalized.match(/"final"\s*:\s*"((?:\\.|[^"\\])*)"/i);
   if (!m?.[1]) return null;
   try {
-    return JSON.parse(`"${m[1].replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`);
+    return JSON.parse(`"${m[1]}"`);
   } catch {
-    return m[1]
-      .replace(/\\n/g, "\n")
-      .replace(/\\"/g, '"')
-      .trim();
+    return normalizeModelText(m[1]);
   }
 }
 
 function inferStructuredFallback(raw: string, task: string): StructuredAssistOutput | null {
-  const blocks = extractFencedCodeBlocks(raw);
-  if (!blocks.length) return null;
-
   const taskPath = inferPathFromTask(task);
   const edits: Array<{ path: string; patch: string; rationale?: string }> = [];
+  const blocks = extractFencedCodeBlocks(raw);
 
   for (const block of blocks.slice(0, 4)) {
-    const path = taskPath || inferPathFromCode(block);
+    const cleaned = cleanCodeSnippet(block);
+    const path = taskPath || inferPathFromCode(cleaned);
     if (!path) continue;
+    if (!looksLikeCode(cleaned)) continue;
     edits.push({
       path,
-      patch: buildAddOrReplacePatch(path, block),
+      patch: buildAddOrReplacePatch(path, cleaned),
       rationale: "Inferred file creation from fenced code block output.",
     });
   }
 
+  if (!edits.length && taskPath) {
+    const cleanedRaw = cleanCodeSnippet(raw);
+    if (looksLikeCode(cleanedRaw)) {
+      edits.push({
+        path: taskPath,
+        patch: buildAddOrReplacePatch(taskPath, cleanedRaw),
+        rationale: "Inferred file content from raw model output.",
+      });
+    }
+  }
+
   if (!edits.length) return null;
   return {
-    final: raw.trim(),
+    final: normalizeModelText(raw),
     edits,
     commands: [],
   };
@@ -507,6 +703,14 @@ function collectInfluence(context?: AssistContext) {
 
 function hasExecutionIntent(task: string): boolean {
   return /\b(create|make|add|build|implement|refactor|fix|debug|run|test|lint|typecheck|command|file|patch|edit|ship)\b/i.test(task);
+}
+
+function hasExplicitCommandRunIntent(task: string): boolean {
+  return /\b(run|execute|terminal|shell|command|test|tests|lint|typecheck|build|compile|install|npm|pnpm|yarn|pytest|jest|vitest|cargo|go test|mvn|gradle)\b/i.test(task);
+}
+
+function hasCodeEditIntent(task: string): boolean {
+  return /\b(create|make|add|implement|write|modify|edit|patch|refactor|fix|ship|file)\b/i.test(task);
 }
 
 export async function guardPlaygroundAccess(params: {
@@ -580,10 +784,13 @@ export async function runAssist(
           confidence: 0.99,
         } as const);
 
-  const decision =
-    req.mode === "auto" && initialDecision.confidence < 0.65
-      ? { mode: "plan" as const, reason: "Auto low confidence fallback to plan", confidence: initialDecision.confidence }
-      : initialDecision;
+  const shouldFallbackToPlan =
+    req.mode === "auto" &&
+    initialDecision.confidence < 0.65 &&
+    (initialDecision.mode === "plan" || initialDecision.mode === "debug" || hasCodeTaskSignals(req.task));
+  const decision = shouldFallbackToPlan
+    ? { mode: "plan" as const, reason: "Auto low confidence fallback to plan", confidence: initialDecision.confidence }
+    : initialDecision;
 
   const budget = {
     maxTokens: req.contextBudget?.maxTokens ?? 16_384,
@@ -594,9 +801,11 @@ export async function runAssist(
 
   const longContextRequested = budget.maxTokens > STANDARD_CONTEXT_LIMIT;
   const longContextEnabled = process.env.PLAYGROUND_ENABLE_LONG_CONTEXT === "1";
-  const defaultModel = req.model || "Qwen/Qwen3-4B-Instruct-2507:nscale";
-  const longContextModel = process.env.PLAYGROUND_LONG_CONTEXT_MODEL || defaultModel;
-  const model = longContextRequested && longContextEnabled ? longContextModel : defaultModel;
+  const fallbackModel = (process.env.PLAYGROUND_MODEL || DEFAULT_PLAYGROUND_MODEL).trim() || DEFAULT_PLAYGROUND_MODEL;
+  const requestedModel = resolveModelAlias(req.model, fallbackModel);
+  const requestedLongContextModel = resolveModelAlias(process.env.PLAYGROUND_LONG_CONTEXT_MODEL, fallbackModel);
+  const model = longContextRequested && longContextEnabled ? requestedLongContextModel : requestedModel;
+  let modelUsed = model;
 
   const logs: string[] = [];
   logs.push(`decision=${decision.mode} confidence=${decision.confidence.toFixed(2)}`);
@@ -608,6 +817,19 @@ export async function runAssist(
   let final = "";
   let edits: Array<{ path: string; patch: string; rationale?: string }> = [];
   let modelCommands: string[] = [];
+  const explicitCommandRunIntent = hasExplicitCommandRunIntent(req.task);
+  const codeEditIntent = hasCodeEditIntent(req.task);
+  const reasoningPreference = extractReasoningPreference(req.workflowIntentId);
+  const reasoningInstruction =
+    reasoningPreference === "low"
+      ? "Reasoning preference: low. Optimize for speed and concise output."
+      : reasoningPreference === "high"
+        ? "Reasoning preference: high. Reason carefully and validate assumptions before proposing edits."
+        : reasoningPreference === "max"
+          ? "Reasoning preference: max. Be deliberate, safety-first, and include explicit verification steps."
+          : reasoningPreference === "medium"
+            ? "Reasoning preference: medium. Use balanced reasoning with concise steps."
+            : null;
   if (decision.mode === "plan") {
     final = [
       `Objective: ${plan?.objective}`,
@@ -622,11 +844,11 @@ export async function runAssist(
       ...(plan?.riskFlags ?? []).map((s) => `- ${s}`),
     ].join("\n");
   } else {
-    if (hooks?.onStatus) await hooks.onStatus("Thinking...");
     const prompt = [
       `Mode: ${decision.mode}`,
       `Task: ${req.task}`,
       req.workflowIntentId ? `Workflow intent id: ${req.workflowIntentId}` : "",
+      reasoningInstruction,
       `Safety profile: ${effectiveSafety}`,
       `Model: ${model}`,
       "",
@@ -639,25 +861,59 @@ export async function runAssist(
           : "Focus on production-ready implementation guidance with concise rationale.",
       "",
       'Return STRICT JSON only with this shape: {"final":"string","edits":[{"path":"relative/path","patch":"unified diff patch","rationale":"optional"}],"commands":["safe command"]}.',
-      "Rules: keep edits empty when not confident; commands must be safe test/build/lint/typecheck commands; never include markdown fences.",
+      codeEditIntent
+        ? "Rules: include concrete code edits (non-empty edits array) when the user asks to create/modify code; do not return placeholder text."
+        : "Rules: keep edits empty when not confident.",
+      explicitCommandRunIntent
+        ? "Rules: commands may be included only if they are necessary, safe, and directly requested."
+        : "Rules: leave commands empty unless the user explicitly asked you to run/test/build/lint.",
+      "Rules: never include markdown fences.",
     ]
       .filter(Boolean)
       .join("\n");
 
-    const raw = await callHfChat({
-      model,
-      prompt,
-      maxTokens: Math.max(128, Math.min(req.max_tokens ?? 512, LONG_CONTEXT_LIMIT)),
-      onToken: hooks?.onToken,
-    });
+    let raw = "";
+    try {
+        raw = await callHfChat({
+          model,
+          prompt,
+          maxTokens: Math.max(128, Math.min(req.max_tokens ?? 512, LONG_CONTEXT_LIMIT)),
+          onToken: STREAM_RAW_MODEL_TOKENS ? hooks?.onToken : undefined,
+        });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (model !== fallbackModel && isLikelyInvalidModelError(message)) {
+        logs.push(`model_fallback from "${model}" to "${fallbackModel}"`);
+        if (hooks?.onStatus) {
+          await hooks.onStatus(`Model "${model}" unavailable. Falling back to "${fallbackModel}".`);
+        }
+        modelUsed = fallbackModel;
+        raw = await callHfChat({
+          model: fallbackModel,
+          prompt,
+          maxTokens: Math.max(128, Math.min(req.max_tokens ?? 512, LONG_CONTEXT_LIMIT)),
+          onToken: STREAM_RAW_MODEL_TOKENS ? hooks?.onToken : undefined,
+        });
+      } else {
+        throw error;
+      }
+    }
     const structured = parseStructuredAssistResponse(raw) ?? inferStructuredFallback(raw, req.task);
     if (structured) {
-      final = structured.final;
+      final = normalizeModelText(structured.final);
       edits = structured.edits;
       modelCommands = structured.commands;
     } else {
-      final = extractFinalFromJsonLike(raw) || raw;
+      final = normalizeModelText(extractFinalFromJsonLike(raw) || raw);
       logs.push("structured_output=parse_failed; using raw model text");
+    }
+    if (codeEditIntent && edits.length === 0) {
+      const recovered = inferStructuredFallback(final || raw, req.task);
+      if (recovered?.edits.length) {
+        edits = recovered.edits;
+        if (!final.trim() && recovered.final.trim()) final = recovered.final;
+        logs.push("structured_output=recovered_from_fallback_code_inference");
+      }
     }
   }
 
@@ -669,7 +925,11 @@ export async function runAssist(
           ? ["npm run test -- --runInBand"]
           : []
       : [];
-  const commands = Array.from(new Set([...modelCommands, ...(modelCommands.length > 0 ? [] : fallbackCommands)]));
+  let commands = Array.from(new Set([...modelCommands, ...(modelCommands.length > 0 ? [] : fallbackCommands)]));
+  if (!explicitCommandRunIntent && commands.length > 0 && edits.length === 0 && decision.mode !== "yolo") {
+    logs.push("dropped_command_only_actions_without_explicit_run_intent");
+    commands = [];
+  }
   const risk = inferRisk(decision.mode, req.task, commands);
   const influence = collectInfluence(budgetedContext);
   const confidence = Math.max(0.05, Math.min(0.99, decision.confidence));
@@ -689,7 +949,7 @@ export async function runAssist(
     commands,
     final,
     logs,
-    modelUsed: model,
+    modelUsed,
     confidence,
     risk,
     influence,

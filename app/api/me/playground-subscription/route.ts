@@ -58,6 +58,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const [sub] = await db
       .select({
         id: playgroundSubscriptions.id,
+        planTier: playgroundSubscriptions.planTier,
         stripeCustomerId: playgroundSubscriptions.stripeCustomerId,
         stripeSubscriptionId: playgroundSubscriptions.stripeSubscriptionId,
       })
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const nextStatus = mapPlaygroundStatus(updated.status);
     const payload = {
       status: nextStatus,
-      planTier: nextStatus === "trial" ? ("trial" as const) : ("paid" as const),
+      planTier: nextStatus === "trial" ? ("trial" as const) : ((sub.planTier === "starter" || sub.planTier === "builder" || sub.planTier === "studio") ? sub.planTier : "builder"),
       cancelAtPeriodEnd: updated.cancel_at_period_end ?? false,
       currentPeriodStart: toDate((updated as { current_period_start?: number | null }).current_period_start),
       currentPeriodEnd: toDate((updated as { current_period_end?: number | null }).current_period_end),

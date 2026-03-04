@@ -1,40 +1,66 @@
 /**
  * HuggingFace Router Rate Limiting
- * 
- * Plan Limits:
- * - Trial: 30 req/day, 8k context, 256 max output, 50k monthly output tokens
- * - Paid: 100 req/day, 16k context, 512 max output, 300k monthly output tokens
+ *
+ * Canonical limits (5-hour cycle):
+ * - Trial: 8k input/request, 256 max output, 30 req/cycle, 120k tokens/cycle, 1.5M tokens/month
+ * - Starter: 32k input/request, 512 max output, 300 req/cycle, 600k tokens/cycle, 8M tokens/month
+ * - Builder: 32k input/request, 512 max output, 1k req/cycle, 1.8M tokens/cycle, 25M tokens/month
+ * - Studio: 32k input/request, 512 max output, 3k req/cycle, 4.5M tokens/cycle, 60M tokens/month
  */
 
 import { db } from "@/lib/db";
-import { hfDailyUsage, hfMonthlyUsage, playgroundSubscriptions } from "@/lib/db/playground-schema";
-import { eq, and, sql } from "drizzle-orm";
+import { hfCycleUsage, hfMonthlyUsage, playgroundSubscriptions } from "@/lib/db/playground-schema";
+import { and, eq, sql } from "drizzle-orm";
 
-export type PlaygroundPlan = "trial" | "paid";
+export type PlaygroundPlan = "trial" | "starter" | "builder" | "studio";
 
 export interface PlanLimits {
-  /** Max context length in tokens */
-  contextCap: number;
+  /** Visible UX ceiling for context window (tokens) */
+  contextHardCap: number;
   /** Max output tokens per request */
   maxOutputTokens: number;
-  /** Max requests per day */
-  maxRequestsPerDay: number;
-  /** Max output tokens per month */
-  maxOutputTokensPerMonth: number;
+  /** Max requests per 5-hour cycle */
+  maxRequestsPerCycle: number;
+  /** Max input tokens per request */
+  maxInputTokensPerRequest: number;
+  /** Max total tokens (input + output) per 5-hour cycle */
+  maxTotalTokensPerCycle: number;
+  /** Max total tokens (input + output) per month */
+  maxTotalTokensPerMonth: number;
 }
 
 export const PLAN_LIMITS: Record<PlaygroundPlan, PlanLimits> = {
   trial: {
-    contextCap: 8192,
+    contextHardCap: 8192,
     maxOutputTokens: 256,
-    maxRequestsPerDay: 30,
-    maxOutputTokensPerMonth: 50000,
+    maxRequestsPerCycle: 30,
+    maxInputTokensPerRequest: 8192,
+    maxTotalTokensPerCycle: 120_000,
+    maxTotalTokensPerMonth: 1_500_000,
   },
-  paid: {
-    contextCap: 16384,
+  starter: {
+    contextHardCap: 32_768,
     maxOutputTokens: 512,
-    maxRequestsPerDay: 100,
-    maxOutputTokensPerMonth: 300000,
+    maxRequestsPerCycle: 300,
+    maxInputTokensPerRequest: 32_768,
+    maxTotalTokensPerCycle: 600_000,
+    maxTotalTokensPerMonth: 8_000_000,
+  },
+  builder: {
+    contextHardCap: 32_768,
+    maxOutputTokens: 512,
+    maxRequestsPerCycle: 1000,
+    maxInputTokensPerRequest: 32_768,
+    maxTotalTokensPerCycle: 1_800_000,
+    maxTotalTokensPerMonth: 25_000_000,
+  },
+  studio: {
+    contextHardCap: 32_768,
+    maxOutputTokens: 512,
+    maxRequestsPerCycle: 3000,
+    maxInputTokensPerRequest: 32_768,
+    maxTotalTokensPerCycle: 4_500_000,
+    maxTotalTokensPerMonth: 60_000_000,
   },
 };
 
@@ -42,10 +68,24 @@ export interface RateLimitResult {
   allowed: boolean;
   reason?: string;
   currentUsage?: {
-    dailyRequests: number;
-    monthlyOutputTokens: number;
+    cycleRequests: number;
+    cycleTotalTokens: number;
+    monthlyTotalTokens: number;
   };
   limits?: PlanLimits;
+}
+
+export function getCurrentFiveHourWindow(now = new Date()): { start: Date; end: Date } {
+  const start = new Date(now);
+  start.setUTCMinutes(0, 0, 0);
+  const currentUtcHour = start.getUTCHours();
+  const blockStartHour = Math.floor(currentUtcHour / 5) * 5;
+  start.setUTCHours(blockStartHour, 0, 0, 0);
+
+  const end = new Date(start);
+  end.setUTCHours(end.getUTCHours() + 5);
+
+  return { start, end };
 }
 
 /**
@@ -62,80 +102,101 @@ export async function getUserPlan(userId: string): Promise<{ plan: PlaygroundPla
     .where(eq(playgroundSubscriptions.userId, userId))
     .limit(1);
 
-  if (subscription.length === 0) {
-    return null;
-  }
+  if (subscription.length === 0) return null;
 
   const sub = subscription[0];
-  
-  // Check if trial has expired
-  if (sub.planTier === "trial" && sub.trialEndsAt) {
-    if (new Date() > sub.trialEndsAt) {
-      return { plan: "trial", isActive: false };
-    }
+  const planTier = (sub.planTier ?? "trial") as PlaygroundPlan;
+  if (!(planTier in PLAN_LIMITS)) return null;
+
+  if (planTier === "trial" && sub.trialEndsAt) {
+    if (new Date() > sub.trialEndsAt) return { plan: "trial", isActive: false };
   }
 
   const isActive = sub.status === "active" || sub.status === "trial";
-  return { plan: sub.planTier as PlaygroundPlan, isActive };
+  return { plan: planTier, isActive };
 }
 
 /**
- * Get daily request count for a user
+ * Get cycle usage for a user
  */
-export async function getDailyRequestCount(userId: string): Promise<number> {
-  const today = new Date().toISOString().split("T")[0];
-  
+export async function getCycleUsage(userId: string, cycleStartAt: Date): Promise<{
+  requestsCount: number;
+  tokensInput: number;
+  tokensOutput: number;
+}> {
   const result = await db
-    .select({ requestsCount: hfDailyUsage.requestsCount })
-    .from(hfDailyUsage)
-    .where(and(
-      eq(hfDailyUsage.userId, userId),
-      eq(hfDailyUsage.usageDate, today)
-    ))
+    .select({
+      requestsCount: hfCycleUsage.requestsCount,
+      tokensInput: hfCycleUsage.tokensInput,
+      tokensOutput: hfCycleUsage.tokensOutput,
+    })
+    .from(hfCycleUsage)
+    .where(
+      and(
+        eq(hfCycleUsage.userId, userId),
+        eq(hfCycleUsage.cycleStartAt, cycleStartAt)
+      )
+    )
     .limit(1);
 
-  return result[0]?.requestsCount ?? 0;
+  return {
+    requestsCount: result[0]?.requestsCount ?? 0,
+    tokensInput: result[0]?.tokensInput ?? 0,
+    tokensOutput: result[0]?.tokensOutput ?? 0,
+  };
 }
 
 /**
- * Get monthly output token count for a user
+ * Get monthly total tokens (input + output) for a user
  */
-export async function getMonthlyOutputTokens(userId: string): Promise<number> {
+export async function getMonthlyTotalTokens(userId: string): Promise<{ input: number; output: number; total: number }> {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
-  
+
   const result = await db
-    .select({ tokensOutput: hfMonthlyUsage.tokensOutput })
+    .select({
+      tokensInput: hfMonthlyUsage.tokensInput,
+      tokensOutput: hfMonthlyUsage.tokensOutput,
+    })
     .from(hfMonthlyUsage)
-    .where(and(
-      eq(hfMonthlyUsage.userId, userId),
-      eq(hfMonthlyUsage.usageYear, year),
-      eq(hfMonthlyUsage.usageMonth, month)
-    ))
+    .where(
+      and(
+        eq(hfMonthlyUsage.userId, userId),
+        eq(hfMonthlyUsage.usageYear, year),
+        eq(hfMonthlyUsage.usageMonth, month)
+      )
+    )
     .limit(1);
 
-  return result[0]?.tokensOutput ?? 0;
+  const input = result[0]?.tokensInput ?? 0;
+  const output = result[0]?.tokensOutput ?? 0;
+  return { input, output, total: input + output };
 }
 
 /**
  * Check all rate limits for a request
+ *
+ * Enforced order:
+ * 1) active subscription
+ * 2) max output/request
+ * 3) context hard cap (input/request)
+ * 4) requests in current 5-hour cycle
+ * 5) total tokens in current cycle
+ * 6) monthly total token cap
  */
 export async function checkRateLimits(
   userId: string,
   requestedMaxTokens: number,
   estimatedInputTokens: number
 ): Promise<RateLimitResult> {
-  // Get user's plan
   const userPlan = await getUserPlan(userId);
-  
   if (!userPlan) {
     return {
       allowed: false,
       reason: "No active playground subscription. Please subscribe to use the HF router.",
     };
   }
-
   if (!userPlan.isActive) {
     return {
       allowed: false,
@@ -145,49 +206,74 @@ export async function checkRateLimits(
 
   const limits = PLAN_LIMITS[userPlan.plan];
 
-  // Check max_tokens against plan limit
   if (requestedMaxTokens > limits.maxOutputTokens) {
     return {
       allowed: false,
-      reason: `max_tokens (${requestedMaxTokens}) exceeds your plan limit of ${limits.maxOutputTokens}. Upgrade to paid plan for higher limits.`,
+      reason: `max_tokens (${requestedMaxTokens}) exceeds your plan limit of ${limits.maxOutputTokens}.`,
       limits,
     };
   }
 
-  // Check context length (estimated input tokens)
-  if (estimatedInputTokens > limits.contextCap) {
+  if (estimatedInputTokens > limits.maxInputTokensPerRequest) {
     return {
       allowed: false,
-      reason: `Context length (${estimatedInputTokens} tokens) exceeds your plan limit of ${limits.contextCap} tokens. Please reduce your prompt size.`,
+      reason: `Context length (${estimatedInputTokens} tokens) exceeds your plan limit of ${limits.contextHardCap} tokens.`,
       limits,
     };
   }
 
-  // Check daily request count
-  const dailyRequests = await getDailyRequestCount(userId);
-  if (dailyRequests >= limits.maxRequestsPerDay) {
+  const { start } = getCurrentFiveHourWindow();
+  const cycleUsage = await getCycleUsage(userId, start);
+  const cycleTotalTokens = cycleUsage.tokensInput + cycleUsage.tokensOutput;
+  if (cycleUsage.requestsCount >= limits.maxRequestsPerCycle) {
     return {
       allowed: false,
-      reason: `Daily request limit reached (${limits.maxRequestsPerDay}). Please try again tomorrow.`,
-      currentUsage: { dailyRequests, monthlyOutputTokens: 0 },
+      reason: `5-hour request limit reached (${limits.maxRequestsPerCycle}). Try again after reset.`,
+      currentUsage: {
+        cycleRequests: cycleUsage.requestsCount,
+        cycleTotalTokens,
+        monthlyTotalTokens: 0,
+      },
       limits,
     };
   }
 
-  // Check monthly output token cap
-  const monthlyTokens = await getMonthlyOutputTokens(userId);
-  if (monthlyTokens + requestedMaxTokens > limits.maxOutputTokensPerMonth) {
+  const projectedCycleTotal = cycleTotalTokens + estimatedInputTokens + requestedMaxTokens;
+  if (projectedCycleTotal > limits.maxTotalTokensPerCycle) {
     return {
       allowed: false,
-      reason: `Monthly output token limit would be exceeded. Used: ${monthlyTokens}, Limit: ${limits.maxOutputTokensPerMonth}.`,
-      currentUsage: { dailyRequests, monthlyOutputTokens: monthlyTokens },
+      reason: `5-hour total token budget would be exceeded. Used: ${cycleTotalTokens}, projected: ${projectedCycleTotal}, limit: ${limits.maxTotalTokensPerCycle}.`,
+      currentUsage: {
+        cycleRequests: cycleUsage.requestsCount,
+        cycleTotalTokens,
+        monthlyTotalTokens: 0,
+      },
+      limits,
+    };
+  }
+
+  const monthly = await getMonthlyTotalTokens(userId);
+  const projectedMonthlyTotal = monthly.total + estimatedInputTokens + requestedMaxTokens;
+  if (projectedMonthlyTotal > limits.maxTotalTokensPerMonth) {
+    return {
+      allowed: false,
+      reason: `Monthly total token budget would be exceeded. Used: ${monthly.total}, projected: ${projectedMonthlyTotal}, limit: ${limits.maxTotalTokensPerMonth}.`,
+      currentUsage: {
+        cycleRequests: cycleUsage.requestsCount,
+        cycleTotalTokens,
+        monthlyTotalTokens: monthly.total,
+      },
       limits,
     };
   }
 
   return {
     allowed: true,
-    currentUsage: { dailyRequests, monthlyOutputTokens: monthlyTokens },
+    currentUsage: {
+      cycleRequests: cycleUsage.requestsCount,
+      cycleTotalTokens,
+      monthlyTotalTokens: monthly.total,
+    },
     limits,
   };
 }
@@ -202,32 +288,33 @@ export async function incrementUsage(
   estimatedCostUsd: number
 ): Promise<void> {
   const now = new Date();
-  const today = now.toISOString().split("T")[0];
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
+  const { start } = getCurrentFiveHourWindow(now);
 
-  // Upsert daily usage
   await db
-    .insert(hfDailyUsage)
+    .insert(hfCycleUsage)
     .values({
       userId,
-      usageDate: today,
+      cycleStartAt: start,
       requestsCount: 1,
       tokensInput,
       tokensOutput,
       estimatedCostUsd,
+      createdAt: now,
+      updatedAt: now,
     })
     .onConflictDoUpdate({
-      target: [hfDailyUsage.userId, hfDailyUsage.usageDate],
+      target: [hfCycleUsage.userId, hfCycleUsage.cycleStartAt],
       set: {
-        requestsCount: sql`${hfDailyUsage.requestsCount} + 1`,
-        tokensInput: sql`${hfDailyUsage.tokensInput} + ${tokensInput}`,
-        tokensOutput: sql`${hfDailyUsage.tokensOutput} + ${tokensOutput}`,
-        estimatedCostUsd: sql`${hfDailyUsage.estimatedCostUsd} + ${estimatedCostUsd}`,
+        requestsCount: sql`${hfCycleUsage.requestsCount} + 1`,
+        tokensInput: sql`${hfCycleUsage.tokensInput} + ${tokensInput}`,
+        tokensOutput: sql`${hfCycleUsage.tokensOutput} + ${tokensOutput}`,
+        estimatedCostUsd: sql`${hfCycleUsage.estimatedCostUsd} + ${estimatedCostUsd}`,
+        updatedAt: now,
       },
     });
 
-  // Upsert monthly usage
   await db
     .insert(hfMonthlyUsage)
     .values({
@@ -235,6 +322,7 @@ export async function incrementUsage(
       usageYear: year,
       usageMonth: month,
       requestsCount: 1,
+      tokensInput,
       tokensOutput,
       estimatedCostUsd,
     })
@@ -242,6 +330,7 @@ export async function incrementUsage(
       target: [hfMonthlyUsage.userId, hfMonthlyUsage.usageYear, hfMonthlyUsage.usageMonth],
       set: {
         requestsCount: sql`${hfMonthlyUsage.requestsCount} + 1`,
+        tokensInput: sql`${hfMonthlyUsage.tokensInput} + ${tokensInput}`,
         tokensOutput: sql`${hfMonthlyUsage.tokensOutput} + ${tokensOutput}`,
         estimatedCostUsd: sql`${hfMonthlyUsage.estimatedCostUsd} + ${estimatedCostUsd}`,
       },
@@ -253,13 +342,18 @@ export async function incrementUsage(
  */
 export async function getUserUsageStats(userId: string): Promise<{
   plan: PlaygroundPlan;
-  today: {
+  cycle: {
     requestsUsed: number;
     requestsLimit: number;
-    tokensOutput: number;
+    tokensTotalUsed: number;
+    tokensTotalLimit: number;
+    startsAt: string;
+    endsAt: string;
   };
   thisMonth: {
+    tokensInput: number;
     tokensOutput: number;
+    tokensTotal: number;
     tokensLimit: number;
     estimatedCost: number;
   };
@@ -268,34 +362,38 @@ export async function getUserUsageStats(userId: string): Promise<{
   if (!userPlan) return null;
 
   const limits = PLAN_LIMITS[userPlan.plan];
-  const dailyRequests = await getDailyRequestCount(userId);
-  const monthlyTokens = await getMonthlyOutputTokens(userId);
-
-  // Get estimated cost for this month
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-  
+  const cycleWindow = getCurrentFiveHourWindow(now);
+  const cycleUsage = await getCycleUsage(userId, cycleWindow.start);
+  const monthly = await getMonthlyTotalTokens(userId);
+
   const monthlyResult = await db
     .select({ estimatedCostUsd: hfMonthlyUsage.estimatedCostUsd })
     .from(hfMonthlyUsage)
-    .where(and(
-      eq(hfMonthlyUsage.userId, userId),
-      eq(hfMonthlyUsage.usageYear, year),
-      eq(hfMonthlyUsage.usageMonth, month)
-    ))
+    .where(
+      and(
+        eq(hfMonthlyUsage.userId, userId),
+        eq(hfMonthlyUsage.usageYear, now.getFullYear()),
+        eq(hfMonthlyUsage.usageMonth, now.getMonth() + 1)
+      )
+    )
     .limit(1);
 
   return {
     plan: userPlan.plan,
-    today: {
-      requestsUsed: dailyRequests,
-      requestsLimit: limits.maxRequestsPerDay,
-      tokensOutput: 0, // Would need to query daily usage for this
+    cycle: {
+      requestsUsed: cycleUsage.requestsCount,
+      requestsLimit: limits.maxRequestsPerCycle,
+      tokensTotalUsed: cycleUsage.tokensInput + cycleUsage.tokensOutput,
+      tokensTotalLimit: limits.maxTotalTokensPerCycle,
+      startsAt: cycleWindow.start.toISOString(),
+      endsAt: cycleWindow.end.toISOString(),
     },
     thisMonth: {
-      tokensOutput: monthlyTokens,
-      tokensLimit: limits.maxOutputTokensPerMonth,
+      tokensInput: monthly.input,
+      tokensOutput: monthly.output,
+      tokensTotal: monthly.total,
+      tokensLimit: limits.maxTotalTokensPerMonth,
       estimatedCost: monthlyResult[0]?.estimatedCostUsd ?? 0,
     },
   };
@@ -303,7 +401,7 @@ export async function getUserUsageStats(userId: string): Promise<{
 
 /**
  * Simple token estimation (rough approximation)
- * 1 token ≈ 4 characters for English text
+ * 1 token ~= 4 characters for English text
  */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
@@ -313,15 +411,11 @@ export function estimateTokens(text: string): number {
  * Calculate total tokens in messages array
  */
 export function estimateMessagesTokens(messages: Array<{ content: string }>): number {
-  // Base tokens for message format
   let total = 3;
-  
   for (const message of messages) {
-    // 4 tokens per message (role + content structure)
     total += 4;
-    // Content tokens
-    total += estimateTokens(message.content);
+    total += estimateTokens(message.content || "");
   }
-  
+  total += 3;
   return total;
 }

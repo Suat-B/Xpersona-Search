@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fail, inferErrorCode, ok } from "@/lib/api/contracts";
 import { GET as getSearchAi } from "@/app/api/search/ai/route";
+import { POST as postPlaygroundCheckout } from "@/app/api/me/playground-checkout/route";
 import {
   applyResponseMetaHeaders,
   cloneHeadersWithProxyBypass,
@@ -58,7 +59,7 @@ function parseJsonIfPossible(raw: string): unknown {
   }
 }
 
-async function proxyToLegacy(req: NextRequest, ctx: RouteContext): Promise<NextResponse> {
+async function proxyToLegacy(req: NextRequest, ctx: RouteContext): Promise<Response> {
   const startedAt = Date.now();
   const { path } = await ctx.params;
   const requestId = getOrCreateRequestId(req);
@@ -68,6 +69,9 @@ async function proxyToLegacy(req: NextRequest, ctx: RouteContext): Promise<NextR
   // during runtime route resolution edge-cases.
   if (req.method.toUpperCase() === "GET" && pathText === "search/ai") {
     return getSearchAi(req);
+  }
+  if (req.method.toUpperCase() === "POST" && pathText === "me/playground-checkout") {
+    return postPlaygroundCheckout(req);
   }
 
   const legacyPath = `/api/${pathText}${req.nextUrl.search}`;

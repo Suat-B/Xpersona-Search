@@ -41,16 +41,20 @@ vi.mock("drizzle-orm", () => ({
 vi.mock("@/lib/hf-router/rate-limit", () => ({
   PLAN_LIMITS: {
     trial: {
-      contextCap: 8192,
+      contextHardCap: 8192,
+      maxInputTokensPerRequest: 8192,
       maxOutputTokens: 256,
-      maxRequestsPerDay: 30,
-      maxOutputTokensPerMonth: 50000,
+      maxRequestsPerCycle: 30,
+      maxTotalTokensPerCycle: 120000,
+      maxTotalTokensPerMonth: 1500000,
     },
-    paid: {
-      contextCap: 16384,
+    builder: {
+      contextHardCap: 32768,
+      maxInputTokensPerRequest: 32768,
       maxOutputTokens: 512,
-      maxRequestsPerDay: 100,
-      maxOutputTokensPerMonth: 300000,
+      maxRequestsPerCycle: 1000,
+      maxTotalTokensPerCycle: 1800000,
+      maxTotalTokensPerMonth: 25000000,
     },
   },
   checkRateLimits: mockCheckRateLimits,
@@ -83,14 +87,16 @@ describe("POST /api/v1/hf/chat/completions", () => {
       createSelectChain([{ id: "user-1", email: "user@example.com", apiKeyPrefix: "xprs" }])
     );
     mockDb.insert.mockImplementation(() => createInsertChain());
-    mockGetUserPlan.mockResolvedValue({ plan: "paid", isActive: true });
+    mockGetUserPlan.mockResolvedValue({ plan: "builder", isActive: true });
     mockCheckRateLimits.mockResolvedValue({
       allowed: true,
       limits: {
-        contextCap: 16384,
+        contextHardCap: 32768,
+        maxInputTokensPerRequest: 32768,
         maxOutputTokens: 512,
-        maxRequestsPerDay: 100,
-        maxOutputTokensPerMonth: 300000,
+        maxRequestsPerCycle: 1000,
+        maxTotalTokensPerCycle: 1800000,
+        maxTotalTokensPerMonth: 25000000,
       },
     });
     vi.stubGlobal("fetch", vi.fn());
@@ -143,12 +149,14 @@ describe("POST /api/v1/hf/chat/completions", () => {
     mockCheckRateLimits.mockResolvedValue({
       allowed: false,
       reason: "Daily request limit reached",
-      currentUsage: { dailyRequests: 30, monthlyOutputTokens: 1200 },
+      currentUsage: { cycleRequests: 30, cycleTotalTokens: 1200, monthlyTotalTokens: 2400 },
       limits: {
-        contextCap: 8192,
+        contextHardCap: 8192,
+        maxInputTokensPerRequest: 8192,
         maxOutputTokens: 256,
-        maxRequestsPerDay: 30,
-        maxOutputTokensPerMonth: 50000,
+        maxRequestsPerCycle: 30,
+        maxTotalTokensPerCycle: 120000,
+        maxTotalTokensPerMonth: 1500000,
       },
     });
 
@@ -214,4 +222,3 @@ describe("GET /api/v1/hf/chat/completions", () => {
     expect(res.status).toBe(405);
   });
 });
-

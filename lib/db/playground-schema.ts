@@ -14,8 +14,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { users } from "./schema";
 
-/** Playground subscription tier: trial (2-day) or paid ($3/month) */
-export type PlaygroundPlanTier = "trial" | "paid";
+/** Playground subscription tiers */
+export type PlaygroundPlanTier = "trial" | "starter" | "builder" | "studio";
 
 /** Playground subscription status */
 export type PlaygroundSubscriptionStatus = "active" | "cancelled" | "past_due" | "trial";
@@ -39,7 +39,7 @@ export const playgroundSubscriptions = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
     stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }).unique(),
-    /** 'trial' | 'paid' - simplified 2-tier system */
+    /** 'trial' | 'starter' | 'builder' | 'studio' */
     planTier: varchar("plan_tier", { length: 20 }).notNull().$type<PlaygroundPlanTier>(),
     /** 'active' | 'cancelled' | 'past_due' | 'trial' */
     status: varchar("status", { length: 20 }).notNull().default("trial").$type<PlaygroundSubscriptionStatus>(),
@@ -122,11 +122,35 @@ export const hfMonthlyUsage = pgTable(
     usageYear: integer("usage_year").notNull(),
     usageMonth: integer("usage_month").notNull(),
     requestsCount: integer("requests_count").notNull().default(0),
+    tokensInput: integer("tokens_input").notNull().default(0),
     tokensOutput: integer("tokens_output").notNull().default(0),
     estimatedCostUsd: doublePrecision("estimated_cost_usd").default(0),
   },
   (table) => [
     uniqueIndex("hf_monthly_usage_user_year_month_idx").on(table.userId, table.usageYear, table.usageMonth),
+  ]
+);
+
+// 5-hour cycle usage aggregates for fast cycle quota checks
+export const hfCycleUsage = pgTable(
+  "hf_cycle_usage",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    cycleStartAt: timestamp("cycle_start_at", { withTimezone: true }).notNull(),
+    requestsCount: integer("requests_count").notNull().default(0),
+    tokensInput: integer("tokens_input").notNull().default(0),
+    tokensOutput: integer("tokens_output").notNull().default(0),
+    estimatedCostUsd: doublePrecision("estimated_cost_usd").default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("hf_cycle_usage_user_cycle_idx").on(table.userId, table.cycleStartAt),
+    index("hf_cycle_usage_user_idx").on(table.userId),
+    index("hf_cycle_usage_cycle_idx").on(table.cycleStartAt),
   ]
 );
 

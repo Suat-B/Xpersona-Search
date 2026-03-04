@@ -677,8 +677,7 @@ export function PlaygroundClient() {
 
   const backgroundStyle = useMemo(
     () => ({
-      background:
-        "radial-gradient(1200px 600px at 15% 10%, rgba(34,211,238,0.12), transparent 60%), radial-gradient(900px 500px at 90% 20%, rgba(59,130,246,0.14), transparent 55%), linear-gradient(180deg, #020617 0%, #0b1120 50%, #020617 100%)",
+      background: "#ffffff",
     }),
     [],
   );

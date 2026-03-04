@@ -41,9 +41,18 @@ const https = __importStar(require("https"));
 const url_1 = require("url");
 const crypto_1 = require("crypto");
 const path = __importStar(require("path"));
+const child_process_1 = require("child_process");
 const API_KEY_SECRET = "xpersona.apiKey";
 const MODE_KEY = "xpersona.playground.mode";
 const SAFETY_KEY = "xpersona.playground.safety";
+const OPEN_THREADS_KEY = "xpersona.playground.openThreads";
+const IDE_CONTEXT_FLAG = "xpersona.playground.ideContextV2";
+const MAX_TOTAL_CONTEXT_CHARS = 350000;
+const INDEX_MAX_FILE_SIZE = 250 * 1024;
+const INDEX_CHUNK_SIZE = 1200;
+const INDEX_CHUNK_OVERLAP = 180;
+const INDEX_BATCH_SIZE = 400;
+const INDEX_AUTO_INTERVAL_MS = 5 * 60 * 1000;
 function normalizeWorkspaceRelativePath(input) {
     const trimmed = input.replace(/\\/g, "/").trim();
     if (!trimmed || trimmed.startsWith("/") || /^[a-z]:\//i.test(trimmed) || trimmed.includes(".."))
@@ -77,6 +86,60 @@ function extractContentFromAddPatch(patch) {
     if (!out.length)
         return null;
     return out.join("\n");
+}
+function chunkText(content, chunkSize, overlap) {
+    const text = content.replace(/\r\n/g, "\n");
+    const chunks = [];
+    let i = 0;
+    while (i < text.length) {
+        const end = Math.min(text.length, i + chunkSize);
+        chunks.push(text.slice(i, end));
+        if (end >= text.length)
+            break;
+        i = Math.max(i + 1, end - overlap);
+    }
+    return chunks;
+}
+function trimContextToMaxChars(ctx, maxChars) {
+    const clone = {
+        activeFile: ctx.activeFile ? { ...ctx.activeFile } : undefined,
+        openFiles: [...(ctx.openFiles ?? [])],
+        diagnostics: [...(ctx.diagnostics ?? [])],
+        git: ctx.git ? { ...ctx.git } : undefined,
+        indexedSnippets: [...(ctx.indexedSnippets ?? [])],
+    };
+    const size = () => JSON.stringify(clone).length;
+    if (size() <= maxChars)
+        return clone;
+    while ((clone.openFiles?.length ?? 0) > 0 && size() > maxChars)
+        clone.openFiles?.pop();
+    while ((clone.indexedSnippets?.length ?? 0) > 0 && size() > maxChars)
+        clone.indexedSnippets?.pop();
+    while ((clone.diagnostics?.length ?? 0) > 0 && size() > maxChars)
+        clone.diagnostics?.pop();
+    if (size() > maxChars && clone.activeFile?.content) {
+        clone.activeFile.content = clone.activeFile.content.slice(0, 12000);
+    }
+    return clone;
+}
+function execFileReadOnly(cmd, args, cwd, timeoutMs, maxBuffer) {
+    return new Promise((resolve) => {
+        (0, child_process_1.execFile)(cmd, args, { cwd, timeout: timeoutMs, windowsHide: true, maxBuffer }, (error, stdout, stderr) => {
+            if (error)
+                return resolve({ ok: false, stdout: String(stdout || ""), stderr: String(stderr || error.message || "") });
+            resolve({ ok: true, stdout: String(stdout || ""), stderr: String(stderr || "") });
+        });
+    });
+}
+function sha(input) {
+    return (0, crypto_1.createHash)("sha1").update(input).digest("hex");
+}
+function toRelPath(root, file) {
+    return path.posix.normalize(path.posix.relative(root.path, file.path)).replace(/^\/+/, "");
+}
+function languageFromPath(p) {
+    const ext = (path.extname(p || "").replace(/^\./, "").toLowerCase() || "text");
+    return ext;
 }
 function activate(context) {
     const view = new Provider(context);
@@ -124,19 +187,352 @@ class Provider {
     hasExecutionIntent(task) {
         return /\b(create|make|add|build|implement|refactor|fix|debug|run|test|lint|typecheck|command|file|patch|edit|ship)\b/i.test(task);
     }
+    hasExplicitCommandRunIntent(task) {
+        return /\b(run|execute|terminal|shell|command|test|tests|lint|typecheck|build|compile|install|npm|pnpm|yarn|pytest|jest|vitest|cargo|go test|mvn|gradle)\b/i.test(task);
+    }
+    hasCodeTaskSignals(task) {
+        return /\b(code|file|function|class|bug|error|fix|refactor|implement|build|test|lint|typecheck|stack trace|exception|module|api|endpoint|sql|schema|patch|edit)\b/i.test(task);
+    }
     isConversationalPrompt(task) {
         const t = task.trim().toLowerCase();
-        return (/^(hi|hello|hey|yo|sup|thanks|thank you|thx)\b/.test(t) ||
-            /\b(how are you|what can you do|who are you)\b/.test(t));
+        const greetingOrSmallTalk = /^(hi|hello|hey|yo|sup|thanks|thank you|thx)\b/.test(t) ||
+            /\b(how are you|what can you do|who are you)\b/.test(t);
+        const directQuestion = /\?$/.test(t) ||
+            /^(what|why|how|when|where|who|which|can|could|would|should|is|are|do|does|did)\b/.test(t) ||
+            /\b(explain|define|tell me)\b/.test(t);
+        return (greetingOrSmallTalk ||
+            (directQuestion && !this.hasCodeTaskSignals(t)));
     }
     constructor(ctx) {
         this.ctx = ctx;
+        this.activeThreadId = null;
+        this.threads = {};
+        this.openThreadOrder = [];
+        this.recentHistory = [];
         this.sessionId = null;
         this.timeline = [];
         this.pendingActions = [];
+        this.activeStreamCancel = null;
+        this.cancelRequested = false;
         this.commandTerminal = null;
+        this.indexRunning = false;
+        this.indexFreshness = "cold";
+        this.lastIndexAt = 0;
+        this.indexTimer = null;
+        this.indexDebounceTimer = null;
         this.mode = ctx.workspaceState.get(MODE_KEY) ?? "auto";
         this.safety = ctx.workspaceState.get(SAFETY_KEY) ?? "standard";
+        const persisted = ctx.workspaceState.get(OPEN_THREADS_KEY, null);
+        if (persisted?.openChats?.length) {
+            for (const thread of persisted.openChats) {
+                if (!thread?.id)
+                    continue;
+                this.threads[thread.id] = {
+                    id: thread.id,
+                    title: thread.title || "New chat",
+                    mode: thread.mode || "auto",
+                    updatedAt: thread.updatedAt || null,
+                    isOpen: true,
+                };
+            }
+            this.openThreadOrder = persisted.openChats.map((x) => x.id).filter((id) => this.threads[id]);
+            this.activeThreadId = persisted.activeThreadId && this.threads[persisted.activeThreadId]
+                ? persisted.activeThreadId
+                : (this.openThreadOrder[0] || null);
+        }
+        this.setupBackgroundIndexing();
+    }
+    isIdeContextV2Enabled() {
+        return ((vscode.workspace.getConfiguration().get(IDE_CONTEXT_FLAG) ?? true) &&
+            (vscode.workspace.getConfiguration("xpersona.playground").get("ideContextV2") ?? true));
+    }
+    setupBackgroundIndexing() {
+        const triggerDebounced = () => {
+            if (this.indexDebounceTimer)
+                clearTimeout(this.indexDebounceTimer);
+            this.indexDebounceTimer = setTimeout(() => {
+                void this.runBackgroundIndexing("debounced");
+            }, 1200);
+        };
+        this.ctx.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => triggerDebounced()), vscode.workspace.onDidSaveTextDocument(() => triggerDebounced()), vscode.workspace.onDidOpenTextDocument(() => triggerDebounced()));
+        this.indexTimer = setInterval(() => {
+            void this.runBackgroundIndexing("interval");
+        }, INDEX_AUTO_INTERVAL_MS);
+        this.ctx.subscriptions.push({ dispose: () => this.indexTimer && clearInterval(this.indexTimer) });
+        void this.runBackgroundIndexing("startup");
+    }
+    getWorkspaceRoot() {
+        const folders = vscode.workspace.workspaceFolders;
+        if (!folders || folders.length === 0)
+            return null;
+        return folders[0];
+    }
+    async collectIdeContext(query, workspaceHash, key) {
+        const root = this.getWorkspaceRoot();
+        const activeFile = await this.collectActiveFileContext(20000);
+        const openFiles = await this.collectOpenEditorsContext(20, 6000);
+        const diagnostics = this.collectDiagnostics(200);
+        const git = await this.collectGitSummary(root);
+        const discovery = await this.runSafeDiscovery(root);
+        const indexedSnippets = await this.queryIndexForPrompt(workspaceHash, query, key, 12);
+        const mergedSnippets = [...indexedSnippets];
+        if (discovery.rgFiles) {
+            mergedSnippets.push({
+                path: ".workspace/files",
+                score: 0.3,
+                content: discovery.rgFiles,
+            });
+        }
+        return trimContextToMaxChars({
+            activeFile: activeFile || undefined,
+            openFiles,
+            diagnostics,
+            git: {
+                status: [...(git.status || []), ...(discovery.gitStatus || [])].slice(0, 200),
+                diffSummary: [git.diffSummary, discovery.gitDiff].filter(Boolean).join("\n").slice(0, 120000),
+            },
+            indexedSnippets: mergedSnippets,
+        }, MAX_TOTAL_CONTEXT_CHARS);
+    }
+    async collectActiveFileContext(maxChars) {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor)
+            return null;
+        const document = editor.document;
+        const fullText = document.getText();
+        const selected = editor.selection.isEmpty ? "" : document.getText(editor.selection).slice(0, 6000);
+        return {
+            path: document.uri.fsPath,
+            language: document.languageId,
+            selection: selected || undefined,
+            content: fullText.slice(0, maxChars),
+        };
+    }
+    async collectOpenEditorsContext(maxEditors, maxCharsPerFile) {
+        const editors = vscode.window.visibleTextEditors.slice(0, maxEditors);
+        const unique = new Set();
+        const out = [];
+        for (const e of editors) {
+            const p = e.document.uri.fsPath;
+            if (!p || unique.has(p))
+                continue;
+            unique.add(p);
+            out.push({
+                path: p,
+                language: e.document.languageId,
+                excerpt: e.document.getText().slice(0, maxCharsPerFile),
+            });
+        }
+        return out;
+    }
+    collectDiagnostics(maxItems) {
+        const all = vscode.languages.getDiagnostics();
+        const out = [];
+        for (const [uri, diagnostics] of all) {
+            for (const d of diagnostics) {
+                out.push({
+                    file: uri.fsPath,
+                    severity: d.severity,
+                    message: d.message,
+                    line: d.range.start.line + 1,
+                });
+                if (out.length >= maxItems)
+                    return out;
+            }
+        }
+        return out;
+    }
+    async collectGitSummary(root) {
+        if (!root)
+            return { status: [], diffSummary: "" };
+        const cwd = root.uri.fsPath;
+        const status = await execFileReadOnly("git", ["status", "--short"], cwd, 2500, 12000);
+        const diff = await execFileReadOnly("git", ["diff", "--stat"], cwd, 2500, 12000);
+        return {
+            status: status.stdout.split(/\r?\n/).map((x) => x.trim()).filter(Boolean).slice(0, 200),
+            diffSummary: (diff.stdout || "").slice(0, 12000),
+        };
+    }
+    async runSafeDiscovery(root) {
+        if (!root)
+            return {};
+        const cwd = root.uri.fsPath;
+        const gitStatus = await execFileReadOnly("git", ["status", "--short"], cwd, 2500, 12000);
+        const gitDiff = await execFileReadOnly("git", ["diff", "--stat"], cwd, 2500, 12000);
+        const rgFiles = await execFileReadOnly("rg", ["--files", "--hidden", "-g", "!node_modules", "-g", "!.git"], cwd, 3000, 12000);
+        return {
+            gitStatus: gitStatus.ok ? gitStatus.stdout.split(/\r?\n/).filter(Boolean).slice(0, 200) : [],
+            gitDiff: gitDiff.ok ? gitDiff.stdout.slice(0, 12000) : "",
+            rgFiles: rgFiles.ok ? rgFiles.stdout.split(/\r?\n/).slice(0, 300).join("\n") : "",
+        };
+    }
+    async queryIndexForPrompt(projectKey, query, key, limit) {
+        try {
+            const response = await req("POST", `${base()}/api/v1/playground/index/query`, key, {
+                projectKey,
+                query: query.slice(0, 2000),
+                limit: Math.max(1, Math.min(limit, 50)),
+            });
+            const rows = Array.isArray(response?.data) ? response.data : Array.isArray(response) ? response : [];
+            return rows
+                .map((r) => ({
+                path: String(r.pathDisplay || r.path || ""),
+                score: typeof r.score === "number" ? r.score : undefined,
+                content: String(r.content || "").slice(0, 60000),
+            }))
+                .filter((x) => x.content.length > 0)
+                .slice(0, limit);
+        }
+        catch {
+            return [];
+        }
+    }
+    async runBackgroundIndexing(trigger) {
+        if (!this.isIdeContextV2Enabled())
+            return;
+        const root = this.getWorkspaceRoot();
+        if (!root)
+            return;
+        if (this.indexRunning)
+            return;
+        this.indexRunning = true;
+        try {
+            const include = "**/*.{ts,tsx,js,jsx,json,md,py,go,rs,java,cs,yaml,yml}";
+            const exclude = "**/{node_modules,.git,.next,dist,build}/**";
+            const files = await vscode.workspace.findFiles(new vscode.RelativePattern(root, include), new vscode.RelativePattern(root, exclude), 800);
+            const chunks = [];
+            for (const file of files) {
+                try {
+                    const stat = await vscode.workspace.fs.stat(file);
+                    if (stat.type !== vscode.FileType.File || stat.size > INDEX_MAX_FILE_SIZE)
+                        continue;
+                    const doc = await vscode.workspace.openTextDocument(file);
+                    const rel = toRelPath(root.uri, file);
+                    const relNorm = normalizeWorkspaceRelativePath(rel);
+                    if (!relNorm)
+                        continue;
+                    const text = doc.getText();
+                    for (const chunk of chunkText(text, INDEX_CHUNK_SIZE, INDEX_CHUNK_OVERLAP)) {
+                        const trimmed = chunk.trim();
+                        if (!trimmed)
+                            continue;
+                        chunks.push({
+                            pathHash: sha(relNorm),
+                            chunkHash: sha(`${relNorm}:${trimmed}`),
+                            pathDisplay: relNorm,
+                            content: trimmed,
+                            metadata: { language: doc.languageId || languageFromPath(relNorm), trigger },
+                        });
+                    }
+                }
+                catch {
+                    // Ignore per-file failures.
+                }
+            }
+            if (!chunks.length) {
+                this.indexFreshness = "stale";
+                return;
+            }
+            const workspaceHash = this.computeWorkspaceHash(root);
+            const key = await this.ctx.secrets.get(API_KEY_SECRET);
+            if (!key)
+                return;
+            for (let i = 0; i < chunks.length; i += INDEX_BATCH_SIZE) {
+                const batch = chunks.slice(i, i + INDEX_BATCH_SIZE);
+                await req("POST", `${base()}/api/v1/playground/index/upsert`, key, {
+                    projectKey: workspaceHash,
+                    chunks: batch,
+                    cursor: `${Date.now()}:${i}`,
+                    stats: { trigger, totalChunks: chunks.length },
+                }).catch(() => ({}));
+            }
+            this.lastIndexAt = Date.now();
+            this.indexFreshness = "fresh";
+            this.post({
+                type: "indexState",
+                data: {
+                    chunks: chunks.length,
+                    freshness: this.indexFreshness,
+                    lastQueryMatches: 0,
+                    lastRebuildAt: new Date(this.lastIndexAt).toLocaleTimeString(),
+                },
+            });
+        }
+        finally {
+            this.indexRunning = false;
+            if (Date.now() - this.lastIndexAt > INDEX_AUTO_INTERVAL_MS * 2) {
+                this.indexFreshness = "stale";
+            }
+        }
+    }
+    computeWorkspaceHash(root) {
+        if (!root)
+            return "single-file";
+        const seed = `${root.name}:${root.uri.fsPath}`;
+        return sha(seed).slice(0, 32);
+    }
+    threadFromApiRow(x) {
+        return {
+            id: String(x?.id || ""),
+            title: String(x?.title || "Untitled"),
+            mode: (x?.mode || "auto"),
+            updatedAt: x?.updatedAt || x?.updated_at || x?.createdAt || x?.created_at || null,
+            isOpen: false,
+        };
+    }
+    upsertThread(thread, open) {
+        const existing = this.threads[thread.id];
+        this.threads[thread.id] = {
+            id: thread.id,
+            title: thread.title || existing?.title || "New chat",
+            mode: thread.mode || existing?.mode || "auto",
+            updatedAt: thread.updatedAt || existing?.updatedAt || null,
+            isOpen: open || existing?.isOpen || false,
+        };
+        if (open && !this.openThreadOrder.includes(thread.id))
+            this.openThreadOrder.unshift(thread.id);
+        if (!open)
+            this.threads[thread.id].isOpen = false;
+    }
+    async persistOpenThreads() {
+        const openChats = this.openThreadOrder
+            .map((id) => this.threads[id])
+            .filter((x) => Boolean(x))
+            .map((x) => ({ ...x, isOpen: true }));
+        await this.ctx.workspaceState.update(OPEN_THREADS_KEY, {
+            activeThreadId: this.activeThreadId,
+            openChats,
+        });
+    }
+    async postThreadState() {
+        this.post({
+            type: "threadState",
+            data: {
+                activeThreadId: this.activeThreadId,
+                openChats: this.openThreadOrder
+                    .map((id) => this.threads[id])
+                    .filter((x) => Boolean(x))
+                    .map((x) => ({ ...x, isOpen: true })),
+                recentHistory: this.recentHistory,
+            },
+        });
+        await this.persistOpenThreads();
+    }
+    async ensureActiveThread(key, title) {
+        if (this.activeThreadId && this.threads[this.activeThreadId])
+            return this.activeThreadId;
+        const s = await req("POST", `${base()}/api/v1/playground/sessions`, key, {
+            title: title.slice(0, 60) || "New chat",
+            mode: this.mode,
+        }).catch(() => ({}));
+        const id = s?.data?.id ? String(s.data.id) : null;
+        if (!id)
+            return null;
+        this.upsertThread({ id, title: title.slice(0, 60) || "New chat", mode: this.mode, updatedAt: new Date().toISOString(), isOpen: true }, true);
+        this.activeThreadId = id;
+        this.sessionId = id;
+        await this.postThreadState();
+        return id;
     }
     resolveWebviewView(v) {
         this.view = v;
@@ -158,11 +554,13 @@ class Provider {
                 this.post({ type: "safety", value: this.safety });
                 this.post({ type: "timeline", data: this.timeline });
                 this.post({ type: "pendingActions", count: this.pendingActions.length });
+                await this.postThreadState();
             }
             else if (m.type === "saveKey") {
                 if (m.key?.trim())
                     await this.ctx.secrets.store(API_KEY_SECRET, m.key.trim());
                 this.post({ type: "api", ok: true });
+                await this.loadHistory();
             }
             else if (m.type === "setMode") {
                 await this.setMode(m.value);
@@ -172,13 +570,34 @@ class Provider {
             }
             else if (m.type === "send") {
                 this.post({ type: "sendAck" });
-                await this.ask(String(m.text || ""), Boolean(m.parallel), String(m.model || "Playground"), String(m.reasoning || "medium"));
+                await this.ask(String(m.text || ""), Boolean(m.parallel), String(m.model || "Playground 1"), String(m.reasoning || "medium"), {
+                    includeIdeContext: m.includeIdeContext !== undefined ? Boolean(m.includeIdeContext) : true,
+                    workspaceContextLevel: (m.workspaceContextLevel === "max" ? "max" : "max"),
+                });
+            }
+            else if (m.type === "cancel") {
+                if (!this.activeStreamCancel) {
+                    this.post({ type: "status", text: "Nothing to cancel right now." });
+                    return;
+                }
+                this.cancelRequested = true;
+                this.activeStreamCancel();
+                this.post({ type: "status", text: "Stopping response..." });
             }
             else if (m.type === "history") {
                 await this.loadHistory();
             }
             else if (m.type === "openSession") {
                 await this.openSession(String(m.id || ""));
+            }
+            else if (m.type === "newThread") {
+                await this.newThread();
+            }
+            else if (m.type === "switchThread") {
+                await this.switchThread(String(m.id || ""));
+            }
+            else if (m.type === "closeThread") {
+                await this.closeThread(String(m.id || ""));
             }
             else if (m.type === "replay") {
                 await this.replay();
@@ -190,11 +609,9 @@ class Provider {
                 });
             }
             else if (m.type === "clear") {
-                this.timeline = [];
-                this.sessionId = null;
                 this.pendingActions = [];
-                this.post({ type: "timeline", data: this.timeline });
                 this.post({ type: "pendingActions", count: 0 });
+                this.post({ type: "status", text: "Cleared current chat view." });
             }
             else if (m.type === "execute") {
                 await this.executePendingActions();
@@ -224,12 +641,17 @@ class Provider {
         await this.ctx.workspaceState.update(SAFETY_KEY, s);
         this.post({ type: "safety", value: s });
     }
-    async ask(text, parallel, model = "Playground AI", reasoning = "medium") {
+    async ask(text, parallel, model = "Playground 1", reasoning = "medium", options = {}) {
         if (!text.trim())
             return;
+        if (this.activeStreamCancel) {
+            this.post({ type: "status", text: "Already responding. Stop the current run before sending another message." });
+            return;
+        }
         const key = await this.ctx.secrets.get(API_KEY_SECRET);
         if (!key)
             return this.post({ type: "err", text: "No API key set" });
+        this.cancelRequested = false;
         this.pendingActions = [];
         this.post({ type: "pendingActions", count: 0 });
         this.post({ type: "start" });
@@ -238,33 +660,77 @@ class Provider {
         if (!conversational) {
             this.post({ type: "status", text: `Model: ${model} • Reasoning: ${reasoning}` });
         }
-        const reasoningGuidance = {
-            low: "Use lightweight reasoning and prioritize speed.",
-            medium: "Use balanced reasoning with concise planning.",
-            high: "Use thorough step-by-step reasoning before acting.",
-            max: "Use maximum deliberation, verify assumptions, and prioritize safety over speed.",
-        };
-        const taskWithReasoning = `${text}\n\n[Playground runtime]\nModel requested: Playground AI\nReasoning level: ${reasoning}\nInstruction: ${reasoningGuidance[reasoning]}`;
+        // Keep the user task clean so mode classification is based on intent,
+        // not runtime metadata injected into the prompt body.
+        const taskWithReasoning = text;
         const requestMode = conversational ? "generate" : this.mode;
-        if (!this.sessionId) {
-            const s = await req("POST", `${base()}/api/v1/playground/sessions`, key, {
-                title: text.slice(0, 60),
-                mode: this.mode,
-            }).catch(() => ({}));
-            this.sessionId = s?.data?.id || null;
+        const ideContextEnabled = this.isIdeContextV2Enabled() && (options.includeIdeContext ?? true);
+        const root = this.getWorkspaceRoot();
+        const workspaceHash = this.computeWorkspaceHash(root);
+        const preflightStarted = Date.now();
+        let collectedContext;
+        let contextStatus = {
+            enabled: ideContextEnabled,
+            sections: 0,
+            snippets: 0,
+            indexFreshness: this.indexFreshness,
+            discoveryCommands: 0,
+            preflightMs: 0,
+            notes: [],
+        };
+        if (ideContextEnabled) {
+            try {
+                collectedContext = await this.collectIdeContext(text, workspaceHash, key);
+                const sectionCount = [
+                    collectedContext.activeFile ? 1 : 0,
+                    (collectedContext.openFiles?.length ?? 0) > 0 ? 1 : 0,
+                    (collectedContext.diagnostics?.length ?? 0) > 0 ? 1 : 0,
+                    collectedContext.git ? 1 : 0,
+                    (collectedContext.indexedSnippets?.length ?? 0) > 0 ? 1 : 0,
+                ].reduce((acc, v) => acc + v, 0);
+                contextStatus = {
+                    ...contextStatus,
+                    sections: sectionCount,
+                    snippets: collectedContext.indexedSnippets?.length ?? 0,
+                    indexFreshness: this.indexFreshness,
+                    discoveryCommands: (collectedContext.git?.status?.length ?? 0) > 0 || collectedContext.git?.diffSummary ? 3 : 0,
+                };
+            }
+            catch (e) {
+                contextStatus.notes?.push(`context partial: ${err(e)}`);
+            }
         }
+        contextStatus.preflightMs = Date.now() - preflightStarted;
+        this.post({ type: "contextStatus", data: contextStatus });
+        if (contextStatus.notes?.length) {
+            this.post({ type: "status", text: contextStatus.notes.join(" | ") });
+        }
+        const activeThreadId = await this.ensureActiveThread(key, text);
+        if (!activeThreadId)
+            return this.post({ type: "err", text: "Failed to create chat session." });
         const runStream = async (historySessionId) => {
             let sawTokenEvent = false;
             return (stream(`${base()}/api/v1/playground/assist`, key, {
                 mode: requestMode,
                 task: taskWithReasoning,
                 stream: true,
+                model,
+                ...(collectedContext ? { context: trimContextToMaxChars(collectedContext, MAX_TOTAL_CONTEXT_CHARS) } : {}),
                 ...(historySessionId ? { historySessionId } : {}),
                 workflowIntentId: `reasoning:${reasoning}`,
+                contextBudget: { maxTokens: 65536, strategy: "hybrid" },
+                clientTrace: {
+                    extensionVersion: String(this.ctx.extension.packageJSON?.version || "0.0.0"),
+                    workspaceHash,
+                },
                 safetyProfile: this.safety,
                 agentConfig: parallel
                     ? { strategy: "parallel", roles: ["planner", "implementer", "reviewer"] }
                     : { strategy: "single" },
+            }, {
+                onCancelReady: (cancel) => {
+                    this.activeStreamCancel = cancel;
+                },
             }, async (ev, p) => {
                 if (ev === "token") {
                     const chunk = typeof p === "string" ? p : String(p ?? "");
@@ -349,22 +815,41 @@ class Provider {
             }));
         };
         try {
-            await runStream(this.sessionId);
+            await runStream(activeThreadId);
         }
         catch (e) {
-            const message = err(e);
-            if (this.sessionId && /historysessionid|unknown historysessionid/i.test(message)) {
-                this.addTimeline("session", "stale history session recovered");
-                this.sessionId = null;
-                await runStream(null).catch((inner) => this.post({ type: "err", text: err(inner) }));
+            if (this.cancelRequested) {
+                this.post({ type: "status", text: "Response stopped." });
             }
             else {
-                this.post({ type: "err", text: message });
+                const message = err(e);
+                if (activeThreadId && /historysessionid|unknown historysessionid/i.test(message)) {
+                    this.addTimeline("session", "stale history session recovered");
+                    await runStream(null).catch((inner) => this.post({ type: "err", text: err(inner) }));
+                }
+                else {
+                    this.post({ type: "err", text: message });
+                }
             }
         }
+        finally {
+            this.activeStreamCancel = null;
+        }
+        if (this.threads[activeThreadId])
+            this.threads[activeThreadId].updatedAt = new Date().toISOString();
+        await this.loadHistory();
+        await this.postThreadState();
         this.post({ type: "end" });
+        if (this.cancelRequested) {
+            this.pendingActions = [];
+            this.post({ type: "pendingActions", count: 0 });
+            return;
+        }
         if (this.pendingActions.length > 0) {
-            if (this.hasExecutionIntent(text) || this.pendingActions.some((a) => a.type === "edit")) {
+            const hasEditActions = this.pendingActions.some((a) => a.type === "edit");
+            const hasCommandActions = this.pendingActions.some((a) => a.type === "command");
+            const shouldAutoExecute = hasEditActions || (hasCommandActions && this.hasExplicitCommandRunIntent(text));
+            if (shouldAutoExecute) {
                 if (!conversational) {
                     this.post({ type: "status", text: `Prepared ${this.pendingActions.length} tool action(s). Auto-executing now.` });
                 }
@@ -372,7 +857,7 @@ class Provider {
             }
             else {
                 if (!conversational) {
-                    this.post({ type: "status", text: "Detected conversational prompt; skipped automatic tool execution." });
+                    this.post({ type: "status", text: "Skipped auto-execution for command-only suggestions. I will prioritize code edits unless you explicitly ask to run commands." });
                 }
                 this.pendingActions = [];
                 this.post({ type: "pendingActions", count: 0 });
@@ -381,35 +866,96 @@ class Provider {
     }
     async loadHistory() {
         const key = await this.ctx.secrets.get(API_KEY_SECRET);
-        if (!key)
+        if (!key) {
+            this.recentHistory = [];
+            await this.postThreadState();
             return;
+        }
         const r = await req("GET", `${base()}/api/v1/playground/sessions?limit=30`, key).catch(() => ({}));
-        const items = (r?.data?.data || []).map((x) => ({
-            id: x.id,
-            title: x.title || "Untitled",
-            mode: x.mode || "auto",
-            updatedAt: x.updatedAt || x.updated_at || x.createdAt || x.created_at || null,
-        }));
+        const items = (r?.data?.data || [])
+            .map((x) => this.threadFromApiRow(x))
+            .filter((x) => x.id);
+        this.recentHistory = items;
+        for (const item of items) {
+            if (!this.threads[item.id])
+                this.upsertThread(item, false);
+        }
         this.post({ type: "historyItems", data: items });
+        await this.postThreadState();
     }
     async openSession(id) {
         const key = await this.ctx.secrets.get(API_KEY_SECRET);
         if (!key || !id)
             return;
+        const existing = this.threads[id] || this.recentHistory.find((x) => x.id === id);
+        this.upsertThread(existing || { id, title: "Untitled", mode: this.mode, updatedAt: null, isOpen: true }, true);
+        this.activeThreadId = id;
         this.sessionId = id;
         const r = await req("GET", `${base()}/api/v1/playground/sessions/${encodeURIComponent(id)}/messages?includeAgentEvents=true`, key).catch(() => ({}));
         const msgs = (r?.data || [])
             .filter((m) => m.role === "user" || m.role === "assistant")
             .map((m) => ({ role: m.role, content: m.content }));
-        this.post({ type: "load", data: msgs.reverse() });
+        this.post({ type: "load", data: msgs.reverse(), threadId: id });
         this.addTimeline("history", `loaded ${id.slice(0, 8)}`);
+        await this.postThreadState();
+    }
+    async newThread() {
+        const key = await this.ctx.secrets.get(API_KEY_SECRET);
+        if (!key)
+            return this.post({ type: "err", text: "No API key set" });
+        const s = await req("POST", `${base()}/api/v1/playground/sessions`, key, {
+            title: "New chat",
+            mode: this.mode,
+        }).catch(() => ({}));
+        const id = s?.data?.id ? String(s.data.id) : null;
+        if (!id)
+            return this.post({ type: "err", text: "Failed to create chat session." });
+        this.upsertThread({ id, title: "New chat", mode: this.mode, updatedAt: new Date().toISOString(), isOpen: true }, true);
+        this.activeThreadId = id;
+        this.sessionId = id;
+        this.post({ type: "load", data: [], threadId: id });
+        await this.loadHistory();
+        await this.postThreadState();
+    }
+    async switchThread(id) {
+        if (!id)
+            return;
+        if (!this.threads[id]) {
+            const fromHistory = this.recentHistory.find((x) => x.id === id);
+            if (fromHistory)
+                this.upsertThread(fromHistory, true);
+        }
+        else {
+            this.upsertThread(this.threads[id], true);
+        }
+        this.activeThreadId = id;
+        this.sessionId = id;
+        await this.openSession(id);
+    }
+    async closeThread(id) {
+        if (!id)
+            return;
+        this.openThreadOrder = this.openThreadOrder.filter((x) => x !== id);
+        if (this.threads[id])
+            this.threads[id].isOpen = false;
+        if (this.activeThreadId === id) {
+            this.activeThreadId = this.openThreadOrder[0] || null;
+            this.sessionId = this.activeThreadId;
+            if (this.activeThreadId) {
+                await this.openSession(this.activeThreadId);
+            }
+            else {
+                this.post({ type: "load", data: [], threadId: null });
+            }
+        }
+        await this.postThreadState();
     }
     async replay() {
         const key = await this.ctx.secrets.get(API_KEY_SECRET);
-        if (!key || !this.sessionId)
+        if (!key || !this.activeThreadId)
             return this.post({ type: "status", text: "No active session yet. Send a prompt first, then replay." });
         const r = await req("POST", `${base()}/api/v1/playground/replay`, key, {
-            sessionId: this.sessionId,
+            sessionId: this.activeThreadId,
             workspaceFingerprint: "vscode",
             mode: this.mode,
         }).catch(() => ({}));
@@ -426,7 +972,7 @@ class Provider {
             return this.post({ type: "status", text: "No pending actions to execute." });
         this.post({ type: "status", text: `Executing ${this.pendingActions.length} action(s)...` });
         const r = await req("POST", `${base()}/api/v1/playground/execute`, key, {
-            sessionId: this.sessionId || undefined,
+            sessionId: this.activeThreadId || undefined,
             workspaceFingerprint: "vscode",
             actions: this.pendingActions.map((a) => a.type === "edit"
                 ? { type: "edit", path: a.path, patch: a.patch }
@@ -485,12 +1031,6 @@ class Provider {
         this.addTimeline("execute", `approved ${approved}/${results.length}`);
         this.pendingActions = [];
         this.post({ type: "pendingActions", count: 0 });
-    }
-    getWorkspaceRoot() {
-        const folders = vscode.workspace.workspaceFolders;
-        if (!folders || folders.length === 0)
-            return null;
-        return folders[0];
     }
     async applyEditAction(action) {
         const rel = normalizeWorkspaceRelativePath(action.path || "");
@@ -567,12 +1107,72 @@ function req(method, u, key, body) {
         r.end();
     });
 }
-function stream(u, key, body, onEvent) {
+function stream(u, key, body, options, onEvent) {
     return new Promise((resolve, reject) => {
+        const CONNECT_TIMEOUT_MS = 20000;
+        const IDLE_TIMEOUT_MS = 45000;
         const x = new url_1.URL(u);
         const c = x.protocol === "https:" ? https : http;
         const p = JSON.stringify(body);
         let b = "";
+        let done = false;
+        let idleTimer = null;
+        const clearIdleTimer = () => {
+            if (idleTimer) {
+                clearTimeout(idleTimer);
+                idleTimer = null;
+            }
+        };
+        const armIdleTimer = () => {
+            clearIdleTimer();
+            idleTimer = setTimeout(() => {
+                try {
+                    r.destroy(new Error(`Stream idle timeout after ${IDLE_TIMEOUT_MS}ms`));
+                }
+                catch {
+                    // ignore destroy failures
+                }
+            }, IDLE_TIMEOUT_MS);
+        };
+        const finish = (cb) => {
+            if (done)
+                return;
+            done = true;
+            clearIdleTimer();
+            cb();
+        };
+        const findSeparator = (value) => {
+            const idxLf = value.indexOf("\n\n");
+            const idxCrlf = value.indexOf("\r\n\r\n");
+            if (idxLf < 0 && idxCrlf < 0)
+                return { index: -1, len: 0 };
+            if (idxLf < 0)
+                return { index: idxCrlf, len: 4 };
+            if (idxCrlf < 0)
+                return { index: idxLf, len: 2 };
+            return idxLf < idxCrlf ? { index: idxLf, len: 2 } : { index: idxCrlf, len: 4 };
+        };
+        const handleSseChunk = (chunk) => {
+            const lines = chunk
+                .split(/\r?\n/)
+                .filter((l) => l.startsWith("data:"))
+                .map((l) => l.slice(5).trim());
+            if (!lines.length)
+                return false;
+            const raw = lines.join("\n");
+            if (raw === "[DONE]") {
+                finish(resolve);
+                return true;
+            }
+            try {
+                const o = JSON.parse(raw);
+                onEvent(o.event || "message", o.data ?? o.message ?? o);
+            }
+            catch {
+                // ignore malformed SSE chunks
+            }
+            return false;
+        };
         const r = c.request({
             hostname: x.hostname,
             port: x.port || (x.protocol === "https:" ? 443 : 80),
@@ -585,40 +1185,50 @@ function stream(u, key, body, onEvent) {
                 Accept: "text/event-stream",
             },
         }, (res) => {
+            armIdleTimer();
             if ((res.statusCode || 500) >= 400) {
                 let t = "";
                 res.on("data", (d) => (t += d.toString("utf8")));
-                res.on("end", () => reject(new Error(parseErr(t, res.statusCode))));
+                res.on("end", () => finish(() => reject(new Error(parseErr(t, res.statusCode)))));
                 return;
             }
             res.on("data", (d) => {
+                if (done)
+                    return;
+                armIdleTimer();
                 b += d.toString("utf8");
-                let i = b.indexOf("\n\n");
-                while (i >= 0) {
-                    const e = b.slice(0, i);
-                    b = b.slice(i + 2);
-                    i = b.indexOf("\n\n");
-                    const lines = e
-                        .split(/\r?\n/)
-                        .filter((l) => l.startsWith("data:"))
-                        .map((l) => l.slice(5).trim());
-                    if (!lines.length)
-                        continue;
-                    const raw = lines.join("\n");
-                    if (raw === "[DONE]")
-                        continue;
-                    try {
-                        const o = JSON.parse(raw);
-                        onEvent(o.event || "message", o.data ?? o.message ?? o);
-                    }
-                    catch {
-                        // ignore malformed SSE chunks
-                    }
+                let sep = findSeparator(b);
+                while (sep.index >= 0) {
+                    const e = b.slice(0, sep.index);
+                    b = b.slice(sep.index + sep.len);
+                    if (handleSseChunk(e))
+                        return;
+                    sep = findSeparator(b);
                 }
             });
-            res.on("end", () => resolve());
+            res.on("end", () => {
+                if (!done && b.trim())
+                    handleSseChunk(b);
+                finish(resolve);
+            });
         });
-        r.on("error", reject);
+        options?.onCancelReady?.(() => {
+            try {
+                r.destroy(new Error("Request cancelled by user"));
+            }
+            catch {
+                // ignore destroy failures
+            }
+        });
+        r.setTimeout(CONNECT_TIMEOUT_MS, () => {
+            try {
+                r.destroy(new Error(`Connection timeout after ${CONNECT_TIMEOUT_MS}ms`));
+            }
+            catch {
+                // ignore destroy failures
+            }
+        });
+        r.on("error", (e) => finish(() => reject(e)));
         r.write(p);
         r.end();
     });
@@ -910,6 +1520,65 @@ function html(webview, extensionUri) {
         flex-direction: column;
         gap: 14px;
       }
+      .thread-list {
+        border: 1px solid #1c1c1c;
+        border-radius: 12px;
+        padding: 8px;
+        margin-bottom: 10px;
+        background: #070707;
+        display: grid;
+        gap: 8px;
+      }
+      .thread-section-title {
+        font-size: 11px;
+        color: #8d8d8d;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+      }
+      .thread-row {
+        border: 1px solid transparent;
+        border-radius: 10px;
+        padding: 7px 8px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        cursor: pointer;
+      }
+      .thread-row:hover {
+        border-color: #2b2b2b;
+        background: #0d0d0d;
+      }
+      .thread-row.active {
+        border-color: #345070;
+        background: #0e141d;
+      }
+      .thread-main {
+        min-width: 0;
+      }
+      .thread-title {
+        font-size: 12px;
+        color: #f0f0f0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .thread-meta {
+        font-size: 10px;
+        color: #8f8f8f;
+      }
+      .thread-close {
+        border: 1px solid #2c2c2c;
+        background: #0b0b0b;
+        color: #d7d7d7;
+        width: 20px;
+        height: 20px;
+        min-width: 20px;
+        border-radius: 999px;
+        padding: 0;
+        font-size: 12px;
+        line-height: 1;
+      }
       .m {
         border: none;
         border-radius: 0;
@@ -929,6 +1598,38 @@ function html(webview, extensionUri) {
         color: var(--muted);
         opacity: .85;
         text-align: right;
+      }
+      .plan-decision .m-time {
+        display: none;
+      }
+      .plan-card {
+        border: 1px solid #262626;
+        border-radius: 14px;
+        background: #090909;
+        padding: 12px;
+        display: grid;
+        gap: 8px;
+      }
+      .plan-card-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: #f2f2f2;
+        letter-spacing: .01em;
+      }
+      .plan-choice {
+        border: 1px solid #2d2d2d;
+        border-radius: 10px;
+        background: #101010;
+        color: #ededed;
+        padding: 9px 10px;
+        text-align: left;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .plan-choice:hover {
+        transform: none;
+        border-color: #3a3a3a;
+        background: #151515;
       }
       @keyframes pop {
         from { opacity: 0; transform: translateY(4px); }
@@ -1342,6 +2043,14 @@ function html(webview, extensionUri) {
         font-size: 12px;
         color: #ebebeb;
       }
+      .plan-toggle-main {
+        border: 1px solid #2a2a2a;
+        border-radius: 999px;
+        padding: 4px 8px;
+        background: #0c0c0c;
+        white-space: nowrap;
+        flex: 0 0 auto;
+      }
       .tool-toggle input {
         appearance: none;
         width: 30px;
@@ -1415,6 +2124,21 @@ function html(webview, extensionUri) {
         border: 1px solid #2e2e2e;
         color: #d9d9d9;
       }
+      .chat-icon-btn {
+        width: 28px;
+        height: 28px;
+        min-width: 28px;
+        border-radius: 999px;
+        padding: 0;
+        font-size: 14px;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: #0c0c0c;
+        border: 1px solid #2e2e2e;
+        color: #d9d9d9;
+      }
       .action-menu {
         position: fixed;
         inset: 0;
@@ -1480,6 +2204,38 @@ function html(webview, extensionUri) {
         font-size: 12px;
         font-weight: 600;
         color: #f1f1f1;
+      }
+      .api-key-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+      }
+      .api-key-input {
+        width: 100%;
+        border: 1px solid #2d2d2d;
+        border-radius: 8px;
+        background: #080808;
+        color: #efefef;
+        padding: 7px 9px;
+        font-size: 12px;
+      }
+      .api-key-input:focus {
+        outline: none;
+        border-color: #3f6ea0;
+      }
+      .api-key-save {
+        border: 1px solid #2e2e2e;
+        border-radius: 8px;
+        background: #111111;
+        color: #ececec;
+        padding: 7px 10px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .api-key-hint {
+        color: #8f8f8f;
+        font-size: 11px;
       }
       .action-item {
         border: none;
@@ -1564,20 +2320,27 @@ function html(webview, extensionUri) {
         flex: 0 0 auto;
       }
       .send-round {
-        width: 32px;
+        width: 52px;
         height: 32px;
-        min-width: 32px;
+        min-width: 52px;
         border-radius: 999px;
-        padding: 0;
+        padding: 0 10px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-size: 15px;
-        font-weight: 700;
+        font-size: 12px;
+        font-weight: 600;
         background: #111111 !important;
         border: 1px solid #303030 !important;
         color: #f4f4f4 !important;
         flex-shrink: 0;
+      }
+      .send-round.is-streaming {
+        min-width: 56px;
+        width: 56px;
+        background: #3a1012 !important;
+        border-color: #a63a40 !important;
+        color: #ffd8da !important;
       }
       #c {
         display: none;
@@ -1716,16 +2479,17 @@ function html(webview, extensionUri) {
         min-height: 64px;
         border-radius: 16px;
       }
-      .menu-icon {
+      .menu-icon,
+      .chat-icon-btn {
         width: 24px;
         height: 24px;
         min-width: 24px;
         font-size: 16px;
       }
       .send-round {
-        width: 34px;
+        width: 52px;
         height: 34px;
-        min-width: 34px;
+        min-width: 52px;
       }
       .footer-row {
         padding: 0;
@@ -1816,6 +2580,7 @@ function html(webview, extensionUri) {
             Send: <span class="kbd">Enter</span> New line: <span class="kbd">Shift + Enter</span>
           </div>
         </div>
+        <div id="threadList" class="thread-list"></div>
         <div id="msgs" class="messages"></div>
         <div class="jump-wrap">
           <button id="jumpLatest" class="jump-btn" type="button">Jump to latest</button>
@@ -1851,9 +2616,12 @@ function html(webview, extensionUri) {
             <div class="menu-anchor">
               <button id="actionMenuBtn" type="button" class="menu-icon" aria-label="Open actions" aria-expanded="false">+</button>
             </div>
+            <button id="newThreadBtn" type="button" class="chat-icon-btn" aria-label="Create new chat">+</button>
+            <button id="chatIconBtn" type="button" class="chat-icon-btn" aria-label="Show chat panel">&#128172;</button>
+            <button id="settingsIconBtn" type="button" class="chat-icon-btn" aria-label="Open settings">&#9881;</button>
             <button id="c" type="button" class="ghost">Clear</button>
             <select id="modelSel" class="composer-select">
-              <option value="Playground AI">Playground AI</option>
+              <option value="Playground 1">Playground 1</option>
             </select>
             <select id="reasonSel" class="composer-select">
               <option value="low">Low</option>
@@ -1862,7 +2630,11 @@ function html(webview, extensionUri) {
               <option value="max">Extra High</option>
             </select>
             <span id="contextPill" class="context-pill">&#10023; IDE context</span>
-            <span id="modeHint" class="hint">Auto execution enabled</span>
+            <label class="tool-toggle plan-toggle-main" for="planToggleMain">
+              <span>Plan</span>
+              <input id="planToggleMain" type="checkbox" aria-label="Plan mode toggle" />
+            </label>
+            <span id="modeHint" class="hint">Plan mode OFF (Auto execution)</span>
             <div class="spacer"></div>
             <button id="s" type="button" class="primary send-round" aria-label="Send">&#8593;</button>
           </div>
@@ -1905,6 +2677,15 @@ function html(webview, extensionUri) {
                       <input id="planToggle" type="checkbox" />
                     </label>
                   </div>
+                </div>
+
+                <div class="sheet-card">
+                  <div class="sheet-card-title">Your API Key</div>
+                  <div class="api-key-row">
+                    <input id="apiKeyInline" class="api-key-input" type="password" placeholder="xp_..." />
+                    <button id="apiKeyInlineSave" class="api-key-save" type="button">Save</button>
+                  </div>
+                  <div class="api-key-hint">Stored securely in VS Code secrets.</div>
                 </div>
 
                 <div class="sheet-card">

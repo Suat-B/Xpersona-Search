@@ -26,10 +26,12 @@ export interface PlaygroundUsageResponse {
     cancelAtPeriodEnd: boolean;
   } | null;
   limits: {
-    contextCap: number;
+    contextHardCap: number;
+    maxInputTokensPerRequest: number;
     maxOutputTokens: number;
-    maxRequestsPerDay: number;
-    maxOutputTokensPerMonth: number;
+    maxRequestsPerCycle: number;
+    maxTotalTokensPerCycle: number;
+    maxTotalTokensPerMonth: number;
   } | null;
   today: {
     requestsUsed: number;
@@ -37,7 +39,9 @@ export interface PlaygroundUsageResponse {
     requestsLimit: number;
   };
   thisMonth: {
+    tokensInput: number;
     tokensOutput: number;
+    tokensTotal: number;
     tokensRemaining: number;
     tokensLimit: number;
     estimatedCostUsd: number;
@@ -105,7 +109,9 @@ function buildEmptyUsageResponse(): PlaygroundUsageResponse {
       requestsLimit: 0,
     },
     thisMonth: {
+      tokensInput: 0,
       tokensOutput: 0,
+      tokensTotal: 0,
       tokensRemaining: 0,
       tokensLimit: 0,
       estimatedCostUsd: 0,
@@ -290,12 +296,16 @@ export async function GET(request: NextRequest): Promise<Response> {
     ]);
 
     const sub = subscription[0];
+    const normalizedPlan: PlaygroundPlan | null =
+      sub?.planTier === "trial" || sub?.planTier === "starter" || sub?.planTier === "builder" || sub?.planTier === "studio"
+        ? sub.planTier
+        : null;
     const last24h = last24hRows[0];
     const cycle = cycleRows[0];
-    const requestsLimit = stats?.today.requestsLimit || 30;
-    const tokensLimit = stats?.thisMonth.tokensLimit || 50000;
+    const requestsLimit = stats?.cycle.requestsLimit || 30;
+    const cycleTokenLimit = stats?.cycle.tokensTotalLimit || 120000;
     const cycleRequestsUsed = Number(cycle?.requests ?? 0);
-    const cycleTokensUsed = Number(cycle?.tokensOutput ?? 0);
+    const cycleTokensUsed = stats?.cycle.tokensTotalUsed ?? Number(cycle?.tokensOutput ?? 0);
     const statusBreakdown = {
       success: 0,
       error: 0,
@@ -314,7 +324,7 @@ export async function GET(request: NextRequest): Promise<Response> {
 
     // Build response
     const response: PlaygroundUsageResponse = {
-      plan: (sub?.planTier as PlaygroundPlan) || null,
+      plan: normalizedPlan,
       status: sub?.status || "inactive",
       trial: sub?.trialEndsAt ? {
         endsAt: sub.trialEndsAt.toISOString(),
@@ -324,20 +334,22 @@ export async function GET(request: NextRequest): Promise<Response> {
         currentPeriodEndsAt: sub.currentPeriodEnd.toISOString(),
         cancelAtPeriodEnd: sub.cancelAtPeriodEnd || false,
       } : null,
-      limits: sub ? PLAN_LIMITS[sub.planTier as PlaygroundPlan] : null,
+      limits: normalizedPlan ? PLAN_LIMITS[normalizedPlan] : null,
       today: {
-        requestsUsed: stats?.today.requestsUsed || 0,
+        requestsUsed: stats?.cycle.requestsUsed || 0,
         requestsRemaining: stats 
-          ? Math.max(0, PLAN_LIMITS[stats.plan].maxRequestsPerDay - stats.today.requestsUsed)
+          ? Math.max(0, PLAN_LIMITS[stats.plan].maxRequestsPerCycle - stats.cycle.requestsUsed)
           : 0,
-        requestsLimit: stats?.today.requestsLimit || 30,
+        requestsLimit: stats?.cycle.requestsLimit || 30,
       },
       thisMonth: {
+        tokensInput: stats?.thisMonth.tokensInput || 0,
         tokensOutput: stats?.thisMonth.tokensOutput || 0,
+        tokensTotal: stats?.thisMonth.tokensTotal || 0,
         tokensRemaining: stats
-          ? Math.max(0, PLAN_LIMITS[stats.plan].maxOutputTokensPerMonth - stats.thisMonth.tokensOutput)
+          ? Math.max(0, PLAN_LIMITS[stats.plan].maxTotalTokensPerMonth - stats.thisMonth.tokensTotal)
           : 0,
-        tokensLimit: stats?.thisMonth.tokensLimit || 50000,
+        tokensLimit: stats?.thisMonth.tokensLimit || PLAN_LIMITS.trial.maxTotalTokensPerMonth,
         estimatedCostUsd: stats?.thisMonth.estimatedCost || 0,
       },
       cycle: {
@@ -345,8 +357,8 @@ export async function GET(request: NextRequest): Promise<Response> {
         requestsRemaining: Math.max(0, requestsLimit - cycleRequestsUsed),
         requestsLimit,
         tokensOutput: cycleTokensUsed,
-        tokensRemaining: Math.max(0, tokensLimit - cycleTokensUsed),
-        tokensLimit,
+        tokensRemaining: Math.max(0, cycleTokenLimit - cycleTokensUsed),
+        tokensLimit: cycleTokenLimit,
         estimatedCostUsd: Number(cycle?.estimatedCostUsd ?? 0),
         startsAt: cycleWindow.start.toISOString(),
         endsAt: cycleWindow.end.toISOString(),

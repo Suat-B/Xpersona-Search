@@ -325,7 +325,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const { userId, email } = auth;
   const unlimitedAccess = hasUnlimitedPlaygroundAccess(email);
 
-  // Explicit guard: only users with an active Playground subscription (trial/paid) can use HF routes.
+  // Explicit guard: only users with an active Playground subscription can use HF routes.
   if (!unlimitedAccess) {
     const plan = await getUserPlan(userId);
     if (!plan || !plan.isActive) {
@@ -394,7 +394,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
     maxTokensForUpstream = Math.min(
       requestedMaxTokens,
-      rateLimitCheck.limits?.maxOutputTokens || PLAN_LIMITS.paid.maxOutputTokens
+      rateLimitCheck.limits?.maxOutputTokens || PLAN_LIMITS.builder.maxOutputTokens
     );
   }
   
