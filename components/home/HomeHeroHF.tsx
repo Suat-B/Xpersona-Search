@@ -5,10 +5,10 @@ import HeroDemoPanel from "@/components/home/HeroDemoPanel";
 export function HomeHeroHF() {
   return (
     <section className="relative w-full">
-      <div className="container mx-auto flex min-h-[calc(100vh-64px)] max-w-[1260px] items-center px-4 sm:px-6 py-8 sm:py-10">
-        <div className="relative w-full overflow-hidden rounded-[32px] border border-white/10 bg-gradient-to-br from-[#0b0f14] via-[#0a0f15] to-[#080b10] shadow-[0_40px_120px_rgba(0,0,0,0.55)] px-7 py-9 sm:px-12 sm:py-12 lg:min-h-[560px]">
+      <div className="container mx-auto flex min-h-[calc(100vh-64px)] max-w-[1260px] items-center justify-center px-4 py-8 sm:px-6 sm:py-10">
+        <div className="relative w-full max-w-[1100px] overflow-hidden rounded-[32px] border border-white/10 bg-gradient-to-br from-[#0b0f14] via-[#0a0f15] to-[#080b10] px-5 py-8 shadow-[0_40px_120px_rgba(0,0,0,0.55)] sm:px-12 sm:py-12 lg:min-h-[560px]">
           <div className="grid gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] items-center">
-            <div className="relative z-10 text-center sm:text-left">
+            <div className="relative z-10 mx-auto w-full max-w-[580px] text-center sm:text-left">
               <Image
                 src="/xpersona-logo-1.png"
                 alt="Xpersona"
@@ -20,7 +20,7 @@ export function HomeHeroHF() {
               <p className="text-[12px] uppercase tracking-[0.4em] text-white/50 mb-4">
                 Xpersona Hub
               </p>
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-semibold text-white leading-tight text-balance">
+              <h1 className="text-3xl sm:text-5xl lg:text-6xl font-semibold text-white leading-tight text-balance">
                 The AI agent community building the future.
               </h1>
               <p className="mt-5 text-base sm:text-lg text-white/70 max-w-xl text-balance mx-auto sm:mx-0">
@@ -52,7 +52,7 @@ export function HomeHeroHF() {
                 </Link>
               </div>
             </div>
-            <div>
+            <div className="mx-auto w-full max-w-[420px] lg:max-w-none">
               <HeroDemoPanel />
             </div>
           </div>

@@ -122,6 +122,8 @@
       let streaming = false;
       let followLatest = true;
       let terminalBubble = null;
+      const MAX_DIFF_ROWS = 400;
+      const seenEditPreviewKeys = new Set();
       let currentMode = "auto";
       let lastSendAt = 0;
       let attachedFiles = [];
@@ -264,6 +266,17 @@
           .replaceAll('"', "&quot;");
       }
 
+      function hashPatch(text) {
+        // FNV-1a 32-bit; good enough for UI dedupe.
+        let h = 2166136261;
+        const s = String(text || "");
+        for (let i = 0; i < s.length; i += 1) {
+          h ^= s.charCodeAt(i);
+          h = Math.imul(h, 16777619);
+        }
+        return (h >>> 0).toString(16);
+      }
+
       function updateStartupVisibility() {
         if (startup) startup.classList.remove("hidden");
         if (idleMark) {
@@ -354,11 +367,13 @@
         const body = terminalBubble.querySelector(".m-body");
         if (body) {
           body.innerHTML =
-            '<div class="term-head">' +
-              '<span class="term-title">Terminal</span>' +
-              '<span class="term-state" data-term-state>Idle</span>' +
-            "</div>" +
-            '<div class="term-body" data-term-body></div>';
+            '<details class="term-disclosure" open>' +
+              '<summary class="term-head">' +
+                '<span class="term-title">Terminal</span>' +
+                '<span class="term-state" data-term-state>Idle</span>' +
+              "</summary>" +
+              '<div class="term-body" data-term-body></div>' +
+            "</details>";
         }
         return terminalBubble;
       }
@@ -367,6 +382,10 @@
         const b = ensureTerminalBubble();
         const state = b.querySelector("[data-term-state]");
         if (state) state.textContent = label;
+        if (label === "Running") {
+          const disclosure = b.querySelector(".term-disclosure");
+          if (disclosure) disclosure.open = true;
+        }
       }
 
       function addTerminalLine(text, kind = "info") {
@@ -410,20 +429,116 @@
         return { adds, dels };
       }
 
+      function renderUnifiedDiffRows(patchText, opts) {
+        const options = opts || {};
+        const maxRows = Number.isFinite(options.maxRows) ? Math.max(10, options.maxRows) : MAX_DIFF_ROWS;
+        const lines = String(patchText || "").replace(/\r\n/g, "\n").split("\n");
+
+        let i = 0;
+        while (i < lines.length && !String(lines[i] || "").startsWith("@@")) i += 1;
+        if (i >= lines.length) i = 0;
+
+        let oldLine = 0;
+        let newLine = 0;
+        let rendered = 0;
+        let truncated = false;
+        const out = [];
+
+        const row = (kind, oldNo, newNo, sig, text) => (
+          '<div class="diff-row ' + kind + '">' +
+            '<div class="ln old">' + esc(oldNo ? String(oldNo) : "") + "</div>" +
+            '<div class="ln new">' + esc(newNo ? String(newNo) : "") + "</div>" +
+            '<div class="sig">' + esc(sig || "") + "</div>" +
+            '<div class="txt">' + esc(text || "") + "</div>" +
+          "</div>"
+        );
+
+        for (; i < lines.length; i += 1) {
+          if (rendered >= maxRows) {
+            truncated = true;
+            break;
+          }
+
+          const raw = String(lines[i] || "");
+          if (!raw) continue;
+
+          if (raw.startsWith("@@")) {
+            const m = /^@@\s+-([0-9]+)(?:,([0-9]+))?\s+\+([0-9]+)(?:,([0-9]+))?\s+@@/.exec(raw);
+            if (m) {
+              oldLine = Number(m[1] || "0");
+              newLine = Number(m[3] || "0");
+            }
+            out.push(row("meta", "", "", "", raw));
+            rendered += 1;
+            continue;
+          }
+
+          if (raw.startsWith("+") && !raw.startsWith("+++")) {
+            out.push(row("add", "", newLine, "+", raw.slice(1)));
+            newLine += 1;
+            rendered += 1;
+            continue;
+          }
+
+          if (raw.startsWith("-") && !raw.startsWith("---")) {
+            out.push(row("del", oldLine, "", "-", raw.slice(1)));
+            oldLine += 1;
+            rendered += 1;
+            continue;
+          }
+
+          if (raw.startsWith(" ")) {
+            out.push(row("ctx", oldLine, newLine, " ", raw.slice(1)));
+            oldLine += 1;
+            newLine += 1;
+            rendered += 1;
+            continue;
+          }
+
+          if (raw.startsWith("\\ No newline at end of file")) {
+            out.push(row("meta", "", "", "", raw));
+            rendered += 1;
+            continue;
+          }
+        }
+
+        if (out.length === 0) {
+          const fallback = lines.filter((x) => String(x || "").length > 0).slice(0, maxRows);
+          for (const line of fallback) {
+            out.push(row("meta", "", "", "", String(line || "")));
+          }
+          truncated = lines.length > fallback.length;
+        }
+
+        return { html: out.join(""), truncated, maxRows };
+      }
+
       function addEditPreview(path, patch) {
+        const key = String(path || "unknown") + ":" + hashPatch(patch || "");
+        if (seenEditPreviewKeys.has(key)) return null;
+        seenEditPreviewKeys.add(key);
+
         const d = createBubble("a change");
         const body = d.querySelector(".m-body");
         if (!body) return d;
 
         const parsed = parseDiffStats(patch);
+        const rendered = renderUnifiedDiffRows(patch || "", { maxRows: MAX_DIFF_ROWS });
         body.innerHTML =
-          '<div class="change-head">' +
-            '<span class="change-count">1 file changed</span>' +
-          '</div>' +
-          '<div class="change-file">' +
-            '<span class="change-path">' + esc(path || "unknown") + '</span>' +
-            '<span class="change-stats"><span class="add">+' + esc(parsed.adds) + '</span> <span class="del">-' + esc(parsed.dels) + '</span></span>' +
-          '</div>';
+          '<details class="diff-disclosure" open>' +
+            '<summary class="diff-summary">' +
+              '<span class="diff-summary-title">Edited file</span>' +
+              '<span class="diff-stats"><span class="add">+' + esc(parsed.adds) + '</span> <span class="del">-' + esc(parsed.dels) + "</span></span>" +
+            "</summary>" +
+            '<div class="diff-card">' +
+              '<div class="diff-head">' +
+                '<div class="diff-title"><span class="diff-path">' + esc(path || "unknown") + "</span></div>" +
+                '<div class="diff-stats"><span class="add">+' + esc(parsed.adds) + '</span> <span class="del">-' + esc(parsed.dels) + "</span></div>" +
+              "</div>" +
+              '<div class="diff-body">' + rendered.html + "</div>" +
+              (rendered.truncated ? '<div class="diff-trunc">Truncated (showing first ' + esc(rendered.maxRows) + " lines)</div>" : "") +
+            "</div>" +
+          "</details>";
         return d;
       }
 

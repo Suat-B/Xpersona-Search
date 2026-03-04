@@ -964,7 +964,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       .cmd .m-body {
         font-family: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
         font-size: 11px;
-        color: color-mix(in srgb, var(--fg) 72%, var(--muted));
+        color: color-mix(in srgb, var(--fg) 72%, var(--muted) 28%);
       }
       .cmd .m-time { display: none; }
       .terminal-live {
@@ -988,14 +988,15 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         display: none;
       }
       .term-disclosure > summary::before {
-        content: "▾";
+        content: ">";
         display: inline-block;
         margin-right: 8px;
-        color: color-mix(in srgb, var(--fg) 60%, var(--muted));
+        color: color-mix(in srgb, var(--fg) 60%, var(--muted) 40%);
+        transform: rotate(90deg);
         transition: transform .15s ease;
       }
       .term-disclosure:not([open]) > summary::before {
-        transform: rotate(-90deg);
+        transform: rotate(0deg);
       }
       .term-head {
         display: flex;
@@ -1053,14 +1054,15 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         display: none;
       }
       .diff-disclosure > summary::before {
-        content: "▾";
+        content: ">";
         display: inline-block;
         margin-right: 8px;
-        color: color-mix(in srgb, var(--fg) 60%, var(--muted));
+        color: color-mix(in srgb, var(--fg) 60%, var(--muted) 40%);
+        transform: rotate(90deg);
         transition: transform .15s ease;
       }
       .diff-disclosure:not([open]) > summary::before {
-        transform: rotate(-90deg);
+        transform: rotate(0deg);
       }
       .diff-summary {
         display: flex;
