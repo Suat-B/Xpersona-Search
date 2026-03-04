@@ -863,7 +863,7 @@ export async function runAssist(
       'Return STRICT JSON only with this shape: {"final":"string","edits":[{"path":"relative/path","patch":"unified diff patch","rationale":"optional"}],"commands":["safe command"]}.',
       codeEditIntent
         ? "Rules: include concrete code edits (non-empty edits array) when the user asks to create/modify code; do not return placeholder text."
-        : "Rules: keep edits empty when not confident.",
+        : "Rules: keep edits empty unless explicitly requested; answer in plain natural language and avoid standalone code snippets.",
       explicitCommandRunIntent
         ? "Rules: commands may be included only if they are necessary, safe, and directly requested."
         : "Rules: leave commands empty unless the user explicitly asked you to run/test/build/lint.",

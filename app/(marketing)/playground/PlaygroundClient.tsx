@@ -223,7 +223,7 @@ function HeroSection({ onStartTrial }: { onStartTrial: () => void }) {
             <SparklesIcon className="h-3.5 w-3.5" />
             Powered by our in-house model: Playground
           </div>
-          <h1 className="text-balance text-4xl font-black leading-tight text-white sm:text-5xl lg:text-6xl">
+          <h1 className="text-balance text-4xl font-black leading-tight text-black sm:text-5xl lg:text-6xl">
             Your coding copilot workspace for shipping faster.
           </h1>
           <p className="mt-5 max-w-2xl text-base text-slate-300 sm:text-lg">
@@ -373,7 +373,7 @@ function PricingPreviewSection({
         <div className="mb-8 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
           <div>
             <p className="text-xs uppercase tracking-[0.18em] text-cyan-300">Pricing Preview</p>
-            <h2 className="mt-2 text-3xl font-black text-white sm:text-4xl">Start small, scale as you ship</h2>
+            <h2 className="mt-2 text-3xl font-black text-black sm:text-4xl">Start small, scale as you ship</h2>
             <p className="mt-2 max-w-2xl text-slate-300">Pricing is visible early so your team can evaluate fit quickly.</p>
           </div>
           <div className="rounded-full border border-slate-700 bg-slate-900 p-1">
@@ -425,7 +425,7 @@ function FeatureGridSection() {
   return (
     <section className="px-4 py-14 sm:px-6">
       <div className="mx-auto max-w-6xl">
-        <h2 className="text-3xl font-black text-white sm:text-4xl">VS Code extension features that convert work into shipped code</h2>
+        <h2 className="text-3xl font-black text-black sm:text-4xl">VS Code extension features that convert work into shipped code</h2>
         <p className="mt-3 max-w-3xl text-slate-300">Everything below is built to reduce context switching and increase trial-to-paid retention.</p>
         <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {EXTENSION_FEATURES.map((feature) => (
@@ -440,7 +440,7 @@ function FeatureGridSection() {
               <div className="inline-flex rounded-full border border-slate-600 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-cyan-200">
                 {feature.tag}
               </div>
-              <h3 className="mt-3 text-lg font-bold text-white">{feature.title}</h3>
+              <h3 className="mt-3 text-lg font-bold text-black">{feature.title}</h3>
               <p className="mt-2 text-sm leading-relaxed text-slate-300">{feature.description}</p>
             </article>
           ))}
@@ -460,7 +460,7 @@ function DemoSection() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.16em] text-cyan-300">Interactive Demo</p>
-            <h2 className="mt-2 text-3xl font-black text-white sm:text-4xl">Generate, plan, and debug in one flow</h2>
+            <h2 className="mt-2 text-3xl font-black text-black sm:text-4xl">Generate, plan, and debug in one flow</h2>
           </div>
           <div className="flex rounded-xl border border-slate-700 bg-slate-950/60 p-1" role="tablist" aria-label="Playground demo tabs">
             {(["generate", "plan", "debug"] as DemoTab[]).map((tab) => (
@@ -507,11 +507,11 @@ function UseCasesSection({ onStartTrial }: { onStartTrial: () => void }) {
   return (
     <section className="px-4 py-14 sm:px-6">
       <div className="mx-auto max-w-6xl">
-        <h2 className="text-3xl font-black text-white sm:text-4xl">Built for every team shape</h2>
+        <h2 className="text-3xl font-black text-black sm:text-4xl">Built for every team shape</h2>
         <div className="mt-6 grid gap-4 lg:grid-cols-3">
           {cards.map((card) => (
             <article key={card.title} className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
-              <h3 className="text-lg font-bold text-white">{card.title}</h3>
+              <h3 className="text-lg font-bold text-black">{card.title}</h3>
               <p className="mt-2 text-sm text-slate-300">{card.body}</p>
               <button onClick={onStartTrial} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-cyan-300 transition hover:text-cyan-200">
                 Start Free Trial
@@ -540,7 +540,7 @@ function PricingSection({
     <section className="px-4 py-14 sm:px-6">
       <div className="mx-auto max-w-6xl">
         <div className="mb-8 text-center">
-          <h2 className="text-3xl font-black text-white sm:text-4xl">Full pricing and plan details</h2>
+          <h2 className="text-3xl font-black text-black sm:text-4xl">Full pricing and plan details</h2>
           <p className="mt-2 text-slate-300">Choose the plan that matches your coding throughput today.</p>
         </div>
         <div className="mb-8 flex justify-center">
@@ -588,7 +588,7 @@ function FaqSection() {
   return (
     <section className="px-4 py-14 sm:px-6">
       <div className="mx-auto max-w-4xl">
-        <h2 className="text-center text-3xl font-black text-white sm:text-4xl">Common objections, answered</h2>
+        <h2 className="text-center text-3xl font-black text-black sm:text-4xl">Common objections, answered</h2>
         <div className="mt-6 space-y-3">
           {FAQ_ITEMS.map((item, index) => (
             <div key={item.question} className="rounded-xl border border-slate-700 bg-slate-900/70">
@@ -612,7 +612,7 @@ function FinalCtaSection({ onStartTrial, isBusy }: { onStartTrial: () => void; i
   return (
     <section className="px-4 pb-24 pt-12 sm:px-6">
       <div className="mx-auto max-w-4xl rounded-3xl border border-cyan-400/30 bg-gradient-to-r from-slate-900 to-slate-800 p-8 text-center shadow-[0_20px_60px_rgba(8,145,178,0.25)]">
-        <h2 className="text-3xl font-black text-white sm:text-4xl">Ready to turn prompts into shipped features?</h2>
+        <h2 className="text-3xl font-black text-black sm:text-4xl">Ready to turn prompts into shipped features?</h2>
         <p className="mt-3 text-slate-300">Start your 2-day trial with our in-house model Playground {"<3 pure love <3"} and keep your existing workflow intact.</p>
         <button
           onClick={() => {
@@ -642,7 +642,7 @@ export function PlaygroundClient() {
       setIsCheckoutStarting(true);
       setCheckoutError(null);
       try {
-        const res = await fetch("/api/v1/me/playground-checkout", {
+        const res = await fetch("/api/me/playground-checkout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -656,7 +656,7 @@ export function PlaygroundClient() {
         };
 
         if (res.status === 401) {
-          window.location.href = "/api/v1/auth/play";
+          window.location.href = "/api/auth/play";
           return;
         }
 

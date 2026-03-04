@@ -17,7 +17,16 @@ type Safety = "standard" | "aggressive";
 type ReasoningLevel = "low" | "medium" | "high" | "max";
 type PendingAction = { type: "edit"; path: string; patch: string } | { type: "command"; command: string };
 type ContextLevel = "max";
-type AskOptions = { includeIdeContext?: boolean; workspaceContextLevel?: ContextLevel };
+type AssistAttachmentPayload = {
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+  name?: string;
+  dataUrl: string;
+};
+type AskOptions = {
+  includeIdeContext?: boolean;
+  workspaceContextLevel?: ContextLevel;
+  attachments?: AssistAttachmentPayload[];
+};
 type IdeContext = {
   activeFile?: { path?: string; language?: string; selection?: string; content?: string };
   openFiles?: Array<{ path: string; language?: string; excerpt?: string }>;
@@ -60,6 +69,35 @@ const INDEX_CHUNK_SIZE = 1200;
 const INDEX_CHUNK_OVERLAP = 180;
 const INDEX_BATCH_SIZE = 400;
 const INDEX_AUTO_INTERVAL_MS = 5 * 60 * 1000;
+const ATTACHMENT_MIME_TYPES = new Set<AssistAttachmentPayload["mimeType"]>(["image/png", "image/jpeg", "image/webp"]);
+const MAX_ATTACHMENTS_PER_REQUEST = 3;
+const MAX_ATTACHMENT_DATAURL_CHARS = 8_000_000;
+
+function sanitizeAssistAttachments(raw: unknown): AssistAttachmentPayload[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AssistAttachmentPayload[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const mimeType = typeof (item as { mimeType?: unknown }).mimeType === "string"
+      ? (item as { mimeType: string }).mimeType.trim().toLowerCase()
+      : "";
+    const dataUrl = typeof (item as { dataUrl?: unknown }).dataUrl === "string"
+      ? (item as { dataUrl: string }).dataUrl.trim()
+      : "";
+    if (!ATTACHMENT_MIME_TYPES.has(mimeType as AssistAttachmentPayload["mimeType"])) continue;
+    if (!dataUrl || dataUrl.length > MAX_ATTACHMENT_DATAURL_CHARS) continue;
+    if (!new RegExp(`^data:${mimeType};base64,`, "i").test(dataUrl)) continue;
+    const nameRaw = typeof (item as { name?: unknown }).name === "string" ? (item as { name: string }).name.trim() : "";
+    const name = nameRaw ? nameRaw.slice(0, 255) : undefined;
+    out.push({
+      mimeType: mimeType as AssistAttachmentPayload["mimeType"],
+      dataUrl,
+      ...(name ? { name } : {}),
+    });
+    if (out.length >= MAX_ATTACHMENTS_PER_REQUEST) break;
+  }
+  return out;
+}
 
 function normalizeWorkspaceRelativePath(input: string): string | null {
   const trimmed = input.replace(/\\/g, "/").trim();
@@ -175,17 +213,17 @@ export function activate(context: vscode.ExtensionContext) {
       if (t) view.ask(t, false);
     }),
     vscode.commands.registerCommand("xpersona.playground.history.open", () => view.loadHistory()),
-    vscode.commands.registerCommand("xpersona.playground.image.attach", () => vscode.window.showInformationMessage("Attach image from panel button.")),
+    vscode.commands.registerCommand("xpersona.playground.image.attach", async () => {
+      await view.openImagePicker();
+    }),
     vscode.commands.registerCommand("xpersona.playground.agents.parallelRun", async () => {
       const t = await vscode.window.showInputBox({ prompt: "Parallel task" });
       if (t) view.ask(t, true);
     }),
-    vscode.commands.registerCommand("xpersona.playground.index.rebuild", () =>
-      view.post({
-        type: "indexState",
-        data: { chunks: 0, freshness: "rebuilding", lastQueryMatches: 0, lastRebuildAt: new Date().toLocaleTimeString() },
-      })
-    ),
+    vscode.commands.registerCommand("xpersona.playground.index.rebuild", async () => {
+      await view.show();
+      await view.rebuildIndex("commandPalette");
+    }),
     vscode.commands.registerCommand("xpersona.playground.replay.session", () => view.replay()),
   ];
   context.subscriptions.push(reg, ...cmds);
@@ -416,11 +454,13 @@ class Provider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async runBackgroundIndexing(trigger: string): Promise<void> {
-    if (!this.isIdeContextV2Enabled()) return;
+  private async runBackgroundIndexing(
+    trigger: string
+  ): Promise<{ status: "ok" | "disabled" | "no-workspace" | "busy" | "no-key" | "no-chunks" | "error"; chunks: number; message?: string }> {
+    if (!this.isIdeContextV2Enabled()) return { status: "disabled", chunks: 0, message: "IDE context indexing is disabled." };
     const root = this.getWorkspaceRoot();
-    if (!root) return;
-    if (this.indexRunning) return;
+    if (!root) return { status: "no-workspace", chunks: 0, message: "Open a workspace folder to build an index." };
+    if (this.indexRunning) return { status: "busy", chunks: 0, message: "Index build already in progress." };
     this.indexRunning = true;
     try {
       const include = "**/*.{ts,tsx,js,jsx,json,md,py,go,rs,java,cs,yaml,yml}";
@@ -457,11 +497,11 @@ class Provider implements vscode.WebviewViewProvider {
       }
       if (!chunks.length) {
         this.indexFreshness = "stale";
-        return;
+        return { status: "no-chunks", chunks: 0, message: "No indexable files found." };
       }
       const workspaceHash = this.computeWorkspaceHash(root);
       const key = await this.ctx.secrets.get(API_KEY_SECRET);
-      if (!key) return;
+      if (!key) return { status: "no-key", chunks: 0, message: "Set your API key before rebuilding index." };
       for (let i = 0; i < chunks.length; i += INDEX_BATCH_SIZE) {
         const batch = chunks.slice(i, i + INDEX_BATCH_SIZE);
         await req("POST", `${base()}/api/v1/playground/index/upsert`, key, {
@@ -482,12 +522,68 @@ class Provider implements vscode.WebviewViewProvider {
           lastRebuildAt: new Date(this.lastIndexAt).toLocaleTimeString(),
         },
       });
+      return { status: "ok", chunks: chunks.length };
+    } catch (e) {
+      this.indexFreshness = "stale";
+      return { status: "error", chunks: 0, message: err(e) };
     } finally {
       this.indexRunning = false;
       if (Date.now() - this.lastIndexAt > INDEX_AUTO_INTERVAL_MS * 2) {
         this.indexFreshness = "stale";
       }
     }
+  }
+
+  async rebuildIndex(source: "webview" | "commandPalette" = "webview") {
+    if (!this.isIdeContextV2Enabled()) {
+      this.post({ type: "status", text: "Workspace indexing is disabled. Enable xpersona.playground.ideContextV2 to rebuild." });
+      return;
+    }
+    if (!this.getWorkspaceRoot()) {
+      this.post({ type: "status", text: "Open a workspace folder first, then retry index rebuild." });
+      return;
+    }
+    if (this.indexRunning) {
+      this.post({ type: "status", text: "Index rebuild already running." });
+      return;
+    }
+
+    this.post({
+      type: "indexState",
+      data: { chunks: 0, freshness: "rebuilding", lastQueryMatches: 0, lastRebuildAt: new Date().toLocaleTimeString() },
+    });
+    this.post({ type: "status", text: `Rebuilding semantic index (${source})...` });
+
+    const result = await this.runBackgroundIndexing("manual");
+    if (result.status === "ok") {
+      this.post({ type: "status", text: `Index rebuild complete. ${result.chunks} chunks indexed.` });
+      return;
+    }
+    if (result.status === "no-key") {
+      this.post({ type: "status", text: "Set your API key before rebuilding workspace index." });
+      return;
+    }
+    if (result.status === "no-chunks") {
+      this.post({
+        type: "indexState",
+        data: { chunks: 0, freshness: "stale", lastQueryMatches: 0, lastRebuildAt: new Date().toLocaleTimeString() },
+      });
+      this.post({ type: "status", text: "Index rebuild finished but no supported source files were found." });
+      return;
+    }
+    if (result.status === "busy") {
+      this.post({ type: "status", text: "Index rebuild already running." });
+      return;
+    }
+    if (result.status === "disabled") {
+      this.post({ type: "status", text: "Workspace indexing is disabled." });
+      return;
+    }
+    if (result.status === "no-workspace") {
+      this.post({ type: "status", text: "Open a workspace folder first, then retry index rebuild." });
+      return;
+    }
+    this.post({ type: "err", text: `Index rebuild failed: ${result.message || "unknown error"}` });
   }
 
   private computeWorkspaceHash(root: vscode.WorkspaceFolder | null): string {
@@ -643,6 +739,11 @@ class Provider implements vscode.WebviewViewProvider {
     await vscode.commands.executeCommand("workbench.view.extension.xpersona").then(undefined, () => {});
     await vscode.commands.executeCommand("xpersona.playgroundView.focus").then(undefined, () => {});
     if (prefill) this.post({ type: "prefill", text: prefill });
+  }
+
+  async openImagePicker() {
+    await this.show();
+    this.post({ type: "openUploadPicker" });
   }
 
   async setApiKey() {
