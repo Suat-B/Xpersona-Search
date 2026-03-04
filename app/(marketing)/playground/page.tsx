@@ -6,12 +6,12 @@ const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
 export const metadata: Metadata = {
   title: "Playground AI for VS Code | Start Free Trial",
   description:
-    "Your coding copilot workspace for shipping faster. Generate, plan, and debug with Playground AI in a ChatGPT/Codex/Claude Code-style workflow.",
+    "Your coding copilot workspace for shipping faster. Powered by our in-house model, Playground <3 pure love <3, for generate, plan, and debug workflows.",
   alternates: { canonical: `${baseUrl}/playground` },
   openGraph: {
     title: "Playground AI for VS Code | Start Free Trial",
     description:
-      "Generate, plan, and debug faster with Playground AI. Premium coding workflows designed for developers and teams.",
+      "Powered by our in-house model, Playground <3 pure love <3. Generate, plan, and debug faster with premium coding workflows.",
     url: `${baseUrl}/playground`,
     type: "website",
   },

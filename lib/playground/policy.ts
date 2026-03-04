@@ -30,16 +30,6 @@ const BLOCKED_COMMAND_PATTERNS = [
   /\bsetx?\s+.*(api[_-]?key|token|secret)\b/i,
 ];
 
-const ALLOWED_COMMAND_PATTERNS = [
-  /^(npm|pnpm|yarn)\s+(run\s+)?(build|test|lint|typecheck)\b/i,
-  /^npx\s+vitest\b/i,
-  /^node\s+.+/i,
-  /^tsc\b/i,
-  /^pytest\b/i,
-  /^go\s+test\b/i,
-  /^cargo\s+test\b/i,
-];
-
 export function validateExecuteAction(action: ExecuteAction): { ok: boolean; reason?: string } {
   if (action.type === "edit") {
     const patch = action.patch ?? action.diff ?? "";
@@ -56,9 +46,6 @@ export function validateExecuteAction(action: ExecuteAction): { ok: boolean; rea
     if (BLOCKED_COMMAND_PATTERNS.some((pattern) => pattern.test(action.command))) {
       return { ok: false, reason: "Command blocked by safety policy" };
     }
-    if (!ALLOWED_COMMAND_PATTERNS.some((pattern) => pattern.test(action.command))) {
-      return { ok: false, reason: "Command not in allowlist" };
-    }
     if (action.cwd?.includes("..") || (action.cwd && (action.cwd.startsWith("/") || /^[a-z]:\\/i.test(action.cwd)))) {
       return { ok: false, reason: "cwd must stay within workspace root" };
     }
@@ -70,4 +57,3 @@ export function validateExecuteAction(action: ExecuteAction): { ok: boolean; rea
   }
   return { ok: true };
 }
-

@@ -7,6 +7,7 @@
 ## 1) Executive Summary
 Xpersona should market itself as an **agentic coding platform**, not just a coding assistant:
 - API-first backend for agent workflows (`assist`, `execute`, `sessions`, `index`, `agents/run`, `replay`)
+- Playground, our in-house agentic coding model, as the intelligence core
 - Extension-enabled user experience (IDE + browser + API)
 - Integration-ready architecture (OpenClaw, MCP/A2A-style ecosystems)
 - Governance-aware execution model (policy checks, usage limits, session traceability)
@@ -25,10 +26,11 @@ For developers and AI-native teams that need reliable coding automation, Xperson
 
 ## Differentiators to emphasize
 1. **Programmable API surface** (not only UI chat)
-2. **Execution governance** (`execute` approvals/blocks)
-3. **Session + context memory** (`sessions`, `messages`, `index`)
-4. **Integration orientation** (OpenClaw and protocol ecosystem)
-5. **Commercial readiness** (usage metering + subscription gates)
+2. **Playground in-house model** (owned intelligence layer)
+3. **Execution governance** (`execute` approvals/blocks)
+4. **Session + context memory** (`sessions`, `messages`, `index`)
+5. **Integration orientation** (OpenClaw and protocol ecosystem)
+6. **Commercial readiness** (usage metering + subscription gates)
 
 ## Why The API Aspect Is Awesome
 The API is not a "nice-to-have." It is the product engine.
@@ -71,6 +73,7 @@ The API is not a "nice-to-have." It is the product engine.
 
 ## Messaging lines you can reuse
 - "Not just an assistant UI. A programmable runtime for coding agents."
+- "Playground plus one API gives teams control and speed."
 - "From prompt chat to production workflows, through one API."
 - "Governed autonomy: fast agents with policy-backed control."
 - "Build once, run anywhere: extension, web, CLI, and integrations."
@@ -94,15 +97,17 @@ The API is not a "nice-to-have." It is the product engine.
 
 ## 4) Messaging Architecture
 ## Master message
-"Build, run, and govern coding agents through one API."
+"Build, run, and govern coding agents through one API, powered by Playground."
 
 ## Pillar messages
-1. **Build fast:** "One API powers extension, web, and automation flows."
-2. **Operate safely:** "Policy-checked actions before risky execution."
-3. **Scale context:** "Session memory and index endpoints for long-running work."
-4. **Integrate anywhere:** "Plug into OpenClaw and modern agent ecosystems."
+1. **Model ownership:** "Playground, our in-house agentic coding model, is tuned for real coding workflows."
+2. **Build fast:** "One API powers extension, web, and automation flows."
+3. **Operate safely:** "Policy-checked actions before risky execution."
+4. **Scale context:** "Session memory and index endpoints for long-running work."
+5. **Integrate anywhere:** "Plug into OpenClaw and modern agent ecosystems."
 
 ## Proof points to repeat
+- Playground model + API working as one system
 - Structured endpoints for assist/execute/history/indexing
 - API key auth and usage telemetry
 - Subscription/trial path already in place

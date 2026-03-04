@@ -12,7 +12,7 @@ import { getAuthUser } from "@/lib/auth-utils";
 import { getUserUsageStats, PLAN_LIMITS, type PlaygroundPlan } from "@/lib/hf-router/rate-limit";
 import { db } from "@/lib/db";
 import { hfUsageLogs, playgroundSubscriptions } from "@/lib/db/playground-schema";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
 
 export interface PlaygroundUsageResponse {
   plan: PlaygroundPlan | null;
@@ -42,6 +42,17 @@ export interface PlaygroundUsageResponse {
     tokensLimit: number;
     estimatedCostUsd: number;
   };
+  cycle: {
+    requestsUsed: number;
+    requestsRemaining: number;
+    requestsLimit: number;
+    tokensOutput: number;
+    tokensRemaining: number;
+    tokensLimit: number;
+    estimatedCostUsd: number;
+    startsAt: string;
+    endsAt: string;
+  };
   last24h: {
     requests: number;
     tokensOutput: number;
@@ -57,6 +68,11 @@ export interface PlaygroundUsageResponse {
     validationError: number;
   };
   topModels: Array<{
+    model: string;
+    requests: number;
+    tokensOutput: number;
+  }>;
+  cycleTopModels: Array<{
     model: string;
     requests: number;
     tokensOutput: number;
@@ -101,6 +117,17 @@ function buildEmptyUsageResponse(): PlaygroundUsageResponse {
       successRate: 0,
       avgLatencyMs: null,
     },
+    cycle: {
+      requestsUsed: 0,
+      requestsRemaining: 0,
+      requestsLimit: 0,
+      tokensOutput: 0,
+      tokensRemaining: 0,
+      tokensLimit: 0,
+      estimatedCostUsd: 0,
+      startsAt: new Date().toISOString(),
+      endsAt: getNextFiveHourResetAt(),
+    },
     statusBreakdown: {
       success: 0,
       error: 0,
@@ -109,14 +136,33 @@ function buildEmptyUsageResponse(): PlaygroundUsageResponse {
       validationError: 0,
     },
     topModels: [],
+    cycleTopModels: [],
     recentRequests: [],
-    nextResetAt: getNextResetAt(),
+    nextResetAt: getNextFiveHourResetAt(),
   };
 }
 
 /**
- * Calculate next midnight UTC for daily reset
+ * Calculate current 5-hour UTC window and its end
  */
+function getCurrentFiveHourWindow(now = new Date()): { start: Date; end: Date } {
+  const start = new Date(now);
+  start.setUTCMinutes(0, 0, 0);
+  const currentUtcHour = start.getUTCHours();
+  const blockStartHour = Math.floor(currentUtcHour / 5) * 5;
+  start.setUTCHours(blockStartHour, 0, 0, 0);
+
+  const end = new Date(start);
+  end.setUTCHours(end.getUTCHours() + 5);
+
+  return { start, end };
+}
+
+function getNextFiveHourResetAt(now = new Date()): string {
+  const { end } = getCurrentFiveHourWindow(now);
+  return end.toISOString();
+}
+
 function getNextResetAt(): string {
   const now = new Date();
   const tomorrow = new Date(Date.UTC(
@@ -147,11 +193,12 @@ export async function GET(request: NextRequest): Promise<Response> {
     const now = new Date();
     const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const cycleWindow = getCurrentFiveHourWindow(now);
 
     // Get usage stats
     const stats = await getUserUsageStats(user.id);
 
-    const [subscription, recentRequestsRaw, statusRows, topModelRows, last24hRows] = await Promise.all([
+    const [subscription, recentRequestsRaw, statusRows, topModelRows, cycleTopModelRows, last24hRows, cycleRows] = await Promise.all([
       db
         .select({
           planTier: playgroundSubscriptions.planTier,
@@ -201,6 +248,23 @@ export async function GET(request: NextRequest): Promise<Response> {
         .limit(6),
       db
         .select({
+          model: hfUsageLogs.model,
+          requests: sql<number>`count(*)`,
+          tokensOutput: sql<number>`coalesce(sum(${hfUsageLogs.tokensOutput}), 0)`,
+        })
+        .from(hfUsageLogs)
+        .where(
+          and(
+            eq(hfUsageLogs.userId, user.id),
+            gte(hfUsageLogs.createdAt, cycleWindow.start),
+            lt(hfUsageLogs.createdAt, cycleWindow.end)
+          )
+        )
+        .groupBy(hfUsageLogs.model)
+        .orderBy(desc(sql`count(*)`))
+        .limit(6),
+      db
+        .select({
           requests: sql<number>`count(*)`,
           tokensOutput: sql<number>`coalesce(sum(${hfUsageLogs.tokensOutput}), 0)`,
           estimatedCostUsd: sql<number>`coalesce(sum(${hfUsageLogs.estimatedCostUsd}), 0)`,
@@ -209,10 +273,29 @@ export async function GET(request: NextRequest): Promise<Response> {
         })
         .from(hfUsageLogs)
         .where(and(eq(hfUsageLogs.userId, user.id), gte(hfUsageLogs.createdAt, since24h))),
+      db
+        .select({
+          requests: sql<number>`count(*)`,
+          tokensOutput: sql<number>`coalesce(sum(${hfUsageLogs.tokensOutput}), 0)`,
+          estimatedCostUsd: sql<number>`coalesce(sum(${hfUsageLogs.estimatedCostUsd}), 0)`,
+        })
+        .from(hfUsageLogs)
+        .where(
+          and(
+            eq(hfUsageLogs.userId, user.id),
+            gte(hfUsageLogs.createdAt, cycleWindow.start),
+            lt(hfUsageLogs.createdAt, cycleWindow.end)
+          )
+        ),
     ]);
 
     const sub = subscription[0];
     const last24h = last24hRows[0];
+    const cycle = cycleRows[0];
+    const requestsLimit = stats?.today.requestsLimit || 30;
+    const tokensLimit = stats?.thisMonth.tokensLimit || 50000;
+    const cycleRequestsUsed = Number(cycle?.requests ?? 0);
+    const cycleTokensUsed = Number(cycle?.tokensOutput ?? 0);
     const statusBreakdown = {
       success: 0,
       error: 0,
@@ -257,6 +340,17 @@ export async function GET(request: NextRequest): Promise<Response> {
         tokensLimit: stats?.thisMonth.tokensLimit || 50000,
         estimatedCostUsd: stats?.thisMonth.estimatedCost || 0,
       },
+      cycle: {
+        requestsUsed: cycleRequestsUsed,
+        requestsRemaining: Math.max(0, requestsLimit - cycleRequestsUsed),
+        requestsLimit,
+        tokensOutput: cycleTokensUsed,
+        tokensRemaining: Math.max(0, tokensLimit - cycleTokensUsed),
+        tokensLimit,
+        estimatedCostUsd: Number(cycle?.estimatedCostUsd ?? 0),
+        startsAt: cycleWindow.start.toISOString(),
+        endsAt: cycleWindow.end.toISOString(),
+      },
       last24h: {
         requests: Number(last24h?.requests ?? 0),
         tokensOutput: Number(last24h?.tokensOutput ?? 0),
@@ -273,6 +367,11 @@ export async function GET(request: NextRequest): Promise<Response> {
         requests: Number(row.requests ?? 0),
         tokensOutput: Number(row.tokensOutput ?? 0),
       })),
+      cycleTopModels: cycleTopModelRows.map((row) => ({
+        model: row.model,
+        requests: Number(row.requests ?? 0),
+        tokensOutput: Number(row.tokensOutput ?? 0),
+      })),
       recentRequests: recentRequestsRaw.map((row) => ({
         id: row.id,
         createdAt: row.createdAt?.toISOString?.() ?? new Date().toISOString(),
@@ -285,7 +384,7 @@ export async function GET(request: NextRequest): Promise<Response> {
         estimatedCostUsd: row.estimatedCostUsd ?? null,
         errorMessage: row.errorMessage ?? null,
       })),
-      nextResetAt: getNextResetAt(),
+      nextResetAt: cycleWindow.end.toISOString(),
     };
 
     return NextResponse.json(response);

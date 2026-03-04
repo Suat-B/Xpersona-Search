@@ -1,272 +1,128 @@
-# HuggingFace Router Implementation Summary
+# HuggingFace Router Implementation Summary (Audited)
 
-## Overview
+Audit date: March 3, 2026
 
-I've implemented a complete HuggingFace inference router system that routes requests from your single HF_TOKEN to multiple user accounts with strict rate limiting and usage tracking.
+## Current Status
 
-## Architecture
+The core HF router is implemented and working:
+- API key auth
+- subscription gating
+- daily and monthly quota checks
+- OpenAI-compatible chat route
+- usage logging and aggregate counters
+- usage API for end users and dashboard
+- Stripe checkout + webhook sync for Playground subscriptions
 
-```
-┌─────────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│  User Request   │────▶│  Xpersona Router │────▶│  HuggingFace API │
-│  (X-API-Key)    │     │                  │     │  (HF_TOKEN)      │
-└─────────────────┘     └──────────────────┘     └──────────────────┘
-                               │
-                               ▼
-                        ┌──────────────────┐
-                        │  Rate Limiting   │
-                        │  - Daily quota   │
-                        │  - Monthly cap   │
-                        │  - Context size  │
-                        └──────────────────┘
-                               │
-                               ▼
-                        ┌──────────────────┐
-                        │  Usage Tracking  │
-                        │  - Logs all reqs │
-                        │  - Cost estimates│
-                        └──────────────────┘
-```
+## Verified Implemented
 
-## Files Created
+### Core HF Router
+- `app/api/v1/hf/chat/completions/route.ts`
+- `app/api/v1/hf/usage/route.ts`
+- `lib/hf-router/rate-limit.ts`
 
-### Database Schema
-1. **`lib/db/playground-schema.ts`** - Drizzle schema definitions
-   - `playground_subscriptions` - User subscriptions (trial/paid)
-   - `hf_usage_logs` - Every request logged
-   - `hf_daily_usage` - Daily aggregates for fast quota checks
-   - `hf_monthly_usage` - Monthly aggregates for caps
+### Data Model + Migration
+- `lib/db/playground-schema.ts`
+- `drizzle/0025_playground_hf_router.sql`
 
-2. **`drizzle/0025_playground_hf_router.sql`** - SQL migration
-   - Creates all tables with proper indexes
-   - Run with: `npx drizzle-kit migrate`
+### Billing + Access Control
+- `app/api/me/playground-checkout/route.ts` (+ v1 re-export)
+- `app/api/stripe/webhook/route.ts` (+ v1 re-export)
+- `app/api/me/playground-usage/route.ts` (+ v1 re-export)
+- `lib/playground/auth.ts`
+- `lib/playground/orchestration.ts` (`guardPlaygroundAccess`)
 
-### Core Library
-3. **`lib/hf-router/rate-limit.ts`** - Rate limiting logic
-   - `PLAN_LIMITS` - Configuration for trial/paid plans
-   - `checkRateLimits()` - Validates all quotas before forwarding
-   - `incrementUsage()` - Updates counters after requests
-   - `getUserUsageStats()` - Gets current usage for a user
-   - Token estimation helpers
+### Dashboard UX (already live)
+- `app/(dashboard)/dashboard/playground/page.tsx`
+  - Checkout actions wired to `/api/v1/me/playground-checkout`
+  - Usage pull from `/api/v1/me/playground-usage`
 
-### API Routes
-4. **`app/api/v1/hf/chat/completions/route.ts`** - Main router endpoint
-   - OpenAI-compatible POST endpoint
-   - Authenticates via X-API-Key header
-   - Enforces rate limits
-   - Proxies to HF Inference API
-   - Handles streaming & non-streaming responses
-   - Logs usage asynchronously
+## Plan Limits (Current Code)
 
-5. **`app/api/v1/hf/usage/route.ts`** - Usage stats endpoint
-   - Returns current usage for authenticated user
-   - Includes limits, remaining quota, and costs
+Trial:
+- Daily requests: `30`
+- Context cap: `8192`
+- Max output/request: `256`
+- Monthly output cap: `50000`
 
-## Plan Structure
+Paid:
+- Daily requests: `100`
+- Context cap: `16384`
+- Max output/request: `512`
+- Monthly output cap: `300000`
 
-### Trial Plan (2-day free trial, requires card)
-| Limit | Value |
-|-------|-------|
-| Daily requests | 30 |
-| Context cap | 8,192 tokens |
-| Max output | 256 tokens/request |
-| Monthly output | 50,000 tokens |
+Source: `PLAN_LIMITS` in `lib/hf-router/rate-limit.ts`.
 
-### Paid Plan ($3/month)
-| Limit | Value |
-|-------|-------|
-| Daily requests | 100 |
-| Context cap | 16,384 tokens |
-| Max output | 512 tokens/request |
-| Monthly output | 300,000 tokens (hard cap) |
+## Environment Variables (Current)
 
-## Environment Variables
+HF token:
+- `HF_ROUTER_TOKEN` (preferred)
+- `HF_TOKEN` (fallback)
+- `HUGGINGFACE_TOKEN` (fallback)
 
-Add to your `.env`:
+Playground pricing (Stripe):
+- `STRIPE_PLAYGROUND_PRICE_ID_STARTER_MONTHLY`
+- `STRIPE_PLAYGROUND_PRICE_ID_STARTER_YEARLY`
+- `STRIPE_PLAYGROUND_PRICE_ID_BUILDER_MONTHLY`
+- `STRIPE_PLAYGROUND_PRICE_ID_BUILDER_YEARLY`
+- `STRIPE_PLAYGROUND_PRICE_ID_STUDIO_MONTHLY`
+- `STRIPE_PLAYGROUND_PRICE_ID_STUDIO_YEARLY`
+- `STRIPE_PLAYGROUND_PRICE_ID` (legacy fallback for builder monthly)
 
-```bash
-# HuggingFace Router
-HF_ROUTER_TOKEN=hf_your_token_here
+Feature flags:
+- `PLAYGROUND_ENABLE_AGGRESSIVE_YOLO`
+- `PLAYGROUND_ENABLE_LONG_CONTEXT`
+- `PLAYGROUND_LONG_CONTEXT_MODEL`
 
-# Existing Stripe vars (add new price ID)
-STRIPE_PLAYGROUND_PRICE_ID=price_xxxxx
-```
+## Gaps Still Missing (Priority)
 
-## API Usage
+### P0
+- [ ] Add test coverage for HF router and limits.
+  - Missing unit tests for `lib/hf-router/rate-limit.ts`
+  - Missing integration tests for:
+    - `/api/v1/hf/chat/completions`
+    - `/api/v1/hf/usage`
+    - subscription-required (`402`) and limit-reached (`429`) paths
 
-### 1. Chat Completions
+### P1
+- [ ] Add admin-level observability for HF router economics and abuse signals.
+  - global request volume by day/week
+  - paid vs trial consumption
+  - error/rate-limit trends
+  - top models and high-cost users
 
-```bash
-curl -X POST https://xpersona.co/api/v1/hf/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your_xpersona_api_key" \
-  -d '{
-    "model": "Qwen/Qwen2.5-Coder-7B-Instruct:nscale",
-    "messages": [
-      {"role": "user", "content": "Hello!"}
-    ],
-    "max_tokens": 256
-  }'
-```
+- [ ] Harden request validation on `/api/v1/hf/chat/completions`.
+  - Add explicit schema validation (zod) for request body fields and bounds
+  - Normalize unsupported params and fail with structured validation errors
 
-### 2. Streaming Response
+- [ ] Improve token accounting precision.
+  - Current accounting is heuristic (`chars / 4`)
+  - Add provider/model-aware token counting where available
 
-```bash
-curl -X POST https://xpersona.co/api/v1/hf/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your_xpersona_api_key" \
-  -d '{
-    "model": "Qwen/Qwen2.5-Coder-7B-Instruct:nscale",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "stream": true,
-    "max_tokens": 256
-  }'
-```
+### P2
+- [ ] Document and standardize reset semantics.
+  - Quota reset currently uses UTC date boundaries
+  - Add explicit docs in public API docs to avoid user confusion
 
-### 3. Check Usage
+- [ ] Revisit request payload logging policy.
+  - `hf_usage_logs.request_payload` can be useful for debug, but may capture sensitive prompt content
+  - Add retention policy + optional redaction toggle
 
-```bash
-curl https://xpersona.co/api/v1/hf/usage \
-  -H "X-API-Key: your_xpersona_api_key"
-```
+## Important Tech Debt Found
 
-**Response:**
-```json
-{
-  "plan": "paid",
-  "status": "active",
-  "limits": {
-    "contextCap": 16384,
-    "maxOutputTokens": 512,
-    "maxRequestsPerDay": 100,
-    "maxOutputTokensPerMonth": 300000
-  },
-  "today": {
-    "requestsUsed": 45,
-    "requestsRemaining": 55,
-    "requestsLimit": 100
-  },
-  "thisMonth": {
-    "tokensOutput": 145000,
-    "tokensRemaining": 155000,
-    "tokensLimit": 300000,
-    "estimatedCostUsd": 0.0725
-  }
-}
-```
+- [ ] Resolve schema drift between:
+  - `lib/db/playground-schema.ts` (HF router source of truth used by router code)
+  - `lib/db/schema.ts` (duplicate table definitions)
 
-## Cost Estimation
+Specifically, `hf_daily_usage.usageDate` differs in type across the two files (`date` vs `timestamp`), and index naming differs in places. This can cause confusion and future migration mistakes.
 
-Based on HF Inference pricing (~$0.0005 per 1K tokens):
+## Recommended Next Steps
 
-**Trial Users (max 50K tokens/month):**
-- Cost: ~$0.025 per user/month
-- 1000 trial users: ~$25/month
+1. Add tests first (P0), because billing and gating paths are high-risk regressions.
+2. Add a small admin metrics endpoint/page for HF router visibility.
+3. Remove or reconcile duplicate HF table definitions in `lib/db/schema.ts`.
+4. Add request schema validation + payload redaction controls.
 
-**Paid Users (max 300K tokens/month):**
-- Cost: ~$0.15 per user/month
-- Revenue: $3/user/month
-- **Margin: 95%** 🎉
+## Notes
 
-Very safe pricing with plenty of margin!
-
-## What's Implemented ✅
-
-1. ✅ Database schema with migrations
-2. ✅ Rate limiting (daily/monthly quotas, context limits)
-3. ✅ Usage tracking and logging
-4. ✅ OpenAI-compatible API endpoint
-5. ✅ Streaming response support
-6. ✅ Usage stats endpoint
-7. ✅ Authentication via X-API-Key
-
-## What's Still Needed 📝
-
-1. **Stripe Integration**
-   - Webhook handlers for subscription lifecycle
-   - Checkout session creation for trial signup
-   - Handle trial expiration and payment failures
-
-2. **Frontend Updates**
-   - Update PlaygroundClient with actual checkout flow
-   - User settings page to view usage
-   - Subscription management UI
-
-3. **Admin Dashboard**
-   - Monitor total usage across all users
-   - View costs and revenue
-   - Manage user subscriptions
-
-4. **Tests**
-   - Unit tests for rate limiting
-   - Integration tests for API endpoints
-
-## Next Steps
-
-To complete the implementation:
-
-1. **Run the migration:**
-   ```bash
-   npx drizzle-kit migrate
-   ```
-
-2. **Set up Stripe:**
-   - Create a $3/month price in Stripe
-   - Add webhook endpoint for subscription events
-   - Implement checkout flow
-
-3. **Create a subscription creation script** for testing:
-   ```typescript
-   // scripts/create-playground-subscription.ts
-   await db.insert(playgroundSubscriptions).values({
-     userId: "your_user_id",
-     planTier: "trial",
-     status: "trial",
-     trialStartedAt: new Date(),
-     trialEndsAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), // 2 days
-   });
-   ```
-
-4. **Test the endpoint:**
-   ```bash
-   # Get your API key from the dashboard, then:
-   curl -X POST http://localhost:3000/api/v1/hf/chat/completions \
-     -H "X-API-Key: your_key" \
-     -H "Content-Type: application/json" \
-     -d '{"model":"Qwen/Qwen2.5-Coder-7B-Instruct:nscale","messages":[{"role":"user","content":"Hello"}]}'
-   ```
-
-## VS Code Extension Features (Marketing + Build List)
-
-The website now markets the VS Code extension as supporting the feature set below.  
-This list is also the official build checklist for implementation tracking.
-
-- [ ] **Auto Mode** - Automatically chooses the best workflow per prompt.
-- [ ] **Plan Mode** - Creates step-by-step plans before execution for complex tasks.
-- [ ] **YOLO Mode** - High-speed mode for rapid experimentation and execution.
-- [ ] **IDE Context** - Uses open files, selections, and workspace state in responses.
-- [ ] **IDE Indexing** - Indexes the repository for deeper code-aware assistance.
-- [ ] **History** - Saves and reuses previous chats, prompts, and outputs.
-- [ ] **Multiple Agents** - Runs several specialized agents in parallel.
-- [ ] **Add image** - Accepts image inputs (screenshots, mockups, diagrams) in prompt flows.
-- [ ] **262,144 context window** - Supports long-context sessions for large codebases and threads.
-
-### Rollout Notes
-
-- These features are now represented in the Playground marketing UI under the VS Code Extension section.
-- Engineering status should be updated by checking each item as implementation lands.
-
-## Security Considerations
-
-- All requests authenticated via API key
-- Rate limits enforced at multiple levels
-- Usage logged for audit trail
-- No user data exposed in responses
-- Master HF_TOKEN never exposed to users
-
-## Performance
-
-- Daily/monthly aggregates for fast quota checks (no counting on every request)
-- Asynchronous usage logging (doesn't block response)
-- Streaming support for real-time responses
-- Efficient database queries with proper indexes
+- Stripe integration is already implemented (checkout + webhook + subscription sync). The previous summary section that marked Stripe as "still needed" was outdated.
+- Dashboard usage UI and checkout wiring are already implemented and should no longer be listed as missing.

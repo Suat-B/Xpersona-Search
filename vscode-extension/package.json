@@ -1,9 +1,9 @@
 {
   "name": "xpersona-playground",
-  "displayName": "Xpersona",
-  "description": "Chat with AI agents powered by Xpersona — directly in VS Code.",
-  "version": "0.0.7",
-  "publisher": "xpersona",
+  "displayName": "Playground AI",
+  "description": "Chat with AI agents directly in VS Code.",
+  "version": "0.0.30",
+  "publisher": "playgroundai",
   "license": "UNLICENSED",
   "engines": {
     "vscode": "^1.90.0"
@@ -33,7 +33,7 @@
       "activitybar": [
         {
           "id": "xpersona",
-          "title": "Xpersona",
+          "title": "Playground",
           "icon": "media/xpersona.svg"
         }
       ]
@@ -42,7 +42,7 @@
       "xpersona": [
         {
           "id": "xpersona.playgroundView",
-          "name": "Agent Chat",
+          "name": "Playground Chat",
           "type": "webview",
           "when": "true"
         }
@@ -52,62 +52,62 @@
       {
         "command": "xpersona.playground.prompt",
         "title": "Start Chat with Agent",
-        "category": "Xpersona"
+        "category": "Playground AI"
       },
       {
         "command": "xpersona.playground.openWithSelection",
         "title": "Chat with Selection",
-        "category": "Xpersona"
+        "category": "Playground AI"
       },
       {
         "command": "xpersona.playground.setApiKey",
         "title": "Set API Key",
-        "category": "Xpersona"
+        "category": "Playground AI"
       },
       {
         "command": "xpersona.playground.mode.auto",
         "title": "Set Mode: Auto",
-        "category": "Xpersona"
+        "category": "Playground AI"
       },
       {
         "command": "xpersona.playground.mode.plan",
         "title": "Set Mode: Plan",
-        "category": "Xpersona"
+        "category": "Playground AI"
       },
       {
         "command": "xpersona.playground.mode.yolo",
         "title": "Set Mode: YOLO",
-        "category": "Xpersona"
+        "category": "Playground AI"
       },
       {
         "command": "xpersona.playground.generate",
         "title": "Generate Code",
-        "category": "Xpersona"
+        "category": "Playground AI"
       },
       {
         "command": "xpersona.playground.debug",
         "title": "Debug with Playground",
-        "category": "Xpersona"
+        "category": "Playground AI"
       },
       {
         "command": "xpersona.playground.history.open",
         "title": "Open Playground History",
-        "category": "Xpersona"
+        "category": "Playground AI"
       },
       {
         "command": "xpersona.playground.image.attach",
         "title": "Attach Image to Playground",
-        "category": "Xpersona"
+        "category": "Playground AI"
       },
       {
         "command": "xpersona.playground.agents.parallelRun",
         "title": "Run Parallel Agents",
-        "category": "Xpersona"
+        "category": "Playground AI"
       },
       {
         "command": "xpersona.playground.index.rebuild",
         "title": "Rebuild Workspace Index",
-        "category": "Xpersona"
+        "category": "Playground AI"
       },
       {
         "command": "xpersona.playground.replay.session",
@@ -177,7 +177,7 @@
         "xpersona.playground.baseApiUrl": {
           "type": "string",
           "default": "http://localhost:3000",
-          "description": "Base URL for the Xpersona API. Use http://localhost:3000 for local development."
+          "description": "Base URL for the Playground API. Use http://localhost:3000 for local development."
         },
         "xpersona.playground.model": {
           "type": "string",

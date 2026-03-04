@@ -113,8 +113,21 @@ export async function POST(request: NextRequest): Promise<Response> {
     try {
       await writer.write(encoder.encode(sse({ event: "phase", data: { name: "decision", ts: Date.now(), traceId } })));
       await writer.write(encoder.encode(sse({ event: "log", message: "assist_started", sessionId, traceId })));
+      await writer.write(encoder.encode(sse({ event: "status", data: "Thinking..." })));
       const startedAt = Date.now();
-      const result = await runAssist({ ...body, mode: body.mode ?? "auto" });
+      const result = await runAssist(
+        { ...body, mode: body.mode ?? "auto" },
+        {
+          onToken: async (token) => {
+            if (!token) return;
+            await writer.write(encoder.encode(sse({ event: "token", data: token })));
+          },
+          onStatus: async (status) => {
+            if (!status) return;
+            await writer.write(encoder.encode(sse({ event: "status", data: status })));
+          },
+        }
+      );
       const latencyMs = Date.now() - startedAt;
 
       await writer.write(encoder.encode(sse({ event: "decision", data: result.decision })));
@@ -124,11 +137,14 @@ export async function POST(request: NextRequest): Promise<Response> {
       }
       await writer.write(encoder.encode(sse({ event: "phase", data: { name: "execute", ts: Date.now() } })));
       await writer.write(encoder.encode(sse({ event: "diff_chunk", data: result.edits })));
+      await writer.write(encoder.encode(sse({ event: "commands_chunk", data: result.commands })));
       await writer.write(encoder.encode(sse({ event: "log", data: result.logs })));
       await writer.write(encoder.encode(sse({ event: "meta", data: {
         confidence: result.confidence,
         risk: result.risk,
         influence: result.influence,
+        model: result.modelUsed,
+        decision: result.decision.mode,
         nextBestActions: result.nextBestActions,
       } })));
       await writer.write(encoder.encode(sse({ event: "phase", data: { name: "verify", ts: Date.now() } })));

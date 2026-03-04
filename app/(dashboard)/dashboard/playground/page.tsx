@@ -4,63 +4,151 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
 
+type SubscriptionStatus = "active" | "trial" | "cancelled" | "past_due" | "inactive";
+
 interface PlaygroundUsageData {
   plan: "trial" | "paid" | null;
-  status: "active" | "trial" | "cancelled" | "past_due" | "inactive";
+  status: SubscriptionStatus;
+  trial?: {
+    endsAt: string;
+    isActive: boolean;
+  } | null;
+  billing?: {
+    currentPeriodEndsAt: string;
+    cancelAtPeriodEnd: boolean;
+  } | null;
+  limits: {
+    contextCap: number;
+    maxOutputTokens: number;
+    maxRequestsPerDay: number;
+    maxOutputTokensPerMonth: number;
+  } | null;
   today: {
     requestsUsed: number;
     requestsRemaining: number;
     requestsLimit: number;
+  };
+  thisMonth: {
+    tokensOutput: number;
+    tokensRemaining: number;
+    tokensLimit: number;
+    estimatedCostUsd?: number;
+  };
+  cycle: {
+    requestsUsed: number;
+    requestsRemaining: number;
+    requestsLimit: number;
+    tokensOutput: number;
+    tokensRemaining: number;
+    tokensLimit: number;
+    estimatedCostUsd?: number;
+    startsAt: string;
+    endsAt: string;
   };
   last24h: {
     requests: number;
     successRate: number;
     avgLatencyMs: number | null;
   };
+  statusBreakdown?: {
+    success: number;
+    error: number;
+    rateLimited: number;
+    quotaExceeded: number;
+    validationError: number;
+  };
+  topModels?: Array<{
+    model: string;
+    requests: number;
+    tokensOutput: number;
+  }>;
+  cycleTopModels?: Array<{
+    model: string;
+    requests: number;
+    tokensOutput: number;
+  }>;
+  nextResetAt?: string;
 }
 
 function emptyUsageData(): PlaygroundUsageData {
   return {
     plan: null,
     status: "inactive",
+    trial: null,
+    billing: null,
+    limits: null,
     today: {
       requestsUsed: 0,
       requestsRemaining: 0,
       requestsLimit: 0,
+    },
+    thisMonth: {
+      tokensOutput: 0,
+      tokensRemaining: 0,
+      tokensLimit: 0,
+      estimatedCostUsd: 0,
+    },
+    cycle: {
+      requestsUsed: 0,
+      requestsRemaining: 0,
+      requestsLimit: 0,
+      tokensOutput: 0,
+      tokensRemaining: 0,
+      tokensLimit: 0,
+      estimatedCostUsd: 0,
+      startsAt: new Date().toISOString(),
+      endsAt: new Date().toISOString(),
     },
     last24h: {
       requests: 0,
       successRate: 0,
       avgLatencyMs: null,
     },
+    statusBreakdown: {
+      success: 0,
+      error: 0,
+      rateLimited: 0,
+      quotaExceeded: 0,
+      validationError: 0,
+    },
+    topModels: [],
+    cycleTopModels: [],
+    nextResetAt: undefined,
   };
 }
 
-const REFRESH_WINDOW_HOURS = 5;
-const REFRESH_WINDOW_MS = REFRESH_WINDOW_HOURS * 60 * 60 * 1000;
-
-function getNextRefresh(now: Date): Date {
-  const anchor = new Date(now);
-  anchor.setHours(0, 0, 0, 0);
-  const elapsed = now.getTime() - anchor.getTime();
-  const windowsPassed = Math.floor(elapsed / REFRESH_WINDOW_MS);
-  return new Date(anchor.getTime() + (windowsPassed + 1) * REFRESH_WINDOW_MS);
-}
-
-function formatCountdown(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = total % 60;
-  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds
-    .toString()
-    .padStart(2, "0")}`;
-}
-
-function toneClass(status: PlaygroundUsageData["status"]): string {
+function toneClass(status: SubscriptionStatus): string {
   if (status === "active" || status === "trial") return "text-emerald-200 border-emerald-400/40 bg-emerald-500/10";
   if (status === "past_due") return "text-amber-100 border-amber-400/40 bg-amber-500/10";
   return "text-slate-200 border-slate-400/30 bg-slate-500/10";
+}
+
+function pct(used: number, limit: number): number {
+  if (!limit || limit <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((used / limit) * 100)));
+}
+
+function formatReset(resetIso?: string | null): string {
+  if (!resetIso) return "--";
+  const d = new Date(resetIso);
+  if (Number.isNaN(d.getTime())) return "--";
+  return d.toLocaleString([], {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatDate(iso?: string | null): string {
+  if (!iso) return "--";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "--";
+  return d.toLocaleDateString([], {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+  });
 }
 
 export default function PlaygroundDashboardPage() {
@@ -70,14 +158,15 @@ export default function PlaygroundDashboardPage() {
   const [billing, setBilling] = useState<"monthly" | "yearly">("monthly");
   const [checkoutPlan, setCheckoutPlan] = useState<"starter" | "builder" | "studio" | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [subscriptionAction, setSubscriptionAction] = useState<"portal" | "cancel" | "resume" | null>(null);
+  const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/v1/me/playground-usage", { credentials: "include", cache: "no-store" });
       if (!res.ok) {
         setData(emptyUsageData());
-        setWarning("Live signal is temporarily unavailable. Showing a soft snapshot.");
+        setWarning("Live usage feed is temporarily unavailable. Showing a safe fallback snapshot.");
         return;
       }
       const json = (await res.json()) as PlaygroundUsageData;
@@ -85,7 +174,7 @@ export default function PlaygroundDashboardPage() {
       setWarning(null);
     } catch {
       setData(emptyUsageData());
-      setWarning("Network drift detected. Showing a soft snapshot.");
+      setWarning("Network issue while loading usage. Showing fallback snapshot.");
     } finally {
       setLoading(false);
     }
@@ -123,18 +212,69 @@ export default function PlaygroundDashboardPage() {
     [billing]
   );
 
+  const manageSubscription = useCallback(
+    async (action: "portal" | "cancel" | "resume") => {
+      setSubscriptionAction(action);
+      setSubscriptionError(null);
+
+      try {
+        const res = await fetch("/api/v1/me/playground-subscription", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action }),
+        });
+        const json = (await res.json().catch(() => ({}))) as {
+          success?: boolean;
+          data?: { url?: string };
+          message?: string;
+        };
+
+        if (!res.ok || !json.success) {
+          setSubscriptionError(json.message || "Could not update subscription. Please try again.");
+          return;
+        }
+
+        if (action === "portal" && json.data?.url) {
+          window.location.href = json.data.url;
+          return;
+        }
+
+        await load();
+      } catch {
+        setSubscriptionError("Could not update subscription. Please try again.");
+      } finally {
+        setSubscriptionAction(null);
+      }
+    },
+    [load]
+  );
+
   useEffect(() => {
     load();
     const refreshPoll = setInterval(load, 60_000);
-    const clockTick = setInterval(() => setNowMs(Date.now()), 1_000);
-    return () => {
-      clearInterval(refreshPoll);
-      clearInterval(clockTick);
-    };
+    return () => clearInterval(refreshPoll);
   }, [load]);
 
-  const nextRefresh = useMemo(() => getNextRefresh(new Date(nowMs)), [nowMs]);
-  const countdown = formatCountdown(nextRefresh.getTime() - nowMs);
+  const usage = data ?? emptyUsageData();
+  const nextFiveHourReset = useMemo(
+    () => formatReset(usage.nextResetAt ?? usage.cycle?.endsAt),
+    [usage.nextResetAt, usage.cycle?.endsAt]
+  );
+
+  const dailyUsedPct = useMemo(() => pct(usage.cycle.requestsUsed, usage.cycle.requestsLimit), [usage.cycle.requestsUsed, usage.cycle.requestsLimit]);
+  const monthlyUsedPct = useMemo(() => pct(usage.cycle.tokensOutput, usage.cycle.tokensLimit), [usage.cycle.tokensOutput, usage.cycle.tokensLimit]);
+  const modelTotals = useMemo(() => {
+    const list = usage.cycleTopModels ?? [];
+    return list.reduce(
+      (acc, item) => {
+        acc.requests += item.requests;
+        acc.tokens += item.tokensOutput;
+        return acc;
+      },
+      { requests: 0, tokens: 0 }
+    );
+  }, [usage.topModels]);
 
   if (loading) {
     return (
@@ -149,22 +289,37 @@ export default function PlaygroundDashboardPage() {
     );
   }
 
-  if (!data) {
-    return (
-      <div className="agent-card p-8 text-center">
-        <p className="text-sm text-[var(--text-secondary)]">Unable to load Playground details.</p>
-        <button
-          onClick={load}
-          className="mt-3 inline-flex items-center rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--text-primary)] hover:bg-white/[0.04]"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
+      <section className="relative overflow-hidden rounded-3xl border border-cyan-300/30 bg-[radial-gradient(circle_at_12%_18%,rgba(34,211,238,0.25),transparent_42%),radial-gradient(circle_at_88%_0%,rgba(59,130,246,0.24),transparent_42%),linear-gradient(135deg,#070b16,#0b1120)] p-5 sm:p-7">
+        <div className="pointer-events-none absolute -top-24 left-[-4rem] h-56 w-56 rounded-full bg-cyan-400/20 blur-3xl" aria-hidden />
+        <div className="pointer-events-none absolute -bottom-24 right-[-2rem] h-56 w-56 rounded-full bg-blue-500/15 blur-3xl" aria-hidden />
+
+        <div className="relative grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-6 items-start">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.2em] text-cyan-100/80">Instant API Generator</p>
+            <h1 className="mt-2 text-3xl sm:text-4xl font-semibold text-white leading-tight">
+              Create your Playground API key in seconds
+            </h1>
+            <p className="mt-3 max-w-xl text-sm text-slate-300">
+              Ship faster with a key-ready setup at the top of your workflow. Generate, copy, and plug into your agents without leaving this page.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="rounded-full border border-cyan-200/35 bg-cyan-500/15 px-3 py-1 text-[11px] uppercase tracking-wide text-cyan-100">
+                5-hour reset ready
+              </span>
+              <span className="rounded-full border border-emerald-200/35 bg-emerald-500/15 px-3 py-1 text-[11px] uppercase tracking-wide text-emerald-100">
+                AI integration friendly
+              </span>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-cyan-300/35 bg-black/35 p-4 sm:p-5 backdrop-blur-sm">
+            <ApiKeySection />
+          </div>
+        </div>
+      </section>
+
       {warning && (
         <div className="agent-card p-4 text-sm text-amber-200 border border-amber-400/30 bg-amber-500/10">
           {warning}
@@ -177,8 +332,8 @@ export default function PlaygroundDashboardPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[11px] uppercase tracking-[0.16em] text-cyan-100/80">Playground AI Access</p>
-              <h2 className="mt-1 text-xl sm:text-2xl font-semibold text-white">Start your 2-day paid trial</h2>
-              <p className="mt-1 text-sm text-slate-300">Unlock VS Code extension access, API routing, and higher limits.</p>
+              <h2 className="mt-1 text-xl sm:text-2xl font-semibold text-white">Start your 2-day free trial</h2>
+              <p className="mt-1 text-sm text-slate-300">Track usage in real time with a 5-hour reset rhythm for fast feedback loops.</p>
             </div>
             <div className="inline-flex rounded-xl border border-cyan-200/30 bg-black/35 p-1">
               <button
@@ -200,9 +355,9 @@ export default function PlaygroundDashboardPage() {
 
           <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
             {[
-              { tier: "starter" as const, name: "Starter", monthly: "$2", yearly: "$20", note: "Great for solo testing" },
-              { tier: "builder" as const, name: "Builder", monthly: "$5", yearly: "$50", note: "Most chosen for daily coding" },
-              { tier: "studio" as const, name: "Studio", monthly: "$10", yearly: "$100", note: "Teams and heavier workloads" },
+              { tier: "starter" as const, name: "Starter", monthly: "$2", yearly: "$20", note: "300 requests per 5-hour cycle after trial" },
+              { tier: "builder" as const, name: "Builder", monthly: "$5", yearly: "$50", note: "1,000 requests per 5-hour cycle after trial" },
+              { tier: "studio" as const, name: "Studio", monthly: "$10", yearly: "$100", note: "3,000 requests per 5-hour cycle after trial" },
             ].map((plan) => (
               <div key={plan.tier} className={`rounded-2xl border p-4 ${plan.tier === "builder" ? "border-cyan-300/50 bg-cyan-500/10" : "border-white/15 bg-black/25"}`}>
                 <div className="flex items-center justify-between">
@@ -219,18 +374,15 @@ export default function PlaygroundDashboardPage() {
                   disabled={checkoutPlan !== null}
                   className="mt-4 w-full rounded-xl bg-cyan-500 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-400 disabled:opacity-60"
                 >
-                  {checkoutPlan === plan.tier ? "Starting checkout..." : "Start 2-Day Trial"}
+                  {checkoutPlan === plan.tier ? "Starting checkout..." : "Start Free Trial"}
                 </button>
               </div>
             ))}
           </div>
 
           <p className="mt-3 text-xs text-cyan-100/80">
-            2-day trial on every plan with the same trial quota (30 requests/day, 8K context, 256 max output).
-            Free dashboard plan API keys cannot be used in the Playground API.
-          </p>
-          <p className="mt-1 text-xs text-cyan-100/80">
-            Card is collected during checkout. Subscription billing starts on day 3 unless canceled before trial ends.
+            Trial cycle: 30 requests per reset window, 8K context, 256 max output. Paid packages: Starter 300 requests per
+            cycle, Builder 1,000 requests per cycle, Studio 3,000 requests per cycle (16K context, 512 max output).
           </p>
           {checkoutError ? <p className="mt-2 text-xs text-rose-300">{checkoutError}</p> : null}
         </div>
@@ -240,76 +392,112 @@ export default function PlaygroundDashboardPage() {
         <div className="absolute -top-20 -right-16 h-56 w-56 rounded-full bg-cyan-400/15 blur-3xl" aria-hidden />
         <div className="absolute -bottom-16 -left-14 h-48 w-48 rounded-full bg-sky-500/10 blur-3xl" aria-hidden />
 
-        <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-6 items-end">
+        <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.18em] text-cyan-100/80">Playground Rhythm</p>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-cyan-100/80">5-Hour Reset Overview</p>
             <h1 className="mt-2 text-3xl sm:text-4xl font-semibold text-white font-display leading-tight">
-              Refresh Cycle: Every 5 Hours
+              Playground Usage by Reset Cycle
             </h1>
             <p className="mt-3 max-w-xl text-sm text-slate-300">
-              This view is intentionally light. Check the window, keep your flow, and let the cycle do the rest.
+              Stay within your plan by watching request and token usage in each 5-hour reset cycle.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
-              <span className={`rounded-full border px-3 py-1 text-xs uppercase tracking-wide ${toneClass(data.status)}`}>
-                {data.status.replaceAll("_", " ")}
+              <span className={`rounded-full border px-3 py-1 text-xs uppercase tracking-wide ${toneClass(usage.status)}`}>
+                {usage.status.replaceAll("_", " ")}
               </span>
               <span className="rounded-full border border-cyan-300/35 bg-cyan-500/10 px-3 py-1 text-xs uppercase tracking-wide text-cyan-100">
-                plan {data.plan ?? "none"}
+                plan {usage.plan ?? "none"}
               </span>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-cyan-300/30 bg-black/30 p-5 backdrop-blur-sm">
-            <p className="text-xs uppercase tracking-wider text-cyan-100/80">Next refresh in</p>
-            <p className="mt-2 text-4xl sm:text-5xl font-semibold tabular-nums text-white">{countdown}</p>
-            <p className="mt-2 text-xs text-slate-300">
-              {nextRefresh.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} local window
+          <div className="rounded-2xl border border-cyan-300/30 bg-black/30 p-5 backdrop-blur-sm space-y-4">
+            <div>
+              <div className="flex items-center justify-between text-xs uppercase tracking-wider text-cyan-100/80">
+                <span>Cycle requests used</span>
+                <span>{usage.cycle.requestsUsed}/{usage.cycle.requestsLimit}</span>
+              </div>
+              <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
+                <div className="h-full bg-cyan-400" style={{ width: `${dailyUsedPct}%` }} />
+              </div>
+              <p className="mt-1 text-xs text-slate-300">{dailyUsedPct}% used - {usage.cycle.requestsRemaining} remaining this cycle</p>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between text-xs uppercase tracking-wider text-cyan-100/80">
+                <span>Cycle output tokens used</span>
+                <span>{usage.cycle.tokensOutput.toLocaleString()}/{usage.cycle.tokensLimit.toLocaleString()}</span>
+              </div>
+              <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
+                <div className="h-full bg-emerald-400" style={{ width: `${monthlyUsedPct}%` }} />
+              </div>
+              <p className="mt-1 text-xs text-slate-300">{monthlyUsedPct}% used - {usage.cycle.tokensRemaining.toLocaleString()} tokens remaining in cycle view</p>
+            </div>
+
+            <p className="text-xs text-slate-300">
+              Next 5-hour reset: {nextFiveHourReset}
             </p>
           </div>
         </div>
       </section>
 
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="agent-card p-5">
-          <p className="text-xs uppercase tracking-wider text-[var(--dash-text-secondary)]">Cycle pressure</p>
-          <p className="mt-2 text-2xl font-semibold text-[var(--text-primary)] tabular-nums">
-            {data.today.requestsUsed.toLocaleString()}
-          </p>
-          <p className="mt-2 text-sm text-[var(--text-tertiary)]">Moves logged in the current day</p>
+          <p className="text-xs uppercase tracking-wider text-[var(--dash-text-secondary)]">Cycle used</p>
+          <p className="mt-2 text-2xl font-semibold text-[var(--text-primary)] tabular-nums">{usage.cycle.requestsUsed.toLocaleString()}</p>
+          <p className="mt-2 text-sm text-[var(--text-tertiary)]">Requests consumed this cycle</p>
         </div>
         <div className="agent-card p-5">
-          <p className="text-xs uppercase tracking-wider text-[var(--dash-text-secondary)]">Flow reserve</p>
-          <p className="mt-2 text-2xl font-semibold text-[var(--text-primary)] tabular-nums">
-            {data.today.requestsRemaining.toLocaleString()}
-          </p>
-          <p className="mt-2 text-sm text-[var(--text-tertiary)]">Remaining runway before daily reset</p>
+          <p className="text-xs uppercase tracking-wider text-[var(--dash-text-secondary)]">Cycle remaining</p>
+          <p className="mt-2 text-2xl font-semibold text-[var(--text-primary)] tabular-nums">{usage.cycle.requestsRemaining.toLocaleString()}</p>
+          <p className="mt-2 text-sm text-[var(--text-tertiary)]">Requests left before 5-hour reset</p>
         </div>
         <div className="agent-card p-5">
-          <p className="text-xs uppercase tracking-wider text-[var(--dash-text-secondary)]">Signal quality</p>
-          <p className="mt-2 text-2xl font-semibold text-emerald-300 tabular-nums">
-            {(data.last24h.successRate * 100).toFixed(0)}%
-          </p>
-          <p className="mt-2 text-sm text-[var(--text-tertiary)]">
-            Last 24h, soft read
-            {data.last24h.avgLatencyMs == null ? "" : ` • ${Math.round(data.last24h.avgLatencyMs)} ms`}
-          </p>
+          <p className="text-xs uppercase tracking-wider text-[var(--dash-text-secondary)]">Cycle tokens used</p>
+          <p className="mt-2 text-2xl font-semibold text-[var(--text-primary)] tabular-nums">{usage.cycle.tokensOutput.toLocaleString()}</p>
+          <p className="mt-2 text-sm text-[var(--text-tertiary)]">Output tokens consumed in cycle view</p>
+        </div>
+        <div className="agent-card p-5">
+          <p className="text-xs uppercase tracking-wider text-[var(--dash-text-secondary)]">Cycle tokens remaining</p>
+          <p className="mt-2 text-2xl font-semibold text-[var(--text-primary)] tabular-nums">{usage.cycle.tokensRemaining.toLocaleString()}</p>
+          <p className="mt-2 text-sm text-[var(--text-tertiary)]">Tokens available in cycle view</p>
         </div>
       </section>
 
       <section className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <div className="agent-card p-5 xl:col-span-2">
-          <h2 className="text-base font-semibold text-[var(--text-primary)]">Minimal usage guidance</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            {[
-              "Push when the window feels right.",
-              "Watch the clock more than the details.",
-              "Treat this as pulse, not precision.",
-            ].map((line) => (
-              <div key={line} className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3 text-sm text-[var(--text-secondary)]">
-                {line}
-              </div>
-            ))}
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Usage Health</h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3 text-sm text-[var(--text-secondary)]">
+              <p className="text-xs uppercase tracking-wider text-[var(--dash-text-secondary)]">Success rate (24h)</p>
+              <p className="mt-2 text-xl font-semibold text-emerald-300">{(usage.last24h.successRate * 100).toFixed(0)}%</p>
+            </div>
+            <div className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3 text-sm text-[var(--text-secondary)]">
+              <p className="text-xs uppercase tracking-wider text-[var(--dash-text-secondary)]">Avg latency (24h)</p>
+              <p className="mt-2 text-xl font-semibold text-[var(--text-primary)] tabular-nums">
+                {usage.last24h.avgLatencyMs == null ? "--" : `${Math.round(usage.last24h.avgLatencyMs)} ms`}
+              </p>
+            </div>
           </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-5">
+            <div className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">
+              Success: {(usage.statusBreakdown?.success ?? 0).toLocaleString()}
+            </div>
+            <div className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">
+              Errors: {(usage.statusBreakdown?.error ?? 0).toLocaleString()}
+            </div>
+            <div className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">
+              Rate limited: {(usage.statusBreakdown?.rateLimited ?? 0).toLocaleString()}
+            </div>
+            <div className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">
+              Limit exceeded: {(usage.statusBreakdown?.quotaExceeded ?? 0).toLocaleString()}
+            </div>
+            <div className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">
+              Validation errors: {(usage.statusBreakdown?.validationError ?? 0).toLocaleString()}
+            </div>
+          </div>
+
           <div className="mt-4 flex flex-wrap gap-2">
             <Link href="/playground" className="rounded-xl bg-cyan-500 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-500/90">
               Open Playground
@@ -317,7 +505,70 @@ export default function PlaygroundDashboardPage() {
           </div>
         </div>
 
-        <div className="xl:col-span-1">
+        <div className="xl:col-span-1 space-y-4">
+          <div className="agent-card p-5">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Manage Subscription</h3>
+            <div className="mt-3 space-y-2">
+              <div className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">
+                <p>Status: <span className="font-medium text-[var(--text-primary)]">{usage.status.replaceAll("_", " ")}</span></p>
+                <p className="mt-1">Plan: <span className="font-medium text-[var(--text-primary)]">{usage.plan ?? "none"}</span></p>
+                <p className="mt-1">
+                  Renewal date:{" "}
+                  <span className="font-medium text-[var(--text-primary)]">{formatDate(usage.billing?.currentPeriodEndsAt)}</span>
+                </p>
+                {usage.billing?.cancelAtPeriodEnd ? (
+                  <p className="mt-1 text-amber-300">
+                    Cancellation scheduled for {formatDate(usage.billing.currentPeriodEndsAt)}.
+                  </p>
+                ) : null}
+                {usage.trial?.isActive ? (
+                  <p className="mt-1 text-cyan-200">
+                    Trial ends on {formatDate(usage.trial.endsAt)}.
+                  </p>
+                ) : null}
+              </div>
+
+              <button
+                onClick={() => manageSubscription("portal")}
+                disabled={subscriptionAction !== null || usage.plan == null}
+                className="w-full rounded-xl border border-cyan-300/40 bg-cyan-500/10 px-3 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-60"
+              >
+                {subscriptionAction === "portal" ? "Opening billing portal..." : "Manage Billing"}
+              </button>
+
+              {usage.billing?.cancelAtPeriodEnd ? (
+                <button
+                  onClick={() => manageSubscription("resume")}
+                  disabled={subscriptionAction !== null}
+                  className="w-full rounded-xl border border-emerald-300/40 bg-emerald-500/10 px-3 py-2 text-sm font-medium text-emerald-100 hover:bg-emerald-500/20 disabled:opacity-60"
+                >
+                  {subscriptionAction === "resume" ? "Resuming..." : "Resume Renewal"}
+                </button>
+              ) : (
+                <button
+                  onClick={() => manageSubscription("cancel")}
+                  disabled={subscriptionAction !== null || usage.plan == null}
+                  className="w-full rounded-xl border border-rose-300/40 bg-rose-500/10 px-3 py-2 text-sm font-medium text-rose-100 hover:bg-rose-500/20 disabled:opacity-60"
+                >
+                  {subscriptionAction === "cancel" ? "Scheduling cancellation..." : "Cancel at Period End"}
+                </button>
+              )}
+              {subscriptionError ? <p className="text-xs text-rose-300">{subscriptionError}</p> : null}
+            </div>
+          </div>
+
+          <div className="agent-card p-5">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Model in current cycle</h3>
+            <div className="mt-3 space-y-2">
+              <div className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3">
+                <p className="text-xs text-[var(--text-secondary)] break-all">Playground AI</p>
+                <p className="mt-1 text-xs text-[var(--text-tertiary)]">
+                  {modelTotals.requests.toLocaleString()} req - {modelTotals.tokens.toLocaleString()} tokens
+                </p>
+              </div>
+            </div>
+          </div>
+
           <ApiKeySection />
         </div>
       </section>

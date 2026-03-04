@@ -63,6 +63,12 @@ export type AssistResult = {
   nextBestActions: string[];
 };
 
+type StructuredAssistOutput = {
+  final: string;
+  edits: Array<{ path: string; patch: string; rationale?: string }>;
+  commands: string[];
+};
+
 const HF_ROUTER_BASE_URL = "https://router.huggingface.co/v1";
 const STANDARD_CONTEXT_LIMIT = 32_000;
 const LONG_CONTEXT_LIMIT = 262_144;
@@ -149,6 +155,9 @@ function buildPlan(task: string, context?: AssistContext): AssistPlan {
 
 function classifyMode(task: string): { mode: AssistDecisionMode; reason: string; confidence: number } {
   const lower = task.toLowerCase();
+  if (/\b(what model|which model|who are you|what are you)\b/.test(lower)) {
+    return { mode: "generate", reason: "Task is conversational/identity and should answer directly.", confidence: 0.82 };
+  }
   if (/\b(error|bug|fix|failing|crash|exception|trace|stack)\b/.test(lower)) {
     return { mode: "debug", reason: "Task appears defect-oriented.", confidence: 0.86 };
   }
@@ -196,6 +205,7 @@ async function callHfChat(params: {
   model: string;
   prompt: string;
   maxTokens: number;
+  onToken?: (token: string) => void | Promise<void>;
 }): Promise<string> {
   const token = getHfRouterToken();
   if (!token) {
@@ -212,7 +222,7 @@ async function callHfChat(params: {
     },
     body: JSON.stringify({
       model: params.model,
-      stream: false,
+      stream: true,
       max_tokens: params.maxTokens,
       messages: [
         {
@@ -229,10 +239,251 @@ async function callHfChat(params: {
     const msg = (await r.text().catch(() => "")) || `HF error ${r.status}`;
     throw new Error(msg);
   }
-  const body = (await r.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+
+  const contentType = r.headers.get("content-type") || "";
+  if (contentType.includes("text/event-stream")) {
+    const reader = r.body?.getReader();
+    if (!reader) return "";
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let out = "";
+    const findSeparator = (value: string): { index: number; len: number } => {
+      const idxLf = value.indexOf("\n\n");
+      const idxCrlf = value.indexOf("\r\n\r\n");
+      if (idxLf < 0 && idxCrlf < 0) return { index: -1, len: 0 };
+      if (idxLf < 0) return { index: idxCrlf, len: 4 };
+      if (idxCrlf < 0) return { index: idxLf, len: 2 };
+      return idxLf < idxCrlf ? { index: idxLf, len: 2 } : { index: idxCrlf, len: 4 };
+    };
+
+    const handleEventChunk = async (eventChunk: string) => {
+      const lines = eventChunk
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const dataLines = lines
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trim());
+      if (!dataLines.length) return false;
+      const data = dataLines.join("\n");
+      if (!data || data === "[DONE]") return data === "[DONE]";
+
+      try {
+        const parsed = JSON.parse(data) as {
+          choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }>;
+        };
+        const piece =
+          parsed.choices?.[0]?.delta?.content ??
+          parsed.choices?.[0]?.message?.content ??
+          "";
+        if (piece) {
+          out += piece;
+          if (params.onToken) await params.onToken(piece);
+        }
+      } catch {
+        // Ignore malformed or non-JSON chunks.
+      }
+      return false;
+    };
+
+    let streamDone = false;
+    while (!streamDone) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let sep = findSeparator(buffer);
+      while (sep.index >= 0) {
+        const eventChunk = buffer.slice(0, sep.index);
+        buffer = buffer.slice(sep.index + sep.len);
+        const sawDone = await handleEventChunk(eventChunk);
+        if (sawDone) {
+          streamDone = true;
+          break;
+        }
+        sep = findSeparator(buffer);
+      }
+    }
+
+    if (!streamDone && buffer.trim()) {
+      await handleEventChunk(buffer);
+    }
+
+    return out.trim();
+  }
+
+  const body = (await r.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const text = body.choices?.[0]?.message?.content?.trim() || "";
+  if (text && params.onToken) await params.onToken(text);
+  return text;
+}
+
+function extractJsonObjectCandidate(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
+
+  const fenced = trimmed.match(/```json\s*([\s\S]*?)```/i) || trimmed.match(/```\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) {
+    const block = fenced[1].trim();
+    if (block.startsWith("{") && block.endsWith("}")) return block;
+  }
+
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    return trimmed.slice(start, end + 1);
+  }
+  return null;
+}
+
+function parseStructuredAssistResponse(raw: string): StructuredAssistOutput | null {
+  const candidate = extractJsonObjectCandidate(raw);
+  if (!candidate) return null;
+
+  try {
+    const parsed = JSON.parse(candidate) as {
+      final?: unknown;
+      edits?: unknown;
+      commands?: unknown;
+    };
+
+    const final =
+      typeof parsed.final === "string" && parsed.final.trim()
+        ? parsed.final.trim()
+        : typeof raw === "string"
+          ? raw.trim()
+          : "";
+
+    const edits = Array.isArray(parsed.edits)
+      ? parsed.edits
+          .filter((e): e is { path: string; patch: string; rationale?: string } => {
+            return (
+              !!e &&
+              typeof e === "object" &&
+              typeof (e as { path?: unknown }).path === "string" &&
+              typeof (e as { patch?: unknown }).patch === "string"
+            );
+          })
+          .map((e) => ({
+            path: e.path.trim(),
+            patch: e.patch.trim(),
+            ...(typeof e.rationale === "string" && e.rationale.trim() ? { rationale: e.rationale.trim() } : {}),
+          }))
+          .filter((e) => e.path && e.patch && !e.path.includes("..") && !e.path.startsWith("/") && !/^[a-z]:\\/i.test(e.path))
+          .slice(0, 20)
+      : [];
+
+    const commands = Array.isArray(parsed.commands)
+      ? parsed.commands
+          .filter((c): c is string => typeof c === "string")
+          .map((c) => c.trim())
+          .filter(Boolean)
+          .slice(0, 20)
+      : [];
+
+    return { final, edits, commands };
+  } catch {
+    return null;
+  }
+}
+
+function normalizeRelativePath(value: string): string | null {
+  const cleaned = value.replace(/\\/g, "/").trim().replace(/^["'`]+|["'`]+$/g, "");
+  if (!cleaned) return null;
+  if (cleaned.includes("..")) return null;
+  if (cleaned.startsWith("/") || /^[a-z]:\//i.test(cleaned)) return null;
+  return cleaned;
+}
+
+function inferPathFromTask(task: string): string | null {
+  const patterns = [
+    /\b(?:create|make|add|write)\s+(?:a\s+)?(?:new\s+)?file\s+([^\s"'`]+)/i,
+    /\b(?:create|make|add|write)\s+([^\s"'`]+\.[a-z0-9]+)\b/i,
+  ];
+  for (const rx of patterns) {
+    const m = task.match(rx);
+    if (m?.[1]) {
+      const normalized = normalizeRelativePath(m[1]);
+      if (normalized) return normalized;
+    }
+  }
+  return null;
+}
+
+function inferPathFromCode(code: string): string | null {
+  const firstLine = code.split(/\r?\n/)[0]?.trim() || "";
+  const commentPath =
+    firstLine.match(/^#\s*([a-zA-Z0-9_./-]+\.[a-zA-Z0-9_-]+)\s*$/) ||
+    firstLine.match(/^\/\/\s*([a-zA-Z0-9_./-]+\.[a-zA-Z0-9_-]+)\s*$/) ||
+    firstLine.match(/^\/\*\s*([a-zA-Z0-9_./-]+\.[a-zA-Z0-9_-]+)\s*\*\/\s*$/);
+  if (commentPath?.[1]) {
+    return normalizeRelativePath(commentPath[1]);
+  }
+  return null;
+}
+
+function buildAddOrReplacePatch(path: string, content: string): string {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const body = lines.map((line) => `+${line}`).join("\n");
+  return [
+    `diff --git a/${path} b/${path}`,
+    "new file mode 100644",
+    "index 0000000..1111111",
+    "--- /dev/null",
+    `+++ b/${path}`,
+    `@@ -0,0 +1,${lines.length} @@`,
+    body,
+  ].join("\n");
+}
+
+function extractFencedCodeBlocks(text: string): string[] {
+  const blocks: string[] = [];
+  const re = /```[a-zA-Z0-9_-]*\n([\s\S]*?)```/g;
+  let match: RegExpExecArray | null = null;
+  while ((match = re.exec(text)) !== null) {
+    if (match[1]?.trim()) blocks.push(match[1].trimEnd());
+  }
+  return blocks;
+}
+
+function extractFinalFromJsonLike(raw: string): string | null {
+  const m = raw.match(/"final"\s*:\s*"([\s\S]*?)"/i);
+  if (!m?.[1]) return null;
+  try {
+    return JSON.parse(`"${m[1].replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`);
+  } catch {
+    return m[1]
+      .replace(/\\n/g, "\n")
+      .replace(/\\"/g, '"')
+      .trim();
+  }
+}
+
+function inferStructuredFallback(raw: string, task: string): StructuredAssistOutput | null {
+  const blocks = extractFencedCodeBlocks(raw);
+  if (!blocks.length) return null;
+
+  const taskPath = inferPathFromTask(task);
+  const edits: Array<{ path: string; patch: string; rationale?: string }> = [];
+
+  for (const block of blocks.slice(0, 4)) {
+    const path = taskPath || inferPathFromCode(block);
+    if (!path) continue;
+    edits.push({
+      path,
+      patch: buildAddOrReplacePatch(path, block),
+      rationale: "Inferred file creation from fenced code block output.",
+    });
+  }
+
+  if (!edits.length) return null;
+  return {
+    final: raw.trim(),
+    edits,
+    commands: [],
   };
-  return body.choices?.[0]?.message?.content?.trim() || "";
 }
 
 function inferRisk(decision: AssistDecisionMode, task: string, commands: string[]) {
@@ -252,6 +503,10 @@ function collectInfluence(context?: AssistContext) {
   for (const file of context?.openFiles ?? []) files.add(file.path);
   for (const snippet of context?.indexedSnippets ?? []) if (snippet.path) files.add(snippet.path);
   return { files: Array.from(files).slice(0, 24), snippets: context?.indexedSnippets?.length ?? 0 };
+}
+
+function hasExecutionIntent(task: string): boolean {
+  return /\b(create|make|add|build|implement|refactor|fix|debug|run|test|lint|typecheck|command|file|patch|edit|ship)\b/i.test(task);
 }
 
 export async function guardPlaygroundAccess(params: {
@@ -305,7 +560,10 @@ export async function guardPlaygroundAccess(params: {
   };
 }
 
-export async function runAssist(req: AssistRequest): Promise<AssistResult> {
+export async function runAssist(
+  req: AssistRequest,
+  hooks?: { onToken?: (token: string) => void | Promise<void>; onStatus?: (status: string) => void | Promise<void> }
+): Promise<AssistResult> {
   const aggressiveAllowed = process.env.PLAYGROUND_ENABLE_AGGRESSIVE_YOLO === "1";
   const effectiveSafety: SafetyProfile =
     req.safetyProfile === "aggressive" && !aggressiveAllowed ? "standard" : req.safetyProfile ?? "standard";
@@ -348,6 +606,8 @@ export async function runAssist(req: AssistRequest): Promise<AssistResult> {
   }
 
   let final = "";
+  let edits: Array<{ path: string; patch: string; rationale?: string }> = [];
+  let modelCommands: string[] = [];
   if (decision.mode === "plan") {
     final = [
       `Objective: ${plan?.objective}`,
@@ -362,36 +622,54 @@ export async function runAssist(req: AssistRequest): Promise<AssistResult> {
       ...(plan?.riskFlags ?? []).map((s) => `- ${s}`),
     ].join("\n");
   } else {
+    if (hooks?.onStatus) await hooks.onStatus("Thinking...");
     const prompt = [
       `Mode: ${decision.mode}`,
       `Task: ${req.task}`,
       req.workflowIntentId ? `Workflow intent id: ${req.workflowIntentId}` : "",
       `Safety profile: ${effectiveSafety}`,
+      `Model: ${model}`,
       "",
       contextToPrompt(budgetedContext, req.attachments),
       "",
       decision.mode === "debug"
-        ? "Return: root cause hypothesis, fix diff strategy, and validation checklist."
+        ? "Focus on root cause, minimal safe fix, and verification."
         : decision.mode === "yolo"
-          ? "Return: direct implementation guidance with concrete file edits and command sequence."
-          : "Return: production-ready implementation guidance with concise rationale.",
+          ? "Focus on direct implementation with actionable edits and commands."
+          : "Focus on production-ready implementation guidance with concise rationale.",
+      "",
+      'Return STRICT JSON only with this shape: {"final":"string","edits":[{"path":"relative/path","patch":"unified diff patch","rationale":"optional"}],"commands":["safe command"]}.',
+      "Rules: keep edits empty when not confident; commands must be safe test/build/lint/typecheck commands; never include markdown fences.",
     ]
       .filter(Boolean)
       .join("\n");
 
-    final = await callHfChat({
+    const raw = await callHfChat({
       model,
       prompt,
       maxTokens: Math.max(128, Math.min(req.max_tokens ?? 512, LONG_CONTEXT_LIMIT)),
+      onToken: hooks?.onToken,
     });
+    const structured = parseStructuredAssistResponse(raw) ?? inferStructuredFallback(raw, req.task);
+    if (structured) {
+      final = structured.final;
+      edits = structured.edits;
+      modelCommands = structured.commands;
+    } else {
+      final = extractFinalFromJsonLike(raw) || raw;
+      logs.push("structured_output=parse_failed; using raw model text");
+    }
   }
 
-  const commands =
-    decision.mode === "yolo"
-      ? ["npm run typecheck", "npm run test -- --runInBand"]
-      : decision.mode === "debug"
-        ? ["npm run test -- --runInBand"]
-        : [];
+  const fallbackCommands =
+    hasExecutionIntent(req.task)
+      ? decision.mode === "yolo"
+        ? ["npm run typecheck", "npm run test -- --runInBand"]
+        : decision.mode === "debug"
+          ? ["npm run test -- --runInBand"]
+          : []
+      : [];
+  const commands = Array.from(new Set([...modelCommands, ...(modelCommands.length > 0 ? [] : fallbackCommands)]));
   const risk = inferRisk(decision.mode, req.task, commands);
   const influence = collectInfluence(budgetedContext);
   const confidence = Math.max(0.05, Math.min(0.99, decision.confidence));
@@ -407,7 +685,7 @@ export async function runAssist(req: AssistRequest): Promise<AssistResult> {
   return {
     decision,
     plan,
-    edits: [],
+    edits,
     commands,
     final,
     logs,

@@ -11,6 +11,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  date,
   check,
 } from "drizzle-orm/pg-core";
 import { agents } from "./search-schema";
@@ -1187,6 +1188,7 @@ export const hfUsageLogs = pgTable(
     index("hf_usage_logs_user_created_idx").on(table.userId, table.createdAt),
     index("hf_usage_logs_model_idx").on(table.model),
     index("hf_usage_logs_status_idx").on(table.status),
+    index("hf_usage_logs_date_idx").on(table.createdAt),
   ]
 );
 
@@ -1198,7 +1200,7 @@ export const hfDailyUsage = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    usageDate: timestamp("usage_date", { withTimezone: false }).notNull(),
+    usageDate: date("usage_date").notNull(),
     requestsCount: integer("requests_count").notNull().default(0),
     tokensInput: integer("tokens_input").notNull().default(0),
     tokensOutput: integer("tokens_output").notNull().default(0),

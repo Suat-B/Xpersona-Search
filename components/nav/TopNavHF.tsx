@@ -22,6 +22,7 @@ interface TopNavHFProps {
 export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [planBadge, setPlanBadge] = useState<string | null>(null);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -34,6 +35,37 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
       document.body.style.overflow = "";
     };
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setPlanBadge(null);
+      return;
+    }
+
+    let cancelled = false;
+    fetch("/api/v1/me/playground-usage", { credentials: "include", cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        const json = await res.json().catch(() => null);
+        return json as { plan?: "trial" | "paid" | null; status?: string } | null;
+      })
+      .then((data) => {
+        if (cancelled || !data) return;
+        const isActive = data.status === "active" || data.status === "trial";
+        if (!isActive) {
+          setPlanBadge(null);
+          return;
+        }
+        setPlanBadge(data.plan === "trial" ? "Trial Active" : "Plan Active");
+      })
+      .catch(() => {
+        if (!cancelled) setPlanBadge(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
 
   return (
     <header className="scroll-stable-layer sticky top-0 z-50 w-full border-b border-[var(--border)] bg-[var(--bg-deep)]/85 backdrop-blur-xl">
@@ -65,6 +97,11 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
           ))}
           {isAuthenticated ? (
             <>
+              {planBadge ? (
+                <span className="rounded-full border border-cyan-300/40 bg-cyan-500/15 px-2.5 py-1 text-xs font-medium text-cyan-100">
+                  {planBadge}
+                </span>
+              ) : null}
               <span className="rounded-full border border-emerald-300/40 bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-200">
                 Signed in
               </span>
@@ -131,6 +168,11 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
             <div className="pt-2 border-t border-[var(--border)] space-y-2">
               {isAuthenticated ? (
                 <>
+                  {planBadge ? (
+                    <div className="rounded-lg px-3 py-2 text-xs font-medium text-cyan-100 bg-cyan-500/15 border border-cyan-300/40">
+                      {planBadge}
+                    </div>
+                  ) : null}
                   <div className="rounded-lg px-3 py-2 text-xs font-medium text-emerald-200 bg-emerald-500/15 border border-emerald-300/40">
                     Signed in
                   </div>

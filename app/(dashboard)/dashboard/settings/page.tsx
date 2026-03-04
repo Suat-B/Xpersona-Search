@@ -221,8 +221,14 @@ type UserData = {
   isPermanent?: boolean;
 };
 
+type PlaygroundSubscriptionSnapshot = {
+  plan: "trial" | "paid" | null;
+  status: "active" | "trial" | "cancelled" | "past_due" | "inactive";
+};
+
 function SettingsPageClient() {
   const [user, setUser] = useState<UserData | null>(null);
+  const [subscription, setSubscription] = useState<PlaygroundSubscriptionSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -250,7 +256,32 @@ function SettingsPageClient() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    fetch("/api/v1/me/playground-usage", { credentials: "include", cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        return (await res.json().catch(() => null)) as PlaygroundSubscriptionSnapshot | null;
+      })
+      .then((data) => {
+        if (!data) {
+          setSubscription(null);
+          return;
+        }
+        setSubscription({
+          plan: data.plan ?? null,
+          status: data.status ?? "inactive",
+        });
+      })
+      .catch(() => setSubscription(null));
+  }, []);
+
   const isEphemeral = !user?.isPermanent && (user?.accountType === "agent" || user?.accountType === "human");
+  const hasActivePlan = subscription?.status === "active" || subscription?.status === "trial";
+  const subscriptionLabel = hasActivePlan
+    ? subscription?.plan === "trial"
+      ? "Trial Active"
+      : "Plan Active"
+    : null;
   const linkHref = buildUpgradeAuthUrl(
     "signup",
     user?.accountType ?? null,
@@ -345,6 +376,11 @@ function SettingsPageClient() {
         <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
           Account
         </h2>
+        {subscriptionLabel ? (
+          <div className="mb-4 inline-flex items-center rounded-full border border-cyan-300/40 bg-cyan-500/15 px-3 py-1.5 text-xs font-medium text-cyan-100">
+            {subscriptionLabel}
+          </div>
+        ) : null}
         <Link
           href="/api/v1/signout"
           className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm font-medium text-red-400 hover:bg-red-500/20 transition-colors"

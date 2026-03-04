@@ -40,6 +40,7 @@ const DEV_LINKS = [
 
 const API_PILLARS = [
   "Programmable API, not just chat UI",
+  "Powered by Playground, our in-house agentic coding model",
   "Policy-checked execution before risky actions",
   "Session memory + context index for long workflows",
   "OpenClaw-ready integration surface",
@@ -224,13 +225,16 @@ export function GoogleStyleHome({
                 <span className="inline-flex items-center rounded-full border border-emerald-300/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-medium text-emerald-200">
                   Built for integrations
                 </span>
+                <span className="inline-flex items-center rounded-full border border-cyan-300/30 bg-cyan-500/10 px-3 py-1 text-[11px] font-medium text-cyan-200">
+                  Playground model
+                </span>
               </div>
 
               <h2 className="mt-3 text-lg sm:text-2xl font-bold tracking-tight text-[var(--text-primary)]">
                 The programmable runtime for coding agents
               </h2>
               <p className="mt-2 text-sm sm:text-base text-[var(--text-secondary)] max-w-3xl leading-relaxed">
-                Xpersona gives you one API surface to build, run, and govern coding agents across extension, web, and automation workflows.
+                Xpersona gives you one API surface to build, run, and govern coding agents across extension, web, and automation workflows, powered by Playground, our in-house agentic coding model.
               </p>
 
               <div className="mt-4 grid gap-2 sm:grid-cols-2">

@@ -20,6 +20,7 @@ export function UserAccountMenu({
   accountType = null,
 }: UserAccountMenuProps) {
   const [open, setOpen] = useState(false);
+  const [planBadge, setPlanBadge] = useState<string | null>(null);
   const [recoveryUrl, setRecoveryUrl] = useState<string | null>(null);
   const [recoveryLoading, setRecoveryLoading] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -67,6 +68,32 @@ export function UserAccountMenu({
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, [open, close]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/v1/me/playground-usage", { credentials: "include", cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        const json = await res.json().catch(() => null);
+        return json as { plan?: "trial" | "paid" | null; status?: string } | null;
+      })
+      .then((data) => {
+        if (cancelled || !data) return;
+        const isActive = data.status === "active" || data.status === "trial";
+        if (!isActive) {
+          setPlanBadge(null);
+          return;
+        }
+        setPlanBadge(data.plan === "trial" ? "Trial Active" : "Plan Active");
+      })
+      .catch(() => {
+        if (!cancelled) setPlanBadge(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const copyRecoveryUrl = useCallback(async () => {
     if (!recoveryUrl) return;
@@ -131,8 +158,13 @@ export function UserAccountMenu({
           </button>
         </div>
         <p className="text-xs text-white/70 truncate mt-0.5">
-          {userEmail ? `Free Plan - ${userEmail}` : "Free Plan"}
+          {userEmail ? `${planBadge ?? "Free Plan"} - ${userEmail}` : planBadge ?? "Free Plan"}
         </p>
+        {planBadge ? (
+          <span className="mt-2 inline-flex rounded-full border border-cyan-300/40 bg-cyan-500/15 px-2.5 py-1 text-[11px] font-medium text-cyan-100">
+            {planBadge}
+          </span>
+        ) : null}
       </div>
 
       {open &&

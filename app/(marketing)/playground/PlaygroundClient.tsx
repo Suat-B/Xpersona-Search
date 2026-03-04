@@ -56,10 +56,11 @@ const PRICING_TIERS: PricingTier[] = [
     name: "Starter",
     monthlyPrice: 2,
     yearlyPrice: 20,
-    description: "Great for learning, side-projects, and lightweight coding help.",
+    description: "Great for learning, side-projects, and lightweight coding help (300 requests/month).",
     features: [
       "2-day free trial",
       "Trial quota: 30 requests/day, 8K context, 256 max output",
+      "Paid package: 300 requests/month",
       "Paid limits begin after trial",
       "Core coding workflows",
     ],
@@ -69,10 +70,11 @@ const PRICING_TIERS: PricingTier[] = [
     name: "Builder",
     monthlyPrice: 5,
     yearlyPrice: 50,
-    description: "Best for active developers shipping weekly.",
+    description: "Best for active developers shipping weekly (1,000 requests/month).",
     features: [
       "2-day free trial",
       "Trial quota: 30 requests/day, 8K context, 256 max output",
+      "Paid package: 1,000 requests/month",
       "Paid limits begin after trial",
       "Priority capacity",
       "Usage insights",
@@ -84,10 +86,11 @@ const PRICING_TIERS: PricingTier[] = [
     name: "Studio",
     monthlyPrice: 10,
     yearlyPrice: 100,
-    description: "For advanced users and teams running heavy coding sessions.",
+    description: "For advanced users and teams running heavy coding sessions (3,000 requests/month).",
     features: [
       "2-day free trial",
       "Trial quota: 30 requests/day, 8K context, 256 max output",
+      "Paid package: 3,000 requests/month",
       "Paid limits begin after trial",
       "Highest capacity",
       "Direct support",
@@ -155,6 +158,11 @@ const EXTENSION_FEATURES: MarketingFeature[] = [
 
 const FAQ_ITEMS: FaqItem[] = [
   {
+    question: "Is this powered by your own model or a third-party wrapper?",
+    answer:
+      "Our Playground experience is powered by our own in-house model, Playground <3 pure love <3, built for coding speed, context depth, and reliable execution in VS Code.",
+  },
+  {
     question: "Will this fit my workflow if I already use ChatGPT or Claude Code?",
     answer:
       "Yes. Playground is designed to feel familiar while adding stronger in-editor workflows and team-ready controls.",
@@ -213,14 +221,14 @@ function HeroSection({ onStartTrial }: { onStartTrial: () => void }) {
         <div>
           <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-cyan-400/40 bg-slate-900/70 px-4 py-1.5 text-xs font-semibold text-cyan-200">
             <SparklesIcon className="h-3.5 w-3.5" />
-            Playground AI for VS Code workflows
+            Powered by our in-house model: Playground
           </div>
           <h1 className="text-balance text-4xl font-black leading-tight text-white sm:text-5xl lg:text-6xl">
             Your coding copilot workspace for shipping faster.
           </h1>
           <p className="mt-5 max-w-2xl text-base text-slate-300 sm:text-lg">
-            Built for developers who use ChatGPT, Codex, and Claude Code, but want stronger in-editor execution,
-            planning, and team-ready workflow control.
+            Built for developers who use ChatGPT, Codex, and Claude Code, but want stronger in-editor execution and
+            planning powered by Playground, our in-house model {"<3 pure love <3"}.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <button
@@ -266,7 +274,7 @@ function TrustRail() {
     { label: "Reliability", value: "99.9% uptime SLA" },
     { label: "Latency", value: "~50ms avg response" },
     { label: "Developers", value: "10K+ active builders" },
-    { label: "Coverage", value: "50+ coding languages" },
+    { label: "Model", value: "In-house Playground <3 pure love <3" },
   ];
 
   return (
@@ -403,9 +411,10 @@ function PricingPreviewSection({
         </div>
 
         <div className="mt-5 grid gap-3 text-sm text-slate-300 sm:grid-cols-3">
-          <p className="rounded-lg border border-slate-700 bg-slate-900/50 p-3">All plans include Playground AI coding workflows.</p>
+          <p className="rounded-lg border border-slate-700 bg-slate-900/50 p-3">All plans include usage on our in-house Playground model.</p>
+          <p className="rounded-lg border border-slate-700 bg-slate-900/50 p-3">Paid packages: Starter 300/mo, Builder 1,000/mo, Studio 3,000/mo requests.</p>
           <p className="rounded-lg border border-slate-700 bg-slate-900/50 p-3">Trial starts in seconds. Credit card required.</p>
-          <p className="rounded-lg border border-slate-700 bg-slate-900/50 p-3">Upgrade only when your workload grows.</p>
+          <p className="rounded-lg border border-slate-700 bg-slate-900/50 p-3">Trial quota: 30/day, 8K context, 256 max output. Paid: 16K context, 512 max output.</p>
         </div>
       </div>
     </section>
@@ -604,7 +613,7 @@ function FinalCtaSection({ onStartTrial, isBusy }: { onStartTrial: () => void; i
     <section className="px-4 pb-24 pt-12 sm:px-6">
       <div className="mx-auto max-w-4xl rounded-3xl border border-cyan-400/30 bg-gradient-to-r from-slate-900 to-slate-800 p-8 text-center shadow-[0_20px_60px_rgba(8,145,178,0.25)]">
         <h2 className="text-3xl font-black text-white sm:text-4xl">Ready to turn prompts into shipped features?</h2>
-        <p className="mt-3 text-slate-300">Start your 2-day trial and keep your existing developer workflow intact.</p>
+        <p className="mt-3 text-slate-300">Start your 2-day trial with our in-house model Playground {"<3 pure love <3"} and keep your existing workflow intact.</p>
         <button
           onClick={() => {
             fireAnalyticsEvent("playground_final_cta_click", { location: "final_section" });
