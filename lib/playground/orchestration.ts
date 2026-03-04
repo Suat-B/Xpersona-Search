@@ -25,6 +25,28 @@ export type AssistAgentConfig = {
   roles?: Array<"planner" | "implementer" | "reviewer">;
 };
 
+export type AssistConversationTurn = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type AssistClientPreferences = {
+  tone?: "warm_teammate" | "neutral";
+  autonomy?: "full_auto" | "preview_first";
+  responseStyle?: "concise" | "balanced" | "detailed";
+  reasoning?: "low" | "medium" | "high" | "max";
+};
+
+export type AssistUserProfile = {
+  preferredTone?: string | null;
+  autonomyMode?: string | null;
+  responseStyle?: string | null;
+  reasoningPreference?: string | null;
+  preferredModelAlias?: string | null;
+  sessionSummary?: string | null;
+  stablePreferences?: unknown;
+};
+
 export type AssistRequest = {
   mode: AssistMode;
   task: string;
@@ -34,6 +56,9 @@ export type AssistRequest = {
   context?: AssistContext;
   attachments?: AssistAttachment[];
   historySessionId?: string;
+  conversationHistory?: AssistConversationTurn[];
+  clientPreferences?: AssistClientPreferences;
+  userProfile?: AssistUserProfile | null;
   agentConfig?: AssistAgentConfig;
   workflowIntentId?: string;
   contextBudget?: { maxTokens?: number; strategy?: BudgetStrategy };
@@ -51,6 +76,22 @@ export type AssistPlan = {
 
 export type AssistResult = {
   decision: { mode: AssistDecisionMode; reason: string; confidence: number };
+  intent: { type: "conversation" | "code_edit" | "debug" | "plan" | "execute"; confidence: number; delta: number; clarified: boolean };
+  reasonCodes: string[];
+  autonomyDecision: {
+    mode: "no_actions" | "preview_only" | "auto_apply_only" | "auto_apply_and_validate";
+    autoApplyEdits: boolean;
+    autoRunValidation: boolean;
+    confidence: number;
+    thresholds: { autoApply: number; autoValidate: number };
+    rationale: string;
+  };
+  validationPlan: {
+    scope: "none" | "targeted";
+    checks: string[];
+    touchedFiles: string[];
+    reason: string;
+  };
   plan: AssistPlan | null;
   edits: Array<{ path: string; patch: string; rationale?: string }>;
   commands: string[];
@@ -72,10 +113,13 @@ type StructuredAssistOutput = {
 const HF_ROUTER_BASE_URL = "https://router.huggingface.co/v1";
 const STANDARD_CONTEXT_LIMIT = 32_000;
 const LONG_CONTEXT_LIMIT = 262_144;
-const DEFAULT_PLAYGROUND_MODEL = "Qwen/Qwen3-4B-Instruct-2507:nscale";
+const DEFAULT_PLAYGROUND_MODEL = "Qwen/Qwen2.5-Coder-7B-Instruct:nscale";
 const HF_REQUEST_TIMEOUT_MS = Number(process.env.PLAYGROUND_HF_REQUEST_TIMEOUT_MS || 90_000);
 const HF_STREAM_IDLE_TIMEOUT_MS = Number(process.env.PLAYGROUND_HF_STREAM_IDLE_TIMEOUT_MS || 45_000);
 const STREAM_RAW_MODEL_TOKENS = process.env.PLAYGROUND_STREAM_MODEL_TOKENS === "1";
+const PLAYGROUND_INTELLIGENCE_V2 = process.env.PLAYGROUND_INTELLIGENCE_V2 === "1";
+const AUTO_APPLY_THRESHOLD = 0.72;
+const AUTO_VALIDATE_THRESHOLD = 0.8;
 
 function resolveModelAlias(model: string | undefined, fallbackModel: string): string {
   const trimmed = (model || "").trim();
@@ -96,6 +140,19 @@ function isLikelyInvalidModelError(message: string): boolean {
       lower.includes("invalid") ||
       lower.includes("does not exist") ||
       lower.includes("unrecognized"))
+  );
+}
+
+function isLikelyAttachmentUnsupportedError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("image_url") ||
+    lower.includes("multimodal") ||
+    lower.includes("vision") ||
+    lower.includes("image input") ||
+    (lower.includes("unsupported") && lower.includes("image")) ||
+    (lower.includes("invalid") && lower.includes("image")) ||
+    (lower.includes("content") && lower.includes("type"))
   );
 }
 
@@ -179,16 +236,252 @@ function buildPlan(task: string, context?: AssistContext): AssistPlan {
   };
 }
 
+function hasPathMention(task: string): boolean {
+  return /\b[a-zA-Z0-9_./-]+\.[a-z0-9]{1,8}\b/i.test(task);
+}
+
 function hasCodeTaskSignals(task: string): boolean {
-  return /\b(code|file|function|class|bug|error|fix|refactor|implement|build|test|lint|typecheck|stack trace|exception|module|api|endpoint|sql|schema|patch|edit|debug|feature)\b/i.test(task);
+  return (
+    /\b(code|file|function|class|bug|error|fix|refactor|implement|build|test|lint|typecheck|stack trace|exception|module|api|endpoint|sql|schema|patch|edit|debug|feature|python|javascript|typescript)\b/i.test(task) ||
+    hasPathMention(task)
+  );
+}
+
+function isQuestionLike(task: string): boolean {
+  const lower = task.toLowerCase().trim();
+  return (
+    /\?$/.test(lower) ||
+    /^(what|why|how|when|where|who|which|can|could|would|should|is|are|do|does|did)\b/.test(lower) ||
+    /\b(explain|define|tell me)\b/.test(lower)
+  );
+}
+
+function isGreetingLike(task: string): boolean {
+  return /^(hi|hello|hey|yo|sup|thanks|thank you|thx)\b/i.test(task.trim());
+}
+
+type AssistIntentType = "conversation" | "code_edit" | "debug" | "plan" | "execute";
+
+type IntentResolution = {
+  intent: AssistIntentType;
+  confidence: number;
+  delta: number;
+  clarified: boolean;
+  reasonCodes: string[];
+  scoreSnapshot: Record<AssistIntentType, number>;
+};
+
+type RouteFeatures = {
+  questionLike: boolean;
+  greetingLike: boolean;
+  codeSignals: boolean;
+  pathMention: boolean;
+  hasContext: boolean;
+  debugWords: boolean;
+  planWords: boolean;
+  executeWords: boolean;
+  shortFollowup: boolean;
+  lastAssistantWasPlan: boolean;
+  lastAssistantHadPatchLike: boolean;
+  followupRef: boolean;
+};
+
+function collectRouteFeatures(input: {
+  task: string;
+  context?: AssistContext;
+  conversationHistory?: AssistConversationTurn[];
+}): RouteFeatures {
+  const lower = input.task.toLowerCase();
+  const history = input.conversationHistory ?? [];
+  const lastAssistant = [...history].reverse().find((turn) => turn.role === "assistant")?.content || "";
+  const shortFollowup = input.task.trim().length <= 80;
+  const followupRef = /\b(inside|same file|that file|that one|use that|in there|there|please|same)\b/i.test(input.task);
+
+  return {
+    questionLike: isQuestionLike(input.task),
+    greetingLike: isGreetingLike(input.task),
+    codeSignals: hasCodeTaskSignals(input.task),
+    pathMention: hasPathMention(input.task),
+    hasContext: Boolean(
+      input.context?.activeFile?.path ||
+      (input.context?.openFiles?.length ?? 0) > 0 ||
+      (input.context?.indexedSnippets?.length ?? 0) > 0
+    ),
+    debugWords: /\b(error|bug|fix|failing|crash|exception|trace|stack|not working)\b/i.test(lower),
+    planWords: /\b(plan|design|architecture|roadmap|spec|approach|strategy)\b/i.test(lower),
+    executeWords: /\b(run|execute|terminal|shell|command|test|lint|typecheck|build|compile|install)\b/i.test(lower),
+    shortFollowup,
+    lastAssistantWasPlan: /\bobjective:|acceptance tests:|risk flags:|steps:\b/i.test(lastAssistant),
+    lastAssistantHadPatchLike: /diff --git|@@\s*-\d+,\d+\s+\+\d+,\d+\s*@@|\{"final":/i.test(lastAssistant),
+    followupRef,
+  };
+}
+
+function roundIntentScores(scores: Record<AssistIntentType, number>): Record<AssistIntentType, number> {
+  return {
+    conversation: Number(scores.conversation.toFixed(4)),
+    code_edit: Number(scores.code_edit.toFixed(4)),
+    debug: Number(scores.debug.toFixed(4)),
+    plan: Number(scores.plan.toFixed(4)),
+    execute: Number(scores.execute.toFixed(4)),
+  };
+}
+
+function scoreIntentRoute(features: RouteFeatures): { scores: Record<AssistIntentType, number>; reasonCodes: string[] } {
+  const scores: Record<AssistIntentType, number> = {
+    conversation: 0.08,
+    code_edit: 0.08,
+    debug: 0.08,
+    plan: 0.08,
+    execute: 0.08,
+  };
+  const reasonCodes: string[] = [];
+
+  if (features.greetingLike) {
+    scores.conversation += 0.38;
+    reasonCodes.push("greeting_or_smalltalk");
+  }
+  if (features.questionLike && !features.codeSignals) {
+    scores.conversation += 0.34;
+    reasonCodes.push("question_without_code_signal");
+  }
+  if (features.codeSignals) {
+    scores.code_edit += 0.24;
+    reasonCodes.push("code_task_signal");
+  }
+  if (features.pathMention) {
+    scores.code_edit += 0.2;
+    reasonCodes.push("path_mentioned");
+  }
+  if (features.debugWords) {
+    scores.debug += 0.42;
+    reasonCodes.push("debug_keywords");
+  }
+  if (features.planWords) {
+    scores.plan += 0.42;
+    reasonCodes.push("planning_keywords");
+  }
+  if (features.executeWords) {
+    scores.execute += 0.36;
+    reasonCodes.push("execution_keywords");
+  }
+  if (features.hasContext && features.codeSignals) {
+    scores.code_edit += 0.14;
+    reasonCodes.push("ide_context_present");
+  }
+  if (features.lastAssistantHadPatchLike && features.shortFollowup && features.followupRef) {
+    scores.code_edit += 0.22;
+    reasonCodes.push("followup_bound_to_previous_edit");
+  }
+  if (features.lastAssistantWasPlan && features.shortFollowup && features.followupRef) {
+    scores.execute += 0.1;
+    reasonCodes.push("followup_bound_to_previous_plan");
+  }
+
+  return { scores, reasonCodes };
+}
+
+function applyClarificationPass(
+  task: string,
+  features: RouteFeatures,
+  scores: Record<AssistIntentType, number>,
+  reasonCodes: string[]
+): { scores: Record<AssistIntentType, number>; reasonCodes: string[]; clarified: boolean } {
+  const entries = Object.entries(scores).sort((a, b) => b[1] - a[1]) as Array<[AssistIntentType, number]>;
+  const top = entries[0]?.[1] ?? 0;
+  const second = entries[1]?.[1] ?? 0;
+  if (top - second > 0.12) {
+    return { scores, reasonCodes, clarified: false };
+  }
+
+  const next = { ...scores };
+  let clarified = false;
+  if (features.shortFollowup && features.followupRef && features.lastAssistantHadPatchLike) {
+    next.code_edit += 0.18;
+    clarified = true;
+    reasonCodes.push("clarification_followup_edit_bias");
+  }
+  if (isQuestionLike(task) && !features.executeWords && !features.debugWords && !/\b(create|write|edit|file)\b/i.test(task)) {
+    next.conversation += 0.12;
+    clarified = true;
+    reasonCodes.push("clarification_question_bias");
+  }
+  if (features.executeWords && /\b(run|execute|test|lint|typecheck)\b/i.test(task)) {
+    next.execute += 0.1;
+    clarified = true;
+    reasonCodes.push("clarification_execution_bias");
+  }
+
+  return { scores: next, reasonCodes, clarified };
+}
+
+function mapIntentToDecision(intent: AssistIntentType): AssistDecisionMode {
+  if (intent === "debug") return "debug";
+  if (intent === "plan") return "plan";
+  if (intent === "execute") return "yolo";
+  return "generate";
+}
+
+function buildDecisionReason(intent: AssistIntentType): string {
+  if (intent === "conversation") return "Natural language conversation detected.";
+  if (intent === "code_edit") return "Code editing intent detected from task + context.";
+  if (intent === "debug") return "Debugging intent detected from error-oriented language.";
+  if (intent === "plan") return "Planning/spec intent detected.";
+  return "Execution intent detected from command-run language.";
+}
+
+export function resolveIntentRouting(input: {
+  task: string;
+  context?: AssistContext;
+  conversationHistory?: AssistConversationTurn[];
+  forceLegacy?: boolean;
+}): IntentResolution {
+  const forceLegacy = typeof input.forceLegacy === "boolean" ? input.forceLegacy : !PLAYGROUND_INTELLIGENCE_V2;
+  if (forceLegacy) {
+    const legacy = classifyMode(input.task);
+    const legacyIntent: AssistIntentType =
+      legacy.mode === "debug" ? "debug" :
+      legacy.mode === "plan" ? "plan" :
+      legacy.mode === "yolo" ? "execute" :
+      hasCodeEditIntent(input.task) ? "code_edit" : "conversation";
+    return {
+      intent: legacyIntent,
+      confidence: legacy.confidence,
+      delta: 0.2,
+      clarified: false,
+      reasonCodes: ["legacy_mode_classifier"],
+      scoreSnapshot: {
+        conversation: legacyIntent === "conversation" ? legacy.confidence : 0.05,
+        code_edit: legacyIntent === "code_edit" ? legacy.confidence : 0.05,
+        debug: legacyIntent === "debug" ? legacy.confidence : 0.05,
+        plan: legacyIntent === "plan" ? legacy.confidence : 0.05,
+        execute: legacyIntent === "execute" ? legacy.confidence : 0.05,
+      },
+    };
+  }
+
+  const features = collectRouteFeatures(input);
+  const first = scoreIntentRoute(features);
+  const clarified = applyClarificationPass(input.task, features, first.scores, [...first.reasonCodes]);
+  const entries = Object.entries(clarified.scores).sort((a, b) => b[1] - a[1]) as Array<[AssistIntentType, number]>;
+  const top = entries[0] ?? ["conversation", 0.1];
+  const second = entries[1] ?? ["conversation", 0.08];
+  const sum = entries.reduce((acc, [, value]) => acc + value, 0.0001);
+  const confidence = Math.max(0.05, Math.min(0.99, top[1] / sum + 0.1));
+
+  return {
+    intent: top[0],
+    confidence: Number(confidence.toFixed(4)),
+    delta: Number((top[1] - second[1]).toFixed(4)),
+    clarified: clarified.clarified,
+    reasonCodes: clarified.reasonCodes,
+    scoreSnapshot: roundIntentScores(clarified.scores),
+  };
 }
 
 function classifyMode(task: string): { mode: AssistDecisionMode; reason: string; confidence: number } {
   const lower = task.toLowerCase().trim();
-  const questionLike =
-    /\?$/.test(lower) ||
-    /^(what|why|how|when|where|who|which|can|could|would|should|is|are|do|does|did)\b/.test(lower) ||
-    /\b(explain|define|tell me)\b/.test(lower);
+  const questionLike = isQuestionLike(lower);
 
   if (/\b(what model|which model|who are you|what are you)\b/.test(lower)) {
     return { mode: "generate", reason: "Task is conversational/identity and should answer directly.", confidence: 0.82 };
@@ -245,15 +538,96 @@ function contextToPrompt(context?: AssistContext, attachments?: AssistAttachment
     );
   }
   if (attachments?.length) {
-    parts.push(`Attachments: ${attachments.length} image(s) included`);
+    const labels = attachments
+      .slice(0, 6)
+      .map((attachment, idx) => attachment.name || `image-${idx + 1}`)
+      .join(", ");
+    parts.push(`Attachments: ${attachments.length} image(s) included (${labels})`);
   }
   return parts.join("\n\n");
+}
+
+function conversationToPrompt(history?: AssistConversationTurn[]): string {
+  if (!history?.length) return "";
+  const turns = history
+    .filter((turn) => turn && (turn.role === "user" || turn.role === "assistant") && typeof turn.content === "string")
+    .slice(-8)
+    .map((turn) => ({
+      role: turn.role,
+      content: turn.content.replace(/\r\n/g, "\n").trim().slice(0, 4000),
+    }))
+    .filter((turn) => turn.content.length > 0);
+  if (!turns.length) return "";
+  return [
+    "Recent conversation context (most recent last):",
+    ...turns.map((turn) => `${turn.role.toUpperCase()}: ${turn.content}`),
+  ].join("\n\n");
+}
+
+function profileToPrompt(profile?: AssistUserProfile | null, clientPreferences?: AssistClientPreferences): string {
+  const parts: string[] = [];
+  const tone = clientPreferences?.tone || profile?.preferredTone || "warm_teammate";
+  const autonomy = clientPreferences?.autonomy || profile?.autonomyMode || "full_auto";
+  const style = clientPreferences?.responseStyle || profile?.responseStyle || "balanced";
+  const reasoning = clientPreferences?.reasoning || profile?.reasoningPreference || "medium";
+
+  parts.push(`User preference: tone=${tone}, autonomy=${autonomy}, style=${style}, reasoning=${reasoning}.`);
+
+  const summary = String(profile?.sessionSummary || "").trim();
+  if (summary) {
+    parts.push(`Persistent user summary (bounded): ${summary.slice(0, 700)}`);
+  }
+  return parts.join("\n");
+}
+
+function shouldUseTwoPassCodeGeneration(task: string, codeEditIntent: boolean, context?: AssistContext): boolean {
+  if (!PLAYGROUND_INTELLIGENCE_V2 || !codeEditIntent) return false;
+  const complexitySignal =
+    task.length > 120 ||
+    /\b(robust|end-to-end|production|architecture|multi-file|refactor|migration|validate|guardrail|comprehensive|optimize)\b/i.test(task) ||
+    (context?.openFiles?.length ?? 0) >= 4 ||
+    (context?.diagnostics?.length ?? 0) >= 6;
+  return complexitySignal;
+}
+
+function sanitizeAttachmentsForModel(attachments?: AssistAttachment[]): AssistAttachment[] {
+  if (!attachments?.length) return [];
+  return attachments
+    .filter((attachment) => {
+      if (!attachment || typeof attachment !== "object") return false;
+      if (!attachment.dataUrl || typeof attachment.dataUrl !== "string") return false;
+      const mime = String(attachment.mimeType || "").toLowerCase();
+      if (!["image/png", "image/jpeg", "image/webp"].includes(mime)) return false;
+      return new RegExp(`^data:${mime};base64,`, "i").test(attachment.dataUrl);
+    })
+    .slice(0, 3)
+    .map((attachment) => ({
+      mimeType: String(attachment.mimeType || "").toLowerCase(),
+      ...(attachment.name ? { name: String(attachment.name).slice(0, 255) } : {}),
+      dataUrl: String(attachment.dataUrl || ""),
+    }));
+}
+
+function buildUserMessageContent(prompt: string, attachments?: AssistAttachment[]) {
+  if (!attachments?.length) return prompt;
+  const parts: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> = [
+    { type: "text", text: prompt },
+  ];
+  for (const attachment of attachments) {
+    if (!attachment.dataUrl) continue;
+    parts.push({
+      type: "image_url",
+      image_url: { url: attachment.dataUrl },
+    });
+  }
+  return parts;
 }
 
 async function callHfChat(params: {
   model: string;
   prompt: string;
   maxTokens: number;
+  attachments?: AssistAttachment[];
   onToken?: (token: string) => void | Promise<void>;
 }): Promise<string> {
   const token = getHfRouterToken();
@@ -283,7 +657,7 @@ async function callHfChat(params: {
             content:
               "You are Playground AI. Be practical, concise, and execution-oriented. Return plain text suitable for a coding assistant.",
           },
-          { role: "user", content: params.prompt },
+          { role: "user", content: buildUserMessageContent(params.prompt, params.attachments) },
         ],
       }),
       signal: controller.signal,
@@ -591,13 +965,89 @@ function extractFencedCodeBlocks(text: string): string[] {
 function normalizeModelText(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return "";
-  const asUnescaped = trimmed.includes("\\n") && !trimmed.includes("\n")
-    ? trimmed
-        .replace(/\\r/g, "")
-        .replace(/\\n/g, "\n")
-        .replace(/\\t/g, "\t")
-    : trimmed;
-  return asUnescaped;
+  let out = trimmed;
+  const escapedNewlines = (out.match(/\\n/g) || []).length;
+  if (escapedNewlines >= 2) {
+    out = out.replace(/\\r/g, "").replace(/\\n/g, "\n");
+  }
+  out = out.replace(/\\t/g, "\t");
+  const escapedQuotes = (out.match(/\\"/g) || []).length;
+  if (escapedQuotes >= 2) {
+    out = out.replace(/\\"/g, '"');
+  }
+  return out;
+}
+
+function stripRoboticArtifacts(text: string): string {
+  let out = normalizeModelText(text);
+  if (!out) return out;
+
+  const jsonFinal = extractFinalFromJsonLike(out);
+  if (jsonFinal) out = jsonFinal;
+
+  out = out
+    .replace(/^```(?:json|text)?\s*/i, "")
+    .replace(/```$/i, "")
+    .replace(/^\s*\{"final":/i, "")
+    .replace(/\s*"edits"\s*:\s*\[[\s\S]*$/i, "")
+    .replace(/\b(no commands are required|no edits are provided|prepared \d+ tool action\(s\).*)\b/gi, "")
+    .replace(/\bthinking\.\.\.\s*/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return out;
+}
+
+function firstNonEmptyLine(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean) || "";
+}
+
+export function composeWarmAssistantResponse(input: {
+  final: string;
+  task: string;
+  decisionMode: AssistDecisionMode;
+  intent: AssistIntentType;
+  edits: Array<{ path: string; patch: string; rationale?: string }>;
+  commands: string[];
+  autonomyDecision: {
+    mode: "no_actions" | "preview_only" | "auto_apply_only" | "auto_apply_and_validate";
+  };
+}): string {
+  const cleaned = stripRoboticArtifacts(input.final);
+  if (input.decisionMode === "plan") {
+    return cleaned;
+  }
+
+  if (input.edits.length > 0) {
+    const touched = input.edits.map((edit) => edit.path).slice(0, 3).join(", ");
+    const resultLine = firstNonEmptyLine(cleaned);
+    const nextAction =
+      input.autonomyDecision.mode === "preview_only"
+        ? "Next action: say \"apply now\" and I will execute the previewed edits."
+        : input.autonomyDecision.mode === "auto_apply_and_validate"
+          ? "Next action: review the targeted checks and final diff."
+          : "Next action: review the applied edits.";
+    return [
+      `I made the requested update in ${touched}.`,
+      resultLine ? resultLine : "",
+      nextAction,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (input.intent === "conversation") {
+    return cleaned || "I'm here and ready to help with whatever you want next.";
+  }
+
+  const fallbackLine = cleaned || "I'm ready to continue once you share the next concrete change.";
+  return [
+    "I reviewed your request and here is the result:",
+    fallbackLine,
+  ].join("\n");
 }
 
 function cleanCodeSnippet(text: string): string {
@@ -682,6 +1132,29 @@ function inferStructuredFallback(raw: string, task: string): StructuredAssistOut
   };
 }
 
+function recoverEditsFromConversationHistory(
+  history: AssistConversationTurn[] | undefined,
+  task: string
+): StructuredAssistOutput | null {
+  if (!history?.length) return null;
+  const assistantTurns = [...history]
+    .filter((turn) => turn.role === "assistant" && typeof turn.content === "string" && turn.content.trim())
+    .reverse();
+
+  for (const turn of assistantTurns) {
+    const recovered = inferStructuredFallback(turn.content, task);
+    if (recovered?.edits.length) {
+      return {
+        ...recovered,
+        final:
+          recovered.final.trim() ||
+          "Recovered code from recent conversation and prepared file edits.",
+      };
+    }
+  }
+  return null;
+}
+
 function inferRisk(decision: AssistDecisionMode, task: string, commands: string[]) {
   const complex = /\b(migration|schema|auth|payment|security|delete|remove|rewrite)\b/i.test(task);
   if (decision === "yolo" && (commands.length > 1 || complex)) {
@@ -710,7 +1183,140 @@ function hasExplicitCommandRunIntent(task: string): boolean {
 }
 
 function hasCodeEditIntent(task: string): boolean {
-  return /\b(create|make|add|implement|write|modify|edit|patch|refactor|fix|ship|file)\b/i.test(task);
+  if (/\b(create|make|add|implement|write|modify|edit|patch|refactor|fix|ship|file)\b/i.test(task)) return true;
+  const pathMention = hasPathMention(task);
+  if (!pathMention) return false;
+  if (/\b(in|inside|into|to|update|put|place|insert|apply|use|with)\b/i.test(task)) return true;
+  const trimmed = task.trim().toLowerCase();
+  const questionLike = /\?$/.test(trimmed) || /^(what|why|how|when|where|who|which)\b/.test(trimmed);
+  return !questionLike;
+}
+
+function detectLanguageFromPath(path: string): "ts" | "js" | "python" | "go" | "rust" | "docs" | "other" {
+  const lower = path.toLowerCase();
+  if (/\.(ts|tsx)$/.test(lower)) return "ts";
+  if (/\.(js|jsx)$/.test(lower)) return "js";
+  if (/\.(py)$/.test(lower)) return "python";
+  if (/\.(go)$/.test(lower)) return "go";
+  if (/\.(rs)$/.test(lower)) return "rust";
+  if (/\.(md|mdx|txt|rst)$/.test(lower)) return "docs";
+  return "other";
+}
+
+function buildValidationPlan(input: {
+  task: string;
+  edits: Array<{ path: string; patch: string; rationale?: string }>;
+  explicitCommandRunIntent: boolean;
+  decisionMode: AssistDecisionMode;
+}): { scope: "none" | "targeted"; checks: string[]; touchedFiles: string[]; reason: string } {
+  const touchedFiles = Array.from(new Set(input.edits.map((edit) => edit.path))).slice(0, 12);
+  if (!touchedFiles.length) {
+    return {
+      scope: "none",
+      checks: [],
+      touchedFiles: [],
+      reason: input.explicitCommandRunIntent
+        ? "No file edits were produced; commands are optional and user-driven."
+        : "No edited files detected, so no validation checks were planned.",
+    };
+  }
+
+  const checks: string[] = [];
+  const kinds = new Set(touchedFiles.map(detectLanguageFromPath));
+  const primaryFile = touchedFiles[0];
+
+  if (kinds.has("ts") || kinds.has("js")) {
+    checks.push(`npm run lint -- ${primaryFile}`);
+    checks.push("npm run typecheck");
+  }
+  if (kinds.has("python")) {
+    checks.push(`python -m pytest ${primaryFile}`);
+  }
+  if (kinds.has("go")) {
+    checks.push("go test ./...");
+  }
+  if (kinds.has("rust")) {
+    checks.push("cargo test");
+  }
+  if (checks.length === 0 && !kinds.has("docs")) {
+    checks.push(`git diff -- ${primaryFile}`);
+  }
+
+  return {
+    scope: "targeted",
+    checks: Array.from(new Set(checks)).slice(0, 4),
+    touchedFiles,
+    reason:
+      input.decisionMode === "debug"
+        ? "Targeted validation selected to verify the specific fix path."
+        : "Targeted validation selected from touched files and language signals.",
+  };
+}
+
+function decideAutonomy(input: {
+  confidence: number;
+  editsCount: number;
+  explicitCommandRunIntent: boolean;
+  clientPreferences?: AssistClientPreferences;
+}): {
+  mode: "no_actions" | "preview_only" | "auto_apply_only" | "auto_apply_and_validate";
+  autoApplyEdits: boolean;
+  autoRunValidation: boolean;
+  confidence: number;
+  thresholds: { autoApply: number; autoValidate: number };
+  rationale: string;
+} {
+  if (input.editsCount === 0) {
+    return {
+      mode: "no_actions",
+      autoApplyEdits: false,
+      autoRunValidation: false,
+      confidence: input.confidence,
+      thresholds: { autoApply: AUTO_APPLY_THRESHOLD, autoValidate: AUTO_VALIDATE_THRESHOLD },
+      rationale: "No edit actions were generated.",
+    };
+  }
+
+  const preferPreview = input.clientPreferences?.autonomy === "preview_first";
+  if (preferPreview) {
+    return {
+      mode: "preview_only",
+      autoApplyEdits: false,
+      autoRunValidation: false,
+      confidence: input.confidence,
+      thresholds: { autoApply: AUTO_APPLY_THRESHOLD, autoValidate: AUTO_VALIDATE_THRESHOLD },
+      rationale: "Client preference requests preview-first behavior.",
+    };
+  }
+
+  if (input.confidence >= AUTO_VALIDATE_THRESHOLD) {
+    return {
+      mode: "auto_apply_and_validate",
+      autoApplyEdits: true,
+      autoRunValidation: true,
+      confidence: input.confidence,
+      thresholds: { autoApply: AUTO_APPLY_THRESHOLD, autoValidate: AUTO_VALIDATE_THRESHOLD },
+      rationale: "Confidence meets auto-apply and targeted-validation threshold.",
+    };
+  }
+  if (input.confidence >= AUTO_APPLY_THRESHOLD) {
+    return {
+      mode: "auto_apply_only",
+      autoApplyEdits: true,
+      autoRunValidation: input.explicitCommandRunIntent,
+      confidence: input.confidence,
+      thresholds: { autoApply: AUTO_APPLY_THRESHOLD, autoValidate: AUTO_VALIDATE_THRESHOLD },
+      rationale: "Confidence meets auto-apply threshold but not validation threshold.",
+    };
+  }
+  return {
+    mode: "preview_only",
+    autoApplyEdits: false,
+    autoRunValidation: false,
+    confidence: input.confidence,
+    thresholds: { autoApply: AUTO_APPLY_THRESHOLD, autoValidate: AUTO_VALIDATE_THRESHOLD },
+    rationale: "Confidence below auto-apply threshold; returning preview only.",
+  };
 }
 
 export async function guardPlaygroundAccess(params: {
@@ -772,9 +1378,20 @@ export async function runAssist(
   const effectiveSafety: SafetyProfile =
     req.safetyProfile === "aggressive" && !aggressiveAllowed ? "standard" : req.safetyProfile ?? "standard";
   const requested = req.mode === "yolo" ? "yolo" : req.mode;
-  const initialDecision =
+  const intentResolution = resolveIntentRouting({
+    task: req.task,
+    context: req.context,
+    conversationHistory: req.conversationHistory,
+  });
+  const reasonCodes = [...intentResolution.reasonCodes];
+
+  const decision =
     requested === "auto"
-      ? classifyMode(req.task)
+      ? {
+          mode: mapIntentToDecision(intentResolution.intent) as AssistDecisionMode,
+          reason: buildDecisionReason(intentResolution.intent),
+          confidence: intentResolution.confidence,
+        }
       : ({
           mode:
             requested === "generate" || requested === "debug" || requested === "plan" || requested === "yolo"
@@ -783,14 +1400,11 @@ export async function runAssist(
           reason: `Mode explicitly requested: ${requested}`,
           confidence: 0.99,
         } as const);
-
-  const shouldFallbackToPlan =
-    req.mode === "auto" &&
-    initialDecision.confidence < 0.65 &&
-    (initialDecision.mode === "plan" || initialDecision.mode === "debug" || hasCodeTaskSignals(req.task));
-  const decision = shouldFallbackToPlan
-    ? { mode: "plan" as const, reason: "Auto low confidence fallback to plan", confidence: initialDecision.confidence }
-    : initialDecision;
+  if (requested !== "auto") {
+    reasonCodes.push(`explicit_mode_${requested}`);
+  } else {
+    reasonCodes.push(`intent_${intentResolution.intent}`);
+  }
 
   const budget = {
     maxTokens: req.contextBudget?.maxTokens ?? 16_384,
@@ -808,8 +1422,10 @@ export async function runAssist(
   let modelUsed = model;
 
   const logs: string[] = [];
+  logs.push(`intent=${intentResolution.intent} delta=${intentResolution.delta.toFixed(2)} clarified=${intentResolution.clarified ? 1 : 0}`);
   logs.push(`decision=${decision.mode} confidence=${decision.confidence.toFixed(2)}`);
   logs.push(`contextBudget=${budget.maxTokens}/${budget.strategy}`);
+  logs.push(`reasonCodes=${reasonCodes.join(",")}`);
   if (longContextRequested && !longContextEnabled) {
     logs.push("long-context model unavailable; using summarized/truncated context fallback");
   }
@@ -818,16 +1434,18 @@ export async function runAssist(
   let edits: Array<{ path: string; patch: string; rationale?: string }> = [];
   let modelCommands: string[] = [];
   const explicitCommandRunIntent = hasExplicitCommandRunIntent(req.task);
-  const codeEditIntent = hasCodeEditIntent(req.task);
+  const codeEditIntent = hasCodeEditIntent(req.task) || intentResolution.intent === "code_edit";
   const reasoningPreference = extractReasoningPreference(req.workflowIntentId);
+  const preferredReasoning = req.clientPreferences?.reasoning || req.userProfile?.reasoningPreference || null;
+  const effectiveReasoning = reasoningPreference || preferredReasoning;
   const reasoningInstruction =
-    reasoningPreference === "low"
+    effectiveReasoning === "low"
       ? "Reasoning preference: low. Optimize for speed and concise output."
-      : reasoningPreference === "high"
+      : effectiveReasoning === "high"
         ? "Reasoning preference: high. Reason carefully and validate assumptions before proposing edits."
-        : reasoningPreference === "max"
+        : effectiveReasoning === "max"
           ? "Reasoning preference: max. Be deliberate, safety-first, and include explicit verification steps."
-          : reasoningPreference === "medium"
+          : effectiveReasoning === "medium"
             ? "Reasoning preference: medium. Use balanced reasoning with concise steps."
             : null;
   if (decision.mode === "plan") {
@@ -844,15 +1462,27 @@ export async function runAssist(
       ...(plan?.riskFlags ?? []).map((s) => `- ${s}`),
     ].join("\n");
   } else {
+    const safeAttachments = sanitizeAttachmentsForModel(req.attachments);
+    if ((req.attachments?.length ?? 0) > safeAttachments.length) {
+      logs.push(`attachments_filtered=${safeAttachments.length}/${req.attachments?.length ?? 0}`);
+    }
+    if (safeAttachments.length > 0) {
+      logs.push(`attachments_included=${safeAttachments.length}`);
+    }
     const prompt = [
       `Mode: ${decision.mode}`,
+      `Resolved intent: ${intentResolution.intent}`,
       `Task: ${req.task}`,
       req.workflowIntentId ? `Workflow intent id: ${req.workflowIntentId}` : "",
       reasoningInstruction,
       `Safety profile: ${effectiveSafety}`,
       `Model: ${model}`,
       "",
-      contextToPrompt(budgetedContext, req.attachments),
+      profileToPrompt(req.userProfile, req.clientPreferences),
+      "",
+      conversationToPrompt(req.conversationHistory),
+      "",
+      contextToPrompt(budgetedContext, safeAttachments),
       "",
       decision.mode === "debug"
         ? "Focus on root cause, minimal safe fix, and verification."
@@ -866,49 +1496,134 @@ export async function runAssist(
         : "Rules: keep edits empty unless explicitly requested; answer in plain natural language and avoid standalone code snippets.",
       explicitCommandRunIntent
         ? "Rules: commands may be included only if they are necessary, safe, and directly requested."
-        : "Rules: leave commands empty unless the user explicitly asked you to run/test/build/lint.",
+        : "Rules: leave commands empty unless auto-validation is explicitly required by confidence policy.",
       "Rules: never include markdown fences.",
     ]
       .filter(Boolean)
       .join("\n");
 
     let raw = "";
-    try {
-        raw = await callHfChat({
+    const useTwoPass = shouldUseTwoPassCodeGeneration(req.task, codeEditIntent, budgetedContext);
+    const allowRawTokenStream = STREAM_RAW_MODEL_TOKENS && !useTwoPass;
+    const callPrimaryWithModelFallback = async (promptText: string, attachmentsForCall?: AssistAttachment[]) => {
+      try {
+        modelUsed = model;
+        return await callHfChat({
           model,
-          prompt,
+          prompt: promptText,
           maxTokens: Math.max(128, Math.min(req.max_tokens ?? 512, LONG_CONTEXT_LIMIT)),
-          onToken: STREAM_RAW_MODEL_TOKENS ? hooks?.onToken : undefined,
+          attachments: attachmentsForCall,
+          onToken: allowRawTokenStream ? hooks?.onToken : undefined,
         });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (model !== fallbackModel && isLikelyInvalidModelError(message)) {
-        logs.push(`model_fallback from "${model}" to "${fallbackModel}"`);
-        if (hooks?.onStatus) {
-          await hooks.onStatus(`Model "${model}" unavailable. Falling back to "${fallbackModel}".`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (model !== fallbackModel && isLikelyInvalidModelError(message)) {
+          logs.push(`model_fallback from "${model}" to "${fallbackModel}"`);
+          if (hooks?.onStatus) {
+            await hooks.onStatus(`Model "${model}" unavailable. Falling back to "${fallbackModel}".`);
+          }
+          modelUsed = fallbackModel;
+          return callHfChat({
+            model: fallbackModel,
+            prompt: promptText,
+            maxTokens: Math.max(128, Math.min(req.max_tokens ?? 512, LONG_CONTEXT_LIMIT)),
+            attachments: attachmentsForCall,
+            onToken: allowRawTokenStream ? hooks?.onToken : undefined,
+          });
         }
-        modelUsed = fallbackModel;
-        raw = await callHfChat({
-          model: fallbackModel,
-          prompt,
-          maxTokens: Math.max(128, Math.min(req.max_tokens ?? 512, LONG_CONTEXT_LIMIT)),
-          onToken: STREAM_RAW_MODEL_TOKENS ? hooks?.onToken : undefined,
-        });
-      } else {
         throw error;
       }
-    }
-    const structured = parseStructuredAssistResponse(raw) ?? inferStructuredFallback(raw, req.task);
-    if (structured) {
-      final = normalizeModelText(structured.final);
-      edits = structured.edits;
-      modelCommands = structured.commands;
+    };
+
+    const callWithAttachmentFallback = async (promptText: string, attachmentsForCall?: AssistAttachment[]) => {
+      try {
+        return await callPrimaryWithModelFallback(promptText, attachmentsForCall);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if ((attachmentsForCall?.length ?? 0) > 0 && isLikelyAttachmentUnsupportedError(message)) {
+          logs.push("attachments_fallback=text_only");
+          if (hooks?.onStatus) {
+            await hooks.onStatus("Image input is unavailable for this model/provider. Continuing without images.");
+          }
+          return callPrimaryWithModelFallback(promptText, undefined);
+        }
+        throw error;
+      }
+    };
+
+    if (useTwoPass) {
+      logs.push("two_pass_generation=enabled");
+      const draftPrompt = [
+        prompt,
+        "",
+        "Pass 1 (draft): produce your best strict JSON output directly.",
+      ].join("\n");
+      const draftRaw = await callWithAttachmentFallback(draftPrompt, safeAttachments);
+      const verifyPrompt = [
+        prompt,
+        "",
+        "Pass 2 (verifier): validate and correct the candidate output below.",
+        "If valid, return a semantically equivalent STRICT JSON object.",
+        "If invalid, repair it and return corrected STRICT JSON only.",
+        "",
+        "Candidate output:",
+        draftRaw,
+      ].join("\n");
+      const verifyRaw = await callWithAttachmentFallback(verifyPrompt, undefined);
+      const verifiedStructured = parseStructuredAssistResponse(verifyRaw);
+      const draftStructured = parseStructuredAssistResponse(draftRaw);
+      const verifiedLooksInvalid = !verifiedStructured || (codeEditIntent && (verifiedStructured.edits?.length ?? 0) === 0);
+
+      if (verifiedLooksInvalid) {
+        logs.push("two_pass_verifier=needs_repair");
+        const repairPrompt = [
+          prompt,
+          "",
+          "Repair pass: return STRICT JSON only.",
+          "Fix schema issues, escaped formatting noise, and missing edits if the user requested code.",
+          "",
+          "Draft candidate:",
+          draftRaw,
+          "",
+          "Verifier candidate:",
+          verifyRaw,
+        ].join("\n");
+        raw = await callWithAttachmentFallback(repairPrompt, undefined);
+      } else {
+        raw = verifyRaw;
+      }
+
+      const structured =
+        parseStructuredAssistResponse(raw) ||
+        verifiedStructured ||
+        draftStructured ||
+        inferStructuredFallback(raw, req.task) ||
+        inferStructuredFallback(verifyRaw, req.task) ||
+        inferStructuredFallback(draftRaw, req.task);
+      if (structured) {
+        final = normalizeModelText(structured.final);
+        edits = structured.edits;
+        modelCommands = structured.commands;
+      } else {
+        final = normalizeModelText(extractFinalFromJsonLike(raw) || raw);
+        logs.push("structured_output=parse_failed_after_two_pass");
+      }
     } else {
-      final = normalizeModelText(extractFinalFromJsonLike(raw) || raw);
-      logs.push("structured_output=parse_failed; using raw model text");
+      raw = await callWithAttachmentFallback(prompt, safeAttachments);
+      const structured = parseStructuredAssistResponse(raw) ?? inferStructuredFallback(raw, req.task);
+      if (structured) {
+        final = normalizeModelText(structured.final);
+        edits = structured.edits;
+        modelCommands = structured.commands;
+      } else {
+        final = normalizeModelText(extractFinalFromJsonLike(raw) || raw);
+        logs.push("structured_output=parse_failed; using raw model text");
+      }
     }
     if (codeEditIntent && edits.length === 0) {
-      const recovered = inferStructuredFallback(final || raw, req.task);
+      const recovered =
+        inferStructuredFallback(final || raw, req.task) ||
+        recoverEditsFromConversationHistory(req.conversationHistory, req.task);
       if (recovered?.edits.length) {
         edits = recovered.edits;
         if (!final.trim() && recovered.final.trim()) final = recovered.final;
@@ -917,22 +1632,48 @@ export async function runAssist(
     }
   }
 
-  const fallbackCommands =
-    hasExecutionIntent(req.task)
-      ? decision.mode === "yolo"
-        ? ["npm run typecheck", "npm run test -- --runInBand"]
-        : decision.mode === "debug"
-          ? ["npm run test -- --runInBand"]
-          : []
-      : [];
-  let commands = Array.from(new Set([...modelCommands, ...(modelCommands.length > 0 ? [] : fallbackCommands)]));
-  if (!explicitCommandRunIntent && commands.length > 0 && edits.length === 0 && decision.mode !== "yolo") {
-    logs.push("dropped_command_only_actions_without_explicit_run_intent");
+  const confidence = Math.max(0.05, Math.min(0.99, decision.confidence));
+  const validationPlan = buildValidationPlan({
+    task: req.task,
+    edits,
+    explicitCommandRunIntent,
+    decisionMode: decision.mode,
+  });
+  const autonomyDecision = decideAutonomy({
+    confidence,
+    editsCount: edits.length,
+    explicitCommandRunIntent,
+    clientPreferences: req.clientPreferences,
+  });
+  reasonCodes.push(`autonomy_${autonomyDecision.mode}`);
+  logs.push(`autonomy=${autonomyDecision.mode}`);
+  logs.push(`validation_scope=${validationPlan.scope}`);
+
+  let commands: string[] = [];
+  if (autonomyDecision.autoRunValidation) {
+    commands = Array.from(new Set([...validationPlan.checks, ...modelCommands])).slice(0, 8);
+  } else if (explicitCommandRunIntent || decision.mode === "yolo") {
+    commands = Array.from(new Set([...modelCommands, ...validationPlan.checks])).slice(0, 8);
+  }
+  if (!explicitCommandRunIntent && !autonomyDecision.autoRunValidation && commands.length > 0 && decision.mode !== "yolo") {
+    logs.push("dropped_commands_without_run_intent_or_autovalidation");
     commands = [];
   }
+
+  if (decision.mode !== "plan") {
+    final = composeWarmAssistantResponse({
+      final,
+      task: req.task,
+      decisionMode: decision.mode,
+      intent: intentResolution.intent,
+      edits,
+      commands,
+      autonomyDecision,
+    });
+  }
+
   const risk = inferRisk(decision.mode, req.task, commands);
   const influence = collectInfluence(budgetedContext);
-  const confidence = Math.max(0.05, Math.min(0.99, decision.confidence));
   const nextBestActions =
     decision.mode === "plan"
       ? ["Execute Plan", "Refine constraints", "Add acceptance tests"]
@@ -944,6 +1685,15 @@ export async function runAssist(
 
   return {
     decision,
+    intent: {
+      type: intentResolution.intent,
+      confidence: intentResolution.confidence,
+      delta: intentResolution.delta,
+      clarified: intentResolution.clarified,
+    },
+    reasonCodes: Array.from(new Set(reasonCodes)),
+    autonomyDecision,
+    validationPlan,
     plan,
     edits,
     commands,
@@ -956,3 +1706,5 @@ export async function runAssist(
     nextBestActions,
   };
 }
+
+

@@ -2,11 +2,25 @@ import { NextRequest } from "next/server";
 import { authenticatePlaygroundApiKey } from "@/lib/playground/auth";
 import { estimateMessagesTokens } from "@/lib/hf-router/rate-limit";
 import { guardPlaygroundAccess, runAssist } from "@/lib/playground/orchestration";
-import { appendSessionMessage, createSession, listSessions, logAgentRun } from "@/lib/playground/store";
+import {
+  appendSessionMessage,
+  createSession,
+  getUserPlaygroundProfile,
+  listSessionMessages,
+  listSessions,
+  logAgentRun,
+  upsertUserPlaygroundProfile,
+} from "@/lib/playground/store";
 import { zAssistRequest } from "@/lib/playground/contracts";
 import { badRequest, ok, parseBody, unauthorized } from "@/lib/playground/http";
 import { getOrCreateRequestId } from "@/lib/api/request-meta";
 import { jsonError } from "@/lib/api/errors";
+import {
+  buildAssistResponsePayload,
+  buildCompactSessionSummary,
+  buildConversationHistory,
+  mergeConversationHistory,
+} from "./route-helpers";
 
 type SessionTask<T> = () => Promise<T>;
 
@@ -35,6 +49,31 @@ function isSessionQueued(sessionId: string): boolean {
 
 function sse(data: Record<string, unknown>): string {
   return `data: ${JSON.stringify(data)}\n\n`;
+}
+
+function estimateAttachmentBytesFromDataUrl(dataUrl: string | undefined): number | null {
+  if (!dataUrl || typeof dataUrl !== "string") return null;
+  const comma = dataUrl.indexOf(",");
+  if (comma < 0) return null;
+  const base64 = dataUrl.slice(comma + 1).replace(/\s+/g, "");
+  if (!base64) return 0;
+  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+  const bytes = Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
+  return Number.isFinite(bytes) ? bytes : null;
+}
+
+function summarizeAttachments(
+  attachments: Array<{ mimeType: string; name?: string; dataUrl?: string }> | undefined
+): Array<{ mimeType: string; name?: string; bytesApprox?: number }> | undefined {
+  if (!attachments?.length) return undefined;
+  return attachments.slice(0, 6).map((attachment) => {
+    const bytesApprox = estimateAttachmentBytesFromDataUrl(attachment.dataUrl);
+    return {
+      mimeType: attachment.mimeType,
+      ...(attachment.name ? { name: attachment.name.slice(0, 255) } : {}),
+      ...(typeof bytesApprox === "number" ? { bytesApprox } : {}),
+    };
+  });
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
@@ -82,19 +121,65 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
   }
 
+  const persistedConversationHistory = buildConversationHistory(
+    await listSessionMessages({
+      userId: auth.userId,
+      sessionId,
+      includeAgentEvents: false,
+    }).catch(() => [])
+  );
+  const priorConversationHistory = mergeConversationHistory({
+    persisted: persistedConversationHistory,
+    fromClient: body.conversationHistory,
+  });
+  const userProfile = await getUserPlaygroundProfile({ userId: auth.userId }).catch(() => null);
+
+  if (body.clientPreferences) {
+    await upsertUserPlaygroundProfile({
+      userId: auth.userId,
+      ...(body.clientPreferences.tone ? { preferredTone: body.clientPreferences.tone } : {}),
+      ...(body.clientPreferences.autonomy ? { autonomyMode: body.clientPreferences.autonomy } : {}),
+      ...(body.clientPreferences.responseStyle ? { responseStyle: body.clientPreferences.responseStyle } : {}),
+      ...(body.clientPreferences.reasoning ? { reasoningPreference: body.clientPreferences.reasoning } : {}),
+      ...(body.model ? { preferredModelAlias: body.model } : {}),
+      stablePreferences: {
+        source: "clientPreferences",
+        ...(body.clientPreferences || {}),
+      },
+    }).catch(() => {});
+  }
+  const effectiveUserProfile = {
+    ...(userProfile || {}),
+    ...(body.clientPreferences?.tone ? { preferredTone: body.clientPreferences.tone } : {}),
+    ...(body.clientPreferences?.autonomy ? { autonomyMode: body.clientPreferences.autonomy } : {}),
+    ...(body.clientPreferences?.responseStyle ? { responseStyle: body.clientPreferences.responseStyle } : {}),
+    ...(body.clientPreferences?.reasoning ? { reasoningPreference: body.clientPreferences.reasoning } : {}),
+    ...(body.model ? { preferredModelAlias: body.model } : {}),
+  };
+
   await appendSessionMessage({
     userId: auth.userId,
     sessionId,
     role: "user",
     content: body.task,
-    payload: { mode: body.mode ?? "auto", context: body.context ?? null },
+    payload: {
+      mode: body.mode ?? "auto",
+      context: body.context ?? null,
+      attachments: summarizeAttachments(body.attachments),
+    },
     tokenCount: estimatedInputTokens,
   });
 
   if (!stream) {
     const result = await enqueueSessionTask(sessionId, async () => {
       const startedAt = Date.now();
-      const runResult = await runAssist({ ...body, mode: body.mode ?? "auto" });
+      const runResult = await runAssist({
+        ...body,
+        mode: body.mode ?? "auto",
+        conversationHistory: priorConversationHistory,
+        clientPreferences: body.clientPreferences,
+        userProfile: effectiveUserProfile,
+      });
       const latencyMs = Date.now() - startedAt;
       await appendSessionMessage({
         userId: auth.userId,
@@ -112,25 +197,28 @@ export async function POST(request: NextRequest): Promise<Response> {
         status: "completed",
         confidence: runResult.confidence,
         riskLevel: runResult.risk.blastRadius,
-        payload: { mode: body.mode ?? "auto", decision: runResult.decision, traceId },
+        payload: {
+          mode: body.mode ?? "auto",
+          decision: runResult.decision,
+          intent: runResult.intent,
+          reasonCodes: runResult.reasonCodes,
+          autonomyDecision: runResult.autonomyDecision,
+          validationPlan: runResult.validationPlan,
+          traceId,
+        },
       });
+      await upsertUserPlaygroundProfile({
+        userId: auth.userId,
+        sessionSummary: buildCompactSessionSummary({
+          history: [...priorConversationHistory, { role: "user", content: body.task }, { role: "assistant", content: runResult.final }],
+          latestTask: body.task,
+          latestFinal: runResult.final,
+        }),
+        ...(body.model ? { preferredModelAlias: body.model } : {}),
+      }).catch(() => {});
       return runResult;
     });
-    return ok(request, {
-      sessionId,
-      decision: result.decision,
-      plan: result.plan,
-      edits: result.edits,
-      commands: result.commands,
-      final: result.final,
-      logs: result.logs,
-      model: result.modelUsed,
-      confidence: result.confidence,
-      risk: result.risk,
-      influence: result.influence,
-      nextBestActions: result.nextBestActions,
-      traceId,
-    });
+    return ok(request, buildAssistResponsePayload({ sessionId, traceId, result }));
   }
 
   const { readable, writable } = new TransformStream();
@@ -164,7 +252,13 @@ export async function POST(request: NextRequest): Promise<Response> {
           await writer.write(encoder.encode(sse({ event: "log", message: "assist_started", sessionId, traceId })));
           const startedAt = Date.now();
           const result = await runAssist(
-            { ...body, mode: body.mode ?? "auto" },
+            {
+              ...body,
+              mode: body.mode ?? "auto",
+              conversationHistory: priorConversationHistory,
+              clientPreferences: body.clientPreferences,
+              userProfile: effectiveUserProfile,
+            },
             {
               onToken: async (token) => {
                 if (!token) return;
@@ -179,6 +273,14 @@ export async function POST(request: NextRequest): Promise<Response> {
           const latencyMs = Date.now() - startedAt;
 
           await writer.write(encoder.encode(sse({ event: "decision", data: result.decision })));
+          await writer.write(
+            encoder.encode(
+              sse({
+                event: "reason_codes",
+                data: result.reasonCodes,
+              })
+            )
+          );
           if (result.plan) {
             await writer.write(encoder.encode(sse({ event: "phase", data: { name: "plan", ts: Date.now() } })));
             await writer.write(encoder.encode(sse({ event: "plan_chunk", data: result.plan })));
@@ -192,6 +294,10 @@ export async function POST(request: NextRequest): Promise<Response> {
               sse({
                 event: "meta",
                 data: {
+                  intent: result.intent,
+                  reasonCodes: result.reasonCodes,
+                  autonomyDecision: result.autonomyDecision,
+                  validationPlan: result.validationPlan,
                   confidence: result.confidence,
                   risk: result.risk,
                   influence: result.influence,
@@ -222,8 +328,25 @@ export async function POST(request: NextRequest): Promise<Response> {
             status: "completed",
             confidence: result.confidence,
             riskLevel: result.risk.blastRadius,
-            payload: { mode: body.mode ?? "auto", decision: result.decision, traceId },
+            payload: {
+              mode: body.mode ?? "auto",
+              decision: result.decision,
+              intent: result.intent,
+              reasonCodes: result.reasonCodes,
+              autonomyDecision: result.autonomyDecision,
+              validationPlan: result.validationPlan,
+              traceId,
+            },
           });
+          await upsertUserPlaygroundProfile({
+            userId: auth.userId,
+            sessionSummary: buildCompactSessionSummary({
+              history: [...priorConversationHistory, { role: "user", content: body.task }, { role: "assistant", content: result.final }],
+              latestTask: body.task,
+              latestFinal: result.final,
+            }),
+            ...(body.model ? { preferredModelAlias: body.model } : {}),
+          }).catch(() => {});
         } catch (error) {
           await emitStreamError(error);
         }

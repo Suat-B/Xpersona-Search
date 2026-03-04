@@ -4,7 +4,7 @@ from openai import OpenAI
 from huggingface_hub import InferenceClient
 
 
-MODEL = "Qwen/Qwen3-4B-Instruct-2507:nscale"
+MODEL = "Qwen/Qwen2.5-Coder-7B-Instruct:nscale"
 PROMPT = "What is the capital of France?"
 
 

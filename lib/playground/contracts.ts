@@ -31,6 +31,18 @@ const zOpenFile = z.object({
   excerpt: z.string().max(120_000).optional(),
 });
 
+const zConversationTurn = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().min(1).max(12_000),
+});
+
+const zClientPreferences = z.object({
+  tone: z.enum(["warm_teammate", "neutral"]).optional(),
+  autonomy: z.enum(["full_auto", "preview_first"]).optional(),
+  responseStyle: z.enum(["concise", "balanced", "detailed"]).optional(),
+  reasoning: z.enum(["low", "medium", "high", "max"]).optional(),
+});
+
 export const zAssistRequest = z.object({
   mode: zAssistMode.default("auto"),
   task: z.string().min(1).max(120_000),
@@ -62,6 +74,8 @@ export const zAssistRequest = z.object({
     .max(6)
     .optional(),
   historySessionId: z.string().uuid().optional(),
+  conversationHistory: z.array(zConversationTurn).max(24).optional(),
+  clientPreferences: zClientPreferences.optional(),
   agentConfig: z
     .object({
       strategy: z.enum(["single", "parallel"]).optional(),

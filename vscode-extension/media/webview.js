@@ -97,8 +97,6 @@
       const exec = document.getElementById("exec");
       const taskList = document.getElementById("taskList");
       const viewAllTasks = document.getElementById("viewAllTasks");
-      const settingsToggle = document.getElementById("settingsToggle");
-      const settingsGroup = document.getElementById("settingsGroup");
       const threadList = document.getElementById("threadList");
       const modeQuick = document.getElementById("modeQuick");
       const safetyQuick = document.getElementById("safetyQuick");
@@ -106,8 +104,7 @@
       const uploadBtn = document.getElementById("uploadBtn");
       const uploadInput = document.getElementById("uploadInput");
       const uploadCount = document.getElementById("uploadCount");
-      const planToggleMain = document.getElementById("planToggleMain");
-      const planToggle = document.getElementById("planToggle");
+      const attachHint = document.getElementById("attachHint");
       const ctxToggle = document.getElementById("ctxToggle");
       const input = document.getElementById("t");
       const sendBtn = document.getElementById("s");
@@ -115,18 +112,15 @@
       const reasonSel = document.getElementById("reasonSel");
       const contextPill = document.getElementById("contextPill");
       const jumpLatestBtn = document.getElementById("jumpLatest");
-      const idleMark = document.getElementById("idleMark");
       const startup = document.querySelector(".startup");
       const runState = document.getElementById("runState");
       const modeBanner = document.getElementById("modeBanner");
-      const modeHint = document.getElementById("modeHint");
       const actionMenuBtn = document.getElementById("actionMenuBtn");
       const actionMenu = document.getElementById("actionMenu");
       const actionMenuClose = document.getElementById("actionMenuClose");
+      const newThreadQuick = document.getElementById("newThreadQuick");
       const apiKeyInline = document.getElementById("apiKeyInline");
       const apiKeyInlineSave = document.getElementById("apiKeyInlineSave");
-      const chatIconBtn = document.getElementById("chatIconBtn");
-      const settingsIconBtn = document.getElementById("settingsIconBtn");
       const newThreadBtn = document.getElementById("newThreadBtn");
 
       let streamBubble = null;
@@ -135,6 +129,9 @@
       let terminalBubble = null;
       const MAX_DIFF_ROWS = 400;
       const seenEditPreviewKeys = new Set();
+      const MAX_ATTACHMENTS = 3;
+      const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024;
+      const ALLOWED_ATTACHMENT_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
       let currentMode = "auto";
       let lastSendAt = 0;
       let attachedFiles = [];
@@ -146,6 +143,8 @@
       let planDecisionBubble = null;
       let lastStatusText = "";
       let lastStatusAt = 0;
+      let activeProgressState = "";
+      let lastInferenceDigest = "";
 
       function eventTargetElement(target) {
         if (!target) return null;
@@ -166,10 +165,7 @@
       function postSendFallback(rawText) {
         const text = String(rawText || "").replace(/\r?\n+$/g, "").trim();
         if (!text) return;
-        const parallelToggle = document.getElementById("parallel");
-        const parallelEnabled = Boolean(
-          (parallelQuick && parallelQuick.checked) || (parallelToggle && parallelToggle.checked)
-        );
+        const parallelEnabled = Boolean(parallelQuick && parallelQuick.checked);
         const includeIdeContext = ctxToggle ? Boolean(ctxToggle.checked) : true;
         v.postMessage({
           type: "send",
@@ -179,7 +175,7 @@
           reasoning: reasonSel ? reasonSel.value : "medium",
           includeIdeContext,
           workspaceContextLevel: "max",
-          attachments: attachedFiles.map((f) => ({ name: f.name, size: f.size, type: f.type })),
+          attachments: attachedFiles.map((f) => ({ mimeType: f.mimeType, name: f.name, dataUrl: f.dataUrl })),
         });
       }
 
@@ -382,36 +378,101 @@
 
       function updateStartupVisibility() {
         if (startup) startup.classList.remove("hidden");
-        if (idleMark) {
-          const hasMessages = Boolean(msgs && msgs.childElementCount > 0);
-          idleMark.classList.toggle("hidden", hasMessages || streaming);
-        }
       }
 
       function applyModeUI(modeValue) {
         const normalized = modeValue === "plan" || modeValue === "yolo" ? modeValue : "auto";
         currentMode = normalized;
 
-        const modeSel = document.getElementById("mode");
-        if (modeSel) modeSel.value = normalized;
         if (modeQuick) modeQuick.value = normalized;
 
         const planActive = normalized === "plan";
-        if (planToggleMain) planToggleMain.checked = planActive;
-        if (planToggle) planToggle.checked = planActive;
         if (modeBanner) modeBanner.classList.toggle("hidden", !planActive);
-        if (modeHint) modeHint.textContent = planActive ? "Plan mode ON" : "Plan mode OFF (Auto execution)";
       }
 
-      function updateAttachmentUI() {
+      function setAttachHint(text, isError = false) {
+        if (!attachHint) return;
+        attachHint.textContent = text || "";
+        attachHint.classList.toggle("error", Boolean(isError));
+      }
+
+      function updateAttachmentUI(statusText, isError = false) {
         const count = attachedFiles.length;
+        if (uploadBtn) uploadBtn.textContent = count > 0 ? "Attach (" + count + ")" : "Attach";
         if (uploadCount) {
           uploadCount.textContent = count === 0
-            ? "No files selected"
-            : (count === 1 ? "1 file selected" : count + " files selected");
+            ? "No images selected."
+            : (count === 1 ? "1 image selected." : count + " images selected.");
         }
-        const imagesPill = document.getElementById("ac");
-        if (imagesPill) imagesPill.textContent = "images:" + count;
+        if (statusText) {
+          setAttachHint(statusText, isError);
+        } else if (count > 0) {
+          setAttachHint(count + " image(s) ready.");
+        } else {
+          setAttachHint("No images attached.");
+        }
+      }
+
+      function fileToDataUrl(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error("Failed to read file."));
+          reader.readAsDataURL(file);
+        });
+      }
+
+      async function appendAttachments(files) {
+        const queue = Array.from(files || []);
+        if (!queue.length) return;
+
+        const next = attachedFiles.slice();
+        const errors = [];
+
+        for (const file of queue) {
+          if (!file) continue;
+          if (next.length >= MAX_ATTACHMENTS) {
+            errors.push("Only " + MAX_ATTACHMENTS + " images are allowed.");
+            break;
+          }
+          if (!ALLOWED_ATTACHMENT_TYPES.has(String(file.type || "").toLowerCase())) {
+            errors.push(file.name + ": only PNG/JPEG/WEBP images are supported.");
+            continue;
+          }
+          if (Number(file.size || 0) > MAX_ATTACHMENT_BYTES) {
+            errors.push(file.name + ": exceeds 4MB limit.");
+            continue;
+          }
+          const duplicate = next.some((x) =>
+            x.name === file.name &&
+            x.size === file.size &&
+            x.lastModified === file.lastModified
+          );
+          if (duplicate) continue;
+          try {
+            const dataUrl = await fileToDataUrl(file);
+            if (!dataUrl || dataUrl.length > 8_000_000) {
+              errors.push(file.name + ": could not be attached (file too large after encoding).");
+              continue;
+            }
+            next.push({
+              name: file.name,
+              mimeType: String(file.type || "").toLowerCase(),
+              dataUrl,
+              size: Number(file.size || 0),
+              lastModified: Number(file.lastModified || 0),
+            });
+          } catch {
+            errors.push(file.name + ": failed to read.");
+          }
+        }
+
+        attachedFiles = next;
+        if (errors.length) {
+          updateAttachmentUI(errors[0], true);
+          return;
+        }
+        updateAttachmentUI();
       }
 
       function createBubble(cls) {
@@ -456,6 +517,38 @@
         const body = d.querySelector(".m-body");
         if (body) body.textContent = text;
         return d;
+      }
+
+      function appendUserAttachmentPreview(bubble, attachments) {
+        if (!bubble || !Array.isArray(attachments) || attachments.length === 0) return;
+        const body = bubble.querySelector(".m-body");
+        if (!body) return;
+
+        const valid = attachments
+          .filter((a) => a && typeof a.dataUrl === "string" && a.dataUrl.startsWith("data:image/"))
+          .slice(0, MAX_ATTACHMENTS);
+        if (!valid.length) return;
+
+        const grid = document.createElement("div");
+        grid.className = "m-media-grid";
+        for (const item of valid) {
+          const card = document.createElement("div");
+          card.className = "m-media-card";
+
+          const img = document.createElement("img");
+          img.src = item.dataUrl;
+          img.alt = item.name ? "Attached image: " + item.name : "Attached image";
+          img.loading = "lazy";
+          card.appendChild(img);
+
+          const name = document.createElement("span");
+          name.className = "m-media-name";
+          name.textContent = item.name || "image";
+          card.appendChild(name);
+
+          grid.appendChild(card);
+        }
+        body.appendChild(grid);
       }
 
       function clearPlanDecisionCard() {
@@ -783,6 +876,13 @@
         }
       }
 
+      function startNewChat() {
+        saveCurrentDraft();
+        showTab("chat");
+        v.postMessage({ type: "newThread" });
+        setActionMenuOpen(false);
+      }
+
       function onMenuAction(action) {
         if (!action) return;
         if (action.startsWith("show:")) {
@@ -806,6 +906,52 @@
         }
       }
 
+      function setProgressState(label) {
+        activeProgressState = String(label || "").trim();
+        if (!runState) return;
+        runState.textContent = activeProgressState || (streaming ? "Working..." : "Local");
+      }
+
+      function isProgressOnlyStatus(statusText) {
+        const s = String(statusText || "").trim();
+        if (!s) return false;
+        return (
+          /^Model:/i.test(s) ||
+          /^Decision:/i.test(s) ||
+          /^Queued behind/i.test(s) ||
+          /^Working on your request/i.test(s) ||
+          /^Understanding request/i.test(s) ||
+          /^Planning approach/i.test(s) ||
+          /^Preparing actions/i.test(s) ||
+          /^Validating output/i.test(s) ||
+          /^Working:/i.test(s) ||
+          /^Thinking/i.test(s)
+        );
+      }
+
+      function buildInferenceSummary(data) {
+        if (!data || typeof data !== "object") return "";
+        const intent = data.intent && data.intent.type ? String(data.intent.type) : String(data.decision || "unknown");
+        const touched = Array.isArray(data.validationPlan && data.validationPlan.touchedFiles)
+          ? data.validationPlan.touchedFiles
+          : [];
+        const autonomy = data.autonomyDecision && data.autonomyDecision.mode
+          ? String(data.autonomyDecision.mode)
+          : "unknown";
+        const checks = Array.isArray(data.validationPlan && data.validationPlan.checks)
+          ? data.validationPlan.checks
+          : [];
+        const filesLine = touched.length ? touched.slice(0, 3).join(", ") : "none";
+        const checksLine = checks.length ? checks.slice(0, 2).join(" | ") : "none";
+        return [
+          "What I inferred",
+          "Intent: " + intent,
+          "Target files: " + filesLine,
+          "Autonomy: " + autonomy,
+          "Validation plan: " + checksLine,
+        ].join("\n");
+      }
+
       function setStreaming(isBusy) {
         streaming = isBusy;
         const activeSendBtn = sendBtn || document.getElementById("s");
@@ -819,7 +965,12 @@
           activeSendBtn.title = isBusy ? "Stop response" : "Send";
           activeSendBtn.classList.toggle("is-streaming", isBusy);
         }
-        if (runState) runState.textContent = isBusy ? "Working..." : "Local";
+        if (isBusy) {
+          setProgressState("Working...");
+        } else {
+          activeProgressState = "";
+          if (runState) runState.textContent = "Local";
+        }
         if (!isBusy) updateJump();
         updateStartupVisibility();
       }
@@ -855,17 +1006,20 @@
           lastSendAt = now;
 
           clearPlanDecisionCard();
-          addMessage(text, "u");
+          const previewAttachments = attachedFiles.map((f) => ({
+            name: f.name,
+            mimeType: f.mimeType,
+            dataUrl: f.dataUrl,
+          }));
+          const userBubble = addMessage(text, "u");
+          appendUserAttachmentPreview(userBubble, previewAttachments);
           composerInput.value = "";
           if (currentThreadId) threadDrafts[currentThreadId] = "";
           setStreaming(true);
           streamBubble = addTypingBubble();
 
-          const parallelToggle = document.getElementById("parallel");
-          const parallelEnabled = Boolean(
-            (parallelQuick && parallelQuick.checked) || (parallelToggle && parallelToggle.checked)
-          );
-          const attachmentMeta = attachedFiles.map((f) => ({ name: f.name, size: f.size, type: f.type }));
+          const parallelEnabled = Boolean(parallelQuick && parallelQuick.checked);
+          const attachmentPayload = previewAttachments;
           const includeIdeContext = ctxToggle ? Boolean(ctxToggle.checked) : true;
 
           v.postMessage({
@@ -876,7 +1030,7 @@
             reasoning: reasonSel ? reasonSel.value : "medium",
             includeIdeContext,
             workspaceContextLevel: "max",
-            attachments: attachmentMeta,
+            attachments: attachmentPayload,
           });
           if (runState) runState.textContent = "Sent";
           attachedFiles = [];
@@ -891,23 +1045,11 @@
       }
 
       document.querySelectorAll(".tab").forEach((b) => (b.onclick = () => showTab(b.dataset.p)));
-      if (chatIconBtn) {
-        chatIconBtn.onclick = () => {
-          showTab("chat");
-          if (input) input.focus();
-        };
-      }
-      if (settingsIconBtn && settingsGroup) {
-        settingsIconBtn.onclick = () => {
-          showTab("chat");
-          setActionMenuOpen(true);
-        };
-      }
       if (newThreadBtn) {
-        newThreadBtn.onclick = () => {
-          saveCurrentDraft();
-          v.postMessage({ type: "newThread" });
-        };
+        newThreadBtn.onclick = startNewChat;
+      }
+      if (newThreadQuick) {
+        newThreadQuick.onclick = startNewChat;
       }
       const saveKeyBtn = document.getElementById("ks");
       if (saveKeyBtn) {
@@ -940,30 +1082,14 @@
           e.preventDefault();
           uploadInput.click();
         };
-        uploadInput.onchange = () => {
-          attachedFiles = Array.from(uploadInput.files || []);
-          updateAttachmentUI();
+        uploadInput.onchange = async () => {
+          await appendAttachments(uploadInput.files || []);
+          uploadInput.value = "";
         };
       }
-      if (ctxToggle && contextPill) {
-        const applyContextPill = () => {
-          contextPill.classList.toggle("hidden", !ctxToggle.checked);
-        };
-        ctxToggle.onchange = applyContextPill;
-        applyContextPill();
-      }
-      if (planToggleMain) {
-        planToggleMain.onchange = () => {
-          const nextMode = planToggleMain.checked ? "plan" : "auto";
-          applyModeUI(nextMode);
-          v.postMessage({ type: "setMode", value: nextMode });
-        };
-      }
-      if (planToggle) {
-        planToggle.onchange = () => {
-          const nextMode = planToggle.checked ? "plan" : "auto";
-          applyModeUI(nextMode);
-          v.postMessage({ type: "setMode", value: nextMode });
+      if (ctxToggle) {
+        ctxToggle.onchange = () => {
+          if (contextPill) contextPill.textContent = ctxToggle.checked ? "IDE: on" : "IDE: off";
         };
       }
       updateAttachmentUI();
@@ -1121,12 +1247,6 @@
         }
       }, true);
       const clearBtn = document.getElementById("c");
-      const modeSelect = document.getElementById("mode");
-      const safetySelect = document.getElementById("safety");
-      const parallelSelect = document.getElementById("parallel");
-      const historyBtn = document.getElementById("hist");
-      const replayBtn = document.getElementById("rep");
-      const rebuildBtn = document.getElementById("idx");
       const histQuick = document.getElementById("histQuick");
       const repQuick = document.getElementById("repQuick");
       const idxQuick = document.getElementById("idxQuick");
@@ -1139,19 +1259,8 @@
           updateStartupVisibility();
           setStreaming(false);
           v.postMessage({ type: "clear" });
+          setActionMenuOpen(false);
         };
-      }
-      if (modeSelect) {
-        modeSelect.addEventListener("change", (e) => {
-          applyModeUI(e.target.value);
-          v.postMessage({ type: "setMode", value: e.target.value });
-        });
-      }
-      if (safetySelect) {
-        safetySelect.addEventListener("change", (e) => {
-          if (safetyQuick) safetyQuick.value = e.target.value;
-          v.postMessage({ type: "setSafety", value: e.target.value });
-        });
       }
       if (modeQuick) {
         modeQuick.addEventListener("change", (e) => {
@@ -1161,36 +1270,8 @@
       }
       if (safetyQuick) {
         safetyQuick.addEventListener("change", (e) => {
-          if (safetySelect) safetySelect.value = e.target.value;
           v.postMessage({ type: "setSafety", value: e.target.value });
         });
-      }
-      if (parallelQuick) {
-        parallelQuick.onchange = () => {
-          if (parallelSelect) parallelSelect.checked = parallelQuick.checked;
-        };
-      }
-      if (settingsToggle && settingsGroup) {
-        settingsToggle.onclick = () => {
-          settingsGroup.classList.toggle("show");
-        };
-      }
-      if (historyBtn) {
-        historyBtn.onclick = () => {
-          showHistoryPanel("Refreshing history...");
-          v.postMessage({ type: "history" });
-        };
-      }
-      if (replayBtn) {
-        replayBtn.onclick = () => {
-          triggerReplayFromUI("toolbar");
-        };
-      }
-      if (rebuildBtn) {
-        rebuildBtn.onclick = () => {
-          showIndexPanel("Rebuilding semantic index...");
-          v.postMessage({ type: "indexRebuild" });
-        };
       }
       if (viewAllTasks) {
         viewAllTasks.onclick = () => {
@@ -1241,19 +1322,18 @@
             if (setup) setup.style.display = "flex";
             if (app) app.style.display = "none";
           }
+        } else if (m.type === "openUploadPicker") {
+          if (uploadInput) uploadInput.click();
         } else if (m.type === "mode") {
           applyModeUI(m.value);
         } else if (m.type === "safety") {
-          if (safetySelect) safetySelect.value = m.value;
           if (safetyQuick) safetyQuick.value = m.value;
         } else if (m.type === "att") {
           const count = Number(m.count || 0);
-          const imagesPill = document.getElementById("ac");
-          if (imagesPill) imagesPill.textContent = "images:" + count;
           if (uploadCount && attachedFiles.length === 0) {
             uploadCount.textContent = count === 0
-              ? "No files selected"
-              : (count === 1 ? "1 file selected" : count + " files selected");
+              ? "No images selected."
+              : (count === 1 ? "1 image selected." : count + " images selected.");
           }
         } else if (m.type === "start") {
           setStreaming(true);
@@ -1277,6 +1357,8 @@
           }
           setStreaming(false);
           streamBubble = null;
+          activeProgressState = "";
+          if (runState) runState.textContent = "Local";
           if (shouldShowPlanDecision) showPlanDecisionCard();
           if (followLatest) scrollToLatest();
         } else if (m.type === "status") {
@@ -1292,15 +1374,15 @@
             terminalBubble = null;
             setTerminalState("Running");
             addTerminalLine("Starting execution...", "info");
-            if (runState) runState.textContent = "Executing";
+            setProgressState("Executing");
           } else if (/^Execute finished:/i.test(statusText)) {
             setTerminalState("Done");
             addTerminalLine(statusText, "summary");
-            if (runState) runState.textContent = "Local";
-          } else if (/^Thinking/i.test(statusText)) {
-            if (runState && streaming) runState.textContent = "Thinking...";
-          } else if (/^Model:/i.test(statusText) || /^Decision:/i.test(statusText) || /^Queued behind/i.test(statusText)) {
-            if (runState && streaming) runState.textContent = "Working...";
+            activeProgressState = "";
+            if (runState) runState.textContent = streaming ? "Working..." : "Local";
+          } else if (isProgressOnlyStatus(statusText)) {
+            if (statusText === activeProgressState) return;
+            setProgressState(statusText);
           } else if (/^Ran\s+/i.test(statusText)) {
             addMessage(statusText, "cmd");
           } else {
@@ -1315,9 +1397,11 @@
           setTerminalState("Running");
           addTerminalLine("$ " + (m.command || ""), "cmdline");
           addMessage("Ran " + (m.command || "command"), "cmd");
-          if (runState) runState.textContent = "Executing";
+          setProgressState("Executing");
         } else if (m.type === "fileAction") {
-          addMessage("[file] wrote " + (m.path || "unknown"), "cmd");
+          const status = String(m.status || "applied");
+          const reason = m.reason ? " (" + String(m.reason) + ")" : "";
+          addMessage("[file] " + status + " " + (m.path || "unknown") + reason, "cmd");
         } else if (m.type === "meta") {
           chips.innerHTML = "";
           if (modelSel?.value) {
@@ -1350,6 +1434,28 @@
             r.textContent = "Risk " + m.data.risk.blastRadius + " / rollback " + m.data.risk.rollbackComplexity;
             chips.appendChild(r);
           }
+          const inferredSummary = buildInferenceSummary(m.data || {});
+          if (inferredSummary) {
+            const digest = inferredSummary.slice(0, 500);
+            if (digest !== lastInferenceDigest) {
+              lastInferenceDigest = digest;
+              addMessage(inferredSummary, "cmd");
+            }
+          }
+        } else if (m.type === "actionOutcome") {
+          const data = m.data || {};
+          const filesChanged = Number(data.filesChanged || 0);
+          const checksRun = Number(data.checksRun || 0);
+          const quality = String(data.quality || "unknown");
+          const summary = String(data.summary || "");
+          const outcome = [
+            "Action outcome",
+            "Files changed: " + filesChanged,
+            "Checks run: " + checksRun,
+            "Result quality: " + quality,
+            summary ? summary : "",
+          ].filter(Boolean).join("\n");
+          addMessage(outcome, quality === "good" ? "cmd" : "a");
         } else if (m.type === "timeline") {
           const rows = m.data || [];
           timeline.innerHTML = rows.map((x) => (

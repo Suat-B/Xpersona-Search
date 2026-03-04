@@ -7,6 +7,7 @@ import {
   playgroundMessages,
   playgroundReplayRuns,
   playgroundSessions,
+  playgroundUserProfiles,
 } from "@/lib/db/playground-schema";
 import { and, desc, eq, gte, ilike, lte, sql } from "drizzle-orm";
 
@@ -35,9 +36,24 @@ type MessageRecord = {
   createdAt: Date | null;
 };
 
+export type PlaygroundUserProfileRecord = {
+  id: string;
+  userId: string;
+  preferredTone: string;
+  autonomyMode: string;
+  responseStyle: string;
+  reasoningPreference: string;
+  preferredModelAlias: string | null;
+  sessionSummary: string | null;
+  stablePreferences: unknown;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
 const memory = {
   sessions: new Map<string, SessionRecord[]>(),
   messages: new Map<string, MessageRecord[]>(),
+  userProfiles: new Map<string, PlaygroundUserProfileRecord>(),
 };
 
 export async function listSessions(input: {
@@ -220,6 +236,120 @@ export async function appendSessionMessage(input: {
     const existing = memory.messages.get(input.sessionId) ?? [];
     existing.push(row);
     memory.messages.set(input.sessionId, existing);
+    return row;
+  }
+}
+
+export async function getUserPlaygroundProfile(input: { userId: string }): Promise<PlaygroundUserProfileRecord | null> {
+  try {
+    const rows = await db
+      .select({
+        id: playgroundUserProfiles.id,
+        userId: playgroundUserProfiles.userId,
+        preferredTone: playgroundUserProfiles.preferredTone,
+        autonomyMode: playgroundUserProfiles.autonomyMode,
+        responseStyle: playgroundUserProfiles.responseStyle,
+        reasoningPreference: playgroundUserProfiles.reasoningPreference,
+        preferredModelAlias: playgroundUserProfiles.preferredModelAlias,
+        sessionSummary: playgroundUserProfiles.sessionSummary,
+        stablePreferences: playgroundUserProfiles.stablePreferences,
+        createdAt: playgroundUserProfiles.createdAt,
+        updatedAt: playgroundUserProfiles.updatedAt,
+      })
+      .from(playgroundUserProfiles)
+      .where(eq(playgroundUserProfiles.userId, input.userId))
+      .limit(1);
+    return rows[0] ?? null;
+  } catch {
+    return memory.userProfiles.get(input.userId) ?? null;
+  }
+}
+
+export async function upsertUserPlaygroundProfile(input: {
+  userId: string;
+  preferredTone?: string | null;
+  autonomyMode?: string | null;
+  responseStyle?: string | null;
+  reasoningPreference?: string | null;
+  preferredModelAlias?: string | null;
+  sessionSummary?: string | null;
+  stablePreferences?: Record<string, unknown> | null;
+}): Promise<PlaygroundUserProfileRecord> {
+  try {
+    const [row] = await db
+      .insert(playgroundUserProfiles)
+      .values({
+        userId: input.userId,
+        preferredTone: input.preferredTone ?? "warm_teammate",
+        autonomyMode: input.autonomyMode ?? "full_auto",
+        responseStyle: input.responseStyle ?? "balanced",
+        reasoningPreference: input.reasoningPreference ?? "medium",
+        preferredModelAlias: input.preferredModelAlias ?? null,
+        sessionSummary: input.sessionSummary ?? null,
+        stablePreferences: (input.stablePreferences as any) ?? null,
+      })
+      .onConflictDoUpdate({
+        target: [playgroundUserProfiles.userId],
+        set: {
+          preferredTone: input.preferredTone ?? sql`COALESCE(${playgroundUserProfiles.preferredTone}, 'warm_teammate')`,
+          autonomyMode: input.autonomyMode ?? sql`COALESCE(${playgroundUserProfiles.autonomyMode}, 'full_auto')`,
+          responseStyle: input.responseStyle ?? sql`COALESCE(${playgroundUserProfiles.responseStyle}, 'balanced')`,
+          reasoningPreference: input.reasoningPreference ?? sql`COALESCE(${playgroundUserProfiles.reasoningPreference}, 'medium')`,
+          preferredModelAlias:
+            input.preferredModelAlias !== undefined
+              ? input.preferredModelAlias
+              : playgroundUserProfiles.preferredModelAlias,
+          sessionSummary:
+            input.sessionSummary !== undefined
+              ? input.sessionSummary
+              : playgroundUserProfiles.sessionSummary,
+          stablePreferences:
+            input.stablePreferences !== undefined
+              ? (input.stablePreferences as any)
+              : playgroundUserProfiles.stablePreferences,
+          updatedAt: new Date(),
+        },
+      })
+      .returning({
+        id: playgroundUserProfiles.id,
+        userId: playgroundUserProfiles.userId,
+        preferredTone: playgroundUserProfiles.preferredTone,
+        autonomyMode: playgroundUserProfiles.autonomyMode,
+        responseStyle: playgroundUserProfiles.responseStyle,
+        reasoningPreference: playgroundUserProfiles.reasoningPreference,
+        preferredModelAlias: playgroundUserProfiles.preferredModelAlias,
+        sessionSummary: playgroundUserProfiles.sessionSummary,
+        stablePreferences: playgroundUserProfiles.stablePreferences,
+        createdAt: playgroundUserProfiles.createdAt,
+        updatedAt: playgroundUserProfiles.updatedAt,
+      });
+    memory.userProfiles.set(input.userId, row);
+    return row;
+  } catch {
+    const existing = memory.userProfiles.get(input.userId);
+    const row: PlaygroundUserProfileRecord = {
+      id: existing?.id || crypto.randomUUID(),
+      userId: input.userId,
+      preferredTone: input.preferredTone ?? existing?.preferredTone ?? "warm_teammate",
+      autonomyMode: input.autonomyMode ?? existing?.autonomyMode ?? "full_auto",
+      responseStyle: input.responseStyle ?? existing?.responseStyle ?? "balanced",
+      reasoningPreference: input.reasoningPreference ?? existing?.reasoningPreference ?? "medium",
+      preferredModelAlias:
+        input.preferredModelAlias !== undefined
+          ? input.preferredModelAlias
+          : existing?.preferredModelAlias ?? null,
+      sessionSummary:
+        input.sessionSummary !== undefined
+          ? input.sessionSummary
+          : existing?.sessionSummary ?? null,
+      stablePreferences:
+        input.stablePreferences !== undefined
+          ? input.stablePreferences
+          : existing?.stablePreferences ?? null,
+      createdAt: existing?.createdAt ?? new Date(),
+      updatedAt: new Date(),
+    };
+    memory.userProfiles.set(input.userId, row);
     return row;
   }
 }
@@ -435,4 +565,3 @@ export async function createReplayRun(input: {
     return crypto.randomUUID();
   }
 }
-

@@ -177,6 +177,30 @@ export const playgroundSessions = pgTable(
   ]
 );
 
+// Stable user preferences/profile memory for warmer, more consistent assistance.
+export const playgroundUserProfiles = pgTable(
+  "playground_user_profiles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    preferredTone: varchar("preferred_tone", { length: 40 }).notNull().default("warm_teammate"),
+    autonomyMode: varchar("autonomy_mode", { length: 32 }).notNull().default("full_auto"),
+    responseStyle: varchar("response_style", { length: 32 }).notNull().default("balanced"),
+    reasoningPreference: varchar("reasoning_preference", { length: 16 }).notNull().default("medium"),
+    preferredModelAlias: varchar("preferred_model_alias", { length: 120 }),
+    sessionSummary: text("session_summary"),
+    stablePreferences: jsonb("stable_preferences"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("playground_user_profiles_user_idx").on(table.userId),
+    index("playground_user_profiles_updated_idx").on(table.updatedAt),
+  ]
+);
+
 // Message timeline for each session
 export const playgroundMessages = pgTable(
   "playground_messages",
