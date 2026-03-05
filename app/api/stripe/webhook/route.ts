@@ -63,6 +63,17 @@ async function upsertPlaygroundSubscriptionFromStripe(subscription: Stripe.Subsc
       ? subscription.customer
       : subscription.customer?.id || null;
 
+  // Keep users.stripeCustomerId in sync so we can open the billing portal later.
+  // This is especially important when Checkout creates the Customer (we don't pass `customer`),
+  // because the user record may not have a Stripe customer ID yet.
+  if (customerId) {
+    try {
+      await db.update(users).set({ stripeCustomerId: customerId }).where(eq(users.id, userId));
+    } catch (err) {
+      console.error("[stripe/webhook] failed to update users.stripeCustomerId:", err);
+    }
+  }
+
   const mappedStatus = mapPlaygroundStatus(subscription.status);
   const metadataTier = toPaidTier(subscription.metadata?.xpersona_tier);
   const trialEndsAt = toDate(subscription.trial_end);

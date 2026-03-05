@@ -7,7 +7,6 @@ import "./globals.css";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { ServiceProvider } from "@/components/providers/ServiceProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
-import { HelpFrame } from "@/components/help/HelpFrame";
 import { getService } from "@/lib/service";
 import { auth } from "@/lib/auth";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
@@ -101,7 +100,6 @@ export default async function RootLayout({
           ) : (
             children
           )}
-          <HelpFrame />
           <Analytics />
           <SpeedInsights />
         </AuthProvider>

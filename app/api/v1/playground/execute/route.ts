@@ -35,6 +35,10 @@ export async function POST(request: NextRequest): Promise<Response> {
     const stdout =
       action.type === "rollback"
         ? `Rollback prepared for snapshot ${action.snapshotId}`
+        : action.type === "mkdir"
+          ? `Directory approved: ${action.path}`
+          : action.type === "write_file"
+            ? `File write approved: ${action.path}`
         : check.ok
           ? "Policy approved."
           : "";
@@ -87,4 +91,3 @@ export async function POST(request: NextRequest): Promise<Response> {
     snapshotId,
   });
 }
-

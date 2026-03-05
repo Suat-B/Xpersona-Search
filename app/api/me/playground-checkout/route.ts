@@ -34,6 +34,14 @@ function getPriceId(tier: "starter" | "builder" | "studio", billing: "monthly" |
   return null;
 }
 
+function isPlaceholderEmail(email: string): boolean {
+  const e = email.trim().toLowerCase();
+  if (e.endsWith("@xpersona.guest")) return true;
+  if (e.endsWith("@xpersona.human")) return true;
+  if (e.startsWith("play_") && e.endsWith("@xpersona.co")) return true;
+  return false;
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
   try {
     const authResult = await getAuthUser(request);
@@ -78,6 +86,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const [existingSub] = await db
       .select({
         stripeSubscriptionId: playgroundSubscriptions.stripeSubscriptionId,
+        stripeCustomerId: playgroundSubscriptions.stripeCustomerId,
         status: playgroundSubscriptions.status,
       })
       .from(playgroundSubscriptions)
@@ -95,23 +104,33 @@ export async function POST(request: NextRequest): Promise<Response> {
       !!existingSub?.stripeSubscriptionId &&
       existingSub.status !== "cancelled";
 
-    let customerId = dbUser.stripeCustomerId ?? null;
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: dbUser.email,
-        metadata: {
-          xpersona_user_id: dbUser.id,
-        },
-      });
-      customerId = customer.id;
-      await db
-        .update(users)
-        .set({ stripeCustomerId: customer.id })
-        .where(eq(users.id, dbUser.id));
-    }
-
     const baseUrl = getBaseUrl();
     if (hasExistingStripeSub) {
+      // Prefer user.stripeCustomerId, fall back to subscription record, and finally resolve via Stripe.
+      let customerId = dbUser.stripeCustomerId ?? existingSub?.stripeCustomerId ?? null;
+      if (!customerId && existingSub?.stripeSubscriptionId) {
+        try {
+          const sub = await stripe.subscriptions.retrieve(existingSub.stripeSubscriptionId);
+          customerId = typeof sub.customer === "string" ? sub.customer : sub.customer?.id ?? null;
+          if (customerId) {
+            await db.update(users).set({ stripeCustomerId: customerId }).where(eq(users.id, dbUser.id));
+            await db
+              .update(playgroundSubscriptions)
+              .set({ stripeCustomerId: customerId, updatedAt: new Date() })
+              .where(eq(playgroundSubscriptions.userId, dbUser.id));
+          }
+        } catch {
+          // Ignore; portal creation below will fail with a clear error if customerId remains missing.
+        }
+      }
+
+      if (!customerId) {
+        return NextResponse.json(
+          { success: false, error: "STRIPE_CUSTOMER_MISSING", message: "Missing Stripe customer for existing subscription" },
+          { status: 500 }
+        );
+      }
+
       const portal = await stripe.billingPortal.sessions.create({
         customer: customerId,
         return_url: `${baseUrl}/dashboard/playground`,
@@ -126,9 +145,13 @@ export async function POST(request: NextRequest): Promise<Response> {
       });
     }
 
+    const placeholderEmail = isPlaceholderEmail(dbUser.email);
+
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
-      customer: customerId,
+      // Important: do NOT pass `customer` for new checkouts. When `customer` is set,
+      // Stripe locks the email field to the existing Customer email (which is a placeholder for play/guest users).
+      ...(placeholderEmail ? {} : { customer_email: dbUser.email }),
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${baseUrl}/dashboard/playground?checkout=success`,
       cancel_url: `${baseUrl}/dashboard/playground?checkout=cancelled`,
@@ -147,6 +170,8 @@ export async function POST(request: NextRequest): Promise<Response> {
         metadata: {
           xpersona_product: "playground_ai",
           xpersona_user_id: dbUser.id,
+          xpersona_tier: tier,
+          xpersona_billing: billing,
         },
         trial_settings: {
           end_behavior: {

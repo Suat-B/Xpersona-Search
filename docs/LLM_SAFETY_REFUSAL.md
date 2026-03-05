@@ -68,7 +68,7 @@ Some models refuse less often:
 
 | Model | Notes |
 |-------|--------|
-| **Open-source (local)** | Llama 3, Mistral, Qwen, DeepSeek — typically no gambling refusal |
+| **Open-source (local)** | Llama 3, Mistral, DeepSeek — typically no gambling refusal |
 | **Open-source (hosted)** | Groq (Llama), Together, Fireworks — often more permissive |
 | **OpenAI** | May refuse; reframing + opt-in prompt usually helps |
 | **Anthropic Claude** | Similar; explicit "user authorized" language helps |

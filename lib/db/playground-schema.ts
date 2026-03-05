@@ -26,7 +26,7 @@ export type PlaygroundMode = "auto" | "plan" | "yolo" | "generate" | "debug";
 export type PlaygroundMessageRole = "system" | "user" | "assistant" | "agent";
 export type PlaygroundRunRole = "planner" | "implementer" | "reviewer" | "single";
 export type PlaygroundRunStatus = "queued" | "running" | "completed" | "failed";
-export type PlaygroundActionType = "edit" | "command" | "index" | "sync" | "rollback";
+export type PlaygroundActionType = "edit" | "command" | "mkdir" | "write_file" | "index" | "sync" | "rollback";
 export type PlaygroundActionStatus = "approved" | "blocked" | "executed" | "failed";
 
 // Playground subscriptions — HF inference router billing

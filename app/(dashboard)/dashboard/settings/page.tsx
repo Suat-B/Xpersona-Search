@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
@@ -8,6 +8,16 @@ import { buildUpgradeAuthUrl } from "@/lib/auth-flow";
 
 const inputClass =
   "w-full rounded-lg border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#30d158]/50";
+
+function responseMessage(data: any): string | null {
+  if (!data || typeof data !== "object") return null;
+  if (typeof data.message === "string" && data.message.trim()) return data.message;
+  if (data.error && typeof data.error === "object") {
+    const msg = (data.error as { message?: unknown }).message;
+    if (typeof msg === "string" && msg.trim()) return msg;
+  }
+  return null;
+}
 
 function ChangePasswordSection() {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -130,6 +140,163 @@ function ChangePasswordSection() {
   );
 }
 
+function LinkEmailSection({
+  onLinked,
+  mergeSignInHref,
+  mergeSignUpHref,
+}: {
+  onLinked?: () => void | Promise<void>;
+  mergeSignInHref: string;
+  mergeSignUpHref: string;
+}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(false);
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/v1/me/link-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password,
+          confirmPassword,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        setError(responseMessage(data) ?? "Failed to link email. Please try again.");
+        return;
+      }
+
+      setSuccess(true);
+      setEmail("");
+      setPassword("");
+      setConfirmPassword("");
+      await onLinked?.();
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <GlassCard className="p-5">
+      <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
+        Link email
+      </h2>
+      <p className="text-sm text-[var(--text-secondary)] mb-4">
+        Add an email + password to keep this account and sign in again later.
+      </p>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+            Email
+          </label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            required
+            autoComplete="email"
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+            Password
+          </label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="At least 8 characters"
+            required
+            minLength={8}
+            autoComplete="new-password"
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+            Confirm password
+          </label>
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Repeat your password"
+            required
+            minLength={8}
+            autoComplete="new-password"
+            className={inputClass}
+          />
+        </div>
+        {error && (
+          <p className="text-sm text-[#ff453a] bg-[#ff453a]/10 border border-[#ff453a]/20 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
+        {success && (
+          <p className="text-sm text-[#30d158] bg-[#30d158]/10 border border-[#30d158]/20 rounded-lg px-3 py-2">
+            Email linked. You can now sign in with this email + password.
+          </p>
+        )}
+        <button
+          type="submit"
+          disabled={loading}
+          className="rounded-full bg-[#30d158] px-4 py-2 text-sm font-medium text-white hover:bg-[#30d158]/90 disabled:opacity-50"
+        >
+          {loading ? "Linking..." : "Link email"}
+        </button>
+      </form>
+
+      <div className="mt-4 border-t border-[var(--dash-divider)] pt-4">
+        <p className="text-xs text-[var(--text-secondary)]">
+          Already have an account? Sign in (or create a new one) to merge this temporary account into it.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Link
+            href={mergeSignInHref}
+            className="inline-flex items-center gap-2 rounded-lg border border-[var(--dash-divider)] bg-[var(--dash-bg-card)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] hover:bg-white/5 transition-colors"
+          >
+            Sign in &amp; merge
+          </Link>
+          <Link
+            href={mergeSignUpHref}
+            className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-3 py-2 text-xs font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
+          >
+            Create account &amp; merge
+          </Link>
+        </div>
+      </div>
+    </GlassCard>
+  );
+}
+
 function SignalPreferencesSection() {
   const [discordWebhookUrl, setDiscordWebhookUrl] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
@@ -231,30 +398,35 @@ function SettingsPageClient() {
   const [subscription, setSubscription] = useState<PlaygroundSubscriptionSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetch("/api/v1/me", { credentials: "include" })
-      .then(async (r) => {
-        const text = await r.text();
-        try {
-          return text ? JSON.parse(text) : {};
-        } catch {
-          return {};
-        }
-      })
-      .then((data) => {
-        if (data.success && data.data) {
-          setUser({
-            id: data.data.id,
-            email: data.data.email ?? null,
-            name: data.data.name ?? null,
-            image: data.data.image ?? null,
-            accountType: data.data.accountType ?? null,
-            isPermanent: data.data.isPermanent ?? false,
-          });
-        }
-      })
-      .finally(() => setLoading(false));
+  const refreshUser = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/v1/me", { credentials: "include" });
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = {};
+      }
+      if (data.success && data.data) {
+        setUser({
+          id: data.data.id,
+          email: data.data.email ?? null,
+          name: data.data.name ?? null,
+          image: data.data.image ?? null,
+          accountType: data.data.accountType ?? null,
+          isPermanent: data.data.isPermanent ?? false,
+        });
+      }
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    refreshUser();
+  }, [refreshUser]);
 
   useEffect(() => {
     fetch("/api/v1/me/playground-usage", { credentials: "include", cache: "no-store" })
@@ -282,8 +454,13 @@ function SettingsPageClient() {
       ? "Trial Active"
       : "Plan Active"
     : null;
-  const linkHref = buildUpgradeAuthUrl(
+  const mergeSignUpHref = buildUpgradeAuthUrl(
     "signup",
+    user?.accountType ?? null,
+    "/dashboard/settings"
+  );
+  const mergeSignInHref = buildUpgradeAuthUrl(
+    "signin",
     user?.accountType ?? null,
     "/dashboard/settings"
   );
@@ -332,12 +509,9 @@ function SettingsPageClient() {
                     ? "You're using a temporary play account. Create a permanent account to keep your API key and credits."
                     : "You're using a guest account. Create a permanent account to save your progress."}
                 </p>
-                <Link
-                  href={linkHref}
-                  className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent-heart)]/50 bg-[var(--accent-heart)]/10 px-4 py-2 text-sm font-medium text-[var(--accent-heart)] hover:bg-[var(--accent-heart)]/20 transition-colors"
-                >
-                  Create permanent account
-                </Link>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Link your email below, or sign in/create an account to merge this temporary account.
+                </p>
               </div>
             )}
           </div>
@@ -347,6 +521,15 @@ function SettingsPageClient() {
           </p>
         )}
       </GlassCard>
+
+      {/* Link email — for temporary/guest accounts */}
+      {isEphemeral && (
+        <LinkEmailSection
+          onLinked={refreshUser}
+          mergeSignInHref={mergeSignInHref}
+          mergeSignUpHref={mergeSignUpHref}
+        />
+      )}
 
       {/* Change password â€” only for email/password accounts */}
       {(user?.isPermanent || user?.accountType === "email") && <ChangePasswordSection />}

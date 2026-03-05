@@ -10,6 +10,19 @@ export type ExecuteCommandAction = {
   command: string;
   cwd?: string;
   timeoutMs?: number;
+  category?: "implementation" | "validation";
+};
+
+export type ExecuteMkdirAction = {
+  type: "mkdir";
+  path: string;
+};
+
+export type ExecuteWriteFileAction = {
+  type: "write_file";
+  path: string;
+  content: string;
+  overwrite?: boolean;
 };
 
 export type ExecuteRollbackAction = {
@@ -17,7 +30,22 @@ export type ExecuteRollbackAction = {
   snapshotId: string;
 };
 
-export type ExecuteAction = ExecuteEditAction | ExecuteCommandAction | ExecuteRollbackAction;
+export type ExecuteAction =
+  | ExecuteEditAction
+  | ExecuteCommandAction
+  | ExecuteMkdirAction
+  | ExecuteWriteFileAction
+  | ExecuteRollbackAction;
+
+function isUnsafeRelativePath(value: string): boolean {
+  return (
+    !value ||
+    value.includes("..") ||
+    value.startsWith("/") ||
+    /^[a-z]:\\/i.test(value) ||
+    /^[a-z]:\//i.test(value)
+  );
+}
 
 const BLOCKED_COMMAND_PATTERNS = [
   /\brm\s+-rf\b/i,
@@ -34,8 +62,7 @@ export function validateExecuteAction(action: ExecuteAction): { ok: boolean; rea
   if (action.type === "edit") {
     const patch = action.patch ?? action.diff ?? "";
     if (!action.path || !patch) return { ok: false, reason: "Edit action missing path and patch/diff" };
-    if (action.path.includes("..")) return { ok: false, reason: "Path traversal is blocked" };
-    if (action.path.startsWith("/") || /^[a-z]:\\/i.test(action.path)) {
+    if (isUnsafeRelativePath(action.path)) {
       return { ok: false, reason: "Absolute paths are blocked; use workspace-relative paths" };
     }
     return { ok: true };
@@ -48,6 +75,23 @@ export function validateExecuteAction(action: ExecuteAction): { ok: boolean; rea
     }
     if (action.cwd?.includes("..") || (action.cwd && (action.cwd.startsWith("/") || /^[a-z]:\\/i.test(action.cwd)))) {
       return { ok: false, reason: "cwd must stay within workspace root" };
+    }
+    return { ok: true };
+  }
+
+  if (action.type === "mkdir") {
+    if (isUnsafeRelativePath(action.path)) {
+      return { ok: false, reason: "Absolute paths are blocked; use workspace-relative paths" };
+    }
+    return { ok: true };
+  }
+
+  if (action.type === "write_file") {
+    if (isUnsafeRelativePath(action.path)) {
+      return { ok: false, reason: "Absolute paths are blocked; use workspace-relative paths" };
+    }
+    if (typeof action.content !== "string") {
+      return { ok: false, reason: "write_file requires string content" };
     }
     return { ok: true };
   }

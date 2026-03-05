@@ -1,5 +1,7 @@
 import type { AssistResult } from "@/lib/playground/orchestration";
 
+const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
+
 export function buildConversationHistory(
   rows: Array<{ role?: string; content?: string }> | undefined
 ): Array<{ role: "user" | "assistant"; content: string }> {
@@ -82,9 +84,10 @@ export function buildAssistResponsePayload(input: {
     plan: result.plan,
     edits: result.edits,
     commands: result.commands,
+    actions: result.actions,
     final: result.final,
     logs: result.logs,
-    model: result.modelUsed,
+    model: PUBLIC_PLAYGROUND_MODEL_NAME,
     confidence: result.confidence,
     risk: result.risk,
     influence: result.influence,

@@ -200,13 +200,13 @@ function activate(context) {
 function deactivate() { }
 class Provider {
     hasExecutionIntent(task) {
-        return /\b(create|make|add|build|implement|refactor|fix|debug|run|test|lint|typecheck|command|file|patch|edit|ship|git|commit|push|pull|checkout|merge|rebase|branch)\b/i.test(task);
+        return /\b(create|make|add|build|implement|refactor|fix|debug|run|test|lint|typecheck|command|file|patch|edit|ship)\b/i.test(task);
     }
     hasExplicitCommandRunIntent(task) {
-        return /\b(run|execute|terminal|shell|command|test|tests|lint|typecheck|build|compile|install|npm|pnpm|yarn|pytest|jest|vitest|cargo|go test|mvn|gradle|git|commit|push|pull|checkout|merge|rebase|stash|cherry-pick)\b/i.test(task);
+        return /\b(run|execute|terminal|shell|command|test|tests|lint|typecheck|build|compile|install|npm|pnpm|yarn|pytest|jest|vitest|cargo|go test|mvn|gradle)\b/i.test(task);
     }
     hasCodeTaskSignals(task) {
-        return (/\b(code|file|function|class|bug|error|fix|refactor|implement|build|test|lint|typecheck|stack trace|exception|module|api|endpoint|sql|schema|patch|edit|python|javascript|typescript|git|commit|push|pull|checkout|merge|rebase|branch)\b/i.test(task) ||
+        return (/\b(code|file|function|class|bug|error|fix|refactor|implement|build|test|lint|typecheck|stack trace|exception|module|api|endpoint|sql|schema|patch|edit|python|javascript|typescript)\b/i.test(task) ||
             /\b[a-zA-Z0-9_./-]+\.[a-z0-9]{1,8}\b/i.test(task));
     }
     isConversationalPrompt(task) {
@@ -217,7 +217,7 @@ class Provider {
             /^(what|why|how|when|where|who|which|can|could|would|should|is|are|do|does|did)\b/.test(t) ||
             /\b(explain|define|tell me)\b/.test(t);
         return (greetingOrSmallTalk ||
-            (directQuestion && !this.hasCodeTaskSignals(t) && !this.hasExecutionIntent(t) && !this.hasExplicitCommandRunIntent(t)));
+            (directQuestion && !this.hasCodeTaskSignals(t)));
     }
     constructor(ctx) {
         this.ctx = ctx;
@@ -794,12 +794,6 @@ class Provider {
                 this.post({ type: "pendingActions", count: this.pendingActions.length });
                 this.post({ type: "mentionsConfig", enabled: this.mentionsEnabled() });
                 await this.postThreadState();
-                if (hasKey && this.activeThreadId) {
-                    await this.openSession(this.activeThreadId);
-                }
-                else if (!this.activeThreadId) {
-                    this.post({ type: "load", data: [], threadId: null });
-                }
             }
             else if (m.type === "saveKey") {
                 if (m.key?.trim())
@@ -816,7 +810,6 @@ class Provider {
             else if (m.type === "send") {
                 this.post({ type: "sendAck" });
                 const attachments = sanitizeAssistAttachments(m.attachments);
-                const threadId = typeof m.threadId === "string" ? String(m.threadId).trim() : "";
                 if (Array.isArray(m.attachments) && m.attachments.length > attachments.length) {
                     this.post({ type: "status", text: "Some image attachments were skipped because they were invalid or unsupported." });
                 }
@@ -824,7 +817,6 @@ class Provider {
                     includeIdeContext: m.includeIdeContext !== undefined ? Boolean(m.includeIdeContext) : true,
                     workspaceContextLevel: (m.workspaceContextLevel === "max" ? "max" : "max"),
                     attachments,
-                    ...(threadId ? { threadId } : {}),
                 });
             }
             else if (m.type === "cancel") {
@@ -869,7 +861,7 @@ class Provider {
                 this.post({ type: "status", text: "Cleared current chat view." });
             }
             else if (m.type === "execute") {
-                await this.executePendingActions(undefined, this.activeThreadId || undefined);
+                await this.executePendingActions();
             }
             else if (m.type === "mentionSearch") {
                 if (!this.mentionsEnabled()) {
@@ -941,23 +933,11 @@ class Provider {
         this.pendingActions = [];
         this.lastRunMeta = null;
         this.post({ type: "pendingActions", count: 0 });
+        this.post({ type: "start" });
         this.addTimeline("intent", text.slice(0, 120));
         const conversational = this.isConversationalPrompt(text);
-        const requestedThreadId = typeof options.threadId === "string" ? options.threadId.trim() : "";
-        if (requestedThreadId && requestedThreadId !== this.activeThreadId) {
-            const existing = this.threads[requestedThreadId] || this.recentHistory.find((x) => x.id === requestedThreadId);
-            if (existing)
-                this.upsertThread(existing, true);
-            this.activeThreadId = requestedThreadId;
-            this.sessionId = requestedThreadId;
-        }
-        const activeThreadId = await this.ensureActiveThread(key, text);
-        if (!activeThreadId)
-            return this.post({ type: "err", text: "Failed to create chat session." });
-        const runThreadId = activeThreadId;
-        this.postRun(runThreadId, { type: "start" });
         if (!conversational) {
-            this.postRun(runThreadId, { type: "status", text: `Model: ${model} | Reasoning: ${reasoning}` });
+            this.post({ type: "status", text: `Model: ${model} | Reasoning: ${reasoning}` });
         }
         // Keep the user task clean so mode classification is based on intent,
         // not runtime metadata injected into the prompt body.
@@ -1000,10 +980,13 @@ class Provider {
             }
         }
         contextStatus.preflightMs = Date.now() - preflightStarted;
-        this.postRun(runThreadId, { type: "contextStatus", data: contextStatus });
+        this.post({ type: "contextStatus", data: contextStatus });
         if (contextStatus.notes?.length) {
-            this.postRun(runThreadId, { type: "status", text: contextStatus.notes.join(" | ") });
+            this.post({ type: "status", text: contextStatus.notes.join(" | ") });
         }
+        const activeThreadId = await this.ensureActiveThread(key, text);
+        if (!activeThreadId)
+            return this.post({ type: "err", text: "Failed to create chat session." });
         const runStream = async (historySessionId) => {
             let sawTokenEvent = false;
             let lastProgressState = "";
@@ -1011,7 +994,7 @@ class Provider {
                 if (!label || label === lastProgressState)
                     return;
                 lastProgressState = label;
-                this.postRun(runThreadId, { type: "status", text: label });
+                this.post({ type: "status", text: label });
             };
             return (stream(`${base()}/api/v1/playground/assist`, key, {
                 mode: requestMode,
@@ -1041,13 +1024,13 @@ class Provider {
                     const chunk = typeof p === "string" ? p : String(p ?? "");
                     if (chunk) {
                         sawTokenEvent = true;
-                        this.postRun(runThreadId, { type: "token", text: chunk });
+                        this.post({ type: "token", text: chunk });
                     }
                 }
                 else if (ev === "status") {
                     const statusText = typeof p === "string" ? p : String(p ?? "");
                     if (statusText.trim())
-                        this.postRun(runThreadId, { type: "status", text: statusText.trim() });
+                        this.post({ type: "status", text: statusText.trim() });
                 }
                 else if (ev === "log") {
                     const logText = typeof p === "string"
@@ -1060,13 +1043,13 @@ class Provider {
                             emitProgress("Working on your request...");
                         }
                         else {
-                            this.postRun(runThreadId, { type: "status", text: logText.trim() });
+                            this.post({ type: "status", text: logText.trim() });
                         }
                     }
                 }
                 else if (ev === "final") {
                     if (!sawTokenEvent) {
-                        this.postRun(runThreadId, { type: "token", text: typeof p === "string" ? p : JSON.stringify(p) });
+                        this.post({ type: "token", text: typeof p === "string" ? p : JSON.stringify(p) });
                     }
                 }
                 else if (ev === "decision") {
@@ -1091,7 +1074,7 @@ class Provider {
                                 const editPath = edit.path.trim();
                                 const editPatch = rawPatch.trim();
                                 this.pendingActions.push({ type: "edit", path: editPath, patch: editPatch });
-                                this.postRun(runThreadId, { type: "editPreview", path: editPath, patch: editPatch });
+                                this.post({ type: "editPreview", path: editPath, patch: editPatch });
                             }
                         }
                         this.post({ type: "pendingActions", count: this.pendingActions.length });
@@ -1118,7 +1101,7 @@ class Provider {
                                 const patch = typeof action.patch === "string" ? String(action.patch).trim() : "";
                                 if (path && patch) {
                                     this.pendingActions.push({ type: "edit", path, patch });
-                                    this.postRun(runThreadId, { type: "editPreview", path, patch });
+                                    this.post({ type: "editPreview", path, patch });
                                 }
                                 continue;
                             }
@@ -1174,7 +1157,7 @@ class Provider {
                 }
                 else if (ev === "meta") {
                     this.lastRunMeta = (p || null);
-                    this.postRun(runThreadId, { type: "meta", data: p });
+                    this.post({ type: "meta", data: p });
                 }
             }));
         };
@@ -1183,16 +1166,16 @@ class Provider {
         }
         catch (e) {
             if (this.cancelRequested) {
-                this.postRun(runThreadId, { type: "status", text: "Response stopped." });
+                this.post({ type: "status", text: "Response stopped." });
             }
             else {
                 const message = err(e);
                 if (activeThreadId && /historysessionid|unknown historysessionid/i.test(message)) {
                     this.addTimeline("session", "stale history session recovered");
-                    await runStream(null).catch((inner) => this.postRun(runThreadId, { type: "err", text: err(inner) }));
+                    await runStream(null).catch((inner) => this.post({ type: "err", text: err(inner) }));
                 }
                 else {
-                    this.postRun(runThreadId, { type: "err", text: message });
+                    this.post({ type: "err", text: message });
                 }
             }
         }
@@ -1203,7 +1186,7 @@ class Provider {
             this.threads[activeThreadId].updatedAt = new Date().toISOString();
         await this.loadHistory();
         await this.postThreadState();
-        this.postRun(runThreadId, { type: "end" });
+        this.post({ type: "end" });
         if (this.cancelRequested) {
             this.pendingActions = [];
             this.post({ type: "pendingActions", count: 0 });
@@ -1227,11 +1210,11 @@ class Provider {
                     ? false
                     : (autonomy?.autoRunValidation === true || this.hasExplicitCommandRunIntent(text));
             if (hasEditActions && !autoApplyEdits) {
-                this.postRun(runThreadId, {
+                this.post({
                     type: "status",
                     text: `Prepared ${this.pendingActions.length} action(s), not executed. Execution policy is ${policy}.`,
                 });
-                this.postRun(runThreadId, {
+                this.post({
                     type: "actionOutcome",
                     data: {
                         filesChanged: 0,
@@ -1251,17 +1234,17 @@ class Provider {
             }
             if (actionsToExecute.length > 0) {
                 if (!conversational) {
-                    this.postRun(runThreadId, {
+                    this.post({
                         type: "status",
                         text: `Prepared ${actionsToExecute.length} tool action(s). Auto-executing now.`,
                     });
                 }
-                await this.executePendingActions(actionsToExecute, runThreadId);
+                await this.executePendingActions(actionsToExecute);
             }
             else {
                 if (!conversational) {
                     const modeLabel = validation?.scope === "targeted" ? "Targeted validation skipped" : "Auto-execution skipped";
-                    this.postRun(runThreadId, { type: "status", text: `Prepared ${this.pendingActions.length} action(s). ${modeLabel}. Execution policy prevented auto-run.` });
+                    this.post({ type: "status", text: `Prepared ${this.pendingActions.length} action(s). ${modeLabel}. Execution policy prevented auto-run.` });
                 }
                 this.pendingActions = [];
                 this.post({ type: "pendingActions", count: 0 });
@@ -1368,11 +1351,10 @@ class Provider {
         this.post({ type: "assistant", text: `${s}\n\n${st.map((x, i) => `${i + 1}. ${x}`).join("\n")}` });
         this.addTimeline("replay", s);
     }
-    async executePendingActions(actions, threadIdOverride) {
+    async executePendingActions(actions) {
         const key = await this.ctx.secrets.get(API_KEY_SECRET);
         if (!key)
             return this.post({ type: "err", text: "No API key set" });
-        const runThreadId = threadIdOverride || this.activeThreadId || null;
         const rawActionList = (actions && actions.length ? actions : this.pendingActions).slice();
         const seenActionKeys = new Set();
         const actionList = rawActionList.filter((action) => {
@@ -1383,10 +1365,10 @@ class Provider {
             return true;
         });
         if (!actionList.length)
-            return this.postRun(runThreadId, { type: "status", text: "No pending actions to execute." });
-        this.postRun(runThreadId, { type: "status", text: `Executing ${actionList.length} action(s)...` });
+            return this.post({ type: "status", text: "No pending actions to execute." });
+        this.post({ type: "status", text: `Executing ${actionList.length} action(s)...` });
         const r = await req("POST", `${base()}/api/v1/playground/execute`, key, {
-            sessionId: runThreadId || undefined,
+            sessionId: this.activeThreadId || undefined,
             workspaceFingerprint: "vscode",
             actions: actionList.map((a) => {
                 if (a.type === "edit")
@@ -1399,7 +1381,7 @@ class Provider {
             }),
         }).catch((e) => ({ error: err(e) }));
         if (r?.error) {
-            this.postRun(runThreadId, { type: "err", text: r.error });
+            this.post({ type: "err", text: r.error });
             return;
         }
         const results = (r?.data?.results || []);
@@ -1414,7 +1396,7 @@ class Provider {
                         ? `${row.status?.toUpperCase() || "UNKNOWN"} write_file ${row.action.path || "unknown"}${row.reason ? ` (${row.reason})` : ""}`
                         : `${row.status?.toUpperCase() || "UNKNOWN"} command ${row.action?.command || "unknown"}${row.reason ? ` (${row.reason})` : ""} [exit ${row.exitCode ?? "?"}]`,
         }));
-        this.postRun(runThreadId, { type: "execLogs", data: logs });
+        this.post({ type: "execLogs", data: logs });
         let appliedEdits = 0;
         let launchedCommands = 0;
         const applyErrors = [];
@@ -1425,7 +1407,7 @@ class Provider {
             if (row.action.type === "edit") {
                 const previewPatch = row.action.patch || row.action.diff || "";
                 if (previewPatch.trim()) {
-                    this.postRun(runThreadId, { type: "editPreview", path: row.action.path || "unknown", patch: previewPatch });
+                    this.post({ type: "editPreview", path: row.action.path || "unknown", patch: previewPatch });
                 }
                 const applied = await this.applyEditAction({
                     path: row.action.path,
@@ -1439,7 +1421,7 @@ class Provider {
                 });
                 if (applied.status === "applied" || applied.status === "partial") {
                     appliedEdits += 1;
-                    this.postRun(runThreadId, { type: "fileAction", path: row.action.path || "unknown", status: applied.status, reason: applied.reason || "" });
+                    this.post({ type: "fileAction", path: row.action.path || "unknown", status: applied.status, reason: applied.reason || "" });
                 }
                 else if (applied.reason) {
                     applyErrors.push(`${row.action.path || "unknown"}: ${applied.reason}`);
@@ -1454,7 +1436,7 @@ class Provider {
                 });
                 if (applied.status === "applied") {
                     appliedEdits += 1;
-                    this.postRun(runThreadId, { type: "fileAction", path: row.action.path, status: "applied", reason: "Directory created" });
+                    this.post({ type: "fileAction", path: row.action.path, status: "applied", reason: "Directory created" });
                 }
                 else if (applied.reason) {
                     applyErrors.push(`${row.action.path}: ${applied.reason}`);
@@ -1473,27 +1455,27 @@ class Provider {
                 });
                 if (applied.status === "applied") {
                     appliedEdits += 1;
-                    this.postRun(runThreadId, { type: "fileAction", path: row.action.path, status: "applied", reason: "File created/updated" });
+                    this.post({ type: "fileAction", path: row.action.path, status: "applied", reason: "File created/updated" });
                 }
                 else if (applied.reason) {
                     applyErrors.push(`${row.action.path}: ${applied.reason}`);
                 }
             }
             else if (row.action.type === "command" && row.action.command) {
-                this.postRun(runThreadId, { type: "terminalCommand", command: row.action.command });
+                this.post({ type: "terminalCommand", command: row.action.command });
                 this.runApprovedCommand(row.action.command);
                 launchedCommands += 1;
             }
         }
         const approved = results.filter((x) => x.status === "approved").length;
-        this.postRun(runThreadId, {
+        this.post({
             type: "status",
             text: `Execute finished: ${approved}/${results.length} approved. Applied ${appliedEdits} edit(s), launched ${launchedCommands} command(s).`,
         });
         if (applyErrors.length) {
-            this.postRun(runThreadId, { type: "err", text: `Some approved edits were not auto-applied:\n- ${applyErrors.join("\n- ")}` });
+            this.post({ type: "err", text: `Some approved edits were not auto-applied:\n- ${applyErrors.join("\n- ")}` });
         }
-        this.postRun(runThreadId, {
+        this.post({
             type: "actionOutcome",
             data: {
                 filesChanged: appliedEdits,
@@ -2596,31 +2578,6 @@ function html(webview, extensionUri) {
         font-weight: 700;
         letter-spacing: 0.03em;
         text-transform: uppercase;
-        cursor: pointer;
-        gap: 6px;
-        user-select: none;
-      }
-      .mode-plan-chip:hover {
-        transform: none;
-        border-color: rgba(138, 188, 255, 0.85);
-        background: linear-gradient(135deg, rgba(37, 99, 235, 0.44), rgba(6, 182, 212, 0.32));
-      }
-      .mode-plan-chip:active {
-        transform: none;
-        opacity: 0.92;
-      }
-      .plan-chip-x {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 16px;
-        height: 16px;
-        border-radius: 999px;
-        border: 1px solid rgba(215, 235, 255, 0.38);
-        background: rgba(0, 0, 0, 0.18);
-        font-size: 11px;
-        line-height: 1;
-        color: rgba(215, 235, 255, 0.92);
       }
       .startup.hidden,
       .panel.hidden {
@@ -3332,8 +3289,7 @@ function html(webview, extensionUri) {
         margin: 8px;
         border: 1px solid var(--border);
         border-radius: 18px;
-        /* Theme-driven: match the user's VS Code theme (no custom gray tint). */
-        background: var(--bg-1);
+        background: color-mix(in srgb, var(--bg-0) 92%, var(--fg) 8%);
         overflow: hidden;
         display: flex;
         flex-direction: column;
@@ -3366,7 +3322,7 @@ function html(webview, extensionUri) {
         position: relative;
         border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
         border-radius: 18px;
-        background: var(--surface);
+        background: color-mix(in srgb, var(--surface) 92%, var(--bg-0));
         padding: 8px;
         display: grid;
         gap: 7px;
@@ -3389,108 +3345,21 @@ function html(webview, extensionUri) {
         bottom: calc(100% - 2px);
       }
       .input-actions {
-        gap: 8px;
+        gap: 6px;
       }
-      .input-actions.minimal {
-        flex-wrap: nowrap;
-        align-items: center;
+      .inline-context {
+        gap: 6px;
+        padding: 0 4px;
       }
-      .icon-btn {
-        position: relative;
-        width: 32px;
-        height: 32px;
-        min-width: 32px;
-        border-radius: 999px;
-        padding: 0;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border: 1px solid var(--input-border);
-        background: var(--input-bg);
-        color: var(--input-fg);
-        font-size: 14px;
+      .inline-context > span {
         line-height: 1;
-      }
-      .icon-btn:hover {
-        transform: none;
-        background: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--input-bg) 84%, var(--fg) 16%));
-      }
-      .attach-btn {
-        font-size: 16px;
-        font-weight: 700;
-      }
-      .attach-btn[data-count]:not([data-count=""])::after {
-        content: attr(data-count);
-        position: absolute;
-        margin-left: 18px;
-        margin-top: -18px;
-        width: 16px;
-        height: 16px;
-        border-radius: 999px;
-        background: var(--accent);
-        color: var(--accent-fg);
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 10px;
-        font-weight: 700;
-        border: 1px solid color-mix(in srgb, var(--accent) 85%, black 15%);
-      }
-      .gear-btn {
-        font-size: 15px;
-      }
-      .context-toggle-pill {
-        position: relative;
-        display: inline-flex;
-        align-items: center;
-        gap: 0;
-        cursor: pointer;
-        user-select: none;
-      }
-      .context-toggle-pill input {
-        position: absolute;
-        opacity: 0;
-        width: 1px;
-        height: 1px;
-        pointer-events: none;
-      }
-      .context-toggle-pill .context-pill {
-        padding: 6px 10px;
-        border-style: solid !important;
-        border-color: var(--input-border) !important;
-        background: var(--input-bg) !important;
-        color: var(--input-fg);
-        font-size: 12px;
-        font-weight: 600;
-      }
-      .context-toggle-pill input:not(:checked) + .context-pill {
-        opacity: 0.7;
-      }
-      .composer-meta {
-        min-height: 16px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 11px;
-        color: var(--muted);
-      }
-      .composer-state {
-        min-width: 0;
-        flex: 1;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
       }
       .context-pill {
         padding: 5px 8px;
       }
-      .input-actions.minimal .send-round {
-        width: 34px;
-        height: 34px;
-        min-width: 34px;
-        padding: 0;
-        border-radius: 999px;
-        font-size: 16px;
+      .more-btn {
+        min-width: 58px;
+        height: 32px;
       }
       .action-menu {
         position: static;
@@ -3648,26 +3517,26 @@ function html(webview, extensionUri) {
             <div class="composer-shell">
               <textarea id="t" placeholder="Ask for follow-up changes" enterkeyhint="send"></textarea>
               <div id="mentionMenu" class="mention-menu hidden" role="listbox" aria-label="Mention suggestions"></div>
-              <div class="input-actions minimal">
-                <button id="uploadBtn" class="icon-btn attach-btn" type="button" aria-label="Attach image" title="Attach">+</button>
-                <label class="context-toggle-pill" for="ctxToggle" title="Toggle IDE context">
+              <div class="input-actions">
+                <button id="uploadBtn" class="upload-btn" type="button">Attach</button>
+                <select id="modeQuick" class="composer-select">
+                  <option value="auto">Mode: Auto</option>
+                  <option value="plan">Mode: Plan</option>
+                  <option value="yolo">Mode: Full access</option>
+                </select>
+                <label class="tool-toggle inline-context" for="ctxToggle">
                   <input id="ctxToggle" type="checkbox" checked />
-                  <span id="contextPill" class="context-pill">IDE Context: on</span>
+                  <span id="contextPill" class="context-pill">IDE: on</span>
                 </label>
-                <div class="spacer"></div>
-                <button id="actionMenuBtn" type="button" class="icon-btn gear-btn" aria-label="Settings" title="Settings" aria-expanded="false">&#9881;</button>
-                <button id="s" type="button" class="primary send-round" aria-label="Send">&#8593;</button>
-              </div>
-              <div class="composer-meta">
-                <button
-                  id="planModeChip"
-                  class="mode-plan-chip hidden"
-                  type="button"
-                  aria-live="polite"
-                  aria-label="Plan mode is on. Click to switch back to Auto."
-                  title="Click to exit plan mode"
-                >PLAN MODE <span class="plan-chip-x">x</span></button>
-                <span id="composerState" class="composer-state">Mode: Auto - Reasoning: Medium</span>
+                <span id="planModeChip" class="mode-plan-chip hidden" aria-live="polite">Plan mode</span>
+                <select id="reasonSel" class="composer-select">
+                  <option value="low">Low</option>
+                  <option value="medium" selected>Medium</option>
+                  <option value="high">High</option>
+                  <option value="max">Extra High</option>
+                </select>
+                <button id="actionMenuBtn" type="button" class="menu-icon more-btn" aria-label="Open settings" title="More" aria-expanded="false">More</button>
+                <button id="s" type="button" class="primary send-round" aria-label="Send">Send</button>
               </div>
               <div id="actionMenu" class="action-menu hidden" aria-hidden="true">
                 <div class="action-menu-sheet" role="dialog" aria-label="Composer settings">
@@ -3680,22 +3549,6 @@ function html(webview, extensionUri) {
                   </div>
 
                   <div class="sheet-grid">
-                    <div class="sheet-card">
-                      <div class="sheet-card-title">Quick controls</div>
-                      <div class="sheet-row">
-                        <select id="modeQuick" class="composer-select">
-                          <option value="auto">Mode: Auto</option>
-                          <option value="plan">Mode: Plan</option>
-                          <option value="yolo">Mode: Full access</option>
-                        </select>
-                        <select id="reasonSel" class="composer-select">
-                          <option value="low">Low</option>
-                          <option value="medium" selected>Medium</option>
-                          <option value="high">High</option>
-                          <option value="max">Extra High</option>
-                        </select>
-                      </div>
-                    </div>
                     <div class="sheet-card">
                       <div class="sheet-card-title">Model</div>
                       <div class="sheet-row">

@@ -4,6 +4,7 @@ import * as https from "https";
 import { URL } from "url";
 import { createHash } from "crypto";
 import * as path from "path";
+import * as fs from "fs";
 import { execFile } from "child_process";
 import { applyUnifiedDiff, extractPatchTargetPath, type PatchApplyStatus } from "./patch-utils";
 
@@ -11,12 +12,21 @@ const API_KEY_SECRET = "xpersona.apiKey";
 const MODE_KEY = "xpersona.playground.mode";
 const SAFETY_KEY = "xpersona.playground.safety";
 const OPEN_THREADS_KEY = "xpersona.playground.openThreads";
+const PINNED_THREADS_KEY = "xpersona.playground.pinnedThreads";
+const EXECUTION_POLICY_CONFIG_KEY = "executionPolicy";
+const MENTIONS_ENABLED_FLAG = "mentions.enabled";
+const DEFAULT_PLAYGROUND_MODEL = "Playground 1";
 
 type Mode = "auto" | "plan" | "yolo";
 type RequestMode = Mode | "generate" | "debug";
 type Safety = "standard" | "aggressive";
 type ReasoningLevel = "low" | "medium" | "high" | "max";
-type PendingAction = { type: "edit"; path: string; patch: string } | { type: "command"; command: string };
+type ExecutionPolicy = "full_auto" | "yolo_only" | "preview_first";
+type PendingAction =
+  | { type: "edit"; path: string; patch: string }
+  | { type: "command"; command: string; category?: "implementation" | "validation" }
+  | { type: "mkdir"; path: string }
+  | { type: "write_file"; path: string; content: string; overwrite?: boolean };
 type ContextLevel = "max";
 type RunMeta = {
   intent?: { type?: string; confidence?: number; delta?: number; clarified?: boolean };
@@ -39,6 +49,7 @@ type AskOptions = {
   includeIdeContext?: boolean;
   workspaceContextLevel?: ContextLevel;
   attachments?: AssistAttachmentPayload[];
+  threadId?: string | null;
 };
 type IdeContext = {
   activeFile?: { path?: string; language?: string; selection?: string; content?: string };
@@ -190,6 +201,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("xpersona.playground.mode.auto", () => view.setMode("auto")),
     vscode.commands.registerCommand("xpersona.playground.mode.plan", () => view.setMode("plan")),
     vscode.commands.registerCommand("xpersona.playground.mode.yolo", () => view.setMode("yolo")),
+    vscode.commands.registerCommand("xpersona.playground.mode.cycle", () => view.cycleMode()),
     vscode.commands.registerCommand("xpersona.playground.generate", async () => {
       const t = await vscode.window.showInputBox({ prompt: "Generate task" });
       if (t) view.ask(t, false);
@@ -225,6 +237,7 @@ class Provider implements vscode.WebviewViewProvider {
   private threads: Record<string, ThreadState> = {};
   private openThreadOrder: string[] = [];
   private recentHistory: ThreadState[] = [];
+  private pinnedThreadIds = new Set<string>();
   private sessionId: string | null = null;
   private timeline: Array<{ ts: number; phase: string; detail: string }> = [];
   private pendingActions: PendingAction[] = [];
@@ -232,20 +245,24 @@ class Provider implements vscode.WebviewViewProvider {
   private activeStreamCancel: (() => void) | null = null;
   private cancelRequested = false;
   private commandTerminal: vscode.Terminal | null = null;
+  private modeStatusItem: vscode.StatusBarItem;
+  private lastPlanModeNoticeAt = 0;
+  private mentionCatalog: Array<{ path: string; kind: "file" | "folder" }> = [];
+  private mentionCatalogAt = 0;
   private indexRunning = false;
   private indexFreshness: "fresh" | "stale" | "cold" = "cold";
   private lastIndexAt = 0;
   private indexTimer: NodeJS.Timeout | null = null;
   private indexDebounceTimer: NodeJS.Timeout | null = null;
   private hasExecutionIntent(task: string): boolean {
-    return /\b(create|make|add|build|implement|refactor|fix|debug|run|test|lint|typecheck|command|file|patch|edit|ship)\b/i.test(task);
+    return /\b(create|make|add|build|implement|refactor|fix|debug|run|test|lint|typecheck|command|file|patch|edit|ship|git|commit|push|pull|checkout|merge|rebase|branch)\b/i.test(task);
   }
   private hasExplicitCommandRunIntent(task: string): boolean {
-    return /\b(run|execute|terminal|shell|command|test|tests|lint|typecheck|build|compile|install|npm|pnpm|yarn|pytest|jest|vitest|cargo|go test|mvn|gradle)\b/i.test(task);
+    return /\b(run|execute|terminal|shell|command|test|tests|lint|typecheck|build|compile|install|npm|pnpm|yarn|pytest|jest|vitest|cargo|go test|mvn|gradle|git|commit|push|pull|checkout|merge|rebase|stash|cherry-pick)\b/i.test(task);
   }
   private hasCodeTaskSignals(task: string): boolean {
     return (
-      /\b(code|file|function|class|bug|error|fix|refactor|implement|build|test|lint|typecheck|stack trace|exception|module|api|endpoint|sql|schema|patch|edit|python|javascript|typescript)\b/i.test(task) ||
+      /\b(code|file|function|class|bug|error|fix|refactor|implement|build|test|lint|typecheck|stack trace|exception|module|api|endpoint|sql|schema|patch|edit|python|javascript|typescript|git|commit|push|pull|checkout|merge|rebase|branch)\b/i.test(task) ||
       /\b[a-zA-Z0-9_./-]+\.[a-z0-9]{1,8}\b/i.test(task)
     );
   }
@@ -261,13 +278,17 @@ class Provider implements vscode.WebviewViewProvider {
 
     return (
       greetingOrSmallTalk ||
-      (directQuestion && !this.hasCodeTaskSignals(t))
+      (directQuestion && !this.hasCodeTaskSignals(t) && !this.hasExecutionIntent(t) && !this.hasExplicitCommandRunIntent(t))
     );
   }
 
   constructor(private ctx: vscode.ExtensionContext) {
     this.mode = (ctx.workspaceState.get(MODE_KEY) as Mode | undefined) ?? "auto";
     this.safety = (ctx.workspaceState.get(SAFETY_KEY) as Safety | undefined) ?? "standard";
+    this.modeStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 80);
+    this.modeStatusItem.command = "xpersona.playground.mode.cycle";
+    this.ctx.subscriptions.push(this.modeStatusItem);
+    this.updateModeStatusItem();
     const persisted = ctx.workspaceState.get<OpenThreadsSnapshot | null>(OPEN_THREADS_KEY, null);
     if (persisted?.openChats?.length) {
       for (const thread of persisted.openChats) {
@@ -285,7 +306,50 @@ class Provider implements vscode.WebviewViewProvider {
         ? persisted.activeThreadId
         : (this.openThreadOrder[0] || null);
     }
+    const pinned = ctx.workspaceState.get<string[]>(PINNED_THREADS_KEY, []);
+    if (Array.isArray(pinned)) {
+      for (const id of pinned) {
+        if (typeof id === "string" && id.trim()) this.pinnedThreadIds.add(id.trim());
+      }
+    }
     this.setupBackgroundIndexing();
+  }
+
+  private modeStatusPresentation(mode: Mode): {
+    text: string;
+    tooltip: string;
+    color?: vscode.ThemeColor;
+    backgroundColor?: vscode.ThemeColor;
+  } {
+    if (mode === "plan") {
+      return {
+        text: "$(checklist) Playground: Plan",
+        tooltip: "Plan mode is active. Click to cycle mode.",
+        color: new vscode.ThemeColor("statusBarItem.prominentForeground"),
+        backgroundColor: new vscode.ThemeColor("statusBarItem.prominentBackground"),
+      };
+    }
+    if (mode === "yolo") {
+      return {
+        text: "$(warning) Playground: Full",
+        tooltip: "Full access mode is active. Click to cycle mode.",
+        color: new vscode.ThemeColor("statusBarItem.warningForeground"),
+        backgroundColor: new vscode.ThemeColor("statusBarItem.warningBackground"),
+      };
+    }
+    return {
+      text: "$(sparkle) Playground: Auto",
+      tooltip: "Auto mode is active. Click to cycle mode.",
+    };
+  }
+
+  private updateModeStatusItem() {
+    const presentation = this.modeStatusPresentation(this.mode);
+    this.modeStatusItem.text = presentation.text;
+    this.modeStatusItem.tooltip = presentation.tooltip;
+    this.modeStatusItem.color = presentation.color;
+    this.modeStatusItem.backgroundColor = presentation.backgroundColor;
+    this.modeStatusItem.show();
   }
 
   private isIdeContextV2Enabled(): boolean {
@@ -295,8 +359,117 @@ class Provider implements vscode.WebviewViewProvider {
     );
   }
 
+  private getExecutionPolicy(): ExecutionPolicy {
+    const configured = vscode.workspace
+      .getConfiguration("xpersona.playground")
+      .get<string>(EXECUTION_POLICY_CONFIG_KEY);
+    if (configured === "preview_first" || configured === "yolo_only" || configured === "full_auto") {
+      return configured;
+    }
+    return "full_auto";
+  }
+
+  private mentionsEnabled(): boolean {
+    return vscode.workspace.getConfiguration("xpersona.playground").get<boolean>(MENTIONS_ENABLED_FLAG) ?? true;
+  }
+
+  private deriveThreadTitle(input: string): string {
+    const raw = String(input || "").replace(/\s+/g, " ").trim();
+    if (!raw) return "New chat";
+    const compact = raw
+      .replace(/^(hi|hello|hey|please|pls|can you|could you|would you)\b[:,\s-]*/i, "")
+      .replace(/\b(for me|please)\b/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const candidate = (compact || raw).slice(0, 60).trim();
+    if (!candidate) return "New chat";
+    return candidate[0].toUpperCase() + candidate.slice(1);
+  }
+
+  private sortOpenThreadIds(ids: string[]): string[] {
+    return ids.slice().sort((a, b) => {
+      const aPinned = this.pinnedThreadIds.has(a) ? 1 : 0;
+      const bPinned = this.pinnedThreadIds.has(b) ? 1 : 0;
+      if (aPinned !== bPinned) return bPinned - aPinned;
+      const aTime = this.threads[a]?.updatedAt ? new Date(this.threads[a].updatedAt as string).getTime() : 0;
+      const bTime = this.threads[b]?.updatedAt ? new Date(this.threads[b].updatedAt as string).getTime() : 0;
+      return bTime - aTime;
+    });
+  }
+
+  private async persistPinnedThreads() {
+    await this.ctx.workspaceState.update(PINNED_THREADS_KEY, Array.from(this.pinnedThreadIds));
+  }
+
+  private async setThreadPinned(id: string, pinned: boolean) {
+    const threadId = String(id || "").trim();
+    if (!threadId) return;
+    if (pinned) this.pinnedThreadIds.add(threadId);
+    else this.pinnedThreadIds.delete(threadId);
+    await this.persistPinnedThreads();
+    await this.postThreadState();
+  }
+
+  private async searchWorkspaceMentions(rawQuery: string, rawLimit: number): Promise<Array<{ path: string; kind: "file" | "folder" }>> {
+    const root = this.getWorkspaceRoot();
+    if (!root) return [];
+    const query = String(rawQuery || "").replace(/\\/g, "/").trim().toLowerCase();
+    const limit = Math.max(1, Math.min(Number.isFinite(rawLimit) ? rawLimit : 12, 30));
+    const catalogFresh = Date.now() - this.mentionCatalogAt < 15_000;
+    if (!catalogFresh || this.mentionCatalog.length === 0) {
+      const files = await vscode.workspace.findFiles(
+        new vscode.RelativePattern(root, "**/*"),
+        new vscode.RelativePattern(root, "**/{node_modules,.git,.next,dist,build}/**"),
+        3000
+      );
+      const folderSet = new Set<string>();
+      const items: Array<{ path: string; kind: "file" | "folder" }> = [];
+      for (const uri of files) {
+        const rel = toRelPath(root.uri, uri);
+        const safe = normalizeWorkspaceRelativePath(rel);
+        if (!safe) continue;
+        items.push({ path: safe, kind: "file" });
+        const parts = safe.split("/").filter(Boolean);
+        for (let i = 1; i < parts.length; i += 1) {
+          folderSet.add(parts.slice(0, i).join("/"));
+        }
+      }
+      for (const folder of folderSet) items.push({ path: folder, kind: "folder" });
+      this.mentionCatalog = items;
+      this.mentionCatalogAt = Date.now();
+    }
+
+    const rank = (candidate: string) => {
+      const c = candidate.toLowerCase();
+      const base = path.posix.basename(c);
+      if (!query) return 1000 - c.length;
+      if (base === query) return 1300 - c.length;
+      if (c === query) return 1200 - c.length;
+      if (base.startsWith(query)) return 1100 - c.length;
+      if (c.startsWith(query)) return 900 - c.length;
+      if (c.split("/").some((segment) => segment.startsWith(query))) return 700 - c.length;
+      if (base.includes(query)) return 620 - c.length;
+      if (c.includes(query)) return 500 - c.length;
+      const qParts = query.split("/").filter(Boolean);
+      if (qParts.length && qParts.every((part) => c.includes(part))) return 350 - c.length;
+      return -1;
+    };
+
+    return this.mentionCatalog
+      .map((item) => ({ item, score: rank(item.path) }))
+      .filter((row) => row.score >= 0)
+      .sort((a, b) => {
+        if (a.score !== b.score) return b.score - a.score;
+        if (a.item.kind !== b.item.kind) return a.item.kind === "folder" ? -1 : 1;
+        return a.item.path.localeCompare(b.item.path);
+      })
+      .slice(0, limit)
+      .map((row) => row.item);
+  }
+
   private setupBackgroundIndexing() {
     const triggerDebounced = () => {
+      this.mentionCatalogAt = 0;
       if (this.indexDebounceTimer) clearTimeout(this.indexDebounceTimer);
       this.indexDebounceTimer = setTimeout(() => {
         void this.runBackgroundIndexing("debounced");
@@ -602,10 +775,12 @@ class Provider implements vscode.WebviewViewProvider {
       isOpen: open || existing?.isOpen || false,
     };
     if (open && !this.openThreadOrder.includes(thread.id)) this.openThreadOrder.unshift(thread.id);
+    this.openThreadOrder = this.sortOpenThreadIds(this.openThreadOrder);
     if (!open) this.threads[thread.id].isOpen = false;
   }
 
   private async persistOpenThreads() {
+    this.openThreadOrder = this.sortOpenThreadIds(this.openThreadOrder);
     const openChats = this.openThreadOrder
       .map((id) => this.threads[id])
       .filter((x): x is ThreadState => Boolean(x))
@@ -617,6 +792,7 @@ class Provider implements vscode.WebviewViewProvider {
   }
 
   private async postThreadState() {
+    this.openThreadOrder = this.sortOpenThreadIds(this.openThreadOrder);
     this.post({
       type: "threadState",
       data: {
@@ -626,6 +802,7 @@ class Provider implements vscode.WebviewViewProvider {
           .filter((x): x is ThreadState => Boolean(x))
           .map((x) => ({ ...x, isOpen: true })),
         recentHistory: this.recentHistory,
+        pinnedIds: Array.from(this.pinnedThreadIds),
       },
     });
     await this.persistOpenThreads();
@@ -633,14 +810,15 @@ class Provider implements vscode.WebviewViewProvider {
 
   private async ensureActiveThread(key: string, title: string): Promise<string | null> {
     if (this.activeThreadId && this.threads[this.activeThreadId]) return this.activeThreadId;
+    const sessionTitle = this.deriveThreadTitle(title);
     const s = await req<any>("POST", `${base()}/api/v1/playground/sessions`, key, {
-      title: title.slice(0, 60) || "New chat",
+      title: sessionTitle,
       mode: this.mode,
     }).catch(() => ({}));
     const id = s?.data?.id ? String(s.data.id) : null;
     if (!id) return null;
     this.upsertThread(
-      { id, title: title.slice(0, 60) || "New chat", mode: this.mode, updatedAt: new Date().toISOString(), isOpen: true },
+      { id, title: sessionTitle, mode: this.mode, updatedAt: new Date().toISOString(), isOpen: true },
       true
     );
     this.activeThreadId = id;
@@ -666,10 +844,17 @@ class Provider implements vscode.WebviewViewProvider {
         }
         this.post({ type: "api", ok: hasKey });
         this.post({ type: "mode", value: this.mode });
+        this.updateModeStatusItem();
         this.post({ type: "safety", value: this.safety });
         this.post({ type: "timeline", data: this.timeline });
         this.post({ type: "pendingActions", count: this.pendingActions.length });
+        this.post({ type: "mentionsConfig", enabled: this.mentionsEnabled() });
         await this.postThreadState();
+        if (hasKey && this.activeThreadId) {
+          await this.openSession(this.activeThreadId);
+        } else if (!this.activeThreadId) {
+          this.post({ type: "load", data: [], threadId: null });
+        }
       } else if (m.type === "saveKey") {
         if (m.key?.trim()) await this.ctx.secrets.store(API_KEY_SECRET, m.key.trim());
         this.post({ type: "api", ok: true });
@@ -681,18 +866,20 @@ class Provider implements vscode.WebviewViewProvider {
       } else if (m.type === "send") {
         this.post({ type: "sendAck" });
         const attachments = sanitizeAssistAttachments(m.attachments);
+        const threadId = typeof m.threadId === "string" ? String(m.threadId).trim() : "";
         if (Array.isArray(m.attachments) && m.attachments.length > attachments.length) {
           this.post({ type: "status", text: "Some image attachments were skipped because they were invalid or unsupported." });
         }
         await this.ask(
           String(m.text || ""),
           Boolean(m.parallel),
-          String(m.model || "Playground 1"),
+          String(m.model || DEFAULT_PLAYGROUND_MODEL),
           String(m.reasoning || "medium") as ReasoningLevel,
           {
             includeIdeContext: m.includeIdeContext !== undefined ? Boolean(m.includeIdeContext) : true,
             workspaceContextLevel: (m.workspaceContextLevel === "max" ? "max" : "max") as ContextLevel,
             attachments,
+            ...(threadId ? { threadId } : {}),
           }
         );
       } else if (m.type === "cancel") {
@@ -727,7 +914,16 @@ class Provider implements vscode.WebviewViewProvider {
         this.post({ type: "pendingActions", count: 0 });
         this.post({ type: "status", text: "Cleared current chat view." });
       } else if (m.type === "execute") {
-        await this.executePendingActions();
+        await this.executePendingActions(undefined, this.activeThreadId || undefined);
+      } else if (m.type === "mentionSearch") {
+        if (!this.mentionsEnabled()) {
+          this.post({ type: "mentionResults", query: String(m.query || ""), items: [] });
+          return;
+        }
+        const items = await this.searchWorkspaceMentions(String(m.query || ""), Number(m.limit || 12)).catch(() => []);
+        this.post({ type: "mentionResults", query: String(m.query || ""), items });
+      } else if (m.type === "pinThread") {
+        await this.setThreadPinned(String(m.id || ""), Boolean(m.pinned));
       }
     });
   }
@@ -751,10 +947,26 @@ class Provider implements vscode.WebviewViewProvider {
     this.post({ type: "api", ok: true });
   }
 
+  async cycleMode() {
+    const nextMode: Mode = this.mode === "auto" ? "plan" : this.mode === "plan" ? "yolo" : "auto";
+    await this.setMode(nextMode);
+  }
+
   async setMode(m: Mode) {
-    this.mode = m;
-    await this.ctx.workspaceState.update(MODE_KEY, m);
-    this.post({ type: "mode", value: m });
+    const normalized: Mode = m === "plan" || m === "yolo" ? m : "auto";
+    const changed = this.mode !== normalized;
+    this.mode = normalized;
+    await this.ctx.workspaceState.update(MODE_KEY, normalized);
+    this.post({ type: "mode", value: normalized });
+    this.updateModeStatusItem();
+    if (normalized === "plan") {
+      const now = Date.now();
+      if (changed || now - this.lastPlanModeNoticeAt > 4000) {
+        this.lastPlanModeNoticeAt = now;
+        this.post({ type: "status", text: "Plan mode enabled." });
+        vscode.window.setStatusBarMessage("Playground AI: Plan mode enabled", 2500);
+      }
+    }
   }
 
   async setSafety(s: Safety) {
@@ -766,7 +978,7 @@ class Provider implements vscode.WebviewViewProvider {
   async ask(
     text: string,
     parallel: boolean,
-    model: string = "Playground 1",
+    model: string = DEFAULT_PLAYGROUND_MODEL,
     reasoning: ReasoningLevel = "medium",
     options: AskOptions = {}
   ) {
@@ -782,11 +994,21 @@ class Provider implements vscode.WebviewViewProvider {
     this.pendingActions = [];
     this.lastRunMeta = null;
     this.post({ type: "pendingActions", count: 0 });
-    this.post({ type: "start" });
     this.addTimeline("intent", text.slice(0, 120));
     const conversational = this.isConversationalPrompt(text);
+    const requestedThreadId = typeof options.threadId === "string" ? options.threadId.trim() : "";
+    if (requestedThreadId && requestedThreadId !== this.activeThreadId) {
+      const existing = this.threads[requestedThreadId] || this.recentHistory.find((x) => x.id === requestedThreadId);
+      if (existing) this.upsertThread(existing, true);
+      this.activeThreadId = requestedThreadId;
+      this.sessionId = requestedThreadId;
+    }
+    const activeThreadId = await this.ensureActiveThread(key, text);
+    if (!activeThreadId) return this.post({ type: "err", text: "Failed to create chat session." });
+    const runThreadId = activeThreadId;
+    this.postRun(runThreadId, { type: "start" });
     if (!conversational) {
-      this.post({ type: "status", text: `Model: ${model} | Reasoning: ${reasoning}` });
+      this.postRun(runThreadId, { type: "status", text: `Model: ${model} | Reasoning: ${reasoning}` });
     }
 
     // Keep the user task clean so mode classification is based on intent,
@@ -830,13 +1052,10 @@ class Provider implements vscode.WebviewViewProvider {
       }
     }
     contextStatus.preflightMs = Date.now() - preflightStarted;
-    this.post({ type: "contextStatus", data: contextStatus });
+    this.postRun(runThreadId, { type: "contextStatus", data: contextStatus });
     if (contextStatus.notes?.length) {
-      this.post({ type: "status", text: contextStatus.notes.join(" | ") });
+      this.postRun(runThreadId, { type: "status", text: contextStatus.notes.join(" | ") });
     }
-
-    const activeThreadId = await this.ensureActiveThread(key, text);
-    if (!activeThreadId) return this.post({ type: "err", text: "Failed to create chat session." });
 
     const runStream = async (historySessionId: string | null) => {
       let sawTokenEvent = false;
@@ -844,7 +1063,7 @@ class Provider implements vscode.WebviewViewProvider {
       const emitProgress = (label: string) => {
         if (!label || label === lastProgressState) return;
         lastProgressState = label;
-        this.post({ type: "status", text: label });
+        this.postRun(runThreadId, { type: "status", text: label });
       };
       return (
       stream(
@@ -864,6 +1083,7 @@ class Provider implements vscode.WebviewViewProvider {
             extensionVersion: String(this.ctx.extension.packageJSON?.version || "0.0.0"),
             workspaceHash,
           },
+          executionPolicy: this.getExecutionPolicy(),
           safetyProfile: this.safety,
           agentConfig: parallel
             ? { strategy: "parallel", roles: ["planner", "implementer", "reviewer"] }
@@ -879,11 +1099,11 @@ class Provider implements vscode.WebviewViewProvider {
             const chunk = typeof p === "string" ? p : String(p ?? "");
             if (chunk) {
               sawTokenEvent = true;
-              this.post({ type: "token", text: chunk });
+              this.postRun(runThreadId, { type: "token", text: chunk });
             }
           } else if (ev === "status") {
             const statusText = typeof p === "string" ? p : String(p ?? "");
-            if (statusText.trim()) this.post({ type: "status", text: statusText.trim() });
+            if (statusText.trim()) this.postRun(runThreadId, { type: "status", text: statusText.trim() });
           } else if (ev === "log") {
             const logText =
               typeof p === "string"
@@ -895,12 +1115,12 @@ class Provider implements vscode.WebviewViewProvider {
               if (/assist_started/i.test(logText)) {
                 emitProgress("Working on your request...");
               } else {
-                this.post({ type: "status", text: logText.trim() });
+                this.postRun(runThreadId, { type: "status", text: logText.trim() });
               }
             }
           } else if (ev === "final") {
             if (!sawTokenEvent) {
-              this.post({ type: "token", text: typeof p === "string" ? p : JSON.stringify(p) });
+              this.postRun(runThreadId, { type: "token", text: typeof p === "string" ? p : JSON.stringify(p) });
             }
           } else if (ev === "decision") {
             if (!conversational) {
@@ -926,7 +1146,7 @@ class Provider implements vscode.WebviewViewProvider {
                   const editPath = edit.path.trim();
                   const editPatch = rawPatch.trim();
                   this.pendingActions.push({ type: "edit", path: editPath, patch: editPatch });
-                  this.post({ type: "editPreview", path: editPath, patch: editPatch });
+                  this.postRun(runThreadId, { type: "editPreview", path: editPath, patch: editPatch });
                 }
               }
               this.post({ type: "pendingActions", count: this.pendingActions.length });
@@ -936,6 +1156,45 @@ class Provider implements vscode.WebviewViewProvider {
               for (const command of p) {
                 if (typeof command === "string" && command.trim()) {
                   this.pendingActions.push({ type: "command", command: command.trim() });
+                }
+              }
+              this.post({ type: "pendingActions", count: this.pendingActions.length });
+            }
+          } else if (ev === "actions_chunk") {
+            if (Array.isArray(p)) {
+              for (const action of p) {
+                if (!action || typeof action !== "object") continue;
+                const type = String((action as { type?: unknown }).type || "").toLowerCase();
+                if (type === "edit") {
+                  const path = typeof (action as { path?: unknown }).path === "string" ? String((action as { path: string }).path).trim() : "";
+                  const patch = typeof (action as { patch?: unknown }).patch === "string" ? String((action as { patch: string }).patch).trim() : "";
+                  if (path && patch) {
+                    this.pendingActions.push({ type: "edit", path, patch });
+                    this.postRun(runThreadId, { type: "editPreview", path, patch });
+                  }
+                  continue;
+                }
+                if (type === "command") {
+                  const command = typeof (action as { command?: unknown }).command === "string" ? String((action as { command: string }).command).trim() : "";
+                  const category =
+                    (action as { category?: unknown }).category === "implementation" || (action as { category?: unknown }).category === "validation"
+                      ? ((action as { category: "implementation" | "validation" }).category)
+                      : undefined;
+                  if (command) this.pendingActions.push({ type: "command", command, ...(category ? { category } : {}) });
+                  continue;
+                }
+                if (type === "mkdir") {
+                  const path = typeof (action as { path?: unknown }).path === "string" ? String((action as { path: string }).path).trim() : "";
+                  if (path) this.pendingActions.push({ type: "mkdir", path });
+                  continue;
+                }
+                if (type === "write_file") {
+                  const path = typeof (action as { path?: unknown }).path === "string" ? String((action as { path: string }).path).trim() : "";
+                  const content = typeof (action as { content?: unknown }).content === "string" ? (action as { content: string }).content : "";
+                  const overwrite = typeof (action as { overwrite?: unknown }).overwrite === "boolean" ? (action as { overwrite: boolean }).overwrite : undefined;
+                  if (path) {
+                    this.pendingActions.push({ type: "write_file", path, content, ...(overwrite !== undefined ? { overwrite } : {}) });
+                  }
                 }
               }
               this.post({ type: "pendingActions", count: this.pendingActions.length });
@@ -964,7 +1223,7 @@ class Provider implements vscode.WebviewViewProvider {
             };
           } else if (ev === "meta") {
             this.lastRunMeta = (p || null) as RunMeta | null;
-            this.post({ type: "meta", data: p });
+            this.postRun(runThreadId, { type: "meta", data: p });
           }
         }
       ));
@@ -974,14 +1233,14 @@ class Provider implements vscode.WebviewViewProvider {
       await runStream(activeThreadId);
     } catch (e) {
       if (this.cancelRequested) {
-        this.post({ type: "status", text: "Response stopped." });
+        this.postRun(runThreadId, { type: "status", text: "Response stopped." });
       } else {
       const message = err(e);
       if (activeThreadId && /historysessionid|unknown historysessionid/i.test(message)) {
         this.addTimeline("session", "stale history session recovered");
-        await runStream(null).catch((inner) => this.post({ type: "err", text: err(inner) }));
+        await runStream(null).catch((inner) => this.postRun(runThreadId, { type: "err", text: err(inner) }));
       } else {
-        this.post({ type: "err", text: message });
+        this.postRun(runThreadId, { type: "err", text: message });
       }
       }
     } finally {
@@ -991,29 +1250,38 @@ class Provider implements vscode.WebviewViewProvider {
     await this.loadHistory();
     await this.postThreadState();
 
-    this.post({ type: "end" });
+    this.postRun(runThreadId, { type: "end" });
     if (this.cancelRequested) {
       this.pendingActions = [];
       this.post({ type: "pendingActions", count: 0 });
       return;
     }
     if (this.pendingActions.length > 0) {
-      const hasEditActions = this.pendingActions.some((a) => a.type === "edit");
+      const policy = this.getExecutionPolicy();
+      const hasEditActions = this.pendingActions.some((a) => a.type === "edit" || a.type === "mkdir" || a.type === "write_file");
       const hasCommandActions = this.pendingActions.some((a) => a.type === "command");
       const meta = ((this as unknown as { lastRunMeta?: RunMeta | null }).lastRunMeta || {}) as RunMeta;
       const autonomy = meta.autonomyDecision;
       const validation = meta.validationPlan;
-      const autoApplyEdits = hasEditActions ? autonomy?.autoApplyEdits !== false : false;
+      const autoApplyEdits =
+        policy === "full_auto"
+          ? hasEditActions
+          : policy === "preview_first"
+            ? false
+            : hasEditActions && this.mode === "yolo" && autonomy?.autoApplyEdits !== false;
       const autoRunValidation =
-        autonomy?.autoRunValidation === true ||
-        this.hasExplicitCommandRunIntent(text);
+        policy === "full_auto"
+          ? hasCommandActions
+          : policy === "preview_first"
+            ? false
+            : (autonomy?.autoRunValidation === true || this.hasExplicitCommandRunIntent(text));
 
       if (hasEditActions && !autoApplyEdits) {
-        this.post({
+        this.postRun(runThreadId, {
           type: "status",
-          text: `Preview only: confidence below threshold (${Math.round(Number(autonomy?.confidence || 0) * 100)}%). Say "apply now" to execute.`,
+          text: `Prepared ${this.pendingActions.length} action(s), not executed. Execution policy is ${policy}.`,
         });
-        this.post({
+        this.postRun(runThreadId, {
           type: "actionOutcome",
           data: {
             filesChanged: 0,
@@ -1035,16 +1303,16 @@ class Provider implements vscode.WebviewViewProvider {
 
       if (actionsToExecute.length > 0) {
         if (!conversational) {
-          this.post({
+          this.postRun(runThreadId, {
             type: "status",
             text: `Prepared ${actionsToExecute.length} tool action(s). Auto-executing now.`,
           });
         }
-        await this.executePendingActions(actionsToExecute);
+        await this.executePendingActions(actionsToExecute, runThreadId);
       } else {
         if (!conversational) {
-          const modeLabel = validation?.scope === "targeted" ? "targeted validation skipped" : "auto-execution skipped";
-          this.post({ type: "status", text: `${modeLabel}. I kept a preview and avoided robotic command spam.` });
+          const modeLabel = validation?.scope === "targeted" ? "Targeted validation skipped" : "Auto-execution skipped";
+          this.postRun(runThreadId, { type: "status", text: `Prepared ${this.pendingActions.length} action(s). ${modeLabel}. Execution policy prevented auto-run.` });
         }
         this.pendingActions = [];
         this.post({ type: "pendingActions", count: 0 });
@@ -1151,26 +1419,35 @@ class Provider implements vscode.WebviewViewProvider {
     this.addTimeline("replay", s);
   }
 
-  async executePendingActions(actions?: PendingAction[]) {
+  async executePendingActions(actions?: PendingAction[], threadIdOverride?: string) {
     const key = await this.ctx.secrets.get(API_KEY_SECRET);
     if (!key) return this.post({ type: "err", text: "No API key set" });
-    const actionList = (actions && actions.length ? actions : this.pendingActions).slice();
-    if (!actionList.length) return this.post({ type: "status", text: "No pending actions to execute." });
+    const runThreadId = threadIdOverride || this.activeThreadId || null;
+    const rawActionList = (actions && actions.length ? actions : this.pendingActions).slice();
+    const seenActionKeys = new Set<string>();
+    const actionList = rawActionList.filter((action) => {
+      const key = JSON.stringify(action);
+      if (seenActionKeys.has(key)) return false;
+      seenActionKeys.add(key);
+      return true;
+    });
+    if (!actionList.length) return this.postRun(runThreadId, { type: "status", text: "No pending actions to execute." });
 
-    this.post({ type: "status", text: `Executing ${actionList.length} action(s)...` });
+    this.postRun(runThreadId, { type: "status", text: `Executing ${actionList.length} action(s)...` });
 
     const r = await req<any>("POST", `${base()}/api/v1/playground/execute`, key, {
-      sessionId: this.activeThreadId || undefined,
+      sessionId: runThreadId || undefined,
       workspaceFingerprint: "vscode",
-      actions: actionList.map((a) =>
-        a.type === "edit"
-          ? { type: "edit", path: a.path, patch: a.patch }
-          : { type: "command", command: a.command }
-      ),
+      actions: actionList.map((a) => {
+        if (a.type === "edit") return { type: "edit", path: a.path, patch: a.patch };
+        if (a.type === "command") return { type: "command", command: a.command, ...(a.category ? { category: a.category } : {}) };
+        if (a.type === "mkdir") return { type: "mkdir", path: a.path };
+        return { type: "write_file", path: a.path, content: a.content, ...(a.overwrite !== undefined ? { overwrite: a.overwrite } : {}) };
+      }),
     }).catch((e) => ({ error: err(e) }));
 
     if (r?.error) {
-      this.post({ type: "err", text: r.error });
+      this.postRun(runThreadId, { type: "err", text: r.error });
       return;
     }
 
@@ -1178,7 +1455,7 @@ class Provider implements vscode.WebviewViewProvider {
       status?: string;
       reason?: string;
       exitCode?: number;
-      action?: { type?: string; path?: string; command?: string; patch?: string; diff?: string };
+      action?: { type?: string; path?: string; command?: string; patch?: string; diff?: string; content?: string; overwrite?: boolean };
     }>;
 
     const logs = results.map((row) => ({
@@ -1187,21 +1464,25 @@ class Provider implements vscode.WebviewViewProvider {
       message:
         row.action?.type === "edit"
           ? `${row.status?.toUpperCase() || "UNKNOWN"} edit ${row.action.path || "unknown"}${row.reason ? ` (${row.reason})` : ""}`
-          : `${row.status?.toUpperCase() || "UNKNOWN"} command ${row.action?.command || "unknown"}${row.reason ? ` (${row.reason})` : ""} [exit ${row.exitCode ?? "?"}]`,
+          : row.action?.type === "mkdir"
+            ? `${row.status?.toUpperCase() || "UNKNOWN"} mkdir ${row.action.path || "unknown"}${row.reason ? ` (${row.reason})` : ""}`
+            : row.action?.type === "write_file"
+              ? `${row.status?.toUpperCase() || "UNKNOWN"} write_file ${row.action.path || "unknown"}${row.reason ? ` (${row.reason})` : ""}`
+              : `${row.status?.toUpperCase() || "UNKNOWN"} command ${row.action?.command || "unknown"}${row.reason ? ` (${row.reason})` : ""} [exit ${row.exitCode ?? "?"}]`,
     }));
 
-    this.post({ type: "execLogs", data: logs });
+    this.postRun(runThreadId, { type: "execLogs", data: logs });
     let appliedEdits = 0;
     let launchedCommands = 0;
     const applyErrors: string[] = [];
-    const perFileStatuses: Array<{ path: string; status: PatchApplyStatus; reason?: string }> = [];
+    const perFileStatuses: Array<{ path: string; status: PatchApplyStatus | "applied" | "partial" | "rejected_invalid_patch" | "rejected_path_policy"; reason?: string }> = [];
 
     for (const row of results) {
       if (row.status !== "approved" || !row.action) continue;
       if (row.action.type === "edit") {
         const previewPatch = row.action.patch || row.action.diff || "";
         if (previewPatch.trim()) {
-          this.post({ type: "editPreview", path: row.action.path || "unknown", patch: previewPatch });
+          this.postRun(runThreadId, { type: "editPreview", path: row.action.path || "unknown", patch: previewPatch });
         }
         const applied = await this.applyEditAction({
           path: row.action.path,
@@ -1215,26 +1496,56 @@ class Provider implements vscode.WebviewViewProvider {
         });
         if (applied.status === "applied" || applied.status === "partial") {
           appliedEdits += 1;
-          this.post({ type: "fileAction", path: row.action.path || "unknown", status: applied.status, reason: applied.reason || "" });
+          this.postRun(runThreadId, { type: "fileAction", path: row.action.path || "unknown", status: applied.status, reason: applied.reason || "" });
         } else if (applied.reason) {
           applyErrors.push(`${row.action.path || "unknown"}: ${applied.reason}`);
         }
+      } else if (row.action.type === "mkdir" && row.action.path) {
+        const applied = await this.applyMkdirAction({ path: row.action.path });
+        perFileStatuses.push({
+          path: row.action.path,
+          status: applied.status,
+          ...(applied.reason ? { reason: applied.reason } : {}),
+        });
+        if (applied.status === "applied") {
+          appliedEdits += 1;
+          this.postRun(runThreadId, { type: "fileAction", path: row.action.path, status: "applied", reason: "Directory created" });
+        } else if (applied.reason) {
+          applyErrors.push(`${row.action.path}: ${applied.reason}`);
+        }
+      } else if (row.action.type === "write_file" && row.action.path) {
+        const applied = await this.applyWriteFileAction({
+          path: row.action.path,
+          content: typeof row.action.content === "string" ? row.action.content : "",
+          overwrite: typeof row.action.overwrite === "boolean" ? row.action.overwrite : true,
+        });
+        perFileStatuses.push({
+          path: row.action.path,
+          status: applied.status,
+          ...(applied.reason ? { reason: applied.reason } : {}),
+        });
+        if (applied.status === "applied") {
+          appliedEdits += 1;
+          this.postRun(runThreadId, { type: "fileAction", path: row.action.path, status: "applied", reason: "File created/updated" });
+        } else if (applied.reason) {
+          applyErrors.push(`${row.action.path}: ${applied.reason}`);
+        }
       } else if (row.action.type === "command" && row.action.command) {
-        this.post({ type: "terminalCommand", command: row.action.command });
+        this.postRun(runThreadId, { type: "terminalCommand", command: row.action.command });
         this.runApprovedCommand(row.action.command);
         launchedCommands += 1;
       }
     }
 
     const approved = results.filter((x) => x.status === "approved").length;
-    this.post({
+    this.postRun(runThreadId, {
       type: "status",
       text: `Execute finished: ${approved}/${results.length} approved. Applied ${appliedEdits} edit(s), launched ${launchedCommands} command(s).`,
     });
     if (applyErrors.length) {
-      this.post({ type: "err", text: `Some approved edits were not auto-applied:\n- ${applyErrors.join("\n- ")}` });
+      this.postRun(runThreadId, { type: "err", text: `Some approved edits were not auto-applied:\n- ${applyErrors.join("\n- ")}` });
     }
-    this.post({
+    this.postRun(runThreadId, {
       type: "actionOutcome",
       data: {
         filesChanged: appliedEdits,
@@ -1295,6 +1606,46 @@ class Provider implements vscode.WebviewViewProvider {
     };
   }
 
+  private async applyMkdirAction(action: { path?: string }): Promise<{ status: "applied" | "rejected_path_policy"; reason?: string }> {
+    const rel = normalizeWorkspaceRelativePath(action.path || "");
+    if (!rel) return { status: "rejected_path_policy", reason: "Invalid relative path for mkdir action." };
+    const root = this.getWorkspaceRoot();
+    if (!root) return { status: "rejected_path_policy", reason: "No workspace folder open." };
+    const target = vscode.Uri.joinPath(root.uri, ...rel.split("/").filter(Boolean));
+    await vscode.workspace.fs.createDirectory(target);
+    await vscode.workspace.fs.stat(target);
+    return { status: "applied" };
+  }
+
+  private async applyWriteFileAction(action: { path?: string; content?: string; overwrite?: boolean }): Promise<{ status: "applied" | "rejected_path_policy"; reason?: string }> {
+    const rel = normalizeWorkspaceRelativePath(action.path || "");
+    if (!rel) return { status: "rejected_path_policy", reason: "Invalid relative path for write_file action." };
+    const root = this.getWorkspaceRoot();
+    if (!root) return { status: "rejected_path_policy", reason: "No workspace folder open." };
+
+    const relParts = rel.split("/").filter(Boolean);
+    const target = vscode.Uri.joinPath(root.uri, ...relParts);
+    const parent = path.posix.dirname(rel);
+    if (parent && parent !== ".") {
+      const parentUri = vscode.Uri.joinPath(root.uri, ...parent.split("/").filter(Boolean));
+      await vscode.workspace.fs.createDirectory(parentUri);
+    }
+
+    const overwrite = action.overwrite !== false;
+    if (!overwrite) {
+      try {
+        await vscode.workspace.fs.stat(target);
+        return { status: "rejected_path_policy", reason: "write_file blocked: file already exists and overwrite=false." };
+      } catch {
+        // file does not exist; safe to continue
+      }
+    }
+
+    await vscode.workspace.fs.writeFile(target, Buffer.from(String(action.content || ""), "utf8"));
+    await vscode.workspace.fs.stat(target);
+    return { status: "applied" };
+  }
+
   private runApprovedCommand(command: string) {
     if (!this.commandTerminal) {
       this.commandTerminal = vscode.window.createTerminal({ name: "Playground Execute" });
@@ -1307,6 +1658,15 @@ class Provider implements vscode.WebviewViewProvider {
     this.timeline.push({ ts: Date.now(), phase, detail });
     this.timeline = this.timeline.slice(-200);
     this.post({ type: "timeline", data: this.timeline });
+  }
+
+  private postRun(threadId: string | null | undefined, m: any) {
+    const normalized = threadId ? String(threadId) : "";
+    if (normalized) {
+      this.post({ ...m, threadId: normalized });
+      return;
+    }
+    this.post(m);
   }
 
   post(m: any) {
@@ -1503,14 +1863,21 @@ function nonce() {
 
 function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
   const n = nonce();
-  const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "webview.js"));
+  const scriptPath = path.join(extensionUri.fsPath, "media", "webview.js");
+  const scriptSource = (() => {
+    try {
+      return fs.readFileSync(scriptPath, "utf8");
+    } catch {
+      return `console.error("Playground UI failed to load webview.js.");`;
+    }
+  })().replace(/<\/script/gi, "<\\/script");
   const csp = [
     "default-src 'none'",
     `img-src ${webview.cspSource} https: data:`,
     // Keep styles flexible (we use a few inline style attributes), but lock scripts to a nonce.
     `style-src ${webview.cspSource} 'unsafe-inline'`,
-    // Use an external script (served via webview.asWebviewUri) for maximum compatibility across VS Code forks.
-    `script-src ${webview.cspSource}`,
+    // Inline nonce script avoids external webview resource fetch dependency.
+    `script-src 'nonce-${n}'`,
 ].join("; ");
   return `<!doctype html>
 <html>
@@ -1828,6 +2195,11 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       .thread-main {
         min-width: 0;
       }
+      .thread-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
       .thread-title {
         font-size: 12px;
         color: #f0f0f0;
@@ -1850,6 +2222,23 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         padding: 0;
         font-size: 12px;
         line-height: 1;
+      }
+      .thread-pin {
+        border: 1px solid #2c2c2c;
+        background: #0b0b0b;
+        color: #b7b7b7;
+        width: 20px;
+        height: 20px;
+        min-width: 20px;
+        border-radius: 999px;
+        padding: 0;
+        font-size: 11px;
+        line-height: 1;
+      }
+      .thread-pin.is-pinned {
+        color: #f3c969;
+        border-color: #5a4620;
+        background: #15110a;
       }
       .m {
         border: none;
@@ -2245,19 +2634,61 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       .composer-form {
         display: grid;
         gap: 7px;
+        position: relative;
       }
       .hidden {
         display: none !important;
       }
       .mode-banner {
         margin: 0 12px 8px;
-        padding: 8px 11px;
+        padding: 9px 12px;
         border-radius: 12px;
         font-size: 12px;
-        font-weight: 600;
-        color: #b9dcff;
-        background: linear-gradient(135deg, rgba(37, 99, 235, 0.26), rgba(14, 116, 144, 0.2));
-        border: 1px solid rgba(107, 168, 233, 0.45);
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        color: #d7ebff;
+        background: linear-gradient(135deg, rgba(37, 99, 235, 0.34), rgba(6, 182, 212, 0.25));
+        border: 1px solid rgba(138, 188, 255, 0.65);
+        box-shadow: 0 0 0 1px rgba(34, 112, 214, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      }
+      .mode-plan-chip {
+        height: 32px;
+        display: inline-flex;
+        align-items: center;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(138, 188, 255, 0.6);
+        background: linear-gradient(135deg, rgba(37, 99, 235, 0.32), rgba(6, 182, 212, 0.22));
+        color: #d7ebff;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        cursor: pointer;
+        gap: 6px;
+        user-select: none;
+      }
+      .mode-plan-chip:hover {
+        transform: none;
+        border-color: rgba(138, 188, 255, 0.85);
+        background: linear-gradient(135deg, rgba(37, 99, 235, 0.44), rgba(6, 182, 212, 0.32));
+      }
+      .mode-plan-chip:active {
+        transform: none;
+        opacity: 0.92;
+      }
+      .plan-chip-x {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+        border-radius: 999px;
+        border: 1px solid rgba(215, 235, 255, 0.38);
+        background: rgba(0, 0, 0, 0.18);
+        font-size: 11px;
+        line-height: 1;
+        color: rgba(215, 235, 255, 0.92);
       }
       .startup.hidden,
       .panel.hidden {
@@ -2373,6 +2804,47 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       textarea:focus {
         outline: none;
         border-color: #3a3a3a;
+      }
+      .mention-menu {
+        position: absolute;
+        left: 2px;
+        right: 2px;
+        bottom: 118px;
+        border: 1px solid #2a2a2a;
+        border-radius: 12px;
+        background: #0a0a0a;
+        box-shadow: 0 16px 28px rgba(0, 0, 0, 0.4);
+        max-height: 210px;
+        overflow: auto;
+        z-index: 24;
+      }
+      .mention-item {
+        width: 100%;
+        border: none;
+        border-bottom: 1px solid #1b1b1b;
+        background: transparent;
+        color: #e8e8e8;
+        text-align: left;
+        padding: 8px 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 12px;
+      }
+      .mention-item:last-child { border-bottom: none; }
+      .mention-item.active { background: #111a27; }
+      .mention-path {
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .mention-kind {
+        color: #9a9a9a;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: .04em;
       }
       .input-actions {
         display: flex;
@@ -2690,7 +3162,15 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         border-color: var(--vscode-focusBorder, var(--accent));
         background: var(--vscode-list-activeSelectionBackground, color-mix(in srgb, var(--accent) 22%, var(--surface)));
       }
+      .mention-menu {
+        border-color: var(--input-border);
+        background: var(--input-bg);
+      }
+      .mention-item.active {
+        background: var(--vscode-list-activeSelectionBackground, color-mix(in srgb, var(--accent) 22%, var(--input-bg)));
+      }
       .thread-close,
+      .thread-pin,
       .menu-icon,
       .quick-new,
       .upload-btn,
@@ -2910,6 +3390,234 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         text-align: right;
         opacity: 0.65;
       }
+      /* Wide composer + inline more panel */
+      .global-top {
+        padding: 6px 8px 4px;
+      }
+      .chat-shell {
+        flex: 1;
+        min-height: 0;
+        margin: 8px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        /* Theme-driven: match the user's VS Code theme (no custom gray tint). */
+        background: var(--bg-1);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .panel {
+        padding: 12px;
+      }
+      .mode-banner {
+        margin: 0 8px 6px;
+        padding: 7px 9px;
+      }
+      .input {
+        padding: 10px 10px 9px;
+        border-top: 1px solid var(--border);
+        background: transparent;
+      }
+      .messages {
+        gap: 12px;
+      }
+      .m {
+        max-width: 100%;
+      }
+      .u {
+        max-width: 88%;
+      }
+      .composer-form {
+        gap: 0;
+      }
+      .composer-shell {
+        position: relative;
+        border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
+        border-radius: 18px;
+        background: var(--surface);
+        padding: 8px;
+        display: grid;
+        gap: 7px;
+      }
+      textarea {
+        min-height: 66px;
+        border: none;
+        border-radius: 12px;
+        background: transparent;
+        padding: 8px 10px;
+        resize: vertical;
+      }
+      textarea:focus {
+        outline: 1px solid var(--vscode-focusBorder, var(--accent));
+        border-color: transparent;
+      }
+      .mention-menu {
+        left: 8px;
+        right: 8px;
+        bottom: calc(100% - 2px);
+      }
+      .input-actions {
+        gap: 8px;
+      }
+      .input-actions.minimal {
+        flex-wrap: nowrap;
+        align-items: center;
+      }
+      .icon-btn {
+        position: relative;
+        width: 32px;
+        height: 32px;
+        min-width: 32px;
+        border-radius: 999px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--input-border);
+        background: var(--input-bg);
+        color: var(--input-fg);
+        font-size: 14px;
+        line-height: 1;
+      }
+      .icon-btn:hover {
+        transform: none;
+        background: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--input-bg) 84%, var(--fg) 16%));
+      }
+      .attach-btn {
+        font-size: 16px;
+        font-weight: 700;
+      }
+      .attach-btn[data-count]:not([data-count=""])::after {
+        content: attr(data-count);
+        position: absolute;
+        margin-left: 18px;
+        margin-top: -18px;
+        width: 16px;
+        height: 16px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: var(--accent-fg);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        font-weight: 700;
+        border: 1px solid color-mix(in srgb, var(--accent) 85%, black 15%);
+      }
+      .gear-btn {
+        font-size: 15px;
+      }
+      .context-toggle-pill {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 0;
+        cursor: pointer;
+        user-select: none;
+      }
+      .context-toggle-pill input {
+        position: absolute;
+        opacity: 0;
+        width: 1px;
+        height: 1px;
+        pointer-events: none;
+      }
+      .context-toggle-pill .context-pill {
+        padding: 6px 10px;
+        border-style: solid !important;
+        border-color: var(--input-border) !important;
+        background: var(--input-bg) !important;
+        color: var(--input-fg);
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .context-toggle-pill input:not(:checked) + .context-pill {
+        opacity: 0.7;
+      }
+      .composer-meta {
+        min-height: 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .composer-state {
+        min-width: 0;
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .context-pill {
+        padding: 5px 8px;
+      }
+      .input-actions.minimal .send-round {
+        width: 34px;
+        height: 34px;
+        min-width: 34px;
+        padding: 0;
+        border-radius: 999px;
+        font-size: 16px;
+      }
+      .action-menu {
+        position: static;
+        inset: auto;
+        background: transparent;
+        backdrop-filter: none;
+        z-index: auto;
+        display: block;
+        padding: 0;
+      }
+      .action-menu.hidden {
+        display: none !important;
+      }
+      .action-menu-sheet {
+        width: 100%;
+        max-height: none;
+        border-radius: 14px;
+        box-shadow: none;
+        padding: 10px;
+      }
+      .sheet-grid {
+        gap: 8px;
+      }
+      .sheet-card {
+        border-radius: 12px;
+      }
+      @media (max-width: 600px) {
+        .global-top {
+          padding: 6px 6px 4px;
+        }
+        .chat-shell {
+          margin: 6px;
+        }
+        .panel {
+          padding: 10px;
+        }
+        .input {
+          padding: 8px 6px;
+        }
+        .u {
+          max-width: 95%;
+        }
+      }
+      @media (max-width: 420px) {
+        .composer-shell {
+          padding: 7px;
+        }
+        textarea {
+          min-height: 64px;
+          padding: 7px 8px;
+        }
+        .input-actions {
+          row-gap: 6px;
+        }
+        .context-pill {
+          font-size: 11px;
+          padding: 4px 7px;
+        }
+      }
     </style>
   </head>
   <body>
@@ -2957,7 +3665,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
           <select id="mode">
             <option value="auto">Mode: Auto</option>
             <option value="plan">Mode: Plan</option>
-            <option value="yolo">Mode: YOLO</option>
+            <option value="yolo">Mode: Full access</option>
           </select>
           <select id="safety">
             <option value="standard">Safety: Standard</option>
@@ -2984,137 +3692,164 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
           <button id="historyQuick" type="button" class="menu-icon panel-icon" aria-label="Open chat history" title="Open chat history">&#128339;</button>
           <button id="backToChatQuick" type="button" class="menu-icon panel-icon hidden" aria-label="Back to chat" title="Back to chat">&#8592;</button>
           <button id="newThreadQuick" type="button" class="menu-icon quick-new" aria-label="Start new chat">New chat</button>
-          <button id="actionMenuBtn" type="button" class="menu-icon settings-icon" aria-label="Open settings" title="Settings" aria-expanded="false">&#9881;</button>
         </div>
       </div>
-      <div id="modeBanner" class="mode-banner hidden">Plan mode active. I will plan before acting.</div>
+      <div id="modeBanner" class="mode-banner hidden">Plan mode active: I will plan before acting.</div>
 
-      <div id="chat" class="panel active">
-        <div id="chips" class="chips"></div>
-        <div id="threadList" class="thread-list"></div>
-        <div id="msgs" class="messages"></div>
-        <div class="jump-wrap">
-          <button id="jumpLatest" class="jump-btn" type="button">Jump to latest</button>
+      <div class="chat-shell" role="region" aria-label="Playground chat">
+        <div id="chat" class="panel active">
+          <div id="chips" class="chips"></div>
+          <div id="threadList" class="thread-list"></div>
+          <div id="msgs" class="messages"></div>
+          <div class="jump-wrap">
+            <button id="jumpLatest" class="jump-btn" type="button">Jump to latest</button>
+          </div>
         </div>
-      </div>
-      <div id="timeline" class="panel"></div>
-      <div id="history" class="panel"></div>
-      <div id="index" class="panel"></div>
-      <div id="agents" class="panel"></div>
-      <div id="exec" class="panel"></div>
+        <div id="timeline" class="panel"></div>
+        <div id="history" class="panel"></div>
+        <div id="index" class="panel"></div>
+        <div id="agents" class="panel"></div>
+        <div id="exec" class="panel"></div>
 
-      <div class="input">
-        <form id="composerForm" class="composer-form" novalidate>
-          <textarea id="t" placeholder="Ask for follow-up changes" enterkeyhint="send"></textarea>
-          <div class="input-actions">
-            <button id="uploadBtn" class="upload-btn" type="button">Attach</button>
-            <select id="modeQuick" class="composer-select">
-              <option value="auto">Mode: Auto</option>
-              <option value="plan">Mode: Plan</option>
-              <option value="yolo">Mode: YOLO</option>
-            </select>
-            <select id="modelSel" class="composer-select">
-              <option value="Playground 1">Playground 1</option>
-            </select>
-            <select id="reasonSel" class="composer-select">
-              <option value="low">Low</option>
-              <option value="medium" selected>Medium</option>
-              <option value="high">High</option>
-              <option value="max">Extra High</option>
-            </select>
-            <button id="s" type="button" class="primary send-round" aria-label="Send">Send</button>
-          </div>
-          <input id="uploadInput" class="file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple />
-          <div id="attachHint" class="attach-hint">No images attached.</div>
-          <div class="footer-row">
-            <span id="runState" class="footer-muted">Local</span>
-            <span id="permState" class="footer-accent">Full access</span>
-            <span id="usagePct" class="footer-muted">0%</span>
-          </div>
-          <div id="actionMenu" class="action-menu hidden" aria-hidden="true">
-            <div class="action-menu-sheet" role="dialog" aria-label="Composer settings">
-              <div class="sheet-head">
-                <div>
-                  <div class="sheet-title">Settings</div>
-                  <div class="sheet-sub">Everything moved here for a cleaner chat layout.</div>
-                </div>
-                <button id="actionMenuClose" type="button" class="sheet-close" aria-label="Close settings">x</button>
+        <div class="input">
+          <form id="composerForm" class="composer-form" novalidate>
+            <div class="composer-shell">
+              <textarea id="t" placeholder="Ask for follow-up changes" enterkeyhint="send"></textarea>
+              <div id="mentionMenu" class="mention-menu hidden" role="listbox" aria-label="Mention suggestions"></div>
+              <div class="input-actions minimal">
+                <button id="uploadBtn" class="icon-btn attach-btn" type="button" aria-label="Attach image" title="Attach">+</button>
+                <label class="context-toggle-pill" for="ctxToggle" title="Toggle IDE context">
+                  <input id="ctxToggle" type="checkbox" checked />
+                  <span id="contextPill" class="context-pill">IDE Context: on</span>
+                </label>
+                <div class="spacer"></div>
+                <button id="actionMenuBtn" type="button" class="icon-btn gear-btn" aria-label="Settings" title="Settings" aria-expanded="false">&#9881;</button>
+                <button id="s" type="button" class="primary send-round" aria-label="Send">&#8593;</button>
               </div>
+              <div class="composer-meta">
+                <button
+                  id="planModeChip"
+                  class="mode-plan-chip hidden"
+                  type="button"
+                  aria-live="polite"
+                  aria-label="Plan mode is on. Click to switch back to Auto."
+                  title="Click to exit plan mode"
+                >PLAN MODE <span class="plan-chip-x">x</span></button>
+                <span id="composerState" class="composer-state">Mode: Auto - Reasoning: Medium</span>
+              </div>
+              <div id="actionMenu" class="action-menu hidden" aria-hidden="true">
+                <div class="action-menu-sheet" role="dialog" aria-label="Composer settings">
+                  <div class="sheet-head">
+                    <div>
+                      <div class="sheet-title">More settings</div>
+                      <div class="sheet-sub">Advanced controls inside your composer.</div>
+                    </div>
+                    <button id="actionMenuClose" type="button" class="sheet-close" aria-label="Close settings">x</button>
+                  </div>
 
-              <div class="sheet-grid">
-                <div class="sheet-card">
-                  <div class="sheet-card-title">Attachments</div>
-                  <div class="sheet-row">
-                    <span id="uploadCount" class="tool-muted">No images selected.</span>
-                    <span class="tool-muted">PNG/JPEG/WEBP, up to 3 images, 4MB each.</span>
-                  </div>
-                </div>
-
-                <div class="sheet-card">
-                  <div class="sheet-card-title">Conversation</div>
-                  <div class="sheet-row sheet-toggle">
-                    <label class="tool-toggle">
-                      <span>Include IDE context</span>
-                      <input id="ctxToggle" type="checkbox" checked />
-                    </label>
-                  </div>
-                  <div class="sheet-row sheet-toggle">
-                    <label class="tool-toggle" for="safetyQuick">
-                      <span>Safety profile</span>
-                      <select id="safetyQuick" class="composer-select">
-                        <option value="standard">Standard</option>
-                        <option value="aggressive">Aggressive</option>
-                      </select>
-                    </label>
-                  </div>
-                  <div class="sheet-row sheet-toggle">
-                    <label class="tool-toggle">
-                      <span>Parallel agents</span>
-                      <input id="parallelQuick" type="checkbox" />
-                    </label>
-                  </div>
-                  <div id="contextPill" class="context-pill">IDE: on</div>
-                </div>
-
-                <div class="sheet-card">
-                  <div class="sheet-card-title">Your API Key</div>
-                  <div class="api-key-row">
-                    <input id="apiKeyInline" class="api-key-input" type="password" placeholder="xp_..." />
-                    <button id="apiKeyInlineSave" class="api-key-save" type="button">Save</button>
-                  </div>
-                  <div class="api-key-hint">Stored securely in VS Code secrets.</div>
-                </div>
-
-                <div class="sheet-card">
-                  <div class="sheet-card-title">Panels</div>
                   <div class="sheet-grid">
-                    <button class="action-item" type="button" data-menu-action="show:chat">Show Chat</button>
-                    <button class="action-item" type="button" data-menu-action="show:timeline">Show Timeline</button>
-                    <button class="action-item" type="button" data-menu-action="show:history">Show History</button>
-                    <button class="action-item" type="button" data-menu-action="show:index">Show Index</button>
-                    <button class="action-item" type="button" data-menu-action="show:agents">Show Agents</button>
-                    <button class="action-item" type="button" data-menu-action="show:exec">Show Execution</button>
-                  </div>
-                </div>
+                    <div class="sheet-card">
+                      <div class="sheet-card-title">Quick controls</div>
+                      <div class="sheet-row">
+                        <select id="modeQuick" class="composer-select">
+                          <option value="auto">Mode: Auto</option>
+                          <option value="plan">Mode: Plan</option>
+                          <option value="yolo">Mode: Full access</option>
+                        </select>
+                        <select id="reasonSel" class="composer-select">
+                          <option value="low">Low</option>
+                          <option value="medium" selected>Medium</option>
+                          <option value="high">High</option>
+                          <option value="max">Extra High</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="sheet-card">
+                      <div class="sheet-card-title">Model</div>
+                      <div class="sheet-row">
+                        <select id="modelSel" class="composer-select">
+                          <option value="${DEFAULT_PLAYGROUND_MODEL}">${DEFAULT_PLAYGROUND_MODEL}</option>
+                        </select>
+                      </div>
+                    </div>
 
-                <div class="sheet-card">
-                  <div class="sheet-card-title">Actions</div>
-                  <div class="sheet-grid">
-                    <button id="newThreadBtn" class="action-item" type="button">New Chat</button>
-                    <button id="c" class="action-item" type="button">Clear Chat</button>
-                    <button class="action-item" type="button" data-menu-action="history">Refresh History</button>
-                    <button class="action-item" type="button" data-menu-action="replay">Replay Session</button>
-                    <button class="action-item" type="button" data-menu-action="indexRebuild">Rebuild Index</button>
+                    <div class="sheet-card">
+                      <div class="sheet-card-title">Conversation</div>
+                      <div class="sheet-row sheet-toggle">
+                        <label class="tool-toggle" for="safetyQuick">
+                          <span>Safety profile</span>
+                          <select id="safetyQuick" class="composer-select">
+                            <option value="standard">Standard</option>
+                            <option value="aggressive">Aggressive</option>
+                          </select>
+                        </label>
+                      </div>
+                      <div class="sheet-row sheet-toggle">
+                        <label class="tool-toggle">
+                          <span>Parallel agents</span>
+                          <input id="parallelQuick" type="checkbox" />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div class="sheet-card">
+                      <div class="sheet-card-title">Attachments</div>
+                      <div class="sheet-row">
+                        <span id="uploadCount" class="tool-muted">No images selected.</span>
+                        <span class="tool-muted">PNG/JPEG/WEBP, up to 3 images, 4MB each.</span>
+                      </div>
+                    </div>
+
+                    <div class="sheet-card">
+                      <div class="sheet-card-title">Your API Key</div>
+                      <div class="api-key-row">
+                        <input id="apiKeyInline" class="api-key-input" type="password" placeholder="xp_..." />
+                        <button id="apiKeyInlineSave" class="api-key-save" type="button">Save</button>
+                      </div>
+                      <div class="api-key-hint">Stored securely in VS Code secrets.</div>
+                    </div>
+
+                    <div class="sheet-card">
+                      <div class="sheet-card-title">Panels</div>
+                      <div class="sheet-grid">
+                        <button class="action-item" type="button" data-menu-action="show:chat">Show Chat</button>
+                        <button class="action-item" type="button" data-menu-action="show:timeline">Show Timeline</button>
+                        <button class="action-item" type="button" data-menu-action="show:history">Show History</button>
+                        <button class="action-item" type="button" data-menu-action="show:index">Show Index</button>
+                        <button class="action-item" type="button" data-menu-action="show:agents">Show Agents</button>
+                        <button class="action-item" type="button" data-menu-action="show:exec">Show Execution</button>
+                      </div>
+                    </div>
+
+                    <div class="sheet-card">
+                      <div class="sheet-card-title">Actions</div>
+                      <div class="sheet-grid">
+                        <button id="newThreadBtn" class="action-item" type="button">New Chat</button>
+                        <button id="c" class="action-item" type="button">Clear Chat</button>
+                        <button class="action-item" type="button" data-menu-action="history">Refresh History</button>
+                        <button class="action-item" type="button" data-menu-action="replay">Replay Session</button>
+                        <button class="action-item" type="button" data-menu-action="indexRebuild">Rebuild Index</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
+              </div>
+              <input id="uploadInput" class="file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+              <div id="attachHint" class="attach-hint">No images attached.</div>
+              <div class="footer-row">
+                <span id="runState" class="footer-muted">Local</span>
+                <span id="permState" class="footer-accent">Full access</span>
+                <span id="usagePct" class="footer-muted">0%</span>
               </div>
             </div>
-          </div>
-        </form>
+          </form>
+        </div>
       </div>
     </div>
 
-    <script nonce="${n}" src="${scriptUri}"></script>
+    <script nonce="${n}">
+${scriptSource}
+    </script>
   </body>
 </html>`;
 }

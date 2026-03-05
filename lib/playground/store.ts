@@ -511,7 +511,7 @@ export async function logAgentRun(input: {
 export async function logAction(input: {
   userId: string;
   sessionId?: string;
-  actionType: "edit" | "command" | "index" | "sync" | "rollback";
+  actionType: "edit" | "command" | "mkdir" | "write_file" | "index" | "sync" | "rollback";
   status: "approved" | "blocked" | "executed" | "failed";
   payload: Record<string, unknown>;
   reason?: string;

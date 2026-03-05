@@ -43,6 +43,8 @@ const zClientPreferences = z.object({
   reasoning: z.enum(["low", "medium", "high", "max"]).optional(),
 });
 
+const zExecutionPolicy = z.enum(["full_auto", "yolo_only", "preview_first"]);
+
 export const zAssistRequest = z.object({
   mode: zAssistMode.default("auto"),
   task: z.string().min(1).max(120_000),
@@ -76,6 +78,7 @@ export const zAssistRequest = z.object({
   historySessionId: z.string().uuid().optional(),
   conversationHistory: z.array(zConversationTurn).max(24).optional(),
   clientPreferences: zClientPreferences.optional(),
+  executionPolicy: zExecutionPolicy.optional(),
   agentConfig: z
     .object({
       strategy: z.enum(["single", "parallel"]).optional(),
@@ -110,6 +113,19 @@ const zExecuteCommand = z.object({
   command: z.string().min(1).max(2000),
   cwd: z.string().max(4096).optional(),
   timeoutMs: z.number().int().min(100).max(300_000).optional(),
+  category: z.enum(["implementation", "validation"]).optional(),
+});
+
+const zExecuteMkdir = z.object({
+  type: z.literal("mkdir"),
+  path: z.string().min(1).max(4096),
+});
+
+const zExecuteWriteFile = z.object({
+  type: z.literal("write_file"),
+  path: z.string().min(1).max(4096),
+  content: z.string().max(400_000),
+  overwrite: z.boolean().optional(),
 });
 
 const zExecuteRollback = z.object({
@@ -119,7 +135,7 @@ const zExecuteRollback = z.object({
 
 export const zExecuteRequest = z.object({
   sessionId: z.string().uuid().optional(),
-  actions: z.array(z.union([zExecuteEdit, zExecuteCommand, zExecuteRollback])).min(1).max(100),
+  actions: z.array(z.union([zExecuteEdit, zExecuteCommand, zExecuteMkdir, zExecuteWriteFile, zExecuteRollback])).min(1).max(100),
   workspaceFingerprint: z.string().min(4).max(256),
 });
 

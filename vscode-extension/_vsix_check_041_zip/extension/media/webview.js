@@ -48,7 +48,6 @@
               includeIdeContext,
               workspaceContextLevel: "max",
               attachments: [],
-              threadId: currentThreadId,
             });
           } catch {
             // no-op
@@ -119,7 +118,6 @@
       const modelSel = document.getElementById("modelSel");
       const reasonSel = document.getElementById("reasonSel");
       const contextPill = document.getElementById("contextPill");
-      const composerState = document.getElementById("composerState");
       const jumpLatestBtn = document.getElementById("jumpLatest");
       const startup = document.querySelector(".startup");
       const runState = document.getElementById("runState");
@@ -164,22 +162,6 @@
       let mentionActiveIndex = 0;
       let mentionSearchToken = null;
       let mentionDebounceTimer = null;
-      let creatingThread = false;
-      let contextSummary = "";
-      const RUN_SCOPED_MESSAGE_TYPES = new Set([
-        "start",
-        "token",
-        "status",
-        "end",
-        "assistant",
-        "editPreview",
-        "terminalCommand",
-        "fileAction",
-        "meta",
-        "actionOutcome",
-        "execLogs",
-        "err",
-      ]);
 
       function planAwareStateLabel(baseLabel) {
         const label = String(baseLabel || "Local");
@@ -195,29 +177,6 @@
         const planActive = modeValue === "plan";
         if (modeBanner) modeBanner.classList.toggle("hidden", !planActive);
         if (planModeChip) planModeChip.classList.toggle("hidden", !planActive);
-      }
-
-      function labelForMode(value) {
-        const v = String(value || "").toLowerCase();
-        if (v === "plan") return "Plan";
-        if (v === "yolo") return "Full access";
-        return "Auto";
-      }
-
-      function labelForReasoning(value) {
-        const v = String(value || "").toLowerCase();
-        if (v === "low") return "Low";
-        if (v === "high") return "High";
-        if (v === "max") return "Extra High";
-        return "Medium";
-      }
-
-      function updateComposerState() {
-        if (!composerState) return;
-        const modeLabel = labelForMode(modeQuick ? modeQuick.value : currentMode);
-        const reasoningLabel = labelForReasoning(reasonSel ? reasonSel.value : "medium");
-        const tail = contextSummary ? " - " + contextSummary : "";
-        composerState.textContent = "Mode: " + modeLabel + " - Reasoning: " + reasoningLabel + tail;
       }
 
       function parseSlashModeCommand(rawText) {
@@ -283,7 +242,6 @@
           includeIdeContext,
           workspaceContextLevel: "max",
           attachments: attachedFiles.map((f) => ({ mimeType: f.mimeType, name: f.name, dataUrl: f.dataUrl })),
-          threadId: currentThreadId,
         });
       }
 
@@ -466,59 +424,6 @@
         return null;
       }
 
-      function handleMentionKeydown(e) {
-        if (!mentionsEnabled) return false;
-        if (!mentionMenu || mentionMenu.classList.contains("hidden")) return false;
-        if (!mentionItems.length) return false;
-
-        const key = String(e.key || "");
-        const code = String(e.code || "");
-        const keyCode = Number(e.keyCode || e.which || 0);
-
-        const isDown = key === "ArrowDown" || code === "ArrowDown" || keyCode === 40;
-        const isUp = key === "ArrowUp" || code === "ArrowUp" || keyCode === 38;
-        const isEnter = key === "Enter" || code === "Enter" || code === "NumpadEnter" || keyCode === 13;
-        const isTab = key === "Tab" || code === "Tab" || keyCode === 9;
-        const isEsc = key === "Escape" || code === "Escape" || keyCode === 27;
-
-        if (isDown) {
-          e.preventDefault();
-          e.stopPropagation();
-          if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-          mentionActiveIndex = (mentionActiveIndex + 1) % mentionItems.length;
-          renderMentionMenu();
-          return true;
-        }
-
-        if (isUp) {
-          e.preventDefault();
-          e.stopPropagation();
-          if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-          mentionActiveIndex = (mentionActiveIndex - 1 + mentionItems.length) % mentionItems.length;
-          renderMentionMenu();
-          return true;
-        }
-
-        if ((isEnter || isTab) && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
-          e.preventDefault();
-          e.stopPropagation();
-          if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-          const active = mentionItems[mentionActiveIndex] || mentionItems[0];
-          if (active) applyMentionSelection(active.path);
-          return true;
-        }
-
-        if (isEsc) {
-          e.preventDefault();
-          e.stopPropagation();
-          if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-          closeMentionMenu();
-          return true;
-        }
-
-        return false;
-      }
-
       function scheduleMentionSearch() {
         const ctx = mentionContextFromInput();
         if (!ctx) {
@@ -594,10 +499,6 @@
             const kind = el.getAttribute('data-kind');
             if (!id) return;
             saveCurrentDraft();
-            creatingThread = false;
-            currentThreadId = id;
-            renderThreadList();
-            setRunState("Switching chat...");
             if (kind === 'open') v.postMessage({ type: 'switchThread', id });
             else v.postMessage({ type: 'openSession', id });
           });
@@ -661,7 +562,6 @@
           sendBtn.setAttribute("aria-label", sendLabel);
           sendBtn.title = sendLabel;
         }
-        updateComposerState();
       }
 
       function setAttachHint(text, isError = false) {
@@ -672,12 +572,7 @@
 
       function updateAttachmentUI(statusText, isError = false) {
         const count = attachedFiles.length;
-        if (uploadBtn) {
-          uploadBtn.dataset.count = count > 0 ? String(count) : "";
-          const label = count > 0 ? "Attach image (" + count + " selected)" : "Attach image";
-          uploadBtn.setAttribute("aria-label", label);
-          uploadBtn.title = count > 0 ? "Attach (" + count + ")" : "Attach";
-        }
+        if (uploadBtn) uploadBtn.textContent = count > 0 ? "Attach (" + count + ")" : "Attach";
         if (uploadCount) {
           uploadCount.textContent = count === 0
             ? "No images selected."
@@ -1184,25 +1079,8 @@
       }
 
       function startNewChat() {
-        if (creatingThread) return;
         saveCurrentDraft();
-        creatingThread = true;
-        currentThreadId = null;
         showTab("chat");
-        clearPlanDecisionCard();
-        closeMentionMenu();
-        setStreaming(false);
-        streamBubble = null;
-        terminalBubble = null;
-        activeProgressState = "";
-        lastStatusText = "";
-        lastStatusAt = 0;
-        if (msgs) {
-          while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
-        }
-        renderThreadList();
-        restoreDraftForThread(currentThreadId);
-        setRunState("Creating new chat...");
         v.postMessage({ type: "newThread" });
         setActionMenuOpen(false);
       }
@@ -1262,7 +1140,7 @@
         if (uploadBtn) uploadBtn.disabled = isBusy;
         if (activeSendBtn) {
           const sendLabel = currentMode === "plan" ? "Send planning request" : "Send";
-          activeSendBtn.textContent = isBusy ? "\u23f9" : "\u2191";
+          activeSendBtn.textContent = isBusy ? "Stop" : "Send";
           activeSendBtn.setAttribute("aria-label", isBusy ? "Stop response" : sendLabel);
           activeSendBtn.title = isBusy ? "Stop response" : sendLabel;
           activeSendBtn.classList.toggle("is-streaming", isBusy);
@@ -1275,7 +1153,6 @@
         }
         if (!isBusy) updateJump();
         updateStartupVisibility();
-        if (!isBusy) updateComposerState();
       }
 
       function requestCancel() {
@@ -1291,11 +1168,6 @@
           if (!composerInput) return;
           const parsed = parseSlashModeCommand(composerInput.value || "");
           if (streaming) return;
-          if (creatingThread) {
-            setRunState("Creating new chat...");
-            addMessage("Creating new chat. Send your message in a moment.", "cmd");
-            return;
-          }
           if (parsed.preventSend) {
             addMessage("Plan mode enabled. Add your request after /plan.", "cmd");
             return;
@@ -1333,7 +1205,6 @@
             includeIdeContext,
             workspaceContextLevel: "max",
             attachments: attachmentPayload,
-            threadId: currentThreadId,
           });
           setRunState("Sent");
           attachedFiles = [];
@@ -1403,25 +1274,10 @@
       }
       if (ctxToggle) {
         ctxToggle.onchange = () => {
-          const enabled = Boolean(ctxToggle.checked);
-          if (contextPill) contextPill.textContent = enabled ? "IDE Context: on" : "IDE Context: off";
-          if (!enabled) contextSummary = "";
-          updateComposerState();
+          if (contextPill) contextPill.textContent = ctxToggle.checked ? "IDE: on" : "IDE: off";
         };
       }
       updateAttachmentUI();
-      updateComposerState();
-      if (planModeChip) {
-        planModeChip.onclick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (streaming) return;
-          if (currentMode !== "plan") return;
-          applyModeUI("auto");
-          v.postMessage({ type: "setMode", value: "auto" });
-          setRunState("Local");
-        };
-      }
       if (actionMenuBtn && actionMenu) {
         actionMenuBtn.onclick = (e) => {
           e.preventDefault();
@@ -1481,7 +1337,6 @@
         triggerSendSafe(e);
       }, true);
       document.addEventListener("keydown", (e) => {
-        if (handleMentionKeydown(e)) return;
         if (e.key === "Escape") setActionMenuOpen(false);
       }, true);
       document.addEventListener("keyup", (e) => {
@@ -1490,7 +1345,34 @@
         }
       }, true);
       const onComposerKeydown = (e) => {
-        if (handleMentionKeydown(e)) return;
+        if (mentionsEnabled && mentionItems.length) {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            mentionActiveIndex = (mentionActiveIndex + 1) % mentionItems.length;
+            renderMentionMenu();
+            return;
+          }
+          if (e.key === "ArrowUp") {
+            e.preventDefault();
+            mentionActiveIndex = (mentionActiveIndex - 1 + mentionItems.length) % mentionItems.length;
+            renderMentionMenu();
+            return;
+          }
+          if (e.key === "Enter" || e.key === "Tab") {
+            if (!e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+              e.preventDefault();
+              e.stopPropagation();
+              const active = mentionItems[mentionActiveIndex] || mentionItems[0];
+              if (active) applyMentionSelection(active.path);
+              return;
+            }
+          }
+          if (e.key === "Escape") {
+            e.preventDefault();
+            closeMentionMenu();
+            return;
+          }
+        }
         const isShiftTab = (e.key === "Tab" || e.code === "Tab") && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey;
         if (isShiftTab) {
           e.preventDefault();
@@ -1612,11 +1494,6 @@
           v.postMessage({ type: "setMode", value: e.target.value });
         });
       }
-      if (reasonSel) {
-        reasonSel.addEventListener("change", () => {
-          updateComposerState();
-        });
-      }
       if (safetyQuick) {
         safetyQuick.addEventListener("change", (e) => {
           v.postMessage({ type: "setSafety", value: e.target.value });
@@ -1660,14 +1537,6 @@
 
       window.addEventListener("message", (ev) => {
         const m = ev.data;
-        if (
-          m &&
-          RUN_SCOPED_MESSAGE_TYPES.has(String(m.type || "")) &&
-          m.threadId &&
-          (creatingThread || (currentThreadId && String(m.threadId) !== String(currentThreadId)))
-        ) {
-          return;
-        }
         if (m.type === "sendAck") {
           setRunState("Working...");
         } else if (m.type === "api") {
@@ -1717,7 +1586,6 @@
         } else if (m.type === "start") {
           setStreaming(true);
         } else if (m.type === "token") {
-          if (!streaming) setStreaming(true);
           if (streamBubble) {
             const body = streamBubble.querySelector(".m-body");
             if (streamBubble.classList.contains("typing")) {
@@ -1842,7 +1710,6 @@
           openChats = Array.isArray(data.openChats) ? data.openChats : [];
           recentHistory = Array.isArray(data.recentHistory) ? data.recentHistory : [];
           pinnedIds = Array.isArray(data.pinnedIds) ? data.pinnedIds.map((id) => String(id || "")) : [];
-          if (currentThreadId) creatingThread = false;
           renderThreadList();
           restoreDraftForThread(currentThreadId);
         } else if (m.type === "historyItems") {
@@ -1858,12 +1725,7 @@
           history.querySelectorAll(".item").forEach((el) => {
             el.onclick = () => {
               saveCurrentDraft();
-              const id = el.getAttribute("data-id");
-              creatingThread = false;
-              currentThreadId = id;
-              renderThreadList();
-              setRunState("Switching chat...");
-              v.postMessage({ type: "openSession", id });
+              v.postMessage({ type: "openSession", id: el.getAttribute("data-id") });
             };
           });
           if (taskList) {
@@ -1881,12 +1743,7 @@
             taskList.querySelectorAll(".task-entry").forEach((el) => {
               el.onclick = () => {
                 saveCurrentDraft();
-                const id = el.getAttribute("data-id");
-                creatingThread = false;
-                currentThreadId = id;
-                renderThreadList();
-                setRunState("Switching chat...");
-                v.postMessage({ type: "openSession", id });
+                v.postMessage({ type: "openSession", id: el.getAttribute("data-id") });
               };
             });
           }
@@ -1898,12 +1755,14 @@
             '<div class="item"><div class="item-title">Last matches</div><div class="item-sub">' + esc(m.data?.lastQueryMatches || 0) + '</div></div>' +
             '<div class="item"><div class="item-title">Last rebuild</div><div class="item-sub">' + esc(m.data?.lastRebuildAt || "n/a") + '</div></div>';
         } else if (m.type === "contextStatus") {
-          const enabled = m.data?.enabled !== false;
-          const fresh = String(m.data?.indexFreshness || "cold");
-          const snippets = Number(m.data?.snippets || 0);
-          if (contextPill) contextPill.textContent = enabled ? "IDE Context: on" : "IDE Context: off";
-          contextSummary = enabled ? ("Index: " + fresh + " - Snippets: " + snippets) : "";
-          updateComposerState();
+          if (contextPill) {
+            const enabled = m.data?.enabled !== false;
+            const fresh = String(m.data?.indexFreshness || "cold");
+            const snippets = Number(m.data?.snippets || 0);
+            contextPill.textContent = enabled
+              ? "IDE: on Ã‚Â· Index: " + fresh + " Ã‚Â· Snippets: " + snippets
+              : "IDE: off";
+          }
         } else if (m.type === "roundtable") {
           agents.textContent = JSON.stringify(m.data || {}, null, 2);
         } else if (m.type === "execLogs") {
@@ -1929,7 +1788,6 @@
         } else if (m.type === "pendingActions") {
           // Auto execution mode; pending count is reflected via status messages.
         } else if (m.type === "err") {
-          creatingThread = false;
           clearPlanDecisionCard();
           setStreaming(false);
           streamBubble = null;
@@ -1938,16 +1796,7 @@
         } else if (m.type === "prefill") {
           input.value = m.text || "";
         } else if (m.type === "load") {
-          creatingThread = false;
           clearPlanDecisionCard();
-          closeMentionMenu();
-          setStreaming(false);
-          streamBubble = null;
-          terminalBubble = null;
-          activeProgressState = "";
-          lastStatusText = "";
-          lastStatusAt = 0;
-          setRunState("Local");
           if (m.threadId !== undefined) currentThreadId = m.threadId;
           while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
           (m.data || []).forEach((x) => {

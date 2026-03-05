@@ -58,6 +58,7 @@ export type AssistRequest = {
   historySessionId?: string;
   conversationHistory?: AssistConversationTurn[];
   clientPreferences?: AssistClientPreferences;
+  executionPolicy?: "full_auto" | "yolo_only" | "preview_first";
   userProfile?: AssistUserProfile | null;
   agentConfig?: AssistAgentConfig;
   workflowIntentId?: string;
@@ -95,6 +96,12 @@ export type AssistResult = {
   plan: AssistPlan | null;
   edits: Array<{ path: string; patch: string; rationale?: string }>;
   commands: string[];
+  actions: Array<
+    | { type: "edit"; path: string; patch: string }
+    | { type: "command"; command: string; category?: "implementation" | "validation" }
+    | { type: "mkdir"; path: string }
+    | { type: "write_file"; path: string; content: string; overwrite?: boolean }
+  >;
   final: string;
   logs: string[];
   modelUsed: string;
@@ -108,12 +115,21 @@ type StructuredAssistOutput = {
   final: string;
   edits: Array<{ path: string; patch: string; rationale?: string }>;
   commands: string[];
+  actions?: Array<
+    | { type: "edit"; path: string; patch: string }
+    | { type: "command"; command: string; category?: "implementation" | "validation" }
+    | { type: "mkdir"; path: string }
+    | { type: "write_file"; path: string; content: string; overwrite?: boolean }
+  >;
 };
 
 const HF_ROUTER_BASE_URL = "https://router.huggingface.co/v1";
 const STANDARD_CONTEXT_LIMIT = 32_000;
 const LONG_CONTEXT_LIMIT = 262_144;
 const DEFAULT_PLAYGROUND_MODEL = "Qwen/Qwen2.5-Coder-7B-Instruct:nscale";
+const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
+const IDENTITY_DENIAL_RESPONSE =
+  "I'm Playground 1. I'm not Qwen, and I'm not nscale. I can still help with your task - what would you like to do next?";
 const HF_REQUEST_TIMEOUT_MS = Number(process.env.PLAYGROUND_HF_REQUEST_TIMEOUT_MS || 90_000);
 const HF_STREAM_IDLE_TIMEOUT_MS = Number(process.env.PLAYGROUND_HF_STREAM_IDLE_TIMEOUT_MS || 45_000);
 const STREAM_RAW_MODEL_TOKENS = process.env.PLAYGROUND_STREAM_MODEL_TOKENS === "1";
@@ -129,6 +145,34 @@ function resolveModelAlias(model: string | undefined, fallbackModel: string): st
     return fallbackModel;
   }
   return trimmed;
+}
+
+function normalizeIdentityProbeText(input: string): string {
+  return String(input || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function hasQwenOrNscaleReference(input: string): boolean {
+  const normalized = normalizeIdentityProbeText(input);
+  if (!normalized) return false;
+  if (/\bqwen\b/.test(normalized)) return true;
+  if (/\bnscale\b/.test(normalized)) return true;
+  if (/\bn scale\b/.test(normalized)) return true;
+  return /\bn[\s-]*scale\b/i.test(input);
+}
+
+function isQwenOrNscaleIdentityProbe(input: string): boolean {
+  const raw = String(input || "");
+  const normalized = normalizeIdentityProbeText(raw);
+  if (!hasQwenOrNscaleReference(raw)) return false;
+  if (/^\s*(qwen|n[\s-]*scale)\s*\??\s*$/i.test(raw)) return true;
+  if (/\bwhat is\b/.test(normalized)) return true;
+  return /\b(are you|are u|who are you|what are you|is this|is it|do you use|are you using|using|powered by|running on|based on|model)\b/.test(
+    normalized
+  );
 }
 
 function isLikelyInvalidModelError(message: string): boolean {
@@ -655,7 +699,7 @@ async function callHfChat(params: {
           {
             role: "system",
             content:
-              "You are Playground AI. Be practical, concise, and execution-oriented. Return plain text suitable for a coding assistant.",
+              `You are Playground AI. Be practical, concise, and execution-oriented. Return plain text suitable for a coding assistant. If asked whether you are Qwen or nscale (or what nscale is in your identity/provider context), deny both and state you are ${PUBLIC_PLAYGROUND_MODEL_NAME}.`,
           },
           { role: "user", content: buildUserMessageContent(params.prompt, params.attachments) },
         ],
@@ -842,6 +886,7 @@ function parseStructuredAssistResponse(raw: string): StructuredAssistOutput | nu
       final?: unknown;
       edits?: unknown;
       commands?: unknown;
+      actions?: unknown;
     };
 
     const final =
@@ -878,7 +923,39 @@ function parseStructuredAssistResponse(raw: string): StructuredAssistOutput | nu
           .slice(0, 20)
       : [];
 
-    return { final, edits, commands };
+    const actions: ToolAction[] = [];
+    if (Array.isArray(parsed.actions)) {
+      for (const entry of parsed.actions as unknown[]) {
+        if (!entry || typeof entry !== "object") continue;
+        const obj = entry as Record<string, unknown>;
+        const type = typeof obj.type === "string" ? obj.type.trim().toLowerCase() : "";
+        if (type === "edit") {
+          const path = typeof obj.path === "string" ? obj.path.trim() : "";
+          const patch = typeof obj.patch === "string" ? obj.patch.trim() : typeof obj.diff === "string" ? obj.diff.trim() : "";
+          if (path && patch) actions.push({ type: "edit", path, patch });
+          continue;
+        }
+        if (type === "command") {
+          const command = typeof obj.command === "string" ? obj.command.trim() : "";
+          const category = obj.category === "implementation" || obj.category === "validation" ? obj.category : undefined;
+          if (command) actions.push({ type: "command", command, ...(category ? { category } : {}) });
+          continue;
+        }
+        if (type === "mkdir") {
+          const path = typeof obj.path === "string" ? obj.path.trim() : "";
+          if (path) actions.push({ type: "mkdir", path });
+          continue;
+        }
+        if (type === "write_file") {
+          const path = typeof obj.path === "string" ? obj.path.trim() : "";
+          const content = typeof obj.content === "string" ? obj.content : "";
+          const overwrite = typeof obj.overwrite === "boolean" ? obj.overwrite : undefined;
+          if (path) actions.push({ type: "write_file", path, content, ...(overwrite !== undefined ? { overwrite } : {}) });
+        }
+      }
+    }
+
+    return { final, edits, commands, ...(actions.length ? { actions: actions.slice(0, 40) } : {}) };
   };
 
   try {
@@ -1012,6 +1089,7 @@ export function composeWarmAssistantResponse(input: {
   intent: AssistIntentType;
   edits: Array<{ path: string; patch: string; rationale?: string }>;
   commands: string[];
+  actions?: ToolAction[];
   autonomyDecision: {
     mode: "no_actions" | "preview_only" | "auto_apply_only" | "auto_apply_and_validate";
   };
@@ -1021,17 +1099,22 @@ export function composeWarmAssistantResponse(input: {
     return cleaned;
   }
 
-  if (input.edits.length > 0) {
-    const touched = input.edits.map((edit) => edit.path).slice(0, 3).join(", ");
+  const actionPaths = (input.actions ?? []).flatMap((action) => {
+    if (action.type === "edit" || action.type === "mkdir" || action.type === "write_file") return [action.path];
+    return [];
+  });
+
+  if ((input.actions?.length ?? 0) > 0 || input.edits.length > 0) {
+    const touched = Array.from(new Set([...input.edits.map((edit) => edit.path), ...actionPaths])).slice(0, 3).join(", ");
     const resultLine = firstNonEmptyLine(cleaned);
     const nextAction =
       input.autonomyDecision.mode === "preview_only"
-        ? "Next action: say \"apply now\" and I will execute the previewed edits."
+        ? "Next action: say \"apply now\" and I will execute the prepared edits."
         : input.autonomyDecision.mode === "auto_apply_and_validate"
-          ? "Next action: review the targeted checks and final diff."
-          : "Next action: review the applied edits.";
+          ? "Next action: execution is pending verification in the client."
+          : "Next action: execution is pending verification in the client.";
     return [
-      `I made the requested update in ${touched}.`,
+      `I prepared the requested update in ${touched}.`,
       resultLine ? resultLine : "",
       nextAction,
     ]
@@ -1203,13 +1286,144 @@ function detectLanguageFromPath(path: string): "ts" | "js" | "python" | "go" | "
   return "other";
 }
 
-function buildValidationPlan(input: {
+export type ToolAction =
+  | { type: "edit"; path: string; patch: string }
+  | { type: "command"; command: string; category?: "implementation" | "validation" }
+  | { type: "mkdir"; path: string }
+  | { type: "write_file"; path: string; content: string; overwrite?: boolean };
+
+function uniqToolActions(actions: ToolAction[]): ToolAction[] {
+  const seen = new Set<string>();
+  const out: ToolAction[] = [];
+  for (const action of actions) {
+    const key =
+      action.type === "edit"
+        ? `edit:${action.path}:${action.patch}`
+        : action.type === "command"
+          ? `command:${action.command}:${action.category || ""}`
+          : action.type === "mkdir"
+            ? `mkdir:${action.path}`
+            : `write_file:${action.path}:${action.overwrite ? 1 : 0}:${action.content}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(action);
+  }
+  return out;
+}
+
+function normalizeToolPath(path: string): string | null {
+  const normalized = normalizeRelativePath(path);
+  if (!normalized) return null;
+  if (/^\.+$/.test(normalized)) return null;
+  return normalized;
+}
+
+function inferMkdirPathFromTask(task: string): string | null {
+  const patterns = [
+    /\b(?:create|make|add)\s+(?:a\s+)?(?:new\s+)?(?:folder|directory|dir)\s+(?:called|named)?\s*["'`]?([a-zA-Z0-9_./-]+)["'`]?/i,
+    /\bmkdir\s+["'`]?([a-zA-Z0-9_./-]+)["'`]?/i,
+  ];
+  for (const pattern of patterns) {
+    const match = task.match(pattern);
+    if (match?.[1]) {
+      const path = normalizeToolPath(match[1]);
+      if (path) return path;
+    }
+  }
+  return null;
+}
+
+function inferWriteFileIntent(task: string): { path: string; content: string; overwrite: boolean } | null {
+  const hasWriteIntent = /\b(create|write|make|add)\b/i.test(task) && /\b(file)\b/i.test(task);
+  const path = inferPathFromTask(task);
+  if (!hasWriteIntent || !path) return null;
+  const normalized = normalizeToolPath(path);
+  if (!normalized) return null;
+  return { path: normalized, content: "", overwrite: true };
+}
+
+export function synthesizeDeterministicActions(input: {
   task: string;
   edits: Array<{ path: string; patch: string; rationale?: string }>;
+  commands: string[];
+  structuredActions?: ToolAction[];
+}): ToolAction[] {
+  const actions: ToolAction[] = [];
+
+  for (const action of input.structuredActions ?? []) {
+    if (action.type === "edit") {
+      const path = normalizeToolPath(action.path);
+      if (!path || !action.patch.trim()) continue;
+      actions.push({ type: "edit", path, patch: action.patch.trim() });
+      continue;
+    }
+    if (action.type === "command") {
+      const command = action.command.trim();
+      if (!command) continue;
+      actions.push({ type: "command", command, ...(action.category ? { category: action.category } : {}) });
+      continue;
+    }
+    if (action.type === "mkdir") {
+      const path = normalizeToolPath(action.path);
+      if (!path) continue;
+      actions.push({ type: "mkdir", path });
+      continue;
+    }
+    const path = normalizeToolPath(action.path);
+    if (!path) continue;
+    actions.push({
+      type: "write_file",
+      path,
+      content: typeof action.content === "string" ? action.content : "",
+      ...(typeof action.overwrite === "boolean" ? { overwrite: action.overwrite } : {}),
+    });
+  }
+
+  for (const edit of input.edits) {
+    const path = normalizeToolPath(edit.path);
+    if (!path || !edit.patch.trim()) continue;
+    actions.push({ type: "edit", path, patch: edit.patch.trim() });
+  }
+
+  for (const command of input.commands) {
+    const cleaned = command.trim();
+    if (!cleaned) continue;
+    actions.push({ type: "command", command: cleaned, category: "validation" });
+  }
+
+  const inferredMkdir = inferMkdirPathFromTask(input.task);
+  if (inferredMkdir && !actions.some((action) => action.type === "mkdir" && action.path === inferredMkdir)) {
+    actions.push({ type: "mkdir", path: inferredMkdir });
+  }
+
+  const inferredWrite = inferWriteFileIntent(input.task);
+  if (
+    inferredWrite &&
+    !actions.some((action) => action.type === "edit" && action.path === inferredWrite.path) &&
+    !actions.some((action) => action.type === "write_file" && action.path === inferredWrite.path)
+  ) {
+    actions.push({ type: "write_file", path: inferredWrite.path, content: inferredWrite.content, overwrite: inferredWrite.overwrite });
+  }
+
+  return uniqToolActions(actions).slice(0, 40);
+}
+
+function buildValidationPlan(input: {
+  task: string;
+  actions: ToolAction[];
   explicitCommandRunIntent: boolean;
   decisionMode: AssistDecisionMode;
 }): { scope: "none" | "targeted"; checks: string[]; touchedFiles: string[]; reason: string } {
-  const touchedFiles = Array.from(new Set(input.edits.map((edit) => edit.path))).slice(0, 12);
+  const touchedFiles = Array.from(
+    new Set(
+      input.actions.flatMap((action) => {
+        if (action.type === "edit") return [action.path];
+        if (action.type === "write_file") return [action.path];
+        if (action.type === "mkdir") return [action.path];
+        return [];
+      })
+    )
+  ).slice(0, 12);
   if (!touchedFiles.length) {
     return {
       scope: "none",
@@ -1255,8 +1469,12 @@ function buildValidationPlan(input: {
 
 function decideAutonomy(input: {
   confidence: number;
-  editsCount: number;
+  actionsCount: number;
+  hasEditActions: boolean;
+  hasCommandActions: boolean;
   explicitCommandRunIntent: boolean;
+  executionPolicy?: "full_auto" | "yolo_only" | "preview_first";
+  decisionMode: AssistDecisionMode;
   clientPreferences?: AssistClientPreferences;
 }): {
   mode: "no_actions" | "preview_only" | "auto_apply_only" | "auto_apply_and_validate";
@@ -1266,7 +1484,7 @@ function decideAutonomy(input: {
   thresholds: { autoApply: number; autoValidate: number };
   rationale: string;
 } {
-  if (input.editsCount === 0) {
+  if (input.actionsCount === 0) {
     return {
       mode: "no_actions",
       autoApplyEdits: false,
@@ -1274,6 +1492,39 @@ function decideAutonomy(input: {
       confidence: input.confidence,
       thresholds: { autoApply: AUTO_APPLY_THRESHOLD, autoValidate: AUTO_VALIDATE_THRESHOLD },
       rationale: "No edit actions were generated.",
+    };
+  }
+
+  if (input.executionPolicy === "preview_first") {
+    return {
+      mode: "preview_only",
+      autoApplyEdits: false,
+      autoRunValidation: false,
+      confidence: input.confidence,
+      thresholds: { autoApply: AUTO_APPLY_THRESHOLD, autoValidate: AUTO_VALIDATE_THRESHOLD },
+      rationale: "Execution policy requires preview-first behavior.",
+    };
+  }
+
+  if (input.executionPolicy === "yolo_only" && input.decisionMode !== "yolo") {
+    return {
+      mode: "preview_only",
+      autoApplyEdits: false,
+      autoRunValidation: false,
+      confidence: input.confidence,
+      thresholds: { autoApply: AUTO_APPLY_THRESHOLD, autoValidate: AUTO_VALIDATE_THRESHOLD },
+      rationale: "Execution policy only allows auto-apply in YOLO mode.",
+    };
+  }
+
+  if (input.executionPolicy === "full_auto") {
+    return {
+      mode: input.hasCommandActions ? "auto_apply_and_validate" : "auto_apply_only",
+      autoApplyEdits: input.hasEditActions || !input.hasCommandActions,
+      autoRunValidation: input.hasCommandActions,
+      confidence: input.confidence,
+      thresholds: { autoApply: AUTO_APPLY_THRESHOLD, autoValidate: AUTO_VALIDATE_THRESHOLD },
+      rationale: "Execution policy enables full-auto for approved actions.",
     };
   }
 
@@ -1385,7 +1636,7 @@ export async function runAssist(
   });
   const reasonCodes = [...intentResolution.reasonCodes];
 
-  const decision =
+  let decision =
     requested === "auto"
       ? {
           mode: mapIntentToDecision(intentResolution.intent) as AssistDecisionMode,
@@ -1404,6 +1655,18 @@ export async function runAssist(
     reasonCodes.push(`explicit_mode_${requested}`);
   } else {
     reasonCodes.push(`intent_${intentResolution.intent}`);
+  }
+  if (req.executionPolicy) {
+    reasonCodes.push(`execution_policy_${req.executionPolicy}`);
+  }
+  const isIdentityProbe = isQwenOrNscaleIdentityProbe(req.task);
+  if (isIdentityProbe) {
+    decision = {
+      mode: "generate",
+      reason: "Identity probe detected; enforcing product identity guardrail.",
+      confidence: 0.99,
+    };
+    reasonCodes.push("identity_guardrail_qwen_nscale");
   }
 
   const budget = {
@@ -1433,6 +1696,7 @@ export async function runAssist(
   let final = "";
   let edits: Array<{ path: string; patch: string; rationale?: string }> = [];
   let modelCommands: string[] = [];
+  let structuredActions: ToolAction[] = [];
   const explicitCommandRunIntent = hasExplicitCommandRunIntent(req.task);
   const codeEditIntent = hasCodeEditIntent(req.task) || intentResolution.intent === "code_edit";
   const reasoningPreference = extractReasoningPreference(req.workflowIntentId);
@@ -1448,7 +1712,10 @@ export async function runAssist(
           : effectiveReasoning === "medium"
             ? "Reasoning preference: medium. Use balanced reasoning with concise steps."
             : null;
-  if (decision.mode === "plan") {
+  if (isIdentityProbe) {
+    final = IDENTITY_DENIAL_RESPONSE;
+    logs.push(`identity_guardrail=enforced model=${PUBLIC_PLAYGROUND_MODEL_NAME}`);
+  } else if (decision.mode === "plan") {
     final = [
       `Objective: ${plan?.objective}`,
       "",
@@ -1504,7 +1771,7 @@ export async function runAssist(
 
     let raw = "";
     const useTwoPass = shouldUseTwoPassCodeGeneration(req.task, codeEditIntent, budgetedContext);
-    const allowRawTokenStream = STREAM_RAW_MODEL_TOKENS && !useTwoPass;
+    const allowRawTokenStream = STREAM_RAW_MODEL_TOKENS && !useTwoPass && !hasExecutionIntent(req.task);
     const callPrimaryWithModelFallback = async (promptText: string, attachmentsForCall?: AssistAttachment[]) => {
       try {
         modelUsed = model;
@@ -1604,6 +1871,7 @@ export async function runAssist(
         final = normalizeModelText(structured.final);
         edits = structured.edits;
         modelCommands = structured.commands;
+        structuredActions = (structured.actions ?? []) as ToolAction[];
       } else {
         final = normalizeModelText(extractFinalFromJsonLike(raw) || raw);
         logs.push("structured_output=parse_failed_after_two_pass");
@@ -1615,6 +1883,7 @@ export async function runAssist(
         final = normalizeModelText(structured.final);
         edits = structured.edits;
         modelCommands = structured.commands;
+        structuredActions = (structured.actions ?? []) as ToolAction[];
       } else {
         final = normalizeModelText(extractFinalFromJsonLike(raw) || raw);
         logs.push("structured_output=parse_failed; using raw model text");
@@ -1633,16 +1902,26 @@ export async function runAssist(
   }
 
   const confidence = Math.max(0.05, Math.min(0.99, decision.confidence));
-  const validationPlan = buildValidationPlan({
+  const actions = synthesizeDeterministicActions({
     task: req.task,
     edits,
+    commands: modelCommands,
+    structuredActions,
+  });
+  const validationPlan = buildValidationPlan({
+    task: req.task,
+    actions,
     explicitCommandRunIntent,
     decisionMode: decision.mode,
   });
   const autonomyDecision = decideAutonomy({
     confidence,
-    editsCount: edits.length,
+    actionsCount: actions.length,
+    hasEditActions: actions.some((action) => action.type === "edit" || action.type === "mkdir" || action.type === "write_file"),
+    hasCommandActions: actions.some((action) => action.type === "command"),
     explicitCommandRunIntent,
+    executionPolicy: req.executionPolicy,
+    decisionMode: decision.mode,
     clientPreferences: req.clientPreferences,
   });
   reasonCodes.push(`autonomy_${autonomyDecision.mode}`);
@@ -1651,9 +1930,23 @@ export async function runAssist(
 
   let commands: string[] = [];
   if (autonomyDecision.autoRunValidation) {
-    commands = Array.from(new Set([...validationPlan.checks, ...modelCommands])).slice(0, 8);
+    commands = Array.from(
+      new Set([
+        ...validationPlan.checks,
+        ...actions
+          .filter((action): action is Extract<ToolAction, { type: "command" }> => action.type === "command")
+          .map((action) => action.command),
+      ])
+    ).slice(0, 8);
   } else if (explicitCommandRunIntent || decision.mode === "yolo") {
-    commands = Array.from(new Set([...modelCommands, ...validationPlan.checks])).slice(0, 8);
+    commands = Array.from(
+      new Set([
+        ...actions
+          .filter((action): action is Extract<ToolAction, { type: "command" }> => action.type === "command")
+          .map((action) => action.command),
+        ...validationPlan.checks,
+      ])
+    ).slice(0, 8);
   }
   if (!explicitCommandRunIntent && !autonomyDecision.autoRunValidation && commands.length > 0 && decision.mode !== "yolo") {
     logs.push("dropped_commands_without_run_intent_or_autovalidation");
@@ -1668,8 +1961,19 @@ export async function runAssist(
       intent: intentResolution.intent,
       edits,
       commands,
+      actions,
       autonomyDecision,
     });
+  }
+  if (isIdentityProbe) {
+    const normalizedFinal = normalizeIdentityProbeText(final);
+    const referencesPlayground = /\bplayground 1\b/.test(normalizedFinal);
+    const deniesQwen = /\bnot\b[^.]{0,30}\bqwen\b/.test(normalizedFinal);
+    const deniesNscale = /\bnot\b[^.]{0,30}\bn ?scale\b/.test(normalizedFinal);
+    if (!referencesPlayground || !deniesQwen || !deniesNscale) {
+      final = IDENTITY_DENIAL_RESPONSE;
+      logs.push("identity_guardrail=post_normalization_override");
+    }
   }
 
   const risk = inferRisk(decision.mode, req.task, commands);
@@ -1697,6 +2001,7 @@ export async function runAssist(
     plan,
     edits,
     commands,
+    actions,
     final,
     logs,
     modelUsed,

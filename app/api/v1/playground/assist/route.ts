@@ -23,6 +23,7 @@ import {
 } from "./route-helpers";
 
 type SessionTask<T> = () => Promise<T>;
+const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
 
 const sessionQueues = new Map<string, Promise<unknown>>();
 
@@ -288,6 +289,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           await writer.write(encoder.encode(sse({ event: "phase", data: { name: "execute", ts: Date.now() } })));
           await writer.write(encoder.encode(sse({ event: "diff_chunk", data: result.edits })));
           await writer.write(encoder.encode(sse({ event: "commands_chunk", data: result.commands })));
+          await writer.write(encoder.encode(sse({ event: "actions_chunk", data: result.actions })));
           await writer.write(encoder.encode(sse({ event: "log", data: result.logs })));
           await writer.write(
             encoder.encode(
@@ -301,8 +303,9 @@ export async function POST(request: NextRequest): Promise<Response> {
                   confidence: result.confidence,
                   risk: result.risk,
                   influence: result.influence,
-                  model: result.modelUsed,
+                  model: PUBLIC_PLAYGROUND_MODEL_NAME,
                   decision: result.decision.mode,
+                  actions: result.actions,
                   nextBestActions: result.nextBestActions,
                 },
               })

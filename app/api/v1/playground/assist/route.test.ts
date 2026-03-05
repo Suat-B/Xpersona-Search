@@ -67,6 +67,7 @@ describe("assist route helpers", () => {
         plan: null,
         edits: [],
         commands: [],
+        actions: [],
         final: "done",
         logs: [],
         modelUsed: "Playground 1",
@@ -79,5 +80,6 @@ describe("assist route helpers", () => {
     expect(payload.reasonCodes).toEqual(["intent_code_edit"]);
     expect(payload.autonomyDecision.mode).toBe("auto_apply_only");
     expect(payload.validationPlan.scope).toBe("targeted");
+    expect(payload.model).toBe("Playground 1");
   });
 });
