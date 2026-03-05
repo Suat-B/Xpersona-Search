@@ -420,9 +420,19 @@ class Provider implements vscode.WebviewViewProvider {
   }
 
   private async resolveRequestAuth(): Promise<{ apiKey?: string; bearer?: string } | null> {
-    const token = await this.ensureVscodeAccessToken().catch(() => null);
+    let token: string | null = null;
+    try {
+      token = await this.ensureVscodeAccessToken();
+    } catch {
+      token = null;
+    }
     if (token) return { bearer: token };
-    const key = await this.ctx.secrets.get(API_KEY_SECRET).catch(() => null);
+    let key: string | null = null;
+    try {
+      key = (await this.ctx.secrets.get(API_KEY_SECRET)) ?? null;
+    } catch {
+      key = null;
+    }
     if (key && key.trim()) return { apiKey: key.trim() };
     return null;
   }
@@ -513,7 +523,11 @@ class Provider implements vscode.WebviewViewProvider {
         refresh_token: refreshToken,
       }).catch(() => null);
     }
-    await this.ctx.secrets.delete(VSCODE_REFRESH_TOKEN_SECRET).catch(() => {});
+    try {
+      await this.ctx.secrets.delete(VSCODE_REFRESH_TOKEN_SECRET);
+    } catch {
+      // ignore
+    }
     this.vscodeAccessToken = null;
     this.vscodeAccessTokenExpiresAtMs = 0;
     this.vscodeSignedInEmail = null;
@@ -3759,15 +3773,59 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         min-height: 0;
         margin: 8px;
         border: 1px solid var(--border);
-        border-radius: 18px;
+        border-radius: 28px;
         /* Theme-driven: match the user's VS Code theme (no custom gray tint). */
         background: var(--bg-1);
         overflow: hidden;
         display: flex;
         flex-direction: column;
+        padding: 10px;
+        gap: 10px;
       }
-      .panel {
+      .stage-shell {
+        flex: 1;
+        min-height: 0;
+        border-radius: 22px;
+        overflow: hidden;
+        display: flex;
+        background: transparent;
+      }
+      .stage-shell .panel {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
         padding: 12px;
+      }
+      #stageBlank.panel {
+        padding: 0;
+        white-space: normal;
+      }
+      #stageThreads.panel {
+        white-space: normal;
+      }
+      .dock-shell {
+        flex: 0 0 clamp(240px, 38%, 520px);
+        min-height: 240px;
+        border: 1px solid var(--border);
+        border-radius: 26px;
+        background: var(--surface);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        cursor: text;
+      }
+      .dock-shell:focus-within {
+        border-color: var(--vscode-focusBorder, var(--accent));
+        box-shadow: 0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder, var(--accent)) 75%, transparent);
+      }
+      .chat-panel {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 12px;
+      }
+      .chat-panel .jump-wrap {
+        bottom: 10px;
       }
       .mode-banner {
         margin: 0 8px 6px;
@@ -3952,7 +4010,8 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         .chat-shell {
           margin: 6px;
         }
-        .panel {
+        .stage-shell .panel,
+        .chat-panel {
           padding: 10px;
         }
         .input {
@@ -3990,7 +4049,11 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
     <div id="setup" class="setup">
       <div class="setup-card">
         <h3>Connect Playground AI</h3>
-        <p>Paste your API key to start chatting. You can update it anytime from command palette.</p>
+        <p>Sign in with your Playground account (recommended), or paste an API key.</p>
+        <button id="signInSetup" class="primary" type="button">Sign in with Browser</button>
+        <div style="height:10px"></div>
+        <div style="opacity:.7;font-size:12px">or</div>
+        <div style="height:10px"></div>
         <input id="k" type="password" placeholder="xp_..." />
         <div style="height:8px"></div>
         <button id="ks" class="primary">Save API Key</button>
@@ -3998,21 +4061,6 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
     </div>
 
     <div id="app" class="app">
-      <div class="startup">
-        <div class="startup-head">
-          <span class="startup-title">PLAYGROUND AI</span>
-        </div>
-        <div class="tasks-head">
-          <span class="tasks-label">Tasks</span>
-          <div class="startup-actions">
-            <button id="histQuick" class="task-icon-btn" type="button" aria-label="Refresh history">&#9432;</button>
-            <button id="repQuick" class="task-icon-btn" type="button" aria-label="Replay session">&#9881;</button>
-            <button id="idxQuick" class="task-icon-btn" type="button" aria-label="Rebuild index">&#9998;</button>
-          </div>
-        </div>
-        <div id="taskList" class="task-list">No task history yet.</div>
-        <button id="viewAllTasks" class="view-all" type="button">View all (0)</button>
-      </div>
       <div class="toolbar">
         <div class="toolbar-row">
           <span class="title">PLAYGROUND AI</span>
@@ -4049,114 +4097,146 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       <div class="global-top">
         <span class="chat-title">Playground Chat</span>
         <div class="global-actions">
-          <button id="historyQuick" type="button" class="menu-icon panel-icon" aria-label="Open chat history" title="Open chat history">&#128339;</button>
-          <button id="backToChatQuick" type="button" class="menu-icon panel-icon hidden" aria-label="Back to chat" title="Back to chat">&#8592;</button>
+          <button id="historyQuick" type="button" class="menu-icon panel-icon" aria-label="Open threads" title="Open threads">&#128339;</button>
+          <button id="backToChatQuick" type="button" class="menu-icon panel-icon hidden" aria-label="Back to blank stage" title="Back to blank stage">&#8592;</button>
           <button id="newThreadQuick" type="button" class="menu-icon quick-new" aria-label="Start new chat">New chat</button>
         </div>
       </div>
       <div id="modeBanner" class="mode-banner hidden">Plan mode active: I will plan before acting.</div>
 
       <div class="chat-shell" role="region" aria-label="Playground chat">
-        <div id="chat" class="panel active">
-          <div id="chips" class="chips"></div>
-          <div id="threadList" class="thread-list"></div>
-          <div id="msgs" class="messages"></div>
-          <div class="jump-wrap">
-            <button id="jumpLatest" class="jump-btn" type="button">Jump to latest</button>
+        <div class="stage-shell" role="region" aria-label="Stage">
+          <div id="stageBlank" class="panel active" aria-label="Blank stage"></div>
+          <div id="stageThreads" class="panel" aria-label="Threads and tasks">
+            <div class="tasks-head">
+              <span class="tasks-label">Threads</span>
+              <div class="startup-actions">
+                <button id="histQuick" class="task-icon-btn" type="button" aria-label="Refresh history" title="Refresh history">&#9432;</button>
+                <button id="repQuick" class="task-icon-btn" type="button" aria-label="Replay session" title="Replay session">&#9881;</button>
+                <button id="idxQuick" class="task-icon-btn" type="button" aria-label="Rebuild index" title="Rebuild index">&#9998;</button>
+              </div>
+            </div>
+            <div id="threadList" class="thread-list"></div>
+            <div style="height:10px"></div>
+            <div class="tasks-head">
+              <span class="tasks-label">Tasks</span>
+            </div>
+            <div id="taskList" class="task-list">No task history yet.</div>
+            <button id="viewAllTasks" class="view-all" type="button">View all (0)</button>
           </div>
+          <div id="timeline" class="panel"></div>
+          <div id="history" class="panel"></div>
+          <div id="index" class="panel"></div>
+          <div id="agents" class="panel"></div>
+          <div id="exec" class="panel"></div>
         </div>
-        <div id="timeline" class="panel"></div>
-        <div id="history" class="panel"></div>
-        <div id="index" class="panel"></div>
-        <div id="agents" class="panel"></div>
-        <div id="exec" class="panel"></div>
 
-        <div class="input">
-          <form id="composerForm" class="composer-form" novalidate>
-            <div class="composer-shell">
-              <textarea id="t" placeholder="Ask for follow-up changes" enterkeyhint="send"></textarea>
-              <div id="mentionMenu" class="mention-menu hidden" role="listbox" aria-label="Mention suggestions"></div>
-              <div class="input-actions minimal">
-                <button id="uploadBtn" class="icon-btn attach-btn" type="button" aria-label="Attach image" title="Attach">+</button>
-                <label class="context-toggle-pill" for="ctxToggle" title="Toggle IDE context">
-                  <input id="ctxToggle" type="checkbox" checked />
-                  <span id="contextPill" class="context-pill">IDE Context: on</span>
-                </label>
-                <div class="spacer"></div>
-                <button id="actionMenuBtn" type="button" class="icon-btn gear-btn" aria-label="Settings" title="Settings" aria-expanded="false">&#9881;</button>
-                <button id="s" type="button" class="primary send-round" aria-label="Send">&#8593;</button>
-              </div>
-              <div class="composer-meta">
-                <button
-                  id="planModeChip"
-                  class="mode-plan-chip hidden"
-                  type="button"
-                  aria-live="polite"
-                  aria-label="Plan mode is on. Click to switch back to Auto."
-                  title="Click to exit plan mode"
-                >PLAN MODE <span class="plan-chip-x">x</span></button>
-                <span id="composerState" class="composer-state">Mode: Auto - Reasoning: Medium</span>
-              </div>
-              <div id="actionMenu" class="action-menu hidden" aria-hidden="true">
-                <div class="action-menu-sheet" role="dialog" aria-label="Composer settings">
-                  <div class="sheet-head">
-                    <div>
-                      <div class="sheet-title">More settings</div>
-                      <div class="sheet-sub">Advanced controls inside your composer.</div>
-                    </div>
-                    <button id="actionMenuClose" type="button" class="sheet-close" aria-label="Close settings">x</button>
-                  </div>
+        <div id="chatDock" class="dock-shell" role="region" aria-label="Chat dock">
+          <div id="chat" class="chat-panel" aria-label="Chat messages">
+            <div id="chips" class="chips"></div>
+            <div id="msgs" class="messages"></div>
+            <div class="jump-wrap">
+              <button id="jumpLatest" class="jump-btn" type="button">Jump to latest</button>
+            </div>
+          </div>
 
-                  <div class="sheet-grid">
-                    <div class="sheet-card">
-                      <div class="sheet-card-title">Quick controls</div>
-                      <div class="sheet-row">
-                        <select id="modeQuick" class="composer-select">
-                          <option value="auto">Mode: Auto</option>
-                          <option value="plan">Mode: Plan</option>
-                          <option value="yolo">Mode: Full access</option>
-                        </select>
-                        <select id="reasonSel" class="composer-select">
-                          <option value="low">Low</option>
-                          <option value="medium" selected>Medium</option>
-                          <option value="high">High</option>
-                          <option value="max">Extra High</option>
-                        </select>
+          <div class="input">
+            <form id="composerForm" class="composer-form" novalidate>
+              <div class="composer-shell">
+                <textarea id="t" placeholder="Ask for follow-up changes" enterkeyhint="send"></textarea>
+                <div id="mentionMenu" class="mention-menu hidden" role="listbox" aria-label="Mention suggestions"></div>
+                <div class="input-actions minimal">
+                  <button id="uploadBtn" class="icon-btn attach-btn" type="button" aria-label="Attach image" title="Attach">+</button>
+                  <label class="context-toggle-pill" for="ctxToggle" title="Toggle IDE context">
+                    <input id="ctxToggle" type="checkbox" checked />
+                    <span id="contextPill" class="context-pill">IDE Context: on</span>
+                  </label>
+                  <div class="spacer"></div>
+                  <button id="actionMenuBtn" type="button" class="icon-btn gear-btn" aria-label="Settings" title="Settings" aria-expanded="false">&#9881;</button>
+                  <button id="s" type="button" class="primary send-round" aria-label="Send">&#8593;</button>
+                </div>
+                <div class="composer-meta">
+                  <button
+                    id="planModeChip"
+                    class="mode-plan-chip hidden"
+                    type="button"
+                    aria-live="polite"
+                    aria-label="Plan mode is on. Click to switch back to Auto."
+                    title="Click to exit plan mode"
+                  >PLAN MODE <span class="plan-chip-x">x</span></button>
+                  <span id="composerState" class="composer-state">Mode: Auto - Reasoning: Medium</span>
+                </div>
+                <div id="actionMenu" class="action-menu hidden" aria-hidden="true">
+                  <div class="action-menu-sheet" role="dialog" aria-label="Composer settings">
+                    <div class="sheet-head">
+                      <div>
+                        <div class="sheet-title">More settings</div>
+                        <div class="sheet-sub">Advanced controls inside your composer.</div>
                       </div>
-                    </div>
-                    <div class="sheet-card">
-                      <div class="sheet-card-title">Model</div>
-                      <div class="sheet-row">
-                        <select id="modelSel" class="composer-select">
-                          <option value="${DEFAULT_PLAYGROUND_MODEL}">${DEFAULT_PLAYGROUND_MODEL}</option>
-                        </select>
-                      </div>
+                      <button id="actionMenuClose" type="button" class="sheet-close" aria-label="Close settings">x</button>
                     </div>
 
-                    <div class="sheet-card">
-                      <div class="sheet-card-title">Conversation</div>
-                      <div class="sheet-row sheet-toggle">
-                        <label class="tool-toggle" for="safetyQuick">
-                          <span>Safety profile</span>
-                          <select id="safetyQuick" class="composer-select">
-                            <option value="standard">Standard</option>
-                            <option value="aggressive">Aggressive</option>
+                    <div class="sheet-grid">
+                      <div class="sheet-card">
+                        <div class="sheet-card-title">Quick controls</div>
+                        <div class="sheet-row">
+                          <select id="modeQuick" class="composer-select">
+                            <option value="auto">Mode: Auto</option>
+                            <option value="plan">Mode: Plan</option>
+                            <option value="yolo">Mode: Full access</option>
                           </select>
-                        </label>
+                          <select id="reasonSel" class="composer-select">
+                            <option value="low">Low</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="high">High</option>
+                            <option value="max">Extra High</option>
+                          </select>
+                        </div>
                       </div>
-                      <div class="sheet-row sheet-toggle">
-                        <label class="tool-toggle">
-                          <span>Parallel agents</span>
-                          <input id="parallelQuick" type="checkbox" />
-                        </label>
+                      <div class="sheet-card">
+                        <div class="sheet-card-title">Model</div>
+                        <div class="sheet-row">
+                          <select id="modelSel" class="composer-select">
+                            <option value="${DEFAULT_PLAYGROUND_MODEL}">${DEFAULT_PLAYGROUND_MODEL}</option>
+                          </select>
+                        </div>
                       </div>
-                    </div>
+
+                      <div class="sheet-card">
+                        <div class="sheet-card-title">Conversation</div>
+                        <div class="sheet-row sheet-toggle">
+                          <label class="tool-toggle" for="safetyQuick">
+                            <span>Safety profile</span>
+                            <select id="safetyQuick" class="composer-select">
+                              <option value="standard">Standard</option>
+                              <option value="aggressive">Aggressive</option>
+                            </select>
+                          </label>
+                        </div>
+                        <div class="sheet-row sheet-toggle">
+                          <label class="tool-toggle">
+                            <span>Parallel agents</span>
+                            <input id="parallelQuick" type="checkbox" />
+                          </label>
+                        </div>
+                      </div>
+
+                      <div class="sheet-card">
+                        <div class="sheet-card-title">Attachments</div>
+                        <div class="sheet-row">
+                          <span id="uploadCount" class="tool-muted">No images selected.</span>
+                          <span class="tool-muted">PNG/JPEG/WEBP, up to 3 images, 4MB each.</span>
+                        </div>
+                      </div>
 
                     <div class="sheet-card">
-                      <div class="sheet-card-title">Attachments</div>
+                      <div class="sheet-card-title">Account</div>
                       <div class="sheet-row">
-                        <span id="uploadCount" class="tool-muted">No images selected.</span>
-                        <span class="tool-muted">PNG/JPEG/WEBP, up to 3 images, 4MB each.</span>
+                        <span id="authLabel" class="tool-muted">Not signed in.</span>
+                      </div>
+                      <div class="sheet-grid">
+                        <button id="authSignIn" class="action-item" type="button">Sign in</button>
+                        <button id="authSignOut" class="action-item" type="button">Sign out</button>
                       </div>
                     </div>
 
@@ -4172,12 +4252,13 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
                     <div class="sheet-card">
                       <div class="sheet-card-title">Panels</div>
                       <div class="sheet-grid">
-                        <button class="action-item" type="button" data-menu-action="show:chat">Show Chat</button>
-                        <button class="action-item" type="button" data-menu-action="show:timeline">Show Timeline</button>
-                        <button class="action-item" type="button" data-menu-action="show:history">Show History</button>
-                        <button class="action-item" type="button" data-menu-action="show:index">Show Index</button>
-                        <button class="action-item" type="button" data-menu-action="show:agents">Show Agents</button>
-                        <button class="action-item" type="button" data-menu-action="show:exec">Show Execution</button>
+                        <button class="action-item" type="button" data-menu-action="show:stageBlank">Stage: Blank</button>
+                        <button class="action-item" type="button" data-menu-action="show:stageThreads">Stage: Threads</button>
+                        <button class="action-item" type="button" data-menu-action="show:timeline">Stage: Timeline</button>
+                        <button class="action-item" type="button" data-menu-action="show:history">Stage: History</button>
+                        <button class="action-item" type="button" data-menu-action="show:index">Stage: Index</button>
+                        <button class="action-item" type="button" data-menu-action="show:agents">Stage: Agents</button>
+                        <button class="action-item" type="button" data-menu-action="show:exec">Stage: Execution</button>
                       </div>
                     </div>
 
@@ -4201,8 +4282,9 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
                 <span id="permState" class="footer-accent">Full access</span>
                 <span id="usagePct" class="footer-muted">0%</span>
               </div>
-            </div>
-          </form>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
     </div>

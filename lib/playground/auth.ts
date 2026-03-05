@@ -4,6 +4,7 @@ import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { hashApiKey } from "@/lib/auth-utils";
 import { isAdminEmail } from "@/lib/admin";
+import { isVscodeAccessToken, verifyVscodeAccessToken } from "@/lib/playground/vscode-tokens";
 
 export const UNLIMITED_PLAYGROUND_EMAILS = new Set([
   "suat.bastug@icloud.com",
@@ -15,6 +16,34 @@ export type PlaygroundAuth = {
   email: string;
   apiKeyPrefix: string | null;
 };
+
+/**
+ * Authenticate Playground requests.
+ * Priority: VS Code access token (Authorization Bearer xp_vsat_*) -> legacy API key (X-API-Key or Authorization Bearer xp_*).
+ */
+export async function authenticatePlaygroundRequest(
+  request: NextRequest
+): Promise<PlaygroundAuth | null> {
+  const rawAuth = request.headers.get("Authorization") ?? "";
+  const bearer = rawAuth.toLowerCase().startsWith("bearer ") ? rawAuth.slice(7).trim() : null;
+
+  if (bearer && isVscodeAccessToken(bearer)) {
+    let verified: { userId: string; email: string } | null = null;
+    try {
+      verified = verifyVscodeAccessToken(bearer);
+    } catch {
+      verified = null;
+    }
+    if (!verified) return null;
+    return {
+      userId: verified.userId,
+      email: verified.email,
+      apiKeyPrefix: null,
+    };
+  }
+
+  return authenticatePlaygroundApiKey(request);
+}
 
 export async function authenticatePlaygroundApiKey(
   request: NextRequest

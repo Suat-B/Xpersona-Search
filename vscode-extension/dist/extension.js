@@ -45,6 +45,8 @@ const fs = __importStar(require("fs"));
 const child_process_1 = require("child_process");
 const patch_utils_1 = require("./patch-utils");
 const API_KEY_SECRET = "xpersona.apiKey";
+const VSCODE_REFRESH_TOKEN_SECRET = "xpersona.playground.vscodeRefreshToken";
+const VSCODE_PENDING_PKCE_KEY = "xpersona.playground.vscodePendingPkce";
 const MODE_KEY = "xpersona.playground.mode";
 const SAFETY_KEY = "xpersona.playground.safety";
 const OPEN_THREADS_KEY = "xpersona.playground.openThreads";
@@ -179,6 +181,11 @@ function languageFromPath(p) {
 function activate(context) {
     const view = new Provider(context);
     const reg = vscode.window.registerWebviewViewProvider("xpersona.playgroundView", view);
+    const uriReg = vscode.window.registerUriHandler({
+        handleUri: async (uri) => {
+            await view.handleAuthCallback(uri);
+        },
+    });
     const cmds = [
         vscode.commands.registerCommand("xpersona.playground.prompt", () => view.show()),
         vscode.commands.registerCommand("xpersona.playground.openWithSelection", async () => {
@@ -188,6 +195,8 @@ function activate(context) {
             const t = e.selection.isEmpty ? e.document.lineAt(e.selection.active.line).text : e.document.getText(e.selection);
             await view.show(t.trim());
         }),
+        vscode.commands.registerCommand("xpersona.playground.signIn", () => view.signInWithBrowser()),
+        vscode.commands.registerCommand("xpersona.playground.signOut", () => view.signOut()),
         vscode.commands.registerCommand("xpersona.playground.setApiKey", () => view.setApiKey()),
         vscode.commands.registerCommand("xpersona.playground.mode.auto", () => view.setMode("auto")),
         vscode.commands.registerCommand("xpersona.playground.mode.plan", () => view.setMode("plan")),
@@ -218,7 +227,7 @@ function activate(context) {
         }),
         vscode.commands.registerCommand("xpersona.playground.replay.session", () => view.replay()),
     ];
-    context.subscriptions.push(reg, ...cmds);
+    context.subscriptions.push(reg, uriReg, ...cmds);
 }
 function deactivate() { }
 class Provider {
@@ -264,6 +273,10 @@ class Provider {
         this.lastIndexAt = 0;
         this.indexTimer = null;
         this.indexDebounceTimer = null;
+        this.vscodeAccessToken = null;
+        this.vscodeAccessTokenExpiresAtMs = 0;
+        this.vscodeSignedInEmail = null;
+        this.pendingPkce = null;
         this.mode = ctx.workspaceState.get(MODE_KEY) ?? "auto";
         this.safety = ctx.workspaceState.get(SAFETY_KEY) ?? "standard";
         this.modeStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 80);
@@ -296,6 +309,191 @@ class Provider {
             }
         }
         this.setupBackgroundIndexing();
+    }
+    pkceChallenge(verifier) {
+        return (0, crypto_1.createHash)("sha256").update(verifier, "utf8").digest("base64url");
+    }
+    vscodeRedirectUri() {
+        return "vscode://playgroundai.xpersona-playground/auth-callback";
+    }
+    async loadPendingPkce() {
+        const fresh = this.pendingPkce && Date.now() - this.pendingPkce.createdAtMs < 10 * 60 * 1000;
+        if (fresh && this.pendingPkce)
+            return { state: this.pendingPkce.state, verifier: this.pendingPkce.verifier };
+        const stored = this.ctx.globalState.get(VSCODE_PENDING_PKCE_KEY, null);
+        const state = typeof stored?.state === "string" ? stored.state : "";
+        const verifier = typeof stored?.verifier === "string" ? stored.verifier : "";
+        const createdAtMs = typeof stored?.createdAtMs === "number" ? stored.createdAtMs : 0;
+        if (!state || !verifier || !createdAtMs)
+            return null;
+        if (Date.now() - createdAtMs > 10 * 60 * 1000)
+            return null;
+        this.pendingPkce = { state, verifier, createdAtMs };
+        return { state, verifier };
+    }
+    async storePendingPkce(state, verifier) {
+        this.pendingPkce = { state, verifier, createdAtMs: Date.now() };
+        await this.ctx.globalState.update(VSCODE_PENDING_PKCE_KEY, this.pendingPkce);
+    }
+    async clearPendingPkce() {
+        this.pendingPkce = null;
+        await this.ctx.globalState.update(VSCODE_PENDING_PKCE_KEY, null);
+    }
+    async getRefreshToken() {
+        try {
+            return (await this.ctx.secrets.get(VSCODE_REFRESH_TOKEN_SECRET)) ?? null;
+        }
+        catch {
+            return null;
+        }
+    }
+    async hasAnyAuth() {
+        const refreshToken = await this.getRefreshToken();
+        if (refreshToken)
+            return true;
+        try {
+            const k = await this.ctx.secrets.get(API_KEY_SECRET);
+            return Boolean(k && k.trim());
+        }
+        catch {
+            return false;
+        }
+    }
+    async ensureVscodeAccessToken() {
+        const now = Date.now();
+        if (this.vscodeAccessToken && now < this.vscodeAccessTokenExpiresAtMs - 60000)
+            return this.vscodeAccessToken;
+        const refreshToken = await this.getRefreshToken();
+        if (!refreshToken)
+            return null;
+        const r = await req("POST", `${base()}/api/v1/playground/auth/vscode/token`, null, {
+            grant_type: "refresh_token",
+            refresh_token: refreshToken,
+        }).catch(() => null);
+        const token = typeof r?.access_token === "string" ? String(r.access_token) : "";
+        const expiresIn = Number(r?.expires_in ?? 900);
+        if (!token) {
+            this.vscodeAccessToken = null;
+            this.vscodeAccessTokenExpiresAtMs = 0;
+            return null;
+        }
+        this.vscodeAccessToken = token;
+        this.vscodeAccessTokenExpiresAtMs = now + Math.max(60, expiresIn) * 1000;
+        return token;
+    }
+    async resolveRequestAuth() {
+        let token = null;
+        try {
+            token = await this.ensureVscodeAccessToken();
+        }
+        catch {
+            token = null;
+        }
+        if (token)
+            return { bearer: token };
+        let key = null;
+        try {
+            key = (await this.ctx.secrets.get(API_KEY_SECRET)) ?? null;
+        }
+        catch {
+            key = null;
+        }
+        if (key && key.trim())
+            return { apiKey: key.trim() };
+        return null;
+    }
+    async refreshSignedInEmail() {
+        const token = await this.ensureVscodeAccessToken();
+        if (!token)
+            return;
+        const me = await req("GET", `${base()}/api/v1/playground/auth/vscode/me`, { bearer: token }).catch(() => null);
+        const email = typeof me?.data?.email === "string" ? String(me.data.email) : null;
+        if (email)
+            this.vscodeSignedInEmail = email;
+    }
+    async postAuthState() {
+        const refreshToken = await this.getRefreshToken();
+        const signedIn = Boolean(refreshToken);
+        this.post({ type: "authState", signedIn, email: this.vscodeSignedInEmail });
+    }
+    async signInWithBrowser() {
+        const state = (0, crypto_1.randomBytes)(16).toString("hex");
+        const verifier = (0, crypto_1.randomBytes)(32).toString("base64url");
+        const challenge = this.pkceChallenge(verifier);
+        await this.storePendingPkce(state, verifier);
+        const u = new url_1.URL(`${base()}/api/v1/playground/auth/vscode/authorize`);
+        u.searchParams.set("client_id", "vscode");
+        u.searchParams.set("redirect_uri", this.vscodeRedirectUri());
+        u.searchParams.set("state", state);
+        u.searchParams.set("code_challenge", challenge);
+        u.searchParams.set("code_challenge_method", "S256");
+        this.post({ type: "status", text: "Opening browser sign-in..." });
+        await vscode.env.openExternal(vscode.Uri.parse(u.toString()));
+    }
+    async handleAuthCallback(uri) {
+        const authority = String(uri.authority || "");
+        if (authority !== "playgroundai.xpersona-playground")
+            return;
+        const pathName = String(uri.path || "");
+        if (!pathName.endsWith("auth-callback"))
+            return;
+        const params = new URLSearchParams(uri.query || "");
+        const code = (params.get("code") ?? "").trim();
+        const state = (params.get("state") ?? "").trim();
+        if (!code || !state) {
+            this.post({ type: "err", text: "Sign-in callback missing code/state." });
+            return;
+        }
+        const pending = await this.loadPendingPkce();
+        if (!pending || pending.state !== state) {
+            this.post({ type: "err", text: "Sign-in state mismatch. Please try signing in again." });
+            return;
+        }
+        const r = await req("POST", `${base()}/api/v1/playground/auth/vscode/token`, null, {
+            grant_type: "authorization_code",
+            code,
+            code_verifier: pending.verifier,
+        }).catch((e) => ({ error: err(e) }));
+        if (r?.error) {
+            this.post({ type: "err", text: `Sign-in failed: ${String(r.error).slice(0, 200)}` });
+            return;
+        }
+        const accessToken = typeof r?.access_token === "string" ? String(r.access_token) : "";
+        const refreshToken = typeof r?.refresh_token === "string" ? String(r.refresh_token) : "";
+        const expiresIn = Number(r?.expires_in ?? 900);
+        if (!accessToken || !refreshToken) {
+            this.post({ type: "err", text: "Sign-in failed: missing tokens." });
+            return;
+        }
+        await this.ctx.secrets.store(VSCODE_REFRESH_TOKEN_SECRET, refreshToken);
+        this.vscodeAccessToken = accessToken;
+        this.vscodeAccessTokenExpiresAtMs = Date.now() + Math.max(60, expiresIn) * 1000;
+        await this.clearPendingPkce();
+        await this.refreshSignedInEmail().catch(() => { });
+        this.post({ type: "api", ok: true });
+        await this.postAuthState();
+        await this.loadHistory();
+    }
+    async signOut() {
+        const refreshToken = await this.getRefreshToken();
+        if (refreshToken) {
+            await req("POST", `${base()}/api/v1/playground/auth/vscode/revoke`, null, {
+                refresh_token: refreshToken,
+            }).catch(() => null);
+        }
+        try {
+            await this.ctx.secrets.delete(VSCODE_REFRESH_TOKEN_SECRET);
+        }
+        catch {
+            // ignore
+        }
+        this.vscodeAccessToken = null;
+        this.vscodeAccessTokenExpiresAtMs = 0;
+        this.vscodeSignedInEmail = null;
+        await this.clearPendingPkce().catch(() => { });
+        const ok = await this.hasAnyAuth();
+        this.post({ type: "api", ok });
+        await this.postAuthState();
     }
     modeStatusPresentation(mode) {
         if (mode === "plan") {
@@ -476,14 +674,14 @@ class Provider {
         const safe = normalizeWorkspaceRelativePath(rel);
         return safe || uri.fsPath;
     }
-    async collectIdeContext(query, workspaceHash, key) {
+    async collectIdeContext(query, workspaceHash, auth) {
         const root = this.getWorkspaceRoot();
         const activeFile = await this.collectActiveFileContext(20000);
         const openFiles = await this.collectOpenEditorsContext(20, 6000);
         const diagnostics = this.collectDiagnostics(200);
         const git = await this.collectGitSummary(root);
         const discovery = await this.runSafeDiscovery(root);
-        const indexedSnippets = await this.queryIndexForPrompt(workspaceHash, query, key, 12);
+        const indexedSnippets = await this.queryIndexForPrompt(workspaceHash, query, auth, 12);
         const mergedSnippets = [...indexedSnippets];
         if (discovery.rgFiles) {
             mergedSnippets.push({
@@ -663,9 +861,9 @@ class Provider {
             rgFiles: rgFiles.ok ? rgFiles.stdout.split(/\r?\n/).slice(0, 300).join("\n") : "",
         };
     }
-    async queryIndexForPrompt(projectKey, query, key, limit) {
+    async queryIndexForPrompt(projectKey, query, auth, limit) {
         try {
-            const response = await req("POST", `${base()}/api/v1/playground/index/query`, key, {
+            const response = await req("POST", `${base()}/api/v1/playground/index/query`, auth, {
                 projectKey,
                 query: query.slice(0, 2000),
                 limit: Math.max(1, Math.min(limit, 50)),
@@ -731,12 +929,12 @@ class Provider {
                 return { status: "no-chunks", chunks: 0, message: "No indexable files found." };
             }
             const workspaceHash = this.computeWorkspaceHash(root);
-            const key = await this.ctx.secrets.get(API_KEY_SECRET);
-            if (!key)
-                return { status: "no-key", chunks: 0, message: "Set your API key before rebuilding index." };
+            const auth = await this.resolveRequestAuth();
+            if (!auth)
+                return { status: "no-key", chunks: 0, message: "Sign in (browser) or set an API key before rebuilding index." };
             for (let i = 0; i < chunks.length; i += INDEX_BATCH_SIZE) {
                 const batch = chunks.slice(i, i + INDEX_BATCH_SIZE);
-                await req("POST", `${base()}/api/v1/playground/index/upsert`, key, {
+                await req("POST", `${base()}/api/v1/playground/index/upsert`, auth, {
                     projectKey: workspaceHash,
                     chunks: batch,
                     cursor: `${Date.now()}:${i}`,
@@ -791,7 +989,7 @@ class Provider {
             return;
         }
         if (result.status === "no-key") {
-            this.post({ type: "status", text: "Set your API key before rebuilding workspace index." });
+            this.post({ type: "status", text: "Sign in (browser) or set an API key before rebuilding workspace index." });
             return;
         }
         if (result.status === "no-chunks") {
@@ -873,11 +1071,11 @@ class Provider {
         });
         await this.persistOpenThreads();
     }
-    async ensureActiveThread(key, title) {
+    async ensureActiveThread(auth, title) {
         if (this.activeThreadId && this.threads[this.activeThreadId])
             return this.activeThreadId;
         const sessionTitle = this.deriveThreadTitle(title);
-        const s = await req("POST", `${base()}/api/v1/playground/sessions`, key, {
+        const s = await req("POST", `${base()}/api/v1/playground/sessions`, auth, {
             title: sessionTitle,
             mode: this.mode,
         }).catch(() => ({}));
@@ -897,15 +1095,20 @@ class Provider {
         v.webview.html = html(v.webview, this.ctx.extensionUri);
         v.webview.onDidReceiveMessage(async (m) => {
             if (m.type === "check") {
-                let hasKey = false;
+                let hasApiKey = false;
                 try {
                     const k = await this.ctx.secrets.get(API_KEY_SECRET);
-                    hasKey = !!k;
+                    hasApiKey = !!(k && k.trim());
                 }
                 catch (e) {
                     this.post({ type: "err", text: `Failed to read API key: ${err(e)}` });
                 }
-                this.post({ type: "api", ok: hasKey });
+                const hasRefresh = Boolean(await this.getRefreshToken());
+                if (hasRefresh)
+                    await this.refreshSignedInEmail().catch(() => { });
+                const ok = hasApiKey || hasRefresh;
+                this.post({ type: "api", ok });
+                await this.postAuthState();
                 this.post({ type: "mode", value: this.mode });
                 this.updateModeStatusItem();
                 this.post({ type: "safety", value: this.safety });
@@ -913,17 +1116,24 @@ class Provider {
                 this.post({ type: "pendingActions", count: this.pendingActions.length });
                 this.post({ type: "mentionsConfig", enabled: this.mentionsEnabled() });
                 await this.postThreadState();
-                if (hasKey && this.activeThreadId) {
+                if (ok && this.activeThreadId) {
                     await this.openSession(this.activeThreadId);
                 }
                 else if (!this.activeThreadId) {
                     this.post({ type: "load", data: [], threadId: null });
                 }
             }
+            else if (m.type === "signIn") {
+                await this.signInWithBrowser();
+            }
+            else if (m.type === "signOut") {
+                await this.signOut();
+            }
             else if (m.type === "saveKey") {
                 if (m.key?.trim())
                     await this.ctx.secrets.store(API_KEY_SECRET, m.key.trim());
                 this.post({ type: "api", ok: true });
+                await this.postAuthState();
                 await this.loadHistory();
             }
             else if (m.type === "setMode") {
@@ -1020,6 +1230,7 @@ class Provider {
             return;
         await this.ctx.secrets.store(API_KEY_SECRET, k.trim());
         this.post({ type: "api", ok: true });
+        await this.postAuthState();
     }
     async cycleMode() {
         const nextMode = this.mode === "auto" ? "plan" : this.mode === "plan" ? "yolo" : "auto";
@@ -1053,9 +1264,9 @@ class Provider {
             this.post({ type: "status", text: "Already responding. Stop the current run before sending another message." });
             return;
         }
-        const key = await this.ctx.secrets.get(API_KEY_SECRET);
-        if (!key)
-            return this.post({ type: "err", text: "No API key set" });
+        const auth = await this.resolveRequestAuth();
+        if (!auth)
+            return this.post({ type: "err", text: "Not authenticated. Use Sign in (browser) or set an API key." });
         this.cancelRequested = false;
         this.pendingActions = [];
         this.lastRunMeta = null;
@@ -1070,7 +1281,7 @@ class Provider {
             this.activeThreadId = requestedThreadId;
             this.sessionId = requestedThreadId;
         }
-        const activeThreadId = await this.ensureActiveThread(key, text);
+        const activeThreadId = await this.ensureActiveThread(auth, text);
         if (!activeThreadId)
             return this.post({ type: "err", text: "Failed to create chat session." });
         const runThreadId = activeThreadId;
@@ -1098,7 +1309,7 @@ class Provider {
         };
         if (ideContextEnabled) {
             try {
-                collectedContext = await this.collectIdeContext(text, workspaceHash, key);
+                collectedContext = await this.collectIdeContext(text, workspaceHash, auth);
             }
             catch (e) {
                 contextStatus.notes?.push(`context partial: ${err(e)}`);
@@ -1155,7 +1366,7 @@ class Provider {
                 lastProgressState = label;
                 this.postRun(runThreadId, { type: "status", text: label });
             };
-            return (stream(`${base()}/api/v1/playground/assist`, key, {
+            return (stream(`${base()}/api/v1/playground/assist`, auth, {
                 mode: requestMode,
                 task: taskWithReasoning,
                 stream: true,
@@ -1411,13 +1622,13 @@ class Provider {
         }
     }
     async loadHistory() {
-        const key = await this.ctx.secrets.get(API_KEY_SECRET);
-        if (!key) {
+        const auth = await this.resolveRequestAuth();
+        if (!auth) {
             this.recentHistory = [];
             await this.postThreadState();
             return;
         }
-        const r = await req("GET", `${base()}/api/v1/playground/sessions?limit=30`, key).catch(() => ({}));
+        const r = await req("GET", `${base()}/api/v1/playground/sessions?limit=30`, auth).catch(() => ({}));
         const items = (r?.data?.data || [])
             .map((x) => this.threadFromApiRow(x))
             .filter((x) => x.id);
@@ -1430,14 +1641,14 @@ class Provider {
         await this.postThreadState();
     }
     async openSession(id) {
-        const key = await this.ctx.secrets.get(API_KEY_SECRET);
-        if (!key || !id)
+        const auth = await this.resolveRequestAuth();
+        if (!auth || !id)
             return;
         const existing = this.threads[id] || this.recentHistory.find((x) => x.id === id);
         this.upsertThread(existing || { id, title: "Untitled", mode: this.mode, updatedAt: null, isOpen: true }, true);
         this.activeThreadId = id;
         this.sessionId = id;
-        const r = await req("GET", `${base()}/api/v1/playground/sessions/${encodeURIComponent(id)}/messages?includeAgentEvents=true`, key).catch(() => ({}));
+        const r = await req("GET", `${base()}/api/v1/playground/sessions/${encodeURIComponent(id)}/messages?includeAgentEvents=true`, auth).catch(() => ({}));
         const msgs = (r?.data || [])
             .filter((m) => m.role === "user" || m.role === "assistant")
             .map((m) => ({ role: m.role, content: m.content }));
@@ -1446,10 +1657,10 @@ class Provider {
         await this.postThreadState();
     }
     async newThread() {
-        const key = await this.ctx.secrets.get(API_KEY_SECRET);
-        if (!key)
-            return this.post({ type: "err", text: "No API key set" });
-        const s = await req("POST", `${base()}/api/v1/playground/sessions`, key, {
+        const auth = await this.resolveRequestAuth();
+        if (!auth)
+            return this.post({ type: "err", text: "Not authenticated. Use Sign in (browser) or set an API key." });
+        const s = await req("POST", `${base()}/api/v1/playground/sessions`, auth, {
             title: "New chat",
             mode: this.mode,
         }).catch(() => ({}));
@@ -1497,10 +1708,10 @@ class Provider {
         await this.postThreadState();
     }
     async replay() {
-        const key = await this.ctx.secrets.get(API_KEY_SECRET);
-        if (!key || !this.activeThreadId)
+        const auth = await this.resolveRequestAuth();
+        if (!auth || !this.activeThreadId)
             return this.post({ type: "status", text: "No active session yet. Send a prompt first, then replay." });
-        const r = await req("POST", `${base()}/api/v1/playground/replay`, key, {
+        const r = await req("POST", `${base()}/api/v1/playground/replay`, auth, {
             sessionId: this.activeThreadId,
             workspaceFingerprint: "vscode",
             mode: this.mode,
@@ -1511,23 +1722,23 @@ class Provider {
         this.addTimeline("replay", s);
     }
     async executePendingActions(actions, threadIdOverride) {
-        const key = await this.ctx.secrets.get(API_KEY_SECRET);
-        if (!key)
-            return this.post({ type: "err", text: "No API key set" });
+        const auth = await this.resolveRequestAuth();
+        if (!auth)
+            return this.post({ type: "err", text: "Not authenticated. Use Sign in (browser) or set an API key." });
         const runThreadId = threadIdOverride || this.activeThreadId || null;
         const rawActionList = (actions && actions.length ? actions : this.pendingActions).slice();
         const seenActionKeys = new Set();
         const actionList = rawActionList.filter((action) => {
-            const key = JSON.stringify(action);
-            if (seenActionKeys.has(key))
+            const actionKey = JSON.stringify(action);
+            if (seenActionKeys.has(actionKey))
                 return false;
-            seenActionKeys.add(key);
+            seenActionKeys.add(actionKey);
             return true;
         });
         if (!actionList.length)
             return this.postRun(runThreadId, { type: "status", text: "No pending actions to execute." });
         this.postRun(runThreadId, { type: "status", text: `Executing ${actionList.length} action(s)...` });
-        const r = await req("POST", `${base()}/api/v1/playground/execute`, key, {
+        const r = await req("POST", `${base()}/api/v1/playground/execute`, auth, {
             sessionId: runThreadId || undefined,
             workspaceFingerprint: "vscode",
             actions: actionList.map((a) => {
@@ -1755,19 +1966,29 @@ class Provider {
         this.view?.webview.postMessage(m);
     }
 }
-function req(method, u, key, body) {
+function req(method, u, auth, body) {
     return new Promise((resolve, reject) => {
         const x = new url_1.URL(u);
         const c = x.protocol === "https:" ? https : http;
         const p = body === undefined ? "" : JSON.stringify(body);
+        const headers = {
+            "Content-Type": "application/json",
+        };
+        if (auth?.apiKey) {
+            headers["X-API-Key"] = auth.apiKey;
+            if (!headers.Authorization)
+                headers.Authorization = `Bearer ${auth.apiKey}`;
+        }
+        if (auth?.bearer) {
+            headers.Authorization = `Bearer ${auth.bearer}`;
+        }
         const r = c.request({
             hostname: x.hostname,
             port: x.port || (x.protocol === "https:" ? 443 : 80),
             path: x.pathname + x.search,
             method,
             headers: {
-                "X-API-Key": key,
-                "Content-Type": "application/json",
+                ...headers,
                 ...(body === undefined ? {} : { "Content-Length": Buffer.byteLength(p) }),
             },
         }, (res) => {
@@ -1790,13 +2011,25 @@ function req(method, u, key, body) {
         r.end();
     });
 }
-function stream(u, key, body, options, onEvent) {
+function stream(u, auth, body, options, onEvent) {
     return new Promise((resolve, reject) => {
         const CONNECT_TIMEOUT_MS = 20000;
         const IDLE_TIMEOUT_MS = 45000;
         const x = new url_1.URL(u);
         const c = x.protocol === "https:" ? https : http;
         const p = JSON.stringify(body);
+        const headers = {
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
+        };
+        if (auth?.apiKey) {
+            headers["X-API-Key"] = auth.apiKey;
+            if (!headers.Authorization)
+                headers.Authorization = `Bearer ${auth.apiKey}`;
+        }
+        if (auth?.bearer) {
+            headers.Authorization = `Bearer ${auth.bearer}`;
+        }
         let b = "";
         let done = false;
         let idleTimer = null;
@@ -1862,10 +2095,8 @@ function stream(u, key, body, options, onEvent) {
             path: x.pathname + x.search,
             method: "POST",
             headers: {
-                "X-API-Key": key,
-                "Content-Type": "application/json",
+                ...headers,
                 "Content-Length": Buffer.byteLength(p),
-                Accept: "text/event-stream",
             },
         }, (res) => {
             armIdleTimer();
@@ -3473,15 +3704,59 @@ function html(webview, extensionUri) {
         min-height: 0;
         margin: 8px;
         border: 1px solid var(--border);
-        border-radius: 18px;
+        border-radius: 28px;
         /* Theme-driven: match the user's VS Code theme (no custom gray tint). */
         background: var(--bg-1);
         overflow: hidden;
         display: flex;
         flex-direction: column;
+        padding: 10px;
+        gap: 10px;
       }
-      .panel {
+      .stage-shell {
+        flex: 1;
+        min-height: 0;
+        border-radius: 22px;
+        overflow: hidden;
+        display: flex;
+        background: transparent;
+      }
+      .stage-shell .panel {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
         padding: 12px;
+      }
+      #stageBlank.panel {
+        padding: 0;
+        white-space: normal;
+      }
+      #stageThreads.panel {
+        white-space: normal;
+      }
+      .dock-shell {
+        flex: 0 0 clamp(240px, 38%, 520px);
+        min-height: 240px;
+        border: 1px solid var(--border);
+        border-radius: 26px;
+        background: var(--surface);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        cursor: text;
+      }
+      .dock-shell:focus-within {
+        border-color: var(--vscode-focusBorder, var(--accent));
+        box-shadow: 0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder, var(--accent)) 75%, transparent);
+      }
+      .chat-panel {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 12px;
+      }
+      .chat-panel .jump-wrap {
+        bottom: 10px;
       }
       .mode-banner {
         margin: 0 8px 6px;
@@ -3666,7 +3941,8 @@ function html(webview, extensionUri) {
         .chat-shell {
           margin: 6px;
         }
-        .panel {
+        .stage-shell .panel,
+        .chat-panel {
           padding: 10px;
         }
         .input {
@@ -3704,7 +3980,11 @@ function html(webview, extensionUri) {
     <div id="setup" class="setup">
       <div class="setup-card">
         <h3>Connect Playground AI</h3>
-        <p>Paste your API key to start chatting. You can update it anytime from command palette.</p>
+        <p>Sign in with your Playground account (recommended), or paste an API key.</p>
+        <button id="signInSetup" class="primary" type="button">Sign in with Browser</button>
+        <div style="height:10px"></div>
+        <div style="opacity:.7;font-size:12px">or</div>
+        <div style="height:10px"></div>
         <input id="k" type="password" placeholder="xp_..." />
         <div style="height:8px"></div>
         <button id="ks" class="primary">Save API Key</button>
@@ -3712,21 +3992,6 @@ function html(webview, extensionUri) {
     </div>
 
     <div id="app" class="app">
-      <div class="startup">
-        <div class="startup-head">
-          <span class="startup-title">PLAYGROUND AI</span>
-        </div>
-        <div class="tasks-head">
-          <span class="tasks-label">Tasks</span>
-          <div class="startup-actions">
-            <button id="histQuick" class="task-icon-btn" type="button" aria-label="Refresh history">&#9432;</button>
-            <button id="repQuick" class="task-icon-btn" type="button" aria-label="Replay session">&#9881;</button>
-            <button id="idxQuick" class="task-icon-btn" type="button" aria-label="Rebuild index">&#9998;</button>
-          </div>
-        </div>
-        <div id="taskList" class="task-list">No task history yet.</div>
-        <button id="viewAllTasks" class="view-all" type="button">View all (0)</button>
-      </div>
       <div class="toolbar">
         <div class="toolbar-row">
           <span class="title">PLAYGROUND AI</span>
@@ -3763,114 +4028,146 @@ function html(webview, extensionUri) {
       <div class="global-top">
         <span class="chat-title">Playground Chat</span>
         <div class="global-actions">
-          <button id="historyQuick" type="button" class="menu-icon panel-icon" aria-label="Open chat history" title="Open chat history">&#128339;</button>
-          <button id="backToChatQuick" type="button" class="menu-icon panel-icon hidden" aria-label="Back to chat" title="Back to chat">&#8592;</button>
+          <button id="historyQuick" type="button" class="menu-icon panel-icon" aria-label="Open threads" title="Open threads">&#128339;</button>
+          <button id="backToChatQuick" type="button" class="menu-icon panel-icon hidden" aria-label="Back to blank stage" title="Back to blank stage">&#8592;</button>
           <button id="newThreadQuick" type="button" class="menu-icon quick-new" aria-label="Start new chat">New chat</button>
         </div>
       </div>
       <div id="modeBanner" class="mode-banner hidden">Plan mode active: I will plan before acting.</div>
 
       <div class="chat-shell" role="region" aria-label="Playground chat">
-        <div id="chat" class="panel active">
-          <div id="chips" class="chips"></div>
-          <div id="threadList" class="thread-list"></div>
-          <div id="msgs" class="messages"></div>
-          <div class="jump-wrap">
-            <button id="jumpLatest" class="jump-btn" type="button">Jump to latest</button>
+        <div class="stage-shell" role="region" aria-label="Stage">
+          <div id="stageBlank" class="panel active" aria-label="Blank stage"></div>
+          <div id="stageThreads" class="panel" aria-label="Threads and tasks">
+            <div class="tasks-head">
+              <span class="tasks-label">Threads</span>
+              <div class="startup-actions">
+                <button id="histQuick" class="task-icon-btn" type="button" aria-label="Refresh history" title="Refresh history">&#9432;</button>
+                <button id="repQuick" class="task-icon-btn" type="button" aria-label="Replay session" title="Replay session">&#9881;</button>
+                <button id="idxQuick" class="task-icon-btn" type="button" aria-label="Rebuild index" title="Rebuild index">&#9998;</button>
+              </div>
+            </div>
+            <div id="threadList" class="thread-list"></div>
+            <div style="height:10px"></div>
+            <div class="tasks-head">
+              <span class="tasks-label">Tasks</span>
+            </div>
+            <div id="taskList" class="task-list">No task history yet.</div>
+            <button id="viewAllTasks" class="view-all" type="button">View all (0)</button>
           </div>
+          <div id="timeline" class="panel"></div>
+          <div id="history" class="panel"></div>
+          <div id="index" class="panel"></div>
+          <div id="agents" class="panel"></div>
+          <div id="exec" class="panel"></div>
         </div>
-        <div id="timeline" class="panel"></div>
-        <div id="history" class="panel"></div>
-        <div id="index" class="panel"></div>
-        <div id="agents" class="panel"></div>
-        <div id="exec" class="panel"></div>
 
-        <div class="input">
-          <form id="composerForm" class="composer-form" novalidate>
-            <div class="composer-shell">
-              <textarea id="t" placeholder="Ask for follow-up changes" enterkeyhint="send"></textarea>
-              <div id="mentionMenu" class="mention-menu hidden" role="listbox" aria-label="Mention suggestions"></div>
-              <div class="input-actions minimal">
-                <button id="uploadBtn" class="icon-btn attach-btn" type="button" aria-label="Attach image" title="Attach">+</button>
-                <label class="context-toggle-pill" for="ctxToggle" title="Toggle IDE context">
-                  <input id="ctxToggle" type="checkbox" checked />
-                  <span id="contextPill" class="context-pill">IDE Context: on</span>
-                </label>
-                <div class="spacer"></div>
-                <button id="actionMenuBtn" type="button" class="icon-btn gear-btn" aria-label="Settings" title="Settings" aria-expanded="false">&#9881;</button>
-                <button id="s" type="button" class="primary send-round" aria-label="Send">&#8593;</button>
-              </div>
-              <div class="composer-meta">
-                <button
-                  id="planModeChip"
-                  class="mode-plan-chip hidden"
-                  type="button"
-                  aria-live="polite"
-                  aria-label="Plan mode is on. Click to switch back to Auto."
-                  title="Click to exit plan mode"
-                >PLAN MODE <span class="plan-chip-x">x</span></button>
-                <span id="composerState" class="composer-state">Mode: Auto - Reasoning: Medium</span>
-              </div>
-              <div id="actionMenu" class="action-menu hidden" aria-hidden="true">
-                <div class="action-menu-sheet" role="dialog" aria-label="Composer settings">
-                  <div class="sheet-head">
-                    <div>
-                      <div class="sheet-title">More settings</div>
-                      <div class="sheet-sub">Advanced controls inside your composer.</div>
-                    </div>
-                    <button id="actionMenuClose" type="button" class="sheet-close" aria-label="Close settings">x</button>
-                  </div>
+        <div id="chatDock" class="dock-shell" role="region" aria-label="Chat dock">
+          <div id="chat" class="chat-panel" aria-label="Chat messages">
+            <div id="chips" class="chips"></div>
+            <div id="msgs" class="messages"></div>
+            <div class="jump-wrap">
+              <button id="jumpLatest" class="jump-btn" type="button">Jump to latest</button>
+            </div>
+          </div>
 
-                  <div class="sheet-grid">
-                    <div class="sheet-card">
-                      <div class="sheet-card-title">Quick controls</div>
-                      <div class="sheet-row">
-                        <select id="modeQuick" class="composer-select">
-                          <option value="auto">Mode: Auto</option>
-                          <option value="plan">Mode: Plan</option>
-                          <option value="yolo">Mode: Full access</option>
-                        </select>
-                        <select id="reasonSel" class="composer-select">
-                          <option value="low">Low</option>
-                          <option value="medium" selected>Medium</option>
-                          <option value="high">High</option>
-                          <option value="max">Extra High</option>
-                        </select>
+          <div class="input">
+            <form id="composerForm" class="composer-form" novalidate>
+              <div class="composer-shell">
+                <textarea id="t" placeholder="Ask for follow-up changes" enterkeyhint="send"></textarea>
+                <div id="mentionMenu" class="mention-menu hidden" role="listbox" aria-label="Mention suggestions"></div>
+                <div class="input-actions minimal">
+                  <button id="uploadBtn" class="icon-btn attach-btn" type="button" aria-label="Attach image" title="Attach">+</button>
+                  <label class="context-toggle-pill" for="ctxToggle" title="Toggle IDE context">
+                    <input id="ctxToggle" type="checkbox" checked />
+                    <span id="contextPill" class="context-pill">IDE Context: on</span>
+                  </label>
+                  <div class="spacer"></div>
+                  <button id="actionMenuBtn" type="button" class="icon-btn gear-btn" aria-label="Settings" title="Settings" aria-expanded="false">&#9881;</button>
+                  <button id="s" type="button" class="primary send-round" aria-label="Send">&#8593;</button>
+                </div>
+                <div class="composer-meta">
+                  <button
+                    id="planModeChip"
+                    class="mode-plan-chip hidden"
+                    type="button"
+                    aria-live="polite"
+                    aria-label="Plan mode is on. Click to switch back to Auto."
+                    title="Click to exit plan mode"
+                  >PLAN MODE <span class="plan-chip-x">x</span></button>
+                  <span id="composerState" class="composer-state">Mode: Auto - Reasoning: Medium</span>
+                </div>
+                <div id="actionMenu" class="action-menu hidden" aria-hidden="true">
+                  <div class="action-menu-sheet" role="dialog" aria-label="Composer settings">
+                    <div class="sheet-head">
+                      <div>
+                        <div class="sheet-title">More settings</div>
+                        <div class="sheet-sub">Advanced controls inside your composer.</div>
                       </div>
-                    </div>
-                    <div class="sheet-card">
-                      <div class="sheet-card-title">Model</div>
-                      <div class="sheet-row">
-                        <select id="modelSel" class="composer-select">
-                          <option value="${DEFAULT_PLAYGROUND_MODEL}">${DEFAULT_PLAYGROUND_MODEL}</option>
-                        </select>
-                      </div>
+                      <button id="actionMenuClose" type="button" class="sheet-close" aria-label="Close settings">x</button>
                     </div>
 
-                    <div class="sheet-card">
-                      <div class="sheet-card-title">Conversation</div>
-                      <div class="sheet-row sheet-toggle">
-                        <label class="tool-toggle" for="safetyQuick">
-                          <span>Safety profile</span>
-                          <select id="safetyQuick" class="composer-select">
-                            <option value="standard">Standard</option>
-                            <option value="aggressive">Aggressive</option>
+                    <div class="sheet-grid">
+                      <div class="sheet-card">
+                        <div class="sheet-card-title">Quick controls</div>
+                        <div class="sheet-row">
+                          <select id="modeQuick" class="composer-select">
+                            <option value="auto">Mode: Auto</option>
+                            <option value="plan">Mode: Plan</option>
+                            <option value="yolo">Mode: Full access</option>
                           </select>
-                        </label>
+                          <select id="reasonSel" class="composer-select">
+                            <option value="low">Low</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="high">High</option>
+                            <option value="max">Extra High</option>
+                          </select>
+                        </div>
                       </div>
-                      <div class="sheet-row sheet-toggle">
-                        <label class="tool-toggle">
-                          <span>Parallel agents</span>
-                          <input id="parallelQuick" type="checkbox" />
-                        </label>
+                      <div class="sheet-card">
+                        <div class="sheet-card-title">Model</div>
+                        <div class="sheet-row">
+                          <select id="modelSel" class="composer-select">
+                            <option value="${DEFAULT_PLAYGROUND_MODEL}">${DEFAULT_PLAYGROUND_MODEL}</option>
+                          </select>
+                        </div>
                       </div>
-                    </div>
+
+                      <div class="sheet-card">
+                        <div class="sheet-card-title">Conversation</div>
+                        <div class="sheet-row sheet-toggle">
+                          <label class="tool-toggle" for="safetyQuick">
+                            <span>Safety profile</span>
+                            <select id="safetyQuick" class="composer-select">
+                              <option value="standard">Standard</option>
+                              <option value="aggressive">Aggressive</option>
+                            </select>
+                          </label>
+                        </div>
+                        <div class="sheet-row sheet-toggle">
+                          <label class="tool-toggle">
+                            <span>Parallel agents</span>
+                            <input id="parallelQuick" type="checkbox" />
+                          </label>
+                        </div>
+                      </div>
+
+                      <div class="sheet-card">
+                        <div class="sheet-card-title">Attachments</div>
+                        <div class="sheet-row">
+                          <span id="uploadCount" class="tool-muted">No images selected.</span>
+                          <span class="tool-muted">PNG/JPEG/WEBP, up to 3 images, 4MB each.</span>
+                        </div>
+                      </div>
 
                     <div class="sheet-card">
-                      <div class="sheet-card-title">Attachments</div>
+                      <div class="sheet-card-title">Account</div>
                       <div class="sheet-row">
-                        <span id="uploadCount" class="tool-muted">No images selected.</span>
-                        <span class="tool-muted">PNG/JPEG/WEBP, up to 3 images, 4MB each.</span>
+                        <span id="authLabel" class="tool-muted">Not signed in.</span>
+                      </div>
+                      <div class="sheet-grid">
+                        <button id="authSignIn" class="action-item" type="button">Sign in</button>
+                        <button id="authSignOut" class="action-item" type="button">Sign out</button>
                       </div>
                     </div>
 
@@ -3886,12 +4183,13 @@ function html(webview, extensionUri) {
                     <div class="sheet-card">
                       <div class="sheet-card-title">Panels</div>
                       <div class="sheet-grid">
-                        <button class="action-item" type="button" data-menu-action="show:chat">Show Chat</button>
-                        <button class="action-item" type="button" data-menu-action="show:timeline">Show Timeline</button>
-                        <button class="action-item" type="button" data-menu-action="show:history">Show History</button>
-                        <button class="action-item" type="button" data-menu-action="show:index">Show Index</button>
-                        <button class="action-item" type="button" data-menu-action="show:agents">Show Agents</button>
-                        <button class="action-item" type="button" data-menu-action="show:exec">Show Execution</button>
+                        <button class="action-item" type="button" data-menu-action="show:stageBlank">Stage: Blank</button>
+                        <button class="action-item" type="button" data-menu-action="show:stageThreads">Stage: Threads</button>
+                        <button class="action-item" type="button" data-menu-action="show:timeline">Stage: Timeline</button>
+                        <button class="action-item" type="button" data-menu-action="show:history">Stage: History</button>
+                        <button class="action-item" type="button" data-menu-action="show:index">Stage: Index</button>
+                        <button class="action-item" type="button" data-menu-action="show:agents">Stage: Agents</button>
+                        <button class="action-item" type="button" data-menu-action="show:exec">Stage: Execution</button>
                       </div>
                     </div>
 
@@ -3915,8 +4213,9 @@ function html(webview, extensionUri) {
                 <span id="permState" class="footer-accent">Full access</span>
                 <span id="usagePct" class="footer-muted">0%</span>
               </div>
-            </div>
-          </form>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
     </div>

@@ -1159,6 +1159,50 @@ export const playgroundSubscriptions = pgTable(
   ]
 );
 
+// VS Code browser auth (PKCE) for Playground API
+export const playgroundVscodeAuthCodes = pgTable(
+  "playground_vscode_auth_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    codeHash: varchar("code_hash", { length: 64 }).notNull().unique(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    codeChallenge: text("code_challenge").notNull(),
+    codeChallengeMethod: varchar("code_challenge_method", { length: 12 }).notNull().default("S256"),
+    redirectUri: text("redirect_uri").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("playground_vscode_auth_codes_code_hash_idx").on(table.codeHash),
+    index("playground_vscode_auth_codes_user_idx").on(table.userId),
+    index("playground_vscode_auth_codes_expires_idx").on(table.expiresAt),
+  ]
+);
+
+export const playgroundVscodeRefreshTokens = pgTable(
+  "playground_vscode_refresh_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tokenHash: varchar("token_hash", { length: 64 }).notNull().unique(),
+    tokenPrefix: varchar("token_prefix", { length: 16 }).notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("playground_vscode_refresh_tokens_token_hash_idx").on(table.tokenHash),
+    index("playground_vscode_refresh_tokens_user_idx").on(table.userId),
+    index("playground_vscode_refresh_tokens_expires_idx").on(table.expiresAt),
+    index("playground_vscode_refresh_tokens_revoked_idx").on(table.revokedAt),
+  ]
+);
+
 // HF usage logs — every inference request through the playground router
 export const hfUsageLogs = pgTable(
   "hf_usage_logs",

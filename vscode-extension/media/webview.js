@@ -96,6 +96,7 @@
       const app = document.getElementById("app");
       const msgs = document.getElementById("msgs");
       const chatPanel = document.getElementById("chat");
+      const chatDock = document.getElementById("chatDock");
       const chips = document.getElementById("chips");
       const timeline = document.getElementById("timeline");
       const history = document.getElementById("history");
@@ -133,6 +134,10 @@
       const backToChatQuick = document.getElementById("backToChatQuick");
       const apiKeyInline = document.getElementById("apiKeyInline");
       const apiKeyInlineSave = document.getElementById("apiKeyInlineSave");
+      const signInSetup = document.getElementById("signInSetup");
+      const authLabel = document.getElementById("authLabel");
+      const authSignIn = document.getElementById("authSignIn");
+      const authSignOut = document.getElementById("authSignOut");
       const newThreadBtn = document.getElementById("newThreadBtn");
 
       let streamBubble = null;
@@ -262,6 +267,42 @@
           el.closest("option") ||
           el.closest(".composer-select")
         );
+      }
+
+      function isInteractiveTarget(target) {
+        const el = eventTargetElement(target);
+        if (!el || !el.closest) return false;
+        return Boolean(
+          el.closest("button") ||
+          el.closest("input") ||
+          el.closest("textarea") ||
+          el.closest("select") ||
+          el.closest("a") ||
+          el.closest("summary") ||
+          el.closest("details") ||
+          el.closest("label") ||
+          el.closest('[role="button"]') ||
+          el.closest('[contenteditable="true"]')
+        );
+      }
+
+      function bindChatDockClickToFocus() {
+        if (!chatDock || !input) return;
+        if (chatDock.dataset.focusBound === "1") return;
+        chatDock.dataset.focusBound = "1";
+        chatDock.addEventListener("click", (e) => {
+          if (!input) return;
+          if (!e || e.defaultPrevented) return;
+          if (isInteractiveTarget(e.target)) return;
+          try {
+            const sel = window.getSelection ? window.getSelection() : null;
+            const selected = sel ? String(sel.toString() || "").trim() : "";
+            if (selected) return;
+          } catch {
+            // ignore selection errors
+          }
+          input.focus();
+        });
       }
 
       function postSendFallback(rawText) {
@@ -1130,15 +1171,24 @@
         return d;
       }
 
+      const STAGE_PANEL_IDS = new Set([
+        "stageBlank",
+        "stageThreads",
+        "timeline",
+        "history",
+        "index",
+        "agents",
+        "exec",
+      ]);
+
       function showTab(p) {
-        document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+        const raw = String(p || "");
+        const id = raw === "chat" ? "stageBlank" : raw;
+        if (!STAGE_PANEL_IDS.has(id)) return;
         document.querySelectorAll(".panel").forEach((t) => t.classList.remove("active"));
-        const tab = document.querySelector('.tab[data-p="' + p + '"]');
-        const panel = document.getElementById(p);
-        if (tab) tab.classList.add("active");
+        const panel = document.getElementById(id);
         if (panel) panel.classList.add("active");
-        if (historyQuick) historyQuick.classList.toggle("hidden", p !== "chat");
-        if (backToChatQuick) backToChatQuick.classList.toggle("hidden", p === "chat");
+        if (backToChatQuick) backToChatQuick.classList.toggle("hidden", id === "stageBlank");
       }
 
       function showHistoryPanel(loadingText) {
@@ -1168,7 +1218,6 @@
       }
 
       function triggerReplayFromUI(sourceLabel) {
-        showTab("chat");
         addMessage("Replaying latest session from " + sourceLabel + "...", "cmd");
         v.postMessage({ type: "replay" });
       }
@@ -1188,7 +1237,7 @@
         saveCurrentDraft();
         creatingThread = true;
         currentThreadId = null;
-        showTab("chat");
+        showTab("stageBlank");
         clearPlanDecisionCard();
         closeMentionMenu();
         setStreaming(false);
@@ -1356,13 +1405,14 @@
       }
       if (historyQuick) {
         historyQuick.onclick = () => {
-          showHistoryPanel("Loading chat history...");
+          showTab("stageThreads");
+          setRunState("Loading threads...");
           v.postMessage({ type: "history" });
         };
       }
       if (backToChatQuick) {
         backToChatQuick.onclick = () => {
-          showTab("chat");
+          showTab("stageBlank");
         };
       }
       const saveKeyBtn = document.getElementById("ks");
@@ -1371,6 +1421,26 @@
           const keyInput = document.getElementById("k");
           const key = keyInput ? keyInput.value.trim() : "";
           if (key) v.postMessage({ type: "saveKey", key });
+        };
+      }
+      if (signInSetup) {
+        signInSetup.onclick = () => {
+          addMessage("Opening browser sign-in…", "cmd");
+          v.postMessage({ type: "signIn" });
+        };
+      }
+      if (authSignIn) {
+        authSignIn.onclick = () => {
+          addMessage("Opening browser sign-in…", "cmd");
+          v.postMessage({ type: "signIn" });
+          setActionMenuOpen(false);
+        };
+      }
+      if (authSignOut) {
+        authSignOut.onclick = () => {
+          addMessage("Signing out…", "cmd");
+          v.postMessage({ type: "signOut" });
+          setActionMenuOpen(false);
         };
       }
       if (apiKeyInlineSave) {
@@ -1630,7 +1700,8 @@
       }
       if (histQuick) {
         histQuick.onclick = () => {
-          showHistoryPanel("Loading latest sessions...");
+          showTab("stageThreads");
+          setRunState("Loading threads...");
           v.postMessage({ type: "history" });
         };
       }
@@ -1657,6 +1728,7 @@
           updateJump();
         });
       }
+      bindChatDockClickToFocus();
 
       window.addEventListener("message", (ev) => {
         const m = ev.data;
@@ -1680,6 +1752,14 @@
             if (setup) setup.style.display = "flex";
             if (app) app.style.display = "none";
           }
+        } else if (m.type === "authState") {
+          const signedIn = m.signedIn === true;
+          const email = typeof m.email === "string" ? m.email : "";
+          if (authLabel) {
+            authLabel.textContent = signedIn ? ("Signed in" + (email ? (" as " + email) : "")) : "Not signed in.";
+          }
+          if (authSignIn) authSignIn.style.display = signedIn ? "none" : "";
+          if (authSignOut) authSignOut.style.display = signedIn ? "" : "none";
         } else if (m.type === "openUploadPicker") {
           if (uploadInput) uploadInput.click();
         } else if (m.type === "mode") {
@@ -1957,7 +2037,7 @@
           updateStartupVisibility();
           renderThreadList();
           restoreDraftForThread(currentThreadId);
-          showTab("chat");
+          showTab("stageBlank");
           followLatest = true;
           scrollToLatest(true);
         }
