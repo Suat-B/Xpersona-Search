@@ -166,6 +166,40 @@ export function verifyRecoveryToken(token: string): string | null {
   }
 }
 
+/** Email-claim link expiry: 48 hours. */
+const EMAIL_CLAIM_LINK_HOURS = 48;
+
+/**
+ * Create a signed token for claiming an account email (userId + email + expiry).
+ * This is used to prove the user controls the email they entered in Stripe Checkout.
+ */
+export function createEmailClaimToken(userId: string, email: string): string {
+  const secret = getSecret();
+  const exp = String(Date.now() + EMAIL_CLAIM_LINK_HOURS * 60 * 60 * 1000);
+  const emailB64 = Buffer.from(email, "utf8").toString("base64url");
+  const payload = userId + "." + exp + "." + emailB64;
+  const sig = createHmac("sha256", secret).update(payload).digest("hex");
+  return Buffer.from(payload + "." + sig).toString("base64url");
+}
+
+/** Verify email-claim token; return { userId, email } or null. */
+export function verifyEmailClaimToken(token: string): { userId: string; email: string } | null {
+  try {
+    const secret = getSecret();
+    const raw = Buffer.from(token, "base64url").toString("utf8");
+    const [userId, exp, emailB64, sig] = raw.split(".");
+    if (!userId || !exp || !emailB64 || !sig) return null;
+    if (Date.now() > parseInt(exp, 10)) return null;
+    const payload = userId + "." + exp + "." + emailB64;
+    const expected = createHmac("sha256", secret).update(payload).digest("hex");
+    if (expected.length !== sig.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) return null;
+    const email = Buffer.from(emailB64, "base64url").toString("utf8");
+    return { userId, email };
+  } catch {
+    return null;
+  }
+}
+
 /** For server components (e.g. dashboard layout): read agent or guest cookie and return userId or null. */
 export function getAuthUserFromCookie(
   cookieStore: { get: (name: string) => { value: string } | undefined }
