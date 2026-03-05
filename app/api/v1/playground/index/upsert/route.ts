@@ -1,11 +1,11 @@
 import { NextRequest } from "next/server";
-import { authenticatePlaygroundApiKey } from "@/lib/playground/auth";
+import { authenticatePlaygroundRequest } from "@/lib/playground/auth";
 import { logAction, upsertIndexChunks } from "@/lib/playground/store";
 import { zIndexUpsertRequest } from "@/lib/playground/contracts";
 import { ok, parseBody, unauthorized } from "@/lib/playground/http";
 
 export async function POST(request: NextRequest): Promise<Response> {
-  const auth = await authenticatePlaygroundApiKey(request);
+  const auth = await authenticatePlaygroundRequest(request);
   if (!auth) return unauthorized(request);
 
   const parsed = await parseBody(request, zIndexUpsertRequest);
@@ -33,4 +33,3 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   return ok(request, { upserted: body.chunks.length });
 }
-

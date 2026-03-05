@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { authenticatePlaygroundApiKey } from "@/lib/playground/auth";
+import { authenticatePlaygroundRequest } from "@/lib/playground/auth";
 import { zReplayRequest } from "@/lib/playground/contracts";
 import { createReplayRun, listSessionMessages, listSessions } from "@/lib/playground/store";
 import { ok, parseBody, unauthorized, badRequest } from "@/lib/playground/http";
@@ -8,7 +8,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (process.env.PLAYGROUND_ENABLE_REPLAY !== "1") {
     return badRequest(request, "Replay is currently disabled by server policy.");
   }
-  const auth = await authenticatePlaygroundApiKey(request);
+  const auth = await authenticatePlaygroundRequest(request);
   if (!auth) return unauthorized(request);
 
   const parsed = await parseBody(request, zReplayRequest);

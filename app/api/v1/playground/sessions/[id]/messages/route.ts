@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { authenticatePlaygroundApiKey } from "@/lib/playground/auth";
+import { authenticatePlaygroundRequest } from "@/lib/playground/auth";
 import { appendSessionMessage, listSessionMessages } from "@/lib/playground/store";
 import { ok, parseBody, unauthorized } from "@/lib/playground/http";
 import { zAppendMessageRequest, zMessagesGetQuery } from "@/lib/playground/contracts";
@@ -7,7 +7,7 @@ import { zAppendMessageRequest, zMessagesGetQuery } from "@/lib/playground/contr
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(request: NextRequest, ctx: Ctx): Promise<Response> {
-  const auth = await authenticatePlaygroundApiKey(request);
+  const auth = await authenticatePlaygroundRequest(request);
   if (!auth) return unauthorized(request);
 
   const query = zMessagesGetQuery.safeParse({
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest, ctx: Ctx): Promise<Response> {
 }
 
 export async function POST(request: NextRequest, ctx: Ctx): Promise<Response> {
-  const auth = await authenticatePlaygroundApiKey(request);
+  const auth = await authenticatePlaygroundRequest(request);
   if (!auth) return unauthorized(request);
 
   const parsed = await parseBody(request, zAppendMessageRequest);
@@ -45,4 +45,3 @@ export async function POST(request: NextRequest, ctx: Ctx): Promise<Response> {
   });
   return ok(request, row, 201);
 }
-

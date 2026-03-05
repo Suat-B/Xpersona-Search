@@ -1,12 +1,12 @@
 import { NextRequest } from "next/server";
-import { authenticatePlaygroundApiKey } from "@/lib/playground/auth";
+import { authenticatePlaygroundRequest } from "@/lib/playground/auth";
 import { runAssist } from "@/lib/playground/orchestration";
 import { logAgentRun } from "@/lib/playground/store";
 import { zAgentsRunRequest } from "@/lib/playground/contracts";
 import { ok, parseBody, unauthorized } from "@/lib/playground/http";
 
 export async function POST(request: NextRequest): Promise<Response> {
-  const auth = await authenticatePlaygroundApiKey(request);
+  const auth = await authenticatePlaygroundRequest(request);
   if (!auth) return unauthorized(request);
 
   const parsed = await parseBody(request, zAgentsRunRequest);

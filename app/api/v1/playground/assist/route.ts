@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { authenticatePlaygroundApiKey } from "@/lib/playground/auth";
+import { authenticatePlaygroundRequest } from "@/lib/playground/auth";
 import { estimateMessagesTokens } from "@/lib/hf-router/rate-limit";
 import { guardPlaygroundAccess, runAssist } from "@/lib/playground/orchestration";
 import {
@@ -78,7 +78,7 @@ function summarizeAttachments(
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
-  const auth = await authenticatePlaygroundApiKey(request);
+  const auth = await authenticatePlaygroundRequest(request);
   if (!auth) return unauthorized(request);
 
   const parsed = await parseBody(request, zAssistRequest);

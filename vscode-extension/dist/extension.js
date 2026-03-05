@@ -99,6 +99,29 @@ function normalizeWorkspaceRelativePath(input) {
         return null;
     return trimmed;
 }
+function extractAtMentions(text) {
+    const input = String(text || "");
+    if (!input.includes("@"))
+        return [];
+    const out = [];
+    const seen = new Set();
+    const re = /(^|[\s([{])@([A-Za-z0-9._\\/\-][A-Za-z0-9._\\/\-]{0,259})/g;
+    for (const match of input.matchAll(re)) {
+        const raw = String(match[2] || "").trim();
+        if (!raw)
+            continue;
+        const cleaned = raw.replace(/[),.;:!?]+$/g, "").trim();
+        if (!cleaned)
+            continue;
+        if (seen.has(cleaned))
+            continue;
+        seen.add(cleaned);
+        out.push(cleaned);
+        if (out.length >= 24)
+            break;
+    }
+    return out;
+}
 function chunkText(content, chunkSize, overlap) {
     const text = content.replace(/\r\n/g, "\n");
     const chunks = [];
@@ -445,6 +468,14 @@ class Provider {
             return null;
         return folders[0];
     }
+    toContextPath(uri) {
+        const root = this.getWorkspaceRoot();
+        if (!root)
+            return uri.fsPath;
+        const rel = toRelPath(root.uri, uri);
+        const safe = normalizeWorkspaceRelativePath(rel);
+        return safe || uri.fsPath;
+    }
     async collectIdeContext(query, workspaceHash, key) {
         const root = this.getWorkspaceRoot();
         const activeFile = await this.collectActiveFileContext(20000);
@@ -480,7 +511,7 @@ class Provider {
         const fullText = document.getText();
         const selected = editor.selection.isEmpty ? "" : document.getText(editor.selection).slice(0, 6000);
         return {
-            path: document.uri.fsPath,
+            path: this.toContextPath(document.uri),
             language: document.languageId,
             selection: selected || undefined,
             content: fullText.slice(0, maxChars),
@@ -491,7 +522,7 @@ class Provider {
         const unique = new Set();
         const out = [];
         for (const e of editors) {
-            const p = e.document.uri.fsPath;
+            const p = this.toContextPath(e.document.uri);
             if (!p || unique.has(p))
                 continue;
             unique.add(p);
@@ -500,6 +531,94 @@ class Provider {
                 language: e.document.languageId,
                 excerpt: e.document.getText().slice(0, maxCharsPerFile),
             });
+        }
+        return out;
+    }
+    async collectMentionedWorkspaceContext(text, maxItems, maxCharsPerItem) {
+        const root = this.getWorkspaceRoot();
+        if (!root)
+            return [];
+        const tokens = extractAtMentions(text);
+        if (!tokens.length)
+            return [];
+        const out = [];
+        const seen = new Set();
+        for (const token of tokens) {
+            if (out.length >= maxItems)
+                break;
+            const q = String(token || "").replace(/\\/g, "/").trim();
+            if (!q)
+                continue;
+            let resolved;
+            const direct = normalizeWorkspaceRelativePath(q);
+            if (direct) {
+                resolved = this.mentionCatalog.find((x) => x.path.toLowerCase() === direct.toLowerCase());
+            }
+            if (!resolved) {
+                const results = await this.searchWorkspaceMentions(q, 16).catch(() => []);
+                const wantsFile = /\.[a-z0-9]{1,8}$/i.test(q) || q.includes(".");
+                resolved = wantsFile ? results.find((r) => r.kind === "file") ?? results[0] : results[0];
+            }
+            if (!resolved)
+                continue;
+            if (seen.has(resolved.path))
+                continue;
+            seen.add(resolved.path);
+            if (resolved.kind === "folder") {
+                const uri = vscode.Uri.joinPath(root.uri, ...resolved.path.split("/"));
+                try {
+                    const entries = await vscode.workspace.fs.readDirectory(uri);
+                    const sorted = entries
+                        .slice()
+                        .sort((a, b) => a[0].localeCompare(b[0]))
+                        .slice(0, 200)
+                        .map(([name, type]) => (type === vscode.FileType.Directory ? `${name}/` : name));
+                    const extra = entries.length > 200 ? `\n… and ${entries.length - 200} more` : "";
+                    out.push({
+                        path: `${resolved.path}/`,
+                        language: "text",
+                        excerpt: `Folder listing (mentioned as @${q}):\n${sorted.join("\n")}${extra}`,
+                    });
+                }
+                catch (e) {
+                    out.push({
+                        path: `${resolved.path}/`,
+                        language: "text",
+                        excerpt: `Failed to read folder listing (mentioned as @${q}): ${err(e)}`,
+                    });
+                }
+                continue;
+            }
+            const uri = vscode.Uri.joinPath(root.uri, ...resolved.path.split("/"));
+            try {
+                const stat = await vscode.workspace.fs.stat(uri);
+                if (stat.size > 2000000) {
+                    out.push({
+                        path: resolved.path,
+                        language: languageFromPath(resolved.path),
+                        excerpt: `Skipped (mentioned as @${q}): file too large (${stat.size} bytes).`,
+                    });
+                    continue;
+                }
+                const doc = await vscode.workspace.openTextDocument(uri);
+                const full = doc.getText().replace(/\r\n/g, "\n");
+                const excerptRaw = full.slice(0, maxCharsPerItem);
+                const excerpt = full.length > excerptRaw.length
+                    ? `${excerptRaw}\n\n… [truncated ${full.length - excerptRaw.length} chars]`
+                    : excerptRaw;
+                out.push({
+                    path: resolved.path,
+                    language: doc.languageId || languageFromPath(resolved.path),
+                    excerpt,
+                });
+            }
+            catch (e) {
+                out.push({
+                    path: resolved.path,
+                    language: languageFromPath(resolved.path),
+                    excerpt: `Failed to read file (mentioned as @${q}): ${err(e)}`,
+                });
+            }
         }
         return out;
     }
@@ -980,6 +1099,32 @@ class Provider {
         if (ideContextEnabled) {
             try {
                 collectedContext = await this.collectIdeContext(text, workspaceHash, key);
+            }
+            catch (e) {
+                contextStatus.notes?.push(`context partial: ${err(e)}`);
+            }
+            if (this.mentionsEnabled()) {
+                try {
+                    const mentioned = await this.collectMentionedWorkspaceContext(text, 8, 20000);
+                    if (mentioned.length) {
+                        collectedContext = collectedContext || {};
+                        const existing = new Set((collectedContext.openFiles ?? []).map((x) => x.path));
+                        collectedContext.openFiles = [
+                            ...mentioned.filter((x) => !existing.has(x.path)),
+                            ...(collectedContext.openFiles ?? []),
+                        ];
+                        const label = mentioned
+                            .slice(0, 6)
+                            .map((x) => x.path)
+                            .join(", ");
+                        contextStatus.notes?.push(`@mentions: ${label}${mentioned.length > 6 ? ` (+${mentioned.length - 6} more)` : ""}`);
+                    }
+                }
+                catch (e) {
+                    contextStatus.notes?.push(`mentions partial: ${err(e)}`);
+                }
+            }
+            if (collectedContext) {
                 const sectionCount = [
                     collectedContext.activeFile ? 1 : 0,
                     (collectedContext.openFiles?.length ?? 0) > 0 ? 1 : 0,
@@ -994,9 +1139,6 @@ class Provider {
                     indexFreshness: this.indexFreshness,
                     discoveryCommands: (collectedContext.git?.status?.length ?? 0) > 0 || collectedContext.git?.diffSummary ? 3 : 0,
                 };
-            }
-            catch (e) {
-                contextStatus.notes?.push(`context partial: ${err(e)}`);
             }
         }
         contextStatus.preflightMs = Date.now() - preflightStarted;

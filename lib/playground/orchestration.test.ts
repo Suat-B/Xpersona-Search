@@ -10,6 +10,7 @@ vi.mock("@/lib/hf-router/rate-limit", () => ({
 }));
 
 let composeWarmAssistantResponse: typeof import("@/lib/playground/orchestration").composeWarmAssistantResponse;
+let contextToPrompt: typeof import("@/lib/playground/orchestration").contextToPrompt;
 let resolveIntentRouting: typeof import("@/lib/playground/orchestration").resolveIntentRouting;
 let synthesizeDeterministicActions: typeof import("@/lib/playground/orchestration").synthesizeDeterministicActions;
 let runAssist: typeof import("@/lib/playground/orchestration").runAssist;
@@ -17,6 +18,7 @@ let runAssist: typeof import("@/lib/playground/orchestration").runAssist;
 beforeAll(async () => {
   const mod = await import("@/lib/playground/orchestration");
   composeWarmAssistantResponse = mod.composeWarmAssistantResponse;
+  contextToPrompt = mod.contextToPrompt;
   resolveIntentRouting = mod.resolveIntentRouting;
   synthesizeDeterministicActions = mod.synthesizeDeterministicActions;
   runAssist = mod.runAssist;
@@ -71,6 +73,33 @@ describe("playground response composer", () => {
     expect(out).toContain("Hello!");
     expect(out).not.toContain("\"final\"");
     expect(out).not.toContain("Thinking...");
+  });
+
+  it("includes active file content and open file excerpts in context prompt", () => {
+    const out = contextToPrompt({
+      activeFile: {
+        path: "vitest.config.ts",
+        language: "ts",
+        selection: "export default {}",
+        content: "export default { test: { environment: 'node' } }",
+      },
+      openFiles: [
+        {
+          path: "src/example.ts",
+          language: "ts",
+          excerpt: "export function hello() { return 'hi'; }",
+        },
+      ],
+      indexedSnippets: [{ path: "README.md", score: 0.5, content: "Hello world" }],
+    });
+
+    expect(out).toContain("Active file:");
+    expect(out).toContain("Selection:");
+    expect(out).toContain("Content:");
+    expect(out).toContain("environment");
+    expect(out).toContain("Open files:");
+    expect(out).toContain("src/example.ts");
+    expect(out).toContain("export function hello");
   });
 });
 

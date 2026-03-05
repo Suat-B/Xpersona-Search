@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { authenticatePlaygroundApiKey } from "@/lib/playground/auth";
+import { authenticatePlaygroundRequest } from "@/lib/playground/auth";
 import { db } from "@/lib/db";
 import { playgroundSubscriptions } from "@/lib/db/playground-schema";
 import { users } from "@/lib/db/schema";
@@ -44,7 +44,7 @@ function isPlaceholderEmail(email: string): boolean {
 
 export async function POST(request: NextRequest): Promise<Response> {
   try {
-    const auth = await authenticatePlaygroundApiKey(request);
+    const auth = await authenticatePlaygroundRequest(request);
     if (!auth) {
       return NextResponse.json(
         { success: false, error: "UNAUTHORIZED", message: "Invalid or missing API key" },

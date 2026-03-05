@@ -556,13 +556,26 @@ function extractReasoningPreference(workflowIntentId?: string): "low" | "medium"
   return m[1].toLowerCase() as "low" | "medium" | "high" | "max";
 }
 
-function contextToPrompt(context?: AssistContext, attachments?: AssistAttachment[]): string {
+export function contextToPrompt(context?: AssistContext, attachments?: AssistAttachment[]): string {
   const parts: string[] = [];
   if (context?.activeFile) {
     parts.push(
       `Active file: ${context.activeFile.path ?? "unknown"} (${context.activeFile.language ?? "unknown"})`
     );
     if (context.activeFile.selection) parts.push(`Selection:\n${context.activeFile.selection}`);
+    if (context.activeFile.content) parts.push(`Content:\n${context.activeFile.content}`);
+  }
+  if (context?.openFiles?.length) {
+    parts.push(
+      `Open files:\n${context.openFiles
+        .slice(0, 12)
+        .map((f) => {
+          const header = `- ${f.path} (${f.language ?? "unknown"})`;
+          const excerpt = String(f.excerpt || "").trim();
+          return excerpt ? `${header}\n${excerpt}` : header;
+        })
+        .join("\n\n")}`
+    );
   }
   if (context?.diagnostics?.length) {
     parts.push(

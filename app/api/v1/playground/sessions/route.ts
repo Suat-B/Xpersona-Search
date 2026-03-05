@@ -1,12 +1,12 @@
 import { NextRequest } from "next/server";
-import { authenticatePlaygroundApiKey } from "@/lib/playground/auth";
+import { authenticatePlaygroundRequest } from "@/lib/playground/auth";
 import { createSession, listSessions } from "@/lib/playground/store";
 import { ok, parseBody, unauthorized } from "@/lib/playground/http";
 import { zCreateSessionRequest, zSessionsListQuery } from "@/lib/playground/contracts";
 import { getOrCreateRequestId } from "@/lib/api/request-meta";
 
 export async function GET(request: NextRequest): Promise<Response> {
-  const auth = await authenticatePlaygroundApiKey(request);
+  const auth = await authenticatePlaygroundRequest(request);
   if (!auth) return unauthorized(request);
 
   const query = zSessionsListQuery.safeParse({
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest): Promise<Response> {
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
-  const auth = await authenticatePlaygroundApiKey(request);
+  const auth = await authenticatePlaygroundRequest(request);
   if (!auth) return unauthorized(request);
 
   const parsed = await parseBody(request, zCreateSessionRequest);
@@ -44,4 +44,3 @@ export async function POST(request: NextRequest): Promise<Response> {
   });
   return ok(request, session, 201);
 }
-

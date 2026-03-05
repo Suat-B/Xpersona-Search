@@ -2,13 +2,15 @@ import * as vscode from "vscode";
 import * as http from "http";
 import * as https from "https";
 import { URL } from "url";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import * as path from "path";
 import * as fs from "fs";
 import { execFile } from "child_process";
 import { applyUnifiedDiff, extractPatchTargetPath, type PatchApplyStatus } from "./patch-utils";
 
 const API_KEY_SECRET = "xpersona.apiKey";
+const VSCODE_REFRESH_TOKEN_SECRET = "xpersona.playground.vscodeRefreshToken";
+const VSCODE_PENDING_PKCE_KEY = "xpersona.playground.vscodePendingPkce";
 const MODE_KEY = "xpersona.playground.mode";
 const SAFETY_KEY = "xpersona.playground.safety";
 const OPEN_THREADS_KEY = "xpersona.playground.openThreads";
@@ -51,6 +53,7 @@ type AskOptions = {
   attachments?: AssistAttachmentPayload[];
   threadId?: string | null;
 };
+type HttpAuth = { apiKey?: string; bearer?: string } | null;
 type IdeContext = {
   activeFile?: { path?: string; language?: string; selection?: string; content?: string };
   openFiles?: Array<{ path: string; language?: string; excerpt?: string }>;
@@ -129,6 +132,25 @@ function normalizeWorkspaceRelativePath(input: string): string | null {
   return trimmed;
 }
 
+function extractAtMentions(text: string): string[] {
+  const input = String(text || "");
+  if (!input.includes("@")) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const re = /(^|[\s([{])@([A-Za-z0-9._\\/\-][A-Za-z0-9._\\/\-]{0,259})/g;
+  for (const match of input.matchAll(re)) {
+    const raw = String(match[2] || "").trim();
+    if (!raw) continue;
+    const cleaned = raw.replace(/[),.;:!?]+$/g, "").trim();
+    if (!cleaned) continue;
+    if (seen.has(cleaned)) continue;
+    seen.add(cleaned);
+    out.push(cleaned);
+    if (out.length >= 24) break;
+  }
+  return out;
+}
+
 function chunkText(content: string, chunkSize: number, overlap: number): string[] {
   const text = content.replace(/\r\n/g, "\n");
   const chunks: string[] = [];
@@ -189,6 +211,11 @@ function languageFromPath(p: string): string {
 export function activate(context: vscode.ExtensionContext) {
   const view = new Provider(context);
   const reg = vscode.window.registerWebviewViewProvider("xpersona.playgroundView", view);
+  const uriReg = vscode.window.registerUriHandler({
+    handleUri: async (uri) => {
+      await view.handleAuthCallback(uri);
+    },
+  });
   const cmds = [
     vscode.commands.registerCommand("xpersona.playground.prompt", () => view.show()),
     vscode.commands.registerCommand("xpersona.playground.openWithSelection", async () => {
@@ -197,6 +224,8 @@ export function activate(context: vscode.ExtensionContext) {
       const t = e.selection.isEmpty ? e.document.lineAt(e.selection.active.line).text : e.document.getText(e.selection);
       await view.show(t.trim());
     }),
+    vscode.commands.registerCommand("xpersona.playground.signIn", () => view.signInWithBrowser()),
+    vscode.commands.registerCommand("xpersona.playground.signOut", () => view.signOut()),
     vscode.commands.registerCommand("xpersona.playground.setApiKey", () => view.setApiKey()),
     vscode.commands.registerCommand("xpersona.playground.mode.auto", () => view.setMode("auto")),
     vscode.commands.registerCommand("xpersona.playground.mode.plan", () => view.setMode("plan")),
@@ -224,7 +253,7 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("xpersona.playground.replay.session", () => view.replay()),
   ];
-  context.subscriptions.push(reg, ...cmds);
+  context.subscriptions.push(reg, uriReg, ...cmds);
 }
 
 export function deactivate() {}
@@ -254,6 +283,10 @@ class Provider implements vscode.WebviewViewProvider {
   private lastIndexAt = 0;
   private indexTimer: NodeJS.Timeout | null = null;
   private indexDebounceTimer: NodeJS.Timeout | null = null;
+  private vscodeAccessToken: string | null = null;
+  private vscodeAccessTokenExpiresAtMs = 0;
+  private vscodeSignedInEmail: string | null = null;
+  private pendingPkce: { state: string; verifier: string; createdAtMs: number } | null = null;
   private hasExecutionIntent(task: string): boolean {
     return /\b(create|make|add|build|implement|refactor|fix|debug|run|test|lint|typecheck|command|file|patch|edit|ship|git|commit|push|pull|checkout|merge|rebase|branch)\b/i.test(task);
   }
@@ -313,6 +346,182 @@ class Provider implements vscode.WebviewViewProvider {
       }
     }
     this.setupBackgroundIndexing();
+  }
+
+  private pkceChallenge(verifier: string): string {
+    return createHash("sha256").update(verifier, "utf8").digest("base64url");
+  }
+
+  private vscodeRedirectUri(): string {
+    return "vscode://playgroundai.xpersona-playground/auth-callback";
+  }
+
+  private async loadPendingPkce(): Promise<{ state: string; verifier: string } | null> {
+    const fresh = this.pendingPkce && Date.now() - this.pendingPkce.createdAtMs < 10 * 60 * 1000;
+    if (fresh && this.pendingPkce) return { state: this.pendingPkce.state, verifier: this.pendingPkce.verifier };
+    const stored = this.ctx.globalState.get<any>(VSCODE_PENDING_PKCE_KEY, null);
+    const state = typeof stored?.state === "string" ? stored.state : "";
+    const verifier = typeof stored?.verifier === "string" ? stored.verifier : "";
+    const createdAtMs = typeof stored?.createdAtMs === "number" ? stored.createdAtMs : 0;
+    if (!state || !verifier || !createdAtMs) return null;
+    if (Date.now() - createdAtMs > 10 * 60 * 1000) return null;
+    this.pendingPkce = { state, verifier, createdAtMs };
+    return { state, verifier };
+  }
+
+  private async storePendingPkce(state: string, verifier: string): Promise<void> {
+    this.pendingPkce = { state, verifier, createdAtMs: Date.now() };
+    await this.ctx.globalState.update(VSCODE_PENDING_PKCE_KEY, this.pendingPkce);
+  }
+
+  private async clearPendingPkce(): Promise<void> {
+    this.pendingPkce = null;
+    await this.ctx.globalState.update(VSCODE_PENDING_PKCE_KEY, null);
+  }
+
+  private async getRefreshToken(): Promise<string | null> {
+    try {
+      return (await this.ctx.secrets.get(VSCODE_REFRESH_TOKEN_SECRET)) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async hasAnyAuth(): Promise<boolean> {
+    const refreshToken = await this.getRefreshToken();
+    if (refreshToken) return true;
+    try {
+      const k = await this.ctx.secrets.get(API_KEY_SECRET);
+      return Boolean(k && k.trim());
+    } catch {
+      return false;
+    }
+  }
+
+  private async ensureVscodeAccessToken(): Promise<string | null> {
+    const now = Date.now();
+    if (this.vscodeAccessToken && now < this.vscodeAccessTokenExpiresAtMs - 60_000) return this.vscodeAccessToken;
+    const refreshToken = await this.getRefreshToken();
+    if (!refreshToken) return null;
+    const r = await req<any>("POST", `${base()}/api/v1/playground/auth/vscode/token`, null, {
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    }).catch(() => null);
+    const token = typeof r?.access_token === "string" ? String(r.access_token) : "";
+    const expiresIn = Number(r?.expires_in ?? 900);
+    if (!token) {
+      this.vscodeAccessToken = null;
+      this.vscodeAccessTokenExpiresAtMs = 0;
+      return null;
+    }
+    this.vscodeAccessToken = token;
+    this.vscodeAccessTokenExpiresAtMs = now + Math.max(60, expiresIn) * 1000;
+    return token;
+  }
+
+  private async resolveRequestAuth(): Promise<{ apiKey?: string; bearer?: string } | null> {
+    const token = await this.ensureVscodeAccessToken().catch(() => null);
+    if (token) return { bearer: token };
+    const key = await this.ctx.secrets.get(API_KEY_SECRET).catch(() => null);
+    if (key && key.trim()) return { apiKey: key.trim() };
+    return null;
+  }
+
+  private async refreshSignedInEmail(): Promise<void> {
+    const token = await this.ensureVscodeAccessToken();
+    if (!token) return;
+    const me = await req<any>("GET", `${base()}/api/v1/playground/auth/vscode/me`, { bearer: token }).catch(() => null);
+    const email = typeof me?.data?.email === "string" ? String(me.data.email) : null;
+    if (email) this.vscodeSignedInEmail = email;
+  }
+
+  private async postAuthState(): Promise<void> {
+    const refreshToken = await this.getRefreshToken();
+    const signedIn = Boolean(refreshToken);
+    this.post({ type: "authState", signedIn, email: this.vscodeSignedInEmail });
+  }
+
+  async signInWithBrowser(): Promise<void> {
+    const state = randomBytes(16).toString("hex");
+    const verifier = randomBytes(32).toString("base64url");
+    const challenge = this.pkceChallenge(verifier);
+    await this.storePendingPkce(state, verifier);
+
+    const u = new URL(`${base()}/api/v1/playground/auth/vscode/authorize`);
+    u.searchParams.set("client_id", "vscode");
+    u.searchParams.set("redirect_uri", this.vscodeRedirectUri());
+    u.searchParams.set("state", state);
+    u.searchParams.set("code_challenge", challenge);
+    u.searchParams.set("code_challenge_method", "S256");
+
+    this.post({ type: "status", text: "Opening browser sign-in..." });
+    await vscode.env.openExternal(vscode.Uri.parse(u.toString()));
+  }
+
+  async handleAuthCallback(uri: vscode.Uri): Promise<void> {
+    const authority = String(uri.authority || "");
+    if (authority !== "playgroundai.xpersona-playground") return;
+    const pathName = String(uri.path || "");
+    if (!pathName.endsWith("auth-callback")) return;
+    const params = new URLSearchParams(uri.query || "");
+    const code = (params.get("code") ?? "").trim();
+    const state = (params.get("state") ?? "").trim();
+    if (!code || !state) {
+      this.post({ type: "err", text: "Sign-in callback missing code/state." });
+      return;
+    }
+    const pending = await this.loadPendingPkce();
+    if (!pending || pending.state !== state) {
+      this.post({ type: "err", text: "Sign-in state mismatch. Please try signing in again." });
+      return;
+    }
+
+    const r = await req<any>("POST", `${base()}/api/v1/playground/auth/vscode/token`, null, {
+      grant_type: "authorization_code",
+      code,
+      code_verifier: pending.verifier,
+    }).catch((e) => ({ error: err(e) }));
+
+    if (r?.error) {
+      this.post({ type: "err", text: `Sign-in failed: ${String(r.error).slice(0, 200)}` });
+      return;
+    }
+
+    const accessToken = typeof r?.access_token === "string" ? String(r.access_token) : "";
+    const refreshToken = typeof r?.refresh_token === "string" ? String(r.refresh_token) : "";
+    const expiresIn = Number(r?.expires_in ?? 900);
+    if (!accessToken || !refreshToken) {
+      this.post({ type: "err", text: "Sign-in failed: missing tokens." });
+      return;
+    }
+
+    await this.ctx.secrets.store(VSCODE_REFRESH_TOKEN_SECRET, refreshToken);
+    this.vscodeAccessToken = accessToken;
+    this.vscodeAccessTokenExpiresAtMs = Date.now() + Math.max(60, expiresIn) * 1000;
+    await this.clearPendingPkce();
+
+    await this.refreshSignedInEmail().catch(() => {});
+    this.post({ type: "api", ok: true });
+    await this.postAuthState();
+    await this.loadHistory();
+  }
+
+  async signOut(): Promise<void> {
+    const refreshToken = await this.getRefreshToken();
+    if (refreshToken) {
+      await req<any>("POST", `${base()}/api/v1/playground/auth/vscode/revoke`, null, {
+        refresh_token: refreshToken,
+      }).catch(() => null);
+    }
+    await this.ctx.secrets.delete(VSCODE_REFRESH_TOKEN_SECRET).catch(() => {});
+    this.vscodeAccessToken = null;
+    this.vscodeAccessTokenExpiresAtMs = 0;
+    this.vscodeSignedInEmail = null;
+    await this.clearPendingPkce().catch(() => {});
+
+    const ok = await this.hasAnyAuth();
+    this.post({ type: "api", ok });
+    await this.postAuthState();
   }
 
   private modeStatusPresentation(mode: Mode): {
@@ -493,14 +702,22 @@ class Provider implements vscode.WebviewViewProvider {
     return folders[0];
   }
 
-  private async collectIdeContext(query: string, workspaceHash: string, key: string): Promise<IdeContext> {
+  private toContextPath(uri: vscode.Uri): string {
+    const root = this.getWorkspaceRoot();
+    if (!root) return uri.fsPath;
+    const rel = toRelPath(root.uri, uri);
+    const safe = normalizeWorkspaceRelativePath(rel);
+    return safe || uri.fsPath;
+  }
+
+  private async collectIdeContext(query: string, workspaceHash: string, auth: HttpAuth): Promise<IdeContext> {
     const root = this.getWorkspaceRoot();
     const activeFile = await this.collectActiveFileContext(20_000);
     const openFiles = await this.collectOpenEditorsContext(20, 6_000);
     const diagnostics = this.collectDiagnostics(200);
     const git = await this.collectGitSummary(root);
     const discovery = await this.runSafeDiscovery(root);
-    const indexedSnippets = await this.queryIndexForPrompt(workspaceHash, query, key, 12);
+    const indexedSnippets = await this.queryIndexForPrompt(workspaceHash, query, auth, 12);
     const mergedSnippets = [...indexedSnippets];
     if (discovery.rgFiles) {
       mergedSnippets.push({
@@ -531,7 +748,7 @@ class Provider implements vscode.WebviewViewProvider {
     const fullText = document.getText();
     const selected = editor.selection.isEmpty ? "" : document.getText(editor.selection).slice(0, 6000);
     return {
-      path: document.uri.fsPath,
+      path: this.toContextPath(document.uri),
       language: document.languageId,
       selection: selected || undefined,
       content: fullText.slice(0, maxChars),
@@ -543,7 +760,7 @@ class Provider implements vscode.WebviewViewProvider {
     const unique = new Set<string>();
     const out: Array<{ path: string; language?: string; excerpt?: string }> = [];
     for (const e of editors) {
-      const p = e.document.uri.fsPath;
+      const p = this.toContextPath(e.document.uri);
       if (!p || unique.has(p)) continue;
       unique.add(p);
       out.push({
@@ -551,6 +768,92 @@ class Provider implements vscode.WebviewViewProvider {
         language: e.document.languageId,
         excerpt: e.document.getText().slice(0, maxCharsPerFile),
       });
+    }
+    return out;
+  }
+
+  private async collectMentionedWorkspaceContext(text: string, maxItems: number, maxCharsPerItem: number): Promise<Array<{ path: string; language?: string; excerpt?: string }>> {
+    const root = this.getWorkspaceRoot();
+    if (!root) return [];
+    const tokens = extractAtMentions(text);
+    if (!tokens.length) return [];
+
+    const out: Array<{ path: string; language?: string; excerpt?: string }> = [];
+    const seen = new Set<string>();
+    for (const token of tokens) {
+      if (out.length >= maxItems) break;
+      const q = String(token || "").replace(/\\/g, "/").trim();
+      if (!q) continue;
+
+      let resolved: { path: string; kind: "file" | "folder" } | undefined;
+      const direct = normalizeWorkspaceRelativePath(q);
+      if (direct) {
+        resolved = this.mentionCatalog.find((x) => x.path.toLowerCase() === direct.toLowerCase());
+      }
+      if (!resolved) {
+        const results = await this.searchWorkspaceMentions(q, 16).catch(() => []);
+        const wantsFile = /\.[a-z0-9]{1,8}$/i.test(q) || q.includes(".");
+        resolved = wantsFile ? results.find((r) => r.kind === "file") ?? results[0] : results[0];
+      }
+      if (!resolved) continue;
+      if (seen.has(resolved.path)) continue;
+      seen.add(resolved.path);
+
+      if (resolved.kind === "folder") {
+        const uri = vscode.Uri.joinPath(root.uri, ...resolved.path.split("/"));
+        try {
+          const entries = await vscode.workspace.fs.readDirectory(uri);
+          const sorted = entries
+            .slice()
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .slice(0, 200)
+            .map(([name, type]) => (type === vscode.FileType.Directory ? `${name}/` : name));
+          const extra = entries.length > 200 ? `\n… and ${entries.length - 200} more` : "";
+          out.push({
+            path: `${resolved.path}/`,
+            language: "text",
+            excerpt: `Folder listing (mentioned as @${q}):\n${sorted.join("\n")}${extra}`,
+          });
+        } catch (e) {
+          out.push({
+            path: `${resolved.path}/`,
+            language: "text",
+            excerpt: `Failed to read folder listing (mentioned as @${q}): ${err(e)}`,
+          });
+        }
+        continue;
+      }
+
+      const uri = vscode.Uri.joinPath(root.uri, ...resolved.path.split("/"));
+      try {
+        const stat = await vscode.workspace.fs.stat(uri);
+        if (stat.size > 2_000_000) {
+          out.push({
+            path: resolved.path,
+            language: languageFromPath(resolved.path),
+            excerpt: `Skipped (mentioned as @${q}): file too large (${stat.size} bytes).`,
+          });
+          continue;
+        }
+        const doc = await vscode.workspace.openTextDocument(uri);
+        const full = doc.getText().replace(/\r\n/g, "\n");
+        const excerptRaw = full.slice(0, maxCharsPerItem);
+        const excerpt =
+          full.length > excerptRaw.length
+            ? `${excerptRaw}\n\n… [truncated ${full.length - excerptRaw.length} chars]`
+            : excerptRaw;
+        out.push({
+          path: resolved.path,
+          language: doc.languageId || languageFromPath(resolved.path),
+          excerpt,
+        });
+      } catch (e) {
+        out.push({
+          path: resolved.path,
+          language: languageFromPath(resolved.path),
+          excerpt: `Failed to read file (mentioned as @${q}): ${err(e)}`,
+        });
+      }
     }
     return out;
   }
@@ -596,9 +899,9 @@ class Provider implements vscode.WebviewViewProvider {
     };
   }
 
-  private async queryIndexForPrompt(projectKey: string, query: string, key: string, limit: number): Promise<Array<{ path?: string; score?: number; content: string }>> {
+  private async queryIndexForPrompt(projectKey: string, query: string, auth: HttpAuth, limit: number): Promise<Array<{ path?: string; score?: number; content: string }>> {
     try {
-      const response = await req<any>("POST", `${base()}/api/v1/playground/index/query`, key, {
+      const response = await req<any>("POST", `${base()}/api/v1/playground/index/query`, auth, {
         projectKey,
         query: query.slice(0, 2000),
         limit: Math.max(1, Math.min(limit, 50)),
@@ -663,11 +966,11 @@ class Provider implements vscode.WebviewViewProvider {
         return { status: "no-chunks", chunks: 0, message: "No indexable files found." };
       }
       const workspaceHash = this.computeWorkspaceHash(root);
-      const key = await this.ctx.secrets.get(API_KEY_SECRET);
-      if (!key) return { status: "no-key", chunks: 0, message: "Set your API key before rebuilding index." };
+      const auth = await this.resolveRequestAuth();
+      if (!auth) return { status: "no-key", chunks: 0, message: "Sign in (browser) or set an API key before rebuilding index." };
       for (let i = 0; i < chunks.length; i += INDEX_BATCH_SIZE) {
         const batch = chunks.slice(i, i + INDEX_BATCH_SIZE);
-        await req("POST", `${base()}/api/v1/playground/index/upsert`, key, {
+        await req("POST", `${base()}/api/v1/playground/index/upsert`, auth, {
           projectKey: workspaceHash,
           chunks: batch,
           cursor: `${Date.now()}:${i}`,
@@ -723,7 +1026,7 @@ class Provider implements vscode.WebviewViewProvider {
       return;
     }
     if (result.status === "no-key") {
-      this.post({ type: "status", text: "Set your API key before rebuilding workspace index." });
+      this.post({ type: "status", text: "Sign in (browser) or set an API key before rebuilding workspace index." });
       return;
     }
     if (result.status === "no-chunks") {
@@ -808,10 +1111,10 @@ class Provider implements vscode.WebviewViewProvider {
     await this.persistOpenThreads();
   }
 
-  private async ensureActiveThread(key: string, title: string): Promise<string | null> {
+  private async ensureActiveThread(auth: HttpAuth, title: string): Promise<string | null> {
     if (this.activeThreadId && this.threads[this.activeThreadId]) return this.activeThreadId;
     const sessionTitle = this.deriveThreadTitle(title);
-    const s = await req<any>("POST", `${base()}/api/v1/playground/sessions`, key, {
+    const s = await req<any>("POST", `${base()}/api/v1/playground/sessions`, auth, {
       title: sessionTitle,
       mode: this.mode,
     }).catch(() => ({}));
@@ -835,14 +1138,18 @@ class Provider implements vscode.WebviewViewProvider {
 
     v.webview.onDidReceiveMessage(async (m) => {
       if (m.type === "check") {
-        let hasKey = false;
+        let hasApiKey = false;
         try {
           const k = await this.ctx.secrets.get(API_KEY_SECRET);
-          hasKey = !!k;
+          hasApiKey = !!(k && k.trim());
         } catch (e) {
           this.post({ type: "err", text: `Failed to read API key: ${err(e)}` });
         }
-        this.post({ type: "api", ok: hasKey });
+        const hasRefresh = Boolean(await this.getRefreshToken());
+        if (hasRefresh) await this.refreshSignedInEmail().catch(() => {});
+        const ok = hasApiKey || hasRefresh;
+        this.post({ type: "api", ok });
+        await this.postAuthState();
         this.post({ type: "mode", value: this.mode });
         this.updateModeStatusItem();
         this.post({ type: "safety", value: this.safety });
@@ -850,14 +1157,19 @@ class Provider implements vscode.WebviewViewProvider {
         this.post({ type: "pendingActions", count: this.pendingActions.length });
         this.post({ type: "mentionsConfig", enabled: this.mentionsEnabled() });
         await this.postThreadState();
-        if (hasKey && this.activeThreadId) {
+        if (ok && this.activeThreadId) {
           await this.openSession(this.activeThreadId);
         } else if (!this.activeThreadId) {
           this.post({ type: "load", data: [], threadId: null });
         }
+      } else if (m.type === "signIn") {
+        await this.signInWithBrowser();
+      } else if (m.type === "signOut") {
+        await this.signOut();
       } else if (m.type === "saveKey") {
         if (m.key?.trim()) await this.ctx.secrets.store(API_KEY_SECRET, m.key.trim());
         this.post({ type: "api", ok: true });
+        await this.postAuthState();
         await this.loadHistory();
       } else if (m.type === "setMode") {
         await this.setMode(m.value as Mode);
@@ -945,6 +1257,7 @@ class Provider implements vscode.WebviewViewProvider {
     if (!k?.trim()) return;
     await this.ctx.secrets.store(API_KEY_SECRET, k.trim());
     this.post({ type: "api", ok: true });
+    await this.postAuthState();
   }
 
   async cycleMode() {
@@ -987,8 +1300,8 @@ class Provider implements vscode.WebviewViewProvider {
       this.post({ type: "status", text: "Already responding. Stop the current run before sending another message." });
       return;
     }
-    const key = await this.ctx.secrets.get(API_KEY_SECRET);
-    if (!key) return this.post({ type: "err", text: "No API key set" });
+    const auth = await this.resolveRequestAuth();
+    if (!auth) return this.post({ type: "err", text: "Not authenticated. Use Sign in (browser) or set an API key." });
 
     this.cancelRequested = false;
     this.pendingActions = [];
@@ -1003,7 +1316,7 @@ class Provider implements vscode.WebviewViewProvider {
       this.activeThreadId = requestedThreadId;
       this.sessionId = requestedThreadId;
     }
-    const activeThreadId = await this.ensureActiveThread(key, text);
+    const activeThreadId = await this.ensureActiveThread(auth, text);
     if (!activeThreadId) return this.post({ type: "err", text: "Failed to create chat session." });
     const runThreadId = activeThreadId;
     this.postRun(runThreadId, { type: "start" });
@@ -1032,7 +1345,33 @@ class Provider implements vscode.WebviewViewProvider {
 
     if (ideContextEnabled) {
       try {
-        collectedContext = await this.collectIdeContext(text, workspaceHash, key);
+        collectedContext = await this.collectIdeContext(text, workspaceHash, auth);
+      } catch (e) {
+        contextStatus.notes?.push(`context partial: ${err(e)}`);
+      }
+
+      if (this.mentionsEnabled()) {
+        try {
+          const mentioned = await this.collectMentionedWorkspaceContext(text, 8, 20_000);
+          if (mentioned.length) {
+            collectedContext = collectedContext || {};
+            const existing = new Set((collectedContext.openFiles ?? []).map((x) => x.path));
+            collectedContext.openFiles = [
+              ...mentioned.filter((x) => !existing.has(x.path)),
+              ...(collectedContext.openFiles ?? []),
+            ];
+            const label = mentioned
+              .slice(0, 6)
+              .map((x) => x.path)
+              .join(", ");
+            contextStatus.notes?.push(`@mentions: ${label}${mentioned.length > 6 ? ` (+${mentioned.length - 6} more)` : ""}`);
+          }
+        } catch (e) {
+          contextStatus.notes?.push(`mentions partial: ${err(e)}`);
+        }
+      }
+
+      if (collectedContext) {
         const sectionCount = [
           collectedContext.activeFile ? 1 : 0,
           (collectedContext.openFiles?.length ?? 0) > 0 ? 1 : 0,
@@ -1047,8 +1386,6 @@ class Provider implements vscode.WebviewViewProvider {
           indexFreshness: this.indexFreshness,
           discoveryCommands: (collectedContext.git?.status?.length ?? 0) > 0 || collectedContext.git?.diffSummary ? 3 : 0,
         };
-      } catch (e) {
-        contextStatus.notes?.push(`context partial: ${err(e)}`);
       }
     }
     contextStatus.preflightMs = Date.now() - preflightStarted;
@@ -1068,7 +1405,7 @@ class Provider implements vscode.WebviewViewProvider {
       return (
       stream(
         `${base()}/api/v1/playground/assist`,
-        key,
+        auth,
         {
           mode: requestMode,
           task: taskWithReasoning,
@@ -1321,13 +1658,13 @@ class Provider implements vscode.WebviewViewProvider {
   }
 
   async loadHistory() {
-    const key = await this.ctx.secrets.get(API_KEY_SECRET);
-    if (!key) {
+    const auth = await this.resolveRequestAuth();
+    if (!auth) {
       this.recentHistory = [];
       await this.postThreadState();
       return;
     }
-    const r = await req<any>("GET", `${base()}/api/v1/playground/sessions?limit=30`, key).catch(() => ({}));
+    const r = await req<any>("GET", `${base()}/api/v1/playground/sessions?limit=30`, auth).catch(() => ({}));
     const items = (r?.data?.data || [])
       .map((x: any) => this.threadFromApiRow(x))
       .filter((x: ThreadState) => x.id);
@@ -1340,8 +1677,8 @@ class Provider implements vscode.WebviewViewProvider {
   }
 
   async openSession(id: string) {
-    const key = await this.ctx.secrets.get(API_KEY_SECRET);
-    if (!key || !id) return;
+    const auth = await this.resolveRequestAuth();
+    if (!auth || !id) return;
     const existing = this.threads[id] || this.recentHistory.find((x) => x.id === id);
     this.upsertThread(existing || { id, title: "Untitled", mode: this.mode, updatedAt: null, isOpen: true }, true);
     this.activeThreadId = id;
@@ -1349,7 +1686,7 @@ class Provider implements vscode.WebviewViewProvider {
     const r = await req<any>(
       "GET",
       `${base()}/api/v1/playground/sessions/${encodeURIComponent(id)}/messages?includeAgentEvents=true`,
-      key
+      auth
     ).catch(() => ({}));
     const msgs = (r?.data || [])
       .filter((m: any) => m.role === "user" || m.role === "assistant")
@@ -1360,9 +1697,9 @@ class Provider implements vscode.WebviewViewProvider {
   }
 
   async newThread() {
-    const key = await this.ctx.secrets.get(API_KEY_SECRET);
-    if (!key) return this.post({ type: "err", text: "No API key set" });
-    const s = await req<any>("POST", `${base()}/api/v1/playground/sessions`, key, {
+    const auth = await this.resolveRequestAuth();
+    if (!auth) return this.post({ type: "err", text: "Not authenticated. Use Sign in (browser) or set an API key." });
+    const s = await req<any>("POST", `${base()}/api/v1/playground/sessions`, auth, {
       title: "New chat",
       mode: this.mode,
     }).catch(() => ({}));
@@ -1406,9 +1743,9 @@ class Provider implements vscode.WebviewViewProvider {
   }
 
   async replay() {
-    const key = await this.ctx.secrets.get(API_KEY_SECRET);
-    if (!key || !this.activeThreadId) return this.post({ type: "status", text: "No active session yet. Send a prompt first, then replay." });
-    const r = await req<any>("POST", `${base()}/api/v1/playground/replay`, key, {
+    const auth = await this.resolveRequestAuth();
+    if (!auth || !this.activeThreadId) return this.post({ type: "status", text: "No active session yet. Send a prompt first, then replay." });
+    const r = await req<any>("POST", `${base()}/api/v1/playground/replay`, auth, {
       sessionId: this.activeThreadId,
       workspaceFingerprint: "vscode",
       mode: this.mode,
@@ -1420,22 +1757,22 @@ class Provider implements vscode.WebviewViewProvider {
   }
 
   async executePendingActions(actions?: PendingAction[], threadIdOverride?: string) {
-    const key = await this.ctx.secrets.get(API_KEY_SECRET);
-    if (!key) return this.post({ type: "err", text: "No API key set" });
+    const auth = await this.resolveRequestAuth();
+    if (!auth) return this.post({ type: "err", text: "Not authenticated. Use Sign in (browser) or set an API key." });
     const runThreadId = threadIdOverride || this.activeThreadId || null;
     const rawActionList = (actions && actions.length ? actions : this.pendingActions).slice();
     const seenActionKeys = new Set<string>();
     const actionList = rawActionList.filter((action) => {
-      const key = JSON.stringify(action);
-      if (seenActionKeys.has(key)) return false;
-      seenActionKeys.add(key);
+      const actionKey = JSON.stringify(action);
+      if (seenActionKeys.has(actionKey)) return false;
+      seenActionKeys.add(actionKey);
       return true;
     });
     if (!actionList.length) return this.postRun(runThreadId, { type: "status", text: "No pending actions to execute." });
 
     this.postRun(runThreadId, { type: "status", text: `Executing ${actionList.length} action(s)...` });
 
-    const r = await req<any>("POST", `${base()}/api/v1/playground/execute`, key, {
+    const r = await req<any>("POST", `${base()}/api/v1/playground/execute`, auth, {
       sessionId: runThreadId || undefined,
       workspaceFingerprint: "vscode",
       actions: actionList.map((a) => {
@@ -1674,11 +2011,26 @@ class Provider implements vscode.WebviewViewProvider {
   }
 }
 
-function req<T>(method: "GET" | "POST", u: string, key: string, body?: unknown): Promise<T> {
+function req<T>(
+  method: "GET" | "POST",
+  u: string,
+  auth: { apiKey?: string; bearer?: string } | null,
+  body?: unknown
+): Promise<T> {
   return new Promise((resolve, reject) => {
     const x = new URL(u);
     const c = x.protocol === "https:" ? https : http;
     const p = body === undefined ? "" : JSON.stringify(body);
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (auth?.apiKey) {
+      headers["X-API-Key"] = auth.apiKey;
+      if (!headers.Authorization) headers.Authorization = `Bearer ${auth.apiKey}`;
+    }
+    if (auth?.bearer) {
+      headers.Authorization = `Bearer ${auth.bearer}`;
+    }
 
     const r = c.request(
       {
@@ -1687,8 +2039,7 @@ function req<T>(method: "GET" | "POST", u: string, key: string, body?: unknown):
         path: x.pathname + x.search,
         method,
         headers: {
-          "X-API-Key": key,
-          "Content-Type": "application/json",
+          ...headers,
           ...(body === undefined ? {} : { "Content-Length": Buffer.byteLength(p) }),
         },
       },
@@ -1714,7 +2065,7 @@ function req<T>(method: "GET" | "POST", u: string, key: string, body?: unknown):
 
 function stream(
   u: string,
-  key: string,
+  auth: { apiKey?: string; bearer?: string } | null,
   body: unknown,
   options: { onCancelReady?: (cancel: () => void) => void } | undefined,
   onEvent: (event: string, payload: any) => void
@@ -1725,6 +2076,17 @@ function stream(
     const x = new URL(u);
     const c = x.protocol === "https:" ? https : http;
     const p = JSON.stringify(body);
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+    };
+    if (auth?.apiKey) {
+      headers["X-API-Key"] = auth.apiKey;
+      if (!headers.Authorization) headers.Authorization = `Bearer ${auth.apiKey}`;
+    }
+    if (auth?.bearer) {
+      headers.Authorization = `Bearer ${auth.bearer}`;
+    }
     let b = "";
     let done = false;
     let idleTimer: NodeJS.Timeout | null = null;
@@ -1785,10 +2147,8 @@ function stream(
         path: x.pathname + x.search,
         method: "POST",
         headers: {
-          "X-API-Key": key,
-          "Content-Type": "application/json",
+          ...headers,
           "Content-Length": Buffer.byteLength(p),
-          Accept: "text/event-stream",
         },
       },
       (res) => {
