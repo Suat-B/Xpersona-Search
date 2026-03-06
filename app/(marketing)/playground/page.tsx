@@ -4,14 +4,14 @@ import { PlaygroundClient } from "./PlaygroundClient";
 const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
 
 export const metadata: Metadata = {
-  title: "Playground AI for VS Code | Start Free Trial",
+  title: "Playground AI for VS Code | Agentic coding workspace",
   description:
-    "Your coding copilot workspace for shipping faster. Powered by our in-house model, Playground <3 pure love <3, for generate, plan, and debug workflows.",
+    "Plan, generate, and debug with full project context—then execute changes with policy-checked control. Powered by Playground 1, our in-house coding model.",
   alternates: { canonical: `${baseUrl}/playground` },
   openGraph: {
-    title: "Playground AI for VS Code | Start Free Trial",
+    title: "Playground AI for VS Code | Agentic coding workspace",
     description:
-      "Powered by our in-house model, Playground <3 pure love <3. Generate, plan, and debug faster with premium coding workflows.",
+      "Plan, generate, and debug with full project context—then execute changes with policy-checked control. Powered by Playground 1, our in-house coding model.",
     url: `${baseUrl}/playground`,
     type: "website",
   },
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 
 export default function PlaygroundPage() {
   return (
-    <div className="min-h-screen flex flex-col bg-white">
+    <div className="min-h-screen flex flex-col bg-[var(--light-bg-primary)]">
       <main className="flex-1">
         <PlaygroundClient />
       </main>

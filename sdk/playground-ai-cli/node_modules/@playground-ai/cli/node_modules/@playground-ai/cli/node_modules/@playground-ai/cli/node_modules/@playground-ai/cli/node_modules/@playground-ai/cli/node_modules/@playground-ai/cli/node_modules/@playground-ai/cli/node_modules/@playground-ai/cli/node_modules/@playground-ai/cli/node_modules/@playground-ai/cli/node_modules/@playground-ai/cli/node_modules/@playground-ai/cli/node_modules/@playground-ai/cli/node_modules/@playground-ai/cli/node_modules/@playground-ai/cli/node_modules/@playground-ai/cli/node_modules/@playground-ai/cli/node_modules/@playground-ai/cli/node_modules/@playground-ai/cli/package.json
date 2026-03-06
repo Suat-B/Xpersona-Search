@@ -1,0 +1,26 @@
+{
+  "name": "@playground-ai/cli",
+  "version": "0.1.0",
+  "description": "Playground AI CLI - agentic coding runtime for terminal workflows.",
+  "type": "module",
+  "bin": {
+    "playground": "dist/cli.js",
+    "pgai": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}

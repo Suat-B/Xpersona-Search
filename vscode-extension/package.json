@@ -1,4 +1,4 @@
-﻿{
+{
     "name":  "xpersona-playground",
     "displayName":  "Playground AI",
     "description":  "Chat with AI agents directly in VS Code.",
@@ -26,6 +26,7 @@
                              "onCommand:xpersona.playground.agents.parallelRun",
                              "onCommand:xpersona.playground.index.rebuild",
                              "onCommand:xpersona.playground.replay.session",
+                             "onCommand:xpersona.playground.undoLastChanges",
                              "onView:xpersona.playgroundView",
                              "onCommand:xpersona.playground.signIn",
                              "onCommand:xpersona.playground.signOut"
@@ -118,6 +119,11 @@
                                              "category":  "Xpersona"
                                          },
                                          {
+                                             "title":  "Undo Playground Changes",
+                                             "command":  "xpersona.playground.undoLastChanges",
+                                             "category":  "Playground AI"
+                                         },
+                                         {
                                              "title":  "Sign In (Browser)",
                                              "command":  "xpersona.playground.signIn",
                                              "category":  "Playground AI"
@@ -170,6 +176,9 @@
                                                                  "command":  "xpersona.playground.replay.session"
                                                              },
                                                              {
+                                                                 "command":  "xpersona.playground.undoLastChanges"
+                                                             },
+                                                             {
                                                                  "command":  "xpersona.playground.signIn"
                                                              },
                                                              {
@@ -181,6 +190,10 @@
                                                                  "command":  "xpersona.playground.openWithSelection",
                                                                  "group":  "2_xpersona@1",
                                                                  "when":  "editorHasSelection"
+                                                             },
+                                                             {
+                                                                 "command":  "xpersona.playground.undoLastChanges",
+                                                                 "group":  "2_xpersona@2"
                                                              }
                                                          ]
                                   },
@@ -218,6 +231,11 @@
                                                                                                                       ],
                                                                                                              "description":  "Execution policy for approved actions. full_auto executes safe actions immediately."
                                                                                                          },
+                                                                 "xpersona.playground.ideContextV2":  {
+                                                                                                           "type":  "boolean",
+                                                                                                           "default":  true,
+                                                                                                           "description":  "Include IDE context by default so Playground can read active files, open files, diagnostics, and indexed workspace snippets."
+                                                                                                       },
                                                                  "xpersona.playground.mentions.enabled":  {
                                                                                                               "type":  "boolean",
                                                                                                               "default":  true,

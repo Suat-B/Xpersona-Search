@@ -120,6 +120,7 @@
       const modelSel = document.getElementById("modelSel");
       const reasonSel = document.getElementById("reasonSel");
       const contextPill = document.getElementById("contextPill");
+      const composerShell = document.querySelector(".composer-shell");
       const composerState = document.getElementById("composerState");
       const jumpLatestBtn = document.getElementById("jumpLatest");
       const startup = document.querySelector(".startup");
@@ -139,6 +140,7 @@
       const authSignIn = document.getElementById("authSignIn");
       const authSignOut = document.getElementById("authSignOut");
       const newThreadBtn = document.getElementById("newThreadBtn");
+      const undoLastBtn = document.getElementById("undoLastBtn");
 
       let streamBubble = null;
       let streaming = false;
@@ -147,6 +149,11 @@
       const DEFAULT_MODEL = "Playground 1";
       const MAX_DIFF_ROWS = 400;
       const seenEditPreviewKeys = new Set();
+
+      function applyIdeContextVisualState(enabled) {
+        if (composerShell) composerShell.classList.toggle("ide-context-on", enabled);
+        if (contextPill) contextPill.textContent = enabled ? "IDE Context: ON" : "IDE Context: OFF";
+      }
       const MAX_ATTACHMENTS = 3;
       const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024;
       const ALLOWED_ATTACHMENT_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -171,6 +178,8 @@
       let mentionDebounceTimer = null;
       let creatingThread = false;
       let contextSummary = "";
+      let undoAvailable = false;
+      let undoCount = 0;
       const RUN_SCOPED_MESSAGE_TYPES = new Set([
         "start",
         "token",
@@ -223,6 +232,15 @@
         const reasoningLabel = labelForReasoning(reasonSel ? reasonSel.value : "medium");
         const tail = contextSummary ? " - " + contextSummary : "";
         composerState.textContent = "Mode: " + modeLabel + " - Reasoning: " + reasoningLabel + tail;
+      }
+
+      function updateUndoButtonState() {
+        if (!undoLastBtn) return;
+        undoLastBtn.disabled = !undoAvailable;
+        undoLastBtn.textContent = undoAvailable
+          ? ("Undo Last Changes" + (undoCount > 1 ? " (" + undoCount + ")" : ""))
+          : "Undo Last Changes";
+        undoLastBtn.title = undoAvailable ? "Revert the latest Playground-applied file changes." : "No Playground changes available to undo.";
       }
 
       function parseSlashModeCommand(rawText) {
@@ -1153,6 +1171,7 @@
 
         const parsed = parseDiffStats(patch);
         const rendered = renderUnifiedDiffRows(patch || "", { maxRows: MAX_DIFF_ROWS });
+        const hasRenderableChanges = parsed.adds > 0 || parsed.dels > 0;
         body.innerHTML =
           '<details class="diff-disclosure" open>' +
             '<summary class="diff-summary">' +
@@ -1164,7 +1183,11 @@
                 '<div class="diff-title"><span class="diff-path">' + esc(path || "unknown") + "</span></div>" +
                 '<div class="diff-stats"><span class="add">+' + esc(parsed.adds) + '</span> <span class="del">-' + esc(parsed.dels) + "</span></div>" +
               "</div>" +
-              '<div class="diff-body">' + rendered.html + "</div>" +
+              (
+                hasRenderableChanges
+                  ? '<div class="diff-body">' + rendered.html + "</div>"
+                  : '<div class="diff-trunc">No line-level diff content was available for this preview.</div>'
+              ) +
               (rendered.truncated ? '<div class="diff-trunc">Truncated (showing first ' + esc(rendered.maxRows) + " lines)</div>" : "") +
             "</div>" +
           "</details>";
@@ -1172,6 +1195,7 @@
       }
 
       const STAGE_PANEL_IDS = new Set([
+        "chat",
         "stageBlank",
         "stageThreads",
         "timeline",
@@ -1183,12 +1207,12 @@
 
       function showTab(p) {
         const raw = String(p || "");
-        const id = raw === "chat" ? "stageBlank" : raw;
+        const id = raw;
         if (!STAGE_PANEL_IDS.has(id)) return;
-        document.querySelectorAll(".panel").forEach((t) => t.classList.remove("active"));
+        document.querySelectorAll(".stage-shell .panel").forEach((t) => t.classList.remove("active"));
         const panel = document.getElementById(id);
         if (panel) panel.classList.add("active");
-        if (backToChatQuick) backToChatQuick.classList.toggle("hidden", id === "stageBlank");
+        if (backToChatQuick) backToChatQuick.classList.toggle("hidden", id === "chat");
       }
 
       function showHistoryPanel(loadingText) {
@@ -1237,7 +1261,7 @@
         saveCurrentDraft();
         creatingThread = true;
         currentThreadId = null;
-        showTab("stageBlank");
+        showTab("chat");
         clearPlanDecisionCard();
         closeMentionMenu();
         setStreaming(false);
@@ -1412,7 +1436,7 @@
       }
       if (backToChatQuick) {
         backToChatQuick.onclick = () => {
-          showTab("stageBlank");
+          showTab("chat");
         };
       }
       const saveKeyBtn = document.getElementById("ks");
@@ -1474,10 +1498,11 @@
       if (ctxToggle) {
         ctxToggle.onchange = () => {
           const enabled = Boolean(ctxToggle.checked);
-          if (contextPill) contextPill.textContent = enabled ? "IDE Context: on" : "IDE Context: off";
+          applyIdeContextVisualState(enabled);
           if (!enabled) contextSummary = "";
           updateComposerState();
         };
+        applyIdeContextVisualState(Boolean(ctxToggle.checked));
       }
       updateAttachmentUI();
       updateComposerState();
@@ -1729,6 +1754,13 @@
         });
       }
       bindChatDockClickToFocus();
+      if (undoLastBtn) {
+        undoLastBtn.onclick = () => {
+          v.postMessage({ type: "undoLastChanges" });
+          setActionMenuOpen(false);
+        };
+      }
+      updateUndoButtonState();
 
       window.addEventListener("message", (ev) => {
         const m = ev.data;
@@ -2008,6 +2040,10 @@
           )).join("") || "No execution logs";
         } else if (m.type === "pendingActions") {
           // Auto execution mode; pending count is reflected via status messages.
+        } else if (m.type === "undoState") {
+          undoAvailable = m.available === true;
+          undoCount = Number(m.count || 0);
+          updateUndoButtonState();
         } else if (m.type === "err") {
           creatingThread = false;
           clearPlanDecisionCard();
@@ -2037,7 +2073,7 @@
           updateStartupVisibility();
           renderThreadList();
           restoreDraftForThread(currentThreadId);
-          showTab("stageBlank");
+          showTab("chat");
           followLatest = true;
           scrollToLatest(true);
         }

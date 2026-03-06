@@ -49,6 +49,8 @@ function parsePatch(patchText) {
                     break;
                 return null;
             }
+            if (hunk.lines.length === 0)
+                return null;
             hunks.push(hunk);
             continue;
         }
@@ -57,6 +59,9 @@ function parsePatch(patchText) {
     if (!hunks.length)
         return null;
     return { oldPath, newPath, hunks };
+}
+function patchHasLineChanges(parsed) {
+    return parsed.hunks.some((hunk) => hunk.lines.some((line) => line.kind === "+" || line.kind === "-"));
 }
 function hunkMatchesAt(sourceLines, start, hunk) {
     let idx = start;
@@ -101,6 +106,15 @@ function applyUnifiedDiff(originalText, patchText) {
             hunksApplied: 0,
             totalHunks: 0,
             targetPath: null,
+        };
+    }
+    if (!patchHasLineChanges(parsed)) {
+        return {
+            status: "rejected_invalid_patch",
+            reason: "Patch contained no line changes.",
+            hunksApplied: 0,
+            totalHunks: parsed.hunks.length,
+            targetPath: parsed.newPath || parsed.oldPath,
         };
     }
     const sourceLines = originalText.replace(/\r\n/g, "\n").split("\n");

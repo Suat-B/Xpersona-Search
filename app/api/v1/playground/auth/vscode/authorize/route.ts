@@ -5,8 +5,8 @@ import { playgroundVscodeAuthCodes } from "@/lib/db/schema";
 import { hashOpaqueToken } from "@/lib/playground/vscode-tokens";
 import { randomBytes } from "crypto";
 
-const EXPECTED_CLIENT_ID = "vscode";
-const EXPECTED_REDIRECT_URI = "vscode://playgroundai.xpersona-playground/auth-callback";
+const EXPECTED_CLIENT_IDS = new Set(["vscode", "cli"]);
+const VSCODE_REDIRECT_URI = "vscode://playgroundai.xpersona-playground/auth-callback";
 const AUTH_CODE_TTL_MS = 5 * 60 * 1000;
 
 function isSafePkceChallenge(value: string): boolean {
@@ -24,10 +24,25 @@ export async function GET(request: NextRequest): Promise<Response> {
   const codeChallenge = params.get("code_challenge") ?? "";
   const method = params.get("code_challenge_method") ?? "S256";
 
-  if (clientId !== EXPECTED_CLIENT_ID) {
+  if (!EXPECTED_CLIENT_IDS.has(clientId)) {
     return NextResponse.json({ success: false, error: "invalid_client" }, { status: 400 });
   }
-  if (redirectUri !== EXPECTED_REDIRECT_URI) {
+
+  const isValidRedirect = (() => {
+    if (clientId === "vscode") return redirectUri === VSCODE_REDIRECT_URI;
+    if (clientId !== "cli") return false;
+    try {
+      const parsed = new URL(redirectUri);
+      if (parsed.protocol !== "http:") return false;
+      if (!(parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost")) return false;
+      if (!parsed.port) return false;
+      return parsed.pathname === "/callback";
+    } catch {
+      return false;
+    }
+  })();
+
+  if (!isValidRedirect) {
     return NextResponse.json({ success: false, error: "invalid_redirect_uri" }, { status: 400 });
   }
   if (!state || state.length > 512) {
@@ -69,4 +84,3 @@ export async function GET(request: NextRequest): Promise<Response> {
   cb.searchParams.set("state", state);
   return NextResponse.redirect(cb.toString(), { status: 302 });
 }
-

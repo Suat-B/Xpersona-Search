@@ -175,6 +175,31 @@ function isQwenOrNscaleIdentityProbe(input: string): boolean {
   );
 }
 
+function sanitizeProviderIdentityLeak(text: string): { text: string; changed: boolean } {
+  const raw = String(text || "");
+  if (!raw.trim()) return { text: raw, changed: false };
+  let out = raw;
+
+  const leakedIdentityPattern =
+    /\b(i am|i'm|currently operating as|running as|powered by|model is|using)\b[\s\S]{0,120}\b(qwen|n[\s-]*scale)\b/i;
+  if (!leakedIdentityPattern.test(raw) && !/\bqwen\d*\b/i.test(raw)) {
+    return { text: raw, changed: false };
+  }
+
+  out = out.replace(
+    /(^|\n)\s*i am currently operating as[^\n]*/gi,
+    (_m, p1) => `${p1}I am ${PUBLIC_PLAYGROUND_MODEL_NAME}, your coding assistant.`
+  );
+  out = out.replace(
+    /\b(i am|i'm)\s+(?:a|an)?\s*(?:language model|model)?\s*(?:by|from)?\s*[^.,;\n]*(qwen|n[\s-]*scale)[^.,;\n]*/gi,
+    `I am ${PUBLIC_PLAYGROUND_MODEL_NAME}`
+  );
+  out = out.replace(/\bqwen\d*(?:[-\w./:]*)?\b/gi, PUBLIC_PLAYGROUND_MODEL_NAME);
+  out = out.replace(/\bn[\s-]*scale\b/gi, "our managed inference provider");
+  out = out.replace(/\s{2,}/g, " ").trim();
+  return { text: out, changed: out !== raw };
+}
+
 function isLikelyInvalidModelError(message: string): boolean {
   const lower = message.toLowerCase();
   return (
@@ -284,10 +309,13 @@ function hasPathMention(task: string): boolean {
   return /\b[a-zA-Z0-9_./-]+\.[a-z0-9]{1,8}\b/i.test(task);
 }
 
+function hasExplicitEditRequest(task: string): boolean {
+  return /\b(edit|update|modify|rewrite|change|refactor|implement|create|add|remove|delete|fix|patch|apply)\b/i.test(task);
+}
+
 function hasCodeTaskSignals(task: string): boolean {
   return (
-    /\b(code|file|function|class|bug|error|fix|refactor|implement|build|test|lint|typecheck|stack trace|exception|module|api|endpoint|sql|schema|patch|edit|debug|feature|python|javascript|typescript)\b/i.test(task) ||
-    hasPathMention(task)
+    /\b(code|file|function|class|bug|error|fix|refactor|implement|build|test|lint|typecheck|stack trace|exception|module|api|endpoint|sql|schema|patch|edit|debug|feature|python|javascript|typescript)\b/i.test(task)
   );
 }
 
@@ -304,6 +332,12 @@ function isGreetingLike(task: string): boolean {
   return /^(hi|hello|hey|yo|sup|thanks|thank you|thx)\b/i.test(task.trim());
 }
 
+function isAcknowledgementLike(task: string): boolean {
+  const trimmed = task.trim().toLowerCase();
+  if (!trimmed || trimmed.length > 48) return false;
+  return /^(awesome|great|nice|cool|perfect|sounds good|looks good|love it|that works|works for me|sweet|beautiful|amazing)\b/.test(trimmed);
+}
+
 type AssistIntentType = "conversation" | "code_edit" | "debug" | "plan" | "execute";
 
 type IntentResolution = {
@@ -318,8 +352,10 @@ type IntentResolution = {
 type RouteFeatures = {
   questionLike: boolean;
   greetingLike: boolean;
+  acknowledgementLike: boolean;
   codeSignals: boolean;
   pathMention: boolean;
+  explicitEditRequest: boolean;
   hasContext: boolean;
   debugWords: boolean;
   planWords: boolean;
@@ -344,8 +380,10 @@ function collectRouteFeatures(input: {
   return {
     questionLike: isQuestionLike(input.task),
     greetingLike: isGreetingLike(input.task),
+    acknowledgementLike: isAcknowledgementLike(input.task),
     codeSignals: hasCodeTaskSignals(input.task),
     pathMention: hasPathMention(input.task),
+    explicitEditRequest: hasExplicitEditRequest(input.task),
     hasContext: Boolean(
       input.context?.activeFile?.path ||
       (input.context?.openFiles?.length ?? 0) > 0 ||
@@ -385,6 +423,10 @@ function scoreIntentRoute(features: RouteFeatures): { scores: Record<AssistInten
     scores.conversation += 0.38;
     reasonCodes.push("greeting_or_smalltalk");
   }
+  if (features.acknowledgementLike) {
+    scores.conversation += 0.34;
+    reasonCodes.push("acknowledgement_smalltalk");
+  }
   if (features.questionLike && !features.codeSignals) {
     scores.conversation += 0.34;
     reasonCodes.push("question_without_code_signal");
@@ -393,9 +435,13 @@ function scoreIntentRoute(features: RouteFeatures): { scores: Record<AssistInten
     scores.code_edit += 0.24;
     reasonCodes.push("code_task_signal");
   }
-  if (features.pathMention) {
+  const questionAboutPath = features.pathMention && features.questionLike;
+  if (features.pathMention && (features.explicitEditRequest || !questionAboutPath)) {
     scores.code_edit += 0.2;
     reasonCodes.push("path_mentioned");
+  } else if (questionAboutPath) {
+    scores.conversation += 0.22;
+    reasonCodes.push("path_mentioned_question_bias_conversation");
   }
   if (features.debugWords) {
     scores.debug += 0.42;
@@ -440,6 +486,11 @@ function applyClarificationPass(
 
   const next = { ...scores };
   let clarified = false;
+  if (isAcknowledgementLike(task) && !features.explicitEditRequest && !features.executeWords && !features.debugWords) {
+    next.conversation += 0.28;
+    clarified = true;
+    reasonCodes.push("clarification_acknowledgement_bias");
+  }
   if (features.shortFollowup && features.followupRef && features.lastAssistantHadPatchLike) {
     next.code_edit += 0.18;
     clarified = true;
@@ -629,11 +680,6 @@ function profileToPrompt(profile?: AssistUserProfile | null, clientPreferences?:
   const reasoning = clientPreferences?.reasoning || profile?.reasoningPreference || "medium";
 
   parts.push(`User preference: tone=${tone}, autonomy=${autonomy}, style=${style}, reasoning=${reasoning}.`);
-
-  const summary = String(profile?.sessionSummary || "").trim();
-  if (summary) {
-    parts.push(`Persistent user summary (bounded): ${summary.slice(0, 700)}`);
-  }
   return parts.join("\n");
 }
 
@@ -1080,7 +1126,10 @@ function stripRoboticArtifacts(text: string): string {
     .replace(/```$/i, "")
     .replace(/^\s*\{"final":/i, "")
     .replace(/\s*"edits"\s*:\s*\[[\s\S]*$/i, "")
-    .replace(/\b(no commands are required|no edits are provided|prepared \d+ tool action\(s\).*)\b/gi, "")
+    .replace(
+      /\b(no commands are required|no edits are provided|prepared \d+ tool action\(s\).*|starting execution\.\.\.|action outcome|execute finished:.*|files changed:\s*\d+|checks run:\s*\d+|result quality:\s*\w+)\b/gi,
+      ""
+    )
     .replace(/\bthinking\.\.\.\s*/gi, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -1108,6 +1157,10 @@ export function composeWarmAssistantResponse(input: {
   };
 }): string {
   const cleaned = stripRoboticArtifacts(input.final);
+  if (input.intent === "conversation") {
+    return cleaned || "I'm here and ready to help with whatever you want next.";
+  }
+
   if (input.decisionMode === "plan") {
     return cleaned;
   }
@@ -1133,10 +1186,6 @@ export function composeWarmAssistantResponse(input: {
     ]
       .filter(Boolean)
       .join("\n");
-  }
-
-  if (input.intent === "conversation") {
-    return cleaned || "I'm here and ready to help with whatever you want next.";
   }
 
   const fallbackLine = cleaned || "I'm ready to continue once you share the next concrete change.";
@@ -1279,12 +1328,15 @@ function hasExplicitCommandRunIntent(task: string): boolean {
 }
 
 function hasCodeEditIntent(task: string): boolean {
-  if (/\b(create|make|add|implement|write|modify|edit|patch|refactor|fix|ship|file)\b/i.test(task)) return true;
+  if (/\b(create|make|add|implement|write|modify|edit|patch|refactor|fix|ship)\b/i.test(task)) return true;
   const pathMention = hasPathMention(task);
   if (!pathMention) return false;
   if (/\b(in|inside|into|to|update|put|place|insert|apply|use|with)\b/i.test(task)) return true;
   const trimmed = task.trim().toLowerCase();
-  const questionLike = /\?$/.test(trimmed) || /^(what|why|how|when|where|who|which)\b/.test(trimmed);
+  const questionLike =
+    /\?$/.test(trimmed) ||
+    /^(what|why|how|when|where|who|which|can|could|would|should|is|are|do|does|did)\b/.test(trimmed) ||
+    /\b(about|explain|describe|read|summarize|tell me|walk me through)\b/.test(trimmed);
   return !questionLike;
 }
 
@@ -1800,7 +1852,7 @@ export async function runAssist(
         if (model !== fallbackModel && isLikelyInvalidModelError(message)) {
           logs.push(`model_fallback from "${model}" to "${fallbackModel}"`);
           if (hooks?.onStatus) {
-            await hooks.onStatus(`Model "${model}" unavailable. Falling back to "${fallbackModel}".`);
+            await hooks.onStatus("Model unavailable. Retrying with backup model.");
           }
           modelUsed = fallbackModel;
           return callHfChat({
@@ -1914,6 +1966,19 @@ export async function runAssist(
     }
   }
 
+  const readOnlyConversationRequest =
+    intentResolution.intent === "conversation" &&
+    !hasCodeEditIntent(req.task) &&
+    !hasExecutionIntent(req.task);
+  if (readOnlyConversationRequest) {
+    if (edits.length > 0 || structuredActions.length > 0 || modelCommands.length > 0) {
+      logs.push("conversation_guard=dropped_non_readonly_actions");
+    }
+    edits = [];
+    structuredActions = [];
+    modelCommands = [];
+  }
+
   const confidence = Math.max(0.05, Math.min(0.99, decision.confidence));
   const actions = synthesizeDeterministicActions({
     task: req.task,
@@ -1977,6 +2042,11 @@ export async function runAssist(
       actions,
       autonomyDecision,
     });
+  }
+  const identityScrub = sanitizeProviderIdentityLeak(final);
+  if (identityScrub.changed) {
+    final = identityScrub.text;
+    logs.push("identity_guardrail=provider_leak_scrubbed");
   }
   if (isIdentityProbe) {
     const normalizedFinal = normalizeIdentityProbeText(final);

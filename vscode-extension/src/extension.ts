@@ -88,6 +88,15 @@ type IndexedChunk = {
   content: string;
   metadata?: Record<string, unknown>;
 };
+type UndoEntry =
+  | { kind: "file"; path: string; existed: boolean; content: string }
+  | { kind: "dir"; path: string };
+type UndoBatch = {
+  id: string;
+  createdAt: string;
+  entries: UndoEntry[];
+  summary: string;
+};
 
 const IDE_CONTEXT_FLAG = "xpersona.playground.ideContextV2";
 const MAX_TOTAL_CONTEXT_CHARS = 350_000;
@@ -127,7 +136,10 @@ function sanitizeAssistAttachments(raw: unknown): AssistAttachmentPayload[] {
 }
 
 function normalizeWorkspaceRelativePath(input: string): string | null {
-  const trimmed = input.replace(/\\/g, "/").trim();
+  let trimmed = input.replace(/\\/g, "/").trim();
+  trimmed = trimmed.replace(/^["'`]+|["'`]+$/g, "");
+  // Models often echo @mentions as paths (e.g. "@README.md"). Strip that marker.
+  if (trimmed.startsWith("@") && trimmed.length > 1) trimmed = trimmed.slice(1);
   if (!trimmed || trimmed.startsWith("/") || /^[a-z]:\//i.test(trimmed) || trimmed.includes("..")) return null;
   return trimmed;
 }
@@ -252,6 +264,7 @@ export function activate(context: vscode.ExtensionContext) {
       await view.rebuildIndex("commandPalette");
     }),
     vscode.commands.registerCommand("xpersona.playground.replay.session", () => view.replay()),
+    vscode.commands.registerCommand("xpersona.playground.undoLastChanges", () => view.undoLastAppliedChanges("editor")),
   ];
   context.subscriptions.push(reg, uriReg, ...cmds);
 }
@@ -287,20 +300,26 @@ class Provider implements vscode.WebviewViewProvider {
   private vscodeAccessTokenExpiresAtMs = 0;
   private vscodeSignedInEmail: string | null = null;
   private pendingPkce: { state: string; verifier: string; createdAtMs: number } | null = null;
+  private undoBatches: UndoBatch[] = [];
   private hasExecutionIntent(task: string): boolean {
     return /\b(create|make|add|build|implement|refactor|fix|debug|run|test|lint|typecheck|command|file|patch|edit|ship|git|commit|push|pull|checkout|merge|rebase|branch)\b/i.test(task);
   }
   private hasExplicitCommandRunIntent(task: string): boolean {
     return /\b(run|execute|terminal|shell|command|test|tests|lint|typecheck|build|compile|install|npm|pnpm|yarn|pytest|jest|vitest|cargo|go test|mvn|gradle|git|commit|push|pull|checkout|merge|rebase|stash|cherry-pick)\b/i.test(task);
   }
+  private hasExplicitEditIntent(task: string): boolean {
+    return /\b(edit|update|modify|rewrite|change|refactor|implement|create|add|remove|delete|fix|patch|apply)\b/i.test(task);
+  }
   private hasCodeTaskSignals(task: string): boolean {
     return (
-      /\b(code|file|function|class|bug|error|fix|refactor|implement|build|test|lint|typecheck|stack trace|exception|module|api|endpoint|sql|schema|patch|edit|python|javascript|typescript|git|commit|push|pull|checkout|merge|rebase|branch)\b/i.test(task) ||
-      /\b[a-zA-Z0-9_./-]+\.[a-z0-9]{1,8}\b/i.test(task)
+      /\b(code|file|function|class|bug|error|fix|refactor|implement|build|test|lint|typecheck|stack trace|exception|module|api|endpoint|sql|schema|patch|edit|python|javascript|typescript|git|commit|push|pull|checkout|merge|rebase|branch)\b/i.test(task)
     );
   }
   private isConversationalPrompt(task: string): boolean {
     const t = task.trim().toLowerCase();
+    const acknowledgementLike =
+      t.length <= 48 &&
+      /^(awesome|great|nice|cool|perfect|sounds good|looks good|love it|that works|works for me|sweet|beautiful|amazing)\b/.test(t);
     const greetingOrSmallTalk =
       /^(hi|hello|hey|yo|sup|thanks|thank you|thx)\b/.test(t) ||
       /\b(how are you|what can you do|who are you)\b/.test(t);
@@ -309,8 +328,12 @@ class Provider implements vscode.WebviewViewProvider {
       /^(what|why|how|when|where|who|which|can|could|would|should|is|are|do|does|did)\b/.test(t) ||
       /\b(explain|define|tell me)\b/.test(t);
 
+    const hasPathMention = /\b[a-zA-Z0-9_./-]+\.[a-z0-9]{1,8}\b/i.test(t);
+    const pathQuestion = hasPathMention && directQuestion && !this.hasExplicitEditIntent(t);
     return (
+      acknowledgementLike ||
       greetingOrSmallTalk ||
+      pathQuestion ||
       (directQuestion && !this.hasCodeTaskSignals(t) && !this.hasExecutionIntent(t) && !this.hasExplicitCommandRunIntent(t))
     );
   }
@@ -755,6 +778,81 @@ class Provider implements vscode.WebviewViewProvider {
     );
   }
 
+  private extractLikelyLookupTokens(text: string, max = 3): string[] {
+    const input = String(text || "");
+    const mentions = new Set(extractAtMentions(input).map((x) => x.replace(/^@+/, "").toLowerCase()));
+    const stop = new Set([
+      "what", "how", "does", "work", "read", "look", "file", "this", "that", "please", "now", "can", "you", "the", "and", "for",
+    ]);
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const m of input.matchAll(/\b[A-Za-z_][A-Za-z0-9_]{3,}\b/g)) {
+      const token = String(m[0] || "").trim();
+      if (!token) continue;
+      const lower = token.toLowerCase();
+      if (seen.has(lower) || stop.has(lower) || mentions.has(lower)) continue;
+      // Bias toward symbol-like identifiers (snake/camel) that are likely in code.
+      if (!token.includes("_") && !/[A-Z]/.test(token)) continue;
+      seen.add(lower);
+      out.push(token);
+      if (out.length >= max) break;
+    }
+    return out;
+  }
+
+  private async collectSymbolWorkspaceContext(
+    text: string,
+    maxFiles: number,
+    maxCharsPerItem: number
+  ): Promise<Array<{ path: string; language?: string; excerpt?: string }>> {
+    const root = this.getWorkspaceRoot();
+    if (!root) return [];
+    const tokens = this.extractLikelyLookupTokens(text, 3);
+    if (!tokens.length) return [];
+
+    const perPath = new Map<string, Array<{ token: string; line: string }>>();
+    for (const token of tokens) {
+      const rg = await execFileReadOnly(
+        "rg",
+        ["-n", "-S", "--no-heading", "--hidden", "-g", "!node_modules", "-g", "!.git", token, "."],
+        root.uri.fsPath,
+        3000,
+        120000
+      );
+      if (!rg.ok || !rg.stdout.trim()) continue;
+      const lines = rg.stdout.split(/\r?\n/).filter(Boolean).slice(0, Math.max(20, maxFiles * 12));
+      for (const line of lines) {
+        const m = /^(.+?):(\d+):(.*)$/.exec(line);
+        if (!m) continue;
+        const rel = normalizeWorkspaceRelativePath(m[1].replace(/\\/g, "/").replace(/^\.\//, ""));
+        if (!rel) continue;
+        const preview = String(m[3] || "").trim();
+        if (!preview) continue;
+        const existing = perPath.get(rel) || [];
+        if (existing.length >= 6) continue;
+        existing.push({ token, line: preview });
+        perPath.set(rel, existing);
+      }
+      if (perPath.size >= maxFiles) break;
+    }
+
+    const out: Array<{ path: string; language?: string; excerpt?: string }> = [];
+    for (const [pathKey, matches] of perPath.entries()) {
+      if (out.length >= maxFiles) break;
+      const lines = matches
+        .slice(0, 6)
+        .map((m) => `[${m.token}] ${m.line}`)
+        .join("\n");
+      const excerptRaw = `Symbol matches:\n${lines}`;
+      out.push({
+        path: pathKey,
+        language: languageFromPath(pathKey),
+        excerpt: excerptRaw.slice(0, maxCharsPerItem),
+      });
+    }
+    return out;
+  }
+
   private async collectActiveFileContext(maxChars: number): Promise<IdeContext["activeFile"] | null> {
     const editor = vscode.window.activeTextEditor;
     if (!editor) return null;
@@ -786,10 +884,15 @@ class Provider implements vscode.WebviewViewProvider {
     return out;
   }
 
-  private async collectMentionedWorkspaceContext(text: string, maxItems: number, maxCharsPerItem: number): Promise<Array<{ path: string; language?: string; excerpt?: string }>> {
+  private async collectMentionedWorkspaceContext(
+    text: string,
+    maxItems: number,
+    maxCharsPerItem: number,
+    preExtractedMentions?: string[]
+  ): Promise<Array<{ path: string; language?: string; excerpt?: string }>> {
     const root = this.getWorkspaceRoot();
     if (!root) return [];
-    const tokens = extractAtMentions(text);
+    const tokens = Array.isArray(preExtractedMentions) ? preExtractedMentions : extractAtMentions(text);
     if (!tokens.length) return [];
 
     const out: Array<{ path: string; language?: string; excerpt?: string }> = [];
@@ -802,7 +905,20 @@ class Provider implements vscode.WebviewViewProvider {
       let resolved: { path: string; kind: "file" | "folder" } | undefined;
       const direct = normalizeWorkspaceRelativePath(q);
       if (direct) {
-        resolved = this.mentionCatalog.find((x) => x.path.toLowerCase() === direct.toLowerCase());
+        const directUri = vscode.Uri.joinPath(root.uri, ...direct.split("/"));
+        try {
+          const stat = await vscode.workspace.fs.stat(directUri);
+          if (stat.type === vscode.FileType.Directory) {
+            resolved = { path: direct, kind: "folder" };
+          } else if (stat.type === vscode.FileType.File) {
+            resolved = { path: direct, kind: "file" };
+          }
+        } catch {
+          // direct path does not exist; fall back to mention index search below
+        }
+        if (!resolved) {
+          resolved = this.mentionCatalog.find((x) => x.path.toLowerCase() === direct.toLowerCase());
+        }
       }
       if (!resolved) {
         const results = await this.searchWorkspaceMentions(q, 16).catch(() => []);
@@ -1169,6 +1285,7 @@ class Provider implements vscode.WebviewViewProvider {
         this.post({ type: "safety", value: this.safety });
         this.post({ type: "timeline", data: this.timeline });
         this.post({ type: "pendingActions", count: this.pendingActions.length });
+        this.postUndoState();
         this.post({ type: "mentionsConfig", enabled: this.mentionsEnabled() });
         await this.postThreadState();
         if (ok && this.activeThreadId) {
@@ -1241,6 +1358,8 @@ class Provider implements vscode.WebviewViewProvider {
         this.post({ type: "status", text: "Cleared current chat view." });
       } else if (m.type === "execute") {
         await this.executePendingActions(undefined, this.activeThreadId || undefined);
+      } else if (m.type === "undoLastChanges") {
+        await this.undoLastAppliedChanges("panel");
       } else if (m.type === "mentionSearch") {
         if (!this.mentionsEnabled()) {
           this.post({ type: "mentionResults", query: String(m.query || ""), items: [] });
@@ -1342,7 +1461,11 @@ class Provider implements vscode.WebviewViewProvider {
     // not runtime metadata injected into the prompt body.
     const taskWithReasoning = text;
     const requestMode: RequestMode = conversational ? "generate" : this.mode;
-    const ideContextEnabled = this.isIdeContextV2Enabled() && (options.includeIdeContext ?? true);
+    const mentionTokens = this.mentionsEnabled() ? extractAtMentions(text) : [];
+    const shouldAttachContextForTask =
+      !conversational || mentionTokens.length > 0 || this.hasCodeTaskSignals(text) || this.hasExecutionIntent(text);
+    const ideContextEnabled =
+      this.isIdeContextV2Enabled() && (options.includeIdeContext ?? true) && shouldAttachContextForTask;
     const root = this.getWorkspaceRoot();
     const workspaceHash = this.computeWorkspaceHash(root);
     const preflightStarted = Date.now();
@@ -1366,7 +1489,7 @@ class Provider implements vscode.WebviewViewProvider {
 
       if (this.mentionsEnabled()) {
         try {
-          const mentioned = await this.collectMentionedWorkspaceContext(text, 8, 20_000);
+          const mentioned = await this.collectMentionedWorkspaceContext(text, 8, 20_000, mentionTokens);
           if (mentioned.length) {
             collectedContext = collectedContext || {};
             const existing = new Set((collectedContext.openFiles ?? []).map((x) => x.path));
@@ -1383,6 +1506,22 @@ class Provider implements vscode.WebviewViewProvider {
         } catch (e) {
           contextStatus.notes?.push(`mentions partial: ${err(e)}`);
         }
+      }
+
+      try {
+        const symbolMatches = await this.collectSymbolWorkspaceContext(text, 6, 8_000);
+        if (symbolMatches.length) {
+          collectedContext = collectedContext || {};
+          const existing = new Set((collectedContext.openFiles ?? []).map((x) => x.path));
+          collectedContext.openFiles = [
+            ...symbolMatches.filter((x) => !existing.has(x.path)),
+            ...(collectedContext.openFiles ?? []),
+          ];
+          const label = symbolMatches.slice(0, 4).map((x) => x.path).join(", ");
+          contextStatus.notes?.push(`symbol lookup: ${label}${symbolMatches.length > 4 ? ` (+${symbolMatches.length - 4} more)` : ""}`);
+        }
+      } catch (e) {
+        contextStatus.notes?.push(`symbol lookup partial: ${err(e)}`);
       }
 
       if (collectedContext) {
@@ -1454,7 +1593,11 @@ class Provider implements vscode.WebviewViewProvider {
             }
           } else if (ev === "status") {
             const statusText = typeof p === "string" ? p : String(p ?? "");
-            if (statusText.trim()) this.postRun(runThreadId, { type: "status", text: statusText.trim() });
+            if (/model unavailable\. retrying with backup model\./i.test(statusText)) return;
+            const sanitizedStatus = statusText
+              .replace(/Model\s+"[^"]+"\s+unavailable\.\s+Falling back to\s+"[^"]+"\./i, "")
+              .trim();
+            if (sanitizedStatus) this.postRun(runThreadId, { type: "status", text: sanitizedStatus });
           } else if (ev === "log") {
             const logText =
               typeof p === "string"
@@ -1480,7 +1623,7 @@ class Provider implements vscode.WebviewViewProvider {
             this.addTimeline("decision", p?.mode || "unknown");
           } else if (ev === "diff_chunk") {
             const editItems = Array.isArray(p) ? p : Array.isArray((p as { edits?: unknown[] } | null)?.edits) ? (p as { edits: unknown[] }).edits : [];
-            if (editItems.length) {
+            if (editItems.length && !conversational) {
               for (const edit of editItems) {
                 const rawPatch =
                   typeof (edit as { patch?: unknown })?.patch === "string"
@@ -1503,7 +1646,7 @@ class Provider implements vscode.WebviewViewProvider {
               this.post({ type: "pendingActions", count: this.pendingActions.length });
             }
           } else if (ev === "commands_chunk") {
-            if (Array.isArray(p)) {
+            if (Array.isArray(p) && !conversational) {
               for (const command of p) {
                 if (typeof command === "string" && command.trim()) {
                   this.pendingActions.push({ type: "command", command: command.trim() });
@@ -1512,7 +1655,7 @@ class Provider implements vscode.WebviewViewProvider {
               this.post({ type: "pendingActions", count: this.pendingActions.length });
             }
           } else if (ev === "actions_chunk") {
-            if (Array.isArray(p)) {
+            if (Array.isArray(p) && !conversational) {
               for (const action of p) {
                 if (!action || typeof action !== "object") continue;
                 const type = String((action as { type?: unknown }).type || "").toLowerCase();
@@ -1607,6 +1750,11 @@ class Provider implements vscode.WebviewViewProvider {
       this.post({ type: "pendingActions", count: 0 });
       return;
     }
+    if (conversational && this.pendingActions.length > 0) {
+      this.pendingActions = [];
+      this.post({ type: "pendingActions", count: 0 });
+      return;
+    }
     if (this.pendingActions.length > 0) {
       const policy = this.getExecutionPolicy();
       const hasEditActions = this.pendingActions.some((a) => a.type === "edit" || a.type === "mkdir" || a.type === "write_file");
@@ -1654,9 +1802,17 @@ class Provider implements vscode.WebviewViewProvider {
 
       if (actionsToExecute.length > 0) {
         if (!conversational) {
+          const editActionCount = actionsToExecute.filter((a) => a.type === "edit" || a.type === "mkdir" || a.type === "write_file").length;
+          const commandActionCount = actionsToExecute.filter((a) => a.type === "command").length;
+          const actionSummary =
+            editActionCount > 0 && commandActionCount > 0
+              ? `${editActionCount} file action(s) and ${commandActionCount} command(s)`
+              : commandActionCount > 0
+                ? `${commandActionCount} command(s)`
+                : `${editActionCount} file action(s)`;
           this.postRun(runThreadId, {
             type: "status",
-            text: `Prepared ${actionsToExecute.length} tool action(s). Auto-executing now.`,
+            text: `Prepared ${actionSummary}. Auto-executing now.`,
           });
         }
         await this.executePendingActions(actionsToExecute, runThreadId);
@@ -1784,7 +1940,16 @@ class Provider implements vscode.WebviewViewProvider {
     });
     if (!actionList.length) return this.postRun(runThreadId, { type: "status", text: "No pending actions to execute." });
 
-    this.postRun(runThreadId, { type: "status", text: `Executing ${actionList.length} action(s)...` });
+    const editActionCount = actionList.filter((action) => action.type === "edit" || action.type === "mkdir" || action.type === "write_file").length;
+    const commandActionCount = actionList.filter((action) => action.type === "command").length;
+    const executionSummary =
+      editActionCount > 0 && commandActionCount > 0
+        ? `${editActionCount} file action(s) and ${commandActionCount} command(s)`
+        : commandActionCount > 0
+          ? `${commandActionCount} command(s)`
+          : `${editActionCount} file action(s)`;
+
+    this.postRun(runThreadId, { type: "status", text: `Executing ${executionSummary}...` });
 
     const r = await req<any>("POST", `${base()}/api/v1/playground/execute`, auth, {
       sessionId: runThreadId || undefined,
@@ -1826,7 +1991,10 @@ class Provider implements vscode.WebviewViewProvider {
     let appliedEdits = 0;
     let launchedCommands = 0;
     const applyErrors: string[] = [];
+    const changedPaths = new Set<string>();
     const perFileStatuses: Array<{ path: string; status: PatchApplyStatus | "applied" | "partial" | "rejected_invalid_patch" | "rejected_path_policy"; reason?: string }> = [];
+    const undoFileSnapshots = new Map<string, { kind: "file"; path: string; existed: boolean; content: string }>();
+    const undoCreatedDirs = new Set<string>();
 
     for (const row of results) {
       if (row.status !== "approved" || !row.action) continue;
@@ -1839,7 +2007,7 @@ class Provider implements vscode.WebviewViewProvider {
           path: row.action.path,
           patch: row.action.patch,
           diff: row.action.diff,
-        });
+        }, undoFileSnapshots);
         perFileStatuses.push({
           path: row.action.path || "unknown",
           status: applied.status,
@@ -1847,12 +2015,13 @@ class Provider implements vscode.WebviewViewProvider {
         });
         if (applied.status === "applied" || applied.status === "partial") {
           appliedEdits += 1;
+          changedPaths.add(row.action.path || "unknown");
           this.postRun(runThreadId, { type: "fileAction", path: row.action.path || "unknown", status: applied.status, reason: applied.reason || "" });
         } else if (applied.reason) {
           applyErrors.push(`${row.action.path || "unknown"}: ${applied.reason}`);
         }
       } else if (row.action.type === "mkdir" && row.action.path) {
-        const applied = await this.applyMkdirAction({ path: row.action.path });
+        const applied = await this.applyMkdirAction({ path: row.action.path }, undoCreatedDirs);
         perFileStatuses.push({
           path: row.action.path,
           status: applied.status,
@@ -1860,6 +2029,7 @@ class Provider implements vscode.WebviewViewProvider {
         });
         if (applied.status === "applied") {
           appliedEdits += 1;
+          changedPaths.add(row.action.path);
           this.postRun(runThreadId, { type: "fileAction", path: row.action.path, status: "applied", reason: "Directory created" });
         } else if (applied.reason) {
           applyErrors.push(`${row.action.path}: ${applied.reason}`);
@@ -1869,7 +2039,7 @@ class Provider implements vscode.WebviewViewProvider {
           path: row.action.path,
           content: typeof row.action.content === "string" ? row.action.content : "",
           overwrite: typeof row.action.overwrite === "boolean" ? row.action.overwrite : true,
-        });
+        }, undoFileSnapshots);
         perFileStatuses.push({
           path: row.action.path,
           status: applied.status,
@@ -1877,6 +2047,7 @@ class Provider implements vscode.WebviewViewProvider {
         });
         if (applied.status === "applied") {
           appliedEdits += 1;
+          changedPaths.add(row.action.path);
           this.postRun(runThreadId, { type: "fileAction", path: row.action.path, status: "applied", reason: "File created/updated" });
         } else if (applied.reason) {
           applyErrors.push(`${row.action.path}: ${applied.reason}`);
@@ -1899,7 +2070,7 @@ class Provider implements vscode.WebviewViewProvider {
     this.postRun(runThreadId, {
       type: "actionOutcome",
       data: {
-        filesChanged: appliedEdits,
+        filesChanged: changedPaths.size,
         checksRun: launchedCommands,
         quality: applyErrors.length ? "needs_attention" : "good",
         summary: applyErrors.length
@@ -1908,6 +2079,16 @@ class Provider implements vscode.WebviewViewProvider {
         perFile: perFileStatuses,
       },
     });
+    if (appliedEdits > 0) {
+      const undoEntries: UndoEntry[] = [
+        ...Array.from(undoFileSnapshots.values()),
+        ...Array.from(undoCreatedDirs).map((dirPath) => ({ kind: "dir", path: dirPath } as UndoEntry)),
+      ];
+      if (undoEntries.length > 0) {
+        this.pushUndoBatch(undoEntries, `Revert ${appliedEdits} Playground file change(s)`);
+      }
+    }
+    this.postUndoState();
     this.addTimeline("execute", `approved ${approved}/${results.length}`);
 
     const toRemove = new Set(actionList.map((action) => JSON.stringify(action)));
@@ -1915,7 +2096,30 @@ class Provider implements vscode.WebviewViewProvider {
     this.post({ type: "pendingActions", count: this.pendingActions.length });
   }
 
-  private async applyEditAction(action: { path?: string; patch?: string; diff?: string }): Promise<{ status: PatchApplyStatus; reason?: string }> {
+  private async captureUndoFileSnapshot(
+    root: vscode.WorkspaceFolder,
+    rel: string,
+    collector?: Map<string, { kind: "file"; path: string; existed: boolean; content: string }>
+  ): Promise<void> {
+    if (!collector || collector.has(rel)) return;
+    const target = vscode.Uri.joinPath(root.uri, ...rel.split("/").filter(Boolean));
+    try {
+      const buf = await vscode.workspace.fs.readFile(target);
+      collector.set(rel, {
+        kind: "file",
+        path: rel,
+        existed: true,
+        content: Buffer.from(buf).toString("utf8"),
+      });
+    } catch {
+      collector.set(rel, { kind: "file", path: rel, existed: false, content: "" });
+    }
+  }
+
+  private async applyEditAction(
+    action: { path?: string; patch?: string; diff?: string },
+    undoCollector?: Map<string, { kind: "file"; path: string; existed: boolean; content: string }>
+  ): Promise<{ status: PatchApplyStatus; reason?: string }> {
     const rel = normalizeWorkspaceRelativePath(action.path || "");
     if (!rel) return { status: "rejected_path_policy", reason: "Invalid relative path in edit action." };
     const root = this.getWorkspaceRoot();
@@ -1928,6 +2132,7 @@ class Provider implements vscode.WebviewViewProvider {
     if (!patchTarget || patchTarget !== rel) {
       return { status: "rejected_path_policy", reason: "Patch path did not match approved workspace-relative path." };
     }
+    await this.captureUndoFileSnapshot(root, rel, undoCollector);
 
     const relParts = rel.split("/").filter(Boolean);
     const target = vscode.Uri.joinPath(root.uri, ...relParts);
@@ -1957,22 +2162,36 @@ class Provider implements vscode.WebviewViewProvider {
     };
   }
 
-  private async applyMkdirAction(action: { path?: string }): Promise<{ status: "applied" | "rejected_path_policy"; reason?: string }> {
+  private async applyMkdirAction(
+    action: { path?: string },
+    undoCreatedDirs?: Set<string>
+  ): Promise<{ status: "applied" | "rejected_path_policy"; reason?: string }> {
     const rel = normalizeWorkspaceRelativePath(action.path || "");
     if (!rel) return { status: "rejected_path_policy", reason: "Invalid relative path for mkdir action." };
     const root = this.getWorkspaceRoot();
     if (!root) return { status: "rejected_path_policy", reason: "No workspace folder open." };
     const target = vscode.Uri.joinPath(root.uri, ...rel.split("/").filter(Boolean));
+    let existedBefore = true;
+    try {
+      await vscode.workspace.fs.stat(target);
+    } catch {
+      existedBefore = false;
+    }
     await vscode.workspace.fs.createDirectory(target);
     await vscode.workspace.fs.stat(target);
+    if (!existedBefore && undoCreatedDirs) undoCreatedDirs.add(rel);
     return { status: "applied" };
   }
 
-  private async applyWriteFileAction(action: { path?: string; content?: string; overwrite?: boolean }): Promise<{ status: "applied" | "rejected_path_policy"; reason?: string }> {
+  private async applyWriteFileAction(
+    action: { path?: string; content?: string; overwrite?: boolean },
+    undoCollector?: Map<string, { kind: "file"; path: string; existed: boolean; content: string }>
+  ): Promise<{ status: "applied" | "rejected_path_policy"; reason?: string }> {
     const rel = normalizeWorkspaceRelativePath(action.path || "");
     if (!rel) return { status: "rejected_path_policy", reason: "Invalid relative path for write_file action." };
     const root = this.getWorkspaceRoot();
     if (!root) return { status: "rejected_path_policy", reason: "No workspace folder open." };
+    await this.captureUndoFileSnapshot(root, rel, undoCollector);
 
     const relParts = rel.split("/").filter(Boolean);
     const target = vscode.Uri.joinPath(root.uri, ...relParts);
@@ -2003,6 +2222,78 @@ class Provider implements vscode.WebviewViewProvider {
     }
     this.commandTerminal.show(true);
     this.commandTerminal.sendText(command, true);
+  }
+
+  private pushUndoBatch(entries: UndoEntry[], summary: string) {
+    const normalized = entries.filter((entry) => !!entry?.path);
+    if (!normalized.length) return;
+    this.undoBatches.push({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      createdAt: new Date().toISOString(),
+      entries: normalized,
+      summary,
+    });
+    if (this.undoBatches.length > 20) {
+      this.undoBatches = this.undoBatches.slice(-20);
+    }
+  }
+
+  private postUndoState() {
+    const latest = this.undoBatches[this.undoBatches.length - 1];
+    this.post({
+      type: "undoState",
+      available: this.undoBatches.length > 0,
+      count: this.undoBatches.length,
+      latestSummary: latest?.summary || "",
+      latestAt: latest?.createdAt || "",
+    });
+  }
+
+  async undoLastAppliedChanges(source: "panel" | "editor" | "command" = "command") {
+    if (!this.undoBatches.length) {
+      this.post({ type: "status", text: "Nothing to undo yet." });
+      return;
+    }
+    const root = this.getWorkspaceRoot();
+    if (!root) {
+      this.post({ type: "err", text: "No workspace folder open. Unable to undo changes." });
+      return;
+    }
+
+    const batch = this.undoBatches.pop() as UndoBatch;
+    const errors: string[] = [];
+    let reverted = 0;
+    const entries = [...batch.entries].reverse();
+    for (const entry of entries) {
+      const target = vscode.Uri.joinPath(root.uri, ...entry.path.split("/").filter(Boolean));
+      try {
+        if (entry.kind === "file") {
+          if (entry.existed) {
+            await vscode.workspace.fs.writeFile(target, Buffer.from(entry.content, "utf8"));
+          } else {
+            await vscode.workspace.fs.delete(target, { recursive: false, useTrash: false });
+          }
+          reverted += 1;
+          continue;
+        }
+        await vscode.workspace.fs.delete(target, { recursive: false, useTrash: false });
+        reverted += 1;
+      } catch (e) {
+        errors.push(`${entry.path}: ${err(e)}`);
+      }
+    }
+
+    const origin = source === "panel" ? "panel" : source === "editor" ? "editor" : "command";
+    if (errors.length > 0) {
+      this.post({
+        type: "err",
+        text: `Undo completed with warnings from ${origin}. Reverted ${reverted}/${entries.length} item(s):\n- ${errors.join("\n- ")}`,
+      });
+    } else {
+      this.post({ type: "status", text: `Undo complete (${origin}): reverted ${reverted} item(s).` });
+    }
+    this.addTimeline("undo", `${origin} reverted ${reverted}/${entries.length}`);
+    this.postUndoState();
   }
 
   private addTimeline(phase: string, detail: string) {
@@ -3454,19 +3745,23 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         color: #ffd8da !important;
       }
       .footer-row {
-        margin-top: 2px;
-        display: grid;
-        grid-template-columns: auto auto 1fr;
+        margin-top: 6px;
+        display: flex;
         align-items: center;
         gap: 12px;
         font-size: 11px;
-        padding: 0;
+        padding: 2px 2px 0;
       }
       .footer-muted {
-        color: var(--muted);
+        color: color-mix(in srgb, var(--fg) 55%, var(--muted) 45%);
       }
       .footer-accent {
-        color: #f2d74e;
+        color: color-mix(in srgb, var(--accent) 74%, #f2d74e 26%);
+        font-weight: 600;
+      }
+      .footer-row #usagePct {
+        margin-left: auto;
+        text-align: right;
       }
       .kbd {
         border: 1px solid var(--border);
@@ -3498,9 +3793,28 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       .jump-btn.show { display: inline-flex; }
       /* Theme alignment for visible chat UI */
       .global-top {
-        border-bottom: 1px solid var(--border);
-        padding: 8px 12px 6px;
-        background: var(--bg-1);
+        border-bottom: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+        background: linear-gradient(to bottom, color-mix(in srgb, var(--bg-1) 94%, black 6%), transparent);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px 10px;
+      }
+      .brand-block {
+        display: grid;
+        gap: 2px;
+      }
+      .brand-kicker {
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: color-mix(in srgb, var(--fg) 96%, var(--muted));
+      }
+      .brand-sub {
+        font-size: 11px;
+        color: color-mix(in srgb, var(--fg) 48%, var(--muted) 52%);
       }
       .chat-title,
       .sheet-title,
@@ -3509,10 +3823,15 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       .a {
         color: var(--fg);
       }
+      .chat-title {
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+      }
       .global-actions {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
       }
       .thread-section-title,
       .tool-muted,
@@ -3573,9 +3892,96 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         transform: none;
         background: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--input-bg) 84%, var(--fg) 16%));
       }
+      .menu-icon,
+      .quick-new {
+        height: 32px;
+        border-radius: 999px;
+      }
+      .menu-icon {
+        width: 32px;
+        min-width: 32px;
+        padding: 0;
+      }
+      .quick-new {
+        padding: 0 14px 0 12px;
+        font-weight: 700;
+      }
+      .quick-new::before {
+        content: "+";
+        margin-right: 6px;
+        opacity: 0.84;
+      }
       .input {
         border-top: 1px solid var(--border);
         background: var(--bg-1);
+      }
+      .chips {
+        padding: 10px 18px 0;
+      }
+      .messages {
+        padding: 26px 22px 72px;
+        gap: 26px;
+      }
+      .m-body {
+        font-size: 14px;
+        line-height: 1.7;
+      }
+      .m-time {
+        margin-top: 8px;
+        font-size: 11px;
+        color: color-mix(in srgb, var(--fg) 42%, var(--muted) 58%);
+      }
+      .m {
+        display: grid;
+      }
+      .u {
+        align-self: flex-end;
+        justify-self: end;
+        margin-left: auto;
+        padding: 14px 16px;
+        border-radius: 20px;
+        border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+        background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, white 6%), color-mix(in srgb, var(--surface) 98%, black 2%));
+        box-shadow: inset 0 1px 0 color-mix(in srgb, white 5%, transparent);
+      }
+      .a {
+        align-self: flex-start;
+        padding: 0;
+        background: transparent;
+        color: var(--fg);
+      }
+      .a .m-body {
+        max-width: min(760px, calc(100% - 76px));
+      }
+      .u .m-body {
+        max-width: 100%;
+      }
+      .cmd {
+        align-self: flex-start;
+        max-width: 100%;
+        opacity: 0.78;
+      }
+      .cmd .m-body {
+        font-size: 12px;
+      }
+      .e {
+        align-self: flex-start;
+        max-width: min(760px, calc(100% - 8px));
+        padding: 14px 16px;
+        border-radius: 18px;
+      }
+      .jump-wrap {
+        padding: 0 22px;
+      }
+      .messages:empty::before {
+        content: "PA";
+        width: 72px;
+        height: 72px;
+        margin-top: 15vh;
+        border-radius: 24px;
+        color: color-mix(in srgb, var(--fg) 22%, transparent);
+        font-size: 26px;
+        letter-spacing: 0.03em;
       }
       textarea::placeholder {
         color: var(--muted);
@@ -3766,27 +4172,28 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       }
       /* Wide composer + inline more panel */
       .global-top {
-        padding: 6px 8px 4px;
+        padding: 12px 16px 10px;
+        border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+        background: linear-gradient(180deg, color-mix(in srgb, var(--bg-1) 92%, black 8%), transparent);
       }
       .chat-shell {
         flex: 1;
         min-height: 0;
-        margin: 8px;
-        border: 1px solid var(--border);
-        border-radius: 28px;
-        /* Theme-driven: match the user's VS Code theme (no custom gray tint). */
-        background: var(--bg-1);
-        overflow: hidden;
+        margin: 0;
+        border: none;
+        border-radius: 0;
+        background: transparent;
+        overflow: visible;
         display: flex;
         flex-direction: column;
-        padding: 10px;
-        gap: 10px;
+        padding: 0;
+        gap: 8px;
       }
       .stage-shell {
         flex: 1;
         min-height: 0;
-        border-radius: 22px;
-        overflow: hidden;
+        border-radius: 0;
+        overflow: visible;
         display: flex;
         background: transparent;
       }
@@ -3794,38 +4201,65 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         flex: 1;
         min-height: 0;
         overflow: auto;
-        padding: 12px;
+        padding: 0 16px;
       }
       #stageBlank.panel {
-        padding: 0;
+        padding: 0 16px;
         white-space: normal;
       }
       #stageThreads.panel {
         white-space: normal;
       }
       .dock-shell {
-        flex: 0 0 clamp(240px, 38%, 520px);
-        min-height: 240px;
+        flex: 0 0 auto;
         border: 1px solid var(--border);
-        border-radius: 26px;
-        background: var(--surface);
-        overflow: hidden;
+        border-radius: 20px;
+        background: color-mix(in srgb, var(--surface) 96%, black 4%);
+        overflow: visible;
         display: flex;
         flex-direction: column;
         cursor: text;
+        padding: 10px 12px;
+        position: relative;
+        margin: 0 16px 16px;
+        box-shadow: 0 -12px 26px rgba(0, 0, 0, 0.28);
       }
       .dock-shell:focus-within {
         border-color: var(--vscode-focusBorder, var(--accent));
         box-shadow: 0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder, var(--accent)) 75%, transparent);
       }
+      .dock-shell .input {
+        padding: 0;
+        border-top: none;
+        background: transparent;
+      }
+      .dock-shell .composer-shell {
+        border: none;
+        background: transparent;
+        padding: 0;
+        border-radius: 0;
+      }
+      .dock-shell textarea {
+        border-radius: 16px;
+        background: transparent;
+        padding: 10px 12px;
+      }
       .chat-panel {
         flex: 1;
         min-height: 0;
         overflow: auto;
-        padding: 12px;
+        padding: 0 0 10px;
       }
       .chat-panel .jump-wrap {
         bottom: 10px;
+      }
+      .brand-kicker {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+      }
+      .brand-sub {
+        font-size: 11px;
+        color: color-mix(in srgb, var(--fg) 68%, var(--muted));
       }
       .mode-banner {
         margin: 0 8px 6px;
@@ -3833,32 +4267,79 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       }
       .input {
         padding: 10px 10px 9px;
-        border-top: 1px solid var(--border);
+        border-top: none;
         background: transparent;
       }
       .messages {
-        gap: 12px;
+        min-height: 100%;
+        gap: 18px;
+        padding: 18px 0 48px;
+        max-width: 840px;
+        margin: 0 auto;
+      }
+      .m-body {
+        font-size: 13px;
+        line-height: 1.65;
+      }
+      .m-time {
+        font-size: 10px;
+      }
+      .messages:empty::before {
+        content: "PA";
+        display: grid;
+        place-items: center;
+        width: 72px;
+        height: 72px;
+        margin: 15vh auto 0;
+        border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+        border-radius: 24px;
+        color: color-mix(in srgb, var(--fg) 22%, transparent);
+        font-size: 26px;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        box-shadow: inset 0 0 0 1px color-mix(in srgb, white 4%, transparent);
       }
       .m {
-        max-width: 100%;
+        max-width: min(840px, calc(100% - 8px));
       }
       .u {
-        max-width: 88%;
+        max-width: 82%;
+        border-radius: 18px;
+        box-shadow: none;
+        background: color-mix(in srgb, var(--surface) 92%, black 8%);
+        border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
       }
       .composer-form {
         gap: 0;
       }
       .composer-shell {
         position: relative;
-        border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
-        border-radius: 18px;
-        background: var(--surface);
+        border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+        border-radius: 16px;
+        background: color-mix(in srgb, var(--surface) 92%, black 8%);
         padding: 8px;
         display: grid;
         gap: 7px;
+        transition:
+          border-color 160ms ease,
+          box-shadow 160ms ease,
+          background 160ms ease;
+      }
+      .composer-shell.ide-context-on {
+        border-color: color-mix(in srgb, var(--accent) 82%, white 18%);
+        box-shadow:
+          0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent),
+          0 0 28px color-mix(in srgb, var(--accent) 22%, transparent),
+          inset 0 1px 0 color-mix(in srgb, white 7%, transparent);
+        background: linear-gradient(
+          180deg,
+          color-mix(in srgb, var(--accent) 10%, var(--surface) 90%) 0%,
+          var(--surface) 100%
+        );
       }
       textarea {
-        min-height: 66px;
+        min-height: 64px;
         border: none;
         border-radius: 12px;
         background: transparent;
@@ -3875,7 +4356,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         bottom: calc(100% - 2px);
       }
       .input-actions {
-        gap: 8px;
+        gap: 10px;
       }
       .input-actions.minimal {
         flex-wrap: nowrap;
@@ -3902,8 +4383,8 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         background: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--input-bg) 84%, var(--fg) 16%));
       }
       .attach-btn {
-        font-size: 16px;
-        font-weight: 700;
+        font-size: 18px;
+        font-weight: 500;
       }
       .attach-btn[data-count]:not([data-count=""])::after {
         content: attr(data-count);
@@ -3923,7 +4404,8 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         border: 1px solid color-mix(in srgb, var(--accent) 85%, black 15%);
       }
       .gear-btn {
-        font-size: 15px;
+        font-size: 18px;
+        letter-spacing: -0.08em;
       }
       .context-toggle-pill {
         position: relative;
@@ -3948,17 +4430,50 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         color: var(--input-fg);
         font-size: 12px;
         font-weight: 600;
+        border-width: 1px;
+        border-radius: 999px;
+        transition: background .18s ease, border-color .18s ease, box-shadow .18s ease, color .18s ease, transform .18s ease, opacity .18s ease;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+      }
+      .context-toggle-pill .context-pill::before {
+        content: "\\2726";
+        display: inline-block;
+        margin-right: 6px;
+        color: color-mix(in srgb, var(--input-fg) 60%, transparent);
+        transition: color .18s ease, text-shadow .18s ease, transform .18s ease;
       }
       .context-toggle-pill input:not(:checked) + .context-pill {
         opacity: 0.7;
+        filter: saturate(0.75);
+      }
+      .context-toggle-pill input:checked + .context-pill {
+        border-color: color-mix(in srgb, var(--accent) 84%, white 16%) !important;
+        background: linear-gradient(
+          135deg,
+          color-mix(in srgb, var(--accent) 38%, var(--input-bg) 62%) 0%,
+          color-mix(in srgb, var(--accent) 22%, var(--input-bg) 78%) 100%
+        ) !important;
+        color: color-mix(in srgb, var(--accent) 52%, white 48%);
+        box-shadow:
+          0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+          0 0 22px color-mix(in srgb, var(--accent) 30%, transparent),
+          inset 0 1px 0 color-mix(in srgb, white 10%, transparent);
+        text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 28%, transparent);
+        transform: translateY(-0.5px);
+      }
+      .context-toggle-pill input:checked + .context-pill::before {
+        color: color-mix(in srgb, var(--accent) 65%, white 35%);
+        text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 42%, transparent);
+        transform: scale(1.03);
       }
       .composer-meta {
-        min-height: 16px;
+        min-height: 18px;
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
         font-size: 11px;
         color: var(--muted);
+        padding: 2px 2px 0;
       }
       .composer-state {
         min-width: 0;
@@ -3966,9 +4481,10 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        letter-spacing: 0.01em;
       }
       .context-pill {
-        padding: 5px 8px;
+        padding: 5px 10px;
       }
       .input-actions.minimal .send-round {
         width: 34px;
@@ -3979,12 +4495,16 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         font-size: 16px;
       }
       .action-menu {
-        position: static;
-        inset: auto;
+        position: absolute;
+        right: 0;
+        left: auto;
+        bottom: calc(100% + 8px);
         background: transparent;
         backdrop-filter: none;
-        z-index: auto;
+        z-index: 50;
         display: block;
+        width: min(560px, calc(100vw - 40px));
+        max-width: 100%;
         padding: 0;
       }
       .action-menu.hidden {
@@ -3992,9 +4512,10 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       }
       .action-menu-sheet {
         width: 100%;
-        max-height: none;
+        max-height: min(62vh, 560px);
+        overflow: auto;
         border-radius: 14px;
-        box-shadow: none;
+        box-shadow: 0 12px 26px color-mix(in srgb, var(--bg-0) 70%, transparent);
         padding: 10px;
       }
       .sheet-grid {
@@ -4016,6 +4537,11 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         }
         .input {
           padding: 8px 6px;
+        }
+        .action-menu {
+          right: 0;
+          left: 0;
+          width: 100%;
         }
         .u {
           max-width: 95%;
@@ -4095,9 +4621,12 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         <button class="tab" data-p="exec">Execution</button>
       </div>
       <div class="global-top">
-        <span class="chat-title">Playground Chat</span>
+        <div class="brand-block">
+          <span class="brand-kicker">Playground AI</span>
+          <span class="brand-sub">General chat</span>
+        </div>
         <div class="global-actions">
-          <button id="historyQuick" type="button" class="menu-icon panel-icon" aria-label="Open threads" title="Open threads">&#128339;</button>
+          <button id="historyQuick" type="button" class="menu-icon panel-icon" aria-label="Open threads" title="Open threads">&#9776;</button>
           <button id="backToChatQuick" type="button" class="menu-icon panel-icon hidden" aria-label="Back to blank stage" title="Back to blank stage">&#8592;</button>
           <button id="newThreadQuick" type="button" class="menu-icon quick-new" aria-label="Start new chat">New chat</button>
         </div>
@@ -4106,13 +4635,20 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
 
       <div class="chat-shell" role="region" aria-label="Playground chat">
         <div class="stage-shell" role="region" aria-label="Stage">
-          <div id="stageBlank" class="panel active" aria-label="Blank stage"></div>
+          <div id="chat" class="panel active chat-panel" aria-label="Chat">
+            <div id="chips" class="chips"></div>
+            <div id="msgs" class="messages"></div>
+            <div class="jump-wrap">
+              <button id="jumpLatest" class="jump-btn" type="button">Jump to latest</button>
+            </div>
+          </div>
+          <div id="stageBlank" class="panel" aria-label="Blank stage"></div>
           <div id="stageThreads" class="panel" aria-label="Threads and tasks">
             <div class="tasks-head">
               <span class="tasks-label">Threads</span>
               <div class="startup-actions">
                 <button id="histQuick" class="task-icon-btn" type="button" aria-label="Refresh history" title="Refresh history">&#9432;</button>
-                <button id="repQuick" class="task-icon-btn" type="button" aria-label="Replay session" title="Replay session">&#9881;</button>
+                <button id="repQuick" class="task-icon-btn" type="button" aria-label="Replay session" title="Replay session">&#8942;</button>
                 <button id="idxQuick" class="task-icon-btn" type="button" aria-label="Rebuild index" title="Rebuild index">&#9998;</button>
               </div>
             </div>
@@ -4132,27 +4668,19 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         </div>
 
         <div id="chatDock" class="dock-shell" role="region" aria-label="Chat dock">
-          <div id="chat" class="chat-panel" aria-label="Chat messages">
-            <div id="chips" class="chips"></div>
-            <div id="msgs" class="messages"></div>
-            <div class="jump-wrap">
-              <button id="jumpLatest" class="jump-btn" type="button">Jump to latest</button>
-            </div>
-          </div>
-
           <div class="input">
             <form id="composerForm" class="composer-form" novalidate>
               <div class="composer-shell">
-                <textarea id="t" placeholder="Ask for follow-up changes" enterkeyhint="send"></textarea>
+                <textarea id="t" placeholder="Ask Playground AI anything, @ to add files, / for commands" enterkeyhint="send"></textarea>
                 <div id="mentionMenu" class="mention-menu hidden" role="listbox" aria-label="Mention suggestions"></div>
                 <div class="input-actions minimal">
                   <button id="uploadBtn" class="icon-btn attach-btn" type="button" aria-label="Attach image" title="Attach">+</button>
                   <label class="context-toggle-pill" for="ctxToggle" title="Toggle IDE context">
                     <input id="ctxToggle" type="checkbox" checked />
-                    <span id="contextPill" class="context-pill">IDE Context: on</span>
+                    <span id="contextPill" class="context-pill">IDE Context: ON</span>
                   </label>
                   <div class="spacer"></div>
-                  <button id="actionMenuBtn" type="button" class="icon-btn gear-btn" aria-label="Settings" title="Settings" aria-expanded="false">&#9881;</button>
+                  <button id="actionMenuBtn" type="button" class="icon-btn gear-btn" aria-label="Settings" title="Settings" aria-expanded="false">&#8942;</button>
                   <button id="s" type="button" class="primary send-round" aria-label="Send">&#8593;</button>
                 </div>
                 <div class="composer-meta">
@@ -4252,6 +4780,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
                     <div class="sheet-card">
                       <div class="sheet-card-title">Panels</div>
                       <div class="sheet-grid">
+                        <button class="action-item" type="button" data-menu-action="show:chat">Stage: Chat</button>
                         <button class="action-item" type="button" data-menu-action="show:stageBlank">Stage: Blank</button>
                         <button class="action-item" type="button" data-menu-action="show:stageThreads">Stage: Threads</button>
                         <button class="action-item" type="button" data-menu-action="show:timeline">Stage: Timeline</button>
@@ -4266,6 +4795,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
                       <div class="sheet-card-title">Actions</div>
                       <div class="sheet-grid">
                         <button id="newThreadBtn" class="action-item" type="button">New Chat</button>
+                        <button id="undoLastBtn" class="action-item" type="button">Undo Last Changes</button>
                         <button id="c" class="action-item" type="button">Clear Chat</button>
                         <button class="action-item" type="button" data-menu-action="history">Refresh History</button>
                         <button class="action-item" type="button" data-menu-action="replay">Replay Session</button>
@@ -4295,6 +4825,8 @@ ${scriptSource}
   </body>
 </html>`;
 }
+
+
 
 
 

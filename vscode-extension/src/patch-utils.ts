@@ -67,6 +67,7 @@ function parsePatch(patchText: string): ParsedPatch | null {
         if (hline.startsWith("diff --git ") || hline.startsWith("--- ") || hline.startsWith("+++ ")) break;
         return null;
       }
+      if (hunk.lines.length === 0) return null;
       hunks.push(hunk);
       continue;
     }
@@ -75,6 +76,10 @@ function parsePatch(patchText: string): ParsedPatch | null {
 
   if (!hunks.length) return null;
   return { oldPath, newPath, hunks };
+}
+
+function patchHasLineChanges(parsed: ParsedPatch): boolean {
+  return parsed.hunks.some((hunk) => hunk.lines.some((line) => line.kind === "+" || line.kind === "-"));
 }
 
 function hunkMatchesAt(sourceLines: string[], start: number, hunk: ParsedHunk): boolean {
@@ -117,6 +122,15 @@ export function applyUnifiedDiff(originalText: string, patchText: string): Patch
       hunksApplied: 0,
       totalHunks: 0,
       targetPath: null,
+    };
+  }
+  if (!patchHasLineChanges(parsed)) {
+    return {
+      status: "rejected_invalid_patch",
+      reason: "Patch contained no line changes.",
+      hunksApplied: 0,
+      totalHunks: parsed.hunks.length,
+      targetPath: parsed.newPath || parsed.oldPath,
     };
   }
 
