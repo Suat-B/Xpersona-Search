@@ -1247,9 +1247,13 @@ class Provider implements vscode.WebviewViewProvider {
     const s = await req<any>("POST", `${base()}/api/v1/playground/sessions`, auth, {
       title: sessionTitle,
       mode: this.mode,
-    }).catch(() => ({}));
+    }).catch((e) => ({ error: err(e) }));
     const id = s?.data?.id ? String(s.data.id) : null;
-    if (!id) return null;
+    if (!id) {
+      const detail = typeof s?.error === "string" && s.error.trim() ? ` ${s.error.trim()}` : "";
+      this.post({ type: "err", text: `Failed to create chat session.${detail}` });
+      return null;
+    }
     this.upsertThread(
       { id, title: sessionTitle, mode: this.mode, updatedAt: new Date().toISOString(), isOpen: true },
       true
@@ -1450,7 +1454,7 @@ class Provider implements vscode.WebviewViewProvider {
       this.sessionId = requestedThreadId;
     }
     const activeThreadId = await this.ensureActiveThread(auth, text);
-    if (!activeThreadId) return this.post({ type: "err", text: "Failed to create chat session." });
+    if (!activeThreadId) return;
     const runThreadId = activeThreadId;
     this.postRun(runThreadId, { type: "start" });
     if (!conversational) {
@@ -1872,9 +1876,12 @@ class Provider implements vscode.WebviewViewProvider {
     const s = await req<any>("POST", `${base()}/api/v1/playground/sessions`, auth, {
       title: "New chat",
       mode: this.mode,
-    }).catch(() => ({}));
+    }).catch((e) => ({ error: err(e) }));
     const id = s?.data?.id ? String(s.data.id) : null;
-    if (!id) return this.post({ type: "err", text: "Failed to create chat session." });
+    if (!id) {
+      const detail = typeof s?.error === "string" && s.error.trim() ? ` ${s.error.trim()}` : "";
+      return this.post({ type: "err", text: `Failed to create chat session.${detail}` });
+    }
     this.upsertThread({ id, title: "New chat", mode: this.mode, updatedAt: new Date().toISOString(), isOpen: true }, true);
     this.activeThreadId = id;
     this.sessionId = id;
@@ -2519,7 +2526,7 @@ function err(e: unknown) {
 }
 
 function base() {
-  return (vscode.workspace.getConfiguration("xpersona.playground").get<string>("baseApiUrl") || "http://localhost:3000").replace(/\/$/, "");
+  return (vscode.workspace.getConfiguration("xpersona.playground").get<string>("baseApiUrl") || "https://xpersona.co").replace(/\/$/, "");
 }
 
 function nonce() {

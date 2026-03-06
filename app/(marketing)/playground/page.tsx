@@ -4,14 +4,14 @@ import { PlaygroundClient } from "./PlaygroundClient";
 const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
 
 export const metadata: Metadata = {
-  title: "Playground AI for VS Code | Agentic coding workspace",
+  title: "Playground AI for VS Code | Ship faster with control",
   description:
-    "Plan, generate, and debug with full project context—then execute changes with policy-checked control. Powered by Playground 1, our in-house coding model.",
+    "Plan, generate, debug, and execute in your real repo. Playground AI helps teams ship faster in VS Code with policy-checked control.",
   alternates: { canonical: `${baseUrl}/playground` },
   openGraph: {
-    title: "Playground AI for VS Code | Agentic coding workspace",
+    title: "Playground AI for VS Code | Ship faster with control",
     description:
-      "Plan, generate, and debug with full project context—then execute changes with policy-checked control. Powered by Playground 1, our in-house coding model.",
+      "Plan, generate, debug, and execute in your real repo. Playground AI helps teams ship faster in VS Code with policy-checked control.",
     url: `${baseUrl}/playground`,
     type: "website",
   },
@@ -27,4 +27,3 @@ export default function PlaygroundPage() {
     </div>
   );
 }
-

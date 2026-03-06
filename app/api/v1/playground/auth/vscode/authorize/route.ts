@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { playgroundVscodeAuthCodes } from "@/lib/db/schema";
+import { playgroundVscodeAuthCodes, users } from "@/lib/db/schema";
 import { hashOpaqueToken } from "@/lib/playground/vscode-tokens";
 import { randomBytes } from "crypto";
+import { eq } from "drizzle-orm";
 
 const EXPECTED_CLIENT_IDS = new Set(["vscode", "cli"]);
 const VSCODE_REDIRECT_URI = "vscode://playgroundai.xpersona-playground/auth-callback";
@@ -68,16 +69,45 @@ export async function GET(request: NextRequest): Promise<Response> {
     return NextResponse.redirect(signInUrl, { status: 302 });
   }
 
+  const existingUser = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!existingUser.length) {
+    const signInUrl = new URL("/auth/signin", request.nextUrl.origin);
+    signInUrl.searchParams.set("callbackUrl", request.nextUrl.toString());
+    return NextResponse.redirect(signInUrl, { status: 302 });
+  }
+
   const rawCode = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + AUTH_CODE_TTL_MS);
-  await db.insert(playgroundVscodeAuthCodes).values({
-    codeHash: hashOpaqueToken(rawCode),
-    userId,
-    codeChallenge,
-    codeChallengeMethod: "S256",
-    redirectUri,
-    expiresAt,
-  });
+  try {
+    await db.insert(playgroundVscodeAuthCodes).values({
+      codeHash: hashOpaqueToken(rawCode),
+      userId,
+      codeChallenge,
+      codeChallengeMethod: "S256",
+      redirectUri,
+      expiresAt,
+    });
+  } catch (error) {
+    console.error("[playground][vscode][authorize] failed to issue auth code", {
+      userId,
+      clientId,
+      redirectUri,
+      error,
+    });
+    try {
+      const cb = new URL(redirectUri);
+      cb.searchParams.set("error", "server_error");
+      cb.searchParams.set("error_description", "authorization_failed");
+      cb.searchParams.set("state", state);
+      return NextResponse.redirect(cb.toString(), { status: 302 });
+    } catch {
+      return NextResponse.json({ success: false, error: "server_error" }, { status: 500 });
+    }
+  }
 
   const cb = new URL(redirectUri);
   cb.searchParams.set("code", rawCode);
