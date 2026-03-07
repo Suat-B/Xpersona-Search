@@ -32,8 +32,56 @@ function normalizePatchPath(raw: string): string | null {
   return trimmed;
 }
 
-function parsePatch(patchText: string): ParsedPatch | null {
+function normalizePatchText(patchText: string): string {
   const lines = patchText.replace(/\r\n/g, "\n").split("\n");
+  const out: string[] = [];
+  let inHunk = false;
+  for (const raw of lines) {
+    const line = raw ?? "";
+    if (line.trim().startsWith("```")) {
+      continue;
+    }
+    if (line.startsWith("@@")) {
+      inHunk = true;
+      out.push(line);
+      continue;
+    }
+    if (line.startsWith("diff --git ") || line.startsWith("--- ") || line.startsWith("+++ ")) {
+      out.push(line);
+      continue;
+    }
+    if (inHunk) {
+      if (/^\s*[+-]\d+\s+-\d+\s*$/.test(line)) {
+        continue;
+      }
+      const numOnly = /^\s*\d+\s*$/.exec(line);
+      if (numOnly) {
+        out.push(" ");
+        continue;
+      }
+      const withNum = /^\s*\d+\s+(.*)$/.exec(line);
+      if (withNum) {
+        const rest = withNum[1] ?? "";
+        if (!rest) {
+          out.push(" ");
+          continue;
+        }
+        const first = rest[0];
+        if (first === "+" || first === "-" || first === " ") {
+          out.push(rest);
+          continue;
+        }
+        out.push(" " + rest);
+        continue;
+      }
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
+function parsePatch(patchText: string): ParsedPatch | null {
+  const lines = normalizePatchText(patchText).split("\n");
   let oldPath: string | null = null;
   let newPath: string | null = null;
   const hunks: ParsedHunk[] = [];
@@ -44,8 +92,11 @@ function parsePatch(patchText: string): ParsedPatch | null {
     if (line.startsWith("--- ")) oldPath = normalizePatchPath(line.slice(4).trim());
     if (line.startsWith("+++ ")) newPath = normalizePatchPath(line.slice(4).trim());
     if (line.startsWith("@@")) {
-      const m = /^@@\s+-([0-9]+)(?:,([0-9]+))?\s+\+([0-9]+)(?:,([0-9]+))?\s+@@/.exec(line);
-      if (!m) return null;
+      const m = /^@@\s+-([0-9]+)(?:,([0-9]+))?\s+\+([0-9]+)(?:,([0-9]+))?\s*@@/.exec(line);
+      if (!m) {
+        i += 1;
+        continue;
+      }
       const hunk: ParsedHunk = {
         oldStart: Number(m[1] || "1"),
         lines: [],
@@ -65,10 +116,9 @@ function parsePatch(patchText: string): ParsedPatch | null {
           continue;
         }
         if (hline.startsWith("diff --git ") || hline.startsWith("--- ") || hline.startsWith("+++ ")) break;
-        return null;
+        i += 1;
       }
-      if (hunk.lines.length === 0) return null;
-      hunks.push(hunk);
+      if (hunk.lines.length > 0) hunks.push(hunk);
       continue;
     }
     i += 1;

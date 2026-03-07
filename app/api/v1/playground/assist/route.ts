@@ -52,6 +52,20 @@ function sse(data: Record<string, unknown>): string {
   return `data: ${JSON.stringify(data)}\n\n`;
 }
 
+const ASSIST_MAX_ATTEMPTS = 3;
+const ASSIST_RETRY_DELAY_MS = 400;
+
+function buildRecoveryTask(task: string, errorMessage: string, attempt: number): string {
+  const suffix =
+    `\n\nRecovery note (attempt ${attempt}): The previous attempt failed with error: ${errorMessage}. ` +
+    "Continue with the original task, resolve the issue, and complete the response.";
+  return task + suffix;
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function estimateAttachmentBytesFromDataUrl(dataUrl: string | undefined): number | null {
   if (!dataUrl || typeof dataUrl !== "string") return null;
   const comma = dataUrl.indexOf(",");
@@ -174,13 +188,26 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (!stream) {
     const result = await enqueueSessionTask(sessionId, async () => {
       const startedAt = Date.now();
-      const runResult = await runAssist({
-        ...body,
-        mode: body.mode ?? "auto",
-        conversationHistory: priorConversationHistory,
-        clientPreferences: body.clientPreferences,
-        userProfile: effectiveUserProfile,
-      });
+      let runResult: Awaited<ReturnType<typeof runAssist>> | null = null;
+      let lastError: unknown = null;
+      for (let attempt = 1; attempt <= ASSIST_MAX_ATTEMPTS; attempt += 1) {
+        try {
+          const task = attempt === 1 ? body.task : buildRecoveryTask(body.task, String(lastError ?? "unknown error"), attempt);
+          runResult = await runAssist({
+            ...body,
+            task,
+            mode: body.mode ?? "auto",
+            conversationHistory: priorConversationHistory,
+            clientPreferences: body.clientPreferences,
+            userProfile: effectiveUserProfile,
+          });
+          break;
+        } catch (error) {
+          lastError = error;
+          if (attempt < ASSIST_MAX_ATTEMPTS) await sleep(ASSIST_RETRY_DELAY_MS);
+        }
+      }
+      if (!runResult) throw lastError ?? new Error("Unknown assist failure");
       const latencyMs = Date.now() - startedAt;
       await appendSessionMessage({
         userId: auth.userId,
@@ -252,25 +279,45 @@ export async function POST(request: NextRequest): Promise<Response> {
           await writer.write(encoder.encode(sse({ event: "phase", data: { name: "decision", ts: Date.now(), traceId } })));
           await writer.write(encoder.encode(sse({ event: "log", message: "assist_started", sessionId, traceId })));
           const startedAt = Date.now();
-          const result = await runAssist(
-            {
-              ...body,
-              mode: body.mode ?? "auto",
-              conversationHistory: priorConversationHistory,
-              clientPreferences: body.clientPreferences,
-              userProfile: effectiveUserProfile,
-            },
-            {
-              onToken: async (token) => {
-                if (!token) return;
-                await writer.write(encoder.encode(sse({ event: "token", data: token })));
-              },
-              onStatus: async (status) => {
-                if (!status) return;
-                await writer.write(encoder.encode(sse({ event: "status", data: status })));
-              },
+          let result: Awaited<ReturnType<typeof runAssist>> | null = null;
+          let lastError: unknown = null;
+          for (let attempt = 1; attempt <= ASSIST_MAX_ATTEMPTS; attempt += 1) {
+            try {
+              if (attempt > 1) {
+                await writer.write(
+                  encoder.encode(
+                    sse({ event: "status", data: `Attempting recovery (${attempt}/${ASSIST_MAX_ATTEMPTS})...` })
+                  )
+                );
+              }
+              const task = attempt === 1 ? body.task : buildRecoveryTask(body.task, String(lastError ?? "unknown error"), attempt);
+              result = await runAssist(
+                {
+                  ...body,
+                  task,
+                  mode: body.mode ?? "auto",
+                  conversationHistory: priorConversationHistory,
+                  clientPreferences: body.clientPreferences,
+                  userProfile: effectiveUserProfile,
+                },
+                {
+                  onToken: async (token) => {
+                    if (!token) return;
+                    await writer.write(encoder.encode(sse({ event: "token", data: token })));
+                  },
+                  onStatus: async (status) => {
+                    if (!status) return;
+                    await writer.write(encoder.encode(sse({ event: "status", data: status })));
+                  },
+                }
+              );
+              break;
+            } catch (error) {
+              lastError = error;
+              if (attempt < ASSIST_MAX_ATTEMPTS) await sleep(ASSIST_RETRY_DELAY_MS);
             }
-          );
+          }
+          if (!result) throw lastError ?? new Error("Unknown assist failure");
           const latencyMs = Date.now() - startedAt;
 
           await writer.write(encoder.encode(sse({ event: "decision", data: result.decision })));

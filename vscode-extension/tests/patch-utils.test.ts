@@ -48,6 +48,33 @@ describe("patch utils", () => {
     expect(result.content).toContain("ONE");
   });
 
+  it("applies hunks without file headers", () => {
+    const patch = [
+      "@@ -1,1 +1,1 @@",
+      "-alpha",
+      "+beta",
+    ].join("\n");
+    const result = applyUnifiedDiff("alpha\n", patch);
+    expect(result.status).toBe("applied");
+    expect(result.content).toBe("beta\n");
+  });
+
+  it("applies hunks inside fenced diff blocks", () => {
+    const patch = [
+      "```diff",
+      "diff --git a/a.txt b/a.txt",
+      "--- a/a.txt",
+      "+++ b/a.txt",
+      "@@ -1,1 +1,1 @@",
+      "-one",
+      "+two",
+      "```",
+    ].join("\n");
+    const result = applyUnifiedDiff("one\n", patch);
+    expect(result.status).toBe("applied");
+    expect(result.content).toBe("two\n");
+  });
+
   it("rejects invalid patch text", () => {
     const result = applyUnifiedDiff("a\n", "not a diff");
     expect(result.status).toBe("rejected_invalid_patch");
