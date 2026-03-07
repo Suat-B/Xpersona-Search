@@ -342,16 +342,49 @@ class Provider implements vscode.WebviewViewProvider {
       /^(what|why|how|when|where|who|which|can|could|would|should|is|are|do|does|did)\b/.test(t) ||
       /\b(explain|define|tell me)\b/.test(t);
     const fileInfoQuestion = this.isFileInfoQuestion(t);
+    const metaConversation = this.isMetaConversationPrompt(t);
 
     const hasPathMention = /\b[a-zA-Z0-9_./-]+\.[a-z0-9]{1,8}\b/i.test(t);
     const pathQuestion = hasPathMention && directQuestion && !this.hasExplicitEditIntent(t);
     return (
       acknowledgementLike ||
       greetingOrSmallTalk ||
+      metaConversation ||
       pathQuestion ||
       fileInfoQuestion ||
       (directQuestion && !this.hasCodeTaskSignals(t) && !this.hasExecutionIntent(t) && !this.hasExplicitCommandRunIntent(t))
     );
+  }
+  private isMetaConversationPrompt(task: string): boolean {
+    const t = task.trim().toLowerCase();
+    if (!t) return false;
+    return (
+      /\b(conversation|chat|transcript|dialogue|thread)\b/.test(t) ||
+      /\b(between me and (the )?(ai|assistant|model))\b/.test(t) ||
+      /\b(the ai|the assistant|the model)\b/.test(t)
+    );
+  }
+  private isSmallTalkPrompt(task: string): boolean {
+    const t = task.trim().toLowerCase();
+    if (!t || t.length > 80) return false;
+    if (this.hasCodeTaskSignals(t) || this.hasExecutionIntent(t) || this.hasExplicitEditIntent(t) || this.hasExplicitCommandRunIntent(t)) {
+      return false;
+    }
+    const greeting =
+      /^(hi|hello|hey|yo|sup|hiya|good morning|good afternoon|good evening)\b/.test(t) ||
+      /\b(how are you|what can you do|who are you|what's up|hows it going|how's it going)\b/.test(t);
+    const gratitude = /^(thanks|thank you|thx|appreciate it)\b/.test(t);
+    const shortAck = t.length <= 24 && /^(ok|okay|cool|nice|great|sweet|perfect|got it|sounds good)\b/.test(t);
+    return greeting || gratitude || shortAck;
+  }
+  private wantsCodeEdits(task: string): boolean {
+    const t = task.trim().toLowerCase();
+    if (!t) return false;
+    if (this.isConversationalPrompt(t) || this.isFileInfoQuestion(t) || this.isMetaConversationPrompt(t)) return false;
+    const editVerb =
+      /\b(edit|update|modify|rewrite|change|refactor|implement|create|add|remove|delete|fix|patch|apply|disable|turn off|stop using|get rid of|make it so|make it)\b/i.test(t);
+    const codeSignal = this.hasCodeTaskSignals(t) || /\b(pinescript|pine|script|strategy|indicator)\b/i.test(t);
+    return editVerb || (codeSignal && this.hasExecutionIntent(t));
   }
 
   constructor(private ctx: vscode.ExtensionContext) {
@@ -1480,10 +1513,15 @@ class Provider implements vscode.WebviewViewProvider {
       this.postRun(runThreadId, { type: "status", text: `Model: ${model} | Reasoning: ${reasoning}` });
     }
 
-    // Keep the user task clean so mode classification is based on intent,
-    // not runtime metadata injected into the prompt body.
-    const taskWithReasoning = text;
+    const smallTalk = this.isSmallTalkPrompt(text);
+    const wantsEdits = !conversational && this.wantsCodeEdits(text);
+    const taskWithReasoning = smallTalk
+      ? `User message: "${text.trim()}". Reply with a brief friendly response. Do not mention code, diagnostics, or workspace details unless asked.`
+      : wantsEdits
+        ? `User request: "${text.trim()}". Prefer concrete code edits or patches. If the file or location is unclear, ask for the exact file or paste of the relevant code. Keep the response focused on applying the change, not theory.`
+        : text;
     const requestMode: RequestMode = conversational ? "generate" : this.mode;
+    const requestReasoning: ReasoningLevel = smallTalk ? "low" : reasoning;
     const fileInfoQuestion = this.isFileInfoQuestion(text);
     const mentionTokens = this.mentionsEnabled() ? extractAtMentions(text) : [];
     const shouldAttachContextForTask = true;
@@ -1589,7 +1627,7 @@ class Provider implements vscode.WebviewViewProvider {
           ...(options.attachments?.length ? { attachments: options.attachments } : {}),
           ...(collectedContext ? { context: trimContextToMaxChars(collectedContext, MAX_TOTAL_CONTEXT_CHARS) } : {}),
           ...(historySessionId ? { historySessionId } : {}),
-          workflowIntentId: `reasoning:${reasoning}`,
+          workflowIntentId: `reasoning:${requestReasoning}`,
           contextBudget: { maxTokens: 65536, strategy: "hybrid" },
           clientTrace: {
             extensionVersion: String(this.ctx.extension.packageJSON?.version || "0.0.0"),
@@ -3593,6 +3631,11 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         justify-content: space-between;
         gap: 8px;
       }
+      .sheet-head-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
       .sheet-title {
         font-size: 14px;
         font-weight: 700;
@@ -4006,14 +4049,8 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         padding: 0 22px;
       }
       .messages:empty::before {
-        content: "PA";
-        width: 72px;
-        height: 72px;
-        margin-top: 15vh;
-        border-radius: 24px;
-        color: color-mix(in srgb, var(--fg) 22%, transparent);
-        font-size: 26px;
-        letter-spacing: 0.03em;
+        content: "";
+        display: none;
       }
       textarea::placeholder {
         color: var(--muted);
@@ -4280,6 +4317,8 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         flex: 1;
         min-height: 0;
         overflow: auto;
+        display: flex;
+        flex-direction: column;
         padding: 0 0 10px;
       }
       .chat-panel .jump-wrap {
@@ -4303,7 +4342,11 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         background: transparent;
       }
       .messages {
+        flex: 1;
         min-height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
         gap: 18px;
         padding: 18px 0 48px;
         max-width: 840px;
@@ -4317,20 +4360,8 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         font-size: 10px;
       }
       .messages:empty::before {
-        content: "PA";
-        display: grid;
-        place-items: center;
-        width: 72px;
-        height: 72px;
-        margin: 15vh auto 0;
-        border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-        border-radius: 24px;
-        color: color-mix(in srgb, var(--fg) 22%, transparent);
-        font-size: 26px;
-        font-weight: 800;
-        letter-spacing: 0.03em;
-        text-transform: uppercase;
-        box-shadow: inset 0 0 0 1px color-mix(in srgb, white 4%, transparent);
+        content: "";
+        display: none;
       }
       .m {
         max-width: min(840px, calc(100% - 8px));
@@ -4533,28 +4564,32 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         font-size: 16px;
       }
       .action-menu {
-        position: absolute;
-        right: 0;
-        left: auto;
-        bottom: calc(100% + 8px);
-        background: transparent;
-        backdrop-filter: none;
-        z-index: 50;
-        display: block;
-        width: min(560px, calc(100vw - 40px));
-        max-width: 100%;
-        padding: 0;
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 24px 20px 20px;
       }
       .action-menu.hidden {
         display: none !important;
       }
+      .action-menu-backdrop {
+        position: absolute;
+        inset: 0;
+        background: color-mix(in srgb, var(--bg-0) 78%, transparent);
+      }
       .action-menu-sheet {
-        width: 100%;
-        max-height: min(62vh, 560px);
+        position: relative;
+        width: min(620px, calc(100vw - 40px));
+        max-height: min(70vh, 620px);
         overflow: auto;
         border-radius: 14px;
         box-shadow: 0 12px 26px color-mix(in srgb, var(--bg-0) 70%, transparent);
         padding: 10px;
+        background: var(--bg-1);
+        border: 1px solid var(--border);
       }
       .attach-hint {
         display: none;
@@ -4739,13 +4774,17 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
                   <span id="composerState" class="composer-state">Mode: Auto - Reasoning: Medium</span>
                 </div>
                 <div id="actionMenu" class="action-menu hidden" aria-hidden="true">
+                  <div class="action-menu-backdrop" aria-hidden="true"></div>
                   <div class="action-menu-sheet" role="dialog" aria-label="Composer settings">
                     <div class="sheet-head">
                       <div>
                         <div class="sheet-title">More settings</div>
                         <div class="sheet-sub">Advanced controls inside your composer.</div>
                       </div>
-                      <button id="actionMenuClose" type="button" class="sheet-close" aria-label="Close settings">x</button>
+                      <div class="sheet-head-actions">
+                        <button id="authSignOutQuick" class="action-item" type="button" style="display:none">Sign out</button>
+                        <button id="actionMenuClose" type="button" class="sheet-close" aria-label="Close settings">x</button>
+                      </div>
                     </div>
 
                     <div class="sheet-grid">

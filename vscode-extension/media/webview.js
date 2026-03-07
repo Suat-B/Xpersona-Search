@@ -129,6 +129,7 @@
       const planModeChip = document.getElementById("planModeChip");
       const actionMenuBtn = document.getElementById("actionMenuBtn");
       const actionMenu = document.getElementById("actionMenu");
+      const actionMenuSheet = actionMenu ? actionMenu.querySelector(".action-menu-sheet") : null;
       const actionMenuClose = document.getElementById("actionMenuClose");
       const newThreadQuick = document.getElementById("newThreadQuick");
       const historyQuick = document.getElementById("historyQuick");
@@ -139,6 +140,7 @@
       const authLabel = document.getElementById("authLabel");
       const authSignIn = document.getElementById("authSignIn");
       const authSignOut = document.getElementById("authSignOut");
+      const authSignOutQuick = document.getElementById("authSignOutQuick");
       const newThreadBtn = document.getElementById("newThreadBtn");
       const undoLastBtn = document.getElementById("undoLastBtn");
 
@@ -146,6 +148,8 @@
       let streaming = false;
       let followLatest = true;
       let terminalBubble = null;
+      let streamBuffer = "";
+      let streamTimer = null;
       const DEFAULT_MODEL = "Playground 1";
       const MAX_DIFF_ROWS = 400;
       const seenEditPreviewKeys = new Set();
@@ -876,6 +880,43 @@
         jumpLatestBtn.classList.toggle("show", shouldShow);
       }
 
+      function flushStreamBuffer(force = false) {
+        if (!streamBubble) return;
+        const body = streamBubble.querySelector(".m-body");
+        if (streamBubble.classList.contains("typing")) {
+          streamBubble.classList.remove("typing");
+          if (body) body.textContent = "";
+        }
+        if (!body) return;
+        if (!streamBuffer) {
+          if (streamTimer) {
+            clearInterval(streamTimer);
+            streamTimer = null;
+          }
+          return;
+        }
+        const chunkSize = force ? streamBuffer.length : Math.max(1, Math.min(18, Math.ceil(streamBuffer.length / 12)));
+        const chunk = streamBuffer.slice(0, chunkSize);
+        streamBuffer = streamBuffer.slice(chunkSize);
+        body.textContent += chunk;
+        if (followLatest) scrollToLatest();
+        if (!streamBuffer && streamTimer) {
+          clearInterval(streamTimer);
+          streamTimer = null;
+        }
+      }
+
+      function queueStreamText(text) {
+        if (!text) return;
+        streamBuffer += text;
+        if (!streamBubble) {
+          streamBubble = addMessage("", "a");
+        }
+        if (!streamTimer) {
+          streamTimer = setInterval(() => flushStreamBuffer(false), 18);
+        }
+      }
+
       function addMessage(text, cls) {
         const d = createBubble(cls);
         const body = d.querySelector(".m-body");
@@ -1251,8 +1292,9 @@
         actionMenu.classList.toggle("hidden", !open);
         actionMenu.setAttribute("aria-hidden", open ? "false" : "true");
         if (actionMenuBtn) actionMenuBtn.setAttribute("aria-expanded", open ? "true" : "false");
-        if (open && apiKeyInline) {
-          setTimeout(() => apiKeyInline.focus(), 0);
+        if (open) {
+          if (actionMenuSheet) actionMenuSheet.scrollTop = 0;
+          if (apiKeyInline) setTimeout(() => apiKeyInline.focus(), 0);
         }
       }
 
@@ -1460,11 +1502,19 @@
           setActionMenuOpen(false);
         };
       }
+      const handleSignOut = () => {
+        addMessage("Signing out…", "cmd");
+        v.postMessage({ type: "signOut" });
+        setActionMenuOpen(false);
+      };
       if (authSignOut) {
-        authSignOut.onclick = () => {
-          addMessage("Signing out…", "cmd");
-          v.postMessage({ type: "signOut" });
-          setActionMenuOpen(false);
+        authSignOut.onclick = handleSignOut;
+      }
+      if (authSignOutQuick) {
+        authSignOutQuick.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          handleSignOut();
         };
       }
       if (apiKeyInlineSave) {
@@ -1539,6 +1589,15 @@
             onMenuAction(btn.getAttribute("data-menu-action"));
             setActionMenuOpen(false);
           });
+        });
+        actionMenu.addEventListener("click", (e) => {
+          const target = eventTargetElement(e.target);
+          if (!target) return;
+          if (target.classList.contains("action-menu-backdrop")) {
+            e.preventDefault();
+            e.stopPropagation();
+            setActionMenuOpen(false);
+          }
         });
       }
 
@@ -1793,6 +1852,7 @@
           }
           if (authSignIn) authSignIn.style.display = signedIn ? "none" : "";
           if (authSignOut) authSignOut.style.display = signedIn ? "" : "none";
+          if (authSignOutQuick) authSignOutQuick.style.display = signedIn ? "" : "none";
         } else if (m.type === "openUploadPicker") {
           if (uploadInput) uploadInput.click();
         } else if (m.type === "mode") {
@@ -1831,21 +1891,19 @@
           setStreaming(true);
         } else if (m.type === "token") {
           if (!streaming) setStreaming(true);
-          if (streamBubble) {
-            const body = streamBubble.querySelector(".m-body");
-            if (streamBubble.classList.contains("typing")) {
-              streamBubble.classList.remove("typing");
-              if (body) body.textContent = "";
-            }
-            if (body) body.textContent += (m.text || "");
-            if (followLatest) scrollToLatest();
-          } else {
-            streamBubble = addMessage(normalizeAssistantText(m.text || ""), "a");
-          }
+          queueStreamText(String(m.text || ""));
         } else if (m.type === "end") {
           const shouldShowPlanDecision = Boolean(streamBubble) && currentMode === "plan";
           if (streamBubble) {
             const body = streamBubble.querySelector(".m-body");
+            if (streamTimer) {
+              clearInterval(streamTimer);
+              streamTimer = null;
+            }
+            if (streamBuffer) {
+              if (body) body.textContent += streamBuffer;
+              streamBuffer = "";
+            }
             if (body) body.textContent = normalizeAssistantText(body.textContent || "");
           }
           setStreaming(false);
@@ -1882,7 +1940,8 @@
             addMessage(statusText, "a");
           }
         } else if (m.type === "assistant") {
-          addMessage(m.text || "", "a");
+          setStreaming(true);
+          queueStreamText(String(m.text || ""));
           if (currentMode === "plan") showPlanDecisionCard();
         } else if (m.type === "editPreview") {
           addEditPreview(m.path || "unknown", m.patch || "");
