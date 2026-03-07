@@ -213,7 +213,7 @@
                                                                                                     },
                                                                  "xpersona.playground.model":  {
                                                                                                    "type":  "string",
-                                                                                                   "default":  "Playground 1",
+                                                                                                   "default":  "Qwen/Qwen3-235B-A22B-Instruct-2507:fastest",
                                                                                                    "description":  "Model identifier for chat completions."
                                                                                                },
                                                                  "xpersona.playground.systemPrompt":  {

@@ -2590,6 +2590,102 @@ LIGHT MODE OVERRIDES - Applied when .light-mode class is present
   box-shadow: none;
 }
 
+.chat-editorial-side-promo {
+  margin-top: 0.35rem;
+  border-radius: 12px;
+  border: 1px solid var(--chat-border);
+  background: rgba(37, 38, 41, 0.55);
+  padding: 0.65rem;
+}
+
+.chat-editorial-side-promo-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.chat-editorial-side-promo-pill {
+  border-radius: 999px;
+  border: 1px solid rgba(16, 163, 127, 0.35);
+  background: rgba(16, 163, 127, 0.12);
+  color: #9ee6d4;
+  padding: 0.12rem 0.45rem;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chat-editorial-side-promo-link {
+  font-size: 0.68rem;
+  color: var(--chat-text-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.chat-editorial-side-promo-link:hover {
+  color: var(--chat-text-secondary);
+}
+
+.chat-editorial-side-promo-plans {
+  margin-top: 0.45rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+}
+
+.chat-editorial-side-plan {
+  border-radius: 999px;
+  border: 1px solid rgba(16, 163, 127, 0.28);
+  background: rgba(16, 163, 127, 0.08);
+  color: #9ee6d4;
+  padding: 0.14rem 0.46rem;
+  font-size: 0.62rem;
+  line-height: 1.35;
+  font-weight: 600;
+}
+
+.chat-editorial-side-plan:hover {
+  border-color: rgba(16, 163, 127, 0.5);
+  background: rgba(16, 163, 127, 0.16);
+}
+
+.chat-editorial-side-plan:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.chat-editorial-side-promo-note {
+  margin-top: 0.25rem;
+  font-size: 0.63rem;
+  color: var(--chat-text-muted);
+}
+
+.chat-editorial-side-promo-cta {
+  margin-top: 0.45rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(16, 163, 127, 0.4);
+  background: rgba(16, 163, 127, 0.14);
+  color: #d1fae5;
+  padding: 0.24rem 0.62rem;
+  font-size: 0.67rem;
+  font-weight: 600;
+}
+
+.chat-editorial-side-promo-cta:hover {
+  border-color: rgba(16, 163, 127, 0.55);
+  background: rgba(16, 163, 127, 0.2);
+}
+
+.chat-editorial-side-promo-cta:focus-visible {
+  outline: 2px solid #10a37f;
+  outline-offset: 2px;
+}
+
 .chat-editorial-message-list {
   padding-bottom: 0.5rem;
 }
@@ -2921,6 +3017,40 @@ LIGHT MODE OVERRIDES - Applied when .light-mode class is present
   text-align: center;
   font-size: 0.75rem;
   color: var(--chat-text-muted);
+}
+
+.chat-editorial-subhint {
+  margin-top: 0.2rem;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--chat-text-muted);
+}
+
+.chat-editorial-subhint-label {
+  color: var(--chat-text-secondary);
+}
+
+.chat-editorial-subhint-plan {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+  line-height: inherit;
+  color: var(--chat-accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.chat-editorial-subhint-plan:hover {
+  color: #34d399;
+}
+
+.chat-editorial-subhint-plan:disabled {
+  opacity: 0.7;
+  cursor: wait;
 }
 
 @keyframes chat-fade-in {

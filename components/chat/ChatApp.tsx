@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -26,6 +26,7 @@ type ChatViewer = {
   source: string;
 };
 
+type PlaygroundTier = "starter" | "builder" | "studio";
 function makeId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -140,6 +141,47 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
   );
 }
 
+function SidebarPlaygroundPromo({
+  viewer,
+  checkoutTier,
+  onCheckout,
+}: {
+  viewer: ChatViewer | null;
+  checkoutTier: PlaygroundTier | null;
+  onCheckout: (tier: PlaygroundTier) => void;
+}) {
+  const isSignedIn = Boolean(viewer && !viewer.isAnonymous);
+
+  return (
+    <section className="chat-editorial-side-promo" aria-label="Playground packages">
+      <div className="chat-editorial-side-promo-head">
+        <p className="chat-editorial-side-promo-pill">Limited-time</p>
+        <Link href="/playground" className="chat-editorial-side-promo-link">
+          Packages
+        </Link>
+      </div>
+      <div className="chat-editorial-side-promo-plans">
+        <button type="button" className="chat-editorial-side-plan" disabled={checkoutTier !== null} onClick={() => onCheckout("starter")}>
+          {checkoutTier === "starter" ? "Opening..." : "Starter $2/mo"}
+        </button>
+        <button type="button" className="chat-editorial-side-plan" disabled={checkoutTier !== null} onClick={() => onCheckout("builder")}>
+          {checkoutTier === "builder" ? "Opening..." : "Builder $5/mo"}
+        </button>
+        <button type="button" className="chat-editorial-side-plan" disabled={checkoutTier !== null} onClick={() => onCheckout("studio")}>
+          {checkoutTier === "studio" ? "Opening..." : "Studio $10/mo"}
+        </button>
+      </div>
+      <p className="chat-editorial-side-promo-note">2-day trial. Cancel before day 3 to avoid charges.</p>
+      <Link
+        href={isSignedIn ? "/dashboard/playground" : "/auth/signup?next=%2Fdashboard%2Fplayground"}
+        className="chat-editorial-side-promo-cta"
+      >
+        {isSignedIn ? "View plans" : "Start trial"}
+      </Link>
+    </section>
+  );
+}
+
 export function ChatApp() {
   const [booting, setBooting] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -152,15 +194,21 @@ export function ChatApp() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [checkoutTier, setCheckoutTier] = useState<PlaygroundTier | null>(null);
 
   const messageViewportRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const pendingSessionIdRef = useRef<string | null>(null);
+  const skipNextAutoLoadSessionIdRef = useRef<string | null>(null);
   const isEmpty = !loadingMessages && messages.length === 0;
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? null,
     [sessions, activeSessionId]
+  );
+  const draftStorageKey = useMemo(
+    () => `xpersona:chat:draft:${activeSessionId ?? "new"}`,
+    [activeSessionId]
   );
 
   const refreshSessions = useCallback(async (): Promise<SessionRow[]> => {
@@ -280,6 +328,10 @@ export function ChatApp() {
 
   useEffect(() => {
     if (!activeSessionId) return;
+    if (skipNextAutoLoadSessionIdRef.current === activeSessionId) {
+      skipNextAutoLoadSessionIdRef.current = null;
+      return;
+    }
     void loadMessages(activeSessionId);
   }, [activeSessionId, loadMessages]);
 
@@ -287,6 +339,43 @@ export function ChatApp() {
     if (!messageViewportRef.current) return;
     messageViewportRef.current.scrollTop = messageViewportRef.current.scrollHeight;
   }, [messages, loadingMessages, sending]);
+
+  useEffect(() => {
+    try {
+      const storedDraft = window.localStorage.getItem(draftStorageKey);
+      setInput(storedDraft ?? "");
+    } catch {
+      setInput("");
+    }
+  }, [draftStorageKey]);
+
+  useEffect(() => {
+    try {
+      if (!input.trim()) {
+        window.localStorage.removeItem(draftStorageKey);
+        return;
+      }
+      window.localStorage.setItem(draftStorageKey, input);
+    } catch {
+      // Ignore storage errors (private mode, quota, etc.)
+    }
+  }, [draftStorageKey, input]);
+
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const previousHtmlOverscroll = html.style.overscrollBehaviorY;
+    const previousBodyOverscroll = body.style.overscrollBehaviorY;
+
+    // Prevent mobile pull-to-refresh from reloading the page mid-chat.
+    html.style.overscrollBehaviorY = "none";
+    body.style.overscrollBehaviorY = "none";
+
+    return () => {
+      html.style.overscrollBehaviorY = previousHtmlOverscroll;
+      body.style.overscrollBehaviorY = previousBodyOverscroll;
+    };
+  }, []);
 
   const onNewChat = useCallback(async () => {
     try {
@@ -305,6 +394,51 @@ export function ChatApp() {
     setSidebarOpen(false);
   }, []);
 
+  const onStartCheckout = useCallback(async (tier: PlaygroundTier) => {
+    if (checkoutTier) return;
+    setCheckoutTier(tier);
+    setStatusText(`Opening ${tier} checkout...`);
+
+    try {
+      const runCheckout = async (allowAuthRetry: boolean): Promise<boolean> => {
+        const res = await fetch("/api/v1/me/playground-checkout", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tier, billing: "monthly" }),
+        });
+        const json = (await res.json().catch(() => ({}))) as {
+          success?: boolean;
+          data?: { url?: string };
+          message?: string;
+        };
+
+        if (res.status === 401 && allowAuthRetry) {
+          const authRes = await fetch("/api/auth/play", { method: "POST", credentials: "include" });
+          if (!authRes.ok) {
+            setStatusText("Sign-in failed. Please try again.");
+            return false;
+          }
+          return runCheckout(false);
+        }
+
+        if (!res.ok || !json.success || !json.data?.url) {
+          setStatusText(json.message || "Could not start checkout. Please try again.");
+          return false;
+        }
+
+        window.location.href = json.data.url;
+        return true;
+      };
+
+      await runCheckout(true);
+    } catch {
+      setStatusText("Could not start checkout. Please check your connection.");
+    } finally {
+      setCheckoutTier(null);
+    }
+  }, [checkoutTier]);
+
   const onSend = useCallback(
     async (event: React.FormEvent) => {
       event.preventDefault();
@@ -313,6 +447,11 @@ export function ChatApp() {
       if (!task) return;
 
       setInput("");
+      try {
+        window.localStorage.removeItem(draftStorageKey);
+      } catch {
+        // Ignore storage errors.
+      }
       setStatusText(null);
       const userMessage: ChatMessage = { id: makeId(), role: "user", content: task };
       const assistantId = makeId();
@@ -420,6 +559,9 @@ export function ChatApp() {
         const rows = await refreshSessions();
         const nextActiveId = resolvedSessionId ?? rows[0]?.id ?? null;
         if (nextActiveId && nextActiveId !== activeSessionId) {
+          // Preserve optimistic + streamed messages when a brand new session
+          // becomes active after first send; avoid immediate empty-state flicker.
+          skipNextAutoLoadSessionIdRef.current = nextActiveId;
           setActiveSessionId(nextActiveId);
         }
         setStatusText(null);
@@ -437,7 +579,7 @@ export function ChatApp() {
         setSending(false);
       }
     },
-    [activeSessionId, input, refreshSessions, sending]
+    [activeSessionId, draftStorageKey, input, refreshSessions, sending]
   );
 
   const composer = (
@@ -482,8 +624,37 @@ export function ChatApp() {
         </div>
       </div>
       <div className="chat-editorial-hint" role="status" aria-live="polite">
-        {statusText || "Enter to send, made with ❤️ in America."}
+        {statusText || "Enter to send, made with love in America."}
       </div>
+      <p className="chat-editorial-subhint">
+        <span className="chat-editorial-subhint-label">Playground for Coding:</span>{" "}
+        <button
+          type="button"
+          className="chat-editorial-subhint-plan"
+          disabled={checkoutTier !== null}
+          onClick={() => onStartCheckout("starter")}
+        >
+          {checkoutTier === "starter" ? "Opening..." : "Starter $2/mo"}
+        </button>{" "}
+        •{" "}
+        <button
+          type="button"
+          className="chat-editorial-subhint-plan"
+          disabled={checkoutTier !== null}
+          onClick={() => onStartCheckout("builder")}
+        >
+          {checkoutTier === "builder" ? "Opening..." : "Builder $5/mo"}
+        </button>{" "}
+        •{" "}
+        <button
+          type="button"
+          className="chat-editorial-subhint-plan"
+          disabled={checkoutTier !== null}
+          onClick={() => onStartCheckout("studio")}
+        >
+          {checkoutTier === "studio" ? "Opening..." : "Studio $10/mo"}
+        </button>
+      </p>
     </form>
   );
 
@@ -515,14 +686,24 @@ export function ChatApp() {
       <div className="flex h-full w-full">
         <aside
           className={`chat-editorial-sidebar fixed inset-y-0 left-0 z-40 w-[300px] p-3 transition-transform md:static md:w-[260px] md:translate-x-0 ${
-            sidebarOpen ? "translate-x-0" : "-translate-x-full"
+            sidebarOpen ? "translate-x-0 pointer-events-auto" : "-translate-x-full pointer-events-none md:pointer-events-auto"
           }`}
           aria-label="Chat sessions"
         >
           <div className="chat-editorial-card chat-editorial-sidebar-card h-full rounded-3xl p-4">
             <div className="chat-editorial-sidebar-inner">
+              <div className="mb-1 flex items-center justify-end md:hidden">
+                <button
+                  type="button"
+                  className="chat-editorial-mobile-button rounded-xl px-3 py-1.5 text-sm"
+                  onClick={() => setSidebarOpen(false)}
+                  aria-label="Close chats"
+                >
+                  Close
+                </button>
+              </div>
               <div className="chat-editorial-brand">
-                <span className="chat-editorial-brand-icon" aria-hidden="true">◎</span>
+                <span className="chat-editorial-brand-icon" aria-hidden="true">P</span>
                 <div>
                   <p className="text-sm font-semibold text-[var(--chat-text-primary)]">Playground 1</p>
                   <p className="text-xs text-[var(--chat-text-muted)]">
@@ -585,6 +766,7 @@ export function ChatApp() {
                   ))
                 )}
               </div>
+              <SidebarPlaygroundPromo viewer={viewer} checkoutTier={checkoutTier} onCheckout={onStartCheckout} />
 
             </div>
           </div>
@@ -613,7 +795,10 @@ export function ChatApp() {
           </header>
 
           <div className={`chat-editorial-shell flex min-h-0 flex-1 flex-col ${isEmpty ? "is-empty" : ""}`}>
-            <div ref={messageViewportRef} className="chat-editorial-scroll flex-1 overflow-y-auto px-4 pb-6 pt-4 sm:px-8">
+            <div
+              ref={messageViewportRef}
+              className="chat-editorial-scroll flex-1 overflow-y-auto overscroll-y-contain px-4 pb-6 pt-4 sm:px-8"
+            >
               {loadingMessages ? (
                 <div className="mx-auto w-full max-w-[860px]">
                   <p className="text-sm text-[var(--chat-text-secondary)]">Loading messages...</p>
@@ -659,3 +844,5 @@ export function ChatApp() {
     </div>
   );
 }
+
+

@@ -53,7 +53,14 @@ const OPEN_THREADS_KEY = "xpersona.playground.openThreads";
 const PINNED_THREADS_KEY = "xpersona.playground.pinnedThreads";
 const EXECUTION_POLICY_CONFIG_KEY = "executionPolicy";
 const MENTIONS_ENABLED_FLAG = "mentions.enabled";
-const DEFAULT_PLAYGROUND_MODEL = "Playground 1";
+const DEFAULT_PLAYGROUND_MODEL = "Qwen/Qwen3-235B-A22B-Instruct-2507:fastest";
+const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
+function modelLabelForUi(model) {
+    const raw = String(model || "").trim();
+    if (!raw)
+        return PUBLIC_PLAYGROUND_MODEL_NAME;
+    return /qwen/i.test(raw) ? PUBLIC_PLAYGROUND_MODEL_NAME : raw;
+}
 const IDE_CONTEXT_FLAG = "xpersona.playground.ideContextV2";
 const MAX_TOTAL_CONTEXT_CHARS = 350000;
 const INDEX_MAX_FILE_SIZE = 250 * 1024;
@@ -1451,13 +1458,13 @@ class Provider {
         const runThreadId = activeThreadId;
         this.postRun(runThreadId, { type: "start" });
         if (!conversational) {
-            this.postRun(runThreadId, { type: "status", text: `Model: ${model} | Reasoning: ${reasoning}` });
+            this.postRun(runThreadId, { type: "status", text: `Model: ${modelLabelForUi(model)} | Reasoning: ${reasoning}` });
         }
         const wantsEdits = !conversational && this.wantsCodeEdits(text);
         const taskWithReasoning = smallTalk
             ? `User message: "${text.trim()}". Reply briefly and friendly. No file edits, commands, or patches.`
             : wantsEdits
-                ? `User request: "${text.trim()}". Prefer concrete code edits or patches. If the file or location is unclear, ask for the exact file or paste of the relevant code. Keep the response focused on applying the change, not theory.`
+                ? `User request: "${text.trim()}". Prefer concrete code edits or patches. Use available IDE context (active file, open files, @mentions, diagnostics) to infer the most likely target and produce a best-effort patch. Ask a clarification question only when no file context exists at all. Keep the response focused on applying the change, not theory.`
                 : text;
         const requestMode = conversational || strictConversationOnly ? "generate" : this.mode;
         const requestReasoning = smallTalk ? "low" : reasoning;
@@ -1544,6 +1551,20 @@ class Provider {
         if (contextStatus.notes?.length) {
             this.postRun(runThreadId, { type: "status", text: contextStatus.notes.join(" | ") });
         }
+        const hintedTargetPath = normalizeWorkspaceRelativePath(String(collectedContext?.activeFile?.path || collectedContext?.openFiles?.[0]?.path || "").replace(/\\/g, "/"));
+        const selectedCodeHint = String(collectedContext?.activeFile?.selection || "").trim();
+        const taskForAssist = wantsEdits
+            ? [
+                taskWithReasoning,
+                hintedTargetPath ? `Primary target file hint: ${hintedTargetPath}` : "",
+                selectedCodeHint ? `Selected code hint:\n${selectedCodeHint.slice(0, 1200)}` : "",
+                hintedTargetPath
+                    ? "If unsure, edit the hinted file directly. Do not ask for an exact file path when IDE context is available."
+                    : "",
+            ]
+                .filter(Boolean)
+                .join("\n\n")
+            : taskWithReasoning;
         const runStream = async (historySessionId) => {
             let sawTokenEvent = false;
             let lastProgressState = "";
@@ -1555,7 +1576,7 @@ class Provider {
             };
             return (stream(`${base()}/api/v1/playground/assist`, auth, {
                 mode: requestMode,
-                task: taskWithReasoning,
+                task: taskForAssist,
                 stream: true,
                 model,
                 ...(options.attachments?.length ? { attachments: options.attachments } : {}),
@@ -1772,6 +1793,30 @@ class Provider {
         if ((conversational || strictConversationOnly) && this.pendingActions.length > 0) {
             this.pendingActions = [];
             this.post({ type: "pendingActions", count: 0 });
+            return;
+        }
+        const actionabilitySummary = (this.lastRunMeta || null)?.actionability?.summary;
+        const shouldAutoContextRetry = allowActions &&
+            wantsEdits &&
+            !conversational &&
+            !strictConversationOnly &&
+            this.pendingActions.length === 0 &&
+            !options.contextRetryAttempted &&
+            actionabilitySummary === "clarification_needed" &&
+            !!hintedTargetPath;
+        if (shouldAutoContextRetry && hintedTargetPath) {
+            const retryTask = `${text.trim()}\n\nApply the requested change directly in ${hintedTargetPath}. Do not ask for file-path clarification; generate actionable edits for this file.`;
+            this.postRun(runThreadId, {
+                type: "status",
+                text: `No actionable edits were produced. Retrying once with explicit file target: ${hintedTargetPath}`,
+            });
+            await this.ask(retryTask, parallel, model, reasoning, {
+                includeIdeContext: options.includeIdeContext,
+                workspaceContextLevel: options.workspaceContextLevel,
+                attachments: options.attachments,
+                threadId: runThreadId,
+                contextRetryAttempted: true,
+            });
             return;
         }
         if (this.pendingActions.length > 0) {
@@ -3013,6 +3058,7 @@ function html(webview, extensionUri) {
       .stream-pending .m-body {
         color: color-mix(in srgb, var(--fg) 72%, var(--muted) 28%);
         font-style: italic;
+        min-width: 200px;
       }
       .reasoning {
         max-width: min(760px, calc(100% - 8px));
@@ -3169,11 +3215,88 @@ function html(webview, extensionUri) {
         white-space: pre-wrap;
         word-break: break-word;
       }
+      .term-line.card {
+        white-space: normal;
+      }
       .term-line.cmdline { color: color-mix(in srgb, var(--fg) 86%, var(--muted)); }
       .term-line.ok { color: color-mix(in srgb, var(--ok) 70%, var(--fg)); }
       .term-line.err { color: color-mix(in srgb, var(--err) 72%, var(--fg)); }
       .term-line.info { color: color-mix(in srgb, var(--fg) 70%, var(--muted)); }
       .term-line.summary { color: color-mix(in srgb, var(--fg) 88%, var(--muted)); border-top: 1px solid var(--surface-border); margin-top: 4px; padding-top: 6px; }
+      .term-cmd-card,
+      .term-result-card {
+        border: 1px solid color-mix(in srgb, var(--surface-border) 76%, transparent);
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--surface) 74%, var(--bg-0));
+        padding: 6px 8px;
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 8px;
+      }
+      .term-result-card.ok {
+        border-color: color-mix(in srgb, var(--ok) 38%, var(--surface-border));
+      }
+      .term-result-card.err {
+        border-color: color-mix(in srgb, var(--err) 45%, var(--surface-border));
+      }
+      .term-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 44px;
+        height: 20px;
+        padding: 0 7px;
+        border-radius: 999px;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+        border: 1px solid var(--surface-border);
+      }
+      .term-badge.cmd {
+        background: color-mix(in srgb, var(--accent) 18%, var(--bg-0));
+        color: color-mix(in srgb, var(--fg) 92%, var(--accent));
+        border-color: color-mix(in srgb, var(--accent) 45%, var(--surface-border));
+      }
+      .term-badge.ok {
+        background: color-mix(in srgb, var(--ok) 20%, var(--bg-0));
+        color: color-mix(in srgb, var(--ok) 84%, var(--fg));
+        border-color: color-mix(in srgb, var(--ok) 50%, var(--surface-border));
+      }
+      .term-badge.err {
+        background: color-mix(in srgb, var(--err) 20%, var(--bg-0));
+        color: color-mix(in srgb, var(--err) 84%, var(--fg));
+        border-color: color-mix(in srgb, var(--err) 55%, var(--surface-border));
+      }
+      .term-cmd-text,
+      .term-result-text {
+        margin: 0;
+        font-family: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
+        font-size: 11.5px;
+        color: color-mix(in srgb, var(--fg) 90%, var(--muted));
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .term-exit-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 18px;
+        padding: 0 7px;
+        border-radius: 999px;
+        font-size: 9px;
+        letter-spacing: .04em;
+        border: 1px solid color-mix(in srgb, var(--surface-border) 82%, transparent);
+        color: color-mix(in srgb, var(--fg) 72%, var(--muted));
+        background: color-mix(in srgb, var(--bg-1) 65%, var(--bg-0));
+      }
+      .term-summary {
+        border-top: 1px solid var(--surface-border);
+        margin-top: 4px;
+        padding-top: 6px;
+        color: color-mix(in srgb, var(--fg) 86%, var(--muted));
+      }
       .change {
         border: 1px solid var(--surface-border);
         border-radius: 12px;
@@ -3195,7 +3318,7 @@ function html(webview, extensionUri) {
       .diff-disclosure > summary::before {
         content: ">";
         display: inline-block;
-        margin-right: 8px;
+        margin-right: 16px;
         color: color-mix(in srgb, var(--fg) 60%, var(--muted) 40%);
         transform: rotate(90deg);
         transition: transform .15s ease;
@@ -3207,15 +3330,15 @@ function html(webview, extensionUri) {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 8px;
-        padding: 9px 10px;
+        gap: 16px;
+        padding: 18px 20px;
         border-bottom: 1px solid var(--surface-border);
         cursor: pointer;
         user-select: none;
         background: color-mix(in srgb, var(--surface) 76%, var(--bg-0));
       }
       .diff-summary-title {
-        font-size: 12px;
+        font-size: 24px;
         font-weight: 600;
         color: color-mix(in srgb, var(--fg) 86%, var(--muted));
       }
@@ -3271,14 +3394,14 @@ function html(webview, extensionUri) {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 8px;
-        padding: 8px 10px;
+        gap: 16px;
+        padding: 16px 20px;
         background: color-mix(in srgb, var(--surface) 68%, var(--bg-0));
         border-bottom: 1px solid var(--surface-border);
       }
       .diff-title {
         color: color-mix(in srgb, var(--fg) 78%, var(--muted));
-        font-size: 11px;
+        font-size: 22px;
       }
       .diff-path {
         color: color-mix(in srgb, var(--fg) 90%, var(--muted));
@@ -3286,7 +3409,7 @@ function html(webview, extensionUri) {
       }
       .diff-stats {
         font-family: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
-        font-size: 11px;
+        font-size: 22px;
       }
       .diff-stats .add {
         color: var(--diff-add-fg);
@@ -3296,9 +3419,9 @@ function html(webview, extensionUri) {
       }
       .diff-body {
         font-family: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
-        font-size: 12px;
-        line-height: 1.45;
-        max-height: 280px;
+        font-size: 24px;
+        line-height: 1.55;
+        max-height: 560px;
         overflow: auto;
       }
       .diff-card[data-lang] {
@@ -3319,11 +3442,11 @@ function html(webview, extensionUri) {
       .diff-card[data-lang="plain"] { --lang-accent: var(--accent); }
       .diff-card[data-lang] .diff-head {
         border-left: 3px solid color-mix(in srgb, var(--lang-accent) 80%, var(--surface-border));
-        padding-left: 7px;
+        padding-left: 14px;
       }
       .diff-row {
         display: grid;
-        grid-template-columns: 44px 44px 16px 1fr;
+        grid-template-columns: 88px 88px 32px 1fr;
         width: fit-content;
         min-width: 100%;
         transition: background .18s ease;
@@ -3331,7 +3454,7 @@ function html(webview, extensionUri) {
       .diff-row .ln {
         color: var(--line-fg);
         text-align: right;
-        padding: 0 8px 0 0;
+        padding: 0 16px 0 0;
         border-right: 1px solid color-mix(in srgb, var(--surface-border) 70%, transparent);
         background: var(--gutter-bg);
       }
@@ -3341,7 +3464,7 @@ function html(webview, extensionUri) {
       }
       .diff-row .txt {
         white-space: pre;
-        padding: 0 8px;
+        padding: 0 16px;
       }
       .diff-row.ctx .sig,
       .diff-row.ctx .txt {
@@ -3384,8 +3507,8 @@ function html(webview, extensionUri) {
       .diff-body .tok-attr { color: color-mix(in srgb, #fde047 70%, var(--fg)); }
       .diff-trunc {
         color: color-mix(in srgb, var(--fg) 62%, var(--muted));
-        font-size: 11px;
-        padding: 6px 10px 8px;
+        font-size: 22px;
+        padding: 12px 20px 16px;
         border-top: 1px solid var(--surface-border);
       }
       .typing .m-time { display: none; }
@@ -4090,7 +4213,8 @@ function html(webview, extensionUri) {
         color: var(--fg);
       }
       .a .m-body {
-        max-width: min(760px, calc(100% - 76px));
+        max-width: min(760px, 100%);
+        width: fit-content;
       }
       .u .m-body {
         max-width: 100%;
@@ -4665,6 +4789,85 @@ function html(webview, extensionUri) {
         border-radius: 999px;
         font-size: 16px;
       }
+      .queue-pill {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        min-width: 22px;
+        height: 22px;
+        padding: 0 7px;
+        border-radius: 999px;
+        border: 1px solid color-mix(in srgb, var(--accent) 58%, var(--border));
+        background: color-mix(in srgb, var(--accent) 22%, var(--bg-1));
+        color: color-mix(in srgb, var(--fg) 92%, var(--accent));
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: .01em;
+      }
+      .queue-pill.show {
+        display: inline-flex;
+      }
+      .queue-panel {
+        margin-top: 6px;
+        border: 1px solid var(--surface-border);
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--surface) 86%, var(--bg-0));
+        overflow: hidden;
+      }
+      .queue-panel.hidden {
+        display: none;
+      }
+      .queue-summary {
+        list-style: none;
+        cursor: pointer;
+        user-select: none;
+        padding: 7px 10px;
+        font-size: 11px;
+        font-weight: 600;
+        color: color-mix(in srgb, var(--fg) 82%, var(--muted));
+        border-bottom: 1px solid color-mix(in srgb, var(--surface-border) 74%, transparent);
+      }
+      .queue-summary::-webkit-details-marker {
+        display: none;
+      }
+      .queue-list {
+        max-height: 170px;
+        overflow: auto;
+        padding: 6px 8px 8px;
+        display: grid;
+        gap: 6px;
+      }
+      .queue-item {
+        border: 1px solid color-mix(in srgb, var(--surface-border) 72%, transparent);
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--bg-1) 72%, var(--bg-0));
+        padding: 6px 8px;
+        display: grid;
+        gap: 6px;
+      }
+      .queue-text {
+        font-size: 11px;
+        color: color-mix(in srgb, var(--fg) 88%, var(--muted));
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .queue-actions {
+        display: flex;
+        gap: 6px;
+      }
+      .queue-btn {
+        border: 1px solid var(--input-border);
+        background: var(--bg-1);
+        color: var(--muted);
+        border-radius: 8px;
+        padding: 2px 6px;
+        font-size: 10px;
+      }
+      .queue-btn:disabled {
+        opacity: .45;
+        cursor: not-allowed;
+      }
       .action-menu {
         position: fixed;
         inset: 0;
@@ -4705,6 +4908,91 @@ function html(webview, extensionUri) {
       .sheet-card {
         border-radius: 12px;
       }
+      /* Minimal refresh */
+      .global-top {
+        padding: 10px 14px 8px;
+        border-bottom: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
+        background: color-mix(in srgb, var(--bg-1) 94%, transparent);
+      }
+      .brand-sub {
+        display: none;
+      }
+      .global-actions {
+        gap: 6px;
+      }
+      .menu-icon,
+      .quick-new {
+        height: 30px;
+        min-width: 30px;
+        border-radius: 10px;
+        font-weight: 600;
+        border-color: color-mix(in srgb, var(--input-border) 90%, transparent);
+        background: color-mix(in srgb, var(--input-bg) 96%, var(--bg-0));
+      }
+      #historyHeader,
+      #undoHeader {
+        min-width: 58px;
+        width: auto;
+        padding: 0 10px;
+      }
+      .chat-shell {
+        gap: 6px;
+      }
+      .messages {
+        gap: 14px;
+        padding: 14px 0 16px;
+      }
+      .m-body {
+        line-height: 1.55;
+      }
+      .u {
+        border-radius: 14px;
+      }
+      .threads-overlay-open #stageThreads {
+        right: 12px;
+        width: min(480px, calc(100vw - 24px));
+        max-height: calc(100vh - 96px);
+        top: 76px;
+        border-radius: 12px;
+        border-color: color-mix(in srgb, var(--border) 78%, transparent);
+        background: color-mix(in srgb, var(--surface) 98%, var(--bg-0));
+        box-shadow: 0 14px 28px rgba(0, 0, 0, 0.24);
+      }
+      .threads-overlay-open #stageThreads .thread-list {
+        max-height: 42vh;
+        overflow: auto;
+      }
+      .threads-overlay-backdrop {
+        background: color-mix(in srgb, var(--bg-0) 72%, transparent);
+        backdrop-filter: blur(2px);
+      }
+      .threads-popup-close {
+        margin-left: 6px;
+      }
+      .dock-shell {
+        border-radius: 14px;
+        padding: 8px 10px;
+        margin: 0 14px 14px;
+        box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
+      }
+      .composer-shell {
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--surface) 97%, var(--bg-0));
+      }
+      .action-menu-sheet {
+        border-radius: 12px;
+      }
+      @media (max-width: 760px) {
+        .threads-overlay-open #stageThreads {
+          top: 62px;
+          right: 8px;
+          left: 8px;
+          width: auto;
+          max-height: calc(100vh - 80px);
+          border-radius: 10px;
+          padding: 10px;
+        }
+      }
       @media (max-width: 600px) {
         .global-top {
           padding: 6px 6px 4px;
@@ -4730,6 +5018,15 @@ function html(webview, extensionUri) {
         }
         .u {
           max-width: 95%;
+        }
+      }
+      @media (max-width: 480px) {
+        .threads-overlay-open #stageThreads {
+          top: 56px;
+          right: 4px;
+          left: 4px;
+          max-height: calc(100vh - 64px);
+          border-radius: 9px;
         }
       }
       @media (max-width: 420px) {
@@ -4837,6 +5134,7 @@ function html(webview, extensionUri) {
                 <button id="histQuick" class="task-icon-btn" type="button" aria-label="Refresh history" title="Refresh history">&#9432;</button>
                 <button id="repQuick" class="task-icon-btn" type="button" aria-label="Replay session" title="Replay session">&#8942;</button>
                 <button id="idxQuick" class="task-icon-btn" type="button" aria-label="Rebuild index" title="Rebuild index">&#9998;</button>
+                <button id="closeThreadsPopup" class="task-icon-btn threads-popup-close hidden" type="button" aria-label="Close chats popup" title="Close popup">&#10005;</button>
               </div>
             </div>
             <div id="threadList" class="thread-list"></div>
@@ -4870,6 +5168,7 @@ function html(webview, extensionUri) {
                   <div class="spacer"></div>
                   <button id="actionMenuBtn" type="button" class="icon-btn gear-btn" aria-label="Settings" title="Settings" aria-expanded="false">&#8942;</button>
                   <button id="s" type="button" class="primary send-round" aria-label="Send">&#8593;</button>
+                  <span id="queuePill" class="queue-pill" title="Queued messages">Queued: 0</span>
                 </div>
                 <div class="composer-meta">
                   <button
@@ -4882,6 +5181,10 @@ function html(webview, extensionUri) {
                   >PLAN MODE <span class="plan-chip-x">x</span></button>
                   <span id="composerState" class="composer-state">Mode: Auto - Reasoning: Medium</span>
                 </div>
+                <details id="queuePanel" class="queue-panel hidden">
+                  <summary id="queueSummary" class="queue-summary">Queued messages (0)</summary>
+                  <div id="queueList" class="queue-list"></div>
+                </details>
                 <div id="actionMenu" class="action-menu hidden" aria-hidden="true">
                   <div class="action-menu-backdrop" aria-hidden="true"></div>
                   <div class="action-menu-sheet" role="dialog" aria-label="Composer settings">
@@ -4917,7 +5220,7 @@ function html(webview, extensionUri) {
                         <div class="sheet-card-title">Model</div>
                         <div class="sheet-row">
                           <select id="modelSel" class="composer-select">
-                            <option value="${DEFAULT_PLAYGROUND_MODEL}">${DEFAULT_PLAYGROUND_MODEL}</option>
+                            <option value="${DEFAULT_PLAYGROUND_MODEL}">${modelLabelForUi(DEFAULT_PLAYGROUND_MODEL)}</option>
                           </select>
                         </div>
                       </div>

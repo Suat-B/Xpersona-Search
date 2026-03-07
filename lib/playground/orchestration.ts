@@ -327,13 +327,22 @@ function hasPathMention(task: string): boolean {
   return /\b[a-zA-Z0-9_./-]+\.[a-z0-9]{1,8}\b/i.test(task);
 }
 
+function normalizeIntentTypos(task: string): string {
+  return String(task || "")
+    .replace(/\bcretae\b/gi, "create")
+    .replace(/\bimplment\b/gi, "implement")
+    .replace(/\bupadte\b/gi, "update");
+}
+
 function hasExplicitEditRequest(task: string): boolean {
-  return /\b(edit|update|modify|rewrite|change|refactor|implement|create|add|remove|delete|fix|patch|apply)\b/i.test(task);
+  const normalized = normalizeIntentTypos(task);
+  return /\b(edit|update|modify|rewrite|change|refactor|implement|create|add|remove|delete|fix|patch|apply)\b/i.test(normalized);
 }
 
 function hasCodeTaskSignals(task: string): boolean {
+  const normalized = normalizeIntentTypos(task);
   return (
-    /\b(code|file|function|class|bug|error|fix|refactor|implement|build|test|lint|typecheck|stack trace|exception|module|api|endpoint|sql|schema|patch|edit|debug|feature|python|javascript|typescript)\b/i.test(task)
+    /\b(code|file|function|class|bug|error|fix|refactor|implement|build|test|lint|typecheck|stack trace|exception|module|api|endpoint|sql|schema|patch|edit|debug|feature|python|javascript|typescript|trailing stop|stop loss|indicator|strategy|trading bot|algo)\b/i.test(normalized)
   );
 }
 
@@ -452,6 +461,10 @@ function scoreIntentRoute(features: RouteFeatures): { scores: Record<AssistInten
   if (features.codeSignals) {
     scores.code_edit += 0.24;
     reasonCodes.push("code_task_signal");
+  }
+  if (features.explicitEditRequest) {
+    scores.code_edit += 0.22;
+    reasonCodes.push("explicit_edit_request");
   }
   const questionAboutPath = features.pathMention && features.questionLike;
   if (features.pathMention && (features.explicitEditRequest || !questionAboutPath)) {
@@ -593,7 +606,7 @@ export function resolveIntentRouting(input: {
 }
 
 function classifyMode(task: string): { mode: AssistDecisionMode; reason: string; confidence: number } {
-  const lower = task.toLowerCase().trim();
+  const lower = normalizeIntentTypos(task).toLowerCase().trim();
   const questionLike = isQuestionLike(lower);
 
   if (/\b(what model|which model|who are you|what are you)\b/.test(lower)) {
@@ -1086,6 +1099,24 @@ function inferPathFromTask(task: string): string | null {
   return null;
 }
 
+function inferPrimaryTargetPath(task: string, context?: AssistContext): string | null {
+  const fromTask = inferPathFromTask(task);
+  if (fromTask) return fromTask;
+
+  const active = normalizeRelativePath(context?.activeFile?.path || "");
+  if (active) return active;
+
+  for (const file of context?.openFiles ?? []) {
+    const normalized = normalizeRelativePath(file.path || "");
+    if (normalized) return normalized;
+  }
+  for (const snippet of context?.indexedSnippets ?? []) {
+    const normalized = normalizeRelativePath(snippet.path || "");
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
 function inferPathFromCode(code: string): string | null {
   const firstLine = code.split(/\r?\n/)[0]?.trim() || "";
   const commentPath =
@@ -1274,9 +1305,47 @@ function isClarificationResponseText(text: string): boolean {
   );
 }
 
-function inferStructuredFallback(raw: string, task: string): StructuredAssistOutput | null {
-  const taskPath = inferPathFromTask(task);
+function soundsLikeCompletedWorkClaim(text: string): boolean {
+  const normalized = String(text || "").trim().toLowerCase();
+  if (!normalized) return false;
+  if (/\b(i can|i could|i would|please share|need more|can't|cannot|unable|not able)\b/.test(normalized)) return false;
+  if (/\?$/.test(normalized)) return false;
+  return /\b(updated|implemented|changed|fixed|added|created|set|increased|decreased|done|completed|applied)\b/.test(normalized);
+}
+
+function extractUnifiedDiffEdits(raw: string): Array<{ path: string; patch: string; rationale?: string }> {
+  const source = normalizeModelText(raw);
+  const out: Array<{ path: string; patch: string; rationale?: string }> = [];
+  const chunkRegex = /(?:^|\n)(diff --git a\/[^\n]+ b\/[^\n]+[\s\S]*?)(?=\n(?:diff --git a\/)|$)/g;
+  let match: RegExpExecArray | null = null;
+  while ((match = chunkRegex.exec(source)) !== null) {
+    const patch = String(match[1] || "").trim();
+    if (!patch) continue;
+    const header = patch.match(/^diff --git a\/(.+?) b\/(.+)$/m);
+    const path = normalizeRelativePath((header?.[2] || header?.[1] || "").trim());
+    if (!path) continue;
+    if (!/^@@\s/m.test(patch) && !/\nnew file mode\s/.test(patch) && !/\ndeleted file mode\s/.test(patch)) continue;
+    out.push({
+      path,
+      patch,
+      rationale: "Inferred edit from raw unified diff output.",
+    });
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
+function inferStructuredFallback(raw: string, task: string, targetPath?: string | null): StructuredAssistOutput | null {
+  const taskPath = inferPathFromTask(task) || normalizeRelativePath(targetPath || "");
   const edits: Array<{ path: string; patch: string; rationale?: string }> = [];
+  const diffEdits = extractUnifiedDiffEdits(raw);
+  if (diffEdits.length) {
+    return {
+      final: normalizeModelText(raw),
+      edits: diffEdits,
+      commands: [],
+    };
+  }
   const blocks = extractFencedCodeBlocks(raw);
 
   for (const block of blocks.slice(0, 4)) {
@@ -1312,7 +1381,8 @@ function inferStructuredFallback(raw: string, task: string): StructuredAssistOut
 
 function recoverEditsFromConversationHistory(
   history: AssistConversationTurn[] | undefined,
-  task: string
+  task: string,
+  targetPath?: string | null
 ): StructuredAssistOutput | null {
   if (!history?.length) return null;
   const assistantTurns = [...history]
@@ -1320,7 +1390,7 @@ function recoverEditsFromConversationHistory(
     .reverse();
 
   for (const turn of assistantTurns) {
-    const recovered = inferStructuredFallback(turn.content, task);
+    const recovered = inferStructuredFallback(turn.content, task, targetPath);
     if (recovered?.edits.length) {
       return {
         ...recovered,
@@ -1374,7 +1444,8 @@ function collectInfluence(context?: AssistContext) {
 }
 
 function hasExecutionIntent(task: string): boolean {
-  return /\b(create|make|add|build|implement|refactor|fix|debug|run|test|lint|typecheck|command|file|patch|edit|ship)\b/i.test(task);
+  const normalized = normalizeIntentTypos(task);
+  return /\b(create|make|add|build|implement|refactor|fix|debug|run|test|lint|typecheck|command|file|patch|edit|ship|strategy|indicator|trailing stop|stop loss)\b/i.test(normalized);
 }
 
 function hasExplicitCommandRunIntent(task: string): boolean {
@@ -1382,16 +1453,32 @@ function hasExplicitCommandRunIntent(task: string): boolean {
 }
 
 function hasCodeEditIntent(task: string): boolean {
-  if (/\b(create|make|add|implement|write|modify|edit|patch|refactor|fix|ship)\b/i.test(task)) return true;
+  const normalized = normalizeIntentTypos(task);
+  if (/\b(create|make|add|implement|write|modify|edit|patch|refactor|fix|ship|strategy|indicator|trailing stop|stop loss)\b/i.test(normalized)) return true;
   const pathMention = hasPathMention(task);
   if (!pathMention) return false;
-  if (/\b(in|inside|into|to|update|put|place|insert|apply|use|with)\b/i.test(task)) return true;
-  const trimmed = task.trim().toLowerCase();
+  if (/\b(in|inside|into|to|update|put|place|insert|apply|use|with)\b/i.test(normalized)) return true;
+  const trimmed = normalized.trim().toLowerCase();
   const questionLike =
     /\?$/.test(trimmed) ||
     /^(what|why|how|when|where|who|which|can|could|would|should|is|are|do|does|did)\b/.test(trimmed) ||
     /\b(about|explain|describe|read|summarize|tell me|walk me through)\b/.test(trimmed);
   return !questionLike;
+}
+
+function isLikelyImplementationAsk(task: string): boolean {
+  const normalized = normalizeIntentTypos(task).toLowerCase().trim();
+  if (!normalized) return false;
+  if (isGreetingLike(normalized) || isAcknowledgementLike(normalized)) return false;
+  if (
+    isQuestionLike(normalized) &&
+    !/\b(create|build|implement|write|make|add|edit|fix|refactor|patch|ship|strategy|indicator|trailing stop|stop loss)\b/.test(normalized)
+  ) {
+    return false;
+  }
+  return /\b(create|build|implement|write|make|add|edit|fix|refactor|patch|ship|strategy|indicator|trailing stop|stop loss)\b/.test(
+    normalized
+  );
 }
 
 function isPureConversationalTask(task: string): boolean {
@@ -1899,7 +1986,26 @@ export async function runAssist(
   if (deterministicConversationReply) {
     reasonCodes.push("conversation_deterministic_reply");
   }
-  const codeEditIntent = !pureConversationalTask && (hasCodeEditIntent(req.task) || intentResolution.intent === "code_edit");
+  const likelyImplementationAsk = isLikelyImplementationAsk(req.task);
+  const autonomousNoActionRetryEligible =
+    !pureConversationalTask &&
+    likelyImplementationAsk &&
+    (req.executionPolicy === "full_auto" || req.mode === "yolo");
+  const codeEditIntent =
+    !pureConversationalTask &&
+    (hasCodeEditIntent(req.task) || intentResolution.intent === "code_edit" || autonomousNoActionRetryEligible);
+  if (autonomousNoActionRetryEligible && intentResolution.intent === "conversation") {
+    reasonCodes.push("autonomy_forced_code_edit_from_task");
+  }
+  const primaryTargetPath = codeEditIntent ? inferPrimaryTargetPath(req.task, budgetedContext) : null;
+  const contextAnchorsAvailable =
+    !!primaryTargetPath ||
+    !!budgetedContext?.activeFile?.selection?.trim() ||
+    !!budgetedContext?.activeFile?.content?.trim() ||
+    (budgetedContext?.openFiles?.length ?? 0) > 0;
+  if (primaryTargetPath) {
+    reasonCodes.push("context_target_path_inferred");
+  }
   const reasoningPreference = extractReasoningPreference(req.workflowIntentId);
   const preferredReasoning = req.clientPreferences?.reasoning || req.userProfile?.reasoningPreference || null;
   const effectiveReasoning = reasoningPreference || preferredReasoning;
@@ -1947,6 +2053,7 @@ export async function runAssist(
       `Mode: ${decision.mode}`,
       `Resolved intent: ${intentResolution.intent}`,
       `Task: ${req.task}`,
+      codeEditIntent && primaryTargetPath ? `Primary target file hint: ${primaryTargetPath}` : "",
       req.workflowIntentId ? `Workflow intent id: ${req.workflowIntentId}` : "",
       reasoningInstruction,
       `Safety profile: ${effectiveSafety}`,
@@ -1966,7 +2073,9 @@ export async function runAssist(
       "",
       'Return STRICT JSON only with this shape: {"final":"string","edits":[{"path":"relative/path","patch":"unified diff patch","rationale":"optional"}],"commands":["safe command"]}.',
       codeEditIntent
-        ? "Rules: include concrete code edits (non-empty edits array) when the user asks to create/modify code; do not return placeholder text."
+        ? contextAnchorsAvailable
+          ? "Rules: include concrete code edits (non-empty edits array) when the user asks to create/modify code; if file path is omitted, infer target from the provided IDE context and proceed without follow-up questions."
+          : "Rules: include concrete code edits (non-empty edits array) when the user asks to create/modify code; do not return placeholder text."
         : "Rules: keep edits empty unless explicitly requested; answer in plain natural language and avoid standalone code snippets.",
       explicitCommandRunIntent
         ? "Rules: commands may be included only if they are necessary, safe, and directly requested."
@@ -2071,9 +2180,9 @@ export async function runAssist(
         parseStructuredAssistResponse(raw) ||
         verifiedStructured ||
         draftStructured ||
-        inferStructuredFallback(raw, req.task) ||
-        inferStructuredFallback(verifyRaw, req.task) ||
-        inferStructuredFallback(draftRaw, req.task);
+        inferStructuredFallback(raw, req.task, primaryTargetPath) ||
+        inferStructuredFallback(verifyRaw, req.task, primaryTargetPath) ||
+        inferStructuredFallback(draftRaw, req.task, primaryTargetPath);
       if (structured) {
         final = normalizeModelText(structured.final);
         edits = structured.edits;
@@ -2085,7 +2194,7 @@ export async function runAssist(
       }
     } else {
       raw = await callWithAttachmentFallback(prompt, safeAttachments);
-      const structured = parseStructuredAssistResponse(raw) ?? inferStructuredFallback(raw, req.task);
+      const structured = parseStructuredAssistResponse(raw) ?? inferStructuredFallback(raw, req.task, primaryTargetPath);
       if (structured) {
         final = normalizeModelText(structured.final);
         edits = structured.edits;
@@ -2098,8 +2207,8 @@ export async function runAssist(
     }
     if (codeEditIntent && edits.length === 0) {
       const recovered =
-        inferStructuredFallback(final || raw, req.task) ||
-        recoverEditsFromConversationHistory(req.conversationHistory, req.task);
+        inferStructuredFallback(final || raw, req.task, primaryTargetPath) ||
+        recoverEditsFromConversationHistory(req.conversationHistory, req.task, primaryTargetPath);
       if (recovered?.edits.length) {
         edits = recovered.edits;
         if (!final.trim() && recovered.final.trim()) final = recovered.final;
@@ -2123,6 +2232,17 @@ export async function runAssist(
 
       let usable = hasUsableActions(edits, modelCommands, structuredActions);
       let clarification = isClarificationResponseText(final);
+      let clarificationOverridden = false;
+      const applyClarificationOverride = () => {
+        if (!clarification || !contextAnchorsAvailable) return;
+        clarification = false;
+        if (!clarificationOverridden) {
+          clarificationOverridden = true;
+          reasonCodes.push("clarification_overridden_by_context");
+          logs.push("clarification_overridden_by_context");
+        }
+      };
+      applyClarificationOverride();
 
       if (!usable && !clarification) {
         repromptStage = "repair";
@@ -2140,7 +2260,7 @@ export async function runAssist(
         ].join("\n");
         const repairRaw = await callWithAttachmentFallback(repairPrompt, undefined);
         raw = repairRaw;
-        const repairStructured = parseStructuredAssistResponse(repairRaw) ?? inferStructuredFallback(repairRaw, req.task);
+        const repairStructured = parseStructuredAssistResponse(repairRaw) ?? inferStructuredFallback(repairRaw, req.task, primaryTargetPath);
         if (repairStructured) {
           final = normalizeModelText(repairStructured.final);
           edits = repairStructured.edits;
@@ -2151,6 +2271,7 @@ export async function runAssist(
         }
         usable = hasUsableActions(edits, modelCommands, structuredActions);
         clarification = isClarificationResponseText(final);
+        applyClarificationOverride();
       }
 
       if (!usable && !clarification) {
@@ -2162,7 +2283,9 @@ export async function runAssist(
           prompt,
           "",
           "Tool-enforcement pass:",
-          "You MUST return actionable edits/commands OR an explicit clarification question if required context is missing.",
+          contextAnchorsAvailable
+            ? "You MUST return actionable edits/commands. IDE context is already provided, so do not ask follow-up questions."
+            : "You MUST return actionable edits/commands OR an explicit clarification question if required context is missing.",
           "Do not return non-actionable summaries.",
           "",
           "Previous output:",
@@ -2170,7 +2293,7 @@ export async function runAssist(
         ].join("\n");
         const enforceRaw = await callWithAttachmentFallback(enforcePrompt, undefined);
         raw = enforceRaw;
-        const enforceStructured = parseStructuredAssistResponse(enforceRaw) ?? inferStructuredFallback(enforceRaw, req.task);
+        const enforceStructured = parseStructuredAssistResponse(enforceRaw) ?? inferStructuredFallback(enforceRaw, req.task, primaryTargetPath);
         if (enforceStructured) {
           final = normalizeModelText(enforceStructured.final);
           edits = enforceStructured.edits;
@@ -2181,6 +2304,42 @@ export async function runAssist(
         }
         usable = hasUsableActions(edits, modelCommands, structuredActions);
         clarification = isClarificationResponseText(final);
+        applyClarificationOverride();
+      }
+
+      if (!usable && contextAnchorsAvailable) {
+        reasonCodes.push("reprompt_context_assumption_pass_4");
+        logs.push("reprompt_context_assumption_pass_4");
+        if (hooks?.onStatus) await hooks.onStatus("Generating best-effort edits from IDE context...");
+        const assumptionPrompt = [
+          prompt,
+          "",
+          "Context-assumption pass:",
+          "Do NOT ask follow-up questions.",
+          "Infer target file and edit scope from IDE context and produce at least one actionable edit.",
+          primaryTargetPath
+            ? `If uncertain, default to this file: ${primaryTargetPath}`
+            : "If uncertain, default to the active file shown in context.",
+          "",
+          "Previous output:",
+          raw || final,
+        ].join("\n");
+        const assumptionRaw = await callWithAttachmentFallback(assumptionPrompt, undefined);
+        raw = assumptionRaw;
+        const assumptionStructured =
+          parseStructuredAssistResponse(assumptionRaw) ??
+          inferStructuredFallback(assumptionRaw, req.task, primaryTargetPath);
+        if (assumptionStructured) {
+          final = normalizeModelText(assumptionStructured.final);
+          edits = assumptionStructured.edits;
+          modelCommands = assumptionStructured.commands;
+          structuredActions = (assumptionStructured.actions ?? []) as ToolAction[];
+        } else {
+          final = normalizeModelText(extractFinalFromJsonLike(assumptionRaw) || assumptionRaw);
+        }
+        usable = hasUsableActions(edits, modelCommands, structuredActions);
+        clarification = isClarificationResponseText(final);
+        applyClarificationOverride();
       }
 
       if (!usable && !clarification) {
@@ -2188,7 +2347,11 @@ export async function runAssist(
         reasonCodes.push("reprompt_fallback_to_clarification");
         logs.push("reprompt_fallback_to_clarification");
         final =
-          "I need one more detail before I can safely generate actionable edits. Please share the exact file path and the target change, or paste the relevant code block.";
+          primaryTargetPath
+            ? `I still could not produce a valid patch after recovery passes. I'll target ${primaryTargetPath} on the next run if you resend the request.`
+            : contextAnchorsAvailable
+              ? "I still could not produce a valid patch after recovery passes. I'll use the active IDE context as the target on your next run if you resend the request."
+            : "I need one more detail to generate actionable edits. Please share the exact file path and the target change, or paste the relevant code block.";
       }
     }
   }
@@ -2306,6 +2469,15 @@ export async function runAssist(
       actions,
       autonomyDecision,
     });
+  }
+  if (
+    actions.length === 0 &&
+    actionability.summary === "clarification_needed" &&
+    !isClarificationResponseText(final) &&
+    soundsLikeCompletedWorkClaim(final)
+  ) {
+    final = `${actionability.reason}\n\nNo repository changes were applied yet. Share the target file/path and I can apply the edit.`;
+    logs.push("no_action_guardrail=rewrote_false_completion_claim");
   }
   if (readOnlyConversationRequest && /i prepared the requested update/i.test(final)) {
     final = stripRoboticArtifacts(final) || "I'm here and ready to help. What would you like to work on?";

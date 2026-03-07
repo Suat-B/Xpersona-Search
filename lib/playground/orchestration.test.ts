@@ -53,6 +53,15 @@ describe("playground orchestration intent routing", () => {
     expect(routed.reasonCodes).toContain("path_mentioned");
   });
 
+  it("routes typo-heavy implementation ask to code_edit intent", () => {
+    const routed = resolveIntentRouting({
+      task: "Cretae a trailing stop loss",
+      forceLegacy: false,
+    });
+    expect(routed.intent).toBe("code_edit");
+    expect(routed.reasonCodes).toContain("explicit_edit_request");
+  });
+
   it("uses follow-up history to keep file-target continuity", () => {
     const routed = resolveIntentRouting({
       task: "inside my hello.py please",
@@ -213,7 +222,7 @@ describe("playground agentic behavior", () => {
     expect(result.final.toLowerCase()).not.toContain("i prepared the requested update");
   });
 
-  it("runs 3-pass reprompt loop and falls back to clarification when tool output is unusable", async () => {
+  it("runs recovery passes and falls back without asking for path when target is already inferable", async () => {
     process.env.HF_TOKEN = "test-token";
     const fetchMock = vi
       .fn()
@@ -231,10 +240,118 @@ describe("playground agentic behavior", () => {
     expect(result.repromptStage).toBe("fallback");
     expect(result.reasonCodes).toContain("reprompt_repair_pass_2");
     expect(result.reasonCodes).toContain("reprompt_tool_enforcement_pass_3");
+    expect(result.reasonCodes).toContain("reprompt_context_assumption_pass_4");
     expect(result.reasonCodes).toContain("reprompt_fallback_to_clarification");
     expect(result.actionability.summary).toBe("clarification_needed");
-    expect(result.final.toLowerCase()).toContain("please share");
+    expect(result.final.toLowerCase()).toContain("hello.py");
+    expect(result.final.toLowerCase()).not.toContain("please share the exact file path");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("falls back to IDE-context targeting text when path is not inferable but context exists", async () => {
+    process.env.HF_TOKEN = "test-token";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({ choices: [{ message: { content: "{\"final\":\"done\",\"edits\":[],\"commands\":[]}" } }] }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "update this component to use memoized props",
+      context: {
+        activeFile: {
+          path: "C:/Users/suatb/Desktop/Frieren/Xpersona/components/chat/ChatApp.tsx",
+          language: "tsx",
+          content: "export const label = 'old';",
+        },
+      },
+    });
+    expect(result.repromptStage).toBe("fallback");
+    expect(result.reasonCodes).toContain("reprompt_context_assumption_pass_4");
+    expect(result.final.toLowerCase()).toContain("active ide context");
+    expect(result.final.toLowerCase()).not.toContain("please share the exact file path");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("self-reprompts on zero-action typo request in full-auto mode", async () => {
+    process.env.HF_TOKEN = "test-token";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({ choices: [{ message: { content: "{\"final\":\"done\",\"edits\":[],\"commands\":[]}" } }] }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "Cretae a trailing stop loss",
+      executionPolicy: "full_auto",
+    });
+    expect(result.reasonCodes).toContain("explicit_edit_request");
+    expect(result.reasonCodes).toContain("reprompt_repair_pass_2");
+    expect(result.reasonCodes).toContain("reprompt_tool_enforcement_pass_3");
+    expect(result.repromptStage).toBe("fallback");
+    expect(result.final.toLowerCase()).not.toContain("i'm here and ready to help");
+    expect(result.actionability.summary).toBe("clarification_needed");
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("uses IDE context to recover from clarification-style outputs and produce edits", async () => {
+    process.env.HF_TOKEN = "test-token";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          choices: [{ message: { content: "{\"final\":\"Which file should I edit?\",\"edits\":[],\"commands\":[]}" } }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({ choices: [{ message: { content: "{\"final\":\"done\",\"edits\":[],\"commands\":[]}" } }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({ choices: [{ message: { content: "{\"final\":\"done\",\"edits\":[],\"commands\":[]}" } }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content:
+                  "{\"final\":\"Updated component\",\"edits\":[{\"path\":\"components/chat/ChatApp.tsx\",\"patch\":\"diff --git a/components/chat/ChatApp.tsx b/components/chat/ChatApp.tsx\\n--- a/components/chat/ChatApp.tsx\\n+++ b/components/chat/ChatApp.tsx\\n@@ -1 +1 @@\\n-export const label = 'old';\\n+export const label = 'new';\"}],\"commands\":[]}",
+              },
+            },
+          ],
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "edit this component so the chat label says new",
+      context: {
+        activeFile: { path: "components/chat/ChatApp.tsx", language: "tsx", selection: "export const label = 'old';" },
+      },
+    });
+    expect(result.reasonCodes).toContain("clarification_overridden_by_context");
+    expect(result.reasonCodes).toContain("reprompt_context_assumption_pass_4");
+    expect(result.actions.length).toBeGreaterThan(0);
+    expect(result.actionability.summary).toBe("valid_actions");
+    expect(result.repromptStage).not.toBe("fallback");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it("biases auto mode toward auto-apply-and-validate for valid low-risk edits", async () => {
@@ -263,5 +380,35 @@ describe("playground agentic behavior", () => {
     });
     expect(result.actions.length).toBeGreaterThan(0);
     expect(result.autonomyDecision.mode).toBe("auto_apply_and_validate");
+  });
+
+  it("does not claim completion when no actions were produced", async () => {
+    process.env.HF_TOKEN = "test-token";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content:
+                  "{\"final\":\"Updated the K-Theory strategy to use an input length of 20 instead of 10.\",\"edits\":[],\"commands\":[]}",
+              },
+            },
+          ],
+        }),
+      }))
+    );
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "can you increase the input length to 20",
+    });
+    expect(result.actions).toHaveLength(0);
+    expect(result.actionability.summary).toBe("clarification_needed");
+    expect(result.final).toContain("No repository changes were applied yet");
+    expect(result.final.toLowerCase()).not.toContain("updated the k-theory strategy");
   });
 });

@@ -39,7 +39,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const proxiedBody = {
     ...body,
     mode: "generate",
-    model: "Playground 1",
+    model: "Qwen/Qwen3-235B-A22B-Instruct-2507:fastest",
     stream: true,
     safetyProfile: "standard",
   };

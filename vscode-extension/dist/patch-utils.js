@@ -2,13 +2,39 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.extractPatchTargetPath = extractPatchTargetPath;
 exports.applyUnifiedDiff = applyUnifiedDiff;
+function parseHunkHeader(line) {
+    const numbered = /^@@\s+-([0-9]+)(?:,([0-9]+))?\s+\+([0-9]+)(?:,([0-9]+))?\s*@@/.exec(line);
+    if (numbered) {
+        return { oldStart: Number(numbered[1] || "1"), hasExplicitStart: true };
+    }
+    // Accept apply_patch-style headers like "@@" or "@@ optional context".
+    if (/^@@(?:\s.*)?$/.test(line.trim())) {
+        return { oldStart: 1, hasExplicitStart: false };
+    }
+    return null;
+}
 function normalizePatchPath(raw) {
     const trimmed = raw.trim();
     if (!trimmed || trimmed === "/dev/null")
         return null;
-    if (trimmed.startsWith("a/") || trimmed.startsWith("b/"))
-        return trimmed.slice(2);
-    return trimmed;
+    let token = trimmed;
+    if (token.startsWith('"')) {
+        const quoted = /^"((?:\\.|[^"])*)"/.exec(token);
+        if (quoted)
+            token = quoted[1].replace(/\\"/g, '"');
+        else
+            token = token.slice(1);
+    }
+    else {
+        const tab = token.indexOf("\t");
+        if (tab >= 0)
+            token = token.slice(0, tab);
+        token = token.replace(/\s+\d{4}-\d{2}-\d{2}.*$/, "");
+    }
+    token = token.trim().replace(/^["']|["']$/g, "");
+    if (token.startsWith("a/") || token.startsWith("b/"))
+        return token.slice(2);
+    return token;
 }
 function isOmittedPlaceholder(line) {
     const trimmed = line.trim();
@@ -81,13 +107,14 @@ function parsePatch(patchText) {
         if (line.startsWith("+++ "))
             newPath = normalizePatchPath(line.slice(4).trim());
         if (line.startsWith("@@")) {
-            const m = /^@@\s+-([0-9]+)(?:,([0-9]+))?\s+\+([0-9]+)(?:,([0-9]+))?\s*@@/.exec(line);
-            if (!m) {
+            const parsedHeader = parseHunkHeader(line);
+            if (!parsedHeader) {
                 i += 1;
                 continue;
             }
             const hunk = {
-                oldStart: Number(m[1] || "1"),
+                oldStart: parsedHeader.oldStart,
+                hasExplicitStart: parsedHeader.hasExplicitStart,
                 lines: [],
             };
             i += 1;
@@ -114,6 +141,28 @@ function parsePatch(patchText) {
             continue;
         }
         i += 1;
+    }
+    if (!hunks.length) {
+        const fallbackLines = [];
+        for (const line of lines) {
+            if (!line)
+                continue;
+            if (line.startsWith("diff --git ") || line.startsWith("--- ") || line.startsWith("+++ "))
+                continue;
+            const marker = line[0];
+            if (marker === " " || marker === "+" || marker === "-") {
+                fallbackLines.push({ kind: marker, text: line.slice(1) });
+            }
+        }
+        const hasChange = fallbackLines.some((line) => line.kind === "+" || line.kind === "-");
+        const hasAnchor = fallbackLines.some((line) => line.kind === " " || line.kind === "-");
+        if (hasChange && hasAnchor) {
+            hunks.push({
+                oldStart: 1,
+                hasExplicitStart: false,
+                lines: fallbackLines,
+            });
+        }
     }
     if (!hunks.length)
         return null;
@@ -162,23 +211,24 @@ function findRelaxedUniqueMatch(sourceLines, from, to, hunk) {
     }
     return matchIndex;
 }
-function locateHunkStart(sourceLines, expectedStart, hunk) {
-    if (hunkMatchesAt(sourceLines, expectedStart, hunk))
-        return expectedStart;
-    const from = Math.max(0, expectedStart - 6);
-    const to = Math.min(sourceLines.length, expectedStart + 6);
+function locateHunkStart(sourceLines, expectedStart, hunk, minStart) {
+    const boundedExpected = Math.max(minStart, expectedStart);
+    if (hunkMatchesAt(sourceLines, boundedExpected, hunk))
+        return boundedExpected;
+    const from = Math.max(minStart, boundedExpected - 6);
+    const to = Math.min(sourceLines.length, boundedExpected + 6);
     for (let i = from; i <= to; i += 1) {
         if (hunkMatchesAt(sourceLines, i, hunk))
             return i;
     }
-    for (let i = 0; i < sourceLines.length; i += 1) {
+    for (let i = minStart; i < sourceLines.length; i += 1) {
         if (hunkMatchesAt(sourceLines, i, hunk))
             return i;
     }
     const relaxedNearby = findRelaxedUniqueMatch(sourceLines, from, to, hunk);
     if (relaxedNearby >= 0)
         return relaxedNearby;
-    return findRelaxedUniqueMatch(sourceLines, 0, Math.max(0, sourceLines.length - 1), hunk);
+    return findRelaxedUniqueMatch(sourceLines, minStart, Math.max(minStart, sourceLines.length - 1), hunk);
 }
 function extractPatchTargetPath(patchText) {
     const parsed = parsePatch(patchText);
@@ -211,8 +261,8 @@ function applyUnifiedDiff(originalText, patchText) {
     let cursor = 0;
     let applied = 0;
     for (const hunk of parsed.hunks) {
-        const expected = Math.max(0, hunk.oldStart - 1);
-        const start = locateHunkStart(sourceLines, expected, hunk);
+        const expected = hunk.hasExplicitStart ? Math.max(cursor, hunk.oldStart - 1) : cursor;
+        const start = locateHunkStart(sourceLines, expected, hunk, cursor);
         if (start < 0) {
             out.push(...sourceLines.slice(cursor));
             return {

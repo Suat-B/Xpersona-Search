@@ -122,6 +122,10 @@
       const contextPill = document.getElementById("contextPill");
       const composerShell = document.querySelector(".composer-shell");
       const composerState = document.getElementById("composerState");
+      const queuePill = document.getElementById("queuePill");
+      const queuePanel = document.getElementById("queuePanel");
+      const queueSummary = document.getElementById("queueSummary");
+      const queueList = document.getElementById("queueList");
       const jumpLatestBtn = document.getElementById("jumpLatest");
       const startup = document.querySelector(".startup");
       const runState = document.getElementById("runState");
@@ -137,6 +141,7 @@
       const historyHeader = document.getElementById("historyHeader");
       const undoHeader = document.getElementById("undoHeader");
       const backToChatQuick = document.getElementById("backToChatQuick");
+      const closeThreadsPopupBtn = document.getElementById("closeThreadsPopup");
       const apiKeyInline = document.getElementById("apiKeyInline");
       const apiKeyInlineSave = document.getElementById("apiKeyInlineSave");
       const signInSetup = document.getElementById("signInSetup");
@@ -150,13 +155,17 @@
       let streamBubble = null;
       let reasoningBubble = null;
       let streaming = false;
+      let streamEndPending = false;
       let followLatest = true;
+      let autoScrollLockUntil = 0;
       let terminalBubble = null;
       let streamBuffer = "";
       let streamTimer = null;
       let latestReasonCodes = [];
       let latestRunMeta = null;
       let threadsOverlayOpen = false;
+      let responseStartedAtMs = 0;
+      let lastAssistantBubble = null;
       const DEFAULT_MODEL = "Playground 1";
       const MAX_DIFF_ROWS = 400;
       const seenEditPreviewKeys = new Set();
@@ -198,7 +207,7 @@
         actions: "pending",
         execution: "pending",
         outcome: "pending",
-        note: "",
+        notes: [],
       };
       const seenRunCommands = new Set();
       const seenRunStatuses = new Set();
@@ -223,7 +232,7 @@
         runStepState.actions = "pending";
         runStepState.execution = "pending";
         runStepState.outcome = "pending";
-        runStepState.note = "";
+        runStepState.notes = [];
         seenRunCommands.clear();
         seenRunStatuses.clear();
       }
@@ -257,6 +266,12 @@
         if (v === "high") return "High";
         if (v === "max") return "Extra High";
         return "Medium";
+      }
+
+      function modelLabelForUi(value) {
+        const raw = String(value || "").trim();
+        if (!raw) return DEFAULT_MODEL;
+        return /qwen/i.test(raw) ? DEFAULT_MODEL : raw;
       }
 
       function updateComposerState() {
@@ -499,6 +514,33 @@
         return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       }
 
+      function formatElapsed(ms) {
+        const safeMs = Number(ms);
+        if (!Number.isFinite(safeMs) || safeMs < 0) return "0.0s";
+        if (safeMs < 60_000) return (safeMs / 1000).toFixed(1) + "s";
+        const totalSeconds = Math.round(safeMs / 1000);
+        const mins = Math.floor(totalSeconds / 60);
+        const secs = totalSeconds % 60;
+        return mins + "m " + secs + "s";
+      }
+
+      function stampResponseDuration(targetBubble, errored = false) {
+        if (!responseStartedAtMs) return;
+        const elapsedLabel = formatElapsed(Date.now() - responseStartedAtMs);
+        responseStartedAtMs = 0;
+        const suffix = (errored ? "stopped after " : "worked for ") + elapsedLabel;
+        const bubble = targetBubble && targetBubble.isConnected ? targetBubble : null;
+        if (bubble) {
+          const meta = bubble.querySelector(".m-time");
+          if (meta) {
+            const base = String(meta.textContent || "").split(" · ")[0] || timeLabel();
+            meta.textContent = base + " · " + suffix;
+            return;
+          }
+        }
+        addMessage((errored ? "Stopped after " : "Worked for ") + elapsedLabel + ".", "cmd");
+      }
+
       function shortAgeLabel(isoValue) {
         if (!isoValue) return "";
         const ms = new Date(isoValue).getTime();
@@ -718,6 +760,7 @@
             setRunState("Switching chat...");
             if (kind === 'open') v.postMessage({ type: 'switchThread', id });
             else v.postMessage({ type: 'openSession', id });
+            if (threadsOverlayOpen) setThreadsOverlayOpen(false);
           });
         });
 
@@ -913,7 +956,7 @@
 
         msgs.appendChild(d);
         updateStartupVisibility();
-        if (followLatest) scrollToLatest();
+        if (streaming || followLatest) scrollToLatest(streaming);
         return d;
       }
 
@@ -923,8 +966,27 @@
 
       function scrollToLatest(force = false) {
         if (!chatPanel) return;
+        if (force) followLatest = true;
         if (force || followLatest) {
+          autoScrollLockUntil = Date.now() + 220;
           chatPanel.scrollTop = chatPanel.scrollHeight;
+          const latestBubble = msgs && msgs.lastElementChild ? msgs.lastElementChild : null;
+          if (latestBubble && typeof latestBubble.scrollIntoView === "function") {
+            latestBubble.scrollIntoView({ block: "end", inline: "nearest" });
+          }
+          requestAnimationFrame(() => {
+            if (!chatPanel) return;
+            if (followLatest) {
+              autoScrollLockUntil = Date.now() + 160;
+              chatPanel.scrollTop = chatPanel.scrollHeight;
+              const latestAfterLayout = msgs && msgs.lastElementChild ? msgs.lastElementChild : null;
+              if (latestAfterLayout && typeof latestAfterLayout.scrollIntoView === "function") {
+                latestAfterLayout.scrollIntoView({ block: "end", inline: "nearest" });
+              }
+            }
+            updateJump();
+          });
+          return;
         }
         updateJump();
       }
@@ -949,17 +1011,40 @@
             clearInterval(streamTimer);
             streamTimer = null;
           }
+          if (streamEndPending) {
+            finalizeStreamMessage();
+          }
           return;
         }
         const chunkSize = force ? streamBuffer.length : Math.max(1, Math.min(18, Math.ceil(streamBuffer.length / 12)));
         const chunk = streamBuffer.slice(0, chunkSize);
         streamBuffer = streamBuffer.slice(chunkSize);
         body.textContent += chunk;
-        if (followLatest) scrollToLatest();
+        if (streaming || followLatest) scrollToLatest(streaming);
         if (!streamBuffer && streamTimer) {
           clearInterval(streamTimer);
           streamTimer = null;
         }
+        if (!streamBuffer && streamEndPending) {
+          finalizeStreamMessage();
+        }
+      }
+
+      function finalizeStreamMessage() {
+        const completedBubble = streamBubble && streamBubble.isConnected ? streamBubble : null;
+        if (streamBubble) {
+          const body = streamBubble.querySelector(".m-body");
+          if (body) body.textContent = normalizeAssistantText(body.textContent || "");
+        }
+        if (completedBubble) lastAssistantBubble = completedBubble;
+        streamEndPending = false;
+        setStreaming(false);
+        streamBubble = null;
+        activeProgressState = "";
+        setRunState("Local");
+        pinAssistantResponseToBottom();
+        stampResponseDuration(completedBubble, false);
+        if (followLatest) scrollToLatest();
       }
 
       function queueStreamText(text) {
@@ -981,6 +1066,16 @@
         return d;
       }
 
+      function pinAssistantResponseToBottom() {
+        if (!msgs) return;
+        const anchor =
+          (streamBubble && streamBubble.isConnected)
+            ? streamBubble
+            : (lastAssistantBubble && lastAssistantBubble.isConnected ? lastAssistantBubble : null);
+        if (!anchor || anchor.parentElement !== msgs) return;
+        if (msgs.lastElementChild !== anchor) msgs.appendChild(anchor);
+      }
+
       function ensureRunProgressBubble() {
         if (runProgressBubble && runProgressBubble.isConnected) return runProgressBubble;
         runProgressBubble = createBubble("cmd run-progress");
@@ -1000,13 +1095,36 @@
           statusIcon(runStepState.execution) + " Execution running",
           statusIcon(runStepState.outcome) + " Outcome",
         ];
-        if (runStepState.note) lines.push("Note: " + runStepState.note);
+        if (Array.isArray(runStepState.notes) && runStepState.notes.length > 0) {
+          runStepState.notes.forEach((noteLine) => {
+            lines.push("Note: " + noteLine);
+          });
+        }
         body.textContent = lines.join("\n");
+        pinAssistantResponseToBottom();
+        if (streaming || followLatest) scrollToLatest(streaming);
+      }
+
+      function appendRunNotes(note) {
+        const lines = String(note || "")
+          .split(/\r?\n/g)
+          .map((x) => x.trim())
+          .filter(Boolean);
+        if (lines.length === 0) return;
+        const existing = new Set(runStepState.notes || []);
+        for (const line of lines) {
+          if (existing.has(line)) continue;
+          runStepState.notes.push(line);
+          existing.add(line);
+        }
+        if (runStepState.notes.length > 60) {
+          runStepState.notes = runStepState.notes.slice(-60);
+        }
       }
 
       function updateRunStep(step, nextState, note) {
         if (step && runStepState[step] !== undefined) runStepState[step] = nextState;
-        if (typeof note === "string" && note.trim()) runStepState.note = note.trim();
+        if (typeof note === "string" && note.trim()) appendRunNotes(note);
         renderRunProgress();
       }
 
@@ -1086,6 +1204,7 @@
           });
         }
         planDecisionBubble = d;
+        pinAssistantResponseToBottom();
       }
 
       function addTypingBubble() {
@@ -1164,6 +1283,7 @@
         });
         details.appendChild(list);
         body.appendChild(details);
+        pinAssistantResponseToBottom();
       }
 
       function ensureTerminalBubble() {
@@ -1199,9 +1319,58 @@
         if (!body) return;
         const row = document.createElement("div");
         row.className = "term-line " + kind;
-        row.textContent = text;
+        const rawText = String(text || "");
+
+        if (kind === "cmdline") {
+          row.classList.add("card");
+          const card = document.createElement("div");
+          card.className = "term-cmd-card";
+
+          const badge = document.createElement("span");
+          badge.className = "term-badge cmd";
+          badge.textContent = "CMD";
+          card.appendChild(badge);
+
+          const code = document.createElement("code");
+          code.className = "term-cmd-text";
+          code.textContent = rawText.replace(/^\$\s*/, "");
+          card.appendChild(code);
+
+          row.appendChild(card);
+        } else if (kind === "ok" || kind === "err") {
+          const m = /^(OK|ERR)\s+(.+?)\s+\(exit\s+(-?\d+|\?)\)$/i.exec(rawText.trim());
+          row.classList.add("card");
+          const card = document.createElement("div");
+          card.className = "term-result-card " + (kind === "ok" ? "ok" : "err");
+
+          const badge = document.createElement("span");
+          badge.className = "term-badge " + (kind === "ok" ? "ok" : "err");
+          badge.textContent = kind === "ok" ? "PASS" : "FAIL";
+          card.appendChild(badge);
+
+          const cmd = document.createElement("code");
+          cmd.className = "term-result-text";
+          cmd.textContent = m ? m[2] : rawText;
+          card.appendChild(cmd);
+
+          if (m) {
+            const exit = document.createElement("span");
+            exit.className = "term-exit-pill";
+            exit.textContent = "exit " + m[3];
+            card.appendChild(exit);
+          }
+          row.appendChild(card);
+        } else if (kind === "summary") {
+          const summary = document.createElement("div");
+          summary.className = "term-summary";
+          summary.textContent = rawText;
+          row.appendChild(summary);
+        } else {
+          row.textContent = rawText;
+        }
         body.appendChild(row);
-        if (followLatest) scrollToLatest();
+        pinAssistantResponseToBottom();
+        if (streaming || followLatest) scrollToLatest(streaming);
       }
 
       function parseExecCommandResult(message) {
@@ -1545,6 +1714,7 @@
               (rendered.truncated ? '<div class="diff-trunc">Truncated (showing first ' + esc(rendered.maxRows) + " lines)</div>" : "") +
             "</div>" +
           "</details>";
+        pinAssistantResponseToBottom();
         return d;
       }
 
@@ -1576,7 +1746,15 @@
         threadsOverlayOpen = open;
         if (app) app.classList.toggle("threads-overlay-open", open);
         if (threadsOverlayBackdrop) threadsOverlayBackdrop.classList.toggle("show", open);
+        if (threadsOverlayBackdrop) threadsOverlayBackdrop.setAttribute("aria-hidden", open ? "false" : "true");
         if (backToChatQuick) backToChatQuick.classList.toggle("hidden", !open);
+        if (closeThreadsPopupBtn) closeThreadsPopupBtn.classList.toggle("hidden", !open);
+      }
+
+      function openChatsPopup(sourceLabel) {
+        setThreadsOverlayOpen(true);
+        setRunState(sourceLabel || "Loading chats...");
+        v.postMessage({ type: "history" });
       }
 
       function showHistoryPanel(loadingText) {
@@ -1629,6 +1807,9 @@
 
       function startNewChat() {
         if (creatingThread) return;
+        if (threadsOverlayOpen) setThreadsOverlayOpen(false);
+        responseStartedAtMs = 0;
+        lastAssistantBubble = null;
         saveCurrentDraft();
         creatingThread = true;
         currentThreadId = null;
@@ -1638,6 +1819,8 @@
         setStreaming(false);
         streamBubble = null;
         terminalBubble = null;
+        queuedMessages.length = 0;
+        renderQueuedMessagesUI();
         activeProgressState = "";
         lastStatusText = "";
         lastStatusAt = 0;
@@ -1741,6 +1924,37 @@
         setRunState("Stopping...");
       }
 
+      function queuePreviewText(text) {
+        const raw = String(text || "").replace(/\s+/g, " ").trim();
+        if (!raw) return "(empty)";
+        return raw.length > 120 ? raw.slice(0, 117) + "..." : raw;
+      }
+
+      function renderQueuedMessagesUI() {
+        const count = queuedMessages.length;
+        if (queuePill) {
+          queuePill.textContent = "Queued: " + count;
+          queuePill.classList.toggle("show", count > 0);
+        }
+        if (queueSummary) queueSummary.textContent = "Queued messages (" + count + ")";
+        if (queuePanel) queuePanel.classList.toggle("hidden", count === 0);
+        if (!queueList) return;
+        if (count === 0) {
+          queueList.innerHTML = "";
+          return;
+        }
+        queueList.innerHTML = queuedMessages.map((item, idx) => (
+          '<div class="queue-item" data-queue-idx="' + idx + '">' +
+            '<div class="queue-text" title="' + esc(String(item.text || "")) + '">' + esc(queuePreviewText(item.text || "")) + '</div>' +
+            '<div class="queue-actions">' +
+              '<button class="queue-btn" type="button" data-queue-act="up" data-queue-idx="' + idx + '"' + (idx === 0 ? " disabled" : "") + '>Up</button>' +
+              '<button class="queue-btn" type="button" data-queue-act="down" data-queue-idx="' + idx + '"' + (idx === count - 1 ? " disabled" : "") + '>Down</button>' +
+              '<button class="queue-btn" type="button" data-queue-act="remove" data-queue-idx="' + idx + '">Remove</button>' +
+            "</div>" +
+          "</div>"
+        )).join("");
+      }
+
       function queueMessageDuringStream(text, previewAttachments) {
         const payload = {
           text,
@@ -1753,12 +1967,16 @@
           threadId: currentThreadId,
         };
         queuedMessages.push(payload);
-        addMessage("Queued message (" + queuedMessages.length + "): " + text, "cmd");
+        renderQueuedMessagesUI();
+        addMessage("Queued message (" + queuedMessages.length + "): " + queuePreviewText(text), "cmd");
       }
 
       function dispatchPromptPayload(payload) {
         if (!payload || !payload.text) return;
+        followLatest = true;
         clearPlanDecisionCard();
+        responseStartedAtMs = Date.now();
+        lastAssistantBubble = null;
         const userBubble = addMessage(payload.text, "u");
         appendUserAttachmentPreview(userBubble, payload.attachments || []);
         if (input) {
@@ -1768,6 +1986,7 @@
         if (currentThreadId) threadDrafts[currentThreadId] = "";
         setStreaming(true);
         streamBubble = addMessage("Streaming response...", "a stream-pending");
+        pinAssistantResponseToBottom();
         reasoningBubble = null;
         latestReasonCodes = [];
         latestRunMeta = null;
@@ -1791,6 +2010,7 @@
         if (creatingThread) return;
         const next = queuedMessages.shift();
         if (!next) return;
+        renderQueuedMessagesUI();
         dispatchPromptPayload(next);
       }
 
@@ -1860,12 +2080,17 @@
       }
       if (historyQuick) {
         historyQuick.onclick = () => {
-          openHistoryPanel("Loading history...");
+          openChatsPopup("Loading chats...");
         };
       }
       if (historyHeader) {
         historyHeader.onclick = () => {
-          openHistoryPanel("Loading history...");
+          openChatsPopup("Loading chats...");
+        };
+      }
+      if (closeThreadsPopupBtn) {
+        closeThreadsPopupBtn.onclick = () => {
+          setThreadsOverlayOpen(false);
         };
       }
       if (undoHeader) {
@@ -2128,6 +2353,29 @@
         input.onkeydown = onComposerKeydown;
         syncComposerHeight();
       }
+      if (queueList) {
+        queueList.addEventListener("click", (e) => {
+          const target = eventTargetElement(e.target);
+          if (!target) return;
+          const actEl = target.closest("[data-queue-act]");
+          if (!actEl) return;
+          const act = String(actEl.getAttribute("data-queue-act") || "");
+          const idx = Number(actEl.getAttribute("data-queue-idx"));
+          if (!Number.isFinite(idx) || idx < 0 || idx >= queuedMessages.length) return;
+          if (act === "remove") {
+            queuedMessages.splice(idx, 1);
+          } else if (act === "up" && idx > 0) {
+            const tmp = queuedMessages[idx - 1];
+            queuedMessages[idx - 1] = queuedMessages[idx];
+            queuedMessages[idx] = tmp;
+          } else if (act === "down" && idx < queuedMessages.length - 1) {
+            const tmp = queuedMessages[idx + 1];
+            queuedMessages[idx + 1] = queuedMessages[idx];
+            queuedMessages[idx] = tmp;
+          }
+          renderQueuedMessagesUI();
+        });
+      }
       // Full composer wiring is complete; the early fallback sender can stand down.
       window.__playgroundComposerReady = true;
       // Global fallback in case the textarea handler is bypassed by editor/webview quirks.
@@ -2157,9 +2405,13 @@
 
       if (clearBtn) {
         clearBtn.onclick = () => {
+          responseStartedAtMs = 0;
+          lastAssistantBubble = null;
           clearPlanDecisionCard();
           while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
           chips.innerHTML = "";
+          queuedMessages.length = 0;
+          renderQueuedMessagesUI();
           updateStartupVisibility();
           setStreaming(false);
           v.postMessage({ type: "clear" });
@@ -2214,6 +2466,10 @@
       }
       if (chatPanel) {
         chatPanel.addEventListener("scroll", () => {
+          if (Date.now() < autoScrollLockUntil) {
+            updateJump();
+            return;
+          }
           followLatest = isNearBottom(chatPanel);
           updateJump();
         });
@@ -2225,6 +2481,7 @@
         };
       }
       updateUndoButtonState();
+      renderQueuedMessagesUI();
 
       window.addEventListener("message", (ev) => {
         const m = ev.data;
@@ -2292,8 +2549,11 @@
               : (count === 1 ? "1 image selected." : count + " images selected.");
           }
         } else if (m.type === "start") {
+          if (!responseStartedAtMs) responseStartedAtMs = Date.now();
           runProgressBubble = null;
           resetRunProgress();
+          renderRunProgress();
+          streamEndPending = false;
           setStreaming(true);
         } else if (m.type === "token") {
           if (!streaming) setStreaming(true);
@@ -2304,23 +2564,12 @@
         } else if (m.type === "end") {
           const shouldShowPlanDecision = Boolean(streamBubble) && currentMode === "plan";
           if (streamBubble) {
-            const body = streamBubble.querySelector(".m-body");
-            if (streamTimer) {
-              clearInterval(streamTimer);
-              streamTimer = null;
-            }
-            if (streamBuffer) {
-              if (body) body.textContent += streamBuffer;
-              streamBuffer = "";
-            }
-            if (body) body.textContent = normalizeAssistantText(body.textContent || "");
+            streamEndPending = true;
+            flushStreamBuffer(false);
+          } else {
+            finalizeStreamMessage();
           }
-          setStreaming(false);
-          streamBubble = null;
-          activeProgressState = "";
-          setRunState("Local");
           if (shouldShowPlanDecision) showPlanDecisionCard();
-          if (followLatest) scrollToLatest();
           if (queuedMessages.length > 0) {
             setTimeout(() => flushQueuedMessages(), 0);
           }
@@ -2394,7 +2643,7 @@
           if (modelSel?.value) {
             const mm = document.createElement("span");
             mm.className = "chip";
-            mm.textContent = "Model " + modelSel.value;
+            mm.textContent = "Model " + modelLabelForUi(modelSel.value);
             chips.appendChild(mm);
           }
           if (reasonSel?.value) {
@@ -2480,6 +2729,7 @@
               renderThreadList();
               setRunState("Switching chat...");
               v.postMessage({ type: "openSession", id });
+              if (threadsOverlayOpen) setThreadsOverlayOpen(false);
             };
           });
           if (taskList) {
@@ -2503,6 +2753,7 @@
                 renderThreadList();
                 setRunState("Switching chat...");
                 v.postMessage({ type: "openSession", id });
+                if (threadsOverlayOpen) setThreadsOverlayOpen(false);
               };
             });
           }
@@ -2549,17 +2800,23 @@
           undoCount = Number(m.count || 0);
           updateUndoButtonState();
         } else if (m.type === "err") {
+          const failedBubble = streamBubble && streamBubble.isConnected ? streamBubble : null;
           creatingThread = false;
           clearPlanDecisionCard();
           setStreaming(false);
           streamBubble = null;
+          if (failedBubble) lastAssistantBubble = failedBubble;
           updateRunStep("outcome", "warn", String(m.text || "Error"));
           addMessage("Error: " + m.text, "e");
           setRunState("Error");
+          pinAssistantResponseToBottom();
+          stampResponseDuration(failedBubble, true);
         } else if (m.type === "prefill") {
           input.value = m.text || "";
           syncComposerHeight();
         } else if (m.type === "load") {
+          responseStartedAtMs = 0;
+          lastAssistantBubble = null;
           creatingThread = false;
           clearPlanDecisionCard();
           closeMentionMenu();
@@ -2569,6 +2826,7 @@
           runProgressBubble = null;
           resetRunProgress();
           queuedMessages.length = 0;
+          renderQueuedMessagesUI();
           activeProgressState = "";
           lastStatusText = "";
           lastStatusAt = 0;
