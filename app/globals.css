@@ -2001,23 +2001,223 @@ LIGHT MODE OVERRIDES - Applied when .light-mode class is present
 }
 
 /* Playground marketing page scoped styles */
-.playground-aurora {
-  background:
-    radial-gradient(circle at 15% 20%, rgba(56, 189, 248, 0.2), transparent 48%),
-    radial-gradient(circle at 85% 10%, rgba(37, 99, 235, 0.16), transparent 42%),
-    linear-gradient(160deg, #ffffff 0%, #f8fbff 45%, #f0f7ff 100%);
+.playground-studio {
+  --light-bg-primary: #05070b;
+  --light-bg-secondary: #070a10;
+  --light-bg-tertiary: #0a0f18;
+  --light-bg-card: rgba(9, 13, 21, 0.85);
+  --light-bg-hover: rgba(14, 21, 35, 0.9);
+  --light-bg-active: rgba(20, 30, 48, 0.92);
+
+  --light-text-primary: rgba(248, 250, 252, 0.95);
+  --light-text-secondary: rgba(226, 232, 240, 0.78);
+  --light-text-tertiary: rgba(148, 163, 184, 0.78);
+  --light-text-quaternary: rgba(148, 163, 184, 0.55);
+
+  --light-accent: #60a5fa;
+  --light-accent-hover: #93c5fd;
+  --light-accent-light: rgba(96, 165, 250, 0.16);
+  --light-accent-subtle: rgba(96, 165, 250, 0.1);
+  --light-accent-text: #93c5fd;
+
+  --light-border: rgba(148, 163, 184, 0.18);
+  --light-border-strong: rgba(148, 163, 184, 0.28);
+  --light-border-focus: rgba(96, 165, 250, 0.7);
+
+  --light-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --light-shadow-md: 0 12px 24px rgba(0, 0, 0, 0.55);
+  --light-shadow-lg: 0 18px 42px rgba(0, 0, 0, 0.6);
+  --light-shadow-xl: 0 30px 70px rgba(0, 0, 0, 0.68);
+  --light-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.55);
+  --light-shadow-card-hover: 0 18px 48px rgba(0, 0, 0, 0.7);
+  --light-shadow-input-focus: 0 0 0 3px rgba(96, 165, 250, 0.18);
 }
 
-.playground-grid::before {
+.playground-studio .playground-aurora {
+  background:
+    radial-gradient(circle at 18% 16%, rgba(56, 189, 248, 0.22), transparent 46%),
+    radial-gradient(circle at 80% 12%, rgba(96, 165, 250, 0.18), transparent 40%),
+    radial-gradient(circle at 50% 0%, rgba(148, 163, 184, 0.08), transparent 38%),
+    linear-gradient(160deg, #05070b 0%, #070a10 50%, #05070b 100%);
+}
+
+.playground-studio .playground-noise {
+  opacity: 0.22;
+}
+
+.playground-studio .playground-hero-orb {
+  background: radial-gradient(circle at center, rgba(96, 165, 250, 0.22), rgba(56, 189, 248, 0.14), transparent 62%);
+  filter: blur(34px);
+}
+
+.playground-studio .playground-panel {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: linear-gradient(155deg, rgba(9, 13, 21, 0.92), rgba(7, 10, 16, 0.82));
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+}
+
+.playground-studio .playground-glass,
+.playground-studio .playground-chip,
+.playground-studio .playground-mini,
+.playground-studio .playground-step {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: linear-gradient(155deg, rgba(9, 13, 21, 0.86), rgba(8, 12, 20, 0.72));
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55);
+}
+
+.playground-toggle {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(9, 13, 21, 0.6);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(12px);
+}
+
+.playground-pricing-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: linear-gradient(155deg, rgba(9, 13, 21, 0.9), rgba(8, 12, 20, 0.76));
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.playground-pricing-card::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  background:
+    radial-gradient(circle at 35% 0%, rgba(96, 165, 250, 0.22), transparent 55%),
+    radial-gradient(circle at 80% 10%, rgba(56, 189, 248, 0.14), transparent 52%);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.playground-pricing-card::after {
   content: "";
   position: absolute;
   inset: 0;
-  background-image:
-    linear-gradient(rgba(148, 163, 184, 0.09) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.09) 1px, transparent 1px);
-  background-size: 36px 36px;
-  mask-image: radial-gradient(circle at center, black 35%, transparent 75%);
+  background: radial-gradient(rgba(255, 255, 255, 0.03) 0.5px, transparent 0.5px);
+  background-size: 3px 3px;
+  opacity: 0.12;
   pointer-events: none;
+}
+
+.playground-pricing-card > * {
+  position: relative;
+}
+
+.playground-pricing-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 34px 90px rgba(0, 0, 0, 0.74);
+  border-color: rgba(96, 165, 250, 0.32);
+}
+
+.playground-pricing-card--highlight {
+  border-color: rgba(96, 165, 250, 0.55);
+}
+
+.playground-pricing-card--highlight::before {
+  background:
+    radial-gradient(circle at 40% 0%, rgba(96, 165, 250, 0.35), transparent 58%),
+    radial-gradient(circle at 85% 10%, rgba(56, 189, 248, 0.18), transparent 52%);
+}
+
+.playground-pricing-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border-radius: 9999px;
+  padding: 6px 10px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: rgba(15, 23, 42, 0.92);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.95), rgba(56, 189, 248, 0.85));
+  box-shadow: 0 14px 28px rgba(96, 165, 250, 0.25);
+}
+
+.playground-pricing-pill {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(9, 13, 21, 0.55);
+  color: rgba(226, 232, 240, 0.82);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(10px);
+}
+
+.playground-pricing-subpill {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(9, 13, 21, 0.42);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(10px);
+}
+
+.playground-pricing-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.22), transparent);
+}
+
+.playground-pricing-check {
+  border-radius: 9999px;
+  background: radial-gradient(circle at 30% 30%, rgba(96, 165, 250, 0.95), rgba(56, 189, 248, 0.75));
+  box-shadow: 0 12px 22px rgba(96, 165, 250, 0.18);
+  display: inline-block;
+}
+
+.playground-pricing-check::after {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 100%;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z'/%3E%3C/svg%3E") center / 70% 70% no-repeat;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z'/%3E%3C/svg%3E") center / 70% 70% no-repeat;
+  background: rgba(15, 23, 42, 0.92);
+}
+
+.playground-pricing-cta {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(9, 13, 21, 0.65);
+  color: rgba(248, 250, 252, 0.92);
+  backdrop-filter: blur(12px);
+}
+
+.playground-pricing-cta:hover {
+  border-color: rgba(96, 165, 250, 0.4);
+  background: rgba(14, 21, 35, 0.75);
+}
+
+.playground-pricing-cta--highlight {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.95), rgba(56, 189, 248, 0.82));
+  color: rgba(15, 23, 42, 0.92);
+  box-shadow: 0 18px 44px rgba(96, 165, 250, 0.22);
+}
+
+.playground-pricing-cta--highlight:hover {
+  background: linear-gradient(135deg, rgba(147, 197, 253, 0.95), rgba(56, 189, 248, 0.9));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .playground-pricing-card,
+  .playground-pricing-card:hover {
+    transition: none;
+    transform: none;
+  }
+}
+
+.playground-studio .playground-accent-text {
+  background: linear-gradient(135deg, rgba(226, 232, 240, 0.95) 0%, rgba(147, 197, 253, 0.98) 52%, rgba(56, 189, 248, 0.9) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.playground-aurora {
+  background:
+    radial-gradient(circle at 18% 16%, rgba(56, 189, 248, 0.22), transparent 46%),
+    radial-gradient(circle at 80% 12%, rgba(37, 99, 235, 0.18), transparent 40%),
+    radial-gradient(circle at 50% 0%, rgba(148, 163, 184, 0.12), transparent 38%),
+    linear-gradient(160deg, #ffffff 0%, #f7faff 42%, #eef4ff 100%);
 }
 
 .playground-noise {
@@ -2042,6 +2242,27 @@ LIGHT MODE OVERRIDES - Applied when .light-mode class is present
   border: 1px solid rgba(148, 163, 184, 0.28);
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.88), rgba(248, 250, 252, 0.72));
   backdrop-filter: blur(10px);
+}
+
+.playground-chip {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(248, 250, 252, 0.72);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(8px);
+}
+
+.playground-mini {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.9), rgba(241, 245, 249, 0.7));
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(10px);
+}
+
+.playground-step {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.94), rgba(239, 246, 255, 0.8));
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(12px);
 }
 
 .playground-glow-border {

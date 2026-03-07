@@ -302,7 +302,7 @@ class Provider implements vscode.WebviewViewProvider {
   private pendingPkce: { state: string; verifier: string; createdAtMs: number } | null = null;
   private undoBatches: UndoBatch[] = [];
   private hasExecutionIntent(task: string): boolean {
-    return /\b(create|make|add|build|implement|refactor|fix|debug|run|test|lint|typecheck|command|file|patch|edit|ship|git|commit|push|pull|checkout|merge|rebase|branch)\b/i.test(task);
+    return /\b(create|make|add|build|implement|refactor|fix|debug|run|test|lint|typecheck|command|patch|edit|ship|git|commit|push|pull|checkout|merge|rebase|branch)\b/i.test(task);
   }
   private hasExplicitCommandRunIntent(task: string): boolean {
     return /\b(run|execute|terminal|shell|command|test|tests|lint|typecheck|build|compile|install|npm|pnpm|yarn|pytest|jest|vitest|cargo|go test|mvn|gradle|git|commit|push|pull|checkout|merge|rebase|stash|cherry-pick)\b/i.test(task);
@@ -313,6 +313,20 @@ class Provider implements vscode.WebviewViewProvider {
   private hasCodeTaskSignals(task: string): boolean {
     return (
       /\b(code|file|function|class|bug|error|fix|refactor|implement|build|test|lint|typecheck|stack trace|exception|module|api|endpoint|sql|schema|patch|edit|python|javascript|typescript|git|commit|push|pull|checkout|merge|rebase|branch)\b/i.test(task)
+    );
+  }
+  private isFileInfoQuestion(task: string): boolean {
+    const t = task.trim().toLowerCase();
+    const directQuestion =
+      /\?$/.test(t) ||
+      /^(what|why|how|when|where|who|which|can|could|would|should|is|are|do|does|did)\b/.test(t) ||
+      /\b(explain|define|tell me)\b/.test(t);
+    return (
+      directQuestion &&
+      /\b(current|this|the)\s+file\b/.test(t) &&
+      /\b(about|do|does|contain|mean|purpose|summary)\b/.test(t) &&
+      !this.hasExplicitEditIntent(t) &&
+      !this.hasExplicitCommandRunIntent(t)
     );
   }
   private isConversationalPrompt(task: string): boolean {
@@ -327,6 +341,7 @@ class Provider implements vscode.WebviewViewProvider {
       /\?$/.test(t) ||
       /^(what|why|how|when|where|who|which|can|could|would|should|is|are|do|does|did)\b/.test(t) ||
       /\b(explain|define|tell me)\b/.test(t);
+    const fileInfoQuestion = this.isFileInfoQuestion(t);
 
     const hasPathMention = /\b[a-zA-Z0-9_./-]+\.[a-z0-9]{1,8}\b/i.test(t);
     const pathQuestion = hasPathMention && directQuestion && !this.hasExplicitEditIntent(t);
@@ -334,6 +349,7 @@ class Provider implements vscode.WebviewViewProvider {
       acknowledgementLike ||
       greetingOrSmallTalk ||
       pathQuestion ||
+      fileInfoQuestion ||
       (directQuestion && !this.hasCodeTaskSignals(t) && !this.hasExecutionIntent(t) && !this.hasExplicitCommandRunIntent(t))
     );
   }
@@ -1446,6 +1462,9 @@ class Provider implements vscode.WebviewViewProvider {
     this.post({ type: "pendingActions", count: 0 });
     this.addTimeline("intent", text.slice(0, 120));
     const conversational = this.isConversationalPrompt(text);
+    const allowActions =
+      !conversational &&
+      (this.hasExecutionIntent(text) || this.hasExplicitEditIntent(text) || this.hasExplicitCommandRunIntent(text));
     const requestedThreadId = typeof options.threadId === "string" ? options.threadId.trim() : "";
     if (requestedThreadId && requestedThreadId !== this.activeThreadId) {
       const existing = this.threads[requestedThreadId] || this.recentHistory.find((x) => x.id === requestedThreadId);
@@ -1465,11 +1484,10 @@ class Provider implements vscode.WebviewViewProvider {
     // not runtime metadata injected into the prompt body.
     const taskWithReasoning = text;
     const requestMode: RequestMode = conversational ? "generate" : this.mode;
+    const fileInfoQuestion = this.isFileInfoQuestion(text);
     const mentionTokens = this.mentionsEnabled() ? extractAtMentions(text) : [];
-    const shouldAttachContextForTask =
-      !conversational || mentionTokens.length > 0 || this.hasCodeTaskSignals(text) || this.hasExecutionIntent(text);
-    const ideContextEnabled =
-      this.isIdeContextV2Enabled() && (options.includeIdeContext ?? true) && shouldAttachContextForTask;
+    const shouldAttachContextForTask = true;
+    const ideContextEnabled = true;
     const root = this.getWorkspaceRoot();
     const workspaceHash = this.computeWorkspaceHash(root);
     const preflightStarted = Date.now();
@@ -1627,7 +1645,7 @@ class Provider implements vscode.WebviewViewProvider {
             this.addTimeline("decision", p?.mode || "unknown");
           } else if (ev === "diff_chunk") {
             const editItems = Array.isArray(p) ? p : Array.isArray((p as { edits?: unknown[] } | null)?.edits) ? (p as { edits: unknown[] }).edits : [];
-            if (editItems.length && !conversational) {
+            if (editItems.length && allowActions) {
               for (const edit of editItems) {
                 const rawPatch =
                   typeof (edit as { patch?: unknown })?.patch === "string"
@@ -1650,7 +1668,7 @@ class Provider implements vscode.WebviewViewProvider {
               this.post({ type: "pendingActions", count: this.pendingActions.length });
             }
           } else if (ev === "commands_chunk") {
-            if (Array.isArray(p) && !conversational) {
+            if (Array.isArray(p) && allowActions) {
               for (const command of p) {
                 if (typeof command === "string" && command.trim()) {
                   this.pendingActions.push({ type: "command", command: command.trim() });
@@ -1659,7 +1677,7 @@ class Provider implements vscode.WebviewViewProvider {
               this.post({ type: "pendingActions", count: this.pendingActions.length });
             }
           } else if (ev === "actions_chunk") {
-            if (Array.isArray(p) && !conversational) {
+            if (Array.isArray(p) && allowActions) {
               for (const action of p) {
                 if (!action || typeof action !== "object") continue;
                 const type = String((action as { type?: unknown }).type || "").toLowerCase();
@@ -1752,6 +1770,13 @@ class Provider implements vscode.WebviewViewProvider {
     if (this.cancelRequested) {
       this.pendingActions = [];
       this.post({ type: "pendingActions", count: 0 });
+      return;
+    }
+    if (!allowActions) {
+      if (this.pendingActions.length > 0) {
+        this.pendingActions = [];
+        this.post({ type: "pendingActions", count: 0 });
+      }
       return;
     }
     if (conversational && this.pendingActions.length > 0) {
@@ -4473,6 +4498,9 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 42%, transparent);
         transform: scale(1.03);
       }
+      .context-toggle-pill {
+        display: none;
+      }
       .composer-meta {
         min-height: 18px;
         display: flex;
@@ -4481,6 +4509,9 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         font-size: 11px;
         color: var(--muted);
         padding: 2px 2px 0;
+      }
+      .composer-meta {
+        display: none;
       }
       .composer-state {
         min-width: 0;
@@ -4524,6 +4555,12 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         border-radius: 14px;
         box-shadow: 0 12px 26px color-mix(in srgb, var(--bg-0) 70%, transparent);
         padding: 10px;
+      }
+      .attach-hint {
+        display: none;
+      }
+      .footer-row {
+        display: none;
       }
       .sheet-grid {
         gap: 8px;

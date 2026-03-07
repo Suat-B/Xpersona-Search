@@ -37,7 +37,7 @@
           if (!text) return;
           t.value = "";
           const earlyCtxToggle = document.getElementById("ctxToggle");
-          const includeIdeContext = earlyCtxToggle ? Boolean(earlyCtxToggle.checked) : true;
+          const includeIdeContext = true;
           try {
             v.postMessage({
               type: "send",
@@ -332,7 +332,7 @@
         const text = parsed.text;
         if (!text) return;
         const parallelEnabled = Boolean(parallelQuick && parallelQuick.checked);
-        const includeIdeContext = ctxToggle ? Boolean(ctxToggle.checked) : true;
+        const includeIdeContext = true;
         v.postMessage({
           type: "send",
           text,
@@ -1395,7 +1395,7 @@
 
           const parallelEnabled = Boolean(parallelQuick && parallelQuick.checked);
           const attachmentPayload = previewAttachments;
-          const includeIdeContext = ctxToggle ? Boolean(ctxToggle.checked) : true;
+          const includeIdeContext = true;
 
           v.postMessage({
             type: "send",
@@ -1496,13 +1496,14 @@
         };
       }
       if (ctxToggle) {
+        ctxToggle.checked = true;
+        ctxToggle.disabled = true;
         ctxToggle.onchange = () => {
-          const enabled = Boolean(ctxToggle.checked);
-          applyIdeContextVisualState(enabled);
-          if (!enabled) contextSummary = "";
+          ctxToggle.checked = true;
+          applyIdeContextVisualState(true);
           updateComposerState();
         };
-        applyIdeContextVisualState(Boolean(ctxToggle.checked));
+        applyIdeContextVisualState(true);
       }
       updateAttachmentUI();
       updateComposerState();
