@@ -5,6 +5,7 @@ import {
   resolveExistingChatActor,
 } from "@/lib/chat/actor";
 import { proxyPlaygroundRequest } from "@/lib/chat/playground-proxy";
+import { buildWorkspaceAssistContext } from "@/lib/chat/workspace-context";
 
 function unauthorized(): NextResponse {
   return NextResponse.json(
@@ -35,9 +36,14 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   await ensureChatTrialEntitlement(actor.userId);
   const bearer = createChatProxyBearer(actor);
+  const inferredContext =
+    body.context === undefined
+      ? await buildWorkspaceAssistContext(body.task).catch(() => null)
+      : null;
 
   const proxiedBody = {
     ...body,
+    ...(inferredContext ? { context: inferredContext } : {}),
     mode: "generate",
     model: "Qwen/Qwen3-235B-A22B-Instruct-2507:fastest",
     stream: true,

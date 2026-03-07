@@ -26,7 +26,6 @@ type ChatViewer = {
   source: string;
 };
 
-type PlaygroundTier = "starter" | "builder" | "studio";
 function makeId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -141,47 +140,6 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
   );
 }
 
-function SidebarPlaygroundPromo({
-  viewer,
-  checkoutTier,
-  onCheckout,
-}: {
-  viewer: ChatViewer | null;
-  checkoutTier: PlaygroundTier | null;
-  onCheckout: (tier: PlaygroundTier) => void;
-}) {
-  const isSignedIn = Boolean(viewer && !viewer.isAnonymous);
-
-  return (
-    <section className="chat-editorial-side-promo" aria-label="Playground packages">
-      <div className="chat-editorial-side-promo-head">
-        <p className="chat-editorial-side-promo-pill">Limited-time</p>
-        <Link href="/playground" className="chat-editorial-side-promo-link">
-          Packages
-        </Link>
-      </div>
-      <div className="chat-editorial-side-promo-plans">
-        <button type="button" className="chat-editorial-side-plan" disabled={checkoutTier !== null} onClick={() => onCheckout("starter")}>
-          {checkoutTier === "starter" ? "Opening..." : "Starter $2/mo"}
-        </button>
-        <button type="button" className="chat-editorial-side-plan" disabled={checkoutTier !== null} onClick={() => onCheckout("builder")}>
-          {checkoutTier === "builder" ? "Opening..." : "Builder $5/mo"}
-        </button>
-        <button type="button" className="chat-editorial-side-plan" disabled={checkoutTier !== null} onClick={() => onCheckout("studio")}>
-          {checkoutTier === "studio" ? "Opening..." : "Studio $10/mo"}
-        </button>
-      </div>
-      <p className="chat-editorial-side-promo-note">2-day trial. Cancel before day 3 to avoid charges.</p>
-      <Link
-        href={isSignedIn ? "/dashboard/playground" : "/auth/signup?next=%2Fdashboard%2Fplayground"}
-        className="chat-editorial-side-promo-cta"
-      >
-        {isSignedIn ? "View plans" : "Start trial"}
-      </Link>
-    </section>
-  );
-}
-
 export function ChatApp() {
   const [booting, setBooting] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -194,7 +152,6 @@ export function ChatApp() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [checkoutTier, setCheckoutTier] = useState<PlaygroundTier | null>(null);
 
   const messageViewportRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -394,51 +351,6 @@ export function ChatApp() {
     setSidebarOpen(false);
   }, []);
 
-  const onStartCheckout = useCallback(async (tier: PlaygroundTier) => {
-    if (checkoutTier) return;
-    setCheckoutTier(tier);
-    setStatusText(`Opening ${tier} checkout...`);
-
-    try {
-      const runCheckout = async (allowAuthRetry: boolean): Promise<boolean> => {
-        const res = await fetch("/api/v1/me/playground-checkout", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tier, billing: "monthly" }),
-        });
-        const json = (await res.json().catch(() => ({}))) as {
-          success?: boolean;
-          data?: { url?: string };
-          message?: string;
-        };
-
-        if (res.status === 401 && allowAuthRetry) {
-          const authRes = await fetch("/api/auth/play", { method: "POST", credentials: "include" });
-          if (!authRes.ok) {
-            setStatusText("Sign-in failed. Please try again.");
-            return false;
-          }
-          return runCheckout(false);
-        }
-
-        if (!res.ok || !json.success || !json.data?.url) {
-          setStatusText(json.message || "Could not start checkout. Please try again.");
-          return false;
-        }
-
-        window.location.href = json.data.url;
-        return true;
-      };
-
-      await runCheckout(true);
-    } catch {
-      setStatusText("Could not start checkout. Please check your connection.");
-    } finally {
-      setCheckoutTier(null);
-    }
-  }, [checkoutTier]);
-
   const onSend = useCallback(
     async (event: React.FormEvent) => {
       event.preventDefault();
@@ -627,33 +539,7 @@ export function ChatApp() {
         {statusText || "Enter to send, made with love in America."}
       </div>
       <p className="chat-editorial-subhint">
-        <span className="chat-editorial-subhint-label">Playground for Coding:</span>{" "}
-        <button
-          type="button"
-          className="chat-editorial-subhint-plan"
-          disabled={checkoutTier !== null}
-          onClick={() => onStartCheckout("starter")}
-        >
-          {checkoutTier === "starter" ? "Opening..." : "Starter $2/mo"}
-        </button>{" "}
-        •{" "}
-        <button
-          type="button"
-          className="chat-editorial-subhint-plan"
-          disabled={checkoutTier !== null}
-          onClick={() => onStartCheckout("builder")}
-        >
-          {checkoutTier === "builder" ? "Opening..." : "Builder $5/mo"}
-        </button>{" "}
-        •{" "}
-        <button
-          type="button"
-          className="chat-editorial-subhint-plan"
-          disabled={checkoutTier !== null}
-          onClick={() => onStartCheckout("studio")}
-        >
-          {checkoutTier === "studio" ? "Opening..." : "Studio $10/mo"}
-        </button>
+        <span className="chat-editorial-subhint-label">Playground for Coding</span>
       </p>
     </form>
   );
@@ -766,8 +652,6 @@ export function ChatApp() {
                   ))
                 )}
               </div>
-              <SidebarPlaygroundPromo viewer={viewer} checkoutTier={checkoutTier} onCheckout={onStartCheckout} />
-
             </div>
           </div>
         </aside>

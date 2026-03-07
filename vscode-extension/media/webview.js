@@ -120,6 +120,10 @@
       const modelSel = document.getElementById("modelSel");
       const reasonSel = document.getElementById("reasonSel");
       const contextPill = document.getElementById("contextPill");
+      const contextTelemetry = document.getElementById("contextTelemetry");
+      const contextAutoBadge = document.getElementById("contextAutoBadge");
+      const contextTelemetryText = document.getElementById("contextTelemetryText");
+      const contextTelemetryMeta = document.getElementById("contextTelemetryMeta");
       const composerShell = document.querySelector(".composer-shell");
       const composerState = document.getElementById("composerState");
       const queuePill = document.getElementById("queuePill");
@@ -172,7 +176,109 @@
 
       function applyIdeContextVisualState(enabled) {
         if (composerShell) composerShell.classList.toggle("ide-context-on", enabled);
-        if (contextPill) contextPill.textContent = enabled ? "IDE Context: ON" : "IDE Context: OFF";
+        if (contextPill) contextPill.textContent = enabled ? "IDE Context: AUTO" : "IDE Context: OFF";
+      }
+      function setContextTelemetryState(inputState) {
+        if (!contextTelemetry) return;
+        const state = inputState && typeof inputState === "object" ? inputState : {};
+        const enabled = state.enabled !== false;
+        const phaseRaw = String(state.phase || "idle").toLowerCase();
+        const phase = phaseRaw === "collecting" || phaseRaw === "ready" ? phaseRaw : "idle";
+        const sourceRaw = String(state.source || "preview").toLowerCase();
+        const source = sourceRaw === "send" ? "send" : "preview";
+        const snippets = Number(state.snippets || 0);
+        const matches = Number(state.workspaceMatches || 0);
+        const fresh = String(state.indexFreshness || "cold");
+        const preflightMs = Number(state.preflightMs || 0);
+        const notes = Array.isArray(state.notes) ? state.notes.map((x) => String(x || "").trim()).filter(Boolean) : [];
+        const phaseLabel = phase === "collecting" ? "syncing" : phase === "ready" ? "ready" : "idle";
+        const sourceLabel = source === "send" ? "send" : "typing";
+
+        if (contextAutoBadge) {
+          contextAutoBadge.classList.remove("idle", "collecting", "ready");
+          contextAutoBadge.classList.add(enabled ? phase : "idle");
+          contextAutoBadge.textContent = enabled ? "Auto Context" : "Context Off";
+        }
+        if (contextPill) {
+          contextPill.textContent = enabled
+            ? (phase === "collecting" ? "IDE Context: Syncing" : "IDE Context: AUTO")
+            : "IDE Context: OFF";
+        }
+        if (contextTelemetryText) {
+          if (!enabled) {
+            contextTelemetryText.textContent = "IDE context is disabled.";
+          } else if (phase === "collecting") {
+            contextTelemetryText.textContent = source === "send"
+              ? "Syncing workspace context for this request..."
+              : "Scanning workspace context in the background...";
+          } else if (phase === "ready") {
+            contextTelemetryText.textContent = notes[0] || "Context is ready.";
+          } else {
+            contextTelemetryText.textContent = "Background sync standing by.";
+          }
+        }
+        if (contextTelemetryMeta) {
+          if (!enabled) {
+            contextTelemetryMeta.textContent = "off";
+          } else {
+            const ms = preflightMs > 0 ? preflightMs + "ms" : "--";
+            contextTelemetryMeta.textContent =
+              sourceLabel + " | " + phaseLabel + " | files " + matches + " | snippets " + snippets + " | " + fresh + " | " + ms;
+          }
+        }
+        contextSummary = enabled
+          ? ("Context: " + phaseLabel + " | files " + matches + " | snippets " + snippets + " | " + fresh)
+          : "";
+      }
+
+      function scheduleContextPreviewDispatch(force = false) {
+        if (!input) return;
+        const text = String(input.value || "").trim();
+        if (contextPreviewTimer) {
+          clearTimeout(contextPreviewTimer);
+          contextPreviewTimer = null;
+        }
+
+        if (!text) {
+          if (lastContextPreviewText) {
+            lastContextPreviewText = "";
+            v.postMessage({ type: "contextPreview", text: "", threadId: currentThreadId });
+          }
+          setContextTelemetryState({
+            enabled: true,
+            phase: "idle",
+            source: "preview",
+            snippets: 0,
+            workspaceMatches: 0,
+            indexFreshness: "cold",
+            preflightMs: 0,
+            notes: ["Auto context idle."],
+          });
+          updateComposerState();
+          return;
+        }
+
+        if (!force && text === lastContextPreviewText) return;
+
+        contextPreviewTimer = setTimeout(() => {
+          if (!input) return;
+          const latest = String(input.value || "").trim();
+          if (!latest) return;
+          if (!force && latest === lastContextPreviewText) return;
+          lastContextPreviewText = latest;
+          setContextTelemetryState({
+            enabled: true,
+            phase: "collecting",
+            source: "preview",
+            snippets: 0,
+            workspaceMatches: 0,
+            indexFreshness: "cold",
+            preflightMs: 0,
+            notes: ["Auto context scanning workspace..."],
+          });
+          updateComposerState();
+          v.postMessage({ type: "contextPreview", text: latest, threadId: currentThreadId });
+        }, 480);
       }
       const MAX_ATTACHMENTS = 3;
       const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024;
@@ -198,6 +304,8 @@
       let mentionDebounceTimer = null;
       let creatingThread = false;
       let contextSummary = "";
+      let contextPreviewTimer = null;
+      let lastContextPreviewText = "";
       let undoAvailable = false;
       let undoCount = 0;
       const queuedMessages = [];
@@ -569,6 +677,7 @@
         if (!input) return;
         input.value = (id && threadDrafts[id]) ? threadDrafts[id] : "";
         syncComposerHeight();
+        scheduleContextPreviewDispatch(true);
       }
 
       function isPinnedThread(id) {
@@ -709,6 +818,7 @@
         input.selectionEnd = nextCaret;
         input.focus();
         if (currentThreadId) threadDrafts[currentThreadId] = input.value || "";
+        scheduleContextPreviewDispatch();
         closeMentionMenu();
       }
 
@@ -1984,6 +2094,7 @@
           syncComposerHeight();
         }
         if (currentThreadId) threadDrafts[currentThreadId] = "";
+        scheduleContextPreviewDispatch(true);
         setStreaming(true);
         streamBubble = addMessage("Streaming response...", "a stream-pending");
         pinAssistantResponseToBottom();
@@ -2182,11 +2293,31 @@
         ctxToggle.onchange = () => {
           ctxToggle.checked = true;
           applyIdeContextVisualState(true);
+          setContextTelemetryState({
+            enabled: true,
+            phase: "idle",
+            source: "preview",
+            snippets: 0,
+            workspaceMatches: 0,
+            indexFreshness: "cold",
+            preflightMs: 0,
+            notes: ["Auto context standing by."],
+          });
           updateComposerState();
         };
         applyIdeContextVisualState(true);
       }
       updateAttachmentUI();
+      setContextTelemetryState({
+        enabled: true,
+        phase: "idle",
+        source: "preview",
+        snippets: 0,
+        workspaceMatches: 0,
+        indexFreshness: "cold",
+        preflightMs: 0,
+        notes: ["Auto context standing by."],
+      });
       updateComposerState();
       if (planModeChip) {
         planModeChip.onclick = (e) => {
@@ -2336,6 +2467,7 @@
           }
           syncComposerHeight();
           scheduleMentionSearch();
+          scheduleContextPreviewDispatch();
         });
         input.addEventListener("beforeinput", (e) => {
           if (e.inputType === "insertLineBreak" || e.inputType === "insertParagraph") {
@@ -2495,6 +2627,17 @@
         }
         if (m.type === "sendAck") {
           setRunState("Working...");
+          setContextTelemetryState({
+            enabled: true,
+            phase: "collecting",
+            source: "send",
+            snippets: 0,
+            workspaceMatches: 0,
+            indexFreshness: "cold",
+            preflightMs: 0,
+            notes: ["Syncing context for this request..."],
+          });
+          updateComposerState();
         } else if (m.type === "api") {
           hostHandshakeReceived = true;
           if (m.ok) {
@@ -2555,6 +2698,17 @@
           renderRunProgress();
           streamEndPending = false;
           setStreaming(true);
+          setContextTelemetryState({
+            enabled: true,
+            phase: "collecting",
+            source: "send",
+            snippets: 0,
+            workspaceMatches: 0,
+            indexFreshness: "cold",
+            preflightMs: 0,
+            notes: ["Syncing context for this request..."],
+          });
+          updateComposerState();
         } else if (m.type === "token") {
           if (!streaming) setStreaming(true);
           queueStreamText(String(m.text || ""));
@@ -2765,11 +2919,17 @@
             '<div class="item"><div class="item-title">Last matches</div><div class="item-sub">' + esc(m.data?.lastQueryMatches || 0) + '</div></div>' +
             '<div class="item"><div class="item-title">Last rebuild</div><div class="item-sub">' + esc(m.data?.lastRebuildAt || "n/a") + '</div></div>';
         } else if (m.type === "contextStatus") {
-          const enabled = m.data?.enabled !== false;
-          const fresh = String(m.data?.indexFreshness || "cold");
-          const snippets = Number(m.data?.snippets || 0);
-          if (contextPill) contextPill.textContent = enabled ? "IDE Context: on" : "IDE Context: off";
-          contextSummary = enabled ? ("Index: " + fresh + " - Snippets: " + snippets) : "";
+          const payload = m.data && typeof m.data === "object" ? m.data : {};
+          setContextTelemetryState({
+            enabled: payload.enabled !== false,
+            phase: payload.phase || "ready",
+            source: payload.source || "preview",
+            snippets: Number(payload.snippets || 0),
+            workspaceMatches: Number(payload.workspaceMatches || 0),
+            indexFreshness: String(payload.indexFreshness || "cold"),
+            preflightMs: Number(payload.preflightMs || 0),
+            notes: Array.isArray(payload.notes) ? payload.notes : [],
+          });
           updateComposerState();
         } else if (m.type === "roundtable") {
           agents.textContent = JSON.stringify(m.data || {}, null, 2);
@@ -2814,6 +2974,7 @@
         } else if (m.type === "prefill") {
           input.value = m.text || "";
           syncComposerHeight();
+          scheduleContextPreviewDispatch(true);
         } else if (m.type === "load") {
           responseStartedAtMs = 0;
           lastAssistantBubble = null;

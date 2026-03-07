@@ -6,6 +6,7 @@ const mockResolveActor = vi.hoisted(() => vi.fn());
 const mockEnsureTrial = vi.hoisted(() => vi.fn());
 const mockCreateBearer = vi.hoisted(() => vi.fn());
 const mockProxy = vi.hoisted(() => vi.fn());
+const mockBuildWorkspaceContext = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/chat/actor", () => ({
   resolveExistingChatActor: mockResolveActor,
@@ -15,6 +16,10 @@ vi.mock("@/lib/chat/actor", () => ({
 
 vi.mock("@/lib/chat/playground-proxy", () => ({
   proxyPlaygroundRequest: mockProxy,
+}));
+
+vi.mock("@/lib/chat/workspace-context", () => ({
+  buildWorkspaceAssistContext: mockBuildWorkspaceContext,
 }));
 
 describe("POST /api/me/chat/assist", () => {
@@ -34,6 +39,27 @@ describe("POST /api/me/chat/assist", () => {
     });
     mockCreateBearer.mockReturnValue("xp_vsat_mock");
     mockProxy.mockResolvedValue(new Response("ok", { status: 200 }));
+    mockBuildWorkspaceContext.mockResolvedValue({
+      activeFile: {
+        path: "components/chat/ChatApp.tsx",
+        language: "tsx",
+        content: "export function ChatApp() {}",
+      },
+      openFiles: [
+        {
+          path: "app/api/me/chat/assist/route.ts",
+          language: "ts",
+          excerpt: "export async function POST() {}",
+        },
+      ],
+      indexedSnippets: [
+        {
+          path: "lib/chat/workspace-context.ts",
+          score: 0.89,
+          content: "function buildWorkspaceAssistContext(task: string)",
+        },
+      ],
+    });
   });
 
   it("returns 401 when actor is missing", async () => {
@@ -82,10 +108,41 @@ describe("POST /api/me/chat/assist", () => {
         body: expect.objectContaining({
           task: "Build me a function",
           historySessionId: "sess-1",
+          context: expect.objectContaining({
+            activeFile: expect.objectContaining({ path: "components/chat/ChatApp.tsx" }),
+          }),
           mode: "generate",
-          model: "Playground 1",
+          model: "Qwen/Qwen3-235B-A22B-Instruct-2507:fastest",
           stream: true,
           safetyProfile: "standard",
+        }),
+      })
+    );
+  });
+
+  it("skips automatic workspace inference when context is already supplied", async () => {
+    const req = new NextRequest("http://localhost/api/me/chat/assist", {
+      method: "POST",
+      body: JSON.stringify({
+        task: "Use this provided context",
+        context: {
+          activeFile: {
+            path: "custom.ts",
+            content: "const x = 1;",
+          },
+        },
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    await POST(req);
+    expect(mockBuildWorkspaceContext).not.toHaveBeenCalled();
+    expect(mockProxy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          context: expect.objectContaining({
+            activeFile: expect.objectContaining({ path: "custom.ts" }),
+          }),
         }),
       })
     );

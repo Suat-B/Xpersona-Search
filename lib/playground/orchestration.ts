@@ -2049,6 +2049,7 @@ export async function runAssist(
     if (safeAttachments.length > 0) {
       logs.push(`attachments_included=${safeAttachments.length}`);
     }
+    const useStructuredOutput = codeEditIntent || decision.mode === "debug" || decision.mode === "yolo";
     const prompt = [
       `Mode: ${decision.mode}`,
       `Resolved intent: ${intentResolution.intent}`,
@@ -2071,23 +2072,31 @@ export async function runAssist(
           ? "Focus on direct implementation with actionable edits and commands."
           : "Focus on production-ready implementation guidance with concise rationale.",
       "",
-      'Return STRICT JSON only with this shape: {"final":"string","edits":[{"path":"relative/path","patch":"unified diff patch","rationale":"optional"}],"commands":["safe command"]}.',
-      codeEditIntent
-        ? contextAnchorsAvailable
-          ? "Rules: include concrete code edits (non-empty edits array) when the user asks to create/modify code; if file path is omitted, infer target from the provided IDE context and proceed without follow-up questions."
-          : "Rules: include concrete code edits (non-empty edits array) when the user asks to create/modify code; do not return placeholder text."
-        : "Rules: keep edits empty unless explicitly requested; answer in plain natural language and avoid standalone code snippets.",
-      explicitCommandRunIntent
-        ? "Rules: commands may be included only if they are necessary, safe, and directly requested."
-        : "Rules: leave commands empty unless auto-validation is explicitly required by confidence policy.",
+      useStructuredOutput
+        ? 'Return STRICT JSON only with this shape: {"final":"string","edits":[{"path":"relative/path","patch":"unified diff patch","rationale":"optional"}],"commands":["safe command"]}.'
+        : "Return plain text only. Do not return JSON.",
+      useStructuredOutput
+        ? codeEditIntent
+          ? contextAnchorsAvailable
+            ? "Rules: include concrete code edits (non-empty edits array) when the user asks to create/modify code; if file path is omitted, infer target from the provided IDE context and proceed without follow-up questions."
+            : "Rules: include concrete code edits (non-empty edits array) when the user asks to create/modify code; do not return placeholder text."
+          : "Rules: keep edits empty unless explicitly requested; answer in plain natural language and avoid standalone code snippets."
+        : "Rules: answer directly in natural language and avoid markdown fences.",
+      useStructuredOutput
+        ? explicitCommandRunIntent
+          ? "Rules: commands may be included only if they are necessary, safe, and directly requested."
+          : "Rules: leave commands empty unless auto-validation is explicitly required by confidence policy."
+        : "Rules: do not include shell commands unless the user explicitly asks for runnable commands.",
       "Rules: never include markdown fences.",
     ]
       .filter(Boolean)
       .join("\n");
 
     let raw = "";
-    const useTwoPass = shouldUseTwoPassCodeGeneration(req.task, codeEditIntent, budgetedContext, effectiveReasoning);
-    const allowRawTokenStream = STREAM_RAW_MODEL_TOKENS && !useTwoPass && !hasExecutionIntent(req.task);
+    const useTwoPass =
+      useStructuredOutput && shouldUseTwoPassCodeGeneration(req.task, codeEditIntent, budgetedContext, effectiveReasoning);
+    const allowRawTokenStream =
+      !useTwoPass && !hasExecutionIntent(req.task) && (STREAM_RAW_MODEL_TOKENS || !useStructuredOutput);
     const callPrimaryWithModelFallback = async (promptText: string, attachmentsForCall?: AssistAttachment[]) => {
       try {
         modelUsed = model;
@@ -2194,15 +2203,19 @@ export async function runAssist(
       }
     } else {
       raw = await callWithAttachmentFallback(prompt, safeAttachments);
-      const structured = parseStructuredAssistResponse(raw) ?? inferStructuredFallback(raw, req.task, primaryTargetPath);
-      if (structured) {
-        final = normalizeModelText(structured.final);
-        edits = structured.edits;
-        modelCommands = structured.commands;
-        structuredActions = (structured.actions ?? []) as ToolAction[];
+      if (!useStructuredOutput) {
+        final = normalizeModelText(raw);
       } else {
-        final = normalizeModelText(extractFinalFromJsonLike(raw) || raw);
-        logs.push("structured_output=parse_failed; using raw model text");
+        const structured = parseStructuredAssistResponse(raw) ?? inferStructuredFallback(raw, req.task, primaryTargetPath);
+        if (structured) {
+          final = normalizeModelText(structured.final);
+          edits = structured.edits;
+          modelCommands = structured.commands;
+          structuredActions = (structured.actions ?? []) as ToolAction[];
+        } else {
+          final = normalizeModelText(extractFinalFromJsonLike(raw) || raw);
+          logs.push("structured_output=parse_failed; using raw model text");
+        }
       }
     }
     if (codeEditIntent && edits.length === 0) {

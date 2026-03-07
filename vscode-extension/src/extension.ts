@@ -73,8 +73,11 @@ type IdeContext = {
 };
 type ContextStatus = {
   enabled: boolean;
+  phase?: "idle" | "collecting" | "ready";
+  source?: "preview" | "send";
   sections: number;
   snippets: number;
+  workspaceMatches?: number;
   indexFreshness: "fresh" | "stale" | "cold";
   discoveryCommands: number;
   preflightMs: number;
@@ -306,6 +309,10 @@ class Provider implements vscode.WebviewViewProvider {
   private lastIndexAt = 0;
   private indexTimer: NodeJS.Timeout | null = null;
   private indexDebounceTimer: NodeJS.Timeout | null = null;
+  private contextPreviewDebounceTimer: NodeJS.Timeout | null = null;
+  private contextPreviewSeq = 0;
+  private contextPreviewLastQuery = "";
+  private contextPreviewLastAt = 0;
   private vscodeAccessToken: string | null = null;
   private vscodeAccessTokenExpiresAtMs = 0;
   private vscodeSignedInEmail: string | null = null;
@@ -596,6 +603,9 @@ class Provider implements vscode.WebviewViewProvider {
     this.post({ type: "api", ok: true });
     await this.postAuthState();
     await this.loadHistory();
+    if (this.isIdeContextV2Enabled()) {
+      void this.runBackgroundIndexing("auth-check");
+    }
   }
 
   async signOut(): Promise<void> {
@@ -806,15 +816,156 @@ class Provider implements vscode.WebviewViewProvider {
     return safe || uri.fsPath;
   }
 
+  private postContextStatus(
+    threadId: string | null | undefined,
+    status: ContextStatus
+  ) {
+    this.postRun(threadId, { type: "contextStatus", data: status });
+  }
+
+  private scheduleContextPreview(rawQuery: string, threadId?: string | null) {
+    const query = String(rawQuery || "").trim();
+    const runThreadId = typeof threadId === "string" && threadId.trim() ? threadId.trim() : this.activeThreadId;
+    if (this.contextPreviewDebounceTimer) {
+      clearTimeout(this.contextPreviewDebounceTimer);
+      this.contextPreviewDebounceTimer = null;
+    }
+
+    if (!query) {
+      this.postContextStatus(runThreadId, {
+        enabled: true,
+        phase: "idle",
+        source: "preview",
+        sections: 0,
+        snippets: 0,
+        workspaceMatches: 0,
+        indexFreshness: this.indexFreshness,
+        discoveryCommands: 0,
+        preflightMs: 0,
+        notes: ["Auto context idle."],
+      });
+      return;
+    }
+
+    this.contextPreviewDebounceTimer = setTimeout(() => {
+      const seq = ++this.contextPreviewSeq;
+      void this.runContextPreview(seq, query, runThreadId);
+    }, 420);
+  }
+
+  private async runContextPreview(
+    seq: number,
+    query: string,
+    threadId: string | null | undefined
+  ) {
+    const startedAt = Date.now();
+    this.postContextStatus(threadId, {
+      enabled: true,
+      phase: "collecting",
+      source: "preview",
+      sections: 0,
+      snippets: 0,
+      workspaceMatches: 0,
+      indexFreshness: this.indexFreshness,
+      discoveryCommands: 0,
+      preflightMs: 0,
+      notes: ["Auto context scanning workspace..."],
+    });
+
+    try {
+      const now = Date.now();
+      if (query === this.contextPreviewLastQuery && now - this.contextPreviewLastAt < 1200) {
+        return;
+      }
+
+      const root = this.getWorkspaceRoot();
+      const openFiles = await this.collectOpenEditorsContext(8, 3_000);
+      const workspaceMatches = await this.collectQueryWorkspaceContext(query, 8, 4_500);
+      let indexedSnippets: Array<{ path?: string; score?: number; content: string }> = [];
+      if (root) {
+        const auth = await this.resolveRequestAuth();
+        if (auth) {
+          const workspaceHash = this.computeWorkspaceHash(root);
+          indexedSnippets = await this.queryIndexForPrompt(workspaceHash, query, auth, 8);
+        }
+      }
+      if (seq !== this.contextPreviewSeq) return;
+
+      const dedup = new Set<string>();
+      const mergedOpenFiles = [...workspaceMatches, ...openFiles].filter((item) => {
+        const key = String(item.path || "");
+        if (!key || dedup.has(key)) return false;
+        dedup.add(key);
+        return true;
+      });
+
+      const sections = [
+        mergedOpenFiles.length > 0 ? 1 : 0,
+        indexedSnippets.length > 0 ? 1 : 0,
+      ].reduce((acc, value) => acc + value, 0);
+      const preflightMs = Date.now() - startedAt;
+      const notes: string[] = [
+        `Auto context ready: ${workspaceMatches.length} workspace match${workspaceMatches.length === 1 ? "" : "es"}.`,
+      ];
+      if (!indexedSnippets.length && root) {
+        notes.push("Index snippets unavailable yet; running workspace fallback.");
+      }
+
+      this.postContextStatus(threadId, {
+        enabled: true,
+        phase: "ready",
+        source: "preview",
+        sections,
+        snippets: indexedSnippets.length,
+        workspaceMatches: workspaceMatches.length,
+        indexFreshness: this.indexFreshness,
+        discoveryCommands: 0,
+        preflightMs,
+        notes,
+      });
+      this.contextPreviewLastQuery = query;
+      this.contextPreviewLastAt = Date.now();
+    } catch (e) {
+      if (seq !== this.contextPreviewSeq) return;
+      this.postContextStatus(threadId, {
+        enabled: true,
+        phase: "ready",
+        source: "preview",
+        sections: 0,
+        snippets: 0,
+        workspaceMatches: 0,
+        indexFreshness: this.indexFreshness,
+        discoveryCommands: 0,
+        preflightMs: Date.now() - startedAt,
+        notes: [`Auto context preview failed: ${err(e)}`],
+      });
+    }
+  }
+
   private async collectIdeContext(query: string, workspaceHash: string, auth: HttpAuth): Promise<IdeContext> {
     const root = this.getWorkspaceRoot();
     const activeFile = await this.collectActiveFileContext(20_000);
     const openFiles = await this.collectOpenEditorsContext(20, 6_000);
+    const queryWorkspaceFiles = await this.collectQueryWorkspaceContext(query, 10, 10_000);
     const diagnostics = this.collectDiagnostics(200);
     const git = await this.collectGitSummary(root);
     const discovery = await this.runSafeDiscovery(root);
     const indexedSnippets = await this.queryIndexForPrompt(workspaceHash, query, auth, 12);
-    const mergedSnippets = [...indexedSnippets];
+    const mergedOpenFilesMap = new Map<string, { path: string; language?: string; excerpt?: string }>();
+    for (const file of [...queryWorkspaceFiles, ...openFiles]) {
+      if (!file.path || mergedOpenFilesMap.has(file.path)) continue;
+      mergedOpenFilesMap.set(file.path, file);
+    }
+    const mergedSnippets = [
+      ...indexedSnippets,
+      ...queryWorkspaceFiles
+        .map((file) => ({
+          path: file.path,
+          score: 0.45,
+          content: String(file.excerpt || "").slice(0, 4_000),
+        }))
+        .filter((snippet) => snippet.content.length > 0),
+    ];
     if (discovery.rgFiles) {
       mergedSnippets.push({
         path: ".workspace/files",
@@ -825,7 +976,7 @@ class Provider implements vscode.WebviewViewProvider {
     return trimContextToMaxChars(
       {
         activeFile: activeFile || undefined,
-        openFiles,
+        openFiles: Array.from(mergedOpenFilesMap.values()),
         diagnostics,
         git: {
           status: [...(git.status || []), ...(discovery.gitStatus || [])].slice(0, 200),
@@ -856,6 +1007,144 @@ class Provider implements vscode.WebviewViewProvider {
       out.push(token);
       if (out.length >= max) break;
     }
+    return out;
+  }
+
+  private extractWorkspaceSearchTokens(text: string, max = 6): string[] {
+    const input = String(text || "");
+    if (!input.trim()) return [];
+    const mentions = new Set(extractAtMentions(input).map((x) => x.replace(/^@+/, "").toLowerCase()));
+    const stop = new Set([
+      "what", "how", "does", "work", "read", "look", "file", "this", "that", "please", "now", "can", "you", "the", "and", "for",
+      "with", "into", "from", "when", "where", "why", "help", "need", "make", "build", "create", "update", "fix", "issue",
+      "problem", "about", "there", "their", "they", "should", "would", "could", "have", "has",
+    ]);
+    const out: string[] = [];
+    const seen = new Set<string>();
+
+    const pathMentions = input.match(/[A-Za-z0-9_.\/-]+\.[A-Za-z0-9]{1,10}/g) || [];
+    for (const match of pathMentions) {
+      const cleaned = String(match || "").trim().replace(/^[@./]+/, "").replace(/[),.;:!?]+$/g, "");
+      const lower = cleaned.toLowerCase();
+      if (!cleaned || seen.has(lower) || mentions.has(lower) || stop.has(lower)) continue;
+      seen.add(lower);
+      out.push(cleaned);
+      if (out.length >= max) return out;
+    }
+
+    for (const m of input.matchAll(/\b[A-Za-z_][A-Za-z0-9_]{2,}\b/g)) {
+      const token = String(m[0] || "").trim();
+      if (!token) continue;
+      const lower = token.toLowerCase();
+      if (seen.has(lower) || mentions.has(lower) || stop.has(lower)) continue;
+      if (!/[A-Za-z]/.test(token)) continue;
+      seen.add(lower);
+      out.push(token);
+      if (out.length >= max) break;
+    }
+    return out;
+  }
+
+  private formatLineExcerpt(lines: string[], startLine: number): string {
+    return lines
+      .map((line, idx) => `${String(startLine + idx).padStart(4, " ")} | ${line}`)
+      .join("\n");
+  }
+
+  private async collectQueryWorkspaceContext(
+    text: string,
+    maxFiles: number,
+    maxCharsPerFile: number
+  ): Promise<Array<{ path: string; language?: string; excerpt?: string }>> {
+    const root = this.getWorkspaceRoot();
+    if (!root) return [];
+    const tokens = this.extractWorkspaceSearchTokens(text, 6);
+    if (!tokens.length) return [];
+
+    const perPath = new Map<string, { score: number; matches: Array<{ token: string; line: number; preview: string }> }>();
+
+    for (const token of tokens) {
+      const rg = await execFileReadOnly(
+        "rg",
+        ["-n", "-i", "-S", "--no-heading", "--hidden", "-g", "!node_modules", "-g", "!.git", "-g", "!.next", "-g", "!dist", "-g", "!build", token, "."],
+        root.uri.fsPath,
+        3000,
+        200000
+      );
+      if (!rg.ok || !rg.stdout.trim()) continue;
+      const lines = rg.stdout.split(/\r?\n/).filter(Boolean).slice(0, Math.max(60, maxFiles * 24));
+      for (const line of lines) {
+        const m = /^(.+?):(\d+):(.*)$/.exec(line);
+        if (!m) continue;
+        const rel = normalizeWorkspaceRelativePath(m[1].replace(/\\/g, "/").replace(/^\.\//, ""));
+        if (!rel) continue;
+        const lineNumber = Number.parseInt(String(m[2] || ""), 10);
+        const preview = String(m[3] || "").trim();
+        const entry = perPath.get(rel) || { score: 0, matches: [] };
+        entry.score += 3;
+        if (preview.toLowerCase().includes(token.toLowerCase())) entry.score += 1;
+        if (entry.matches.length < 8 && Number.isFinite(lineNumber) && lineNumber > 0) {
+          entry.matches.push({ token, line: lineNumber, preview });
+        }
+        perPath.set(rel, entry);
+      }
+    }
+
+    const ranked = Array.from(perPath.entries())
+      .sort((a, b) => b[1].score - a[1].score)
+      .slice(0, Math.max(maxFiles, maxFiles * 2));
+    const out: Array<{ path: string; language?: string; excerpt?: string }> = [];
+
+    for (const [pathKey, data] of ranked) {
+      if (out.length >= maxFiles) break;
+      const uri = vscode.Uri.joinPath(root.uri, ...pathKey.split("/"));
+      try {
+        const stat = await vscode.workspace.fs.stat(uri);
+        if (stat.type !== vscode.FileType.File) continue;
+        if (stat.size > 900_000) {
+          const quickMatches = data.matches
+            .slice(0, 6)
+            .map((match) => `- ${match.token} @${match.line}: ${match.preview.slice(0, 140)}`)
+            .join("\n");
+          out.push({
+            path: pathKey,
+            language: languageFromPath(pathKey),
+            excerpt: `Query matches (file too large to open full excerpt):\n${quickMatches}`.slice(0, maxCharsPerFile),
+          });
+          continue;
+        }
+
+        const doc = await vscode.workspace.openTextDocument(uri);
+        const lines = doc.getText().replace(/\r\n/g, "\n").split("\n");
+        const anchorLine = data.matches[0]?.line || 1;
+        const start = Math.max(0, anchorLine - 15);
+        const end = Math.min(lines.length, start + 90);
+        const header = data.matches
+          .slice(0, 6)
+          .map((match) => `- ${match.token} @${match.line}: ${match.preview.slice(0, 120)}`)
+          .join("\n");
+        let excerpt = `Query matches:\n${header}\n\nExcerpt:\n${this.formatLineExcerpt(lines.slice(start, end), start + 1)}`.slice(0, maxCharsPerFile);
+        if (end < lines.length && excerpt.length < maxCharsPerFile - 40) {
+          excerpt += `\n... [truncated ${lines.length - end} lines]`;
+        }
+        out.push({
+          path: pathKey,
+          language: doc.languageId || languageFromPath(pathKey),
+          excerpt,
+        });
+      } catch (e) {
+        const quickMatches = data.matches
+          .slice(0, 6)
+          .map((match) => `- ${match.token} @${match.line}: ${match.preview.slice(0, 140)}`)
+          .join("\n");
+        out.push({
+          path: pathKey,
+          language: languageFromPath(pathKey),
+          excerpt: `Failed to read file excerpt (${err(e)}).\nQuery matches:\n${quickMatches}`.slice(0, maxCharsPerFile),
+        });
+      }
+    }
+
     return out;
   }
 
@@ -927,17 +1216,35 @@ class Provider implements vscode.WebviewViewProvider {
   }
 
   private async collectOpenEditorsContext(maxEditors: number, maxCharsPerFile: number): Promise<Array<{ path: string; language?: string; excerpt?: string }>> {
-    const editors = vscode.window.visibleTextEditors.slice(0, maxEditors);
+    const documents: vscode.TextDocument[] = [];
+    const seenUri = new Set<string>();
+    for (const editor of vscode.window.visibleTextEditors) {
+      const key = String(editor.document.uri.toString());
+      if (seenUri.has(key)) continue;
+      seenUri.add(key);
+      documents.push(editor.document);
+      if (documents.length >= maxEditors) break;
+    }
+    if (documents.length < maxEditors) {
+      for (const doc of vscode.workspace.textDocuments) {
+        const key = String(doc.uri.toString());
+        if (seenUri.has(key)) continue;
+        if (doc.uri.scheme !== "file") continue;
+        seenUri.add(key);
+        documents.push(doc);
+        if (documents.length >= maxEditors) break;
+      }
+    }
     const unique = new Set<string>();
     const out: Array<{ path: string; language?: string; excerpt?: string }> = [];
-    for (const e of editors) {
-      const p = this.toContextPath(e.document.uri);
+    for (const doc of documents) {
+      const p = this.toContextPath(doc.uri);
       if (!p || unique.has(p)) continue;
       unique.add(p);
       out.push({
         path: p,
-        language: e.document.languageId,
-        excerpt: e.document.getText().slice(0, maxCharsPerFile),
+        language: doc.languageId,
+        excerpt: doc.getText().slice(0, maxCharsPerFile),
       });
     }
     return out;
@@ -1351,6 +1658,9 @@ class Provider implements vscode.WebviewViewProvider {
         this.postUndoState();
         this.post({ type: "mentionsConfig", enabled: this.mentionsEnabled() });
         await this.postThreadState();
+        if (ok && this.isIdeContextV2Enabled()) {
+          void this.runBackgroundIndexing("auth-check");
+        }
         if (ok && this.activeThreadId) {
           await this.openSession(this.activeThreadId);
         } else if (!this.activeThreadId) {
@@ -1365,6 +1675,9 @@ class Provider implements vscode.WebviewViewProvider {
         this.post({ type: "api", ok: true });
         await this.postAuthState();
         await this.loadHistory();
+        if (this.isIdeContextV2Enabled()) {
+          void this.runBackgroundIndexing("auth-check");
+        }
       } else if (m.type === "setMode") {
         await this.setMode(m.value as Mode);
       } else if (m.type === "setSafety") {
@@ -1430,6 +1743,10 @@ class Provider implements vscode.WebviewViewProvider {
         }
         const items = await this.searchWorkspaceMentions(String(m.query || ""), Number(m.limit || 12)).catch(() => []);
         this.post({ type: "mentionResults", query: String(m.query || ""), items });
+      } else if (m.type === "contextPreview") {
+        const query = String(m.text || "");
+        const threadId = typeof m.threadId === "string" ? String(m.threadId).trim() : "";
+        this.scheduleContextPreview(query, threadId || undefined);
       } else if (m.type === "pinThread") {
         await this.setThreadPinned(String(m.id || ""), Boolean(m.pinned));
       }
@@ -1548,13 +1865,17 @@ class Provider implements vscode.WebviewViewProvider {
     let collectedContext: IdeContext | undefined;
     let contextStatus: ContextStatus = {
       enabled: ideContextEnabled,
+      phase: "collecting",
+      source: "send",
       sections: 0,
       snippets: 0,
+      workspaceMatches: 0,
       indexFreshness: this.indexFreshness,
       discoveryCommands: 0,
       preflightMs: 0,
       notes: [],
     };
+    this.postContextStatus(runThreadId, { ...contextStatus });
 
     if (ideContextEnabled && !strictConversationOnly) {
       try {
@@ -1610,15 +1931,18 @@ class Provider implements vscode.WebviewViewProvider {
         ].reduce((acc, v) => acc + v, 0);
         contextStatus = {
           ...contextStatus,
+          phase: "ready",
           sections: sectionCount,
           snippets: collectedContext.indexedSnippets?.length ?? 0,
+          workspaceMatches: collectedContext.openFiles?.length ?? 0,
           indexFreshness: this.indexFreshness,
           discoveryCommands: (collectedContext.git?.status?.length ?? 0) > 0 || collectedContext.git?.diffSummary ? 3 : 0,
         };
       }
     }
+    contextStatus.phase = "ready";
     contextStatus.preflightMs = Date.now() - preflightStarted;
-    this.postRun(runThreadId, { type: "contextStatus", data: contextStatus });
+    this.postContextStatus(runThreadId, contextStatus);
     if (contextStatus.notes?.length) {
       this.postRun(runThreadId, { type: "status", text: contextStatus.notes.join(" | ") });
     }
@@ -3450,9 +3774,13 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         background: color-mix(in srgb, var(--surface) 76%, var(--bg-0));
       }
       .diff-summary-title {
-        font-size: 24px;
+        font-size: clamp(12px, 1.4vw, 15px);
         font-weight: 600;
         color: color-mix(in srgb, var(--fg) 86%, var(--muted));
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .change-head {
         display: flex;
@@ -3510,18 +3838,27 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         padding: 16px 20px;
         background: color-mix(in srgb, var(--surface) 68%, var(--bg-0));
         border-bottom: 1px solid var(--surface-border);
+        min-width: 0;
       }
       .diff-title {
         color: color-mix(in srgb, var(--fg) 78%, var(--muted));
-        font-size: 22px;
+        font-size: clamp(11px, 1.25vw, 14px);
+        min-width: 0;
+        flex: 1 1 auto;
       }
       .diff-path {
         color: color-mix(in srgb, var(--fg) 90%, var(--muted));
         font-weight: 600;
+        display: block;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .diff-stats {
         font-family: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
-        font-size: 22px;
+        font-size: clamp(11px, 1.1vw, 13px);
+        white-space: nowrap;
       }
       .diff-stats .add {
         color: var(--diff-add-fg);
@@ -3531,10 +3868,11 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       }
       .diff-body {
         font-family: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
-        font-size: 24px;
-        line-height: 1.55;
-        max-height: 560px;
+        font-size: clamp(10px, 0.95vw, 12px);
+        line-height: 1.45;
+        max-height: min(52vh, 520px);
         overflow: auto;
+        overscroll-behavior: contain;
       }
       .diff-card[data-lang] {
         --lang-accent: var(--accent);
@@ -3558,25 +3896,29 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       }
       .diff-row {
         display: grid;
-        grid-template-columns: 88px 88px 32px 1fr;
-        width: fit-content;
-        min-width: 100%;
+        grid-template-columns: minmax(40px, 56px) minmax(40px, 56px) 18px minmax(0, 1fr);
+        width: 100%;
+        min-width: 0;
         transition: background .18s ease;
       }
       .diff-row .ln {
         color: var(--line-fg);
         text-align: right;
-        padding: 0 16px 0 0;
+        padding: 0 8px 0 0;
         border-right: 1px solid color-mix(in srgb, var(--surface-border) 70%, transparent);
         background: var(--gutter-bg);
+        font-variant-numeric: tabular-nums;
       }
       .diff-row .sig {
         text-align: center;
         background: var(--vscode-editor-background, var(--bg-0));
       }
       .diff-row .txt {
-        white-space: pre;
-        padding: 0 16px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        padding: 0 10px;
+        min-width: 0;
       }
       .diff-row.ctx .sig,
       .diff-row.ctx .txt {
@@ -5157,6 +5499,172 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
           padding: 4px 7px;
         }
       }
+      .global-top {
+        padding: 6px 12px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-0);
+        position: sticky;
+        top: 0;
+        z-index: 40;
+      }
+      .brand-block {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .brand-kicker {
+        font-size: 11px;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .brand-kicker::after {
+        content: " · chat";
+        font-weight: 600;
+        letter-spacing: .06em;
+        color: color-mix(in srgb, var(--muted) 70%, var(--fg) 30%);
+      }
+      .brand-sub { display: none; }
+      .global-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .menu-icon {
+        min-width: auto;
+        height: 26px;
+        padding: 0 10px;
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }
+      .menu-icon:hover {
+        border-color: color-mix(in srgb, var(--border) 40%, #fff 60%);
+        color: #fff;
+      }
+      .menu-icon.quick-new {
+        background: var(--accent);
+        border-color: transparent;
+        color: #fff;
+      }
+      .menu-icon.quick-new:hover {
+        background: color-mix(in srgb, var(--accent) 85%, #fff 15%);
+      }
+      .chat-shell { gap: 0; }
+      .stage-shell .panel { padding: 4px 12px 0; }
+      .chat-panel {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .messages {
+        flex: 1;
+        padding: 8px 0 14px;
+        gap: 12px;
+      }
+      .messages:empty::before {
+        content: "Ask Playground AI · @ files · / commands";
+        display: block;
+        padding: 28px 8px 0;
+        text-align: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .m {
+        display: grid;
+        gap: 4px;
+      }
+      .m.a::before {
+        content: "AI";
+        font-size: 10px;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        color: color-mix(in srgb, var(--muted) 78%, var(--fg) 22%);
+      }
+      .m.u::before {
+        content: "You";
+        font-size: 10px;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        color: color-mix(in srgb, var(--muted) 78%, var(--fg) 22%);
+        text-align: right;
+      }
+      .threads-overlay-open #stageThreads {
+        top: 64px;
+        width: min(420px, calc(100vw - 24px));
+      }
+      .dock-shell {
+        margin: 0 12px 12px;
+        border-radius: 16px;
+        padding: 8px;
+        background: color-mix(in srgb, var(--surface) 88%, var(--bg-0));
+        border-color: color-mix(in srgb, var(--border) 70%, var(--accent) 30%);
+        box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+      }
+      .dock-shell::before {
+        content: "";
+        display: block;
+        height: 1px;
+        margin: -4px 0 8px;
+        background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--border) 70%, transparent), transparent);
+      }
+      .composer-shell {
+        border-radius: 14px;
+        background: transparent;
+      }
+      .context-telemetry {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 22px;
+        padding: 4px 2px 0;
+        color: color-mix(in srgb, var(--muted) 78%, var(--fg) 22%);
+        font-size: 11px;
+        line-height: 1.25;
+      }
+      .context-auto-badge {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: 10px;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .context-auto-badge.collecting {
+        border-color: color-mix(in srgb, var(--accent) 65%, var(--border) 35%);
+        color: color-mix(in srgb, var(--accent) 82%, #fff 18%);
+      }
+      .context-auto-badge.ready {
+        border-color: color-mix(in srgb, var(--ok) 65%, var(--border) 35%);
+        color: color-mix(in srgb, var(--ok) 78%, #fff 22%);
+      }
+      .context-auto-badge.idle {
+        opacity: .85;
+      }
+      .context-telemetry-text {
+        color: color-mix(in srgb, var(--fg) 86%, var(--muted) 14%);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1 1 auto;
+      }
+      .context-telemetry-meta {
+        color: var(--muted);
+        white-space: nowrap;
+        font-family: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
+      }
+      .composer-meta,
+      .queue-panel,
+      .queue-pill,
+      .chips,
+      .tasks-head,
+      #taskList,
+      #viewAllTasks {
+        display: none !important;
+      }
     </style>
   </head>
   <body>
@@ -5216,15 +5724,14 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       </div>
       <div class="global-top">
         <div class="brand-block">
-          <span class="brand-kicker">Playground AI</span>
-          <span class="brand-sub">General chat</span>
+          <span class="brand-kicker">Playground</span>
         </div>
         <div class="global-actions">
-          <button id="historyQuick" type="button" class="menu-icon panel-icon" aria-label="Open threads" title="Open threads">&#9776;</button>
           <button id="historyHeader" type="button" class="menu-icon" aria-label="Open previous chats" title="Previous chats">Chats</button>
-          <button id="undoHeader" type="button" class="menu-icon" aria-label="Undo last changes" title="Undo last changes">Undo</button>
+          <button id="actionMenuBtn" type="button" class="menu-icon" aria-label="Settings" title="Settings" aria-expanded="false">Settings</button>
+          <button id="newThreadQuick" type="button" class="menu-icon quick-new" aria-label="Start new chat">New</button>
+          <button id="undoHeader" type="button" class="menu-icon hidden" aria-label="Undo last changes" title="Undo last changes">Undo</button>
           <button id="backToChatQuick" type="button" class="menu-icon panel-icon hidden" aria-label="Back to blank stage" title="Back to blank stage">&#8592;</button>
-          <button id="newThreadQuick" type="button" class="menu-icon quick-new" aria-label="Start new chat">New chat</button>
         </div>
       </div>
       <div id="modeBanner" class="mode-banner hidden">Plan mode active: I will plan before acting.</div>
@@ -5278,9 +5785,13 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
                     <span id="contextPill" class="context-pill">IDE Context: ON</span>
                   </label>
                   <div class="spacer"></div>
-                  <button id="actionMenuBtn" type="button" class="icon-btn gear-btn" aria-label="Settings" title="Settings" aria-expanded="false">&#8942;</button>
                   <button id="s" type="button" class="primary send-round" aria-label="Send">&#8593;</button>
                   <span id="queuePill" class="queue-pill" title="Queued messages">Queued: 0</span>
+                </div>
+                <div id="contextTelemetry" class="context-telemetry" aria-live="polite">
+                  <span id="contextAutoBadge" class="context-auto-badge idle">Auto Context</span>
+                  <span id="contextTelemetryText" class="context-telemetry-text">Background sync standing by.</span>
+                  <span id="contextTelemetryMeta" class="context-telemetry-meta">idle</span>
                 </div>
                 <div class="composer-meta">
                   <button
@@ -5302,8 +5813,8 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
                   <div class="action-menu-sheet" role="dialog" aria-label="Composer settings">
                     <div class="sheet-head">
                       <div>
-                        <div class="sheet-title">More settings</div>
-                        <div class="sheet-sub">Advanced controls inside your composer.</div>
+                        <div class="sheet-title">Settings</div>
+                        <div class="sheet-sub">Session, model, and account controls.</div>
                       </div>
                       <div class="sheet-head-actions">
                         <button id="authSignOutQuick" class="action-item" type="button" style="display:none">Sign out</button>
@@ -5313,7 +5824,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
 
                     <div class="sheet-grid">
                       <div class="sheet-card">
-                        <div class="sheet-card-title">Quick controls</div>
+                        <div class="sheet-card-title">Session</div>
                         <div class="sheet-row">
                           <select id="modeQuick" class="composer-select">
                             <option value="auto">Mode: Auto</option>
@@ -5327,18 +5838,6 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
                             <option value="max">Extra High</option>
                           </select>
                         </div>
-                      </div>
-                      <div class="sheet-card">
-                        <div class="sheet-card-title">Model</div>
-                        <div class="sheet-row">
-                          <select id="modelSel" class="composer-select">
-                            <option value="${DEFAULT_PLAYGROUND_MODEL}">${modelLabelForUi(DEFAULT_PLAYGROUND_MODEL)}</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div class="sheet-card">
-                        <div class="sheet-card-title">Conversation</div>
                         <div class="sheet-row sheet-toggle">
                           <label class="tool-toggle" for="safetyQuick">
                             <span>Safety profile</span>
@@ -5355,7 +5854,32 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
                           </label>
                         </div>
                       </div>
-
+                      <div class="sheet-card">
+                        <div class="sheet-card-title">Model</div>
+                        <div class="sheet-row">
+                          <select id="modelSel" class="composer-select">
+                            <option value="${DEFAULT_PLAYGROUND_MODEL}">${modelLabelForUi(DEFAULT_PLAYGROUND_MODEL)}</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div class="sheet-card">
+                        <div class="sheet-card-title">Account</div>
+                        <div class="sheet-row">
+                          <span id="authLabel" class="tool-muted">Not signed in.</span>
+                        </div>
+                        <div class="sheet-grid">
+                          <button id="authSignIn" class="action-item" type="button">Sign in</button>
+                          <button id="authSignOut" class="action-item" type="button">Sign out</button>
+                        </div>
+                      </div>
+                      <div class="sheet-card">
+                        <div class="sheet-card-title">API Key</div>
+                        <div class="api-key-row">
+                          <input id="apiKeyInline" class="api-key-input" type="password" placeholder="xp_..." />
+                          <button id="apiKeyInlineSave" class="api-key-save" type="button">Save</button>
+                        </div>
+                        <div class="api-key-hint">Stored securely in VS Code secrets.</div>
+                      </div>
                       <div class="sheet-card">
                         <div class="sheet-card-title">Attachments</div>
                         <div class="sheet-row">
@@ -5365,47 +5889,9 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
                       </div>
 
                     <div class="sheet-card">
-                      <div class="sheet-card-title">Account</div>
-                      <div class="sheet-row">
-                        <span id="authLabel" class="tool-muted">Not signed in.</span>
-                      </div>
+                      <div class="sheet-card-title">Utilities</div>
                       <div class="sheet-grid">
-                        <button id="authSignIn" class="action-item" type="button">Sign in</button>
-                        <button id="authSignOut" class="action-item" type="button">Sign out</button>
-                      </div>
-                    </div>
-
-                    <div class="sheet-card">
-                      <div class="sheet-card-title">Your API Key</div>
-                      <div class="api-key-row">
-                        <input id="apiKeyInline" class="api-key-input" type="password" placeholder="xp_..." />
-                        <button id="apiKeyInlineSave" class="api-key-save" type="button">Save</button>
-                      </div>
-                      <div class="api-key-hint">Stored securely in VS Code secrets.</div>
-                    </div>
-
-                    <div class="sheet-card">
-                      <div class="sheet-card-title">Panels</div>
-                      <div class="sheet-grid">
-                        <button class="action-item" type="button" data-menu-action="show:chat">Stage: Chat</button>
-                        <button class="action-item" type="button" data-menu-action="show:stageBlank">Stage: Blank</button>
-                        <button class="action-item" type="button" data-menu-action="show:stageThreads">Stage: Threads</button>
-                        <button class="action-item" type="button" data-menu-action="show:timeline">Stage: Timeline</button>
-                        <button class="action-item" type="button" data-menu-action="show:history">Stage: History</button>
-                        <button class="action-item" type="button" data-menu-action="show:index">Stage: Index</button>
-                        <button class="action-item" type="button" data-menu-action="show:agents">Stage: Agents</button>
-                        <button class="action-item" type="button" data-menu-action="show:exec">Stage: Execution</button>
-                      </div>
-                    </div>
-
-                    <div class="sheet-card">
-                      <div class="sheet-card-title">Actions</div>
-                      <div class="sheet-grid">
-                        <button id="newThreadBtn" class="action-item" type="button">New Chat</button>
-                        <button id="undoLastBtn" class="action-item" type="button">Undo Last Changes</button>
                         <button id="c" class="action-item" type="button">Clear Chat</button>
-                        <button class="action-item" type="button" data-menu-action="execute">Execute Pending Actions</button>
-                        <button class="action-item" type="button" data-menu-action="history">Refresh History</button>
                         <button class="action-item" type="button" data-menu-action="replay">Replay Session</button>
                         <button class="action-item" type="button" data-menu-action="indexRebuild">Rebuild Index</button>
                       </div>
