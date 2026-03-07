@@ -18,6 +18,14 @@ type ChatMessage = {
   pending?: boolean;
 };
 
+type ChatViewer = {
+  userId: string;
+  email: string;
+  isAnonymous: boolean;
+  accountType: string;
+  source: string;
+};
+
 function makeId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -135,6 +143,7 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
 export function ChatApp() {
   const [booting, setBooting] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<ChatViewer | null>(null);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -147,7 +156,6 @@ export function ChatApp() {
   const messageViewportRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const pendingSessionIdRef = useRef<string | null>(null);
-  const suppressNextLoadRef = useRef(false);
   const isEmpty = !loadingMessages && messages.length === 0;
 
   const activeSession = useMemo(
@@ -226,6 +234,26 @@ export function ChatApp() {
           const text = await bootRes.text();
           throw new Error(text || "Bootstrap failed");
         }
+        const bootJson = (await bootRes.json().catch(() => ({}))) as {
+          data?: { viewer?: unknown };
+        };
+        const candidate = bootJson?.data?.viewer as Partial<ChatViewer> | undefined;
+        const nextViewer =
+          candidate &&
+          typeof candidate.userId === "string" &&
+          typeof candidate.email === "string" &&
+          typeof candidate.isAnonymous === "boolean" &&
+          typeof candidate.accountType === "string" &&
+          typeof candidate.source === "string"
+            ? ({
+                userId: candidate.userId,
+                email: candidate.email,
+                isAnonymous: candidate.isAnonymous,
+                accountType: candidate.accountType,
+                source: candidate.source,
+              } as ChatViewer)
+            : null;
+        if (!cancelled) setViewer(nextViewer);
         const rows = await refreshSessions();
         if (cancelled) return;
         if (rows.length === 0) {
@@ -240,6 +268,7 @@ export function ChatApp() {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : "Could not initialize chat";
         setBootError(message);
+        setViewer(null);
       } finally {
         if (!cancelled) setBooting(false);
       }
@@ -251,10 +280,6 @@ export function ChatApp() {
 
   useEffect(() => {
     if (!activeSessionId) return;
-    if (suppressNextLoadRef.current) {
-      suppressNextLoadRef.current = false;
-      return;
-    }
     void loadMessages(activeSessionId);
   }, [activeSessionId, loadMessages]);
 
@@ -395,7 +420,6 @@ export function ChatApp() {
         const rows = await refreshSessions();
         const nextActiveId = resolvedSessionId ?? rows[0]?.id ?? null;
         if (nextActiveId && nextActiveId !== activeSessionId) {
-          suppressNextLoadRef.current = true;
           setActiveSessionId(nextActiveId);
         }
         setStatusText(null);
@@ -501,7 +525,9 @@ export function ChatApp() {
                 <span className="chat-editorial-brand-icon" aria-hidden="true">◎</span>
                 <div>
                   <p className="text-sm font-semibold text-[var(--chat-text-primary)]">Playground 1</p>
-                  <p className="text-xs text-[var(--chat-text-muted)]">Personal</p>
+                  <p className="text-xs text-[var(--chat-text-muted)]">
+                    {viewer && !viewer.isAnonymous ? viewer.email : "Personal"}
+                  </p>
                 </div>
                 <svg className="chat-editorial-brand-chevron" viewBox="0 0 20 20" aria-hidden="true">
                   <path d="m5 7 5 5 5-5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
@@ -511,12 +537,20 @@ export function ChatApp() {
                 <Link href="/" className="chat-editorial-brand-link">
                   Home
                 </Link>
-                <Link href="/auth/signin" className="chat-editorial-brand-link">
-                  Sign In
-                </Link>
-                <Link href="/auth/signup" className="chat-editorial-brand-link is-primary">
-                  Sign Up
-                </Link>
+                {viewer && !viewer.isAnonymous ? (
+                  <Link href="/dashboard" className="chat-editorial-brand-link is-primary">
+                    Dashboard
+                  </Link>
+                ) : (
+                  <>
+                    <Link href="/auth/signin" className="chat-editorial-brand-link">
+                      Sign In
+                    </Link>
+                    <Link href="/auth/signup" className="chat-editorial-brand-link is-primary">
+                      Sign Up
+                    </Link>
+                  </>
+                )}
               </div>
 
               <button onClick={onNewChat} className="chat-editorial-side-action" type="button">

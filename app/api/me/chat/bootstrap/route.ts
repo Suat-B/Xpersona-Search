@@ -12,7 +12,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const existing = await resolveExistingChatActor(request);
     if (existing) {
       const trial = await ensureChatTrialEntitlement(existing.userId);
-      return NextResponse.json({
+      const response = NextResponse.json({
         success: true,
         data: {
           ready: true,
@@ -26,6 +26,8 @@ export async function POST(request: NextRequest): Promise<Response> {
           trial,
         },
       });
+      applyChatActorCookie(response, existing);
+      return response;
     }
 
     const rl = await checkChatBootstrapRateLimit(request);

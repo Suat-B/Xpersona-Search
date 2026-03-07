@@ -1783,6 +1783,10 @@ class Provider implements vscode.WebviewViewProvider {
               ...(this.lastRunMeta || {}),
               reasonCodes: codes as string[],
             };
+            this.postRun(runThreadId, {
+              type: "reasonCodes",
+              codes: codes as string[],
+            });
           } else if (ev === "meta") {
             this.lastRunMeta = (p || null) as RunMeta | null;
             this.postRun(runThreadId, { type: "meta", data: p });
@@ -1841,19 +1845,36 @@ class Provider implements vscode.WebviewViewProvider {
       const meta = ((this as unknown as { lastRunMeta?: RunMeta | null }).lastRunMeta || {}) as RunMeta;
       const autonomy = meta.autonomyDecision;
       const validation = meta.validationPlan;
+      const explicitCommandIntent = this.hasExplicitCommandRunIntent(text);
+      const decisionConfidence =
+        typeof autonomy?.confidence === "number"
+          ? autonomy.confidence
+          : typeof meta.intent?.confidence === "number"
+            ? meta.intent.confidence
+            : undefined;
       const autoApplyEdits =
         policy === "full_auto"
           ? hasEditActions
           : policy === "preview_first"
             ? false
             : hasEditActions && (this.mode === "yolo" || this.mode === "auto") && autonomy?.autoApplyEdits !== false;
-      const autoRunValidation =
+      let autoRunValidation =
         policy === "full_auto"
           ? hasCommandActions
           : policy === "preview_first"
             ? false
             : (this.mode === "yolo" || this.mode === "auto") &&
-              (autonomy?.autoRunValidation === true || this.hasExplicitCommandRunIntent(text) || hasCommandActions);
+              (autonomy?.autoRunValidation === true || explicitCommandIntent || hasCommandActions);
+      const lowConfidenceCommandOnly =
+        hasCommandActions &&
+        !hasEditActions &&
+        this.mode !== "yolo" &&
+        !explicitCommandIntent &&
+        typeof decisionConfidence === "number" &&
+        decisionConfidence < 0.72;
+      if (lowConfidenceCommandOnly) {
+        autoRunValidation = false;
+      }
 
       if (hasEditActions && !autoApplyEdits) {
         this.postRun(runThreadId, {
@@ -1898,6 +1919,14 @@ class Provider implements vscode.WebviewViewProvider {
         }
         await this.executePendingActions(actionsToExecute, runThreadId);
       } else {
+        if (lowConfidenceCommandOnly && hasCommandActions && !hasEditActions) {
+          if (!conversational) {
+            this.postRun(runThreadId, { type: "status", text: "No runnable commands extracted; kept in preview." });
+            this.postRun(runThreadId, { type: "prefill", text: "run anyway" });
+          }
+          this.post({ type: "pendingActions", count: this.pendingActions.length });
+          return;
+        }
         if (!conversational) {
           const modeLabel = validation?.scope === "targeted" ? "Targeted validation skipped" : "Auto-execution skipped";
           this.postRun(runThreadId, { type: "status", text: `Prepared ${this.pendingActions.length} action(s). ${modeLabel}. Execution policy prevented auto-run.` });
@@ -2023,6 +2052,7 @@ class Provider implements vscode.WebviewViewProvider {
       return true;
     });
     if (!actionList.length) return this.postRun(runThreadId, { type: "status", text: "No pending actions to execute." });
+    const expectedFileChanges = actionList.some((action) => action.type === "edit" || action.type === "mkdir" || action.type === "write_file");
 
     const editActionCount = actionList.filter((action) => action.type === "edit" || action.type === "mkdir" || action.type === "write_file").length;
     const commandActionCount = actionList.filter((action) => action.type === "command").length;
@@ -2156,10 +2186,12 @@ class Provider implements vscode.WebviewViewProvider {
       data: {
         filesChanged: changedPaths.size,
         checksRun: launchedCommands,
-        quality: applyErrors.length ? "needs_attention" : "good",
+        quality: applyErrors.length || (expectedFileChanges && changedPaths.size === 0) ? "needs_attention" : "good",
         summary: applyErrors.length
           ? "Applied edits with warnings. Review rejected patches."
-          : "Actions completed successfully.",
+          : expectedFileChanges && changedPaths.size === 0
+            ? "No file edits were applied."
+            : "Actions completed successfully.",
         perFile: perFileStatuses,
       },
     });
@@ -2668,6 +2700,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         font-family: var(--vscode-font-family);
         color: var(--fg);
         background: var(--bg-0);
+        overflow: hidden;
       }
       button, select, input, textarea { font-family: inherit; font-size: 12px; }
       button, select, input {
@@ -3082,6 +3115,83 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         padding: 10px 12px;
       }
       .a { background: transparent; color: #f0f0f0; }
+      .stream-pending .m-body {
+        color: color-mix(in srgb, var(--fg) 72%, var(--muted) 28%);
+        font-style: italic;
+      }
+      .reasoning {
+        max-width: min(760px, calc(100% - 8px));
+      }
+      .reasoning-disclosure {
+        margin: 0;
+        border: 1px solid var(--surface-border);
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--surface) 86%, var(--bg-0));
+        overflow: hidden;
+      }
+      .reasoning-disclosure > summary {
+        list-style: none;
+        cursor: pointer;
+        user-select: none;
+        padding: 8px 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 11px;
+        font-weight: 600;
+        color: color-mix(in srgb, var(--fg) 84%, var(--muted));
+        border-bottom: 1px solid color-mix(in srgb, var(--surface-border) 74%, transparent);
+        background: color-mix(in srgb, var(--surface) 78%, var(--bg-0));
+      }
+      .reasoning-disclosure > summary::-webkit-details-marker {
+        display: none;
+      }
+      .reasoning-summary-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .reasoning-live {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 10px;
+        color: color-mix(in srgb, var(--accent) 72%, var(--fg) 28%);
+      }
+      .reasoning-live i {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--accent) 88%, white 12%);
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 38%, transparent);
+        animation: reasoning-pulse 1.2s ease-out infinite;
+      }
+      .reasoning-list {
+        margin: 0;
+        padding: 8px 14px 10px 24px;
+        display: grid;
+        gap: 6px;
+        font-size: 12px;
+        color: color-mix(in srgb, var(--fg) 74%, var(--muted) 26%);
+      }
+      .reasoning-list li {
+        overflow-wrap: anywhere;
+      }
+      @keyframes reasoning-pulse {
+        0% {
+          transform: scale(0.95);
+          box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+        }
+        70% {
+          transform: scale(1);
+          box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 0%, transparent);
+        }
+        100% {
+          transform: scale(0.95);
+          box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent);
+        }
+      }
       .e {
         background: color-mix(in srgb, var(--err) 22%, transparent);
         border-color: color-mix(in srgb, var(--err) 55%, var(--border));
@@ -3928,6 +4038,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         align-items: center;
         justify-content: space-between;
         gap: 12px;
+        flex-wrap: wrap;
         padding: 12px 16px 10px;
       }
       .brand-block {
@@ -3961,6 +4072,9 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         display: inline-flex;
         align-items: center;
         gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        max-width: 100%;
       }
       .thread-section-title,
       .tool-muted,
@@ -4034,6 +4148,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       .quick-new {
         padding: 0 14px 0 12px;
         font-weight: 700;
+        white-space: nowrap;
       }
       .quick-new::before {
         content: "+";
@@ -4306,7 +4421,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         border: none;
         border-radius: 0;
         background: transparent;
-        overflow: visible;
+        overflow: hidden;
         display: flex;
         flex-direction: column;
         padding: 0;
@@ -4316,7 +4431,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         flex: 1;
         min-height: 0;
         border-radius: 0;
-        overflow: visible;
+        overflow: hidden;
         display: flex;
         background: transparent;
       }
@@ -4360,6 +4475,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         flex: 1;
         min-height: 0;
         overflow: auto;
+        scrollbar-gutter: stable both-edges;
         padding: 0 16px;
       }
       #stageBlank.panel {
@@ -4379,7 +4495,9 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         flex-direction: column;
         cursor: text;
         padding: 10px 12px;
-        position: relative;
+        position: sticky;
+        bottom: 10px;
+        z-index: 30;
         margin: 0 16px 16px;
         box-shadow: 0 -12px 26px rgba(0, 0, 0, 0.28);
       }
@@ -4407,9 +4525,10 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         flex: 1;
         min-height: 0;
         overflow: auto;
+        overscroll-behavior: contain;
         display: flex;
         flex-direction: column;
-        padding: 0 0 10px;
+        padding: 0 0 8px;
       }
       .chat-panel .jump-wrap {
         bottom: 10px;
@@ -4432,19 +4551,17 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         background: transparent;
       }
       .messages {
-        flex: 1;
-        min-height: 100%;
         display: flex;
         flex-direction: column;
-        justify-content: flex-end;
         gap: 18px;
-        padding: 18px 0 48px;
+        padding: 18px 0 20px;
         max-width: 840px;
         margin: 0 auto;
       }
       .m-body {
         font-size: 13px;
         line-height: 1.65;
+        overflow-wrap: anywhere;
       }
       .m-time {
         font-size: 10px;
@@ -4711,6 +4828,10 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
           right: 0;
           left: 0;
           width: 100%;
+        }
+        .global-actions {
+          width: 100%;
+          justify-content: flex-start;
         }
         .u {
           max-width: 95%;

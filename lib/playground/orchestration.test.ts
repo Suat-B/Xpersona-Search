@@ -122,6 +122,18 @@ describe("playground deterministic actions", () => {
 });
 
 describe("playground identity guardrail", () => {
+  it("answers country-of-origin probes with the configured country", async () => {
+    const result = await runAssist({
+      mode: "auto",
+      task: "What country were u made in?",
+    });
+    expect(result.final).toBe("United States of America");
+    expect(result.edits).toHaveLength(0);
+    expect(result.commands).toHaveLength(0);
+    expect(result.actions).toHaveLength(0);
+    expect(result.decision.mode).toBe("generate");
+  });
+
   it("denies Qwen identity probes and redirects to Playground 1", async () => {
     const result = await runAssist({
       mode: "auto",
@@ -153,6 +165,30 @@ describe("playground identity guardrail", () => {
     });
     expect(result.final).not.toContain("I'm Playground 1. I'm not Qwen");
     expect(result.decision.mode).toBe("plan");
+  });
+});
+
+describe("playground conversational guardrails", () => {
+  it("answers year questions deterministically", async () => {
+    const expectedYear = new Intl.DateTimeFormat("en-US", { year: "numeric", timeZone: "America/Chicago" }).format(
+      new Date()
+    );
+    const result = await runAssist({
+      mode: "auto",
+      task: "what year is it",
+    });
+    expect(result.final).toContain(expectedYear);
+    expect(result.reasonCodes).toContain("conversation_deterministic_reply");
+  });
+
+  it("handles short acknowledgements without random identity output", async () => {
+    const result = await runAssist({
+      mode: "auto",
+      task: "nice",
+    });
+    expect(result.final).toBe("Happy to help. Tell me what you'd like to do next.");
+    expect(result.final.toLowerCase()).not.toContain("china");
+    expect(result.reasonCodes).toContain("conversation_deterministic_reply");
   });
 });
 

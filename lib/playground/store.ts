@@ -90,6 +90,15 @@ export async function listSessions(input: {
       .orderBy(desc(playgroundSessions.updatedAt))
       .limit(limit + 1);
 
+    // If DB read succeeds but returns nothing while in-memory fallback has rows
+    // (e.g., DB write path failed earlier), prefer memory so recents still work.
+    if (rows.length === 0) {
+      const memoryRows = memory.sessions.get(input.userId) ?? [];
+      if (memoryRows.length > 0) {
+        return { data: memoryRows.slice(0, limit), nextCursor: null };
+      }
+    }
+
     const hasMore = rows.length > limit;
     const data = rows.slice(0, limit);
     const nextCursor = hasMore && data.length ? data[data.length - 1].updatedAt?.toISOString() ?? null : null;

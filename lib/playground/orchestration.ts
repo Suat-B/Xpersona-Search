@@ -1,5 +1,6 @@
 import { checkRateLimits, getUserPlan } from "@/lib/hf-router/rate-limit";
 import { hasUnlimitedPlaygroundAccess } from "@/lib/playground/auth";
+import { looksLikeShellCommand } from "@/lib/playground/policy";
 
 export type AssistMode = "auto" | "plan" | "yolo" | "generate" | "debug";
 export type AssistDecisionMode = "plan" | "generate" | "debug" | "yolo";
@@ -131,10 +132,11 @@ type StructuredAssistOutput = {
 const HF_ROUTER_BASE_URL = "https://router.huggingface.co/v1";
 const STANDARD_CONTEXT_LIMIT = 32_000;
 const LONG_CONTEXT_LIMIT = 262_144;
-const DEFAULT_PLAYGROUND_MODEL = "Qwen/Qwen2.5-Coder-7B-Instruct:nscale";
+const DEFAULT_PLAYGROUND_MODEL = "openai/gpt-oss-20b:fastest";
 const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
 const IDENTITY_DENIAL_RESPONSE =
   "I'm Playground 1. I'm not Qwen, and I'm not nscale. I can still help with your task - what would you like to do next?";
+const COUNTRY_OF_ORIGIN_RESPONSE = "United States of America";
 const HF_REQUEST_TIMEOUT_MS = Number(process.env.PLAYGROUND_HF_REQUEST_TIMEOUT_MS || 90_000);
 const HF_STREAM_IDLE_TIMEOUT_MS = Number(process.env.PLAYGROUND_HF_STREAM_IDLE_TIMEOUT_MS || 45_000);
 const STREAM_RAW_MODEL_TOKENS = process.env.PLAYGROUND_STREAM_MODEL_TOKENS === "1";
@@ -178,6 +180,17 @@ function isQwenOrNscaleIdentityProbe(input: string): boolean {
   return /\b(are you|are u|who are you|what are you|is this|is it|do you use|are you using|using|powered by|running on|based on|model)\b/.test(
     normalized
   );
+}
+
+function isCountryOriginProbe(input: string): boolean {
+  const normalized = normalizeIdentityProbeText(input);
+  if (!normalized) return false;
+  const targetsAssistant = /\b(you|u|your|ur)\b/.test(normalized);
+  if (!targetsAssistant) return false;
+  if (/\bwhere are (you|u) from\b/.test(normalized)) return true;
+  if (/\bwhat country (are|were) (you|u)\b/.test(normalized)) return true;
+  if (/\b(country|origin)\b/.test(normalized) && /\b(from|made|built|created|born)\b/.test(normalized)) return true;
+  return /\b(made|built|created|born) in\b/.test(normalized);
 }
 
 function sanitizeProviderIdentityLeak(text: string): { text: string; changed: boolean } {
@@ -769,7 +782,7 @@ async function callHfChat(params: {
           {
             role: "system",
             content:
-              `You are Playground AI. Be practical, concise, and execution-oriented. Return plain text suitable for a coding assistant. If asked whether you are Qwen or nscale (or what nscale is in your identity/provider context), deny both and state you are ${PUBLIC_PLAYGROUND_MODEL_NAME}.`,
+              `You are Playground AI. Be practical, concise, and execution-oriented. Return plain text suitable for a coding assistant. Be factual and avoid fabrications. If you are unsure, say so and suggest how to verify. If the user corrects you, acknowledge the correction and update your answer. If asked whether you are Qwen or nscale (or what nscale is in your identity/provider context), deny both and state you are ${PUBLIC_PLAYGROUND_MODEL_NAME}.`,
           },
           { role: "user", content: buildUserMessageContent(params.prompt, params.attachments) },
         ],
@@ -1182,7 +1195,8 @@ export function composeWarmAssistantResponse(input: {
   });
 
   if ((input.actions?.length ?? 0) > 0 || input.edits.length > 0) {
-    const touched = Array.from(new Set([...input.edits.map((edit) => edit.path), ...actionPaths])).slice(0, 3).join(", ");
+    const touchedPaths = Array.from(new Set([...input.edits.map((edit) => edit.path), ...actionPaths])).slice(0, 3);
+    const touched = touchedPaths.join(", ");
     const resultLine = firstNonEmptyLine(cleaned);
     const nextAction =
       input.autonomyDecision.mode === "preview_only"
@@ -1190,8 +1204,11 @@ export function composeWarmAssistantResponse(input: {
         : input.autonomyDecision.mode === "auto_apply_and_validate"
           ? "Next action: changes were auto-applied and validation is running/complete. Review results in Execution and terminal."
           : "Next action: changes were auto-applied. Review execution details in the Execution panel.";
+    const headline = touched
+      ? `I prepared the requested update in ${touched}.`
+      : "I prepared an execution plan, but no file targets were identified yet.";
     return [
-      `I prepared the requested update in ${touched}.`,
+      headline,
       resultLine ? resultLine : "",
       nextAction,
     ]
@@ -1388,6 +1405,34 @@ function isPureConversationalTask(task: string): boolean {
   );
 }
 
+function getCurrentYearChicago(): string {
+  return new Intl.DateTimeFormat("en-US", { year: "numeric", timeZone: "America/Chicago" }).format(new Date());
+}
+
+function getDeterministicConversationalReply(task: string): string | null {
+  const normalized = normalizeIdentityProbeText(task);
+  if (!normalized) return "I'm here and ready to help. What would you like to do next?";
+
+  if (
+    /\b(what|which)\s+year\b/.test(normalized) ||
+    /\bcurrent year\b/.test(normalized) ||
+    /\bwhat s the year\b/.test(normalized) ||
+    /\bwhat year is it\b/.test(normalized)
+  ) {
+    return `It's ${getCurrentYearChicago()}.`;
+  }
+
+  if (isAcknowledgementLike(normalized)) {
+    return "Happy to help. Tell me what you'd like to do next.";
+  }
+
+  if (isGreetingLike(normalized)) {
+    return "Hey. What can I help you with right now?";
+  }
+
+  return null;
+}
+
 function detectLanguageFromPath(path: string): "ts" | "js" | "python" | "go" | "rust" | "docs" | "other" {
   const lower = path.toLowerCase();
   if (/\.(ts|tsx)$/.test(lower)) return "ts";
@@ -1472,7 +1517,7 @@ export function synthesizeDeterministicActions(input: {
     }
     if (action.type === "command") {
       const command = action.command.trim();
-      if (!command) continue;
+      if (!command || !looksLikeShellCommand(command)) continue;
       actions.push({ type: "command", command, ...(action.category ? { category: action.category } : {}) });
       continue;
     }
@@ -1500,7 +1545,7 @@ export function synthesizeDeterministicActions(input: {
 
   for (const command of input.commands) {
     const cleaned = command.trim();
-    if (!cleaned) continue;
+    if (!cleaned || !looksLikeShellCommand(cleaned)) continue;
     actions.push({ type: "command", command: cleaned, category: "validation" });
   }
 
@@ -1794,8 +1839,16 @@ export async function runAssist(
   if (req.executionPolicy) {
     reasonCodes.push(`execution_policy_${req.executionPolicy}`);
   }
+  const isCountryOriginProbeTask = isCountryOriginProbe(req.task);
   const isIdentityProbe = isQwenOrNscaleIdentityProbe(req.task);
-  if (isIdentityProbe) {
+  if (isCountryOriginProbeTask) {
+    decision = {
+      mode: "generate",
+      reason: "Country-of-origin probe detected; enforcing country guardrail.",
+      confidence: 0.99,
+    };
+    reasonCodes.push("identity_guardrail_country_origin");
+  } else if (isIdentityProbe) {
     decision = {
       mode: "generate",
       reason: "Identity probe detected; enforcing product identity guardrail.",
@@ -1839,6 +1892,13 @@ export async function runAssist(
   };
   const explicitCommandRunIntent = hasExplicitCommandRunIntent(req.task);
   const pureConversationalTask = isPureConversationalTask(req.task);
+  const deterministicConversationReply =
+    pureConversationalTask && !isCountryOriginProbeTask && !isIdentityProbe
+      ? getDeterministicConversationalReply(req.task)
+      : null;
+  if (deterministicConversationReply) {
+    reasonCodes.push("conversation_deterministic_reply");
+  }
   const codeEditIntent = !pureConversationalTask && (hasCodeEditIntent(req.task) || intentResolution.intent === "code_edit");
   const reasoningPreference = extractReasoningPreference(req.workflowIntentId);
   const preferredReasoning = req.clientPreferences?.reasoning || req.userProfile?.reasoningPreference || null;
@@ -1853,9 +1913,15 @@ export async function runAssist(
           : effectiveReasoning === "medium"
             ? "Reasoning preference: medium. Use balanced reasoning with concise steps."
             : null;
-  if (isIdentityProbe) {
+  if (isCountryOriginProbeTask) {
+    final = COUNTRY_OF_ORIGIN_RESPONSE;
+    logs.push("identity_guardrail=country_origin_override");
+  } else if (isIdentityProbe) {
     final = IDENTITY_DENIAL_RESPONSE;
     logs.push(`identity_guardrail=enforced model=${PUBLIC_PLAYGROUND_MODEL_NAME}`);
+  } else if (deterministicConversationReply) {
+    final = deterministicConversationReply;
+    logs.push("conversation_guardrail=deterministic_smalltalk");
   } else if (decision.mode === "plan") {
     final = [
       `Objective: ${plan?.objective}`,
@@ -2142,12 +2208,19 @@ export async function runAssist(
   }
 
   const confidence = Math.max(0.05, Math.min(0.99, decision.confidence));
+  const commandCandidatesCount =
+    modelCommands.length +
+    structuredActions.filter((action) => action.type === "command").length;
   const actions = synthesizeDeterministicActions({
     task: req.task,
     edits,
     commands: modelCommands,
     structuredActions,
   });
+  const runnableCommandsCount = actions.filter((action) => action.type === "command").length;
+  if (commandCandidatesCount > runnableCommandsCount) {
+    logs.push(`dropped_non_shell_commands=${commandCandidatesCount - runnableCommandsCount}`);
+  }
   const validationPlan = buildValidationPlan({
     task: req.task,
     actions,
@@ -2186,6 +2259,16 @@ export async function runAssist(
       reason: "No actionable edits/commands were produced for this request.",
     };
   }
+  if (
+    actionability?.summary === "clarification_needed" &&
+    commandCandidatesCount > 0 &&
+    runnableCommandsCount === 0
+  ) {
+    actionability = {
+      summary: "clarification_needed",
+      reason: "No runnable commands extracted; kept in preview.",
+    };
+  }
 
   let commands: string[] = [];
   if (autonomyDecision.autoRunValidation) {
@@ -2212,7 +2295,7 @@ export async function runAssist(
     commands = [];
   }
 
-  if (decision.mode !== "plan") {
+  if (decision.mode !== "plan" && !isCountryOriginProbeTask) {
     final = composeWarmAssistantResponse({
       final,
       task: req.task,
@@ -2242,6 +2325,10 @@ export async function runAssist(
       final = IDENTITY_DENIAL_RESPONSE;
       logs.push("identity_guardrail=post_normalization_override");
     }
+  }
+  if (isCountryOriginProbeTask && final.trim() !== COUNTRY_OF_ORIGIN_RESPONSE) {
+    final = COUNTRY_OF_ORIGIN_RESPONSE;
+    logs.push("identity_guardrail=country_origin_post_override");
   }
 
   const risk = inferRisk(decision.mode, req.task, commands);
@@ -2281,6 +2368,3 @@ export async function runAssist(
     actionability,
   };
 }
-
-
-

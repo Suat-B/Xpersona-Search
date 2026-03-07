@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthUser, getAgentCookieName, getAuthCookieOptions } from "@/lib/auth-utils";
+import { createAgentToken, getAuthUser, getAgentCookieName, getAuthCookieOptions } from "@/lib/auth-utils";
 import { createPlayAccount } from "@/lib/auth/play-account";
 import { db } from "@/lib/db";
 import { playgroundSubscriptions } from "@/lib/db/playground-schema";
@@ -34,6 +34,7 @@ export async function resolveExistingChatActor(request: NextRequest): Promise<Ch
     isAnonymous: user.accountType === "agent" && user.email.startsWith("play_"),
     accountType: user.accountType,
     source: "existing",
+    cookieToken: createAgentToken(user.id),
   };
 }
 

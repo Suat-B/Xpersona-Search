@@ -148,11 +148,14 @@
       const undoLastBtn = document.getElementById("undoLastBtn");
 
       let streamBubble = null;
+      let reasoningBubble = null;
       let streaming = false;
       let followLatest = true;
       let terminalBubble = null;
       let streamBuffer = "";
       let streamTimer = null;
+      let latestReasonCodes = [];
+      let latestRunMeta = null;
       let threadsOverlayOpen = false;
       const DEFAULT_MODEL = "Playground 1";
       const MAX_DIFF_ROWS = 400;
@@ -188,12 +191,24 @@
       let contextSummary = "";
       let undoAvailable = false;
       let undoCount = 0;
+      const queuedMessages = [];
+      let runProgressBubble = null;
+      const runStepState = {
+        plan: "pending",
+        actions: "pending",
+        execution: "pending",
+        outcome: "pending",
+        note: "",
+      };
+      const seenRunCommands = new Set();
+      const seenRunStatuses = new Set();
       const RUN_SCOPED_MESSAGE_TYPES = new Set([
         "start",
         "token",
         "status",
         "end",
         "assistant",
+        "reasonCodes",
         "editPreview",
         "terminalCommand",
         "fileAction",
@@ -202,6 +217,16 @@
         "execLogs",
         "err",
       ]);
+
+      function resetRunProgress() {
+        runStepState.plan = "pending";
+        runStepState.actions = "pending";
+        runStepState.execution = "pending";
+        runStepState.outcome = "pending";
+        runStepState.note = "";
+        seenRunCommands.clear();
+        seenRunStatuses.clear();
+      }
 
       function planAwareStateLabel(baseLabel) {
         const label = String(baseLabel || "Local");
@@ -486,6 +511,13 @@
         return diffDays + "d";
       }
 
+      function syncComposerHeight() {
+        if (!input) return;
+        input.style.height = "auto";
+        const next = Math.max(64, Math.min(220, input.scrollHeight || 64));
+        input.style.height = next + "px";
+      }
+
       function saveCurrentDraft() {
         if (!input || !currentThreadId) return;
         threadDrafts[currentThreadId] = input.value || "";
@@ -494,6 +526,7 @@
       function restoreDraftForThread(id) {
         if (!input) return;
         input.value = (id && threadDrafts[id]) ? threadDrafts[id] : "";
+        syncComposerHeight();
       }
 
       function isPinnedThread(id) {
@@ -905,8 +938,9 @@
       function flushStreamBuffer(force = false) {
         if (!streamBubble) return;
         const body = streamBubble.querySelector(".m-body");
-        if (streamBubble.classList.contains("typing")) {
+        if (streamBubble.classList.contains("typing") || streamBubble.classList.contains("stream-pending")) {
           streamBubble.classList.remove("typing");
+          streamBubble.classList.remove("stream-pending");
           if (body) body.textContent = "";
         }
         if (!body) return;
@@ -937,6 +971,7 @@
         if (!streamTimer) {
           streamTimer = setInterval(() => flushStreamBuffer(false), 18);
         }
+        flushStreamBuffer(false);
       }
 
       function addMessage(text, cls) {
@@ -944,6 +979,35 @@
         const body = d.querySelector(".m-body");
         if (body) body.textContent = text;
         return d;
+      }
+
+      function ensureRunProgressBubble() {
+        if (runProgressBubble && runProgressBubble.isConnected) return runProgressBubble;
+        runProgressBubble = createBubble("cmd run-progress");
+        return runProgressBubble;
+      }
+
+      function renderRunProgress() {
+        const bubble = ensureRunProgressBubble();
+        const body = bubble.querySelector(".m-body");
+        if (!body) return;
+        const statusIcon = (state) =>
+          state === "done" ? "[x]" : state === "running" ? "[~]" : state === "warn" ? "[!]" : "[ ]";
+        const lines = [
+          "Execution run",
+          statusIcon(runStepState.plan) + " Plan prepared",
+          statusIcon(runStepState.actions) + " Actions extracted",
+          statusIcon(runStepState.execution) + " Execution running",
+          statusIcon(runStepState.outcome) + " Outcome",
+        ];
+        if (runStepState.note) lines.push("Note: " + runStepState.note);
+        body.textContent = lines.join("\n");
+      }
+
+      function updateRunStep(step, nextState, note) {
+        if (step && runStepState[step] !== undefined) runStepState[step] = nextState;
+        if (typeof note === "string" && note.trim()) runStepState.note = note.trim();
+        renderRunProgress();
       }
 
       function appendUserAttachmentPreview(bubble, attachments) {
@@ -1031,13 +1095,84 @@
         return d;
       }
 
+      function updateReasoningCard() {
+        const meta = latestRunMeta && typeof latestRunMeta === "object" ? latestRunMeta : {};
+        const reasonCodes = Array.isArray(latestReasonCodes)
+          ? latestReasonCodes.filter((x) => typeof x === "string" && x.trim())
+          : [];
+        const lines = [];
+
+        if (reasonCodes.length) lines.push("Signals: " + reasonCodes.join(", "));
+
+        if (meta.decision) {
+          lines.push("Decision mode: " + String(meta.decision));
+        } else if (meta.autonomyDecision?.mode) {
+          lines.push("Decision mode: " + String(meta.autonomyDecision.mode));
+        }
+
+        if (typeof meta.confidence === "number" && Number.isFinite(meta.confidence)) {
+          lines.push("Confidence: " + Math.round(meta.confidence * 100) + "%");
+        }
+
+        if (meta.autonomyDecision?.rationale) {
+          lines.push("Rationale: " + String(meta.autonomyDecision.rationale));
+        }
+
+        if (meta.validationPlan?.reason) {
+          lines.push("Validation: " + String(meta.validationPlan.reason));
+        }
+
+        if (meta.actionability?.reason) {
+          lines.push("Actionability: " + String(meta.actionability.reason));
+        }
+
+        const checks = Array.isArray(meta.validationPlan?.checks)
+          ? meta.validationPlan.checks.filter((x) => typeof x === "string" && x.trim())
+          : [];
+        if (checks.length) lines.push("Checks: " + checks.slice(0, 5).join(", "));
+
+        if (!lines.length) {
+          if (reasoningBubble && reasoningBubble.isConnected) reasoningBubble.remove();
+          reasoningBubble = null;
+          return;
+        }
+
+        if (!reasoningBubble || !reasoningBubble.isConnected) {
+          reasoningBubble = createBubble("a reasoning");
+        }
+        const body = reasoningBubble.querySelector(".m-body");
+        if (!body) return;
+        const hadDetails = Boolean(body.querySelector("details"));
+        const open = body.querySelector("details")?.open ?? false;
+        body.innerHTML = "";
+        const details = document.createElement("details");
+        details.className = "reasoning-disclosure";
+        details.open = hadDetails ? open : true;
+
+        const summary = document.createElement("summary");
+        summary.innerHTML =
+          '<span class="reasoning-summary-title">Reasoning (if provided)</span>' +
+          (streaming ? '<span class="reasoning-live"><i></i>Live</span>' : "");
+        details.appendChild(summary);
+
+        const list = document.createElement("ul");
+        list.className = "reasoning-list";
+        lines.forEach((line) => {
+          const li = document.createElement("li");
+          li.textContent = line;
+          list.appendChild(li);
+        });
+        details.appendChild(list);
+        body.appendChild(details);
+      }
+
       function ensureTerminalBubble() {
         if (terminalBubble && terminalBubble.isConnected) return terminalBubble;
         terminalBubble = createBubble("cmd terminal-live");
         const body = terminalBubble.querySelector(".m-body");
         if (body) {
           body.innerHTML =
-            '<details class="term-disclosure" open>' +
+            '<details class="term-disclosure">' +
               '<summary class="term-head">' +
                 '<span class="term-title">Terminal</span>' +
                 '<span class="term-state" data-term-state>Idle</span>' +
@@ -1564,7 +1699,13 @@
           /^Preparing actions/i.test(s) ||
           /^Validating output/i.test(s) ||
           /^Working:/i.test(s) ||
-          /^Thinking/i.test(s)
+          /^Thinking/i.test(s) ||
+          /^Repairing tool output/i.test(s) ||
+          /^Enforcing actionable tool output/i.test(s) ||
+          /^Prepared .+Auto-executing now\./i.test(s) ||
+          /^Prepared .+not executed\./i.test(s) ||
+          /^Prepared .+Execution policy prevented auto-run\./i.test(s) ||
+          /^No runnable commands extracted; kept in preview\./i.test(s)
         );
       }
 
@@ -1591,6 +1732,7 @@
         if (!isBusy) updateJump();
         updateStartupVisibility();
         if (!isBusy) updateComposerState();
+        updateReasoningCard();
       }
 
       function requestCancel() {
@@ -1599,13 +1741,65 @@
         setRunState("Stopping...");
       }
 
+      function queueMessageDuringStream(text, previewAttachments) {
+        const payload = {
+          text,
+          attachments: Array.isArray(previewAttachments) ? previewAttachments : [],
+          parallel: Boolean(parallelQuick && parallelQuick.checked),
+          model: modelSel ? modelSel.value : DEFAULT_MODEL,
+          reasoning: reasonSel ? reasonSel.value : "medium",
+          includeIdeContext: true,
+          workspaceContextLevel: "max",
+          threadId: currentThreadId,
+        };
+        queuedMessages.push(payload);
+        addMessage("Queued message (" + queuedMessages.length + "): " + text, "cmd");
+      }
+
+      function dispatchPromptPayload(payload) {
+        if (!payload || !payload.text) return;
+        clearPlanDecisionCard();
+        const userBubble = addMessage(payload.text, "u");
+        appendUserAttachmentPreview(userBubble, payload.attachments || []);
+        if (input) {
+          input.value = "";
+          syncComposerHeight();
+        }
+        if (currentThreadId) threadDrafts[currentThreadId] = "";
+        setStreaming(true);
+        streamBubble = addMessage("Streaming response...", "a stream-pending");
+        reasoningBubble = null;
+        latestReasonCodes = [];
+        latestRunMeta = null;
+        v.postMessage({
+          type: "send",
+          text: payload.text,
+          parallel: Boolean(payload.parallel),
+          model: payload.model || DEFAULT_MODEL,
+          reasoning: payload.reasoning || "medium",
+          includeIdeContext: payload.includeIdeContext !== false,
+          workspaceContextLevel: payload.workspaceContextLevel === "max" ? "max" : "max",
+          attachments: Array.isArray(payload.attachments) ? payload.attachments : [],
+          threadId: payload.threadId || currentThreadId,
+        });
+        setRunState("Sent");
+        scrollToLatest(true);
+      }
+
+      function flushQueuedMessages() {
+        if (streaming) return;
+        if (creatingThread) return;
+        const next = queuedMessages.shift();
+        if (!next) return;
+        dispatchPromptPayload(next);
+      }
+
       function sendCurrent() {
         try {
           closeMentionMenu();
           const composerInput = input || document.getElementById("t");
           if (!composerInput) return;
           const parsed = parseSlashModeCommand(composerInput.value || "");
-          if (streaming) return;
           if (creatingThread) {
             setRunState("Creating new chat...");
             addMessage("Creating new chat. Send your message in a moment.", "cmd");
@@ -1617,44 +1811,39 @@
           }
           const text = parsed.text;
           if (!text) return;
-
-          const now = Date.now();
-          if (now - lastSendAt < 120) return;
-          lastSendAt = now;
-
-          clearPlanDecisionCard();
           const previewAttachments = attachedFiles.map((f) => ({
             name: f.name,
             mimeType: f.mimeType,
             dataUrl: f.dataUrl,
           }));
-          const userBubble = addMessage(text, "u");
-          appendUserAttachmentPreview(userBubble, previewAttachments);
-          composerInput.value = "";
-          if (currentThreadId) threadDrafts[currentThreadId] = "";
-          setStreaming(true);
-          streamBubble = addTypingBubble();
+          if (streaming) {
+            queueMessageDuringStream(text, previewAttachments);
+            composerInput.value = "";
+            syncComposerHeight();
+            if (currentThreadId) threadDrafts[currentThreadId] = "";
+            attachedFiles = [];
+            if (uploadInput) uploadInput.value = "";
+            updateAttachmentUI();
+            return;
+          }
 
-          const parallelEnabled = Boolean(parallelQuick && parallelQuick.checked);
-          const attachmentPayload = previewAttachments;
-          const includeIdeContext = true;
+          const now = Date.now();
+          if (now - lastSendAt < 120) return;
+          lastSendAt = now;
 
-          v.postMessage({
-            type: "send",
+          dispatchPromptPayload({
             text,
-            parallel: parallelEnabled,
+            attachments: previewAttachments,
+            parallel: Boolean(parallelQuick && parallelQuick.checked),
             model: modelSel ? modelSel.value : DEFAULT_MODEL,
             reasoning: reasonSel ? reasonSel.value : "medium",
-            includeIdeContext,
+            includeIdeContext: true,
             workspaceContextLevel: "max",
-            attachments: attachmentPayload,
             threadId: currentThreadId,
           });
-          setRunState("Sent");
           attachedFiles = [];
           if (uploadInput) uploadInput.value = "";
           updateAttachmentUI();
-          scrollToLatest(true);
         } catch (e) {
           setStreaming(false);
           streamBubble = null;
@@ -1881,10 +2070,6 @@
           e.keyCode === 13 ||
           e.which === 13;
         if (!plainEnter) return;
-        if (streaming) {
-          requestCancel();
-          return;
-        }
         if (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) {
           allowNextLineBreak = true;
           return;
@@ -1924,6 +2109,7 @@
           if (currentThreadId) {
             threadDrafts[currentThreadId] = input.value || "";
           }
+          syncComposerHeight();
           scheduleMentionSearch();
         });
         input.addEventListener("beforeinput", (e) => {
@@ -1940,6 +2126,7 @@
           setTimeout(() => closeMentionMenu(), 90);
         });
         input.onkeydown = onComposerKeydown;
+        syncComposerHeight();
       }
       // Full composer wiring is complete; the early fallback sender can stand down.
       window.__playgroundComposerReady = true;
@@ -2105,10 +2292,15 @@
               : (count === 1 ? "1 image selected." : count + " images selected.");
           }
         } else if (m.type === "start") {
+          runProgressBubble = null;
+          resetRunProgress();
           setStreaming(true);
         } else if (m.type === "token") {
           if (!streaming) setStreaming(true);
           queueStreamText(String(m.text || ""));
+        } else if (m.type === "reasonCodes") {
+          latestReasonCodes = Array.isArray(m.codes) ? m.codes : [];
+          updateReasoningCard();
         } else if (m.type === "end") {
           const shouldShowPlanDecision = Boolean(streamBubble) && currentMode === "plan";
           if (streamBubble) {
@@ -2129,12 +2321,19 @@
           setRunState("Local");
           if (shouldShowPlanDecision) showPlanDecisionCard();
           if (followLatest) scrollToLatest();
+          if (queuedMessages.length > 0) {
+            setTimeout(() => flushQueuedMessages(), 0);
+          }
         } else if (m.type === "status") {
           const statusText = String(m.text || "");
           const now = Date.now();
           if (statusText && statusText === lastStatusText && now - lastStatusAt < 2500) {
             return;
           }
+          if (statusText && seenRunStatuses.has(statusText)) {
+            return;
+          }
+          if (statusText) seenRunStatuses.add(statusText);
           lastStatusText = statusText;
           lastStatusAt = now;
 
@@ -2142,17 +2341,30 @@
             terminalBubble = null;
             setTerminalState("Running");
             addTerminalLine("Starting execution...", "info");
+            updateRunStep("execution", "running");
             setProgressState("Executing");
           } else if (/^Execute finished:/i.test(statusText)) {
             setTerminalState("Done");
             addTerminalLine(statusText, "summary");
+            updateRunStep("execution", "done");
             activeProgressState = "";
             setRunState(streaming ? "Working..." : "Local");
           } else if (isProgressOnlyStatus(statusText)) {
+            if (/^Understanding request|^Planning approach|^Repairing tool output|^Enforcing actionable tool output|^Working on your request/i.test(statusText)) {
+              updateRunStep("plan", "running", statusText);
+            } else if (/^Preparing actions|^Prepared /i.test(statusText)) {
+              updateRunStep("actions", "running", statusText);
+            } else if (/^No runnable commands extracted; kept in preview\./i.test(statusText)) {
+              updateRunStep("actions", "warn", statusText);
+              updateRunStep("outcome", "warn");
+            } else {
+              updateRunStep("", "", statusText);
+            }
             if (statusText === activeProgressState) return;
             setProgressState(statusText);
           } else if (/^Ran\s+/i.test(statusText)) {
-            addMessage(statusText, "cmd");
+            // Suppress duplicate "Ran ..." chat noise; terminal stream already shows command activity.
+            return;
           } else {
             addMessage(statusText, "a");
           }
@@ -2164,14 +2376,20 @@
           addEditPreview(m.path || "unknown", m.patch || "");
         } else if (m.type === "terminalCommand") {
           setTerminalState("Running");
-          addTerminalLine("$ " + (m.command || ""), "cmdline");
-          addMessage("Ran " + (m.command || "command"), "cmd");
+          const commandText = String(m.command || "").trim();
+          if (!seenRunCommands.has(commandText)) {
+            addTerminalLine("$ " + commandText, "cmdline");
+            seenRunCommands.add(commandText);
+          }
+          updateRunStep("execution", "running");
           setProgressState("Executing");
         } else if (m.type === "fileAction") {
           const status = String(m.status || "applied");
           const reason = m.reason ? " (" + String(m.reason) + ")" : "";
           addMessage("[file] " + status + " " + (m.path || "unknown") + reason, "cmd");
+          updateRunStep("actions", "done");
         } else if (m.type === "meta") {
+          latestRunMeta = m.data || null;
           chips.innerHTML = "";
           if (modelSel?.value) {
             const mm = document.createElement("span");
@@ -2203,12 +2421,18 @@
             r.textContent = "Risk " + m.data.risk.blastRadius + " / rollback " + m.data.risk.rollbackComplexity;
             chips.appendChild(r);
           }
+          updateReasoningCard();
         } else if (m.type === "actionOutcome") {
           const data = m.data || {};
           const filesChanged = Number(data.filesChanged || 0);
           const checksRun = Number(data.checksRun || 0);
           const quality = String(data.quality || "unknown");
           const summary = String(data.summary || "");
+          const outcomeNote = "files=" + filesChanged + ", checks=" + checksRun + ", quality=" + quality + (summary ? " - " + summary : "");
+          updateRunStep("plan", runStepState.plan === "pending" ? "done" : runStepState.plan);
+          updateRunStep("actions", runStepState.actions === "pending" ? "done" : runStepState.actions);
+          updateRunStep("execution", runStepState.execution === "pending" ? "done" : runStepState.execution);
+          updateRunStep("outcome", quality === "good" ? "done" : "warn", outcomeNote);
           const outcome = [
             "Action outcome",
             "Files changed: " + filesChanged,
@@ -2217,6 +2441,9 @@
             summary ? summary : "",
           ].filter(Boolean).join("\n");
           addMessage(outcome, quality === "good" ? "cmd" : "a");
+          if (filesChanged === 0 && quality !== "good") {
+            addMessage("Warning: No edits were applied.", "a");
+          }
         } else if (m.type === "timeline") {
           const rows = m.data || [];
           timeline.innerHTML = rows.map((x) => (
@@ -2326,10 +2553,12 @@
           clearPlanDecisionCard();
           setStreaming(false);
           streamBubble = null;
+          updateRunStep("outcome", "warn", String(m.text || "Error"));
           addMessage("Error: " + m.text, "e");
           setRunState("Error");
         } else if (m.type === "prefill") {
           input.value = m.text || "";
+          syncComposerHeight();
         } else if (m.type === "load") {
           creatingThread = false;
           clearPlanDecisionCard();
@@ -2337,6 +2566,9 @@
           setStreaming(false);
           streamBubble = null;
           terminalBubble = null;
+          runProgressBubble = null;
+          resetRunProgress();
+          queuedMessages.length = 0;
           activeProgressState = "";
           lastStatusText = "";
           lastStatusAt = 0;
@@ -2350,6 +2582,7 @@
           updateStartupVisibility();
           renderThreadList();
           restoreDraftForThread(currentThreadId);
+          syncComposerHeight();
           showTab("chat");
           followLatest = true;
           scrollToLatest(true);
