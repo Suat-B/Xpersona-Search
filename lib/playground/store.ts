@@ -151,6 +151,34 @@ export async function createSession(input: {
   }
 }
 
+export async function getSessionById(input: {
+  userId: string;
+  sessionId: string;
+}): Promise<SessionRecord | null> {
+  try {
+    const rows = await db
+      .select({
+        id: playgroundSessions.id,
+        userId: playgroundSessions.userId,
+        title: playgroundSessions.title,
+        mode: playgroundSessions.mode,
+        workspaceFingerprint: playgroundSessions.workspaceFingerprint,
+        metadata: playgroundSessions.metadata,
+        traceId: playgroundSessions.traceId,
+        lastError: playgroundSessions.lastError,
+        createdAt: playgroundSessions.createdAt,
+        updatedAt: playgroundSessions.updatedAt,
+      })
+      .from(playgroundSessions)
+      .where(and(eq(playgroundSessions.userId, input.userId), eq(playgroundSessions.id, input.sessionId)))
+      .limit(1);
+    return rows[0] ?? null;
+  } catch {
+    const data = memory.sessions.get(input.userId) ?? [];
+    return data.find((row) => row.id === input.sessionId) ?? null;
+  }
+}
+
 export async function listSessionMessages(input: {
   userId: string;
   sessionId: string;

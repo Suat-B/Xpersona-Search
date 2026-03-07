@@ -5,9 +5,9 @@ import { guardPlaygroundAccess, runAssist } from "@/lib/playground/orchestration
 import {
   appendSessionMessage,
   createSession,
+  getSessionById,
   getUserPlaygroundProfile,
   listSessionMessages,
-  listSessions,
   logAgentRun,
   upsertUserPlaygroundProfile,
 } from "@/lib/playground/store";
@@ -60,6 +60,89 @@ function buildRecoveryTask(task: string, errorMessage: string, attempt: number):
     `\n\nRecovery note (attempt ${attempt}): The previous attempt failed with error: ${errorMessage}. ` +
     "Continue with the original task, resolve the issue, and complete the response.";
   return task + suffix;
+}
+
+function normalizeForRepeatCheck(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .trim();
+}
+
+function tokenizeForOverlap(value: string): Set<string> {
+  return new Set(
+    normalizeForRepeatCheck(value)
+      .split(" ")
+      .map((token) => token.trim())
+      .filter((token) => token.length >= 2)
+  );
+}
+
+function tokenOverlapRatio(a: string, b: string): number {
+  const aTokens = tokenizeForOverlap(a);
+  const bTokens = tokenizeForOverlap(b);
+  if (!aTokens.size || !bTokens.size) return 0;
+  let overlap = 0;
+  for (const token of aTokens) {
+    if (bTokens.has(token)) overlap += 1;
+  }
+  return overlap / Math.max(aTokens.size, bTokens.size);
+}
+
+function extractNumericAtoms(value: string): string[] {
+  return normalizeForRepeatCheck(value).match(/\b\d+\b/g) ?? [];
+}
+
+function isStaleRepeatResponse(input: {
+  final: string;
+  task: string;
+  priorConversationHistory: Array<{ role: "user" | "assistant"; content: string }>;
+}): boolean {
+  const normalizedFinal = normalizeForRepeatCheck(input.final);
+  if (!normalizedFinal) return false;
+
+  const lastAssistant = [...input.priorConversationHistory]
+    .reverse()
+    .find((turn) => turn.role === "assistant")?.content;
+  if (!lastAssistant) return false;
+  if (normalizeForRepeatCheck(lastAssistant) !== normalizedFinal) return false;
+
+  const lastUser = [...input.priorConversationHistory].reverse().find((turn) => turn.role === "user")?.content;
+  if (!lastUser) return false;
+
+  const normalizedTask = normalizeForRepeatCheck(input.task);
+  const normalizedLastUser = normalizeForRepeatCheck(lastUser);
+  if (!normalizedTask || !normalizedLastUser) return false;
+  if (normalizedTask === normalizedLastUser) return false;
+
+  const normalizedLastAssistant = normalizeForRepeatCheck(lastAssistant);
+
+  if (normalizedLastAssistant === normalizedFinal) {
+    return true;
+  }
+
+  const isPartialCarryover =
+    normalizedFinal.length >= 4 &&
+    (normalizedLastAssistant.includes(normalizedFinal) || normalizedFinal.includes(normalizedLastAssistant));
+
+  const finalVsLastAssistantOverlap = tokenOverlapRatio(input.final, lastAssistant);
+  const finalVsTaskOverlap = tokenOverlapRatio(input.final, input.task);
+  const semanticCarryover =
+    finalVsLastAssistantOverlap >= 0.45 &&
+    finalVsTaskOverlap <= 0.2;
+
+  const finalNumbers = extractNumericAtoms(input.final);
+  const lastAssistantNumbers = extractNumericAtoms(lastAssistant);
+  const currentTaskLooksMath = /[\d]+\s*[\+\-\*\/x]/i.test(input.task) || /\b(calculate|compute|multiply|divide|plus|minus)\b/i.test(input.task);
+  const numericCarryover =
+    !currentTaskLooksMath &&
+    finalNumbers.length > 0 &&
+    finalNumbers.every((n) => lastAssistantNumbers.includes(n));
+
+  const taskOverlap = tokenOverlapRatio(input.task, lastUser);
+
+  return taskOverlap < 0.35 && (isPartialCarryover || numericCarryover || semanticCarryover);
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -130,8 +213,8 @@ export async function POST(request: NextRequest): Promise<Response> {
     });
     sessionId = created.id;
   } else {
-    const existing = await listSessions({ userId: auth.userId, limit: 100 });
-    if (!existing.data.some((session) => session.id === sessionId)) {
+    const existing = await getSessionById({ userId: auth.userId, sessionId });
+    if (!existing) {
       return badRequest(request, "Unknown historySessionId");
     }
   }
@@ -218,6 +301,19 @@ export async function POST(request: NextRequest): Promise<Response> {
             clientPreferences: body.clientPreferences,
             userProfile: effectiveUserProfile,
           });
+          if (
+            runResult &&
+            isStaleRepeatResponse({
+              final: runResult.final,
+              task: body.task,
+              priorConversationHistory,
+            })
+          ) {
+            lastError = new Error("stale_repeat_detected: previous answer was repeated instead of answering the latest user task");
+            if (attempt < ASSIST_MAX_ATTEMPTS) {
+              continue;
+            }
+          }
           break;
         } catch (error) {
           lastError = error;
@@ -328,6 +424,19 @@ export async function POST(request: NextRequest): Promise<Response> {
                   },
                 }
               );
+              if (
+                result &&
+                isStaleRepeatResponse({
+                  final: result.final,
+                  task: body.task,
+                  priorConversationHistory,
+                })
+              ) {
+                lastError = new Error("stale_repeat_detected: previous answer was repeated instead of answering the latest user task");
+                if (attempt < ASSIST_MAX_ATTEMPTS) {
+                  continue;
+                }
+              }
               break;
             } catch (error) {
               lastError = error;

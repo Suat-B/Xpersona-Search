@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
 
 type SessionRow = {
   id: string;
@@ -15,6 +16,13 @@ type ChatMessage = {
   content: string;
   pending?: boolean;
 };
+
+const QUICK_PROMPTS = [
+  "Draft a product launch plan for a small AI feature in 7 days.",
+  "Review this idea and list risks, assumptions, and test plan.",
+  "Turn my rough notes into a clean, structured specification.",
+  "Help me debug a bug report with likely root causes and fixes.",
+] as const;
 
 function makeId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -92,6 +100,57 @@ function prettyTime(iso: string | null): string {
   });
 }
 
+function AssistantMessage({ message }: { message: ChatMessage }) {
+  if (message.pending && !message.content.trim()) {
+    return (
+      <div className="chat-editorial-typing" aria-label="Assistant is thinking" role="status">
+        <span />
+        <span />
+        <span />
+      </div>
+    );
+  }
+
+  return (
+    <div className="chat-editorial-markdown">
+      <ReactMarkdown
+        components={{
+          p: ({ children }) => <p>{children}</p>,
+          h1: ({ children }) => <h1>{children}</h1>,
+          h2: ({ children }) => <h2>{children}</h2>,
+          h3: ({ children }) => <h3>{children}</h3>,
+          ul: ({ children }) => <ul>{children}</ul>,
+          ol: ({ children }) => <ol>{children}</ol>,
+          li: ({ children }) => <li>{children}</li>,
+          a: ({ href, children }) => (
+            <a href={href} target="_blank" rel="noopener noreferrer">
+              {children}
+            </a>
+          ),
+          blockquote: ({ children }) => <blockquote>{children}</blockquote>,
+          code: ({ inline, children, ...props }) => {
+            if (inline) {
+              return (
+                <code {...props}>
+                  {children}
+                </code>
+              );
+            }
+
+            return (
+              <pre>
+                <code {...props}>{children}</code>
+              </pre>
+            );
+          },
+        }}
+      >
+        {message.content || "No response received."}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
 export function ChatApp() {
   const [booting, setBooting] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -105,6 +164,7 @@ export function ChatApp() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const messageViewportRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? null,
@@ -112,7 +172,7 @@ export function ChatApp() {
   );
 
   const refreshSessions = useCallback(async (): Promise<SessionRow[]> => {
-    const res = await fetch("/api/me/chat/sessions?limit=40", {
+    const res = await fetch("/api/v1/me/chat/sessions?limit=40", {
       method: "GET",
       credentials: "include",
       cache: "no-store",
@@ -127,7 +187,7 @@ export function ChatApp() {
   }, []);
 
   const createSession = useCallback(async (): Promise<SessionRow> => {
-    const res = await fetch("/api/me/chat/sessions", {
+    const res = await fetch("/api/v1/me/chat/sessions", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -148,7 +208,7 @@ export function ChatApp() {
   const loadMessages = useCallback(async (sessionId: string) => {
     setLoadingMessages(true);
     try {
-      const res = await fetch(`/api/me/chat/sessions/${encodeURIComponent(sessionId)}/messages`, {
+      const res = await fetch(`/api/v1/me/chat/sessions/${encodeURIComponent(sessionId)}/messages`, {
         method: "GET",
         credentials: "include",
         cache: "no-store",
@@ -173,7 +233,7 @@ export function ChatApp() {
       setBooting(true);
       setBootError(null);
       try {
-        const bootRes = await fetch("/api/me/chat/bootstrap", {
+        const bootRes = await fetch("/api/v1/me/chat/bootstrap", {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -230,6 +290,11 @@ export function ChatApp() {
     setSidebarOpen(false);
   }, []);
 
+  const onQuickPrompt = useCallback((prompt: string) => {
+    setInput(prompt);
+    inputRef.current?.focus();
+  }, []);
+
   const onSend = useCallback(
     async (event: React.FormEvent) => {
       event.preventDefault();
@@ -245,19 +310,50 @@ export function ChatApp() {
       setSending(true);
 
       try {
-        const res = await fetch("/api/me/chat/assist", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            task,
-            historySessionId: activeSessionId,
-          }),
-        });
+        const sendAssist = async (sessionId: string): Promise<Response> =>
+          fetch("/api/v1/me/chat/assist", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              task,
+              historySessionId: sessionId,
+            }),
+          });
 
-        if (!res.ok || !res.body) {
+        const createFreshSessionForRetry = async (): Promise<SessionRow> => {
+          const createRes = await fetch("/api/v1/me/chat/sessions", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: task.slice(0, 80) || "New chat", mode: "generate" }),
+          });
+          if (!createRes.ok) {
+            throw new Error("Failed to create a fresh chat session");
+          }
+          const createJson = (await createRes.json().catch(() => ({}))) as { data?: unknown };
+          const created = normalizeSession(createJson?.data);
+          if (!created) throw new Error("Invalid fresh session response");
+          setSessions((prev) => [created, ...prev.filter((x) => x.id !== created.id)]);
+          setActiveSessionId(created.id);
+          return created;
+        };
+
+        let res = await sendAssist(activeSessionId);
+
+        if (!res.ok) {
           const failureText = await res.text().catch(() => "");
-          throw new Error(failureText || "Chat request failed");
+          if (failureText.includes("Unknown historySessionId")) {
+            setStatusText("Session went stale. Starting a fresh chat and retrying...");
+            const fresh = await createFreshSessionForRetry();
+            res = await sendAssist(fresh.id);
+          } else {
+            throw new Error(failureText || "Chat request failed");
+          }
+        }
+
+        if (!res.body) {
+          throw new Error("Chat stream unavailable");
         }
 
         const reader = res.body.getReader();
@@ -267,9 +363,7 @@ export function ChatApp() {
         let done = false;
 
         const setAssistant = (content: string, pending: boolean) => {
-          setMessages((prev) =>
-            prev.map((msg) => (msg.id === assistantId ? { ...msg, content, pending } : msg))
-          );
+          setMessages((prev) => prev.map((msg) => (msg.id === assistantId ? { ...msg, content, pending } : msg)));
         };
 
         const processFrame = (rawFrame: string) => {
@@ -301,6 +395,7 @@ export function ChatApp() {
           } else if (parsed.event === "final" && typeof parsed.data === "string") {
             assistantText = parsed.data;
             setAssistant(assistantText, false);
+            setStatusText(null);
           } else if (parsed.event === "status" && typeof parsed.data === "string") {
             setStatusText(parsed.data);
           }
@@ -346,121 +441,180 @@ export function ChatApp() {
 
   if (booting) {
     return (
-      <div className="min-h-dvh bg-[#212121] text-[#f5f5f5] flex items-center justify-center">
-        <p className="text-sm text-white/70">Preparing chat...</p>
+      <div className="chat-editorial min-h-dvh flex items-center justify-center p-6">
+        <div className="chat-editorial-card flex items-center gap-3 rounded-2xl px-5 py-4">
+          <div className="chat-editorial-spinner" aria-hidden="true" />
+          <p className="text-sm text-[var(--chat-text-secondary)]">Preparing your workspace...</p>
+        </div>
       </div>
     );
   }
 
   if (bootError) {
     return (
-      <div className="min-h-dvh bg-[#212121] text-[#f5f5f5] flex items-center justify-center px-6">
-        <div className="max-w-lg rounded-2xl border border-white/10 bg-black/30 p-6">
-          <h1 className="text-xl font-semibold">Chat Unavailable</h1>
-          <p className="mt-3 text-sm text-white/70">{bootError}</p>
+      <div className="chat-editorial min-h-dvh flex items-center justify-center p-6">
+        <div className="chat-editorial-card max-w-lg rounded-3xl p-7">
+          <p className="chat-editorial-kicker">Chat</p>
+          <h1 className="mt-2 text-xl font-semibold tracking-tight text-[var(--chat-text-primary)]">Chat unavailable</h1>
+          <p className="mt-3 text-sm leading-6 text-[var(--chat-text-secondary)]">{bootError}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-dvh min-h-dvh bg-[#212121] text-[#f5f5f5]">
+    <div className="chat-editorial h-dvh min-h-dvh">
       <div className="flex h-full w-full">
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-[280px] border-r border-white/10 bg-[#171717] p-3 transition-transform md:static md:translate-x-0 ${
+          className={`chat-editorial-sidebar fixed inset-y-0 left-0 z-40 w-[300px] p-3 transition-transform md:static md:translate-x-0 ${
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
+          aria-label="Chat sessions"
         >
-          <button
-            onClick={onNewChat}
-            className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-left text-sm font-medium hover:bg-white/10"
-            type="button"
-          >
-            + New chat
-          </button>
-          <div className="mt-4 space-y-1 overflow-y-auto pr-1" style={{ maxHeight: "calc(100dvh - 88px)" }}>
-            {sessions.map((session) => (
-              <button
-                key={session.id}
-                onClick={() => onSelectSession(session.id)}
-                className={`w-full rounded-lg px-3 py-2 text-left transition-colors ${
-                  session.id === activeSessionId ? "bg-white/12 text-white" : "text-white/75 hover:bg-white/7"
-                }`}
-                type="button"
-              >
-                <p className="truncate text-sm font-medium">{session.title}</p>
-                <p className="mt-1 truncate text-[11px] text-white/45">{prettyTime(session.updatedAt)}</p>
-              </button>
-            ))}
+          <div className="chat-editorial-card h-full rounded-3xl p-3">
+            <button
+              onClick={onNewChat}
+              className="chat-editorial-new-chat w-full rounded-2xl px-4 py-3 text-left text-sm font-semibold"
+              type="button"
+            >
+              + New chat
+            </button>
+
+            <div className="mt-3 flex items-center justify-between px-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--chat-text-muted)]">Recent</p>
+              <p className="text-xs text-[var(--chat-text-muted)]">{sessions.length}</p>
+            </div>
+
+            <div className="mt-2 space-y-2 overflow-y-auto pr-1" style={{ maxHeight: "calc(100dvh - 140px)" }}>
+              {sessions.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-[var(--chat-border-strong)] px-4 py-5 text-sm text-[var(--chat-text-secondary)]">
+                  No chats yet. Start a new one to begin.
+                </div>
+              ) : (
+                sessions.map((session) => (
+                  <button
+                    key={session.id}
+                    onClick={() => onSelectSession(session.id)}
+                    className={`chat-editorial-session w-full rounded-2xl px-3 py-3 text-left transition-colors ${
+                      session.id === activeSessionId ? "is-active" : ""
+                    }`}
+                    type="button"
+                  >
+                    <p className="truncate text-sm font-medium text-[var(--chat-text-primary)]">{session.title}</p>
+                    <p className="mt-1 truncate text-xs text-[var(--chat-text-muted)]">{prettyTime(session.updatedAt)}</p>
+                  </button>
+                ))
+              )}
+            </div>
           </div>
         </aside>
 
         {sidebarOpen ? (
           <button
             type="button"
-            className="fixed inset-0 z-30 bg-black/40 md:hidden"
+            className="fixed inset-0 z-30 bg-slate-900/35 backdrop-blur-[1px] md:hidden"
             onClick={() => setSidebarOpen(false)}
             aria-label="Close sidebar"
           />
         ) : null}
 
-        <main className="relative z-10 flex min-w-0 flex-1 flex-col">
-          <header className="flex h-14 items-center justify-between border-b border-white/10 px-4 md:hidden">
+        <main className="relative z-10 flex min-w-0 flex-1 flex-col chat-editorial-main">
+          <header className="chat-editorial-mobile-header flex h-14 items-center justify-between px-4 md:hidden">
             <button
               type="button"
-              className="rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-sm"
+              className="chat-editorial-mobile-button rounded-xl px-3 py-1.5 text-sm"
               onClick={() => setSidebarOpen(true)}
+              aria-label="Open chats"
             >
               Chats
             </button>
-            <p className="truncate text-sm text-white/70">{activeSession?.title || "Playground Chat"}</p>
+            <p className="truncate text-sm text-[var(--chat-text-secondary)]">{activeSession?.title || "New chat"}</p>
           </header>
 
-          <div ref={messageViewportRef} className="flex-1 overflow-y-auto px-4 pb-6 pt-6 sm:px-8">
+          <div ref={messageViewportRef} className="chat-editorial-scroll flex-1 overflow-y-auto px-4 pb-6 pt-6 sm:px-8">
             {loadingMessages ? (
-              <p className="text-sm text-white/60">Loading messages...</p>
+              <div className="mx-auto w-full max-w-[860px]">
+                <p className="text-sm text-[var(--chat-text-secondary)]">Loading messages...</p>
+              </div>
             ) : messages.length === 0 ? (
-              <div className="mx-auto mt-16 max-w-2xl text-center">
-                <h1 className="text-4xl font-semibold tracking-tight">What are you working on?</h1>
-                <p className="mt-3 text-sm text-white/60">Ask anything and chat with Playground 1.</p>
+              <div className="mx-auto mt-10 w-full max-w-[860px] animate-fade-in-up">
+                <p className="chat-editorial-kicker">Xpersona Chat</p>
+                <h1 className="mt-3 text-balance text-4xl font-semibold tracking-tight text-[var(--chat-text-primary)] sm:text-5xl">
+                  Start with a clear prompt.
+                </h1>
+                <p className="mt-4 max-w-2xl text-pretty text-sm leading-6 text-[var(--chat-text-secondary)] sm:text-base">
+                  Ask for plans, debugging help, writing support, or technical breakdowns. You can paste context and we will work through it step by step.
+                </p>
+                <div className="mt-8 grid gap-3 sm:grid-cols-2">
+                  {QUICK_PROMPTS.map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      className="chat-editorial-quick-prompt rounded-2xl p-4 text-left text-sm"
+                      onClick={() => onQuickPrompt(prompt)}
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : (
-              <div className="mx-auto w-full max-w-3xl space-y-5">
+              <div className="mx-auto w-full max-w-[860px] space-y-6">
                 {messages.map((message) => (
-                  <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div
-                      className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-6 ${
-                        message.role === "user"
-                          ? "bg-[#2f2f2f] text-white"
-                          : "bg-[#262626] text-white/95 border border-white/10"
-                      }`}
-                    >
-                      <p className="whitespace-pre-wrap break-words">{message.content || (message.pending ? "..." : "")}</p>
+                  <article
+                    key={message.id}
+                    className={`chat-editorial-message ${message.role === "user" ? "is-user" : "is-assistant"}`}
+                  >
+                    <div className="chat-editorial-avatar" aria-hidden="true">
+                      {message.role === "user" ? "U" : "AI"}
                     </div>
-                  </div>
+                    <div className="chat-editorial-bubble">
+                      {message.role === "assistant" ? (
+                        <AssistantMessage message={message} />
+                      ) : (
+                        <p className="whitespace-pre-wrap break-words text-sm leading-6 text-[var(--chat-text-primary)]">
+                          {message.content}
+                        </p>
+                      )}
+                    </div>
+                  </article>
                 ))}
               </div>
             )}
           </div>
 
-          <div className="border-t border-white/10 bg-[#212121] px-4 pb-4 pt-3 sm:px-8">
-            <form onSubmit={onSend} className="mx-auto w-full max-w-3xl">
-              {statusText ? <p className="mb-2 text-xs text-white/55">{statusText}</p> : null}
-              <div className="flex items-end gap-2 rounded-3xl border border-white/15 bg-[#2a2a2a] px-3 py-3">
+          <div className="chat-editorial-composer-wrap px-4 pb-4 pt-3 sm:px-8">
+            <form onSubmit={onSend} className="mx-auto w-full max-w-[860px]">
+              <div className="chat-editorial-composer rounded-[24px] p-3">
                 <textarea
+                  ref={inputRef}
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      if (sending || !input.trim() || !activeSessionId) return;
+                      event.currentTarget.form?.requestSubmit();
+                    }
+                  }}
                   rows={1}
-                  placeholder="Ask anything"
-                  className="max-h-36 min-h-[40px] w-full resize-y bg-transparent text-sm text-white placeholder:text-white/45 focus:outline-none"
+                  placeholder="Ask anything..."
+                  className="chat-editorial-textarea max-h-40 min-h-[44px] w-full resize-y"
+                  aria-label="Message input"
                 />
-                <button
-                  type="submit"
-                  disabled={sending || !input.trim() || !activeSessionId}
-                  className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {sending ? "..." : "Send"}
-                </button>
+
+                <div className="mt-3 flex items-end justify-between gap-3">
+                  <div className="min-h-5 text-xs leading-5 text-[var(--chat-text-muted)]" role="status" aria-live="polite">
+                    {statusText || "Enter to send, Shift+Enter for a new line."}
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={sending || !input.trim() || !activeSessionId}
+                    className="chat-editorial-send rounded-full px-4 py-2 text-sm font-semibold"
+                  >
+                    {sending ? "Sending..." : "Send"}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

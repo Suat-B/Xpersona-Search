@@ -62,7 +62,7 @@ export function HomeHeroHF() {
           />
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 -bottom-5 z-0 h-6 w-full rounded-[50%] bg-white/95"
+            className="pointer-events-none absolute inset-x-0 -bottom-5 z-0 h-6 w-full rounded-[50%] bg-black"
           />
         </div>
       </div>

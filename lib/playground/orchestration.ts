@@ -1199,11 +1199,7 @@ export function composeWarmAssistantResponse(input: {
       .join("\n");
   }
 
-  const fallbackLine = cleaned || "I'm ready to continue once you share the next concrete change.";
-  return [
-    "I reviewed your request and here is the result:",
-    fallbackLine,
-  ].join("\n");
+  return cleaned || "I'm ready to continue once you share the next concrete change.";
 }
 
 function cleanCodeSnippet(text: string): string {
