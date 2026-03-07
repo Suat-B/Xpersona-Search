@@ -1429,7 +1429,13 @@ class Provider {
         this.post({ type: "pendingActions", count: 0 });
         this.addTimeline("intent", text.slice(0, 120));
         const conversational = this.isConversationalPrompt(text);
-        const allowActions = !conversational &&
+        const smallTalk = this.isSmallTalkPrompt(text);
+        const strictConversationOnly = smallTalk &&
+            !this.hasExplicitEditIntent(text) &&
+            !this.hasExplicitCommandRunIntent(text) &&
+            !this.hasExecutionIntent(text);
+        const allowActions = !strictConversationOnly &&
+            !conversational &&
             (this.hasExecutionIntent(text) || this.hasExplicitEditIntent(text) || this.hasExplicitCommandRunIntent(text));
         const requestedThreadId = typeof options.threadId === "string" ? options.threadId.trim() : "";
         if (requestedThreadId && requestedThreadId !== this.activeThreadId) {
@@ -1447,14 +1453,13 @@ class Provider {
         if (!conversational) {
             this.postRun(runThreadId, { type: "status", text: `Model: ${model} | Reasoning: ${reasoning}` });
         }
-        const smallTalk = this.isSmallTalkPrompt(text);
         const wantsEdits = !conversational && this.wantsCodeEdits(text);
         const taskWithReasoning = smallTalk
-            ? `User message: "${text.trim()}". Reply with a brief friendly response. Do not mention code, diagnostics, or workspace details unless asked.`
+            ? `User message: "${text.trim()}". Reply briefly and friendly. No file edits, commands, or patches.`
             : wantsEdits
                 ? `User request: "${text.trim()}". Prefer concrete code edits or patches. If the file or location is unclear, ask for the exact file or paste of the relevant code. Keep the response focused on applying the change, not theory.`
                 : text;
-        const requestMode = conversational ? "generate" : this.mode;
+        const requestMode = conversational || strictConversationOnly ? "generate" : this.mode;
         const requestReasoning = smallTalk ? "low" : reasoning;
         const fileInfoQuestion = this.isFileInfoQuestion(text);
         const mentionTokens = this.mentionsEnabled() ? extractAtMentions(text) : [];
@@ -1473,7 +1478,7 @@ class Provider {
             preflightMs: 0,
             notes: [],
         };
-        if (ideContextEnabled) {
+        if (ideContextEnabled && !strictConversationOnly) {
             try {
                 collectedContext = await this.collectIdeContext(text, workspaceHash, auth);
             }
@@ -1617,7 +1622,7 @@ class Provider {
                 }
                 else if (ev === "diff_chunk") {
                     const editItems = Array.isArray(p) ? p : Array.isArray(p?.edits) ? p.edits : [];
-                    if (editItems.length && allowActions) {
+                    if (editItems.length && allowActions && !strictConversationOnly) {
                         for (const edit of editItems) {
                             const rawPatch = typeof edit?.patch === "string"
                                 ? (edit.patch || "")
@@ -1638,7 +1643,7 @@ class Provider {
                     }
                 }
                 else if (ev === "commands_chunk") {
-                    if (Array.isArray(p) && allowActions) {
+                    if (Array.isArray(p) && allowActions && !strictConversationOnly) {
                         for (const command of p) {
                             if (typeof command === "string" && command.trim()) {
                                 this.pendingActions.push({ type: "command", command: command.trim() });
@@ -1648,7 +1653,7 @@ class Provider {
                     }
                 }
                 else if (ev === "actions_chunk") {
-                    if (Array.isArray(p) && allowActions) {
+                    if (Array.isArray(p) && allowActions && !strictConversationOnly) {
                         for (const action of p) {
                             if (!action || typeof action !== "object")
                                 continue;
@@ -1715,6 +1720,10 @@ class Provider {
                 else if (ev === "meta") {
                     this.lastRunMeta = (p || null);
                     this.postRun(runThreadId, { type: "meta", data: p });
+                    const actionability = p?.actionability;
+                    if (actionability?.summary && actionability.summary !== "valid_actions" && actionability.reason) {
+                        this.postRun(runThreadId, { type: "status", text: actionability.reason });
+                    }
                 }
             }));
         };
@@ -1756,7 +1765,7 @@ class Provider {
             }
             return;
         }
-        if (conversational && this.pendingActions.length > 0) {
+        if ((conversational || strictConversationOnly) && this.pendingActions.length > 0) {
             this.pendingActions = [];
             this.post({ type: "pendingActions", count: 0 });
             return;
@@ -1772,12 +1781,13 @@ class Provider {
                 ? hasEditActions
                 : policy === "preview_first"
                     ? false
-                    : hasEditActions && this.mode === "yolo" && autonomy?.autoApplyEdits !== false;
+                    : hasEditActions && (this.mode === "yolo" || this.mode === "auto") && autonomy?.autoApplyEdits !== false;
             const autoRunValidation = policy === "full_auto"
                 ? hasCommandActions
                 : policy === "preview_first"
                     ? false
-                    : (autonomy?.autoRunValidation === true || this.hasExplicitCommandRunIntent(text));
+                    : (this.mode === "yolo" || this.mode === "auto") &&
+                        (autonomy?.autoRunValidation === true || this.hasExplicitCommandRunIntent(text) || hasCommandActions);
             if (hasEditActions && !autoApplyEdits) {
                 this.postRun(runThreadId, {
                     type: "status",
@@ -1792,6 +1802,7 @@ class Provider {
                         summary: "Edits prepared for preview, not auto-applied.",
                     },
                 });
+                this.postRun(runThreadId, { type: "prefill", text: "apply now" });
                 return;
             }
             const actionsToExecute = [];
@@ -3259,7 +3270,7 @@ function html(webview, extensionUri) {
       .item-title { font-weight: 600; margin-bottom: 4px; }
       .item-sub { color: var(--muted); font-size: 11px; }
       .input {
-        border-top: 1px solid #161616;
+        border-top: none;
         padding: 10px 12px;
         display: grid;
         gap: 7px;
@@ -4166,6 +4177,42 @@ function html(webview, extensionUri) {
         display: flex;
         background: transparent;
       }
+      .threads-overlay-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 45;
+        display: none;
+        background: color-mix(in srgb, var(--bg-0) 70%, transparent);
+      }
+      .threads-overlay-backdrop.show {
+        display: block;
+      }
+      .threads-overlay-open #stageThreads {
+        display: block !important;
+        position: fixed;
+        right: 16px;
+        top: 92px;
+        width: min(520px, calc(100vw - 32px));
+        max-height: calc(100vh - 140px);
+        overflow: auto;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--surface) 94%, var(--bg-0));
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+        z-index: 50;
+        padding: 12px 12px 16px;
+      }
+      .threads-overlay-open #stageThreads.panel {
+        padding: 12px 12px 16px;
+      }
+      @media (max-width: 840px) {
+        .threads-overlay-open #stageThreads {
+          right: 12px;
+          left: 12px;
+          width: auto;
+          max-height: calc(100vh - 120px);
+        }
+      }
       .stage-shell .panel {
         flex: 1;
         min-height: 0;
@@ -4468,9 +4515,9 @@ function html(webview, extensionUri) {
         inset: 0;
         z-index: 60;
         display: flex;
-        align-items: flex-start;
+        align-items: flex-start !important;
         justify-content: center;
-        padding: 24px 20px 20px;
+        padding: 8px 20px 20px;
       }
       .action-menu.hidden {
         display: none !important;
@@ -4606,6 +4653,8 @@ function html(webview, extensionUri) {
         </div>
         <div class="global-actions">
           <button id="historyQuick" type="button" class="menu-icon panel-icon" aria-label="Open threads" title="Open threads">&#9776;</button>
+          <button id="historyHeader" type="button" class="menu-icon" aria-label="Open previous chats" title="Previous chats">Chats</button>
+          <button id="undoHeader" type="button" class="menu-icon" aria-label="Undo last changes" title="Undo last changes">Undo</button>
           <button id="backToChatQuick" type="button" class="menu-icon panel-icon hidden" aria-label="Back to blank stage" title="Back to blank stage">&#8592;</button>
           <button id="newThreadQuick" type="button" class="menu-icon quick-new" aria-label="Start new chat">New chat</button>
         </div>
@@ -4645,6 +4694,7 @@ function html(webview, extensionUri) {
           <div id="agents" class="panel"></div>
           <div id="exec" class="panel"></div>
         </div>
+        <div id="threadsOverlayBackdrop" class="threads-overlay-backdrop" aria-hidden="true"></div>
 
         <div id="chatDock" class="dock-shell" role="region" aria-label="Chat dock">
           <div class="input">
@@ -4780,6 +4830,7 @@ function html(webview, extensionUri) {
                         <button id="newThreadBtn" class="action-item" type="button">New Chat</button>
                         <button id="undoLastBtn" class="action-item" type="button">Undo Last Changes</button>
                         <button id="c" class="action-item" type="button">Clear Chat</button>
+                        <button class="action-item" type="button" data-menu-action="execute">Execute Pending Actions</button>
                         <button class="action-item" type="button" data-menu-action="history">Refresh History</button>
                         <button class="action-item" type="button" data-menu-action="replay">Replay Session</button>
                         <button class="action-item" type="button" data-menu-action="indexRebuild">Rebuild Index</button>

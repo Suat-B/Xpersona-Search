@@ -68,7 +68,7 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
   }, [isAuthenticated]);
 
   return (
-    <header className="scroll-stable-layer sticky top-0 z-50 w-full border-b border-[var(--border)] bg-[var(--bg-deep)]/85 backdrop-blur-xl">
+    <header className="scroll-stable-layer sticky top-0 z-50 w-full border-b border-[var(--border)] bg-[var(--bg-card)] backdrop-blur-xl">
       <div className="mx-auto flex h-16 w-full max-w-[1260px] items-center gap-4 px-4 sm:px-6">
         <Link href="/" className="flex flex-none items-center gap-2">
           <Image

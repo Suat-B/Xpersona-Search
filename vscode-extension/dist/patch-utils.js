@@ -10,8 +10,66 @@ function normalizePatchPath(raw) {
         return trimmed.slice(2);
     return trimmed;
 }
-function parsePatch(patchText) {
+function isOmittedPlaceholder(line) {
+    const trimmed = line.trim();
+    if (!trimmed)
+        return false;
+    if (/omitted\s+for\s+brevity/i.test(trimmed))
+        return true;
+    return /^(\/*|#|;)?\s*\.\.\.\s*\[?omitted\s+for\s+brevity\]?\s*\.\.\.\s*$/i.test(trimmed);
+}
+function normalizePatchText(patchText) {
     const lines = patchText.replace(/\r\n/g, "\n").split("\n");
+    const out = [];
+    let inHunk = false;
+    for (const raw of lines) {
+        const line = raw ?? "";
+        if (isOmittedPlaceholder(line)) {
+            continue;
+        }
+        if (line.trim().startsWith("```")) {
+            continue;
+        }
+        if (line.startsWith("@@")) {
+            inHunk = true;
+            out.push(line);
+            continue;
+        }
+        if (line.startsWith("diff --git ") || line.startsWith("--- ") || line.startsWith("+++ ")) {
+            out.push(line);
+            continue;
+        }
+        if (inHunk) {
+            if (/^\s*[+-]\d+\s+-\d+\s*$/.test(line)) {
+                continue;
+            }
+            const numOnly = /^\s*\d+\s*$/.exec(line);
+            if (numOnly) {
+                out.push(" ");
+                continue;
+            }
+            const withNum = /^\s*\d+\s+(.*)$/.exec(line);
+            if (withNum) {
+                const rest = withNum[1] ?? "";
+                if (!rest) {
+                    out.push(" ");
+                    continue;
+                }
+                const first = rest[0];
+                if (first === "+" || first === "-" || first === " ") {
+                    out.push(rest);
+                    continue;
+                }
+                out.push(" " + rest);
+                continue;
+            }
+        }
+        out.push(line);
+    }
+    return out.join("\n");
+}
+function parsePatch(patchText) {
+    const lines = normalizePatchText(patchText).split("\n");
     let oldPath = null;
     let newPath = null;
     const hunks = [];
@@ -23,9 +81,11 @@ function parsePatch(patchText) {
         if (line.startsWith("+++ "))
             newPath = normalizePatchPath(line.slice(4).trim());
         if (line.startsWith("@@")) {
-            const m = /^@@\s+-([0-9]+)(?:,([0-9]+))?\s+\+([0-9]+)(?:,([0-9]+))?\s+@@/.exec(line);
-            if (!m)
-                return null;
+            const m = /^@@\s+-([0-9]+)(?:,([0-9]+))?\s+\+([0-9]+)(?:,([0-9]+))?\s*@@/.exec(line);
+            if (!m) {
+                i += 1;
+                continue;
+            }
             const hunk = {
                 oldStart: Number(m[1] || "1"),
                 lines: [],
@@ -47,11 +107,10 @@ function parsePatch(patchText) {
                 }
                 if (hline.startsWith("diff --git ") || hline.startsWith("--- ") || hline.startsWith("+++ "))
                     break;
-                return null;
+                i += 1;
             }
-            if (hunk.lines.length === 0)
-                return null;
-            hunks.push(hunk);
+            if (hunk.lines.length > 0)
+                hunks.push(hunk);
             continue;
         }
         i += 1;
@@ -76,6 +135,33 @@ function hunkMatchesAt(sourceLines, start, hunk) {
     }
     return true;
 }
+function normalizeMatchLine(line) {
+    return line.trim();
+}
+function hunkMatchesAtRelaxed(sourceLines, start, hunk) {
+    let idx = start;
+    for (const line of hunk.lines) {
+        if (line.kind === "+")
+            continue;
+        if (idx >= sourceLines.length)
+            return false;
+        if (normalizeMatchLine(sourceLines[idx]) !== normalizeMatchLine(line.text))
+            return false;
+        idx += 1;
+    }
+    return true;
+}
+function findRelaxedUniqueMatch(sourceLines, from, to, hunk) {
+    let matchIndex = -1;
+    for (let i = from; i <= to; i += 1) {
+        if (hunkMatchesAtRelaxed(sourceLines, i, hunk)) {
+            if (matchIndex !== -1)
+                return -1;
+            matchIndex = i;
+        }
+    }
+    return matchIndex;
+}
 function locateHunkStart(sourceLines, expectedStart, hunk) {
     if (hunkMatchesAt(sourceLines, expectedStart, hunk))
         return expectedStart;
@@ -89,7 +175,10 @@ function locateHunkStart(sourceLines, expectedStart, hunk) {
         if (hunkMatchesAt(sourceLines, i, hunk))
             return i;
     }
-    return -1;
+    const relaxedNearby = findRelaxedUniqueMatch(sourceLines, from, to, hunk);
+    if (relaxedNearby >= 0)
+        return relaxedNearby;
+    return findRelaxedUniqueMatch(sourceLines, 0, Math.max(0, sourceLines.length - 1), hunk);
 }
 function extractPatchTargetPath(patchText) {
     const parsed = parsePatch(patchText);

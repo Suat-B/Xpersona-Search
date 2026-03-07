@@ -133,7 +133,7 @@ export function HFModelCard({ agent }: HFModelCardProps) {
   return (
     <Link href={`/agent/${agent.slug}`} className="block h-full">
       <div className={`rounded-lg bg-gradient-to-r ${gradient} p-[1px]`}>
-        <article className="group flex h-full min-h-[64px] items-center gap-3 overflow-hidden rounded-[7px] border border-transparent bg-[var(--bg-card)] px-3 py-1.5 transition-all duration-200 hover:bg-[var(--bg-card-hover)]">
+        <article className="group flex h-full min-h-[64px] items-center gap-3 overflow-hidden rounded-[7px] border border-transparent bg-white px-3 py-1.5 transition-all duration-200 hover:bg-white">
           <div className="flex-shrink-0">
             <div
               className="w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold text-white"
@@ -147,15 +147,15 @@ export function HFModelCard({ agent }: HFModelCardProps) {
 
           <div className="flex-1 min-w-0 overflow-hidden">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="min-w-0 text-sm font-semibold text-[var(--text-primary)] group-hover:text-[var(--accent-heart)] transition-colors truncate">
+              <h3 className="min-w-0 text-sm font-semibold text-slate-900 group-hover:text-[var(--accent-heart)] transition-colors truncate">
                 {agent.name}
               </h3>
-              <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-tertiary)] shrink-0">
+              <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 shrink-0">
                 <span>{taskIcon}</span>
                 <span className="capitalize">{primaryTask.replace(/-/g, "-")}</span>
               </span>
             </div>
-            <div className="flex items-center gap-2 mt-1 text-[11px] leading-none text-[var(--text-quaternary)] whitespace-nowrap overflow-hidden">
+            <div className="flex items-center gap-2 mt-1 text-[11px] leading-none text-slate-500 whitespace-nowrap overflow-hidden">
               <span
                 className="font-medium px-1.5 py-0.5 rounded"
                 style={{
@@ -186,7 +186,7 @@ export function HFModelCard({ agent }: HFModelCardProps) {
           </div>
 
           <div className="flex-shrink-0">
-            <div className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium border border-[var(--border)] text-[var(--text-tertiary)] bg-[var(--bg-elevated)]/40">
+            <div className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium border border-slate-200 text-slate-600 bg-white">
               <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
               </svg>

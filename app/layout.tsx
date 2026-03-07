@@ -10,7 +10,7 @@ import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { getService } from "@/lib/service";
 import { auth } from "@/lib/auth";
 import { getAuthUserFromCookie } from "@/lib/auth-utils";
-import { TopNavHF } from "@/components/nav/TopNavHF";
+import { HFChrome } from "@/components/layout/HFChrome";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -93,10 +93,7 @@ export default async function RootLayout({
       <ServiceProvider service={service}>
         <AuthProvider>
           {variant === "hf" ? (
-            <div className="min-h-dvh flex flex-col">
-              <TopNavHF isAuthenticated={isAuthenticated} />
-              <div className="flex-1">{children}</div>
-            </div>
+            <HFChrome isAuthenticated={isAuthenticated}>{children}</HFChrome>
           ) : (
             children
           )}

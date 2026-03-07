@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/playground/auth", () => ({
   hasUnlimitedPlaygroundAccess: () => false,
@@ -22,6 +22,13 @@ beforeAll(async () => {
   resolveIntentRouting = mod.resolveIntentRouting;
   synthesizeDeterministicActions = mod.synthesizeDeterministicActions;
   runAssist = mod.runAssist;
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  delete process.env.HF_ROUTER_TOKEN;
+  delete process.env.HF_TOKEN;
+  delete process.env.HUGGINGFACE_TOKEN;
 });
 
 describe("playground orchestration intent routing", () => {
@@ -146,5 +153,79 @@ describe("playground identity guardrail", () => {
     });
     expect(result.final).not.toContain("I'm Playground 1. I'm not Qwen");
     expect(result.decision.mode).toBe("plan");
+  });
+});
+
+describe("playground agentic behavior", () => {
+  it("keeps greeting requests conversational without fake actions", async () => {
+    process.env.HF_TOKEN = "test-token";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({ choices: [{ message: { content: "Hey! What can I help you build today?" } }] }),
+      }))
+    );
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "hi",
+    });
+    expect(result.intent.type).toBe("conversation");
+    expect(result.actions).toHaveLength(0);
+    expect(result.final.toLowerCase()).not.toContain("i prepared the requested update");
+  });
+
+  it("runs 3-pass reprompt loop and falls back to clarification when tool output is unusable", async () => {
+    process.env.HF_TOKEN = "test-token";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({ choices: [{ message: { content: "{\"final\":\"done\",\"edits\":[],\"commands\":[]}" } }] }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "create a hello.py script with a greet function",
+    });
+    expect(result.repromptStage).toBe("fallback");
+    expect(result.reasonCodes).toContain("reprompt_repair_pass_2");
+    expect(result.reasonCodes).toContain("reprompt_tool_enforcement_pass_3");
+    expect(result.reasonCodes).toContain("reprompt_fallback_to_clarification");
+    expect(result.actionability.summary).toBe("clarification_needed");
+    expect(result.final.toLowerCase()).toContain("please share");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("biases auto mode toward auto-apply-and-validate for valid low-risk edits", async () => {
+    process.env.HF_TOKEN = "test-token";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content:
+                  "{\"final\":\"Created update\",\"edits\":[{\"path\":\"hello.py\",\"patch\":\"diff --git a/hello.py b/hello.py\\nnew file mode 100644\\n--- /dev/null\\n+++ b/hello.py\\n@@ -0,0 +1 @@\\n+print('hi')\"}],\"commands\":[]}",
+              },
+            },
+          ],
+        }),
+      }))
+    );
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "create hello.py with a simple print",
+    });
+    expect(result.actions.length).toBeGreaterThan(0);
+    expect(result.autonomyDecision.mode).toBe("auto_apply_and_validate");
   });
 });

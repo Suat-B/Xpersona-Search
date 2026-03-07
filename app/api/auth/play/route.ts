@@ -4,45 +4,11 @@
  * POST: same, return JSON with apiKey for modal.
  */
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
 import {
-  hashApiKey,
-  createAgentToken,
   getAgentCookieName,
   getAuthCookieOptions,
 } from "@/lib/auth-utils";
-import { generateAgentId } from "@/lib/agent-id";
-import { SIGNUP_BONUS } from "@/lib/constants";
-import { randomBytes, randomUUID } from "crypto";
-
-async function createPlayAccount() {
-  const agentId = generateAgentId();
-  const email = `play_${randomUUID()}@xpersona.co`;
-  const rawKey = "xp_" + randomBytes(32).toString("hex");
-  const apiKeyHash = hashApiKey(rawKey);
-  const apiKeyPrefix = rawKey.slice(0, 11);
-  const name = `Player_${apiKeyPrefix.slice(4, 8)}`;
-
-  const [user] = await db
-    .insert(users)
-    .values({
-      email,
-      name,
-      accountType: "agent",
-      agentId,
-      credits: SIGNUP_BONUS,
-      lastFaucetAt: null,
-      apiKeyHash,
-      apiKeyPrefix,
-      apiKeyCreatedAt: new Date(),
-    })
-    .returning({ id: users.id });
-
-  if (!user) return null;
-  const token = createAgentToken(user.id);
-  return { userId: user.id, token, apiKey: rawKey, apiKeyPrefix, agentId };
-}
+import { createPlayAccount } from "@/lib/auth/play-account";
 
 export async function GET(request: Request) {
   if (!process.env.NEXTAUTH_SECRET && !process.env.AUTH_SECRET) {

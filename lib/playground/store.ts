@@ -156,7 +156,9 @@ export async function listSessionMessages(input: {
   sessionId: string;
   includeAgentEvents?: boolean;
   fromTimestamp?: string;
+  limit?: number;
 }) {
+  const limit = Math.max(1, Math.min(input.limit ?? 500, 500));
   const where = [
     eq(playgroundMessages.userId, input.userId),
     eq(playgroundMessages.sessionId, input.sessionId),
@@ -180,9 +182,9 @@ export async function listSessionMessages(input: {
       .from(playgroundMessages)
       .where(where.length > 1 ? and(...where) : where[0])
       .orderBy(desc(playgroundMessages.createdAt))
-      .limit(500);
+      .limit(limit);
   } catch {
-    return (memory.messages.get(input.sessionId) ?? []).slice(-500).reverse();
+    return (memory.messages.get(input.sessionId) ?? []).slice(-limit).reverse();
   }
 }
 

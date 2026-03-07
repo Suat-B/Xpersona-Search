@@ -41,6 +41,8 @@ type RunMeta = {
     rationale?: string;
   };
   validationPlan?: { scope?: string; checks?: string[]; touchedFiles?: string[]; reason?: string };
+  repromptStage?: "none" | "repair" | "tool_enforcement" | "fallback";
+  actionability?: { summary?: "valid_actions" | "clarification_needed" | "blocked_by_safety"; reason?: string };
 };
 type AssistAttachmentPayload = {
   mimeType: "image/png" | "image/jpeg" | "image/webp";
@@ -1495,7 +1497,14 @@ class Provider implements vscode.WebviewViewProvider {
     this.post({ type: "pendingActions", count: 0 });
     this.addTimeline("intent", text.slice(0, 120));
     const conversational = this.isConversationalPrompt(text);
+    const smallTalk = this.isSmallTalkPrompt(text);
+    const strictConversationOnly =
+      smallTalk &&
+      !this.hasExplicitEditIntent(text) &&
+      !this.hasExplicitCommandRunIntent(text) &&
+      !this.hasExecutionIntent(text);
     const allowActions =
+      !strictConversationOnly &&
       !conversational &&
       (this.hasExecutionIntent(text) || this.hasExplicitEditIntent(text) || this.hasExplicitCommandRunIntent(text));
     const requestedThreadId = typeof options.threadId === "string" ? options.threadId.trim() : "";
@@ -1513,14 +1522,13 @@ class Provider implements vscode.WebviewViewProvider {
       this.postRun(runThreadId, { type: "status", text: `Model: ${model} | Reasoning: ${reasoning}` });
     }
 
-    const smallTalk = this.isSmallTalkPrompt(text);
     const wantsEdits = !conversational && this.wantsCodeEdits(text);
     const taskWithReasoning = smallTalk
-      ? `User message: "${text.trim()}". Reply with a brief friendly response. Do not mention code, diagnostics, or workspace details unless asked.`
+      ? `User message: "${text.trim()}". Reply briefly and friendly. No file edits, commands, or patches.`
       : wantsEdits
         ? `User request: "${text.trim()}". Prefer concrete code edits or patches. If the file or location is unclear, ask for the exact file or paste of the relevant code. Keep the response focused on applying the change, not theory.`
         : text;
-    const requestMode: RequestMode = conversational ? "generate" : this.mode;
+    const requestMode: RequestMode = conversational || strictConversationOnly ? "generate" : this.mode;
     const requestReasoning: ReasoningLevel = smallTalk ? "low" : reasoning;
     const fileInfoQuestion = this.isFileInfoQuestion(text);
     const mentionTokens = this.mentionsEnabled() ? extractAtMentions(text) : [];
@@ -1540,7 +1548,7 @@ class Provider implements vscode.WebviewViewProvider {
       notes: [],
     };
 
-    if (ideContextEnabled) {
+    if (ideContextEnabled && !strictConversationOnly) {
       try {
         collectedContext = await this.collectIdeContext(text, workspaceHash, auth);
       } catch (e) {
@@ -1683,7 +1691,7 @@ class Provider implements vscode.WebviewViewProvider {
             this.addTimeline("decision", p?.mode || "unknown");
           } else if (ev === "diff_chunk") {
             const editItems = Array.isArray(p) ? p : Array.isArray((p as { edits?: unknown[] } | null)?.edits) ? (p as { edits: unknown[] }).edits : [];
-            if (editItems.length && allowActions) {
+            if (editItems.length && allowActions && !strictConversationOnly) {
               for (const edit of editItems) {
                 const rawPatch =
                   typeof (edit as { patch?: unknown })?.patch === "string"
@@ -1706,7 +1714,7 @@ class Provider implements vscode.WebviewViewProvider {
               this.post({ type: "pendingActions", count: this.pendingActions.length });
             }
           } else if (ev === "commands_chunk") {
-            if (Array.isArray(p) && allowActions) {
+            if (Array.isArray(p) && allowActions && !strictConversationOnly) {
               for (const command of p) {
                 if (typeof command === "string" && command.trim()) {
                   this.pendingActions.push({ type: "command", command: command.trim() });
@@ -1715,7 +1723,7 @@ class Provider implements vscode.WebviewViewProvider {
               this.post({ type: "pendingActions", count: this.pendingActions.length });
             }
           } else if (ev === "actions_chunk") {
-            if (Array.isArray(p) && allowActions) {
+            if (Array.isArray(p) && allowActions && !strictConversationOnly) {
               for (const action of p) {
                 if (!action || typeof action !== "object") continue;
                 const type = String((action as { type?: unknown }).type || "").toLowerCase();
@@ -1778,6 +1786,10 @@ class Provider implements vscode.WebviewViewProvider {
           } else if (ev === "meta") {
             this.lastRunMeta = (p || null) as RunMeta | null;
             this.postRun(runThreadId, { type: "meta", data: p });
+            const actionability = (p as { actionability?: { summary?: string; reason?: string } } | null)?.actionability;
+            if (actionability?.summary && actionability.summary !== "valid_actions" && actionability.reason) {
+              this.postRun(runThreadId, { type: "status", text: actionability.reason });
+            }
           }
         }
       ));
@@ -1817,7 +1829,7 @@ class Provider implements vscode.WebviewViewProvider {
       }
       return;
     }
-    if (conversational && this.pendingActions.length > 0) {
+    if ((conversational || strictConversationOnly) && this.pendingActions.length > 0) {
       this.pendingActions = [];
       this.post({ type: "pendingActions", count: 0 });
       return;
@@ -1834,13 +1846,14 @@ class Provider implements vscode.WebviewViewProvider {
           ? hasEditActions
           : policy === "preview_first"
             ? false
-            : hasEditActions && this.mode === "yolo" && autonomy?.autoApplyEdits !== false;
+            : hasEditActions && (this.mode === "yolo" || this.mode === "auto") && autonomy?.autoApplyEdits !== false;
       const autoRunValidation =
         policy === "full_auto"
           ? hasCommandActions
           : policy === "preview_first"
             ? false
-            : (autonomy?.autoRunValidation === true || this.hasExplicitCommandRunIntent(text));
+            : (this.mode === "yolo" || this.mode === "auto") &&
+              (autonomy?.autoRunValidation === true || this.hasExplicitCommandRunIntent(text) || hasCommandActions);
 
       if (hasEditActions && !autoApplyEdits) {
         this.postRun(runThreadId, {
@@ -1856,6 +1869,7 @@ class Provider implements vscode.WebviewViewProvider {
             summary: "Edits prepared for preview, not auto-applied.",
           },
         });
+        this.postRun(runThreadId, { type: "prefill", text: "apply now" });
         return;
       }
 
@@ -3282,11 +3296,32 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         max-height: 280px;
         overflow: auto;
       }
+      .diff-card[data-lang] {
+        --lang-accent: var(--accent);
+      }
+      .diff-card[data-lang="ts"] { --lang-accent: #38bdf8; }
+      .diff-card[data-lang="js"] { --lang-accent: #fbbf24; }
+      .diff-card[data-lang="py"] { --lang-accent: #60a5fa; }
+      .diff-card[data-lang="go"] { --lang-accent: #22d3ee; }
+      .diff-card[data-lang="rust"] { --lang-accent: #f97316; }
+      .diff-card[data-lang="json"] { --lang-accent: #a78bfa; }
+      .diff-card[data-lang="yaml"] { --lang-accent: #34d399; }
+      .diff-card[data-lang="html"] { --lang-accent: #fb7185; }
+      .diff-card[data-lang="css"] { --lang-accent: #818cf8; }
+      .diff-card[data-lang="shell"] { --lang-accent: #4ade80; }
+      .diff-card[data-lang="sql"] { --lang-accent: #f472b6; }
+      .diff-card[data-lang="toml"] { --lang-accent: #facc15; }
+      .diff-card[data-lang="plain"] { --lang-accent: var(--accent); }
+      .diff-card[data-lang] .diff-head {
+        border-left: 3px solid color-mix(in srgb, var(--lang-accent) 80%, var(--surface-border));
+        padding-left: 7px;
+      }
       .diff-row {
         display: grid;
         grid-template-columns: 44px 44px 16px 1fr;
         width: fit-content;
         min-width: 100%;
+        transition: background .18s ease;
       }
       .diff-row .ln {
         color: var(--line-fg);
@@ -3310,19 +3345,38 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       }
       .diff-row.add .sig,
       .diff-row.add .txt {
-        background: var(--diff-add-bg);
+        background: linear-gradient(90deg, var(--diff-add-bg) 0%, color-mix(in srgb, var(--diff-add-bg) 65%, var(--lang-accent)) 100%);
         color: color-mix(in srgb, var(--diff-add-fg) 75%, var(--fg));
       }
       .diff-row.del .sig,
       .diff-row.del .txt {
-        background: var(--diff-del-bg);
+        background: linear-gradient(90deg, var(--diff-del-bg) 0%, color-mix(in srgb, var(--diff-del-bg) 70%, var(--lang-accent)) 100%);
         color: color-mix(in srgb, var(--diff-del-fg) 72%, var(--fg));
+      }
+      .diff-row.add:hover .sig,
+      .diff-row.add:hover .txt {
+        background: linear-gradient(90deg, color-mix(in srgb, var(--diff-add-bg) 80%, var(--lang-accent)) 0%, color-mix(in srgb, var(--diff-add-bg) 50%, var(--lang-accent)) 100%);
+      }
+      .diff-row.del:hover .sig,
+      .diff-row.del:hover .txt {
+        background: linear-gradient(90deg, color-mix(in srgb, var(--diff-del-bg) 80%, var(--lang-accent)) 0%, color-mix(in srgb, var(--diff-del-bg) 50%, var(--lang-accent)) 100%);
       }
       .diff-row.meta .sig,
       .diff-row.meta .txt {
         color: color-mix(in srgb, var(--fg) 55%, var(--muted));
         background: color-mix(in srgb, var(--surface) 62%, var(--bg-0));
       }
+      .diff-body .tok-keyword { color: color-mix(in srgb, var(--accent) 70%, #ff79c6 30%); font-weight: 600; }
+      .diff-body .tok-string { color: color-mix(in srgb, #f9e2af 70%, var(--fg)); }
+      .diff-body .tok-number { color: color-mix(in srgb, #89b4fa 70%, var(--fg)); }
+      .diff-body .tok-comment { color: color-mix(in srgb, var(--muted) 80%, #94a3b8 20%); font-style: italic; }
+      .diff-body .tok-boolean { color: color-mix(in srgb, #c4b5fd 70%, var(--fg)); font-weight: 600; }
+      .diff-body .tok-type { color: color-mix(in srgb, #fda4af 70%, var(--fg)); }
+      .diff-body .tok-func { color: color-mix(in srgb, #5eead4 70%, var(--fg)); }
+      .diff-body .tok-key { color: color-mix(in srgb, #fca5a5 70%, var(--fg)); }
+      .diff-body .tok-prop { color: color-mix(in srgb, #a5b4fc 70%, var(--fg)); }
+      .diff-body .tok-tag { color: color-mix(in srgb, #f472b6 70%, var(--fg)); }
+      .diff-body .tok-attr { color: color-mix(in srgb, #fde047 70%, var(--fg)); }
       .diff-trunc {
         color: color-mix(in srgb, var(--fg) 62%, var(--muted));
         font-size: 11px;
@@ -3359,7 +3413,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       .item-title { font-weight: 600; margin-bottom: 4px; }
       .item-sub { color: var(--muted); font-size: 11px; }
       .input {
-        border-top: 1px solid #161616;
+        border-top: none;
         padding: 10px 12px;
         display: grid;
         gap: 7px;
@@ -4266,6 +4320,42 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         display: flex;
         background: transparent;
       }
+      .threads-overlay-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 45;
+        display: none;
+        background: color-mix(in srgb, var(--bg-0) 70%, transparent);
+      }
+      .threads-overlay-backdrop.show {
+        display: block;
+      }
+      .threads-overlay-open #stageThreads {
+        display: block !important;
+        position: fixed;
+        right: 16px;
+        top: 92px;
+        width: min(520px, calc(100vw - 32px));
+        max-height: calc(100vh - 140px);
+        overflow: auto;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--surface) 94%, var(--bg-0));
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+        z-index: 50;
+        padding: 12px 12px 16px;
+      }
+      .threads-overlay-open #stageThreads.panel {
+        padding: 12px 12px 16px;
+      }
+      @media (max-width: 840px) {
+        .threads-overlay-open #stageThreads {
+          right: 12px;
+          left: 12px;
+          width: auto;
+          max-height: calc(100vh - 120px);
+        }
+      }
       .stage-shell .panel {
         flex: 1;
         min-height: 0;
@@ -4568,9 +4658,9 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         inset: 0;
         z-index: 60;
         display: flex;
-        align-items: flex-start;
+        align-items: flex-start !important;
         justify-content: center;
-        padding: 24px 20px 20px;
+        padding: 8px 20px 20px;
       }
       .action-menu.hidden {
         display: none !important;
@@ -4706,6 +4796,8 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         </div>
         <div class="global-actions">
           <button id="historyQuick" type="button" class="menu-icon panel-icon" aria-label="Open threads" title="Open threads">&#9776;</button>
+          <button id="historyHeader" type="button" class="menu-icon" aria-label="Open previous chats" title="Previous chats">Chats</button>
+          <button id="undoHeader" type="button" class="menu-icon" aria-label="Undo last changes" title="Undo last changes">Undo</button>
           <button id="backToChatQuick" type="button" class="menu-icon panel-icon hidden" aria-label="Back to blank stage" title="Back to blank stage">&#8592;</button>
           <button id="newThreadQuick" type="button" class="menu-icon quick-new" aria-label="Start new chat">New chat</button>
         </div>
@@ -4745,6 +4837,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
           <div id="agents" class="panel"></div>
           <div id="exec" class="panel"></div>
         </div>
+        <div id="threadsOverlayBackdrop" class="threads-overlay-backdrop" aria-hidden="true"></div>
 
         <div id="chatDock" class="dock-shell" role="region" aria-label="Chat dock">
           <div class="input">
@@ -4880,6 +4973,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
                         <button id="newThreadBtn" class="action-item" type="button">New Chat</button>
                         <button id="undoLastBtn" class="action-item" type="button">Undo Last Changes</button>
                         <button id="c" class="action-item" type="button">Clear Chat</button>
+                        <button class="action-item" type="button" data-menu-action="execute">Execute Pending Actions</button>
                         <button class="action-item" type="button" data-menu-action="history">Refresh History</button>
                         <button class="action-item" type="button" data-menu-action="replay">Replay Session</button>
                         <button class="action-item" type="button" data-menu-action="indexRebuild">Rebuild Index</button>

@@ -75,6 +75,18 @@ describe("patch utils", () => {
     expect(result.content).toBe("two\n");
   });
 
+  it("applies hunks when context has trailing whitespace differences", () => {
+    const patch = [
+      "@@ -1,2 +1,2 @@",
+      "-alpha",
+      "+beta",
+      " gamma",
+    ].join("\n");
+    const result = applyUnifiedDiff("alpha  \n gamma\n", patch);
+    expect(result.status).toBe("applied");
+    expect(result.content).toBe("beta\n gamma\n");
+  });
+
   it("rejects invalid patch text", () => {
     const result = applyUnifiedDiff("a\n", "not a diff");
     expect(result.status).toBe("rejected_invalid_patch");

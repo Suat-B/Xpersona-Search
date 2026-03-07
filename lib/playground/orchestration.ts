@@ -109,6 +109,11 @@ export type AssistResult = {
   risk: { blastRadius: "low" | "medium" | "high"; rollbackComplexity: number };
   influence: { files: string[]; snippets: number };
   nextBestActions: string[];
+  repromptStage: "none" | "repair" | "tool_enforcement" | "fallback";
+  actionability: {
+    summary: "valid_actions" | "clarification_needed" | "blocked_by_safety";
+    reason: string;
+  };
 };
 
 type StructuredAssistOutput = {
@@ -133,7 +138,7 @@ const IDENTITY_DENIAL_RESPONSE =
 const HF_REQUEST_TIMEOUT_MS = Number(process.env.PLAYGROUND_HF_REQUEST_TIMEOUT_MS || 90_000);
 const HF_STREAM_IDLE_TIMEOUT_MS = Number(process.env.PLAYGROUND_HF_STREAM_IDLE_TIMEOUT_MS || 45_000);
 const STREAM_RAW_MODEL_TOKENS = process.env.PLAYGROUND_STREAM_MODEL_TOKENS === "1";
-const PLAYGROUND_INTELLIGENCE_V2 = process.env.PLAYGROUND_INTELLIGENCE_V2 === "1";
+const PLAYGROUND_INTELLIGENCE_V2 = process.env.PLAYGROUND_INTELLIGENCE_V2 !== "0";
 const AUTO_APPLY_THRESHOLD = 0.72;
 const AUTO_VALIDATE_THRESHOLD = 0.8;
 
@@ -683,13 +688,19 @@ function profileToPrompt(profile?: AssistUserProfile | null, clientPreferences?:
   return parts.join("\n");
 }
 
-function shouldUseTwoPassCodeGeneration(task: string, codeEditIntent: boolean, context?: AssistContext): boolean {
+function shouldUseTwoPassCodeGeneration(
+  task: string,
+  codeEditIntent: boolean,
+  context?: AssistContext,
+  reasoningPreference?: AssistClientPreferences["reasoning"] | string | null
+): boolean {
   if (!PLAYGROUND_INTELLIGENCE_V2 || !codeEditIntent) return false;
+  if (reasoningPreference === "low" || reasoningPreference === "medium") return false;
   const complexitySignal =
-    task.length > 120 ||
-    /\b(robust|end-to-end|production|architecture|multi-file|refactor|migration|validate|guardrail|comprehensive|optimize)\b/i.test(task) ||
-    (context?.openFiles?.length ?? 0) >= 4 ||
-    (context?.diagnostics?.length ?? 0) >= 6;
+    task.length > 220 ||
+    /\b(robust|end-to-end|production|architecture|multi-file|refactor|migration|validate|guardrail|comprehensive|optimize|performance|latency|scaling)\b/i.test(task) ||
+    (context?.openFiles?.length ?? 0) >= 6 ||
+    (context?.diagnostics?.length ?? 0) >= 8;
   return complexitySignal;
 }
 
@@ -1175,10 +1186,10 @@ export function composeWarmAssistantResponse(input: {
     const resultLine = firstNonEmptyLine(cleaned);
     const nextAction =
       input.autonomyDecision.mode === "preview_only"
-        ? "Next action: say \"apply now\" and I will execute the prepared edits."
+        ? "Next action: review the preview, then reply \"apply now\" or use Actions -> Execute Pending Actions."
         : input.autonomyDecision.mode === "auto_apply_and_validate"
-          ? "Next action: execution is pending verification in the client."
-          : "Next action: execution is pending verification in the client.";
+          ? "Next action: changes were auto-applied and validation is running/complete. Review results in Execution and terminal."
+          : "Next action: changes were auto-applied. Review execution details in the Execution panel.";
     return [
       `I prepared the requested update in ${touched}.`,
       resultLine ? resultLine : "",
@@ -1239,6 +1250,15 @@ function extractFinalFromJsonLike(raw: string): string | null {
   } catch {
     return normalizeModelText(m[1]);
   }
+}
+
+function isClarificationResponseText(text: string): boolean {
+  const normalized = String(text || "").trim().toLowerCase();
+  if (!normalized) return false;
+  return (
+    /\?$/.test(normalized) ||
+    /\b(please share|can you share|could you share|paste|which file|which path|clarify|need more context|show me the file)\b/.test(normalized)
+  );
 }
 
 function inferStructuredFallback(raw: string, task: string): StructuredAssistOutput | null {
@@ -1311,6 +1331,27 @@ function inferRisk(decision: AssistDecisionMode, task: string, commands: string[
   return { blastRadius: "low" as const, rollbackComplexity: 2 };
 }
 
+function isHighRiskActionPattern(task: string, actions: ToolAction[]): boolean {
+  const normalizedTask = String(task || "").toLowerCase();
+  const riskyTask =
+    /\b(schema|migration|auth|payment|security|credential|secret|token|delete|drop table|rm -rf)\b/i.test(normalizedTask);
+  if (riskyTask) return true;
+
+  for (const action of actions) {
+    if (action.type === "command") {
+      const cmd = action.command.toLowerCase();
+      if (/\brm\s+-rf\b/.test(cmd) || /\b(del|rmdir)\b/.test(cmd) || /\b(drop\s+table|truncate)\b/.test(cmd)) return true;
+      if (/\b(curl|wget)\b/.test(cmd) && /\|\s*(sh|bash|zsh)\b/.test(cmd)) return true;
+      if (/\b(psql|mysql|sqlite3)\b/.test(cmd) && /\b(drop|delete|truncate|alter)\b/.test(cmd)) return true;
+    }
+    if (action.type === "edit" || action.type === "write_file") {
+      const p = action.path.toLowerCase();
+      if (/\b(secrets?|credentials?|auth|payment|billing|migration|schema)\b/.test(p)) return true;
+    }
+  }
+  return false;
+}
+
 function collectInfluence(context?: AssistContext) {
   const files = new Set<string>();
   if (context?.activeFile?.path) files.add(context.activeFile.path);
@@ -1338,6 +1379,17 @@ function hasCodeEditIntent(task: string): boolean {
     /^(what|why|how|when|where|who|which|can|could|would|should|is|are|do|does|did)\b/.test(trimmed) ||
     /\b(about|explain|describe|read|summarize|tell me|walk me through)\b/.test(trimmed);
   return !questionLike;
+}
+
+function isPureConversationalTask(task: string): boolean {
+  const trimmed = String(task || "").trim();
+  if (!trimmed) return true;
+  return (
+    (isGreetingLike(trimmed) || isAcknowledgementLike(trimmed) || isQuestionLike(trimmed)) &&
+    !hasCodeEditIntent(trimmed) &&
+    !hasExecutionIntent(trimmed) &&
+    !hasExplicitCommandRunIntent(trimmed)
+  );
 }
 
 function detectLanguageFromPath(path: string): "ts" | "js" | "python" | "go" | "rust" | "docs" | "other" {
@@ -1541,6 +1593,7 @@ function decideAutonomy(input: {
   executionPolicy?: "full_auto" | "yolo_only" | "preview_first";
   decisionMode: AssistDecisionMode;
   clientPreferences?: AssistClientPreferences;
+  riskBlocked?: boolean;
 }): {
   mode: "no_actions" | "preview_only" | "auto_apply_only" | "auto_apply_and_validate";
   autoApplyEdits: boolean;
@@ -1549,6 +1602,17 @@ function decideAutonomy(input: {
   thresholds: { autoApply: number; autoValidate: number };
   rationale: string;
 } {
+  if (input.riskBlocked) {
+    return {
+      mode: "preview_only",
+      autoApplyEdits: false,
+      autoRunValidation: false,
+      confidence: input.confidence,
+      thresholds: { autoApply: AUTO_APPLY_THRESHOLD, autoValidate: AUTO_VALIDATE_THRESHOLD },
+      rationale: "High-risk action pattern detected; manual preview required.",
+    };
+  }
+
   if (input.actionsCount === 0) {
     return {
       mode: "no_actions",
@@ -1612,7 +1676,17 @@ function decideAutonomy(input: {
       autoRunValidation: true,
       confidence: input.confidence,
       thresholds: { autoApply: AUTO_APPLY_THRESHOLD, autoValidate: AUTO_VALIDATE_THRESHOLD },
-      rationale: "Confidence meets auto-apply and targeted-validation threshold.",
+      rationale: "Auto mode prefers aggressive execution with validation when risk is acceptable.",
+    };
+  }
+  if (input.decisionMode === "generate" || input.decisionMode === "debug" || input.decisionMode === "yolo") {
+    return {
+      mode: "auto_apply_and_validate",
+      autoApplyEdits: true,
+      autoRunValidation: true,
+      confidence: input.confidence,
+      thresholds: { autoApply: AUTO_APPLY_THRESHOLD, autoValidate: AUTO_VALIDATE_THRESHOLD },
+      rationale: "Auto mode aggressively applies and validates by default when risk is acceptable.",
     };
   }
   if (input.confidence >= AUTO_APPLY_THRESHOLD) {
@@ -1735,7 +1809,7 @@ export async function runAssist(
   }
 
   const budget = {
-    maxTokens: req.contextBudget?.maxTokens ?? 16_384,
+    maxTokens: req.contextBudget?.maxTokens ?? 8_192,
     strategy: req.contextBudget?.strategy ?? ("hybrid" as const),
   };
   const budgetedContext = trimContextByBudget(req.context, budget.maxTokens, budget.strategy);
@@ -1762,8 +1836,14 @@ export async function runAssist(
   let edits: Array<{ path: string; patch: string; rationale?: string }> = [];
   let modelCommands: string[] = [];
   let structuredActions: ToolAction[] = [];
+  let repromptStage: "none" | "repair" | "tool_enforcement" | "fallback" = "none";
+  let actionability: AssistResult["actionability"] = {
+    summary: "valid_actions",
+    reason: "Action set is acceptable for this request.",
+  };
   const explicitCommandRunIntent = hasExplicitCommandRunIntent(req.task);
-  const codeEditIntent = hasCodeEditIntent(req.task) || intentResolution.intent === "code_edit";
+  const pureConversationalTask = isPureConversationalTask(req.task);
+  const codeEditIntent = !pureConversationalTask && (hasCodeEditIntent(req.task) || intentResolution.intent === "code_edit");
   const reasoningPreference = extractReasoningPreference(req.workflowIntentId);
   const preferredReasoning = req.clientPreferences?.reasoning || req.userProfile?.reasoningPreference || null;
   const effectiveReasoning = reasoningPreference || preferredReasoning;
@@ -1835,7 +1915,7 @@ export async function runAssist(
       .join("\n");
 
     let raw = "";
-    const useTwoPass = shouldUseTwoPassCodeGeneration(req.task, codeEditIntent, budgetedContext);
+    const useTwoPass = shouldUseTwoPassCodeGeneration(req.task, codeEditIntent, budgetedContext, effectiveReasoning);
     const allowRawTokenStream = STREAM_RAW_MODEL_TOKENS && !useTwoPass && !hasExecutionIntent(req.task);
     const callPrimaryWithModelFallback = async (promptText: string, attachmentsForCall?: AssistAttachment[]) => {
       try {
@@ -1964,12 +2044,98 @@ export async function runAssist(
         logs.push("structured_output=recovered_from_fallback_code_inference");
       }
     }
+
+    // Quality reprompt loop: ensure actionable tool output for code-edit requests.
+    if (codeEditIntent) {
+      const hasUsableActions = (candidateEdits: typeof edits, candidateCommands: string[], candidateStructured: ToolAction[]) => {
+        const candidateActions = synthesizeDeterministicActions({
+          task: req.task,
+          edits: candidateEdits,
+          commands: candidateCommands,
+          structuredActions: candidateStructured,
+        });
+        return candidateActions.some(
+          (action) => action.type === "edit" || action.type === "mkdir" || action.type === "write_file" || action.type === "command"
+        );
+      };
+
+      let usable = hasUsableActions(edits, modelCommands, structuredActions);
+      let clarification = isClarificationResponseText(final);
+
+      if (!usable && !clarification) {
+        repromptStage = "repair";
+        reasonCodes.push("reprompt_repair_pass_2");
+        logs.push("reprompt_repair_pass_2");
+        if (hooks?.onStatus) await hooks.onStatus("Repairing tool output...");
+        const repairPrompt = [
+          prompt,
+          "",
+          "Repair pass: the prior output was not actionable.",
+          "Return STRICT JSON only and ensure actionable edits/commands when code changes are requested.",
+          "",
+          "Previous output:",
+          raw || final,
+        ].join("\n");
+        const repairRaw = await callWithAttachmentFallback(repairPrompt, undefined);
+        raw = repairRaw;
+        const repairStructured = parseStructuredAssistResponse(repairRaw) ?? inferStructuredFallback(repairRaw, req.task);
+        if (repairStructured) {
+          final = normalizeModelText(repairStructured.final);
+          edits = repairStructured.edits;
+          modelCommands = repairStructured.commands;
+          structuredActions = (repairStructured.actions ?? []) as ToolAction[];
+        } else {
+          final = normalizeModelText(extractFinalFromJsonLike(repairRaw) || repairRaw);
+        }
+        usable = hasUsableActions(edits, modelCommands, structuredActions);
+        clarification = isClarificationResponseText(final);
+      }
+
+      if (!usable && !clarification) {
+        repromptStage = "tool_enforcement";
+        reasonCodes.push("reprompt_tool_enforcement_pass_3");
+        logs.push("reprompt_tool_enforcement_pass_3");
+        if (hooks?.onStatus) await hooks.onStatus("Enforcing actionable tool output...");
+        const enforcePrompt = [
+          prompt,
+          "",
+          "Tool-enforcement pass:",
+          "You MUST return actionable edits/commands OR an explicit clarification question if required context is missing.",
+          "Do not return non-actionable summaries.",
+          "",
+          "Previous output:",
+          raw || final,
+        ].join("\n");
+        const enforceRaw = await callWithAttachmentFallback(enforcePrompt, undefined);
+        raw = enforceRaw;
+        const enforceStructured = parseStructuredAssistResponse(enforceRaw) ?? inferStructuredFallback(enforceRaw, req.task);
+        if (enforceStructured) {
+          final = normalizeModelText(enforceStructured.final);
+          edits = enforceStructured.edits;
+          modelCommands = enforceStructured.commands;
+          structuredActions = (enforceStructured.actions ?? []) as ToolAction[];
+        } else {
+          final = normalizeModelText(extractFinalFromJsonLike(enforceRaw) || enforceRaw);
+        }
+        usable = hasUsableActions(edits, modelCommands, structuredActions);
+        clarification = isClarificationResponseText(final);
+      }
+
+      if (!usable && !clarification) {
+        repromptStage = "fallback";
+        reasonCodes.push("reprompt_fallback_to_clarification");
+        logs.push("reprompt_fallback_to_clarification");
+        final =
+          "I need one more detail before I can safely generate actionable edits. Please share the exact file path and the target change, or paste the relevant code block.";
+      }
+    }
   }
 
   const readOnlyConversationRequest =
-    intentResolution.intent === "conversation" &&
-    !hasCodeEditIntent(req.task) &&
-    !hasExecutionIntent(req.task);
+    pureConversationalTask ||
+    (intentResolution.intent === "conversation" &&
+      !hasCodeEditIntent(req.task) &&
+      !hasExecutionIntent(req.task));
   if (readOnlyConversationRequest) {
     if (edits.length > 0 || structuredActions.length > 0 || modelCommands.length > 0) {
       logs.push("conversation_guard=dropped_non_readonly_actions");
@@ -1992,6 +2158,7 @@ export async function runAssist(
     explicitCommandRunIntent,
     decisionMode: decision.mode,
   });
+  const riskBlocked = isHighRiskActionPattern(req.task, actions);
   const autonomyDecision = decideAutonomy({
     confidence,
     actionsCount: actions.length,
@@ -2001,10 +2168,28 @@ export async function runAssist(
     executionPolicy: req.executionPolicy,
     decisionMode: decision.mode,
     clientPreferences: req.clientPreferences,
+    riskBlocked,
   });
   reasonCodes.push(`autonomy_${autonomyDecision.mode}`);
   logs.push(`autonomy=${autonomyDecision.mode}`);
   logs.push(`validation_scope=${validationPlan.scope}`);
+
+  if (riskBlocked) {
+    actionability = {
+      summary: "blocked_by_safety",
+      reason: "High-risk task or command pattern detected; manual preview is required.",
+    };
+  } else if (actions.length === 0 && repromptStage === "fallback") {
+    actionability = {
+      summary: "clarification_needed",
+      reason: "Model could not produce actionable edits after recovery passes.",
+    };
+  } else if (actions.length === 0) {
+    actionability = {
+      summary: "clarification_needed",
+      reason: "No actionable edits/commands were produced for this request.",
+    };
+  }
 
   let commands: string[] = [];
   if (autonomyDecision.autoRunValidation) {
@@ -2042,6 +2227,10 @@ export async function runAssist(
       actions,
       autonomyDecision,
     });
+  }
+  if (readOnlyConversationRequest && /i prepared the requested update/i.test(final)) {
+    final = stripRoboticArtifacts(final) || "I'm here and ready to help. What would you like to work on?";
+    logs.push("conversation_guard=removed_action_template");
   }
   const identityScrub = sanitizeProviderIdentityLeak(final);
   if (identityScrub.changed) {
@@ -2092,7 +2281,10 @@ export async function runAssist(
     risk,
     influence,
     nextBestActions,
+    repromptStage,
+    actionability,
   };
 }
+
 
 

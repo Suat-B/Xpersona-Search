@@ -32,12 +32,22 @@ function normalizePatchPath(raw: string): string | null {
   return trimmed;
 }
 
+function isOmittedPlaceholder(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (/omitted\s+for\s+brevity/i.test(trimmed)) return true;
+  return /^(\/*|#|;)?\s*\.\.\.\s*\[?omitted\s+for\s+brevity\]?\s*\.\.\.\s*$/i.test(trimmed);
+}
+
 function normalizePatchText(patchText: string): string {
   const lines = patchText.replace(/\r\n/g, "\n").split("\n");
   const out: string[] = [];
   let inHunk = false;
   for (const raw of lines) {
     const line = raw ?? "";
+    if (isOmittedPlaceholder(line)) {
+      continue;
+    }
     if (line.trim().startsWith("```")) {
       continue;
     }
@@ -143,6 +153,32 @@ function hunkMatchesAt(sourceLines: string[], start: number, hunk: ParsedHunk): 
   return true;
 }
 
+function normalizeMatchLine(line: string): string {
+  return line.trim();
+}
+
+function hunkMatchesAtRelaxed(sourceLines: string[], start: number, hunk: ParsedHunk): boolean {
+  let idx = start;
+  for (const line of hunk.lines) {
+    if (line.kind === "+") continue;
+    if (idx >= sourceLines.length) return false;
+    if (normalizeMatchLine(sourceLines[idx]) !== normalizeMatchLine(line.text)) return false;
+    idx += 1;
+  }
+  return true;
+}
+
+function findRelaxedUniqueMatch(sourceLines: string[], from: number, to: number, hunk: ParsedHunk): number {
+  let matchIndex = -1;
+  for (let i = from; i <= to; i += 1) {
+    if (hunkMatchesAtRelaxed(sourceLines, i, hunk)) {
+      if (matchIndex !== -1) return -1;
+      matchIndex = i;
+    }
+  }
+  return matchIndex;
+}
+
 function locateHunkStart(sourceLines: string[], expectedStart: number, hunk: ParsedHunk): number {
   if (hunkMatchesAt(sourceLines, expectedStart, hunk)) return expectedStart;
 
@@ -154,7 +190,9 @@ function locateHunkStart(sourceLines: string[], expectedStart: number, hunk: Par
   for (let i = 0; i < sourceLines.length; i += 1) {
     if (hunkMatchesAt(sourceLines, i, hunk)) return i;
   }
-  return -1;
+  const relaxedNearby = findRelaxedUniqueMatch(sourceLines, from, to, hunk);
+  if (relaxedNearby >= 0) return relaxedNearby;
+  return findRelaxedUniqueMatch(sourceLines, 0, Math.max(0, sourceLines.length - 1), hunk);
 }
 
 export function extractPatchTargetPath(patchText: string): string | null {

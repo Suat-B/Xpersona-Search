@@ -54,11 +54,6 @@ const PRICING_TIERS: PricingTier[] = [
 
 const FAQ_ITEMS: FaqItem[] = [
   {
-    question: "Is Playground a wrapper around another model?",
-    answer:
-      "No. Playground 1 is our in-house model plus Xpersona orchestration like sessions, indexing, and policy checks.",
-  },
-  {
     question: "Can I still use ChatGPT, Claude, or Codex?",
     answer: "Yes. Playground complements your workflow in VS Code, especially for plan to execute loops in real repos.",
   },
@@ -133,20 +128,17 @@ function CheckIcon({ className }: { className?: string }) {
 
 function Hero({ onStartTrial, onSeeDemo, isBusy }: { onStartTrial: () => void; onSeeDemo: () => void; isBusy: boolean }) {
   return (
-    <section className="playground-aurora playground-grid relative overflow-hidden px-4 pb-12 pt-12 sm:px-6 sm:pt-16">
-      <div className="playground-noise pointer-events-none absolute inset-0" />
-      <div className="playground-hero-orb pointer-events-none absolute left-1/2 top-0 h-[540px] w-[540px] -translate-x-1/2" />
+    <section className="relative overflow-hidden bg-[var(--light-bg-primary)] px-4 pb-12 pt-12 sm:px-6 sm:pt-16">
       <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
         <div className="playground-reveal space-y-6">
           <p className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/70 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--light-accent-text)] shadow-[var(--light-shadow-sm)] backdrop-blur">
-            Playground AI for VS Code
+            Playground AI for your IDE
           </p>
           <div className="inline-flex items-center gap-2 rounded-full border border-[var(--light-accent)]/25 bg-[var(--light-accent-light)] px-3 py-1 text-xs font-semibold text-[var(--light-accent-text)]">
-            Most teams start with Builder
+            Most people start with Builder
           </div>
           <h1 className="text-balance text-4xl font-black leading-[1.05] text-[var(--light-text-primary)] sm:text-5xl lg:text-6xl">
-            Build at full speed.
-            <span className="block playground-accent-text">Keep control while you ship.</span>
+            New Large Language Model Made In America ❤️
           </h1>
           <p className="max-w-2xl text-pretty text-base leading-relaxed text-[var(--light-text-secondary)] sm:text-lg">
             Playground plans, writes, debugs, and executes in your real repo. Less context switching. More shipped features.
@@ -477,8 +469,7 @@ function FinalCta({ onStartTrial, isBusy }: { onStartTrial: () => void; isBusy: 
   return (
     <section className="px-4 pb-24 pt-4 sm:px-6">
       <div className="mx-auto max-w-6xl">
-        <div className="playground-aurora relative overflow-hidden rounded-3xl border border-[var(--light-border)] p-8 text-center shadow-[var(--light-shadow-xl)] sm:p-12">
-          <div className="playground-noise pointer-events-none absolute inset-0" />
+        <div className="relative overflow-hidden rounded-3xl border border-[var(--light-border)] bg-[var(--light-bg-primary)] p-8 text-center shadow-[var(--light-shadow-xl)] sm:p-12">
           <div className="relative">
             <h2 className="text-balance text-3xl font-black text-[var(--light-text-primary)] sm:text-5xl">Start your trial and ship your next feature today</h2>
             <p className="mx-auto mt-4 max-w-2xl text-[var(--light-text-secondary)]">Plan, generate, debug, and execute from one workspace built for real repositories.</p>
@@ -516,25 +507,34 @@ export function PlaygroundClient() {
       setIsCheckoutStarting(true);
       setCheckoutError(null);
       try {
-        const res = await fetch("/api/v1/me/playground-checkout", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ tier, billing: isYearly ? "yearly" : "monthly" }),
-        });
-        const json = (await res.json().catch(() => ({}))) as { success?: boolean; data?: { url?: string }; message?: string };
+        const runCheckout = async (allowAuthRetry: boolean) => {
+          const res = await fetch("/api/v1/me/playground-checkout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ tier, billing: isYearly ? "yearly" : "monthly" }),
+          });
+          const json = (await res.json().catch(() => ({}))) as { success?: boolean; data?: { url?: string }; message?: string };
 
-        if (res.status === 401) {
-          window.location.href = "/api/auth/play";
-          return;
-        }
+          if (res.status === 401 && allowAuthRetry) {
+            const authRes = await fetch("/api/auth/play", { method: "POST", credentials: "include" });
+            if (!authRes.ok) {
+              setCheckoutError("Sign in failed. Please try again.");
+              return;
+            }
+            await runCheckout(false);
+            return;
+          }
 
-        if (!res.ok || !json.success || !json.data?.url) {
-          setCheckoutError(json.message || "Could not start checkout. Please try again.");
-          return;
-        }
+          if (!res.ok || !json.success || !json.data?.url) {
+            setCheckoutError(json.message || "Could not start checkout. Please try again.");
+            return;
+          }
 
-        window.location.href = json.data.url;
+          window.location.href = json.data.url;
+        };
+
+        await runCheckout(true);
       } catch {
         setCheckoutError("Could not start checkout. Please try again.");
       } finally {
@@ -573,3 +573,4 @@ export function PlaygroundClient() {
     </div>
   );
 }
+

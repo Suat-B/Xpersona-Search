@@ -75,11 +75,18 @@ describe("assist route helpers", () => {
         risk: { blastRadius: "low", rollbackComplexity: 1 },
         influence: { files: ["hello.py"], snippets: 1 },
         nextBestActions: ["Apply edits"],
+        repromptStage: "none",
+        actionability: {
+          summary: "valid_actions",
+          reason: "Action set is acceptable for this request.",
+        },
       },
     });
     expect(payload.reasonCodes).toEqual(["intent_code_edit"]);
     expect(payload.autonomyDecision.mode).toBe("auto_apply_only");
     expect(payload.validationPlan.scope).toBe("targeted");
+    expect(payload.repromptStage).toBe("none");
+    expect(payload.actionability.summary).toBe("valid_actions");
     expect(payload.model).toBe("Playground 1");
   });
 });

@@ -141,12 +141,29 @@ export async function POST(request: NextRequest): Promise<Response> {
       userId: auth.userId,
       sessionId,
       includeAgentEvents: false,
+      limit: 120,
     }).catch(() => [])
   );
-  const priorConversationHistory = mergeConversationHistory({
+  let priorConversationHistory = mergeConversationHistory({
     persisted: persistedConversationHistory,
     fromClient: body.conversationHistory,
   });
+  const contextBudgetMax = Math.max(1024, body.contextBudget?.maxTokens ?? 8192);
+  const historyTokens = estimateMessagesTokens(
+    priorConversationHistory.map((turn) => ({ content: turn.content }))
+  );
+  const projectedTokens = historyTokens + estimateMessagesTokens([{ content: body.task }]);
+  if (priorConversationHistory.length > 4 && projectedTokens >= Math.floor(contextBudgetMax * 0.8)) {
+    const compactSummary = buildCompactSessionSummary({
+      history: priorConversationHistory,
+      latestTask: body.task,
+      latestFinal: "",
+    });
+    if (compactSummary) {
+      const tail = priorConversationHistory.slice(-4);
+      priorConversationHistory = [{ role: "assistant", content: `Session summary:\n${compactSummary}` }, ...tail];
+    }
+  }
   const userProfile = await getUserPlaygroundProfile({ userId: auth.userId }).catch(() => null);
 
   if (body.clientPreferences) {
@@ -354,6 +371,8 @@ export async function POST(request: NextRequest): Promise<Response> {
                   decision: result.decision.mode,
                   actions: result.actions,
                   nextBestActions: result.nextBestActions,
+                  repromptStage: result.repromptStage,
+                  actionability: result.actionability,
                 },
               })
             )

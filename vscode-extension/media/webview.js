@@ -131,8 +131,11 @@
       const actionMenu = document.getElementById("actionMenu");
       const actionMenuSheet = actionMenu ? actionMenu.querySelector(".action-menu-sheet") : null;
       const actionMenuClose = document.getElementById("actionMenuClose");
+      const threadsOverlayBackdrop = document.getElementById("threadsOverlayBackdrop");
       const newThreadQuick = document.getElementById("newThreadQuick");
       const historyQuick = document.getElementById("historyQuick");
+      const historyHeader = document.getElementById("historyHeader");
+      const undoHeader = document.getElementById("undoHeader");
       const backToChatQuick = document.getElementById("backToChatQuick");
       const apiKeyInline = document.getElementById("apiKeyInline");
       const apiKeyInlineSave = document.getElementById("apiKeyInlineSave");
@@ -150,6 +153,7 @@
       let terminalBubble = null;
       let streamBuffer = "";
       let streamTimer = null;
+      let threadsOverlayOpen = false;
       const DEFAULT_MODEL = "Playground 1";
       const MAX_DIFF_ROWS = 400;
       const seenEditPreviewKeys = new Set();
@@ -239,12 +243,30 @@
       }
 
       function updateUndoButtonState() {
-        if (!undoLastBtn) return;
-        undoLastBtn.disabled = !undoAvailable;
-        undoLastBtn.textContent = undoAvailable
+        const label = undoAvailable
           ? ("Undo Last Changes" + (undoCount > 1 ? " (" + undoCount + ")" : ""))
           : "Undo Last Changes";
-        undoLastBtn.title = undoAvailable ? "Revert the latest Playground-applied file changes." : "No Playground changes available to undo.";
+        const title = undoAvailable ? "Revert the latest Playground-applied file changes." : "No Playground changes available to undo.";
+        if (undoLastBtn) {
+          undoLastBtn.disabled = !undoAvailable;
+          undoLastBtn.textContent = label;
+          undoLastBtn.title = title;
+        }
+        if (undoHeader) {
+          undoHeader.disabled = !undoAvailable;
+          undoHeader.textContent = undoAvailable ? "Undo" + (undoCount > 1 ? " (" + undoCount + ")" : "") : "Undo";
+          undoHeader.title = title;
+        }
+      }
+
+      function requestUndo(sourceLabel, closeMenu) {
+        if (!undoAvailable) return;
+        const confirmText = "Undo last Playground-applied changes? This will revert the most recent batch.";
+        if (!window.confirm(confirmText)) return;
+        const suffix = sourceLabel ? " (" + sourceLabel + ")" : "";
+        addMessage("Undoing last changes" + suffix + "...", "cmd");
+        v.postMessage({ type: "undoLastChanges" });
+        if (closeMenu) setActionMenuOpen(false);
       }
 
       function parseSlashModeCommand(rawText) {
@@ -1105,6 +1127,13 @@
         return text;
       }
 
+      function isOmittedPlaceholder(line) {
+        const trimmed = String(line || "").trim();
+        if (!trimmed) return false;
+        if (/omitted\s+for\s+brevity/i.test(trimmed)) return true;
+        return /^(\/*|#|;)?\s*\.\.\.\s*\[?omitted\s+for\s+brevity\]?\s*\.\.\.\s*$/i.test(trimmed);
+      }
+
       function parseDiffStats(patchText) {
         const lines = String(patchText || "").replace(/\r\n/g, "\n").split("\n");
         let adds = 0;
@@ -1117,9 +1146,155 @@
         return { adds, dels };
       }
 
+      function detectDiffLanguage(path) {
+        const raw = String(path || "").toLowerCase();
+        const normalized = raw.replaceAll("\\", "/");
+        const file = normalized.split("/").pop() || normalized;
+        if (file === "dockerfile") return "docker";
+        if (file.endsWith(".d.ts")) return "ts";
+        const ext = file.includes(".") ? file.split(".").pop() || "" : "";
+        if (["ts", "tsx"].includes(ext)) return "ts";
+        if (["js", "jsx", "mjs", "cjs"].includes(ext)) return "js";
+        if (["json", "jsonc"].includes(ext)) return "json";
+        if (["yml", "yaml"].includes(ext)) return "yaml";
+        if (["md", "mdx"].includes(ext)) return "md";
+        if (["py"].includes(ext)) return "py";
+        if (["go"].includes(ext)) return "go";
+        if (["rs"].includes(ext)) return "rust";
+        if (["java"].includes(ext)) return "java";
+        if (["cs"].includes(ext)) return "cs";
+        if (["cpp", "cc", "cxx", "c", "h", "hpp"].includes(ext)) return "cpp";
+        if (["html", "htm", "xml"].includes(ext)) return "html";
+        if (["css", "scss", "sass"].includes(ext)) return "css";
+        if (["sh", "bash", "zsh"].includes(ext)) return "shell";
+        if (["sql"].includes(ext)) return "sql";
+        if (["toml"].includes(ext)) return "toml";
+        return "plain";
+      }
+
+      function buildKeywordRegex(words) {
+        if (!words || words.length === 0) return null;
+        return new RegExp("\\b(" + words.join("|") + ")\\b", "g");
+      }
+
+      function collectRanges(ranges, regex, type, text) {
+        if (!regex) return;
+        regex.lastIndex = 0;
+        let m;
+        while ((m = regex.exec(text)) !== null) {
+          const start = m.index;
+          const end = start + m[0].length;
+          let overlaps = false;
+          for (const r of ranges) {
+            if (start < r.end && end > r.start) {
+              overlaps = true;
+              break;
+            }
+          }
+          if (!overlaps) ranges.push({ start, end, type });
+        }
+      }
+
+      function highlightDiffLine(raw, lang) {
+        const text = String(raw || "");
+        if (!text) return "";
+        const ranges = [];
+        const langId = String(lang || "plain");
+        const jsKeywords = [
+          "const","let","var","function","return","if","else","for","while","switch","case","break","continue","class","extends","new","try","catch","finally","throw","import","export","from","async","await","type","interface","enum","public","private","protected","readonly","static","get","set","yield","of","in","as","implements","namespace","declare","abstract","override","default"
+        ];
+        const pyKeywords = [
+          "def","return","if","elif","else","for","while","try","except","finally","raise","class","import","from","as","with","pass","break","continue","lambda","yield","global","nonlocal","assert","True","False","None","async","await"
+        ];
+        const goKeywords = [
+          "func","return","if","else","for","switch","case","break","continue","type","struct","interface","map","chan","go","defer","range","package","import","var","const","select","default"
+        ];
+        const rustKeywords = [
+          "fn","let","mut","if","else","match","impl","trait","pub","use","mod","struct","enum","return","async","await","loop","while","for","in","where","crate","super","self","Self","move"
+        ];
+        const commonKeywords = [
+          "true","false","null","undefined"
+        ];
+
+        const isJs = langId === "js" || langId === "ts";
+        const isPy = langId === "py";
+        const isGo = langId === "go";
+        const isRust = langId === "rust";
+        const isCpp = langId === "cpp" || langId === "java" || langId === "cs";
+        const isJson = langId === "json";
+        const isYaml = langId === "yaml";
+        const isHtml = langId === "html";
+        const isCss = langId === "css";
+        const isShell = langId === "shell";
+        const isSql = langId === "sql";
+
+        if (isJson) {
+          collectRanges(ranges, /"(?:[^"\\]|\\.)*"\s*(?=:)/g, "key", text);
+        }
+        if (isYaml) {
+          collectRanges(ranges, /^\s*[^:#]+(?=\s*:)/g, "key", text);
+        }
+        if (isCss) {
+          collectRanges(ranges, /[a-z-]+(?=\s*:)/gi, "prop", text);
+        }
+
+        const stringRegex = /`([^`\\]|\\.)*`|"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/g;
+        collectRanges(ranges, stringRegex, "string", text);
+
+        if (isJs || isCpp || isGo || isRust || isSql) {
+          collectRanges(ranges, /\/\/.*$/g, "comment", text);
+          collectRanges(ranges, /\/\*.*\*\//g, "comment", text);
+        }
+        if (isPy || isYaml || isShell) {
+          collectRanges(ranges, /#.*$/g, "comment", text);
+        }
+        if (isSql) {
+          collectRanges(ranges, /--.*$/g, "comment", text);
+        }
+
+        collectRanges(ranges, /\b0x[a-fA-F0-9]+\b|\b\d+(\.\d+)?\b/g, "number", text);
+
+        if (isJson) {
+          collectRanges(ranges, /\b(true|false|null)\b/g, "boolean", text);
+        } else if (isPy) {
+          collectRanges(ranges, /\b(True|False|None)\b/g, "boolean", text);
+        } else {
+          collectRanges(ranges, buildKeywordRegex(commonKeywords), "boolean", text);
+        }
+
+        if (isJs) collectRanges(ranges, buildKeywordRegex(jsKeywords), "keyword", text);
+        if (isPy) collectRanges(ranges, buildKeywordRegex(pyKeywords), "keyword", text);
+        if (isGo) collectRanges(ranges, buildKeywordRegex(goKeywords), "keyword", text);
+        if (isRust) collectRanges(ranges, buildKeywordRegex(rustKeywords), "keyword", text);
+        if (isCpp) collectRanges(ranges, buildKeywordRegex(["class","struct","enum","return","if","else","for","while","switch","case","break","continue","try","catch","throw","public","private","protected","static","const","void","int","float","double","bool","namespace","using","new","delete","this","override","virtual","template","typename"]), "keyword", text);
+        if (isSql) collectRanges(ranges, buildKeywordRegex(["select","from","where","join","left","right","inner","outer","on","and","or","insert","into","values","update","set","delete","create","table","alter","drop","group","by","order","limit","offset"]), "keyword", text);
+
+        if (isJs || isGo || isRust || isCpp || isPy) {
+          collectRanges(ranges, /\b[A-Z][A-Za-z0-9_]*\b/g, "type", text);
+          collectRanges(ranges, /\b[A-Za-z_][A-Za-z0-9_]*\b(?=\s*\()/g, "func", text);
+        }
+        if (isHtml) {
+          collectRanges(ranges, /<\/?[a-zA-Z][\w:-]*/g, "tag", text);
+          collectRanges(ranges, /\b[a-zA-Z-:]+(?==)/g, "attr", text);
+        }
+
+        ranges.sort((a, b) => a.start - b.start);
+        let out = "";
+        let idx = 0;
+        for (const r of ranges) {
+          if (r.start < idx) continue;
+          out += esc(text.slice(idx, r.start));
+          out += '<span class="tok-' + r.type + '">' + esc(text.slice(r.start, r.end)) + "</span>";
+          idx = r.end;
+        }
+        out += esc(text.slice(idx));
+        return out;
+      }
+
       function renderUnifiedDiffRows(patchText, opts) {
         const options = opts || {};
         const maxRows = Number.isFinite(options.maxRows) ? Math.max(10, options.maxRows) : MAX_DIFF_ROWS;
+        const lang = options.lang || "plain";
         const lines = String(patchText || "").replace(/\r\n/g, "\n").split("\n");
 
         let i = 0;
@@ -1132,12 +1307,12 @@
         let truncated = false;
         const out = [];
 
-        const row = (kind, oldNo, newNo, sig, text) => (
+        const row = (kind, oldNo, newNo, sig, text, langId) => (
           '<div class="diff-row ' + kind + '">' +
             '<div class="ln old">' + esc(oldNo ? String(oldNo) : "") + "</div>" +
             '<div class="ln new">' + esc(newNo ? String(newNo) : "") + "</div>" +
             '<div class="sig">' + esc(sig || "") + "</div>" +
-            '<div class="txt">' + esc(text || "") + "</div>" +
+            '<div class="txt">' + (langId ? highlightDiffLine(text, langId) : esc(text || "")) + "</div>" +
           "</div>"
         );
 
@@ -1148,7 +1323,7 @@
           }
 
           const raw = String(lines[i] || "");
-          if (!raw) continue;
+          if (!raw || isOmittedPlaceholder(raw)) continue;
 
           if (raw.startsWith("@@")) {
             const m = /^@@\s+-([0-9]+)(?:,([0-9]+))?\s+\+([0-9]+)(?:,([0-9]+))?\s+@@/.exec(raw);
@@ -1162,21 +1337,21 @@
           }
 
           if (raw.startsWith("+") && !raw.startsWith("+++")) {
-            out.push(row("add", "", newLine, "+", raw.slice(1)));
+            out.push(row("add", "", newLine, "+", raw.slice(1), lang));
             newLine += 1;
             rendered += 1;
             continue;
           }
 
           if (raw.startsWith("-") && !raw.startsWith("---")) {
-            out.push(row("del", oldLine, "", "-", raw.slice(1)));
+            out.push(row("del", oldLine, "", "-", raw.slice(1), lang));
             oldLine += 1;
             rendered += 1;
             continue;
           }
 
           if (raw.startsWith(" ")) {
-            out.push(row("ctx", oldLine, newLine, " ", raw.slice(1)));
+            out.push(row("ctx", oldLine, newLine, " ", raw.slice(1), lang));
             oldLine += 1;
             newLine += 1;
             rendered += 1;
@@ -1191,7 +1366,9 @@
         }
 
         if (out.length === 0) {
-          const fallback = lines.filter((x) => String(x || "").length > 0).slice(0, maxRows);
+          const fallback = lines
+            .filter((x) => String(x || "").length > 0 && !isOmittedPlaceholder(x))
+            .slice(0, maxRows);
           for (const line of fallback) {
             out.push(row("meta", "", "", "", String(line || "")));
           }
@@ -1211,7 +1388,8 @@
         if (!body) return d;
 
         const parsed = parseDiffStats(patch);
-        const rendered = renderUnifiedDiffRows(patch || "", { maxRows: MAX_DIFF_ROWS });
+        const lang = detectDiffLanguage(path);
+        const rendered = renderUnifiedDiffRows(patch || "", { maxRows: MAX_DIFF_ROWS, lang });
         const hasRenderableChanges = parsed.adds > 0 || parsed.dels > 0;
         body.innerHTML =
           '<details class="diff-disclosure" open>' +
@@ -1219,7 +1397,7 @@
               '<span class="diff-summary-title">Edited file</span>' +
               '<span class="diff-stats"><span class="add">+' + esc(parsed.adds) + '</span> <span class="del">-' + esc(parsed.dels) + "</span></span>" +
             "</summary>" +
-            '<div class="diff-card">' +
+            '<div class="diff-card" data-lang="' + esc(lang) + '">' +
               '<div class="diff-head">' +
                 '<div class="diff-title"><span class="diff-path">' + esc(path || "unknown") + "</span></div>" +
                 '<div class="diff-stats"><span class="add">+' + esc(parsed.adds) + '</span> <span class="del">-' + esc(parsed.dels) + "</span></div>" +
@@ -1253,7 +1431,17 @@
         document.querySelectorAll(".stage-shell .panel").forEach((t) => t.classList.remove("active"));
         const panel = document.getElementById(id);
         if (panel) panel.classList.add("active");
-        if (backToChatQuick) backToChatQuick.classList.toggle("hidden", id === "chat");
+        if (threadsOverlayOpen) {
+          setThreadsOverlayOpen(false);
+        }
+        if (backToChatQuick && !threadsOverlayOpen) backToChatQuick.classList.toggle("hidden", id === "chat");
+      }
+
+      function setThreadsOverlayOpen(open) {
+        threadsOverlayOpen = open;
+        if (app) app.classList.toggle("threads-overlay-open", open);
+        if (threadsOverlayBackdrop) threadsOverlayBackdrop.classList.toggle("show", open);
+        if (backToChatQuick) backToChatQuick.classList.toggle("hidden", !open);
       }
 
       function showHistoryPanel(loadingText) {
@@ -1269,6 +1457,12 @@
               '<div class="item-sub">Select any row to load that conversation into chat.</div>' +
             '</div>';
         }
+      }
+
+      function openHistoryPanel(sourceLabel) {
+        showHistoryPanel("Loading chat history...");
+        setRunState(sourceLabel || "Loading history...");
+        v.postMessage({ type: "history" });
       }
 
       function showIndexPanel(loadingText) {
@@ -1327,6 +1521,12 @@
         if (action.startsWith("show:")) {
           const panel = action.split(":")[1];
           if (panel) showTab(panel);
+          return;
+        }
+        if (action === "execute") {
+          showTab("exec");
+          addMessage("Executing pending actions...", "cmd");
+          v.postMessage({ type: "execute" });
           return;
         }
         if (action === "history") {
@@ -1471,14 +1671,31 @@
       }
       if (historyQuick) {
         historyQuick.onclick = () => {
-          showTab("stageThreads");
-          setRunState("Loading threads...");
-          v.postMessage({ type: "history" });
+          openHistoryPanel("Loading history...");
+        };
+      }
+      if (historyHeader) {
+        historyHeader.onclick = () => {
+          openHistoryPanel("Loading history...");
+        };
+      }
+      if (undoHeader) {
+        undoHeader.onclick = () => {
+          requestUndo("header");
         };
       }
       if (backToChatQuick) {
         backToChatQuick.onclick = () => {
+          if (threadsOverlayOpen) {
+            setThreadsOverlayOpen(false);
+            return;
+          }
           showTab("chat");
+        };
+      }
+      if (threadsOverlayBackdrop) {
+        threadsOverlayBackdrop.onclick = () => {
+          if (threadsOverlayOpen) setThreadsOverlayOpen(false);
         };
       }
       const saveKeyBtn = document.getElementById("ks");
@@ -1638,6 +1855,7 @@
       document.addEventListener("keydown", (e) => {
         if (handleMentionKeydown(e)) return;
         if (e.key === "Escape") setActionMenuOpen(false);
+        if (e.key === "Escape" && threadsOverlayOpen) setThreadsOverlayOpen(false);
       }, true);
       document.addEventListener("keyup", (e) => {
         if (e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter") {
@@ -1816,8 +2034,7 @@
       bindChatDockClickToFocus();
       if (undoLastBtn) {
         undoLastBtn.onclick = () => {
-          v.postMessage({ type: "undoLastChanges" });
-          setActionMenuOpen(false);
+          requestUndo("actions", true);
         };
       }
       updateUndoButtonState();
