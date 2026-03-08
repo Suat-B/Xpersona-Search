@@ -53,7 +53,8 @@ const OPEN_THREADS_KEY = "xpersona.playground.openThreads";
 const PINNED_THREADS_KEY = "xpersona.playground.pinnedThreads";
 const EXECUTION_POLICY_CONFIG_KEY = "executionPolicy";
 const MENTIONS_ENABLED_FLAG = "mentions.enabled";
-const DEFAULT_PLAYGROUND_MODEL = "Qwen/Qwen3-235B-A22B-Instruct-2507:fastest";
+const DEFAULT_PLAYGROUND_MODEL = "qwen/qwen3.5-122b-a10b";
+const BACKUP_PLAYGROUND_MODEL = "qwen/qwen3.5-122b-a10b";
 const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
 function modelLabelForUi(model) {
     const raw = String(model || "").trim();
@@ -134,6 +135,38 @@ function extractAtMentions(text) {
             break;
     }
     return out;
+}
+function looksLikeWrappedToolPayloadText(text) {
+    const trimmed = String(text || "").trim();
+    if (!trimmed || !/^\s*\{/.test(trimmed))
+        return false;
+    if (!/"final"\s*:/i.test(trimmed))
+        return false;
+    return (/("edits"\s*:|"actions"\s*:|"commands"\s*:)/i.test(trimmed) &&
+        /("path"\s*:|"patch"\s*:)/i.test(trimmed));
+}
+function patchHasWrappedToolPayloadArtifacts(patchText) {
+    const text = String(patchText || "").trim();
+    if (!text)
+        return false;
+    if (looksLikeWrappedToolPayloadText(text))
+        return true;
+    return (0, patch_utils_1.patchContainsWrappedToolPayload)(text);
+}
+function patchHasLeakedPatchArtifacts(patchText) {
+    const text = String(patchText || "").trim();
+    if (!text)
+        return false;
+    return (0, patch_utils_1.patchContainsLeakedPatchArtifacts)(text);
+}
+function isLikelyInvalidModelError(message) {
+    const lower = String(message || "").toLowerCase();
+    return (lower.includes("model") &&
+        (lower.includes("not found") ||
+            lower.includes("unknown") ||
+            lower.includes("invalid") ||
+            lower.includes("does not exist") ||
+            lower.includes("unrecognized")));
 }
 function chunkText(content, chunkSize, overlap) {
     const text = content.replace(/\r\n/g, "\n");
@@ -327,6 +360,7 @@ class Provider {
         this.sessionId = null;
         this.timeline = [];
         this.pendingActions = [];
+        this.guardrailIssues = [];
         this.lastRunMeta = null;
         this.activeStreamCancel = null;
         this.cancelRequested = false;
@@ -597,7 +631,7 @@ class Provider {
         this.modeStatusItem.tooltip = presentation.tooltip;
         this.modeStatusItem.color = presentation.color;
         this.modeStatusItem.backgroundColor = presentation.backgroundColor;
-        this.modeStatusItem.show();
+        this.modeStatusItem.hide();
     }
     isIdeContextV2Enabled() {
         return ((vscode.workspace.getConfiguration().get(IDE_CONTEXT_FLAG) ?? true) &&
@@ -818,13 +852,15 @@ class Provider {
                 dedup.add(key);
                 return true;
             });
+            const queryMatches = workspaceMatches.length;
+            const fileMatches = mergedOpenFiles.length;
             const sections = [
                 mergedOpenFiles.length > 0 ? 1 : 0,
                 indexedSnippets.length > 0 ? 1 : 0,
             ].reduce((acc, value) => acc + value, 0);
             const preflightMs = Date.now() - startedAt;
             const notes = [
-                `Auto context ready: ${workspaceMatches.length} workspace match${workspaceMatches.length === 1 ? "" : "es"}.`,
+                `Auto context ready: ${fileMatches} file${fileMatches === 1 ? "" : "s"} (${queryMatches} query match${queryMatches === 1 ? "" : "es"}).`,
             ];
             if (!indexedSnippets.length && root) {
                 notes.push("Index snippets unavailable yet; running workspace fallback.");
@@ -835,7 +871,7 @@ class Provider {
                 source: "preview",
                 sections,
                 snippets: indexedSnippets.length,
-                workspaceMatches: workspaceMatches.length,
+                workspaceMatches: fileMatches,
                 indexFreshness: this.indexFreshness,
                 discoveryCommands: 0,
                 preflightMs,
@@ -981,10 +1017,23 @@ class Provider {
         if (!tokens.length)
             return [];
         const perPath = new Map();
+        const tokensLower = tokens.map((token) => token.toLowerCase());
+        let rgAvailable = true;
+        let rgUsed = false;
         for (const token of tokens) {
             const rg = await execFileReadOnly("rg", ["-n", "-i", "-S", "--no-heading", "--hidden", "-g", "!node_modules", "-g", "!.git", "-g", "!.next", "-g", "!dist", "-g", "!build", token, "."], root.uri.fsPath, 3000, 200000);
-            if (!rg.ok || !rg.stdout.trim())
+            if (!rg.ok) {
+                if (/ENOENT|not recognized/i.test(rg.stderr || "")) {
+                    rgAvailable = false;
+                    break;
+                }
                 continue;
+            }
+            if (!rg.stdout.trim()) {
+                rgUsed = true;
+                continue;
+            }
+            rgUsed = true;
             const lines = rg.stdout.split(/\r?\n/).filter(Boolean).slice(0, Math.max(60, maxFiles * 24));
             for (const line of lines) {
                 const m = /^(.+?):(\d+):(.*)$/.exec(line);
@@ -1003,6 +1052,61 @@ class Provider {
                     entry.matches.push({ token, line: lineNumber, preview });
                 }
                 perPath.set(rel, entry);
+            }
+        }
+        if ((!rgAvailable || !rgUsed) && perPath.size === 0) {
+            const include = new vscode.RelativePattern(root, "**/*.{ts,tsx,js,jsx,json,md,mdx,txt,py,go,rs,java,cs,yaml,yml,sql,sh,ps1,toml}");
+            const exclude = new vscode.RelativePattern(root, "{**/node_modules/**,**/.git/**,**/.next/**,**/dist/**,**/build/**,**/.cache/**,**/.turbo/**}");
+            const files = await vscode.workspace.findFiles(include, exclude, Math.max(60, maxFiles * 16));
+            for (const uri of files) {
+                if (perPath.size >= Math.max(maxFiles * 2, 40))
+                    break;
+                const rel = normalizeWorkspaceRelativePath(toRelPath(root.uri, uri));
+                if (!rel)
+                    continue;
+                let stat = null;
+                try {
+                    stat = await vscode.workspace.fs.stat(uri);
+                }
+                catch {
+                    stat = null;
+                }
+                if (!stat || stat.type !== vscode.FileType.File)
+                    continue;
+                if (stat.size > 900000)
+                    continue;
+                let raw = null;
+                try {
+                    raw = await vscode.workspace.fs.readFile(uri);
+                }
+                catch {
+                    raw = null;
+                }
+                if (!raw)
+                    continue;
+                const content = Buffer.from(raw).toString("utf8");
+                if (!content)
+                    continue;
+                const lines = content.replace(/\r\n/g, "\n").split("\n");
+                let score = 0;
+                const matches = [];
+                for (let idx = 0; idx < lines.length; idx += 1) {
+                    const line = lines[idx];
+                    const lineLower = line.toLowerCase();
+                    for (let t = 0; t < tokensLower.length; t += 1) {
+                        if (!lineLower.includes(tokensLower[t]))
+                            continue;
+                        score += 3;
+                        if (matches.length < 8) {
+                            matches.push({ token: tokens[t], line: idx + 1, preview: line.trim() });
+                        }
+                    }
+                    if (matches.length >= 8)
+                        break;
+                }
+                if (score <= 0)
+                    continue;
+                perPath.set(rel, { score, matches });
             }
         }
         const ranked = Array.from(perPath.entries())
@@ -1735,6 +1839,7 @@ class Provider {
             return this.post({ type: "err", text: "Not authenticated. Use Sign in (browser) or set an API key." });
         this.cancelRequested = false;
         this.pendingActions = [];
+        this.guardrailIssues = [];
         this.lastRunMeta = null;
         this.post({ type: "pendingActions", count: 0 });
         this.addTimeline("intent", text.slice(0, 120));
@@ -1759,6 +1864,47 @@ class Provider {
         if (!activeThreadId)
             return;
         const runThreadId = activeThreadId;
+        const normalizedRequestedModel = String(model || "").trim().toLowerCase();
+        const backupModelCandidate = [BACKUP_PLAYGROUND_MODEL, DEFAULT_PLAYGROUND_MODEL]
+            .map((entry) => String(entry || "").trim())
+            .find((entry) => entry && entry.toLowerCase() !== normalizedRequestedModel);
+        const runStartedAt = Date.now();
+        const runTraceId = createTraceId();
+        const diagnosticEvents = [];
+        const diagnosticEventKeys = new Set();
+        const addDiagnosticEvent = (code, message, severity = "warn") => {
+            const normalizedCode = String(code || "unknown").trim() || "unknown";
+            const normalizedMessage = String(message || "").trim();
+            if (!normalizedMessage)
+                return;
+            const key = `${normalizedCode}:${normalizedMessage}`;
+            if (diagnosticEventKeys.has(key))
+                return;
+            diagnosticEventKeys.add(key);
+            diagnosticEvents.push({
+                code: normalizedCode,
+                message: normalizedMessage,
+                severity,
+                ts: Date.now(),
+            });
+            if (diagnosticEvents.length > 40)
+                diagnosticEvents.splice(0, diagnosticEvents.length - 40);
+        };
+        const emitDiagnosticsBundle = (stage, summary, extras) => {
+            if (!diagnosticEvents.length)
+                return;
+            this.postDiagnosticsBundle(runThreadId, {
+                traceId: runTraceId,
+                stage,
+                summary: String(summary || "Run diagnostics"),
+                model: extras?.model || modelLabelForUi(model),
+                reasoning: extras?.reasoning || reasoning,
+                mode: extras?.mode || requestMode,
+                startedAt: runStartedAt,
+                endedAt: Date.now(),
+                events: diagnosticEvents.slice(-40),
+            });
+        };
         this.postRun(runThreadId, { type: "start" });
         if (!conversational) {
             this.postRun(runThreadId, { type: "status", text: `Model: ${modelLabelForUi(model)} | Reasoning: ${reasoning}` });
@@ -1797,7 +1943,9 @@ class Provider {
                 collectedContext = await this.collectIdeContext(text, workspaceHash, auth);
             }
             catch (e) {
-                contextStatus.notes?.push(`context partial: ${err(e)}`);
+                const message = err(e);
+                contextStatus.notes?.push(`context partial: ${message}`);
+                addDiagnosticEvent("context_partial", message, "warn");
             }
             if (this.mentionsEnabled()) {
                 try {
@@ -1817,7 +1965,9 @@ class Provider {
                     }
                 }
                 catch (e) {
-                    contextStatus.notes?.push(`mentions partial: ${err(e)}`);
+                    const message = err(e);
+                    contextStatus.notes?.push(`mentions partial: ${message}`);
+                    addDiagnosticEvent("mentions_partial", message, "warn");
                 }
             }
             try {
@@ -1834,7 +1984,9 @@ class Provider {
                 }
             }
             catch (e) {
-                contextStatus.notes?.push(`symbol lookup partial: ${err(e)}`);
+                const message = err(e);
+                contextStatus.notes?.push(`symbol lookup partial: ${message}`);
+                addDiagnosticEvent("symbol_lookup_partial", message, "warn");
             }
             if (collectedContext) {
                 const sectionCount = [
@@ -1875,6 +2027,17 @@ class Provider {
                 .filter(Boolean)
                 .join("\n\n")
             : taskWithReasoning;
+        const guardrailIssues = [];
+        const recordGuardrailIssue = (detail) => {
+            const message = String(detail || "").trim();
+            if (!message)
+                return;
+            if (guardrailIssues.includes(message))
+                return;
+            guardrailIssues.push(message);
+            addDiagnosticEvent("guardrail_blocked", message, "warn");
+            this.addTimeline("guardrail", message.slice(0, 180));
+        };
         const runStream = async (historySessionId) => {
             let sawTokenEvent = false;
             let lastProgressState = "";
@@ -1955,16 +2118,29 @@ class Provider {
                     const editItems = Array.isArray(p) ? p : Array.isArray(p?.edits) ? p.edits : [];
                     if (editItems.length && allowActions && !strictConversationOnly) {
                         for (const edit of editItems) {
+                            const editPath = typeof edit?.path === "string" ? String(edit.path).trim() : "";
                             const rawPatch = typeof edit?.patch === "string"
                                 ? (edit.patch || "")
                                 : typeof edit?.diff === "string"
                                     ? (edit.diff || "")
                                     : "";
-                            if (edit &&
-                                typeof edit.path === "string" &&
-                                edit.path.trim() &&
-                                rawPatch.trim()) {
-                                const editPath = edit.path.trim();
+                            if (!editPath) {
+                                recordGuardrailIssue("Blocked edit action: missing/invalid target path.");
+                                continue;
+                            }
+                            if (!rawPatch.trim()) {
+                                recordGuardrailIssue(`Blocked edit action for ${editPath}: missing patch/diff content.`);
+                                continue;
+                            }
+                            if (patchHasWrappedToolPayloadArtifacts(rawPatch)) {
+                                recordGuardrailIssue(`Blocked edit action for ${editPath}: wrapped tool payload detected in patch.`);
+                                continue;
+                            }
+                            if (patchHasLeakedPatchArtifacts(rawPatch)) {
+                                recordGuardrailIssue(`Blocked edit action for ${editPath}: leaked diff/apply_patch markers detected.`);
+                                continue;
+                            }
+                            if (editPath && rawPatch.trim()) {
                                 const editPatch = rawPatch.trim();
                                 this.pendingActions.push({ type: "edit", path: editPath, patch: editPatch });
                                 this.postRun(runThreadId, { type: "editPreview", path: editPath, patch: editPatch });
@@ -1979,6 +2155,9 @@ class Provider {
                             if (typeof command === "string" && command.trim()) {
                                 this.pendingActions.push({ type: "command", command: command.trim() });
                             }
+                            else {
+                                recordGuardrailIssue("Blocked command action: empty/invalid command payload.");
+                            }
                         }
                         this.post({ type: "pendingActions", count: this.pendingActions.length });
                     }
@@ -1986,16 +2165,32 @@ class Provider {
                 else if (ev === "actions_chunk") {
                     if (Array.isArray(p) && allowActions && !strictConversationOnly) {
                         for (const action of p) {
-                            if (!action || typeof action !== "object")
+                            if (!action || typeof action !== "object") {
+                                recordGuardrailIssue("Blocked action payload: action item was not an object.");
                                 continue;
+                            }
                             const type = String(action.type || "").toLowerCase();
                             if (type === "edit") {
                                 const path = typeof action.path === "string" ? String(action.path).trim() : "";
                                 const patch = typeof action.patch === "string" ? String(action.patch).trim() : "";
-                                if (path && patch) {
-                                    this.pendingActions.push({ type: "edit", path, patch });
-                                    this.postRun(runThreadId, { type: "editPreview", path, patch });
+                                if (!path) {
+                                    recordGuardrailIssue("Blocked edit action: missing/invalid target path.");
+                                    continue;
                                 }
+                                if (!patch) {
+                                    recordGuardrailIssue(`Blocked edit action for ${path}: missing patch/diff content.`);
+                                    continue;
+                                }
+                                if (patchHasWrappedToolPayloadArtifacts(patch)) {
+                                    recordGuardrailIssue(`Blocked edit action for ${path}: wrapped tool payload detected in patch.`);
+                                    continue;
+                                }
+                                if (patchHasLeakedPatchArtifacts(patch)) {
+                                    recordGuardrailIssue(`Blocked edit action for ${path}: leaked diff/apply_patch markers detected.`);
+                                    continue;
+                                }
+                                this.pendingActions.push({ type: "edit", path, patch });
+                                this.postRun(runThreadId, { type: "editPreview", path, patch });
                                 continue;
                             }
                             if (type === "command") {
@@ -2005,22 +2200,38 @@ class Provider {
                                     : undefined;
                                 if (command)
                                     this.pendingActions.push({ type: "command", command, ...(category ? { category } : {}) });
+                                else
+                                    recordGuardrailIssue("Blocked command action: missing command text.");
                                 continue;
                             }
                             if (type === "mkdir") {
                                 const path = typeof action.path === "string" ? String(action.path).trim() : "";
                                 if (path)
                                     this.pendingActions.push({ type: "mkdir", path });
+                                else
+                                    recordGuardrailIssue("Blocked mkdir action: missing/invalid target path.");
                                 continue;
                             }
                             if (type === "write_file") {
                                 const path = typeof action.path === "string" ? String(action.path).trim() : "";
                                 const content = typeof action.content === "string" ? action.content : "";
                                 const overwrite = typeof action.overwrite === "boolean" ? action.overwrite : undefined;
-                                if (path) {
-                                    this.pendingActions.push({ type: "write_file", path, content, ...(overwrite !== undefined ? { overwrite } : {}) });
+                                if (!path) {
+                                    recordGuardrailIssue("Blocked write_file action: missing/invalid target path.");
+                                    continue;
                                 }
+                                if (looksLikeWrappedToolPayloadText(content)) {
+                                    recordGuardrailIssue(`Blocked write_file action for ${path}: wrapped tool payload detected in file content.`);
+                                    continue;
+                                }
+                                if ((0, patch_utils_1.textContainsLeakedPatchArtifacts)(content)) {
+                                    recordGuardrailIssue(`Blocked write_file action for ${path}: leaked diff/apply_patch markers detected in content.`);
+                                    continue;
+                                }
+                                this.pendingActions.push({ type: "write_file", path, content, ...(overwrite !== undefined ? { overwrite } : {}) });
+                                continue;
                             }
+                            recordGuardrailIssue(`Blocked action payload: unsupported action type "${type || "unknown"}".`);
                         }
                         this.post({ type: "pendingActions", count: this.pendingActions.length });
                     }
@@ -2067,13 +2278,41 @@ class Provider {
         }
         catch (e) {
             if (this.cancelRequested) {
+                addDiagnosticEvent("run_cancelled", "Response cancelled by user.", "info");
                 this.postRun(runThreadId, { type: "status", text: "Response stopped." });
             }
             else {
                 const message = err(e);
+                if (!options.modelFallbackAttempted && backupModelCandidate && isLikelyInvalidModelError(message)) {
+                    addDiagnosticEvent("model_fallback", `Model "${model}" unavailable. Retrying with "${backupModelCandidate}".`, "warn");
+                    this.postRun(runThreadId, {
+                        type: "status",
+                        text: `Model unavailable. Retrying with backup model: ${modelLabelForUi(backupModelCandidate)}.`,
+                    });
+                    emitDiagnosticsBundle("stream", "Auto-retrying with backup model after model-unavailable error.", {
+                        model: modelLabelForUi(backupModelCandidate),
+                        reasoning,
+                        mode: requestMode,
+                    });
+                    await this.ask(text, parallel, backupModelCandidate, reasoning, {
+                        includeIdeContext: options.includeIdeContext,
+                        workspaceContextLevel: options.workspaceContextLevel,
+                        attachments: options.attachments,
+                        threadId: runThreadId,
+                        contextRetryAttempted: options.contextRetryAttempted,
+                        modelFallbackAttempted: true,
+                    });
+                    return;
+                }
+                addDiagnosticEvent("stream_error", message, "error");
                 if (activeThreadId && /historysessionid|unknown historysessionid/i.test(message)) {
+                    addDiagnosticEvent("session_recovery", "Detected stale session id; retrying stream without history session id.", "warn");
                     this.addTimeline("session", "stale history session recovered");
-                    await runStream(null).catch((inner) => this.postRun(runThreadId, { type: "err", text: err(inner) }));
+                    await runStream(null).catch((inner) => {
+                        const innerMessage = err(inner);
+                        addDiagnosticEvent("session_recovery_failed", innerMessage, "error");
+                        this.postRun(runThreadId, { type: "err", text: innerMessage });
+                    });
                 }
                 else {
                     this.postRun(runThreadId, { type: "err", text: message });
@@ -2083,17 +2322,20 @@ class Provider {
         finally {
             this.activeStreamCancel = null;
         }
+        this.guardrailIssues = guardrailIssues.slice(0, 20);
         if (this.threads[activeThreadId])
             this.threads[activeThreadId].updatedAt = new Date().toISOString();
         await this.loadHistory();
         await this.postThreadState();
         this.postRun(runThreadId, { type: "end" });
         if (this.cancelRequested) {
+            emitDiagnosticsBundle("final", "Run cancelled before action execution.");
             this.pendingActions = [];
             this.post({ type: "pendingActions", count: 0 });
             return;
         }
         if (!allowActions) {
+            emitDiagnosticsBundle("final", "Run completed without action execution.");
             if (this.pendingActions.length > 0) {
                 this.pendingActions = [];
                 this.post({ type: "pendingActions", count: 0 });
@@ -2101,6 +2343,7 @@ class Provider {
             return;
         }
         if ((conversational || strictConversationOnly) && this.pendingActions.length > 0) {
+            emitDiagnosticsBundle("final", "Conversation-only run; pending actions discarded.");
             this.pendingActions = [];
             this.post({ type: "pendingActions", count: 0 });
             return;
@@ -2116,6 +2359,7 @@ class Provider {
             !!hintedTargetPath;
         if (shouldAutoContextRetry && hintedTargetPath) {
             const retryTask = `${text.trim()}\n\nApply the requested change directly in ${hintedTargetPath}. Do not ask for file-path clarification; generate actionable edits for this file.`;
+            addDiagnosticEvent("auto_context_retry", `Retried with explicit file target: ${hintedTargetPath}`, "warn");
             this.postRun(runThreadId, {
                 type: "status",
                 text: `No actionable edits were produced. Retrying once with explicit file target: ${hintedTargetPath}`,
@@ -2127,7 +2371,31 @@ class Provider {
                 threadId: runThreadId,
                 contextRetryAttempted: true,
             });
+            emitDiagnosticsBundle("actions", "Retried run with explicit file target due to no actionable edits.");
             return;
+        }
+        if (allowActions && this.pendingActions.length === 0 && guardrailIssues.length > 0) {
+            this.postRun(runThreadId, {
+                type: "actionOutcome",
+                data: {
+                    filesChanged: 0,
+                    checksRun: 0,
+                    quality: "needs_attention",
+                    summary: `Guardrails blocked ${guardrailIssues.length} malformed action(s).`,
+                    perFile: [],
+                    debug: {
+                        requestedActions: guardrailIssues.length,
+                        approvedActions: 0,
+                        rejectedActions: guardrailIssues.length,
+                        localRejectedEdits: 0,
+                        rejectedSamples: guardrailIssues.slice(0, 8),
+                        localRejectedSamples: [],
+                        applyErrors: [],
+                    },
+                },
+            });
+            this.guardrailIssues = [];
+            emitDiagnosticsBundle("actions", `Guardrails blocked ${guardrailIssues.length} malformed action(s).`);
         }
         if (this.pendingActions.length > 0) {
             const policy = this.getExecutionPolicy();
@@ -2177,6 +2445,7 @@ class Provider {
                     },
                 });
                 this.postRun(runThreadId, { type: "prefill", text: "apply now" });
+                emitDiagnosticsBundle("actions", "Actions prepared for preview only; auto-apply disabled by policy.");
                 return;
             }
             const actionsToExecute = [];
@@ -2200,15 +2469,18 @@ class Provider {
                         text: `Prepared ${actionSummary}. Auto-executing now.`,
                     });
                 }
-                await this.executePendingActions(actionsToExecute, runThreadId);
+                await this.executePendingActions(actionsToExecute, runThreadId, runTraceId);
+                emitDiagnosticsBundle("final", "Run completed with auto-execution stage.");
             }
             else {
                 if (lowConfidenceCommandOnly && hasCommandActions && !hasEditActions) {
+                    addDiagnosticEvent("command_preview_only", "Low-confidence command-only run kept in preview.", "warn");
                     if (!conversational) {
                         this.postRun(runThreadId, { type: "status", text: "No runnable commands extracted; kept in preview." });
                         this.postRun(runThreadId, { type: "prefill", text: "run anyway" });
                     }
                     this.post({ type: "pendingActions", count: this.pendingActions.length });
+                    emitDiagnosticsBundle("actions", "Command execution paused due to low confidence.");
                     return;
                 }
                 if (!conversational) {
@@ -2217,8 +2489,10 @@ class Provider {
                 }
                 this.pendingActions = [];
                 this.post({ type: "pendingActions", count: 0 });
+                emitDiagnosticsBundle("actions", "Execution skipped by policy; actions remained in preview.");
             }
         }
+        emitDiagnosticsBundle("final", "Run completed.");
     }
     async loadHistory() {
         const auth = await this.resolveRequestAuth();
@@ -2227,10 +2501,30 @@ class Provider {
             await this.postThreadState();
             return;
         }
-        const r = await req("GET", `${base()}/api/v1/playground/sessions?limit=30`, auth).catch(() => ({}));
-        const items = (r?.data?.data || [])
-            .map((x) => this.threadFromApiRow(x))
-            .filter((x) => x.id);
+        const items = [];
+        const seen = new Set();
+        const seenCursors = new Set();
+        let cursor = null;
+        let page = 0;
+        while (page < 20) {
+            const qs = cursor ? `?limit=100&cursor=${encodeURIComponent(cursor)}` : "?limit=100";
+            const r = await req("GET", `${base()}/api/v1/playground/sessions${qs}`, auth).catch(() => ({}));
+            const rows = (r?.data?.data || [])
+                .map((x) => this.threadFromApiRow(x))
+                .filter((x) => x.id);
+            for (const row of rows) {
+                if (seen.has(row.id))
+                    continue;
+                seen.add(row.id);
+                items.push(row);
+            }
+            const nextCursorRaw = typeof r?.data?.nextCursor === "string" ? r.data.nextCursor.trim() : "";
+            if (!nextCursorRaw || seenCursors.has(nextCursorRaw) || rows.length === 0)
+                break;
+            seenCursors.add(nextCursorRaw);
+            cursor = nextCursorRaw;
+            page += 1;
+        }
         this.recentHistory = items;
         for (const item of items) {
             if (!this.threads[item.id])
@@ -2322,11 +2616,45 @@ class Provider {
         this.post({ type: "assistant", text: `${s}\n\n${st.map((x, i) => `${i + 1}. ${x}`).join("\n")}` });
         this.addTimeline("replay", s);
     }
-    async executePendingActions(actions, threadIdOverride) {
+    async executePendingActions(actions, threadIdOverride, traceIdOverride) {
         const auth = await this.resolveRequestAuth();
         if (!auth)
             return this.post({ type: "err", text: "Not authenticated. Use Sign in (browser) or set an API key." });
         const runThreadId = threadIdOverride || this.activeThreadId || null;
+        const runStartedAt = Date.now();
+        const diagnosticsTraceId = traceIdOverride || createTraceId();
+        const executionEvents = [];
+        const executionEventKeys = new Set();
+        const addExecutionEvent = (code, message, severity = "warn") => {
+            const normalizedCode = String(code || "unknown").trim() || "unknown";
+            const normalizedMessage = String(message || "").trim();
+            if (!normalizedMessage)
+                return;
+            const key = `${normalizedCode}:${normalizedMessage}`;
+            if (executionEventKeys.has(key))
+                return;
+            executionEventKeys.add(key);
+            executionEvents.push({ code: normalizedCode, message: normalizedMessage, severity, ts: Date.now() });
+            if (executionEvents.length > 40)
+                executionEvents.splice(0, executionEvents.length - 40);
+        };
+        const emitExecutionDiagnostics = (summary) => {
+            if (!executionEvents.length)
+                return;
+            this.postDiagnosticsBundle(runThreadId, {
+                traceId: diagnosticsTraceId,
+                stage: "execute",
+                summary: String(summary || "Execution diagnostics"),
+                model: modelLabelForUi(vscode.workspace.getConfiguration("xpersona.playground").get("model") || DEFAULT_PLAYGROUND_MODEL),
+                reasoning: "medium",
+                mode: this.mode,
+                startedAt: runStartedAt,
+                endedAt: Date.now(),
+                events: executionEvents.slice(-40),
+            });
+        };
+        const guardrailIssues = this.guardrailIssues.slice(0, 20);
+        this.guardrailIssues = [];
         const rawActionList = (actions && actions.length ? actions : this.pendingActions).slice();
         const seenActionKeys = new Set();
         const actionList = rawActionList.filter((action) => {
@@ -2361,6 +2689,8 @@ class Provider {
             }),
         }).catch((e) => ({ error: err(e) }));
         if (r?.error) {
+            addExecutionEvent("execute_api_error", String(r.error), "error");
+            emitExecutionDiagnostics("Execution API request failed.");
             this.postRun(runThreadId, { type: "err", text: r.error });
             return;
         }
@@ -2454,6 +2784,60 @@ class Provider {
             }
         }
         const approved = results.filter((x) => x.status === "approved").length;
+        const rejected = results.filter((x) => x.status !== "approved");
+        const localRejected = perFileStatuses.filter((row) => row.status !== "applied" && row.status !== "partial");
+        const rejectedSummaries = rejected
+            .map((row) => {
+            const type = String(row.action?.type || "action");
+            const target = row.action?.type === "command"
+                ? String(row.action?.command || "unknown")
+                : String(row.action?.path || "unknown");
+            const reason = String(row.reason || "no reason provided");
+            return `${type} ${target}: ${reason}`;
+        })
+            .slice(0, 8);
+        const localRejectedSummaries = localRejected
+            .map((row) => `${row.path}: ${row.reason || row.status}`)
+            .slice(0, 8);
+        rejectedSummaries.forEach((message) => addExecutionEvent("server_rejected", message, "warn"));
+        localRejectedSummaries.forEach((message) => addExecutionEvent("local_rejected", message, "warn"));
+        applyErrors.forEach((message) => addExecutionEvent("apply_error", message, "error"));
+        guardrailIssues.forEach((message) => addExecutionEvent("guardrail_blocked", message, "warn"));
+        if (expectedFileChanges && changedPaths.size === 0) {
+            const debugReasons = [];
+            if (rejected.length > 0)
+                debugReasons.push(`server rejected ${rejected.length} action(s)`);
+            if (localRejected.length > 0)
+                debugReasons.push(`local patch apply rejected ${localRejected.length} file action(s)`);
+            if (applyErrors.length > 0)
+                debugReasons.push(`apply errors: ${applyErrors.slice(0, 2).join(" | ")}`);
+            if (guardrailIssues.length > 0)
+                debugReasons.push(`guardrails blocked ${guardrailIssues.length} malformed action(s)`);
+            if (debugReasons.length === 0)
+                debugReasons.push("no approved file actions reached local patch application");
+            this.postRun(runThreadId, {
+                type: "status",
+                text: `Execution debug: No file edits were applied. ${debugReasons[0]}.`,
+            });
+            if (debugReasons.length > 1) {
+                this.postRun(runThreadId, {
+                    type: "status",
+                    text: `Execution debug details: ${debugReasons.slice(1).join(" | ")}`,
+                });
+            }
+        }
+        const localExecLogs = [
+            {
+                ts: Date.now(),
+                level: changedPaths.size > 0 ? "info" : "error",
+                message: `LOCAL_SUMMARY requested=${actionList.length} approved=${approved} rejected=${rejected.length} ` +
+                    `applied_edits=${appliedEdits} files_changed=${changedPaths.size} commands_launched=${launchedCommands} guardrail_blocked=${guardrailIssues.length}`,
+            },
+            ...guardrailIssues.slice(0, 8).map((message) => ({ ts: Date.now(), level: "error", message: `GUARDRAIL_BLOCKED ${message}` })),
+            ...rejectedSummaries.map((message) => ({ ts: Date.now(), level: "error", message: `SERVER_REJECTED ${message}` })),
+            ...localRejectedSummaries.map((message) => ({ ts: Date.now(), level: "error", message: `LOCAL_REJECTED ${message}` })),
+        ];
+        this.postRun(runThreadId, { type: "execLogs", data: localExecLogs });
         this.postRun(runThreadId, {
             type: "status",
             text: `Execute finished: ${approved}/${results.length} approved. Applied ${appliedEdits} edit(s), launched ${launchedCommands} command(s).`,
@@ -2473,8 +2857,20 @@ class Provider {
                         ? "No file edits were applied."
                         : "Actions completed successfully.",
                 perFile: perFileStatuses,
+                debug: {
+                    requestedActions: actionList.length,
+                    approvedActions: approved,
+                    rejectedActions: rejected.length + guardrailIssues.length,
+                    localRejectedEdits: localRejected.length,
+                    rejectedSamples: [...guardrailIssues.map((x) => `guardrail ${x}`), ...rejectedSummaries].slice(0, 8),
+                    localRejectedSamples: localRejectedSummaries,
+                    applyErrors: applyErrors.slice(0, 8),
+                },
             },
         });
+        emitExecutionDiagnostics(applyErrors.length || rejected.length || localRejected.length || guardrailIssues.length
+            ? "Execution completed with warnings/errors."
+            : "Execution completed successfully.");
         if (appliedEdits > 0) {
             const undoEntries = [
                 ...Array.from(undoFileSnapshots.values()),
@@ -2517,6 +2913,18 @@ class Provider {
         const patchText = action.patch || action.diff || "";
         if (!patchText)
             return { status: "rejected_invalid_patch", reason: "Missing patch/diff content for edit action." };
+        if (patchHasWrappedToolPayloadArtifacts(patchText)) {
+            return {
+                status: "rejected_invalid_patch",
+                reason: "Patch blocked: detected structured tool payload instead of unified diff content.",
+            };
+        }
+        if (patchHasLeakedPatchArtifacts(patchText)) {
+            return {
+                status: "rejected_invalid_patch",
+                reason: "Patch blocked: detected leaked diff/apply_patch markers in target file changes.",
+            };
+        }
         const patchTarget = normalizeWorkspaceRelativePath((0, patch_utils_1.extractPatchTargetPath)(patchText) || rel);
         if (!patchTarget || patchTarget !== rel) {
             return { status: "rejected_path_policy", reason: "Patch path did not match approved workspace-relative path." };
@@ -2593,7 +3001,20 @@ class Provider {
                 // file does not exist; safe to continue
             }
         }
-        await vscode.workspace.fs.writeFile(target, Buffer.from(String(action.content || ""), "utf8"));
+        const content = String(action.content || "");
+        if (looksLikeWrappedToolPayloadText(content)) {
+            return {
+                status: "rejected_path_policy",
+                reason: "write_file blocked: detected structured tool payload instead of raw file content.",
+            };
+        }
+        if ((0, patch_utils_1.textContainsLeakedPatchArtifacts)(content)) {
+            return {
+                status: "rejected_path_policy",
+                reason: "write_file blocked: detected leaked diff/apply_patch markers in file content.",
+            };
+        }
+        await vscode.workspace.fs.writeFile(target, Buffer.from(content, "utf8"));
         await vscode.workspace.fs.stat(target);
         return { status: "applied" };
     }
@@ -2688,6 +3109,9 @@ class Provider {
         }
         this.post(m);
     }
+    postDiagnosticsBundle(threadId, data) {
+        this.postRun(threadId, { type: "diagnosticsBundle", data });
+    }
     post(m) {
         this.view?.webview.postMessage(m);
     }
@@ -2747,6 +3171,7 @@ function stream(u, auth, body, options, onEvent) {
         const headers = {
             "Content-Type": "application/json",
             Accept: "text/event-stream",
+            ...(options?.headers || {}),
         };
         if (auth?.apiKey) {
             headers["X-API-Key"] = auth.apiKey;
@@ -2795,23 +3220,51 @@ function stream(u, auth, body, options, onEvent) {
             return idxLf < idxCrlf ? { index: idxLf, len: 2 } : { index: idxCrlf, len: 4 };
         };
         const handleSseChunk = (chunk) => {
-            const lines = chunk
-                .split(/\r?\n/)
-                .filter((l) => l.startsWith("data:"))
-                .map((l) => l.slice(5).trim());
-            if (!lines.length)
+            let eventName = "message";
+            const dataLines = [];
+            const lines = chunk.split(/\r?\n/);
+            for (const rawLine of lines) {
+                const line = rawLine.trimEnd();
+                if (!line || line.startsWith(":"))
+                    continue;
+                if (line.startsWith("event:")) {
+                    const nextEvent = line.slice(6).trim();
+                    if (nextEvent)
+                        eventName = nextEvent;
+                    continue;
+                }
+                if (line.startsWith("data:")) {
+                    dataLines.push(line.slice(5).trimStart());
+                }
+            }
+            const raw = (dataLines.length ? dataLines.join("\n") : chunk).trim();
+            if (!raw)
                 return false;
-            const raw = lines.join("\n");
             if (raw === "[DONE]") {
                 finish(resolve);
                 return true;
             }
             try {
-                const o = JSON.parse(raw);
-                onEvent(o.event || "message", o.data ?? o.message ?? o);
+                const parsed = JSON.parse(raw);
+                const parsedEvent = typeof parsed?.event === "string"
+                    ? parsed.event
+                    : typeof parsed?.type === "string"
+                        ? parsed.type
+                        : eventName;
+                const payload = Object.prototype.hasOwnProperty.call(parsed, "data")
+                    ? parsed.data
+                    : Object.prototype.hasOwnProperty.call(parsed, "payload")
+                        ? parsed.payload
+                        : Object.prototype.hasOwnProperty.call(parsed, "message")
+                            ? parsed.message
+                            : Object.prototype.hasOwnProperty.call(parsed, "text") && (parsedEvent === "token" || eventName === "token")
+                                ? parsed.text
+                                : parsed;
+                onEvent(parsedEvent || eventName, payload);
             }
             catch {
-                // ignore malformed SSE chunks
+                // Some providers stream plain text chunks with event labels.
+                onEvent(eventName || "message", raw);
             }
             return false;
         };
@@ -2844,6 +3297,17 @@ function stream(u, auth, body, options, onEvent) {
                     if (handleSseChunk(e))
                         return;
                     sep = findSeparator(b);
+                }
+                // Fallback for newline-delimited JSON streams that don't include SSE separators.
+                if (sep.index < 0 && b.indexOf("\n") >= 0 && !/^\s*(event:|data:|:)/m.test(b)) {
+                    let newline = b.indexOf("\n");
+                    while (newline >= 0) {
+                        const line = b.slice(0, newline).trim();
+                        b = b.slice(newline + 1);
+                        if (line && handleSseChunk(line))
+                            return;
+                        newline = b.indexOf("\n");
+                    }
                 }
             });
             res.on("end", () => {
@@ -2885,8 +3349,27 @@ function parseErr(text, code) {
 function err(e) {
     return e instanceof Error ? e.message : String(e);
 }
+function createTraceId() {
+    return `run-${Date.now().toString(36)}-${(0, crypto_1.randomBytes)(4).toString("hex")}`;
+}
 function base() {
-    return (vscode.workspace.getConfiguration("xpersona.playground").get("baseApiUrl") || "https://xpersona.co").replace(/\/$/, "");
+    const configured = String(vscode.workspace.getConfiguration("xpersona.playground").get("baseApiUrl") || "").trim();
+    const normalized = configured.replace(/\/$/, "");
+    const looksHostedDefault = !normalized || /(^https?:\/\/)?xpersona\.co\/?$/i.test(normalized);
+    if (looksHostedDefault) {
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (root) {
+            try {
+                if (fs.existsSync(path.join(root, ".env.local"))) {
+                    return "http://localhost:3000";
+                }
+            }
+            catch {
+                // Fall through to configured/default base URL.
+            }
+        }
+    }
+    return (normalized || "http://localhost:3000").replace(/\/$/, "");
 }
 function nonce() {
     return (0, crypto_1.createHash)("sha256").update(String(Math.random())).digest("hex").slice(0, 16);
@@ -3352,6 +3835,152 @@ function html(webview, extensionUri) {
         border-color: #3a3a3a;
         background: #151515;
       }
+      .guardrail .m-time {
+        display: none;
+      }
+      .guardrail-card {
+        border: 1px solid color-mix(in srgb, var(--err) 48%, var(--surface-border));
+        border-radius: 12px;
+        padding: 10px 12px;
+        background: color-mix(in srgb, var(--err) 12%, var(--surface));
+        display: grid;
+        gap: 8px;
+        width: min(100%, 740px);
+      }
+      .guardrail-title {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+        color: color-mix(in srgb, var(--err) 82%, var(--fg) 18%);
+      }
+      .guardrail-sub {
+        font-size: 12px;
+        color: color-mix(in srgb, var(--fg) 88%, var(--muted));
+      }
+      .guardrail-list {
+        margin: 0;
+        padding: 0 0 0 16px;
+        display: grid;
+        gap: 5px;
+        font-size: 11px;
+        color: color-mix(in srgb, var(--fg) 84%, var(--muted));
+      }
+      .guardrail-more {
+        color: color-mix(in srgb, var(--fg) 72%, var(--muted));
+        font-style: italic;
+      }
+      .guardrail-meta {
+        font-family: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
+        font-size: 10px;
+        color: color-mix(in srgb, var(--fg) 68%, var(--muted));
+      }
+      .guardrail-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .guardrail-copy {
+        border: 1px solid color-mix(in srgb, var(--surface-border) 78%, transparent);
+        background: color-mix(in srgb, var(--surface) 82%, var(--bg-0));
+        color: color-mix(in srgb, var(--fg) 90%, var(--muted));
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 10px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .guardrail-copy:hover {
+        border-color: color-mix(in srgb, var(--accent) 55%, var(--surface-border));
+        background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+      }
+      .diagnostics .m-time {
+        display: none;
+      }
+      .diag-card {
+        border: 1px solid color-mix(in srgb, var(--surface-border) 85%, transparent);
+        border-radius: 12px;
+        padding: 10px 12px;
+        background: color-mix(in srgb, var(--surface) 90%, var(--bg-0));
+        display: grid;
+        gap: 8px;
+        width: min(100%, 760px);
+      }
+      .diag-title {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+        color: color-mix(in srgb, var(--fg) 92%, var(--muted));
+      }
+      .diag-sub {
+        font-size: 12px;
+        color: color-mix(in srgb, var(--fg) 86%, var(--muted));
+      }
+      .diag-trace {
+        font-family: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
+        font-size: 10px;
+        color: color-mix(in srgb, var(--fg) 70%, var(--muted));
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .diag-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 6px;
+      }
+      .diag-item {
+        border: 1px solid color-mix(in srgb, var(--surface-border) 76%, transparent);
+        border-radius: 10px;
+        padding: 6px 8px;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: start;
+        background: color-mix(in srgb, var(--surface) 80%, var(--bg-0));
+      }
+      .diag-item.warn {
+        border-color: color-mix(in srgb, #f59e0b 42%, var(--surface-border));
+      }
+      .diag-item.error {
+        border-color: color-mix(in srgb, var(--err) 56%, var(--surface-border));
+      }
+      .diag-item.info {
+        border-color: color-mix(in srgb, var(--accent) 46%, var(--surface-border));
+      }
+      .diag-code {
+        font-family: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
+        font-size: 10px;
+        color: color-mix(in srgb, var(--fg) 82%, var(--muted));
+        white-space: nowrap;
+      }
+      .diag-msg {
+        font-size: 11px;
+        color: color-mix(in srgb, var(--fg) 90%, var(--muted));
+        overflow-wrap: anywhere;
+      }
+      .diag-ts {
+        font-size: 10px;
+        color: color-mix(in srgb, var(--fg) 60%, var(--muted));
+        white-space: nowrap;
+      }
+      .diag-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .diag-meta {
+        font-family: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
+        font-size: 10px;
+        color: color-mix(in srgb, var(--fg) 68%, var(--muted));
+      }
       @keyframes pop {
         from { opacity: 0; transform: translateY(4px); }
         to { opacity: 1; transform: translateY(0); }
@@ -3612,6 +4241,12 @@ function html(webview, extensionUri) {
         border-radius: 12px;
         overflow: hidden;
         background: var(--surface);
+        width: 100%;
+        max-width: 100%;
+      }
+      .change .m-body {
+        width: 100%;
+        max-width: 100%;
       }
       .change .m-time {
         display: none;
@@ -3742,9 +4377,12 @@ function html(webview, extensionUri) {
       }
       .diff-body {
         font-family: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
-        font-size: clamp(10px, 0.95vw, 12px);
-        line-height: 1.45;
-        max-height: min(52vh, 520px);
+        font-size: clamp(12px, 1.15vw, 14px);
+        line-height: 1.5;
+        width: 100%;
+        max-width: 100%;
+        min-height: 240px;
+        max-height: clamp(420px, 78vh, 1100px);
         overflow: auto;
         overscroll-behavior: contain;
       }
@@ -3791,7 +4429,7 @@ function html(webview, extensionUri) {
         white-space: pre-wrap;
         overflow-wrap: anywhere;
         word-break: break-word;
-        padding: 0 10px;
+        padding: 0 12px;
         min-width: 0;
       }
       .diff-row.ctx .sig,
@@ -3838,6 +4476,26 @@ function html(webview, extensionUri) {
         font-size: 22px;
         padding: 12px 20px 16px;
         border-top: 1px solid var(--surface-border);
+      }
+      @media (max-width: 760px) {
+        .diff-summary,
+        .diff-head {
+          padding: 12px 14px;
+          gap: 10px;
+        }
+        .diff-row {
+          grid-template-columns: minmax(30px, 44px) minmax(30px, 44px) 14px minmax(0, 1fr);
+        }
+        .diff-row .ln {
+          padding-right: 6px;
+        }
+        .diff-row .txt {
+          padding: 0 8px;
+        }
+        .diff-body {
+          min-height: 180px;
+          max-height: clamp(320px, 66vh, 820px);
+        }
       }
       .typing .m-time { display: none; }
       .typing-dots {
@@ -4497,9 +5155,7 @@ function html(webview, extensionUri) {
         white-space: nowrap;
       }
       .quick-new::before {
-        content: "+";
-        margin-right: 6px;
-        opacity: 0.84;
+        content: none;
       }
       .input {
         border-top: 1px solid var(--border);
@@ -4768,7 +5424,7 @@ function html(webview, extensionUri) {
         border: none;
         border-radius: 0;
         background: transparent;
-        overflow: hidden;
+        overflow: visible;
         display: flex;
         flex-direction: column;
         padding: 0;
@@ -4841,11 +5497,11 @@ function html(webview, extensionUri) {
         display: flex;
         flex-direction: column;
         cursor: text;
-        padding: 10px 12px;
+        padding: 8px 10px;
         position: sticky;
-        bottom: 10px;
+        bottom: 4px;
         z-index: 30;
-        margin: 0 16px 16px;
+        margin: 0 12px 6px;
         box-shadow: 0 -12px 26px rgba(0, 0, 0, 0.28);
       }
       .dock-shell:focus-within {
@@ -4956,7 +5612,8 @@ function html(webview, extensionUri) {
         );
       }
       textarea {
-        min-height: 64px;
+        min-height: 44px;
+        max-height: min(210px, calc(100vh - 260px));
         border: none;
         border-radius: 12px;
         background: transparent;
@@ -4971,6 +5628,8 @@ function html(webview, extensionUri) {
         left: 8px;
         right: 8px;
         bottom: calc(100% - 2px);
+        max-height: min(210px, calc(100vh - 220px));
+        overflow-y: auto;
       }
       .input-actions {
         gap: 10px;
@@ -5224,6 +5883,23 @@ function html(webview, extensionUri) {
         background: var(--bg-1);
         border: 1px solid var(--border);
       }
+      .action-menu.page-mode {
+        position: static;
+        inset: auto;
+        z-index: auto;
+        display: block;
+        padding: 0;
+        align-items: stretch !important;
+        justify-content: flex-start;
+      }
+      .action-menu.page-mode .action-menu-backdrop {
+        display: none !important;
+      }
+      .action-menu.page-mode .action-menu-sheet {
+        width: 100%;
+        max-width: 100%;
+        max-height: none;
+      }
       .attach-hint {
         display: none;
       }
@@ -5374,47 +6050,68 @@ function html(webview, extensionUri) {
         }
       }
       .global-top {
-        padding: 6px 12px;
+        padding: 7px 10px 5px;
         border-bottom: 1px solid var(--border);
         background: var(--bg-0);
         position: sticky;
         top: 0;
         z-index: 40;
+        min-width: 0;
+        flex-wrap: wrap;
+        row-gap: 6px;
       }
       .brand-block {
         display: flex;
         align-items: center;
         gap: 8px;
+        min-width: 0;
       }
       .brand-kicker {
-        font-size: 11px;
-        letter-spacing: .08em;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: .02em;
         text-transform: uppercase;
-        color: var(--muted);
+        color: color-mix(in srgb, var(--fg) 92%, white 8%);
+        white-space: nowrap;
       }
       .brand-kicker::after {
-        content: " · chat";
-        font-weight: 600;
-        letter-spacing: .06em;
-        color: color-mix(in srgb, var(--muted) 70%, var(--fg) 30%);
+        content: "";
       }
       .brand-sub { display: none; }
       .global-actions {
         display: flex;
         align-items: center;
         gap: 6px;
+        margin-left: auto;
+        min-width: 0;
+        flex-wrap: wrap;
+        justify-content: flex-end;
       }
       .menu-icon {
-        min-width: auto;
-        height: 26px;
-        padding: 0 10px;
+        min-width: 30px;
+        width: 30px;
+        height: 30px;
+        padding: 0;
         background: transparent;
         border: 1px solid var(--border);
         color: var(--muted);
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        line-height: 1;
       }
       .menu-icon:hover {
         border-color: color-mix(in srgb, var(--border) 40%, #fff 60%);
         color: #fff;
+      }
+      #newThreadQuick,
+      #historyHeader,
+      #actionMenuBtn {
+        width: 28px;
+        min-width: 28px;
+        padding: 0;
       }
       .menu-icon.quick-new {
         background: var(--accent);
@@ -5424,20 +6121,226 @@ function html(webview, extensionUri) {
       .menu-icon.quick-new:hover {
         background: color-mix(in srgb, var(--accent) 85%, #fff 15%);
       }
-      .chat-shell { gap: 0; }
-      .stage-shell .panel { padding: 4px 12px 0; }
+      .chat-shell {
+        gap: 0;
+        min-width: 0;
+        max-width: 100%;
+        width: 100%;
+      }
+      .stage-shell .panel {
+        padding: 8px 12px 0;
+        min-width: 0;
+        max-width: 100%;
+        overflow-x: hidden;
+      }
       .chat-panel {
-        display: flex;
+        display: none;
         flex-direction: column;
         min-height: 0;
+        max-width: 100%;
+        overflow-x: hidden;
+      }
+      .chat-panel.active {
+        display: flex;
+      }
+      #stageThreads.panel.active {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      #stageThreads .thread-list {
+        display: none !important;
+      }
+      #stageThreads .tasks-head {
+        display: flex !important;
+        align-items: center;
+        justify-content: space-between;
+        margin: 2px 0 0;
+      }
+      #stageThreads .tasks-label {
+        color: color-mix(in srgb, var(--fg) 90%, var(--muted) 10%);
+        font-size: 14px;
+        font-weight: 700;
+        margin: 0;
+        letter-spacing: .01em;
+      }
+      #taskList {
+        display: flex !important;
+        flex-direction: column;
+        gap: 3px;
+        min-height: 0;
+      }
+      .task-entry {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        border: none;
+        border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+        border-radius: 0;
+        background: transparent;
+        padding: 8px 4px;
+        text-align: left;
+      }
+      .task-entry:hover {
+        background: color-mix(in srgb, var(--surface) 62%, transparent);
+        transform: none;
+      }
+      .task-main {
+        min-width: 0;
+      }
+      .task-title {
+        margin: 0;
+        font-size: 15px;
+        color: color-mix(in srgb, var(--fg) 95%, white 5%);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .task-right {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        flex: 0 0 auto;
+      }
+      .task-age {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .task-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+        border: 1px solid color-mix(in srgb, var(--border) 78%, var(--fg) 22%);
+        background: transparent;
+      }
+      .task-meta {
+        padding: 8px 4px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      #viewAllTasks {
+        display: inline-flex !important;
+        margin-top: 4px;
+        border: none;
+        background: transparent;
+        color: var(--muted);
+        font-size: 13px;
+        padding: 2px 0 0;
+        text-align: left;
+      }
+      #viewAllTasks:hover {
+        color: color-mix(in srgb, var(--fg) 88%, white 12%);
+        transform: none;
+      }
+      .history-shell {
+        display: grid;
+        gap: 10px;
+        padding-top: 2px;
+      }
+      .history-toolbar {
+        display: grid;
+        gap: 8px;
+      }
+      .history-search {
+        width: 100%;
+        border-radius: 10px;
+        border: 1px solid var(--input-border);
+        background: color-mix(in srgb, var(--input-bg) 96%, var(--bg-0));
+        color: var(--input-fg);
+        padding: 8px 10px;
+      }
+      .history-filters {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .history-filter {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 4px 8px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .history-count {
+        margin-left: auto;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .history-list {
+        display: grid;
+        gap: 4px;
+        max-height: calc(100vh - 320px);
+        overflow: auto;
+        padding-right: 2px;
+      }
+      .history-row {
+        width: 100%;
+        border: 1px solid transparent;
+        border-radius: 10px;
+        background: transparent;
+        padding: 8px 9px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        text-align: left;
+      }
+      .history-row:hover {
+        border-color: var(--input-border);
+        background: color-mix(in srgb, var(--surface) 74%, var(--bg-0));
+        transform: none;
+      }
+      .history-row.active {
+        border-color: var(--vscode-focusBorder, var(--accent));
+        background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+      }
+      .history-row-main {
+        min-width: 0;
+      }
+      .history-row-title {
+        font-size: 14px;
+        color: color-mix(in srgb, var(--fg) 94%, white 6%);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .history-row-right {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        flex: 0 0 auto;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .history-row-mode {
+        text-transform: capitalize;
+      }
+      .history-row-age {
+        min-width: 30px;
+        text-align: right;
+      }
+      .history-empty,
+      .history-status {
+        color: var(--muted);
+        font-size: 12px;
+        padding: 8px 4px;
       }
       .messages {
         flex: 1;
         padding: 8px 0 14px;
         gap: 12px;
+        min-width: 0;
+        max-width: 100%;
+        overflow-x: hidden;
+        margin: 0;
+        align-items: flex-start;
       }
       .messages:empty::before {
-        content: "Ask Playground AI · @ files · / commands";
+        content: "Ask Playground AI - @ files - / commands";
         display: block;
         padding: 28px 8px 0;
         text-align: center;
@@ -5447,6 +6350,20 @@ function html(webview, extensionUri) {
       .m {
         display: grid;
         gap: 4px;
+        min-width: 0;
+        width: auto;
+        max-width: min(92%, 760px);
+      }
+      .m-body {
+        min-width: 0;
+        max-width: 100%;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+      .m.change .m-body {
+        width: 100%;
+        max-width: 100%;
       }
       .m.a::before {
         content: "AI";
@@ -5463,21 +6380,41 @@ function html(webview, extensionUri) {
         color: color-mix(in srgb, var(--muted) 78%, var(--fg) 22%);
         text-align: right;
       }
+      .m.a {
+        justify-self: start;
+        align-self: flex-start;
+        margin-right: auto;
+        margin-left: 0;
+      }
+      .m.a .m-body {
+        text-align: left;
+      }
+      .m.u {
+        justify-self: end;
+        align-self: flex-end;
+        margin-left: auto;
+        max-width: min(86%, 560px);
+      }
       .threads-overlay-open #stageThreads {
         top: 64px;
         width: min(420px, calc(100vw - 24px));
       }
       .dock-shell {
-        margin: 0 12px 12px;
+        margin: 0 auto 10px;
         border-radius: 16px;
-        padding: 8px;
+        padding: 6px;
         background: color-mix(in srgb, var(--surface) 88%, var(--bg-0));
         border-color: color-mix(in srgb, var(--border) 70%, var(--accent) 30%);
         box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+        min-width: 0;
+        width: min(100%, 500px);
+        max-width: calc(100% - 14px);
+        align-self: center;
+        box-sizing: border-box;
       }
       .dock-shell::before {
         content: "";
-        display: block;
+        display: none;
         height: 1px;
         margin: -4px 0 8px;
         background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--border) 70%, transparent), transparent);
@@ -5485,16 +6422,95 @@ function html(webview, extensionUri) {
       .composer-shell {
         border-radius: 14px;
         background: transparent;
-      }
-      .context-telemetry {
+        width: 100%;
+        min-width: 0;
+        border: none;
+        box-shadow: none;
+        padding: 0;
         display: flex;
         align-items: center;
-        gap: 8px;
-        min-height: 22px;
-        padding: 4px 2px 0;
-        color: color-mix(in srgb, var(--muted) 78%, var(--fg) 22%);
-        font-size: 11px;
-        line-height: 1.25;
+        gap: 6px;
+        flex-wrap: nowrap;
+        overflow: hidden;
+      }
+      .composer-shell > * {
+        min-width: 0;
+      }
+      .dock-shell .input,
+      .composer-form {
+        width: 100%;
+        min-width: 0;
+      }
+      textarea {
+        flex: 1 1 0;
+        width: auto;
+        max-width: 100%;
+        min-height: 62px;
+        max-height: 62px;
+        resize: none;
+        padding: 10px 10px;
+      }
+      .input-actions.minimal {
+        flex: 0 0 auto;
+        width: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: nowrap;
+      }
+      .input-actions.minimal .spacer {
+        display: none;
+      }
+      .context-telemetry {
+        flex: 0 0 auto;
+        min-width: 0;
+        max-width: 96px;
+        padding: 0;
+        min-height: 0;
+        flex-wrap: nowrap;
+        overflow: hidden;
+      }
+      .context-telemetry-text {
+        display: none;
+      }
+      .context-auto-badge {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        padding: 1px 6px;
+        font-size: 9px;
+      }
+      .dock-shell:focus-within,
+      .composer-shell:focus-within,
+      textarea:focus,
+      textarea:focus-visible {
+        outline: none !important;
+        box-shadow: none !important;
+        border-color: inherit !important;
+      }
+      .dock-shell .input,
+      .dock-shell .composer-form,
+      .dock-shell .composer-shell,
+      .dock-shell textarea {
+        border-top: none !important;
+        border-bottom: none !important;
+        box-shadow: none !important;
+        background-image: none !important;
+      }
+      @media (max-width: 640px) {
+        .dock-shell {
+          margin: 0 auto 8px;
+          width: min(100%, 500px);
+          max-width: calc(100% - 8px);
+          align-self: stretch;
+        }
+        .context-telemetry {
+          flex: 0 0 auto;
+          max-width: none;
+        }
+        .context-telemetry-text {
+          display: none;
+        }
       }
       .context-auto-badge {
         display: inline-flex;
@@ -5512,8 +6528,8 @@ function html(webview, extensionUri) {
         color: color-mix(in srgb, var(--accent) 82%, #fff 18%);
       }
       .context-auto-badge.ready {
-        border-color: color-mix(in srgb, var(--ok) 65%, var(--border) 35%);
-        color: color-mix(in srgb, var(--ok) 78%, #fff 22%);
+        border-color: color-mix(in srgb, var(--accent) 65%, var(--border) 35%);
+        color: color-mix(in srgb, var(--accent) 82%, #fff 18%);
       }
       .context-auto-badge.idle {
         opacity: .85;
@@ -5524,20 +6540,76 @@ function html(webview, extensionUri) {
         text-overflow: ellipsis;
         white-space: nowrap;
         flex: 1 1 auto;
+        min-width: 0;
       }
       .context-telemetry-meta {
         color: var(--muted);
         white-space: nowrap;
         font-family: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
+        min-width: 0;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: none;
+      }
+      @media (max-width: 460px) {
+        .context-telemetry-meta {
+          flex-basis: 100%;
+          white-space: normal;
+          overflow-wrap: anywhere;
+        }
+      }
+      html,
+      body,
+      #app,
+      .app {
+        width: 100%;
+        max-width: 100%;
+      }
+      #app,
+      .app,
+      .chat-shell,
+      .stage-shell,
+      .chat-panel,
+      .messages {
+        overflow-x: hidden;
       }
       .composer-meta,
       .queue-panel,
       .queue-pill,
-      .chips,
-      .tasks-head,
-      #taskList,
-      #viewAllTasks {
+      .chips {
         display: none !important;
+      }
+      /* Final hard lock: dock must always fit panel width */
+      .chat-panel.active #chatDock.dock-shell {
+        width: calc(100% - 12px) !important;
+        max-width: calc(100% - 12px) !important;
+        margin: 0 6px 4px !important;
+        align-self: stretch !important;
+        box-sizing: border-box !important;
+      }
+      .chat-panel.active #chatDock .input,
+      .chat-panel.active #chatDock .composer-form,
+      .chat-panel.active #chatDock .composer-shell {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+      }
+      @media (max-width: 640px) {
+        .chat-panel.active #chatDock.dock-shell {
+          width: calc(100% - 6px) !important;
+          max-width: calc(100% - 6px) !important;
+          margin: 0 3px 4px !important;
+        }
+      }
+      @media (max-height: 480px) {
+        .chat-panel.active #chatDock.dock-shell {
+          margin-bottom: 2px !important;
+          padding: 6px 8px !important;
+        }
+        .dock-shell textarea {
+          min-height: 38px !important;
+        }
       }
     </style>
   </head>
@@ -5598,13 +6670,13 @@ function html(webview, extensionUri) {
       </div>
       <div class="global-top">
         <div class="brand-block">
-          <span class="brand-kicker">Playground</span>
+          <span class="brand-kicker">PLAYGROUND AI</span>
         </div>
         <div class="global-actions">
-          <button id="historyHeader" type="button" class="menu-icon" aria-label="Open previous chats" title="Previous chats">Chats</button>
-          <button id="actionMenuBtn" type="button" class="menu-icon" aria-label="Settings" title="Settings" aria-expanded="false">Settings</button>
-          <button id="newThreadQuick" type="button" class="menu-icon quick-new" aria-label="Start new chat">New</button>
-          <button id="undoHeader" type="button" class="menu-icon hidden" aria-label="Undo last changes" title="Undo last changes">Undo</button>
+          <button id="newThreadQuick" type="button" class="menu-icon quick-new" aria-label="Start new chat" title="New chat">&#43;</button>
+          <button id="historyHeader" type="button" class="menu-icon" aria-label="Open tasks" title="Tasks">&#9776;</button>
+          <button id="actionMenuBtn" type="button" class="menu-icon" aria-label="Settings" title="Settings" aria-expanded="false">&#9881;</button>
+          <button id="undoHeader" type="button" class="menu-icon hidden" aria-label="Undo last changes" title="Undo last changes">&#8630;</button>
           <button id="backToChatQuick" type="button" class="menu-icon panel-icon hidden" aria-label="Back to blank stage" title="Back to blank stage">&#8592;</button>
         </div>
       </div>
@@ -5612,31 +6684,21 @@ function html(webview, extensionUri) {
 
       <div class="chat-shell" role="region" aria-label="Playground chat">
         <div class="stage-shell" role="region" aria-label="Stage">
-          <div id="chat" class="panel active chat-panel" aria-label="Chat">
+          <div id="chat" class="panel chat-panel" aria-label="Chat">
             <div id="chips" class="chips"></div>
             <div id="msgs" class="messages"></div>
             <div class="jump-wrap">
-              <button id="jumpLatest" class="jump-btn" type="button">Jump to latest</button>
+              <button id="jumpLatest" class="jump-btn" type="button" aria-label="Jump to latest" title="Jump to latest">&#8595;</button>
             </div>
           </div>
           <div id="stageBlank" class="panel" aria-label="Blank stage"></div>
-          <div id="stageThreads" class="panel" aria-label="Threads and tasks">
-            <div class="tasks-head">
-              <span class="tasks-label">Threads</span>
-              <div class="startup-actions">
-                <button id="histQuick" class="task-icon-btn" type="button" aria-label="Refresh history" title="Refresh history">&#9432;</button>
-                <button id="repQuick" class="task-icon-btn" type="button" aria-label="Replay session" title="Replay session">&#8942;</button>
-                <button id="idxQuick" class="task-icon-btn" type="button" aria-label="Rebuild index" title="Rebuild index">&#9998;</button>
-                <button id="closeThreadsPopup" class="task-icon-btn threads-popup-close hidden" type="button" aria-label="Close chats popup" title="Close popup">&#10005;</button>
-              </div>
-            </div>
-            <div id="threadList" class="thread-list"></div>
-            <div style="height:10px"></div>
+          <div id="stageThreads" class="panel active" aria-label="Tasks">
             <div class="tasks-head">
               <span class="tasks-label">Tasks</span>
             </div>
             <div id="taskList" class="task-list">No task history yet.</div>
             <button id="viewAllTasks" class="view-all" type="button">View all (0)</button>
+            <div id="threadList" class="thread-list hidden-panel"></div>
           </div>
           <div id="timeline" class="panel"></div>
           <div id="history" class="panel"></div>
@@ -5663,7 +6725,7 @@ function html(webview, extensionUri) {
                   <span id="queuePill" class="queue-pill" title="Queued messages">Queued: 0</span>
                 </div>
                 <div id="contextTelemetry" class="context-telemetry" aria-live="polite">
-                  <span id="contextAutoBadge" class="context-auto-badge idle">Auto Context</span>
+                  <span id="contextAutoBadge" class="context-auto-badge idle">IDE Context</span>
                   <span id="contextTelemetryText" class="context-telemetry-text">Background sync standing by.</span>
                   <span id="contextTelemetryMeta" class="context-telemetry-meta">idle</span>
                 </div>

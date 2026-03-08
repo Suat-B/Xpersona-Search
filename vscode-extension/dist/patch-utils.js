@@ -1,5 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.patchContainsWrappedToolPayload = patchContainsWrappedToolPayload;
+exports.textContainsLeakedPatchArtifacts = textContainsLeakedPatchArtifacts;
+exports.patchContainsLeakedPatchArtifacts = patchContainsLeakedPatchArtifacts;
 exports.extractPatchTargetPath = extractPatchTargetPath;
 exports.applyUnifiedDiff = applyUnifiedDiff;
 function parseHunkHeader(line) {
@@ -93,6 +96,76 @@ function normalizePatchText(patchText) {
         out.push(line);
     }
     return out.join("\n");
+}
+function patchContainsWrappedToolPayload(patchText) {
+    const normalized = normalizePatchText(patchText).trim();
+    if (!normalized)
+        return false;
+    const directEnvelope = /^\s*\{/.test(normalized) &&
+        /"final"\s*:/i.test(normalized) &&
+        /("edits"\s*:|"actions"\s*:|"commands"\s*:)/i.test(normalized) &&
+        /("path"\s*:|"patch"\s*:)/i.test(normalized);
+    if (directEnvelope)
+        return true;
+    const addedText = normalized
+        .split("\n")
+        .filter((line) => line.startsWith("+") && !line.startsWith("+++ "))
+        .map((line) => line.slice(1))
+        .join("\n")
+        .trim();
+    if (!addedText)
+        return false;
+    return (/\{\s*"final"\s*:/i.test(addedText) &&
+        /("edits"\s*:|"actions"\s*:|"commands"\s*:)/i.test(addedText) &&
+        /("path"\s*:|"patch"\s*:)/i.test(addedText));
+}
+const PATCH_LEAK_MARKERS = [
+    { key: "apply_patch_begin", re: /^\s*\*\*\*\s*Begin Patch\b/i },
+    { key: "apply_patch_end", re: /^\s*\*\*\*\s*End Patch\b/i },
+    { key: "apply_patch_update", re: /^\s*\*\*\*\s*(Update|Add|Delete)\s+File:\s+/i },
+    { key: "diff_git", re: /^\s*diff --git\s+a\/.+\s+b\/.+/i },
+    { key: "header_old", re: /^\s*---\s+a\/.+/i },
+    { key: "header_new", re: /^\s*\+\+\+\s+b\/.+/i },
+    { key: "hunk_header", re: /^\s*@@\s+-\d+(?:,\d+)?\s+\+\d+(?:,\d+)?\s+@@/ },
+];
+function collectPatchLeakMarkerKeys(text) {
+    const keys = new Set();
+    const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+    for (const line of lines) {
+        for (const marker of PATCH_LEAK_MARKERS) {
+            if (marker.re.test(line)) {
+                keys.add(marker.key);
+            }
+        }
+    }
+    return Array.from(keys);
+}
+function markerKeysLookLikePatchLeak(keys) {
+    if (!keys.length)
+        return false;
+    const set = new Set(keys);
+    if (set.has("apply_patch_begin") || set.has("apply_patch_update"))
+        return true;
+    if (set.has("diff_git") && (set.has("header_old") || set.has("header_new") || set.has("hunk_header")))
+        return true;
+    if (set.has("hunk_header") && (set.has("header_old") || set.has("header_new")))
+        return true;
+    return set.size >= 3;
+}
+function textContainsLeakedPatchArtifacts(text) {
+    const keys = collectPatchLeakMarkerKeys(text);
+    return markerKeysLookLikePatchLeak(keys);
+}
+function patchContainsLeakedPatchArtifacts(patchText) {
+    const normalized = normalizePatchText(patchText);
+    const addedLines = normalized
+        .split("\n")
+        .filter((line) => line.startsWith("+") && !line.startsWith("+++ "))
+        .map((line) => line.slice(1));
+    if (!addedLines.length)
+        return false;
+    const keys = collectPatchLeakMarkerKeys(addedLines.join("\n"));
+    return markerKeysLookLikePatchLeak(keys);
 }
 function parsePatch(patchText) {
     const lines = normalizePatchText(patchText).split("\n");
@@ -237,6 +310,24 @@ function extractPatchTargetPath(patchText) {
     return parsed.newPath || parsed.oldPath || null;
 }
 function applyUnifiedDiff(originalText, patchText) {
+    if (patchContainsWrappedToolPayload(patchText)) {
+        return {
+            status: "rejected_invalid_patch",
+            reason: "Patch appears to contain wrapped tool payload JSON instead of source-code diff.",
+            hunksApplied: 0,
+            totalHunks: 0,
+            targetPath: null,
+        };
+    }
+    if (patchContainsLeakedPatchArtifacts(patchText)) {
+        return {
+            status: "rejected_invalid_patch",
+            reason: "Patch appears to leak diff/apply_patch markers into file content.",
+            hunksApplied: 0,
+            totalHunks: 0,
+            targetPath: null,
+        };
+    }
     const parsed = parsePatch(patchText);
     if (!parsed) {
         return {
