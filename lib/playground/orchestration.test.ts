@@ -408,7 +408,73 @@ describe("playground agentic behavior", () => {
     });
     expect(result.actions).toHaveLength(0);
     expect(result.actionability.summary).toBe("clarification_needed");
+    expect(result.completionStatus).toBe("incomplete");
+    expect(result.missingRequirements).toContain("actionable_actions_required");
     expect(result.final).toContain("No repository changes were applied yet");
     expect(result.final.toLowerCase()).not.toContain("updated the k-theory strategy");
+  });
+
+  it("marks edit-intent command-only output as incomplete for forced reprompt handling", async () => {
+    process.env.HF_TOKEN = "test-token";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: "{\"final\":\"done\",\"edits\":[],\"commands\":[\"npm run lint\"]}",
+              },
+            },
+          ],
+        }),
+      }))
+    );
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "edit hello.py to add logging",
+      executionPolicy: "full_auto",
+    });
+
+    expect(result.actions.some((action) => action.type === "command")).toBe(true);
+    expect(result.actions.some((action) => action.type === "edit")).toBe(false);
+    expect(result.repromptStage).toBe("tool_enforcement");
+    expect(result.completionStatus).toBe("incomplete");
+    expect(result.missingRequirements).toContain("file_edit_actions_required");
+    expect(result.missingRequirements).toContain("command_only_output_for_edit_intent");
+  });
+
+  it("respects no-clarify autonomy profile by returning autonomous retry text instead of user clarification", async () => {
+    process.env.HF_TOKEN = "test-token";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({ choices: [{ message: { content: "{\"final\":\"done\",\"edits\":[],\"commands\":[]}" } }] }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "create hello.py script with greet function",
+      autonomy: {
+        mode: "unbounded",
+        maxCycles: 0,
+        noClarifyToUser: true,
+        commandPolicy: "run_until_done",
+        safetyFloor: "allow_everything",
+        failsafe: "disabled",
+      },
+    });
+
+    expect(result.completionStatus).toBe("incomplete");
+    expect(result.reasonCodes).toContain("autonomy_no_clarify_enabled");
+    expect(result.final.toLowerCase()).toContain("autonomous retry required");
+    expect(result.final.toLowerCase()).not.toContain("please share the exact file path");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 });

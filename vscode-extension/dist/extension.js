@@ -55,8 +55,14 @@ const OPEN_THREADS_KEY = "xpersona.playground.openThreads";
 const PINNED_THREADS_KEY = "xpersona.playground.pinnedThreads";
 const EXECUTION_POLICY_CONFIG_KEY = "executionPolicy";
 const MENTIONS_ENABLED_FLAG = "mentions.enabled";
-const DEFAULT_PLAYGROUND_MODEL = "mistralai/mistral-nemotron";
-const BACKUP_PLAYGROUND_MODEL = "qwen/qwen3.5-122b-a10b";
+const AUTONOMY_MODE_CONFIG_KEY = "autonomy.mode";
+const AUTONOMY_MAX_CYCLES_CONFIG_KEY = "autonomy.maxCycles";
+const AUTONOMY_NO_CLARIFY_CONFIG_KEY = "autonomy.noClarifyToUser";
+const AUTONOMY_COMMAND_POLICY_CONFIG_KEY = "autonomy.commandPolicy";
+const AUTONOMY_SAFETY_FLOOR_CONFIG_KEY = "autonomy.safetyFloor";
+const AUTONOMY_FAILSAFE_CONFIG_KEY = "autonomy.failsafe";
+const DEFAULT_PLAYGROUND_MODEL = "stepfun-ai/step-3.5-flash";
+const BACKUP_PLAYGROUND_MODEL = "mistralai/mistral-nemotron";
 const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
 function modelLabelForUi(model) {
     return PUBLIC_PLAYGROUND_MODEL_NAME;
@@ -377,6 +383,7 @@ class Provider {
         this.pendingActions = [];
         this.guardrailIssues = [];
         this.lastRunMeta = null;
+        this.lastActionOutcome = null;
         this.activeStreamCancel = null;
         this.cancelRequested = false;
         this.commandTerminal = null;
@@ -509,6 +516,14 @@ class Provider {
         }
         return fallback;
     }
+    maskApiKey(key) {
+        const raw = String(key || "").trim();
+        if (!raw)
+            return "";
+        if (raw.length <= 8)
+            return raw.slice(0, 2) + "..." + raw.slice(-2);
+        return raw.slice(0, 4) + "..." + raw.slice(-4);
+    }
     async storeApiKey(rawKey) {
         const key = String(rawKey || "").trim();
         if (!key)
@@ -578,8 +593,18 @@ class Provider {
     }
     async postAuthState() {
         const refreshToken = await this.getRefreshToken();
-        const signedIn = Boolean(refreshToken);
-        this.post({ type: "authState", signedIn, email: this.vscodeSignedInEmail });
+        const browserSignedIn = Boolean(refreshToken);
+        const storedKey = await this.getStoredApiKey();
+        const apiKeySaved = Boolean(storedKey && storedKey.trim());
+        const signedIn = browserSignedIn || apiKeySaved;
+        this.post({
+            type: "authState",
+            signedIn,
+            browserSignedIn,
+            apiKeySaved,
+            apiKeyMasked: apiKeySaved && storedKey ? this.maskApiKey(storedKey) : "",
+            email: this.vscodeSignedInEmail,
+        });
     }
     async signInWithBrowser() {
         const state = (0, crypto_1.randomBytes)(16).toString("hex");
@@ -705,6 +730,27 @@ class Provider {
             return configured;
         }
         return "full_auto";
+    }
+    getAutonomyProfile() {
+        const cfg = vscode.workspace.getConfiguration("xpersona.playground");
+        const modeRaw = String(cfg.get(AUTONOMY_MODE_CONFIG_KEY) || "unbounded").trim().toLowerCase();
+        const maxCyclesRaw = Number(cfg.get(AUTONOMY_MAX_CYCLES_CONFIG_KEY));
+        const noClarify = cfg.get(AUTONOMY_NO_CLARIFY_CONFIG_KEY);
+        const commandPolicyRaw = String(cfg.get(AUTONOMY_COMMAND_POLICY_CONFIG_KEY) || "run_until_done")
+            .trim()
+            .toLowerCase();
+        const safetyFloorRaw = String(cfg.get(AUTONOMY_SAFETY_FLOOR_CONFIG_KEY) || "allow_everything")
+            .trim()
+            .toLowerCase();
+        const failsafeRaw = String(cfg.get(AUTONOMY_FAILSAFE_CONFIG_KEY) || "disabled").trim().toLowerCase();
+        return {
+            mode: modeRaw === "bounded" ? "bounded" : "unbounded",
+            maxCycles: Number.isFinite(maxCyclesRaw) && maxCyclesRaw >= 0 ? Math.floor(maxCyclesRaw) : 0,
+            noClarifyToUser: noClarify !== false,
+            commandPolicy: commandPolicyRaw === "safe_default" ? "safe_default" : "run_until_done",
+            safetyFloor: safetyFloorRaw === "standard" ? "standard" : "allow_everything",
+            failsafe: failsafeRaw === "enabled" ? "enabled" : "disabled",
+        };
     }
     mentionsEnabled() {
         return vscode.workspace.getConfiguration("xpersona.playground").get(MENTIONS_ENABLED_FLAG) ?? true;
@@ -1899,7 +1945,7 @@ class Provider {
             if (changed || now - this.lastPlanModeNoticeAt > 4000) {
                 this.lastPlanModeNoticeAt = now;
                 this.post({ type: "status", text: "Plan mode enabled." });
-                vscode.window.setStatusBarMessage("Playground AI: Plan mode enabled", 2500);
+                vscode.window.setStatusBarMessage("Playground 1: Plan mode enabled", 2500);
             }
         }
     }
@@ -1908,7 +1954,205 @@ class Provider {
         await this.ctx.workspaceState.update(SAFETY_KEY, s);
         this.post({ type: "safety", value: s });
     }
+    postAutonomyRuntime(threadId, data) {
+        this.postRun(threadId, { type: "autonomyRuntime", data });
+    }
+    evaluateAutonomyCompletion(task) {
+        const meta = this.lastRunMeta || {};
+        const actionabilityReason = String(meta.actionability?.reason || "").trim();
+        const missingFromMeta = Array.isArray(meta.missingRequirements)
+            ? meta.missingRequirements.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
+            : [];
+        const localOutcome = this.lastActionOutcome;
+        const filesChanged = Number(localOutcome?.filesChanged || 0);
+        const checksRun = Number(localOutcome?.checksRun || 0);
+        const localAppliedFiles = Array.isArray(localOutcome?.appliedFiles)
+            ? localOutcome.appliedFiles.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
+            : [];
+        const editIntent = this.wantsCodeEdits(task) && !this.isConversationalPrompt(task);
+        const missing = Array.from(new Set(missingFromMeta));
+        if (editIntent && filesChanged === 0)
+            missing.push("local_file_mutation_required");
+        const completionStatus = meta.completionStatus === "incomplete" || missing.length > 0 ? "incomplete" : "complete";
+        const done = completionStatus === "complete" && (!editIntent || filesChanged > 0);
+        const blocker = (missing.length > 0 ? missing.join(", ") : "") ||
+            actionabilityReason ||
+            String(localOutcome?.summary || "").trim() ||
+            "Completion contract not satisfied yet.";
+        let completionScore = 0;
+        if (completionStatus === "complete")
+            completionScore += 50;
+        if (filesChanged > 0)
+            completionScore += 35;
+        if (checksRun > 0)
+            completionScore += 15;
+        if (done)
+            completionScore = 100;
+        completionScore = Math.max(0, Math.min(100, completionScore));
+        return {
+            done,
+            completionStatus,
+            completionScore,
+            missingRequirements: missing,
+            blocker,
+            appliedFiles: localAppliedFiles,
+            filesChanged,
+            checksRun,
+        };
+    }
+    buildAutonomyRepromptTask(input) {
+        const missing = input.missingRequirements.length
+            ? input.missingRequirements.join(", ")
+            : "unspecified";
+        const parts = [
+            input.objective.trim(),
+            "",
+            `Autonomy continuation cycle ${input.cycle + 1}: previous cycle incomplete.`,
+            `Missing requirements: ${missing}.`,
+            `Blocker: ${input.blocker}.`,
+            `Observed local outcomes: filesChanged=${input.filesChanged}, checksRun=${input.checksRun}.`,
+            "Rules: do not ask the user for clarification. Infer targets from available IDE context and return concrete file actions.",
+            "Rules: for edit-intent tasks, command-only output is invalid. Return at least one edit/write_file/mkdir action.",
+            input.hintedTargetPath ? `Primary target file hint: ${input.hintedTargetPath}` : "",
+            "Then include any validation commands needed to confirm the change.",
+        ];
+        return parts.filter(Boolean).join("\n");
+    }
     async ask(text, parallel, model = DEFAULT_PLAYGROUND_MODEL, reasoning = "medium", options = {}) {
+        const autonomy = this.getAutonomyProfile();
+        const loopEnabled = options.autonomousLoop !== false && autonomy.mode === "unbounded";
+        if (!loopEnabled) {
+            await this.askSingleCycle(text, parallel, model, reasoning, options);
+            return;
+        }
+        const objective = String(text || "").trim();
+        if (!objective)
+            return;
+        let cycleTask = objective;
+        let cycle = 0;
+        let loopOptions = { ...options, autonomousLoop: false };
+        while (true) {
+            cycle += 1;
+            const runThreadId = (typeof loopOptions.threadId === "string" && loopOptions.threadId.trim())
+                ? loopOptions.threadId.trim()
+                : this.activeThreadId;
+            this.postAutonomyRuntime(runThreadId, {
+                objective,
+                cycle,
+                maxCycles: autonomy.maxCycles,
+                phase: "plan",
+                completionStatus: "incomplete",
+                completionScore: 0,
+                missingRequirements: [],
+                blocker: "Planning cycle.",
+                appliedFiles: [],
+                filesChanged: 0,
+                checksRun: 0,
+            });
+            const cycleOptions = {
+                ...loopOptions,
+                autonomyCycle: {
+                    objective,
+                    cycle,
+                    maxCycles: autonomy.maxCycles,
+                },
+            };
+            await this.askSingleCycle(cycleTask, parallel, model, reasoning, cycleOptions);
+            const threadId = this.activeThreadId || runThreadId;
+            const hintedTargetPath = normalizeWorkspaceRelativePath(String(this.lastRunMeta?.validationPlan?.touchedFiles?.[0] || "").replace(/\\/g, "/"));
+            const completion = this.evaluateAutonomyCompletion(objective);
+            this.postAutonomyRuntime(threadId, {
+                objective,
+                cycle,
+                maxCycles: autonomy.maxCycles,
+                phase: "verify",
+                completionStatus: completion.completionStatus,
+                completionScore: completion.completionScore,
+                missingRequirements: completion.missingRequirements,
+                blocker: completion.blocker,
+                appliedFiles: completion.appliedFiles,
+                filesChanged: completion.filesChanged,
+                checksRun: completion.checksRun,
+            });
+            const hitCycleLimit = autonomy.maxCycles > 0 && cycle >= autonomy.maxCycles;
+            if (this.cancelRequested || completion.done || hitCycleLimit) {
+                this.postAutonomyRuntime(threadId, {
+                    objective,
+                    cycle,
+                    maxCycles: autonomy.maxCycles,
+                    phase: "done",
+                    completionStatus: completion.done ? "complete" : "incomplete",
+                    completionScore: completion.done ? 100 : completion.completionScore,
+                    missingRequirements: completion.missingRequirements,
+                    blocker: hitCycleLimit && !completion.done
+                        ? "Max cycle limit reached before completion."
+                        : completion.blocker,
+                    appliedFiles: completion.appliedFiles,
+                    filesChanged: completion.filesChanged,
+                    checksRun: completion.checksRun,
+                });
+                if (hitCycleLimit && !completion.done) {
+                    this.postRun(threadId, {
+                        type: "status",
+                        text: `Autonomy stopped after ${cycle} cycle(s) without satisfying completion contract.`,
+                    });
+                }
+                return;
+            }
+            this.postAutonomyRuntime(threadId, {
+                objective,
+                cycle,
+                maxCycles: autonomy.maxCycles,
+                phase: "reprompt",
+                completionStatus: completion.completionStatus,
+                completionScore: completion.completionScore,
+                missingRequirements: completion.missingRequirements,
+                blocker: completion.blocker,
+                appliedFiles: completion.appliedFiles,
+                filesChanged: completion.filesChanged,
+                checksRun: completion.checksRun,
+            });
+            this.postRun(threadId, {
+                type: "status",
+                text: `Autonomy cycle ${cycle} incomplete. Re-prompting with failure telemetry...`,
+            });
+            cycleTask = this.buildAutonomyRepromptTask({
+                objective,
+                cycle,
+                missingRequirements: completion.missingRequirements,
+                blocker: completion.blocker,
+                hintedTargetPath,
+                filesChanged: completion.filesChanged,
+                checksRun: completion.checksRun,
+            });
+            loopOptions = {
+                ...loopOptions,
+                threadId: threadId || undefined,
+                contextRetryAttempted: false,
+                modelFallbackAttempted: false,
+            };
+            await new Promise((resolve) => setTimeout(resolve, 120));
+        }
+    }
+    async askSingleCycle(text, parallel, model = DEFAULT_PLAYGROUND_MODEL, reasoning = "medium", options = {}) {
+        this.lastActionOutcome = null;
+        const cycleContext = options.autonomyCycle;
+        const objectiveText = cycleContext?.objective || String(text || "").trim();
+        if (cycleContext) {
+            this.postAutonomyRuntime(this.activeThreadId, {
+                objective: objectiveText,
+                cycle: cycleContext.cycle,
+                maxCycles: cycleContext.maxCycles,
+                phase: "act",
+                completionStatus: "incomplete",
+                completionScore: 0,
+                missingRequirements: [],
+                blocker: "Collecting context and generating actions.",
+                appliedFiles: [],
+                filesChanged: 0,
+                checksRun: 0,
+            });
+        }
         if (!text.trim())
             return;
         if (this.activeStreamCancel) {
@@ -1918,6 +2162,7 @@ class Provider {
         const auth = await this.resolveRequestAuth();
         if (!auth)
             return this.post({ type: "err", text: "Not authenticated. Use Sign in (browser) or set an API key." });
+        const autonomyProfile = this.getAutonomyProfile();
         this.cancelRequested = false;
         this.pendingActions = [];
         this.guardrailIssues = [];
@@ -1992,7 +2237,7 @@ class Provider {
         }
         const wantsEdits = !conversational && this.wantsCodeEdits(text);
         const taskWithReasoning = smallTalk
-            ? `User message: "${text.trim()}". Reply briefly and friendly. No file edits, commands, or patches.`
+            ? `User message: "${text.trim()}". Reply briefly, warmly, and conversationally.`
             : wantsEdits
                 ? `User request: "${text.trim()}". Prefer concrete code edits or patches. Use available IDE context (active file, open files, @mentions, diagnostics) to infer the most likely target and produce a best-effort patch. Ask a clarification question only when no file context exists at all. Keep the response focused on applying the change, not theory.`
                 : text;
@@ -2143,6 +2388,14 @@ class Provider {
                     workspaceHash,
                 },
                 executionPolicy: this.getExecutionPolicy(),
+                autonomy: {
+                    mode: autonomyProfile.mode,
+                    maxCycles: autonomyProfile.maxCycles,
+                    noClarifyToUser: autonomyProfile.noClarifyToUser,
+                    commandPolicy: autonomyProfile.commandPolicy,
+                    safetyFloor: autonomyProfile.safetyFloor,
+                    failsafe: autonomyProfile.failsafe,
+                },
                 safetyProfile: this.safety,
                 agentConfig: parallel
                     ? { strategy: "parallel", roles: ["planner", "implementer", "reviewer"] }
@@ -2157,6 +2410,12 @@ class Provider {
                     if (chunk) {
                         sawTokenEvent = true;
                         this.postRun(runThreadId, { type: "token", text: chunk });
+                    }
+                }
+                else if (ev === "reasoning_token" || ev === "reasoning") {
+                    const chunk = typeof p === "string" ? p : String(p ?? "");
+                    if (chunk) {
+                        this.postRun(runThreadId, { type: "reasoningToken", text: chunk });
                     }
                 }
                 else if (ev === "status") {
@@ -2387,13 +2646,14 @@ class Provider {
                         reasoning,
                         mode: requestMode,
                     });
-                    await this.ask(text, parallel, backupModelCandidate, reasoning, {
+                    await this.askSingleCycle(text, parallel, backupModelCandidate, reasoning, {
                         includeIdeContext: options.includeIdeContext,
                         workspaceContextLevel: options.workspaceContextLevel,
                         attachments: options.attachments,
                         threadId: runThreadId,
                         contextRetryAttempted: options.contextRetryAttempted,
                         modelFallbackAttempted: true,
+                        autonomousLoop: false,
                     });
                     return;
                 }
@@ -2457,35 +2717,39 @@ class Provider {
                 type: "status",
                 text: `No actionable edits were produced. Retrying once with explicit file target: ${hintedTargetPath}`,
             });
-            await this.ask(retryTask, parallel, model, reasoning, {
+            await this.askSingleCycle(retryTask, parallel, model, reasoning, {
                 includeIdeContext: options.includeIdeContext,
                 workspaceContextLevel: options.workspaceContextLevel,
                 attachments: options.attachments,
                 threadId: runThreadId,
                 contextRetryAttempted: true,
+                autonomousLoop: false,
             });
             emitDiagnosticsBundle("actions", "Retried run with explicit file target due to no actionable edits.");
             return;
         }
         if (allowActions && this.pendingActions.length === 0 && guardrailIssues.length > 0) {
+            const outcome = {
+                filesChanged: 0,
+                checksRun: 0,
+                quality: "needs_attention",
+                summary: `Guardrails blocked ${guardrailIssues.length} malformed action(s).`,
+                perFile: [],
+                appliedFiles: [],
+                debug: {
+                    requestedActions: guardrailIssues.length,
+                    approvedActions: 0,
+                    rejectedActions: guardrailIssues.length,
+                    localRejectedEdits: 0,
+                    rejectedSamples: guardrailIssues.slice(0, 8),
+                    localRejectedSamples: [],
+                    applyErrors: [],
+                },
+            };
+            this.lastActionOutcome = outcome;
             this.postRun(runThreadId, {
                 type: "actionOutcome",
-                data: {
-                    filesChanged: 0,
-                    checksRun: 0,
-                    quality: "needs_attention",
-                    summary: `Guardrails blocked ${guardrailIssues.length} malformed action(s).`,
-                    perFile: [],
-                    debug: {
-                        requestedActions: guardrailIssues.length,
-                        approvedActions: 0,
-                        rejectedActions: guardrailIssues.length,
-                        localRejectedEdits: 0,
-                        rejectedSamples: guardrailIssues.slice(0, 8),
-                        localRejectedSamples: [],
-                        applyErrors: [],
-                    },
-                },
+                data: outcome,
             });
             this.guardrailIssues = [];
             emitDiagnosticsBundle("actions", `Guardrails blocked ${guardrailIssues.length} malformed action(s).`);
@@ -2523,19 +2787,76 @@ class Provider {
             if (lowConfidenceCommandOnly) {
                 autoRunValidation = false;
             }
+            const commandOnlyForEditRequest = wantsEdits &&
+                !explicitCommandIntent &&
+                hasCommandActions &&
+                !hasEditActions;
+            if (commandOnlyForEditRequest) {
+                const retryTarget = hintedTargetPath || normalizeWorkspaceRelativePath(String(validation?.touchedFiles?.[0] || ""));
+                if (!options.contextRetryAttempted) {
+                    const retryTask = [
+                        text.trim(),
+                        retryTarget ? `Apply the requested change directly in ${retryTarget}.` : "",
+                        "Return at least one file action (edit/write_file/mkdir). Do not return command-only output.",
+                    ]
+                        .filter(Boolean)
+                        .join("\n\n");
+                    addDiagnosticEvent("command_only_retry", "Received command-only actions for an edit request; retrying once for concrete file edits.", "warn");
+                    this.postRun(runThreadId, {
+                        type: "status",
+                        text: retryTarget
+                            ? `No file edits were produced. Retrying once with explicit file target: ${retryTarget}`
+                            : "No file edits were produced. Retrying once with stronger edit-only instructions.",
+                    });
+                    await this.askSingleCycle(retryTask, parallel, model, reasoning, {
+                        includeIdeContext: options.includeIdeContext,
+                        workspaceContextLevel: options.workspaceContextLevel,
+                        attachments: options.attachments,
+                        threadId: runThreadId,
+                        contextRetryAttempted: true,
+                        autonomousLoop: false,
+                    });
+                    emitDiagnosticsBundle("actions", "Retried run because edit request produced command-only actions.");
+                    return;
+                }
+                addDiagnosticEvent("command_only_blocked", "Command-only actions were skipped for an edit request.", "warn");
+                this.postRun(runThreadId, {
+                    type: "status",
+                    text: "No file edits were produced. Skipped auto-running command-only actions for this edit request.",
+                });
+                const outcome = {
+                    filesChanged: 0,
+                    checksRun: 0,
+                    quality: "needs_attention",
+                    summary: "No file edits were produced; command-only actions were skipped.",
+                    appliedFiles: [],
+                };
+                this.lastActionOutcome = outcome;
+                this.postRun(runThreadId, {
+                    type: "actionOutcome",
+                    data: outcome,
+                });
+                this.pendingActions = [];
+                this.post({ type: "pendingActions", count: 0 });
+                emitDiagnosticsBundle("actions", "Skipped command-only actions for edit request after retry.");
+                return;
+            }
             if (hasEditActions && !autoApplyEdits) {
                 this.postRun(runThreadId, {
                     type: "status",
                     text: `Prepared ${this.pendingActions.length} action(s), not executed. Execution policy is ${policy}.`,
                 });
+                const outcome = {
+                    filesChanged: 0,
+                    checksRun: 0,
+                    quality: "preview_only",
+                    summary: "Edits prepared for preview, not auto-applied.",
+                    appliedFiles: [],
+                };
+                this.lastActionOutcome = outcome;
                 this.postRun(runThreadId, {
                     type: "actionOutcome",
-                    data: {
-                        filesChanged: 0,
-                        checksRun: 0,
-                        quality: "preview_only",
-                        summary: "Edits prepared for preview, not auto-applied.",
-                    },
+                    data: outcome,
                 });
                 this.postRun(runThreadId, { type: "prefill", text: "apply now" });
                 emitDiagnosticsBundle("actions", "Actions prepared for preview only; auto-apply disabled by policy.");
@@ -2544,11 +2865,28 @@ class Provider {
             const actionsToExecute = [];
             if (hasEditActions && autoApplyEdits) {
                 actionsToExecute.push(...this.pendingActions.filter((a) => a.type === "edit"));
+                actionsToExecute.push(...this.pendingActions.filter((a) => a.type === "mkdir"));
+                actionsToExecute.push(...this.pendingActions.filter((a) => a.type === "write_file"));
             }
             if (hasCommandActions && autoRunValidation) {
                 actionsToExecute.push(...this.pendingActions.filter((a) => a.type === "command"));
             }
             if (actionsToExecute.length > 0) {
+                if (cycleContext) {
+                    this.postAutonomyRuntime(runThreadId, {
+                        objective: objectiveText,
+                        cycle: cycleContext.cycle,
+                        maxCycles: cycleContext.maxCycles,
+                        phase: "apply",
+                        completionStatus: "incomplete",
+                        completionScore: 0,
+                        missingRequirements: [],
+                        blocker: "Applying local file edits and commands.",
+                        appliedFiles: [],
+                        filesChanged: 0,
+                        checksRun: 0,
+                    });
+                }
                 if (!conversational) {
                     const editActionCount = actionsToExecute.filter((a) => a.type === "edit" || a.type === "mkdir" || a.type === "write_file").length;
                     const commandActionCount = actionsToExecute.filter((a) => a.type === "command").length;
@@ -2807,6 +3145,7 @@ class Provider {
         const perFileStatuses = [];
         const undoFileSnapshots = new Map();
         const undoCreatedDirs = new Set();
+        const approvedCommands = [];
         for (const row of results) {
             if (row.status !== "approved" || !row.action)
                 continue;
@@ -2826,9 +3165,16 @@ class Provider {
                     ...(applied.reason ? { reason: applied.reason } : {}),
                 });
                 if (applied.status === "applied" || applied.status === "partial") {
-                    appliedEdits += 1;
-                    changedPaths.add(row.action.path || "unknown");
-                    this.postRun(runThreadId, { type: "fileAction", path: row.action.path || "unknown", status: applied.status, reason: applied.reason || "" });
+                    if (applied.changed) {
+                        appliedEdits += 1;
+                        changedPaths.add(row.action.path || "unknown");
+                    }
+                    this.postRun(runThreadId, {
+                        type: "fileAction",
+                        path: row.action.path || "unknown",
+                        status: applied.status,
+                        reason: applied.reason || (applied.changed ? "" : "Patch produced no file changes."),
+                    });
                 }
                 else if (applied.reason) {
                     applyErrors.push(`${row.action.path || "unknown"}: ${applied.reason}`);
@@ -2842,9 +3188,16 @@ class Provider {
                     ...(applied.reason ? { reason: applied.reason } : {}),
                 });
                 if (applied.status === "applied") {
-                    appliedEdits += 1;
-                    changedPaths.add(row.action.path);
-                    this.postRun(runThreadId, { type: "fileAction", path: row.action.path, status: "applied", reason: "Directory created" });
+                    if (applied.changed) {
+                        appliedEdits += 1;
+                        changedPaths.add(row.action.path);
+                    }
+                    this.postRun(runThreadId, {
+                        type: "fileAction",
+                        path: row.action.path,
+                        status: "applied",
+                        reason: applied.reason || (applied.changed ? "Directory created" : "Directory already existed."),
+                    });
                 }
                 else if (applied.reason) {
                     applyErrors.push(`${row.action.path}: ${applied.reason}`);
@@ -2862,17 +3215,38 @@ class Provider {
                     ...(applied.reason ? { reason: applied.reason } : {}),
                 });
                 if (applied.status === "applied") {
-                    appliedEdits += 1;
-                    changedPaths.add(row.action.path);
-                    this.postRun(runThreadId, { type: "fileAction", path: row.action.path, status: "applied", reason: "File created/updated" });
+                    if (applied.changed) {
+                        appliedEdits += 1;
+                        changedPaths.add(row.action.path);
+                    }
+                    this.postRun(runThreadId, {
+                        type: "fileAction",
+                        path: row.action.path,
+                        status: "applied",
+                        reason: applied.reason || (applied.changed ? "File created/updated" : "File already matched requested content."),
+                    });
                 }
                 else if (applied.reason) {
                     applyErrors.push(`${row.action.path}: ${applied.reason}`);
                 }
             }
             else if (row.action.type === "command" && row.action.command) {
-                this.postRun(runThreadId, { type: "terminalCommand", command: row.action.command });
-                this.runApprovedCommand(row.action.command);
+                approvedCommands.push(row.action.command);
+            }
+        }
+        const shouldRunApprovedCommands = !expectedFileChanges || changedPaths.size > 0;
+        if (!shouldRunApprovedCommands && approvedCommands.length > 0) {
+            const skippedMessage = `Skipped ${approvedCommands.length} command(s) because no file edits were actually applied.`;
+            addExecutionEvent("validation_skipped_no_file_change", skippedMessage, "warn");
+            this.postRun(runThreadId, {
+                type: "status",
+                text: "Skipped validation commands because no file edits were actually applied.",
+            });
+        }
+        else {
+            for (const command of approvedCommands) {
+                this.postRun(runThreadId, { type: "terminalCommand", command });
+                this.runApprovedCommand(command);
                 launchedCommands += 1;
             }
         }
@@ -2938,28 +3312,31 @@ class Provider {
         if (applyErrors.length) {
             this.postRun(runThreadId, { type: "err", text: `Some approved edits were not auto-applied:\n- ${applyErrors.join("\n- ")}` });
         }
+        const outcome = {
+            filesChanged: changedPaths.size,
+            checksRun: launchedCommands,
+            quality: applyErrors.length || (expectedFileChanges && changedPaths.size === 0) ? "needs_attention" : "good",
+            summary: applyErrors.length
+                ? "Applied edits with warnings. Review rejected patches."
+                : expectedFileChanges && changedPaths.size === 0
+                    ? "No file edits were applied."
+                    : "Actions completed successfully.",
+            perFile: perFileStatuses,
+            appliedFiles: Array.from(changedPaths),
+            debug: {
+                requestedActions: actionList.length,
+                approvedActions: approved,
+                rejectedActions: rejected.length + guardrailIssues.length,
+                localRejectedEdits: localRejected.length,
+                rejectedSamples: [...guardrailIssues.map((x) => `guardrail ${x}`), ...rejectedSummaries].slice(0, 8),
+                localRejectedSamples: localRejectedSummaries,
+                applyErrors: applyErrors.slice(0, 8),
+            },
+        };
+        this.lastActionOutcome = outcome;
         this.postRun(runThreadId, {
             type: "actionOutcome",
-            data: {
-                filesChanged: changedPaths.size,
-                checksRun: launchedCommands,
-                quality: applyErrors.length || (expectedFileChanges && changedPaths.size === 0) ? "needs_attention" : "good",
-                summary: applyErrors.length
-                    ? "Applied edits with warnings. Review rejected patches."
-                    : expectedFileChanges && changedPaths.size === 0
-                        ? "No file edits were applied."
-                        : "Actions completed successfully.",
-                perFile: perFileStatuses,
-                debug: {
-                    requestedActions: actionList.length,
-                    approvedActions: approved,
-                    rejectedActions: rejected.length + guardrailIssues.length,
-                    localRejectedEdits: localRejected.length,
-                    rejectedSamples: [...guardrailIssues.map((x) => `guardrail ${x}`), ...rejectedSummaries].slice(0, 8),
-                    localRejectedSamples: localRejectedSummaries,
-                    applyErrors: applyErrors.slice(0, 8),
-                },
-            },
+            data: outcome,
         });
         emitExecutionDiagnostics(applyErrors.length || rejected.length || localRejected.length || guardrailIssues.length
             ? "Execution completed with warnings/errors."
@@ -2999,30 +3376,32 @@ class Provider {
     async applyEditAction(action, undoCollector) {
         const rel = normalizeWorkspaceRelativePath(action.path || "");
         if (!rel)
-            return { status: "rejected_path_policy", reason: "Invalid relative path in edit action." };
+            return { status: "rejected_path_policy", reason: "Invalid relative path in edit action.", changed: false };
         const root = this.getWorkspaceRoot();
         if (!root)
-            return { status: "rejected_path_policy", reason: "No workspace folder open." };
+            return { status: "rejected_path_policy", reason: "No workspace folder open.", changed: false };
         const incomingPatch = action.patch || action.diff || "";
         const normalizedPatch = normalizeIncomingPatchText(incomingPatch);
         const patchText = normalizedPatch.patch;
         if (!patchText)
-            return { status: "rejected_invalid_patch", reason: "Missing patch/diff content for edit action." };
+            return { status: "rejected_invalid_patch", reason: "Missing patch/diff content for edit action.", changed: false };
         if (patchHasWrappedToolPayloadArtifacts(patchText)) {
             return {
                 status: "rejected_invalid_patch",
                 reason: "Patch blocked: detected structured tool payload instead of unified diff content.",
+                changed: false,
             };
         }
         if (patchHasLeakedPatchArtifacts(patchText)) {
             return {
                 status: "rejected_invalid_patch",
                 reason: "Patch blocked: detected leaked diff/apply_patch markers in target file changes.",
+                changed: false,
             };
         }
         const patchTarget = normalizeWorkspaceRelativePath((0, patch_utils_1.extractPatchTargetPath)(patchText) || rel);
         if (!patchTarget || patchTarget !== rel) {
-            return { status: "rejected_path_policy", reason: "Patch path did not match approved workspace-relative path." };
+            return { status: "rejected_path_policy", reason: "Patch path did not match approved workspace-relative path.", changed: false };
         }
         await this.captureUndoFileSnapshot(root, rel, undoCollector);
         const relParts = rel.split("/").filter(Boolean);
@@ -3042,21 +3421,29 @@ class Provider {
         }
         const applied = (0, patch_utils_1.applyUnifiedDiff)(original, patchText);
         if (applied.status === "rejected_invalid_patch" || !applied.content) {
-            return { status: applied.status, reason: applied.reason || "Unsupported patch format." };
+            return { status: applied.status, reason: applied.reason || "Unsupported patch format.", changed: false };
+        }
+        if (applied.content === original) {
+            return {
+                status: applied.status,
+                reason: applied.reason || "Patch matched file context but did not change content.",
+                changed: false,
+            };
         }
         await vscode.workspace.fs.writeFile(target, Buffer.from(applied.content, "utf8"));
         return {
             status: applied.status,
             ...(applied.reason ? { reason: applied.reason } : {}),
+            changed: true,
         };
     }
     async applyMkdirAction(action, undoCreatedDirs) {
         const rel = normalizeWorkspaceRelativePath(action.path || "");
         if (!rel)
-            return { status: "rejected_path_policy", reason: "Invalid relative path for mkdir action." };
+            return { status: "rejected_path_policy", reason: "Invalid relative path for mkdir action.", changed: false };
         const root = this.getWorkspaceRoot();
         if (!root)
-            return { status: "rejected_path_policy", reason: "No workspace folder open." };
+            return { status: "rejected_path_policy", reason: "No workspace folder open.", changed: false };
         const target = vscode.Uri.joinPath(root.uri, ...rel.split("/").filter(Boolean));
         let existedBefore = true;
         try {
@@ -3069,15 +3456,19 @@ class Provider {
         await vscode.workspace.fs.stat(target);
         if (!existedBefore && undoCreatedDirs)
             undoCreatedDirs.add(rel);
-        return { status: "applied" };
+        return {
+            status: "applied",
+            changed: !existedBefore,
+            ...(existedBefore ? { reason: "Directory already existed." } : {}),
+        };
     }
     async applyWriteFileAction(action, undoCollector) {
         const rel = normalizeWorkspaceRelativePath(action.path || "");
         if (!rel)
-            return { status: "rejected_path_policy", reason: "Invalid relative path for write_file action." };
+            return { status: "rejected_path_policy", reason: "Invalid relative path for write_file action.", changed: false };
         const root = this.getWorkspaceRoot();
         if (!root)
-            return { status: "rejected_path_policy", reason: "No workspace folder open." };
+            return { status: "rejected_path_policy", reason: "No workspace folder open.", changed: false };
         await this.captureUndoFileSnapshot(root, rel, undoCollector);
         const relParts = rel.split("/").filter(Boolean);
         const target = vscode.Uri.joinPath(root.uri, ...relParts);
@@ -3087,13 +3478,22 @@ class Provider {
             await vscode.workspace.fs.createDirectory(parentUri);
         }
         const overwrite = action.overwrite !== false;
+        let existedBefore = true;
+        let existingContent = "";
+        try {
+            const existing = await vscode.workspace.fs.readFile(target);
+            existingContent = Buffer.from(existing).toString("utf8");
+        }
+        catch {
+            existedBefore = false;
+        }
         if (!overwrite) {
-            try {
-                await vscode.workspace.fs.stat(target);
-                return { status: "rejected_path_policy", reason: "write_file blocked: file already exists and overwrite=false." };
-            }
-            catch {
-                // file does not exist; safe to continue
+            if (existedBefore) {
+                return {
+                    status: "rejected_path_policy",
+                    reason: "write_file blocked: file already exists and overwrite=false.",
+                    changed: false,
+                };
             }
         }
         const content = String(action.content || "");
@@ -3101,17 +3501,26 @@ class Provider {
             return {
                 status: "rejected_path_policy",
                 reason: "write_file blocked: detected structured tool payload instead of raw file content.",
+                changed: false,
             };
         }
         if ((0, patch_utils_1.textContainsLeakedPatchArtifacts)(content)) {
             return {
                 status: "rejected_path_policy",
                 reason: "write_file blocked: detected leaked diff/apply_patch markers in file content.",
+                changed: false,
+            };
+        }
+        if (existedBefore && existingContent === content) {
+            return {
+                status: "applied",
+                reason: "File already matched requested content.",
+                changed: false,
             };
         }
         await vscode.workspace.fs.writeFile(target, Buffer.from(content, "utf8"));
         await vscode.workspace.fs.stat(target);
-        return { status: "applied" };
+        return { status: "applied", changed: true };
     }
     runApprovedCommand(command) {
         if (!this.commandTerminal) {
@@ -6445,7 +6854,7 @@ function html(webview, extensionUri) {
         align-items: flex-start;
       }
       .messages:empty::before {
-        content: "Ask Playground AI - @ files - / commands";
+        content: "Ask Playground 1 - @ files - / commands";
         display: block;
         padding: 28px 8px 0;
         text-align: center;
@@ -7083,6 +7492,20 @@ function html(webview, extensionUri) {
         color: var(--rep-muted);
         font-size: 10px;
       }
+      .m.assistant-response {
+        border: 0;
+        background: transparent;
+      }
+      .m.assistant-response .m-body {
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+      .m.assistant-response .m-time {
+        padding: 0 2px 2px;
+      }
       .m.u {
         margin-left: auto;
         max-width: 90%;
@@ -7636,7 +8059,7 @@ function html(webview, extensionUri) {
         /* Ensure the composer always has a visible border. */
         border: 1px solid rgba(255, 255, 255, 0.32) !important;
         border-radius: 18px !important;
-        background: rgba(255, 255, 255, 0.05) !important;
+        background: transparent !important;
         overflow: hidden !important;
         box-shadow:
           0 0 0 1px rgba(255, 255, 255, 0.08) !important,
@@ -7720,7 +8143,11 @@ function html(webview, extensionUri) {
         margin: 0 auto 0 0 !important;
       }
       .chat-panel.active #msgs.messages .m.a .m-body {
-        border-radius: 18px 18px 18px 6px !important;
+        border: 0 !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
       }
       .chat-panel.active #msgs.messages .m.a .m-time {
         text-align: left !important;
@@ -7782,7 +8209,7 @@ function html(webview, extensionUri) {
         position: relative !important;
         border: 1px solid rgba(255, 255, 255, 0.3) !important;
         border-radius: 16px !important;
-        background: rgba(255, 255, 255, 0.04) !important;
+        background: transparent !important;
         box-shadow:
           0 0 0 1px rgba(255, 255, 255, 0.07) !important,
           0 10px 30px rgba(0, 0, 0, 0.28) !important;
@@ -7796,6 +8223,22 @@ function html(webview, extensionUri) {
       #chatDock .input-actions.minimal {
         border-top: 1px solid rgba(255, 255, 255, 0.14) !important;
       }
+      #chatDock .context-toggle-pill {
+        gap: 0 !important;
+      }
+      #chatDock .context-toggle-pill .context-pill {
+        border: 0 !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        color: var(--rep-muted) !important;
+        font-size: 11px !important;
+      }
+      #chatDock .context-toggle-pill .context-pill::before {
+        content: none !important;
+        display: none !important;
+      }
       #chatDock #mentionMenu.mention-menu {
         position: absolute !important;
         left: 10px !important;
@@ -7808,6 +8251,84 @@ function html(webview, extensionUri) {
         border-radius: 12px !important;
         background: rgba(14, 14, 14, 0.96) !important;
         box-shadow: 0 18px 34px rgba(0, 0, 0, 0.52) !important;
+      }
+      #chatDock #queuePanel.queue-panel {
+        position: absolute !important;
+        left: 8px !important;
+        right: 8px !important;
+        bottom: calc(100% + 10px) !important;
+        margin: 0 !important;
+        border: 1px solid rgba(255, 255, 255, 0.26) !important;
+        border-radius: 14px !important;
+        background: rgba(14, 14, 14, 0.94) !important;
+        backdrop-filter: blur(8px) saturate(120%) !important;
+        box-shadow: 0 20px 42px rgba(0, 0, 0, 0.5) !important;
+        overflow: hidden !important;
+        z-index: 2147482000 !important;
+      }
+      #chatDock #queuePanel.queue-panel.hidden {
+        display: none !important;
+      }
+      #chatDock #queuePanel.queue-panel .queue-summary {
+        list-style: none !important;
+        padding: 8px 10px !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.14) !important;
+        color: color-mix(in srgb, var(--rep-fg) 80%, var(--rep-muted)) !important;
+        font-size: 9px !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.08em !important;
+        text-transform: uppercase !important;
+      }
+      #chatDock #queuePanel.queue-panel:not([open]) .queue-summary {
+        border-bottom: 0 !important;
+      }
+      #chatDock #queuePanel.queue-panel .queue-list {
+        display: grid !important;
+        gap: 0 !important;
+        padding: 8px !important;
+        max-height: min(36vh, 196px) !important;
+        overflow: auto !important;
+      }
+      #chatDock #queuePanel.queue-panel .queue-item {
+        position: relative !important;
+        display: grid !important;
+        gap: 6px !important;
+        margin-top: -6px !important;
+        border: 1px solid rgba(255, 255, 255, 0.18) !important;
+        border-radius: 11px !important;
+        padding: 8px 9px !important;
+        background: rgba(24, 24, 24, 0.92) !important;
+        box-shadow: 0 8px 18px rgba(0, 0, 0, 0.32) !important;
+      }
+      #chatDock #queuePanel.queue-panel .queue-item:first-child {
+        margin-top: 0 !important;
+      }
+      #chatDock #queuePanel.queue-panel .queue-item[data-queue-idx="0"] {
+        border-color: rgba(255, 255, 255, 0.34) !important;
+        background: rgba(32, 32, 32, 0.95) !important;
+      }
+      #chatDock #queuePanel.queue-panel .queue-text {
+        color: color-mix(in srgb, var(--rep-fg) 88%, var(--rep-muted)) !important;
+        font-size: 11px !important;
+      }
+      #chatDock #queuePanel.queue-panel .queue-actions {
+        justify-content: flex-end !important;
+        gap: 6px !important;
+      }
+      #chatDock #queuePanel.queue-panel .queue-btn {
+        border: 1px solid rgba(255, 255, 255, 0.18) !important;
+        background: rgba(255, 255, 255, 0.02) !important;
+        color: var(--rep-muted) !important;
+        border-radius: 8px !important;
+        padding: 2px 6px !important;
+        font-size: 10px !important;
+      }
+      #chatDock #queuePanel.queue-panel .queue-btn:hover {
+        color: var(--rep-fg) !important;
+        border-color: rgba(255, 255, 255, 0.3) !important;
+      }
+      #chatDock #queuePanel.queue-panel .queue-btn:disabled {
+        opacity: 0.45 !important;
       }
 
       /* Fix native select dropdown contrast (reasoning/model). */
@@ -7854,14 +8375,14 @@ function html(webview, extensionUri) {
           max-width: calc(100% - 94px) !important;
         }
         .brand-name {
-          font-size: 11px !important;
+          font-size: 12px !important;
           max-width: 130px !important;
           white-space: nowrap !important;
           overflow: hidden !important;
           text-overflow: ellipsis !important;
         }
         .brand-kicker {
-          font-size: 10px !important;
+          font-size: 11px !important;
           letter-spacing: 0.12em !important;
         }
         .global-actions {
@@ -7871,13 +8392,13 @@ function html(webview, extensionUri) {
           width: 24px !important;
           height: 24px !important;
           min-width: 24px !important;
-          font-size: 11px !important;
+          font-size: 13px !important;
           border-radius: 7px !important;
         }
         #undoHeader,
         #backToChatQuick {
           padding: 0 6px !important;
-          font-size: 10px !important;
+          font-size: 11px !important;
         }
 
         #chat.chat-panel.active {
@@ -7892,12 +8413,12 @@ function html(webview, extensionUri) {
         }
         #msgs.messages .m .m-body {
           padding: 8px 10px !important;
-          font-size: 11px !important;
+          font-size: 12px !important;
           line-height: 1.4 !important;
           border-radius: 14px !important;
         }
         #msgs.messages .m .m-time {
-          font-size: 9px !important;
+          font-size: 10px !important;
           padding: 0 4px !important;
         }
 
@@ -7913,7 +8434,7 @@ function html(webview, extensionUri) {
         .chat-panel.active #chatDock textarea#t {
           min-height: 44px !important;
           max-height: 120px !important;
-          font-size: 11px !important;
+          font-size: 12px !important;
           line-height: 1.35 !important;
           padding: 10px 10px 7px !important;
         }
@@ -7934,9 +8455,25 @@ function html(webview, extensionUri) {
           flex: 1 1 88px !important;
           max-width: 100px !important;
           min-width: 0 !important;
-          font-size: 10px !important;
+          font-size: 11px !important;
           padding: 2px 4px !important;
           text-overflow: ellipsis !important;
+        }
+        #chatDock #queuePanel.queue-panel {
+          left: 4px !important;
+          right: 4px !important;
+          bottom: calc(100% + 6px) !important;
+        }
+        #chatDock #queuePanel.queue-panel .queue-summary {
+          padding: 7px 8px !important;
+        }
+        #chatDock #queuePanel.queue-panel .queue-list {
+          padding: 6px !important;
+          max-height: min(34vh, 160px) !important;
+        }
+        #chatDock #queuePanel.queue-panel .queue-item {
+          border-radius: 10px !important;
+          padding: 7px 8px !important;
         }
         #chatDock .context-toggle-pill {
           display: none !important;
@@ -7955,7 +8492,7 @@ function html(webview, extensionUri) {
           gap: 6px !important;
         }
         .chat-empty-sub {
-          font-size: 10px !important;
+          font-size: 11px !important;
           max-width: 100% !important;
         }
         .chat-empty-history-row {
@@ -7963,10 +8500,10 @@ function html(webview, extensionUri) {
           gap: 6px !important;
         }
         .chat-empty-history-row-title {
-          font-size: 11px !important;
+          font-size: 12px !important;
         }
         .chat-empty-history-row-age {
-          font-size: 9px !important;
+          font-size: 10px !important;
         }
       }
 
@@ -7990,13 +8527,13 @@ function html(webview, extensionUri) {
   <body>
     <div id="jsGate" class="js-gate" role="status" aria-live="polite">
       <div class="js-gate-card">
-        <div class="js-gate-title">Loading Playground UI...</div>
+        <div class="js-gate-title">Loading Playground 1 UI...</div>
         <div class="js-gate-sub">If this does not disappear, run <span class="kbd">Developer: Reload Window</span>.</div>
       </div>
     </div>
     <div id="setup" class="setup">
       <div class="setup-card">
-        <h3>Connect Playground</h3>
+        <h3>Connect Playground 1</h3>
         <p>Use browser sign-in or paste an API key.</p>
         <button id="signInSetup" class="primary" type="button">Sign in with browser</button>
         <div style="height:8px"></div>
@@ -8012,7 +8549,7 @@ function html(webview, extensionUri) {
       <div class="global-top">
         <button id="backToChatQuick" type="button" class="menu-icon panel-icon hidden header-left" aria-label="Back to chat" title="Back to chat">&#8592;</button>
         <div class="brand-block">
-          <span class="brand-name" title="Playground AI">Playground AI</span>
+          <span class="brand-name" title="Playground 1">Playground 1</span>
           <span class="brand-kicker">CHAT</span>
         </div>
         <div class="global-actions">
@@ -8033,7 +8570,7 @@ function html(webview, extensionUri) {
       </div>
       <div id="modeBanner" class="mode-banner hidden">Plan mode enabled. I will propose steps before making changes.</div>
 
-      <div class="chat-shell" role="region" aria-label="Playground chat">
+      <div class="chat-shell" role="region" aria-label="Playground 1 chat">
         <div class="stage-shell" role="region" aria-label="Stage">
           <div id="chat" class="panel chat-panel active" aria-label="Chat">
             <div id="chips" class="chips"></div>
@@ -8081,7 +8618,7 @@ function html(webview, extensionUri) {
           <div class="input">
             <form id="composerForm" class="composer-form" novalidate>
               <div class="composer-shell">
-                <textarea id="t" placeholder="Ask Playground anything, @ to add files, / for commands" enterkeyhint="send"></textarea>
+                <textarea id="t" placeholder="Ask Playground 1 anything, @ to add files, / for commands" enterkeyhint="send"></textarea>
                 <div id="mentionMenu" class="mention-menu hidden" role="listbox" aria-label="Mention suggestions"></div>
                 <div class="input-actions minimal">
                   <button id="uploadBtn" class="icon-btn attach-btn" type="button" aria-label="Attach image" title="Attach">+</button>
@@ -8096,7 +8633,7 @@ function html(webview, extensionUri) {
                   </select>
                   <label class="context-toggle-pill" for="ctxToggle" title="Toggle IDE context">
                     <input id="ctxToggle" type="checkbox" checked />
-                    <span id="contextPill" class="context-pill">IDE Context: AUTO</span>
+                    <span id="contextPill" class="context-pill">IDE Context: LIVE</span>
                   </label>
                   <div class="spacer"></div>
                   <button id="s" type="button" class="primary send-round" aria-label="Send">&#8593;</button>
@@ -8184,7 +8721,7 @@ function html(webview, extensionUri) {
                           <input id="apiKeyInline" class="api-key-input" type="password" placeholder="xp_..." />
                           <button id="apiKeyInlineSave" class="api-key-save" type="button">Save</button>
                         </div>
-                        <div class="api-key-hint">Stored securely in VS Code secrets.</div>
+                        <div id="apiKeyHint" class="api-key-hint">Stored securely in VS Code secrets.</div>
                       </div>
                       <div class="sheet-card">
                         <div class="sheet-card-title">Attachments</div>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { useIsPermanent } from "@/lib/hooks/use-is-permanent";
+import { useAutoHideHeader } from "@/lib/hooks/use-auto-hide-header";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { getGameUrl } from "@/lib/service-urls";
@@ -87,6 +88,10 @@ export function TradingMobileNav({
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const isPermanent = useIsPermanent(serverIsPermanent);
+  const headerHidden = useAutoHideHeader({
+    scrollContainerSelector: '[data-header-scroll-root="trading"]',
+    disabled: open,
+  });
 
   useEffect(() => {
     setOpen(false);
@@ -102,7 +107,12 @@ export function TradingMobileNav({
 
   return (
     <header
-      className="scroll-stable-layer md:hidden sticky top-0 z-[60] shrink-0 w-full border-b border-white bg-black shadow-sm text-white"
+      className={cn(
+        "scroll-stable-layer md:hidden sticky top-0 z-[60] shrink-0 w-full border-b border-white bg-black shadow-sm text-white overflow-hidden transition-[max-height,transform,opacity,border-color] duration-300",
+        headerHidden
+          ? "max-h-0 -translate-y-2 opacity-0 pointer-events-none border-transparent"
+          : "max-h-24 translate-y-0 opacity-100"
+      )}
       role="banner"
     >
       <div className="flex h-14 min-h-[44px] items-center justify-between px-4">

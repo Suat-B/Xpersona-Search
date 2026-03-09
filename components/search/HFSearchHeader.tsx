@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { useAutoHideHeader } from "@/lib/hooks/use-auto-hide-header";
 
 // Xpersona Logo Component
 function XpersonaLogo() {
@@ -78,6 +79,7 @@ export function HFSearchHeader({
 }: HFSearchHeaderProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const headerHidden = useAutoHideHeader();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -95,6 +97,10 @@ export function HFSearchHeader({
           scrolled
             ? "bg-[var(--bg-matte)]/95 backdrop-blur-xl border-b border-[var(--border)] shadow-lg"
             : "bg-transparent"
+        } ${
+          headerHidden
+            ? "-translate-y-full opacity-0 pointer-events-none"
+            : "translate-y-0 opacity-100"
         }`}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -156,7 +162,7 @@ export function HFSearchHeader({
       </header>
 
       {/* Spacer for fixed header */}
-      <div className="h-16" />
+      <div className={`transition-[height] duration-300 ${headerHidden ? "h-0" : "h-16"}`} />
 
       {/* Sub Header with Results Count */}
       <div className="border-b border-[var(--border)] bg-[var(--bg-matte)]/50">

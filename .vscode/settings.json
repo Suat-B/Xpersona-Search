@@ -1,5 +1,12 @@
 {
     "chatgpt.openOnStartup": true,
     "xpersona.playground.baseApiUrl": "http://localhost:3000",
-    "xpersona.playground.model": "Playground 1"
+    "xpersona.playground.model": "stepfun-ai/step-3.5-flash",
+    "xpersona.playground.executionPolicy": "full_auto",
+    "xpersona.playground.autonomy.mode": "unbounded",
+    "xpersona.playground.autonomy.maxCycles": 0,
+    "xpersona.playground.autonomy.noClarifyToUser": true,
+    "xpersona.playground.autonomy.commandPolicy": "run_until_done",
+    "xpersona.playground.autonomy.safetyFloor": "allow_everything",
+    "xpersona.playground.autonomy.failsafe": "disabled"
 }

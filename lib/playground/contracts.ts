@@ -45,6 +45,15 @@ const zClientPreferences = z.object({
 
 const zExecutionPolicy = z.enum(["full_auto", "yolo_only", "preview_first"]);
 
+const zAutonomyBlock = z.object({
+  mode: z.enum(["unbounded", "bounded"]).optional(),
+  maxCycles: z.number().int().min(0).max(1_000_000).optional(),
+  noClarifyToUser: z.boolean().optional(),
+  commandPolicy: z.enum(["run_until_done", "safe_default"]).optional(),
+  safetyFloor: z.enum(["allow_everything", "standard"]).optional(),
+  failsafe: z.enum(["disabled", "enabled"]).optional(),
+});
+
 export const zAssistRequest = z.object({
   mode: zAssistMode.default("auto"),
   task: z.string().min(1).max(120_000),
@@ -78,6 +87,7 @@ export const zAssistRequest = z.object({
   historySessionId: z.string().uuid().optional(),
   conversationHistory: z.array(zConversationTurn).max(24).optional(),
   clientPreferences: zClientPreferences.optional(),
+  autonomy: zAutonomyBlock.optional(),
   executionPolicy: zExecutionPolicy.optional(),
   agentConfig: z
     .object({

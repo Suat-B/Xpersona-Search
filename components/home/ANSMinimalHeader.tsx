@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useAutoHideHeader } from "@/lib/hooks/use-auto-hide-header";
 
 interface ANSMinimalHeaderProps {
   isAuthenticated?: boolean;
@@ -9,6 +12,7 @@ export function ANSMinimalHeader({
   isAuthenticated = false,
   variant = "light",
 }: ANSMinimalHeaderProps) {
+  const headerHidden = useAutoHideHeader();
   const isDark = variant === "dark";
   const navLinks = [
     { href: "/playground", label: "Playground" },
@@ -40,7 +44,13 @@ export function ANSMinimalHeader({
     : "text-sm font-semibold text-white bg-[var(--light-accent)] hover:bg-[var(--light-accent-hover)] px-4 py-2 rounded-xl transition-colors shadow-md shadow-blue-500/10";
 
   return (
-    <header className={`${headerClasses} safe-area-inset-top`}>
+    <header
+      className={`${headerClasses} safe-area-inset-top overflow-hidden transition-[max-height,transform,opacity,border-color] duration-300 ${
+        headerHidden
+          ? "max-h-0 -translate-y-2 opacity-0 pointer-events-none border-transparent"
+          : "max-h-40 translate-y-0 opacity-100"
+      }`}
+    >
       <div className="container mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 md:px-8 py-3 min-w-0 gap-2">
         <Link href="/" className="group shrink-0 min-h-[44px] flex items-center">
           <span className={logoClasses}>Xpersona</span>

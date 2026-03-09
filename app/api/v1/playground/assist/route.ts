@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { authenticatePlaygroundRequest } from "@/lib/playground/auth";
-import { estimateMessagesTokens } from "@/lib/hf-router/rate-limit";
+import { estimateMessagesTokens, incrementUsage } from "@/lib/hf-router/rate-limit";
 import { guardPlaygroundAccess, runAssist } from "@/lib/playground/orchestration";
 import {
   appendSessionMessage,
@@ -12,9 +12,11 @@ import {
   upsertUserPlaygroundProfile,
 } from "@/lib/playground/store";
 import { zAssistRequest } from "@/lib/playground/contracts";
-import { badRequest, ok, parseBody, unauthorized } from "@/lib/playground/http";
+import { ok, parseBody, unauthorized } from "@/lib/playground/http";
 import { getOrCreateRequestId } from "@/lib/api/request-meta";
 import { jsonError } from "@/lib/api/errors";
+import { db } from "@/lib/db";
+import { hfUsageLogs } from "@/lib/db/playground-schema";
 import {
   buildAssistResponsePayload,
   buildCompactSessionSummary,
@@ -24,6 +26,7 @@ import {
 
 type SessionTask<T> = () => Promise<T>;
 const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
+const ASSIST_USAGE_COST_PER_1K_TOKENS = 0.0005;
 
 const sessionQueues = new Map<string, Promise<unknown>>();
 
@@ -174,6 +177,126 @@ function summarizeAttachments(
   });
 }
 
+function estimateOutputTokens(text: string): number {
+  const normalized = String(text || "");
+  if (!normalized) return 0;
+  return Math.max(1, Math.ceil(normalized.length / 4));
+}
+
+function calculateEstimatedCost(tokensInput: number, tokensOutput: number): number {
+  const totalTokens = Math.max(0, tokensInput) + Math.max(0, tokensOutput);
+  return (totalTokens / 1000) * ASSIST_USAGE_COST_PER_1K_TOKENS;
+}
+
+function inferProviderFromAssistLogs(logs: string[] | undefined): string {
+  for (const line of logs ?? []) {
+    const match = String(line || "").match(/\bprovider=([a-z0-9_-]+)/i);
+    if (match?.[1]) return match[1].toLowerCase().slice(0, 50);
+  }
+  return "playground";
+}
+
+function buildAssistUsagePayload(params: {
+  body: {
+    mode?: string;
+    model?: string;
+    max_tokens?: number;
+    historySessionId?: string;
+    executionPolicy?: string;
+    safetyProfile?: string;
+    workflowIntentId?: string;
+    clientTrace?: { extensionVersion?: string; workspaceHash?: string };
+    context?: {
+      activeFile?: { path?: string };
+      openFiles?: unknown[];
+      diagnostics?: unknown[];
+      indexedSnippets?: unknown[];
+    };
+  };
+  attachments: Array<{ mimeType: string; name?: string; bytesApprox?: number }> | undefined;
+  sessionId: string;
+  traceId: string;
+  stream: boolean;
+  resolvedModel: string;
+  provider: string;
+  reasonCodes?: string[];
+  repromptStage?: string;
+}): Record<string, unknown> {
+  return {
+    endpoint: "/api/v1/playground/assist",
+    mode: params.body.mode ?? "auto",
+    stream: params.stream,
+    modelRequested: params.body.model ?? null,
+    modelResolved: params.resolvedModel,
+    provider: params.provider,
+    maxTokensRequested: params.body.max_tokens ?? null,
+    historySessionId: params.body.historySessionId ?? null,
+    executionPolicy: params.body.executionPolicy ?? null,
+    safetyProfile: params.body.safetyProfile ?? null,
+    workflowIntentId: params.body.workflowIntentId ?? null,
+    clientTrace: params.body.clientTrace ?? null,
+    contextSummary: {
+      hasActiveFile: Boolean(params.body.context?.activeFile?.path),
+      openFiles: params.body.context?.openFiles?.length ?? 0,
+      diagnostics: params.body.context?.diagnostics?.length ?? 0,
+      indexedSnippets: params.body.context?.indexedSnippets?.length ?? 0,
+    },
+    attachments: params.attachments,
+    sessionId: params.sessionId,
+    traceId: params.traceId,
+    reasonCodes: params.reasonCodes ?? [],
+    repromptStage: params.repromptStage ?? "none",
+  };
+}
+
+async function recordAssistUsage(params: {
+  userId: string;
+  model: string;
+  provider: string;
+  tokensInput: number;
+  tokensOutput: number;
+  latencyMs: number;
+  status: "success" | "error" | "rate_limited" | "quota_exceeded" | "validation_error";
+  errorMessage?: string;
+  requestPayload: Record<string, unknown>;
+}): Promise<void> {
+  const tokensInput = Math.max(0, Math.floor(params.tokensInput));
+  const tokensOutput = Math.max(0, Math.floor(params.tokensOutput));
+  const estimatedCostUsd =
+    params.status === "success" ? calculateEstimatedCost(tokensInput, tokensOutput) : 0;
+
+  try {
+    await db.insert(hfUsageLogs).values({
+      userId: params.userId,
+      model: String(params.model || PUBLIC_PLAYGROUND_MODEL_NAME).slice(0, 100),
+      provider: String(params.provider || "playground").slice(0, 50),
+      tokensInput,
+      tokensOutput,
+      latencyMs: Math.max(0, Math.floor(params.latencyMs)),
+      status: params.status,
+      errorMessage: params.errorMessage,
+      estimatedCostUsd,
+      requestPayload: params.requestPayload,
+    });
+  } catch (error) {
+    console.error("Failed to log assist usage:", error);
+  }
+
+  if (params.status === "success") {
+    try {
+      await incrementUsage(params.userId, tokensInput, tokensOutput, estimatedCostUsd);
+    } catch (error) {
+      console.error("Failed to increment assist usage counters:", error);
+    }
+  }
+}
+
+function statusFromAccessError(statusCode?: number): "rate_limited" | "quota_exceeded" | "validation_error" {
+  if (statusCode === 402) return "quota_exceeded";
+  if (statusCode === 429) return "rate_limited";
+  return "validation_error";
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
   const auth = await authenticatePlaygroundRequest(request);
   if (!auth) return unauthorized(request);
@@ -181,6 +304,8 @@ export async function POST(request: NextRequest): Promise<Response> {
   const parsed = await parseBody(request, zAssistRequest);
   if (!parsed.success) return parsed.response;
   const body = parsed.data;
+  const requestStartedAt = Date.now();
+  const attachmentsSummary = summarizeAttachments(body.attachments);
 
   const estimatedInputTokens = estimateMessagesTokens([{ content: body.task }]);
   const access = await guardPlaygroundAccess({
@@ -191,6 +316,28 @@ export async function POST(request: NextRequest): Promise<Response> {
   });
 
   if (!access.allowed) {
+    const resolvedModel = body.model || PUBLIC_PLAYGROUND_MODEL_NAME;
+    await recordAssistUsage({
+      userId: auth.userId,
+      model: resolvedModel,
+      provider: "playground",
+      tokensInput: estimatedInputTokens,
+      tokensOutput: 0,
+      latencyMs: Date.now() - requestStartedAt,
+      status: statusFromAccessError(access.status),
+      errorMessage: access.message,
+      requestPayload: buildAssistUsagePayload({
+        body,
+        attachments: attachmentsSummary,
+        stream: Boolean(body.stream),
+        sessionId: body.historySessionId || "pending",
+        traceId: getOrCreateRequestId(request),
+        resolvedModel,
+        provider: "playground",
+        reasonCodes: access.error ? [access.error] : [],
+        repromptStage: "none",
+      }),
+    });
     return jsonError(request, {
       code: access.error,
       message: access.message,
@@ -298,7 +445,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     payload: {
       mode: body.mode ?? "auto",
       context: body.context ?? null,
-      attachments: summarizeAttachments(body.attachments),
+      attachments: attachmentsSummary,
     },
     tokenCount: estimatedInputTokens,
   });
@@ -363,6 +510,8 @@ export async function POST(request: NextRequest): Promise<Response> {
           reasonCodes: runResult.reasonCodes,
           autonomyDecision: runResult.autonomyDecision,
           validationPlan: runResult.validationPlan,
+          completionStatus: runResult.completionStatus,
+          missingRequirements: runResult.missingRequirements,
           traceId,
         },
       });
@@ -375,6 +524,28 @@ export async function POST(request: NextRequest): Promise<Response> {
         }),
         ...(body.model ? { preferredModelAlias: body.model } : {}),
       }).catch(() => {});
+
+      const provider = inferProviderFromAssistLogs(runResult.logs);
+      await recordAssistUsage({
+        userId: auth.userId,
+        model: runResult.modelUsed || body.model || PUBLIC_PLAYGROUND_MODEL_NAME,
+        provider,
+        tokensInput: estimatedInputTokens,
+        tokensOutput: estimateOutputTokens(runResult.final),
+        latencyMs,
+        status: "success",
+        requestPayload: buildAssistUsagePayload({
+          body,
+          attachments: attachmentsSummary,
+          stream: false,
+          sessionId,
+          traceId,
+          resolvedModel: runResult.modelUsed || body.model || PUBLIC_PLAYGROUND_MODEL_NAME,
+          provider,
+          reasonCodes: runResult.reasonCodes,
+          repromptStage: runResult.repromptStage,
+        }),
+      });
       return runResult;
     });
     const payload = buildAssistResponsePayload({ sessionId, traceId, result });
@@ -450,6 +621,10 @@ export async function POST(request: NextRequest): Promise<Response> {
                     if (!token) return;
                     await writer.write(encoder.encode(sse({ event: "token", data: token })));
                   },
+                  onReasoningToken: async (token) => {
+                    if (!token) return;
+                    await writer.write(encoder.encode(sse({ event: "reasoning_token", data: token })));
+                  },
                   onStatus: async (status) => {
                     if (!status) return;
                     await writer.write(encoder.encode(sse({ event: "status", data: status })));
@@ -514,6 +689,8 @@ export async function POST(request: NextRequest): Promise<Response> {
                   nextBestActions: result.nextBestActions,
                   repromptStage: result.repromptStage,
                   actionability: result.actionability,
+                  completionStatus: result.completionStatus,
+                  missingRequirements: result.missingRequirements,
                 },
               })
             )
@@ -545,6 +722,8 @@ export async function POST(request: NextRequest): Promise<Response> {
               reasonCodes: result.reasonCodes,
               autonomyDecision: result.autonomyDecision,
               validationPlan: result.validationPlan,
+              completionStatus: result.completionStatus,
+              missingRequirements: result.missingRequirements,
               traceId,
             },
           });
@@ -557,6 +736,28 @@ export async function POST(request: NextRequest): Promise<Response> {
             }),
             ...(body.model ? { preferredModelAlias: body.model } : {}),
           }).catch(() => {});
+
+          const provider = inferProviderFromAssistLogs(result.logs);
+          await recordAssistUsage({
+            userId: auth.userId,
+            model: result.modelUsed || body.model || PUBLIC_PLAYGROUND_MODEL_NAME,
+            provider,
+            tokensInput: estimatedInputTokens,
+            tokensOutput: estimateOutputTokens(result.final),
+            latencyMs,
+            status: "success",
+            requestPayload: buildAssistUsagePayload({
+              body,
+              attachments: attachmentsSummary,
+              stream: true,
+              sessionId,
+              traceId,
+              resolvedModel: result.modelUsed || body.model || PUBLIC_PLAYGROUND_MODEL_NAME,
+              provider,
+              reasonCodes: result.reasonCodes,
+              repromptStage: result.repromptStage,
+            }),
+          });
         } catch (error) {
           await emitStreamError(error);
         }

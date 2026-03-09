@@ -1,13 +1,26 @@
+"use client";
+
 import Link from "next/link";
 import { ContinueAsAIButton } from "@/components/auth/ContinueAsAIButton";
 import { getGameUrl } from "@/lib/service-urls";
+import { useAutoHideHeader } from "@/lib/hooks/use-auto-hide-header";
 
 /**
  * Minimal header for the trading subdomain when user is not logged in.
  */
 export function TradingMinimalHeader() {
+  const headerHidden = useAutoHideHeader({
+    scrollContainerSelector: '[data-header-scroll-root="marketing"]',
+  });
+
   return (
-    <header className="scroll-stable-layer sticky top-0 z-20 border-b border-[var(--border)] bg-black/80 backdrop-blur-xl">
+    <header
+      className={`scroll-stable-layer sticky top-0 z-20 border-b border-[var(--border)] bg-black/80 backdrop-blur-xl overflow-hidden transition-[max-height,transform,opacity,border-color] duration-300 ${
+        headerHidden
+          ? "max-h-0 -translate-y-2 opacity-0 pointer-events-none border-transparent"
+          : "max-h-40 translate-y-0 opacity-100"
+      }`}
+    >
       <div className="container mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 py-4 min-w-0">
         <Link href="/trading" className="group">
           <span className="text-lg font-bold tracking-tight text-[var(--text-primary)]">Xpersona</span>

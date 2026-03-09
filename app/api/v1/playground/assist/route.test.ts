@@ -80,6 +80,8 @@ describe("assist route helpers", () => {
           summary: "valid_actions",
           reason: "Action set is acceptable for this request.",
         },
+        completionStatus: "complete",
+        missingRequirements: [],
       },
     });
     expect(payload.reasonCodes).toEqual(["intent_code_edit"]);
@@ -87,6 +89,8 @@ describe("assist route helpers", () => {
     expect(payload.validationPlan.scope).toBe("targeted");
     expect(payload.repromptStage).toBe("none");
     expect(payload.actionability.summary).toBe("valid_actions");
+    expect(payload.completionStatus).toBe("complete");
+    expect(payload.missingRequirements).toEqual([]);
     expect(payload.model).toBe("Playground 1");
   });
 });

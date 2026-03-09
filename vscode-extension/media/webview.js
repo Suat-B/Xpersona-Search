@@ -154,6 +154,7 @@
       const closeThreadsPopupBtn = document.getElementById("closeThreadsPopup");
       const apiKeyInline = document.getElementById("apiKeyInline");
       const apiKeyInlineSave = document.getElementById("apiKeyInlineSave");
+      const apiKeyHint = document.getElementById("apiKeyHint");
       const signInSetup = document.getElementById("signInSetup");
       const authLabel = document.getElementById("authLabel");
       const authSignIn = document.getElementById("authSignIn");
@@ -168,22 +169,27 @@
       let streamEndPending = false;
       let followLatest = true;
       let autoScrollLockUntil = 0;
+      let scrollToLatestRaf = 0;
+      let scrollToLatestForcePending = false;
       let terminalBubble = null;
       let streamBuffer = "";
       let streamTimer = null;
       let latestReasonCodes = [];
       let latestRunMeta = null;
+      let liveReasoningText = "";
       let threadsOverlayOpen = false;
       let responseStartedAtMs = 0;
       let lastAssistantBubble = null;
       let latestActionOutcome = null;
-      const DEFAULT_MODEL = "Playground 1";
+      const DEFAULT_MODEL = "stepfun-ai/step-3.5-flash";
+      const PUBLIC_MODEL_LABEL = "Playground 1";
       const MAX_DIFF_ROWS = 400;
+      const MAX_REASONING_CHARS = 24000;
       const seenEditPreviewKeys = new Set();
 
       function applyIdeContextVisualState(enabled) {
         if (composerShell) composerShell.classList.toggle("ide-context-on", enabled);
-        if (contextPill) contextPill.textContent = enabled ? "IDE Context: AUTO" : "IDE Context: OFF";
+        if (contextPill) contextPill.textContent = enabled ? "IDE Context: LIVE" : "IDE Context: OFF";
       }
       function setContextTelemetryState(inputState) {
         if (!contextTelemetry) return;
@@ -208,7 +214,7 @@
         }
         if (contextPill) {
           contextPill.textContent = enabled
-            ? (phase === "collecting" ? "IDE Context: Syncing" : "IDE Context: AUTO")
+            ? (phase === "collecting" ? "IDE Context: Syncing" : "IDE Context: LIVE")
             : "IDE Context: OFF";
         }
         if (contextTelemetryText) {
@@ -314,6 +320,7 @@
       let mentionLastQuery = "";
       let apiKeySavePending = false;
       let creatingThread = false;
+      let pendingPromptAfterThread = null;
       let activeRunThreadId = null;
       let lastDiagnosticsFingerprint = "";
       let contextSummary = "";
@@ -333,11 +340,29 @@
         outcome: "pending",
         notes: [],
       };
+      let runtimeStrip = null;
+      const runtimeState = {
+        objective: "",
+        cycle: 0,
+        maxCycles: 0,
+        phase: "idle",
+        completionStatus: "incomplete",
+        completionScore: 0,
+        missingRequirements: [],
+        blocker: "",
+        appliedFiles: [],
+        filesChanged: 0,
+        checksRun: 0,
+        commandPass: 0,
+        commandFail: 0,
+        lastCommandBlocker: "",
+      };
       const seenRunCommands = new Set();
       const seenRunStatuses = new Set();
       const RUN_SCOPED_MESSAGE_TYPES = new Set([
         "start",
         "token",
+        "reasoningToken",
         "status",
         "end",
         "assistant",
@@ -347,6 +372,7 @@
         "fileAction",
         "meta",
         "actionOutcome",
+        "autonomyRuntime",
         "execLogs",
         "err",
         "diagnosticsBundle",
@@ -372,6 +398,136 @@
         runState.textContent = planAwareStateLabel(baseLabel);
       }
 
+      function injectRuntimeStripStyles() {
+        if (document.getElementById("runtimeStripStyles")) return;
+        const style = document.createElement("style");
+        style.id = "runtimeStripStyles";
+        style.textContent = [
+          ".runtime-strip{position:sticky;top:0;z-index:6;margin:0 0 10px;border:1px solid #1f1f1f;border-radius:10px;background:#070707;padding:8px;display:grid;gap:7px}",
+          ".runtime-strip.hidden{display:none}",
+          ".rt-head{display:flex;gap:6px;align-items:center;flex-wrap:wrap}",
+          ".rt-pill{font-size:11px;border:1px solid #2b2b2b;border-radius:999px;padding:2px 8px;color:#d7d7d7;background:#0d0d0d}",
+          ".rt-phase{font-weight:700;text-transform:uppercase;letter-spacing:.04em}",
+          ".rt-phase.done{color:#8ee58e;border-color:#2d6636}",
+          ".rt-phase.reprompt{color:#ffd48a;border-color:#6f4f1e}",
+          ".rt-phase.apply{color:#a7d1ff;border-color:#244b72}",
+          ".rt-objective{font-size:12px;color:#efefef;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+          ".rt-mid{display:flex;gap:8px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}",
+          ".rt-files,.rt-commands{display:flex;gap:6px;flex-wrap:wrap;align-items:center}",
+          ".rt-chip{font-size:11px;border:1px solid #2a2a2a;border-radius:999px;padding:2px 8px;background:#0f0f0f;color:#d6d6d6;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+          ".rt-chip.file{border-color:#2f4f73;background:#0d141d}",
+          ".rt-chip.pass{border-color:#2d6636;background:#0f1a12;color:#a5e7ae}",
+          ".rt-chip.fail{border-color:#7a3131;background:#1b0f0f;color:#ffb4b4}",
+          ".rt-why{font-size:11px;color:#ffbf82;background:#1a1209;border:1px solid #5b3a12;border-radius:8px;padding:5px 7px}",
+          ".rt-why.done{display:none}",
+        ].join("");
+        document.head.appendChild(style);
+      }
+
+      function ensureRuntimeStrip() {
+        if (runtimeStrip && runtimeStrip.isConnected) return runtimeStrip;
+        injectRuntimeStripStyles();
+        if (!chatPanel) return null;
+        runtimeStrip = document.createElement("div");
+        runtimeStrip.className = "runtime-strip hidden";
+        runtimeStrip.innerHTML =
+          '<div class="rt-head">' +
+            '<span id="rtObjective" class="rt-objective"></span>' +
+            '<span id="rtCycle" class="rt-pill"></span>' +
+            '<span id="rtPhase" class="rt-pill rt-phase"></span>' +
+            '<span id="rtScore" class="rt-pill"></span>' +
+          "</div>" +
+          '<div class="rt-mid">' +
+            '<div id="rtFiles" class="rt-files"></div>' +
+            '<div id="rtCommands" class="rt-commands"></div>' +
+          "</div>" +
+          '<div id="rtWhy" class="rt-why"></div>';
+        if (chips && chips.parentElement === chatPanel) {
+          chatPanel.insertBefore(runtimeStrip, chips.nextSibling);
+        } else if (msgs && msgs.parentElement === chatPanel) {
+          chatPanel.insertBefore(runtimeStrip, msgs);
+        } else {
+          chatPanel.appendChild(runtimeStrip);
+        }
+        return runtimeStrip;
+      }
+
+      function resetRuntimeState() {
+        runtimeState.objective = "";
+        runtimeState.cycle = 0;
+        runtimeState.maxCycles = 0;
+        runtimeState.phase = "idle";
+        runtimeState.completionStatus = "incomplete";
+        runtimeState.completionScore = 0;
+        runtimeState.missingRequirements = [];
+        runtimeState.blocker = "";
+        runtimeState.appliedFiles = [];
+        runtimeState.filesChanged = 0;
+        runtimeState.checksRun = 0;
+        runtimeState.commandPass = 0;
+        runtimeState.commandFail = 0;
+        runtimeState.lastCommandBlocker = "";
+        renderRuntimeStrip();
+      }
+
+      function renderRuntimeStrip() {
+        const strip = ensureRuntimeStrip();
+        if (!strip) return;
+        const hasRuntime = Boolean(runtimeState.objective && runtimeState.objective.trim());
+        strip.classList.toggle("hidden", !hasRuntime);
+        if (!hasRuntime) return;
+        const objectiveEl = strip.querySelector("#rtObjective");
+        const cycleEl = strip.querySelector("#rtCycle");
+        const phaseEl = strip.querySelector("#rtPhase");
+        const scoreEl = strip.querySelector("#rtScore");
+        const filesEl = strip.querySelector("#rtFiles");
+        const commandsEl = strip.querySelector("#rtCommands");
+        const whyEl = strip.querySelector("#rtWhy");
+        if (objectiveEl) objectiveEl.textContent = "Objective: " + String(runtimeState.objective || "").replace(/\s+/g, " ").trim();
+        const cycleLabel = runtimeState.maxCycles > 0
+          ? ("Cycle " + runtimeState.cycle + "/" + runtimeState.maxCycles)
+          : ("Cycle " + runtimeState.cycle + "/unbounded");
+        if (cycleEl) cycleEl.textContent = cycleLabel;
+        if (phaseEl) {
+          const phase = String(runtimeState.phase || "idle").toLowerCase();
+          phaseEl.className = "rt-pill rt-phase " + phase;
+          phaseEl.textContent = "Phase: " + phase;
+        }
+        if (scoreEl) scoreEl.textContent = "Completion: " + Math.max(0, Math.min(100, Number(runtimeState.completionScore || 0))) + "%";
+        if (filesEl) {
+          const files = Array.isArray(runtimeState.appliedFiles) ? runtimeState.appliedFiles : [];
+          if (!files.length) {
+            filesEl.innerHTML = '<span class="rt-chip">Applied files: none</span>';
+          } else {
+            filesEl.innerHTML = files
+              .slice(0, 8)
+              .map((path) => '<span class="rt-chip file" title="' + esc(path) + '">' + esc(path) + "</span>")
+              .join("");
+          }
+        }
+        if (commandsEl) {
+          const pass = Number(runtimeState.commandPass || 0);
+          const fail = Number(runtimeState.commandFail || 0);
+          const cmdBits = [];
+          cmdBits.push('<span class="rt-chip pass">Cmd pass: ' + pass + "</span>");
+          cmdBits.push('<span class="rt-chip ' + (fail > 0 ? "fail" : "") + '">Cmd fail: ' + fail + "</span>");
+          cmdBits.push('<span class="rt-chip">files=' + Number(runtimeState.filesChanged || 0) + ", checks=" + Number(runtimeState.checksRun || 0) + "</span>");
+          commandsEl.innerHTML = cmdBits.join("");
+        }
+        if (whyEl) {
+          const incomplete = runtimeState.completionStatus === "incomplete" || String(runtimeState.phase) === "reprompt";
+          const missing = Array.isArray(runtimeState.missingRequirements) && runtimeState.missingRequirements.length
+            ? runtimeState.missingRequirements.join(", ")
+            : "";
+          const blocker = runtimeState.lastCommandBlocker || runtimeState.blocker || "";
+          const hint = [missing, blocker].filter(Boolean).join(" | ");
+          whyEl.classList.toggle("done", !incomplete);
+          whyEl.textContent = incomplete
+            ? "Why not done yet: " + (hint || "awaiting completion contract")
+            : "";
+        }
+      }
+
       function applyPlanVisualState(modeValue) {
         const planActive = modeValue === "plan";
         if (modeBanner) modeBanner.classList.toggle("hidden", !planActive);
@@ -394,7 +550,7 @@
       }
 
       function modelLabelForUi(value) {
-        return DEFAULT_MODEL;
+        return PUBLIC_MODEL_LABEL;
       }
 
       function updateComposerState() {
@@ -1272,28 +1428,31 @@
       function scrollToLatest(force = false) {
         if (!chatPanel) return;
         if (force) followLatest = true;
-        if (force || followLatest) {
-          autoScrollLockUntil = Date.now() + 220;
-          chatPanel.scrollTop = chatPanel.scrollHeight;
-          const latestBubble = msgs && msgs.lastElementChild ? msgs.lastElementChild : null;
-          if (latestBubble && typeof latestBubble.scrollIntoView === "function") {
-            latestBubble.scrollIntoView({ block: "end", inline: "nearest" });
-          }
-          requestAnimationFrame(() => {
-            if (!chatPanel) return;
-            if (followLatest) {
-              autoScrollLockUntil = Date.now() + 160;
-              chatPanel.scrollTop = chatPanel.scrollHeight;
-              const latestAfterLayout = msgs && msgs.lastElementChild ? msgs.lastElementChild : null;
-              if (latestAfterLayout && typeof latestAfterLayout.scrollIntoView === "function") {
-                latestAfterLayout.scrollIntoView({ block: "end", inline: "nearest" });
-              }
-            }
-            updateJump();
-          });
+        const shouldFollow = force || followLatest;
+        if (!shouldFollow) {
+          updateJump();
           return;
         }
-        updateJump();
+
+        scrollToLatestForcePending = scrollToLatestForcePending || force;
+        if (scrollToLatestRaf) return;
+
+        scrollToLatestRaf = requestAnimationFrame(() => {
+          scrollToLatestRaf = 0;
+          if (!chatPanel) return;
+
+          const keepFollowing = scrollToLatestForcePending || followLatest;
+          scrollToLatestForcePending = false;
+          if (!keepFollowing) {
+            updateJump();
+            return;
+          }
+
+          autoScrollLockUntil = Date.now() + 120;
+          const nextTop = Math.max(0, chatPanel.scrollHeight - chatPanel.clientHeight);
+          chatPanel.scrollTop = nextTop;
+          updateJump();
+        });
       }
 
       function updateJump() {
@@ -1357,7 +1516,7 @@
         if (!text) return;
         streamBuffer += text;
         if (!streamBubble) {
-          streamBubble = addMessage("", "a");
+          streamBubble = addMessage("", "a assistant-response");
         }
         if (!streamTimer) {
           streamTimer = setInterval(() => flushStreamBuffer(false), 18);
@@ -1711,7 +1870,9 @@
       }
 
       function updateReasoningCard() {
-        if (!SHOW_SYSTEM_ACTIVITY) {
+        const reasoningText = String(liveReasoningText || "").trim();
+        const allowMetaSignals = SHOW_SYSTEM_ACTIVITY;
+        if (!allowMetaSignals && !reasoningText) {
           if (reasoningBubble && reasoningBubble.isConnected) reasoningBubble.remove();
           reasoningBubble = null;
           return;
@@ -1722,36 +1883,36 @@
           : [];
         const lines = [];
 
-        if (reasonCodes.length) lines.push("Signals: " + reasonCodes.join(", "));
+        if (allowMetaSignals && reasonCodes.length) lines.push("Signals: " + reasonCodes.join(", "));
 
-        if (meta.decision) {
+        if (allowMetaSignals && meta.decision) {
           lines.push("Decision mode: " + String(meta.decision));
-        } else if (meta.autonomyDecision?.mode) {
+        } else if (allowMetaSignals && meta.autonomyDecision?.mode) {
           lines.push("Decision mode: " + String(meta.autonomyDecision.mode));
         }
 
-        if (typeof meta.confidence === "number" && Number.isFinite(meta.confidence)) {
+        if (allowMetaSignals && typeof meta.confidence === "number" && Number.isFinite(meta.confidence)) {
           lines.push("Confidence: " + Math.round(meta.confidence * 100) + "%");
         }
 
-        if (meta.autonomyDecision?.rationale) {
+        if (allowMetaSignals && meta.autonomyDecision?.rationale) {
           lines.push("Rationale: " + String(meta.autonomyDecision.rationale));
         }
 
-        if (meta.validationPlan?.reason) {
+        if (allowMetaSignals && meta.validationPlan?.reason) {
           lines.push("Validation: " + String(meta.validationPlan.reason));
         }
 
-        if (meta.actionability?.reason) {
+        if (allowMetaSignals && meta.actionability?.reason) {
           lines.push("Actionability: " + String(meta.actionability.reason));
         }
 
-        const checks = Array.isArray(meta.validationPlan?.checks)
+        const checks = allowMetaSignals && Array.isArray(meta.validationPlan?.checks)
           ? meta.validationPlan.checks.filter((x) => typeof x === "string" && x.trim())
           : [];
         if (checks.length) lines.push("Checks: " + checks.slice(0, 5).join(", "));
 
-        if (!lines.length) {
+        if (!reasoningText && !lines.length) {
           if (reasoningBubble && reasoningBubble.isConnected) reasoningBubble.remove();
           reasoningBubble = null;
           return;
@@ -1775,14 +1936,29 @@
           (streaming ? '<span class="reasoning-live"><i></i>Live</span>' : "");
         details.appendChild(summary);
 
-        const list = document.createElement("ul");
-        list.className = "reasoning-list";
-        lines.forEach((line) => {
-          const li = document.createElement("li");
-          li.textContent = line;
-          list.appendChild(li);
-        });
-        details.appendChild(list);
+        if (reasoningText) {
+          const pre = document.createElement("pre");
+          pre.textContent = reasoningText;
+          pre.style.margin = "10px 0 0";
+          pre.style.padding = "10px";
+          pre.style.whiteSpace = "pre-wrap";
+          pre.style.overflowWrap = "anywhere";
+          pre.style.borderRadius = "10px";
+          pre.style.border = "1px solid rgba(120,120,120,0.2)";
+          pre.style.background = "rgba(120,120,120,0.08)";
+          details.appendChild(pre);
+        }
+
+        if (lines.length) {
+          const list = document.createElement("ul");
+          list.className = "reasoning-list";
+          lines.forEach((line) => {
+            const li = document.createElement("li");
+            li.textContent = line;
+            list.appendChild(li);
+          });
+          details.appendChild(list);
+        }
         body.appendChild(details);
         pinAssistantResponseToBottom();
       }
@@ -1926,6 +2102,14 @@
         const filesChanged = Number(outcome && typeof outcome === "object" ? outcome.filesChanged : NaN);
         if (!Number.isNaN(filesChanged) && filesChanged === 0) {
           text = text.replace(
+            /I prepared the requested update in ([^\n.]+)\.?/gi,
+            "I drafted a proposed update for $1, but no file edits were applied."
+          );
+          text = text.replace(
+            /I drafted a proposed update for ([^\n.]+)\.?/gi,
+            "I drafted a proposed update for $1, but no file edits were applied."
+          );
+          text = text.replace(
             /Next action:\s*auto-apply was requested\.?\s*Confirm what was actually applied in the Execution panel\.?/gi,
             noEdits
           );
@@ -1935,7 +2119,7 @@
 
       function recheckAssistantTextForOutcome(outcome) {
         if (!msgs || !outcome || typeof outcome !== "object") return;
-        const bodies = msgs.querySelectorAll(".m.a .m-body");
+        const bodies = msgs.querySelectorAll(".m.assistant-response .m-body");
         if (!bodies || !bodies.length) return;
         bodies.forEach((node) => {
           if (!node) return;
@@ -2393,6 +2577,7 @@
         if (threadsOverlayOpen) setThreadsOverlayOpen(false);
         responseStartedAtMs = 0;
         lastAssistantBubble = null;
+        removePendingPromptBubble();
         saveCurrentDraft();
         creatingThread = true;
         currentThreadId = null;
@@ -2406,6 +2591,11 @@
         activeProgressState = "";
         lastStatusText = "";
         lastStatusAt = 0;
+        liveReasoningText = "";
+        latestReasonCodes = [];
+        latestRunMeta = null;
+        if (reasoningBubble && reasoningBubble.isConnected) reasoningBubble.remove();
+        reasoningBubble = null;
         if (msgs) {
           while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
         }
@@ -2421,6 +2611,7 @@
         lastAssistantBubble = null;
         latestActionOutcome = null;
         creatingThread = false;
+        removePendingPromptBubble();
         clearPlanDecisionCard();
         closeMentionMenu();
         setStreaming(false);
@@ -2433,6 +2624,11 @@
         activeProgressState = "";
         lastStatusText = "";
         lastStatusAt = 0;
+        liveReasoningText = "";
+        latestReasonCodes = [];
+        latestRunMeta = null;
+        if (reasoningBubble && reasoningBubble.isConnected) reasoningBubble.remove();
+        reasoningBubble = null;
         setRunState("Local");
         if (msgs) {
           while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
@@ -2573,7 +2769,11 @@
           queuePill.classList.toggle("show", count > 0);
         }
         if (queueSummary) queueSummary.textContent = "Queued messages (" + count + ")";
-        if (queuePanel) queuePanel.classList.toggle("hidden", count === 0);
+        if (queuePanel) {
+          queuePanel.classList.toggle("hidden", count === 0);
+          queuePanel.open = count > 0;
+        }
+        if (composerShell) composerShell.classList.toggle("has-queue", count > 0);
         if (!queueList) return;
         if (count === 0) {
           queueList.innerHTML = "";
@@ -2615,6 +2815,46 @@
         if (SHOW_SYSTEM_ACTIVITY) addMessage("Queued message (" + queuedMessages.length + "): " + queuePreviewText(text), "cmd");
       }
 
+      function removePendingPromptBubble() {
+        if (!pendingPromptAfterThread) return;
+        const bubble = pendingPromptAfterThread.queuedBubble;
+        if (bubble && bubble.isConnected) bubble.remove();
+        pendingPromptAfterThread = null;
+        updateStartupVisibility();
+      }
+
+      function queuePromptUntilThreadReady(payload) {
+        if (!payload || !payload.text) return;
+        removePendingPromptBubble();
+        const queuedBubble = addMessage(payload.text, "u queued");
+        appendUserAttachmentPreview(queuedBubble, payload.attachments || []);
+        const meta = queuedBubble.querySelector(".m-time");
+        if (meta) meta.textContent = "Preparing chat...";
+        pendingPromptAfterThread = {
+          ...payload,
+          queuedBubble,
+        };
+        setRunState("Creating new chat...");
+        followLatest = true;
+        scrollToLatest(true);
+      }
+
+      function flushPendingPromptAfterThread() {
+        if (!pendingPromptAfterThread) return;
+        if (creatingThread || streaming) return;
+        if (!currentThreadId) return;
+        const payload = pendingPromptAfterThread;
+        pendingPromptAfterThread = null;
+        dispatchPromptPayload({
+          ...payload,
+          threadId: currentThreadId,
+          queuedBubble:
+            payload.queuedBubble && payload.queuedBubble.isConnected
+              ? payload.queuedBubble
+              : null,
+        });
+      }
+
       function dispatchPromptPayload(payload) {
         if (!payload || !payload.text) return;
         showTab("chat");
@@ -2639,11 +2879,27 @@
           syncComposerHeight();
         }
         if (currentThreadId) threadDrafts[currentThreadId] = "";
+        runtimeState.objective = String(payload.text || "").trim();
+        runtimeState.cycle = 1;
+        runtimeState.maxCycles = runtimeState.maxCycles || 0;
+        runtimeState.phase = "plan";
+        runtimeState.completionStatus = "incomplete";
+        runtimeState.completionScore = 0;
+        runtimeState.missingRequirements = [];
+        runtimeState.blocker = "Queued for execution.";
+        runtimeState.appliedFiles = [];
+        runtimeState.filesChanged = 0;
+        runtimeState.checksRun = 0;
+        runtimeState.commandPass = 0;
+        runtimeState.commandFail = 0;
+        runtimeState.lastCommandBlocker = "";
+        renderRuntimeStrip();
         scheduleContextPreviewDispatch(true);
         setStreaming(true);
-        streamBubble = addMessage("Streaming response...", "a stream-pending");
+        streamBubble = null;
         pinAssistantResponseToBottom();
         reasoningBubble = null;
+        liveReasoningText = "";
         latestReasonCodes = [];
         latestRunMeta = null;
         v.postMessage({
@@ -2677,11 +2933,6 @@
           const composerInput = input || document.getElementById("t");
           if (!composerInput) return;
           const parsed = parseSlashModeCommand(composerInput.value || "");
-          if (creatingThread) {
-            setRunState("Creating new chat...");
-            if (SHOW_SYSTEM_ACTIVITY) addMessage("Creating new chat. Send your message in a moment.", "cmd");
-            return;
-          }
           if (parsed.preventSend) {
             if (SHOW_SYSTEM_ACTIVITY) addMessage("Plan mode enabled. Add your request after /plan.", "cmd");
             return;
@@ -2708,7 +2959,7 @@
           if (now - lastSendAt < 120) return;
           lastSendAt = now;
 
-          dispatchPromptPayload({
+          const payload = {
             text,
             attachments: previewAttachments,
             parallel: Boolean(parallelQuick && parallelQuick.checked),
@@ -2717,7 +2968,31 @@
             includeIdeContext: true,
             workspaceContextLevel: "max",
             threadId: currentThreadId,
-          });
+          };
+
+          if (creatingThread) {
+            queuePromptUntilThreadReady(payload);
+            composerInput.value = "";
+            syncComposerHeight();
+            attachedFiles = [];
+            if (uploadInput) uploadInput.value = "";
+            updateAttachmentUI();
+            return;
+          }
+
+          if (!currentThreadId) {
+            creatingThread = true;
+            queuePromptUntilThreadReady(payload);
+            composerInput.value = "";
+            syncComposerHeight();
+            attachedFiles = [];
+            if (uploadInput) uploadInput.value = "";
+            updateAttachmentUI();
+            v.postMessage({ type: "newThread" });
+            return;
+          }
+
+          dispatchPromptPayload(payload);
           attachedFiles = [];
           if (uploadInput) uploadInput.value = "";
           updateAttachmentUI();
@@ -3122,6 +3397,7 @@
           while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
           chips.innerHTML = "";
           clearQueuedMessages();
+          resetRuntimeState();
           updateStartupVisibility();
           setStreaming(false);
           v.postMessage({ type: "clear" });
@@ -3228,13 +3504,40 @@
           }
         } else if (m.type === "authState") {
           const signedIn = m.signedIn === true;
+          const browserSignedIn = m.browserSignedIn === true;
+          const apiKeySaved = m.apiKeySaved === true;
+          const apiKeyMasked = typeof m.apiKeyMasked === "string" ? String(m.apiKeyMasked).trim() : "";
           const email = typeof m.email === "string" ? m.email : "";
           if (authLabel) {
-            authLabel.textContent = signedIn ? ("Signed in" + (email ? (" as " + email) : "")) : "Not signed in.";
+            if (browserSignedIn) {
+              authLabel.textContent = "Signed in" + (email ? (" as " + email) : "");
+            } else if (apiKeySaved) {
+              authLabel.textContent = "Authenticated with saved API key.";
+            } else if (signedIn) {
+              authLabel.textContent = "Authenticated.";
+            } else {
+              authLabel.textContent = "Not signed in.";
+            }
           }
-          if (authSignIn) authSignIn.style.display = signedIn ? "none" : "";
-          if (authSignOut) authSignOut.style.display = signedIn ? "" : "none";
-          if (authSignOutQuick) authSignOutQuick.style.display = signedIn ? "" : "none";
+          if (authSignIn) authSignIn.style.display = browserSignedIn ? "none" : "";
+          if (authSignOut) authSignOut.style.display = browserSignedIn ? "" : "none";
+          if (authSignOutQuick) authSignOutQuick.style.display = browserSignedIn ? "" : "none";
+          if (apiKeyInline) {
+            apiKeyInline.placeholder = apiKeySaved
+              ? (apiKeyMasked ? ("Saved: " + apiKeyMasked) : "API key saved")
+              : "xp_...";
+          }
+          if (apiKeyHint) {
+            if (apiKeySaved) {
+              apiKeyHint.textContent = apiKeyMasked
+                ? ("API key saved as " + apiKeyMasked + ". Stored securely in VS Code secrets.")
+                : "API key saved. Stored securely in VS Code secrets.";
+            } else if (browserSignedIn) {
+              apiKeyHint.textContent = "Signed in with browser. API key is optional.";
+            } else {
+              apiKeyHint.textContent = "Stored securely in VS Code secrets.";
+            }
+          }
         } else if (m.type === "apiKeySaved") {
           const ok = m.ok !== false;
           const reason = String(m.reason || "").trim();
@@ -3286,6 +3589,11 @@
           }
         } else if (m.type === "start") {
           lastDiagnosticsFingerprint = "";
+          liveReasoningText = "";
+          latestReasonCodes = [];
+          latestRunMeta = null;
+          if (reasoningBubble && reasoningBubble.isConnected) reasoningBubble.remove();
+          reasoningBubble = null;
           if (m.threadId) {
             activeRunThreadId = String(m.threadId);
             if (!currentThreadId || creatingThread) {
@@ -3299,6 +3607,11 @@
           runProgressBubble = null;
           resetRunProgress();
           renderRunProgress();
+          runtimeState.phase = "act";
+          runtimeState.completionStatus = "incomplete";
+          runtimeState.blocker = "Collecting context and preparing actions.";
+          if (runtimeState.cycle <= 0) runtimeState.cycle = 1;
+          renderRuntimeStrip();
           streamEndPending = false;
           setStreaming(true);
           setContextTelemetryState({
@@ -3315,6 +3628,13 @@
         } else if (m.type === "token") {
           if (!streaming) setStreaming(true);
           queueStreamText(String(m.text || ""));
+        } else if (m.type === "reasoningToken") {
+          const chunk = String(m.text || "");
+          if (chunk) {
+            liveReasoningText = (liveReasoningText + chunk).slice(-MAX_REASONING_CHARS);
+            updateReasoningCard();
+            if (streaming || followLatest) scrollToLatest(streaming);
+          }
         } else if (m.type === "reasonCodes") {
           latestReasonCodes = Array.isArray(m.codes) ? m.codes : [];
           updateReasoningCard();
@@ -3326,6 +3646,8 @@
           } else {
             finalizeStreamMessage();
           }
+          runtimeState.phase = "verify";
+          renderRuntimeStrip();
           if (shouldShowPlanDecision) showPlanDecisionCard();
           if (queuedMessages.length > 0) {
             setTimeout(() => flushQueuedMessages(), 0);
@@ -3384,7 +3706,7 @@
             // Suppress duplicate "Ran ..." chat noise; terminal stream already shows command activity.
             return;
           } else {
-            addMessage(statusText, "a");
+            addMessage(statusText, "a assistant-response");
           }
         } else if (m.type === "assistant") {
           setStreaming(true);
@@ -3410,6 +3732,20 @@
           updateRunStep("actions", "done");
         } else if (m.type === "meta") {
           latestRunMeta = m.data || null;
+          if (m.data && typeof m.data === "object") {
+            if (typeof m.data.completionStatus === "string") {
+              runtimeState.completionStatus = m.data.completionStatus === "complete" ? "complete" : "incomplete";
+            }
+            if (Array.isArray(m.data.missingRequirements)) {
+              runtimeState.missingRequirements = m.data.missingRequirements
+                .filter((x) => typeof x === "string" && x.trim())
+                .map((x) => String(x).trim());
+            }
+            if (m.data.actionability && typeof m.data.actionability.reason === "string") {
+              runtimeState.blocker = String(m.data.actionability.reason || "");
+            }
+            renderRuntimeStrip();
+          }
           chips.innerHTML = "";
           if (modelSel?.value) {
             const mm = document.createElement("span");
@@ -3442,6 +3778,24 @@
             chips.appendChild(r);
           }
           updateReasoningCard();
+        } else if (m.type === "autonomyRuntime") {
+          const data = m.data && typeof m.data === "object" ? m.data : {};
+          runtimeState.objective = String(data.objective || runtimeState.objective || "").trim();
+          runtimeState.cycle = Math.max(0, Number(data.cycle || runtimeState.cycle || 0));
+          runtimeState.maxCycles = Math.max(0, Number(data.maxCycles || runtimeState.maxCycles || 0));
+          runtimeState.phase = String(data.phase || runtimeState.phase || "idle").toLowerCase();
+          runtimeState.completionStatus = String(data.completionStatus || runtimeState.completionStatus) === "complete" ? "complete" : "incomplete";
+          runtimeState.completionScore = Math.max(0, Math.min(100, Number(data.completionScore || runtimeState.completionScore || 0)));
+          runtimeState.missingRequirements = Array.isArray(data.missingRequirements)
+            ? data.missingRequirements.filter((x) => typeof x === "string" && x.trim()).map((x) => String(x).trim())
+            : runtimeState.missingRequirements;
+          runtimeState.blocker = String(data.blocker || runtimeState.blocker || "");
+          runtimeState.appliedFiles = Array.isArray(data.appliedFiles)
+            ? data.appliedFiles.filter((x) => typeof x === "string" && x.trim()).map((x) => String(x).trim())
+            : runtimeState.appliedFiles;
+          runtimeState.filesChanged = Math.max(0, Number(data.filesChanged || runtimeState.filesChanged || 0));
+          runtimeState.checksRun = Math.max(0, Number(data.checksRun || runtimeState.checksRun || 0));
+          renderRuntimeStrip();
         } else if (m.type === "actionOutcome") {
           const data = m.data || {};
           const filesChanged = Number(data.filesChanged || 0);
@@ -3449,6 +3803,25 @@
           const quality = String(data.quality || "unknown");
           const summary = String(data.summary || "");
           latestActionOutcome = { filesChanged, checksRun, quality, summary };
+          runtimeState.filesChanged = Math.max(0, filesChanged);
+          runtimeState.checksRun = Math.max(0, checksRun);
+          if (Array.isArray(data.appliedFiles)) {
+            runtimeState.appliedFiles = data.appliedFiles
+              .filter((x) => typeof x === "string" && x.trim())
+              .map((x) => String(x).trim());
+          } else if (Array.isArray(data.perFile)) {
+            runtimeState.appliedFiles = data.perFile
+              .filter((row) => row && (String(row.status || "").toLowerCase() === "applied" || String(row.status || "").toLowerCase() === "partial"))
+              .map((row) => String(row.path || "").trim())
+              .filter(Boolean);
+          }
+          if (filesChanged === 0) {
+            runtimeState.completionStatus = "incomplete";
+            runtimeState.blocker = summary || runtimeState.blocker || "No local file mutation detected.";
+          } else if (quality === "good") {
+            runtimeState.completionScore = Math.max(runtimeState.completionScore, 80);
+          }
+          renderRuntimeStrip();
           recheckAssistantTextForOutcome(latestActionOutcome);
           const perFile = Array.isArray(data.perFile) ? data.perFile : [];
           const debug = data.debug && typeof data.debug === "object" ? data.debug : null;
@@ -3525,9 +3898,9 @@
               "Result quality: " + quality,
               summary ? summary : "",
             ].filter(Boolean).join("\n");
-            addMessage(outcome, quality === "good" ? "cmd" : "a");
+            addMessage(outcome, quality === "good" ? "cmd" : "a assistant-response");
             if (filesChanged === 0 && quality !== "good") {
-              addMessage("Warning: No edits were applied.", "a");
+              addMessage("Warning: No edits were applied.", "a assistant-response");
             }
           }
           if (filesChanged === 0) {
@@ -3535,7 +3908,7 @@
               quality === "good"
                 ? "Open Execution to confirm whether this run was command-only."
                 : "Open Execution for exact reject reasons.";
-            addMessage("Execution debug: no file edits were applied. " + detailHint, "a");
+            addMessage("Execution debug: no file edits were applied. " + detailHint, "a assistant-response");
           }
         } else if (m.type === "diagnosticsBundle") {
           showDiagnosticsBundleCard(m.data || {});
@@ -3558,6 +3931,7 @@
           renderTaskPreview(recentHistory);
           if (history && history.classList.contains("active")) renderHistoryPanel(recentHistory, { query: historySearchQuery });
           restoreDraftForThread(currentThreadId);
+          flushPendingPromptAfterThread();
         } else if (m.type === "historyItems") {
           const rows = Array.isArray(m.data) ? m.data : [];
           recentHistory = rows;
@@ -3587,6 +3961,9 @@
           agents.textContent = JSON.stringify(m.data || {}, null, 2);
         } else if (m.type === "execLogs") {
           const rows = m.data || [];
+          let passCount = 0;
+          let failCount = 0;
+          let lastFailure = "";
           if (SHOW_SYSTEM_ACTIVITY) {
             rows.forEach((x) => {
               const parsed = parseExecCommandResult(x.message || "");
@@ -3601,6 +3978,20 @@
               addTerminalLine(String(x.message || ""), level === "error" ? "err" : "info");
             });
           }
+          rows.forEach((x) => {
+            const parsed = parseExecCommandResult(x.message || "");
+            if (!parsed) return;
+            if (parsed.status === "APPROVED") {
+              passCount += 1;
+              return;
+            }
+            failCount += 1;
+            lastFailure = parsed.reason || parsed.command || lastFailure;
+          });
+          runtimeState.commandPass += passCount;
+          runtimeState.commandFail += failCount;
+          if (lastFailure) runtimeState.lastCommandBlocker = String(lastFailure);
+          renderRuntimeStrip();
           exec.innerHTML = rows.map((x) => (
             '<div class="item">' +
               '<div class="item-title">' + esc(String(x.level || "").toUpperCase()) + ' - ' + esc(new Date(x.ts).toLocaleTimeString()) + '</div>' +
@@ -3614,8 +4005,27 @@
           undoCount = Number(m.count || 0);
           updateUndoButtonState();
         } else if (m.type === "err") {
+          const failedPendingPrompt = creatingThread && pendingPromptAfterThread
+            ? pendingPromptAfterThread
+            : null;
+          if (creatingThread) removePendingPromptBubble();
           const failedBubble = streamBubble && streamBubble.isConnected ? streamBubble : null;
           creatingThread = false;
+          if (failedPendingPrompt && input && !String(input.value || "").trim()) {
+            input.value = String(failedPendingPrompt.text || "");
+            syncComposerHeight();
+          }
+          if (
+            failedPendingPrompt &&
+            Array.isArray(failedPendingPrompt.attachments) &&
+            failedPendingPrompt.attachments.length > 0
+          ) {
+            attachedFiles = failedPendingPrompt.attachments
+              .filter((item) => item && typeof item.dataUrl === "string" && item.dataUrl.startsWith("data:image/"))
+              .slice(0, MAX_ATTACHMENTS);
+            if (uploadInput) uploadInput.value = "";
+            updateAttachmentUI();
+          }
           clearPlanDecisionCard();
           if (failedBubble) {
             failedBubble.classList.remove("typing");
@@ -3635,6 +4045,10 @@
           activeRunThreadId = null;
           if (failedBubble) lastAssistantBubble = failedBubble;
           updateRunStep("outcome", "warn", String(m.text || "Error"));
+          runtimeState.phase = "done";
+          runtimeState.completionStatus = "incomplete";
+          runtimeState.blocker = String(m.text || "Error");
+          renderRuntimeStrip();
           if (SHOW_SYSTEM_ACTIVITY || !failedBubble) addMessage("Error: " + m.text, "e");
           setRunState("Error");
           pinAssistantResponseToBottom();
@@ -3661,19 +4075,21 @@
           activeProgressState = "";
           lastStatusText = "";
           lastStatusAt = 0;
+          resetRuntimeState();
           setRunState("Local");
           if (m.threadId !== undefined) currentThreadId = m.threadId;
           const loadedMessages = Array.isArray(m.data) ? m.data : [];
           while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
           loadedMessages.forEach((x) => {
             const body = x.role === "assistant" ? normalizeAssistantText(x.content) : x.content;
-            addMessage(body, x.role === "user" ? "u" : "a");
+            addMessage(body, x.role === "user" ? "u" : "a assistant-response");
           });
           updateStartupVisibility();
           renderThreadList();
           renderTaskPreview(recentHistory);
           restoreDraftForThread(currentThreadId);
           syncComposerHeight();
+          flushPendingPromptAfterThread();
           showTab("chat");
           followLatest = true;
           scrollToLatest(true);
@@ -3684,6 +4100,7 @@
       renderThreadList();
       renderTaskPreview(recentHistory);
       renderHistoryPanel(recentHistory);
+      resetRuntimeState();
       applyModeUI("auto");
       v.postMessage({ type: "check" });
 

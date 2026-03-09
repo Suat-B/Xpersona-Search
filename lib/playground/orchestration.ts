@@ -38,6 +38,15 @@ export type AssistClientPreferences = {
   reasoning?: "low" | "medium" | "high" | "max";
 };
 
+export type AssistAutonomyConfig = {
+  mode?: "unbounded" | "bounded";
+  maxCycles?: number;
+  noClarifyToUser?: boolean;
+  commandPolicy?: "run_until_done" | "safe_default";
+  safetyFloor?: "allow_everything" | "standard";
+  failsafe?: "disabled" | "enabled";
+};
+
 export type AssistUserProfile = {
   preferredTone?: string | null;
   autonomyMode?: string | null;
@@ -59,6 +68,7 @@ export type AssistRequest = {
   historySessionId?: string;
   conversationHistory?: AssistConversationTurn[];
   clientPreferences?: AssistClientPreferences;
+  autonomy?: AssistAutonomyConfig;
   executionPolicy?: "full_auto" | "yolo_only" | "preview_first";
   userProfile?: AssistUserProfile | null;
   agentConfig?: AssistAgentConfig;
@@ -120,6 +130,8 @@ export type AssistResult = {
     summary: "valid_actions" | "clarification_needed" | "blocked_by_safety";
     reason: string;
   };
+  completionStatus: "complete" | "incomplete";
+  missingRequirements: string[];
 };
 
 type StructuredAssistOutput = {
@@ -773,7 +785,11 @@ function conversationToPrompt(history?: AssistConversationTurn[]): string {
   ].join("\n\n");
 }
 
-function profileToPrompt(profile?: AssistUserProfile | null, clientPreferences?: AssistClientPreferences): string {
+function profileToPrompt(
+  profile?: AssistUserProfile | null,
+  clientPreferences?: AssistClientPreferences,
+  autonomyConfig?: AssistAutonomyConfig
+): string {
   const parts: string[] = [];
   const tone = clientPreferences?.tone || profile?.preferredTone || "warm_teammate";
   const autonomy = clientPreferences?.autonomy || profile?.autonomyMode || "full_auto";
@@ -781,6 +797,11 @@ function profileToPrompt(profile?: AssistUserProfile | null, clientPreferences?:
   const reasoning = clientPreferences?.reasoning || profile?.reasoningPreference || "medium";
 
   parts.push(`User preference: tone=${tone}, autonomy=${autonomy}, style=${style}, reasoning=${reasoning}.`);
+  if (autonomyConfig) {
+    parts.push(
+      `Autonomy runtime: mode=${autonomyConfig.mode || "bounded"}, maxCycles=${autonomyConfig.maxCycles ?? "default"}, noClarify=${autonomyConfig.noClarifyToUser === true ? "true" : "false"}, commandPolicy=${autonomyConfig.commandPolicy || "safe_default"}, safetyFloor=${autonomyConfig.safetyFloor || "standard"}, failsafe=${autonomyConfig.failsafe || "enabled"}.`
+    );
+  }
   return parts.join("\n");
 }
 
@@ -833,12 +854,64 @@ function buildUserMessageContent(prompt: string, attachments?: AssistAttachment[
   return parts;
 }
 
+function coerceStreamText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => coerceStreamText(item)).join("");
+  }
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  if (typeof record.text === "string") return record.text;
+  if (typeof record.content === "string") return record.content;
+  if (typeof record.reasoning_content === "string") return record.reasoning_content;
+  if (typeof record.reasoning === "string") return record.reasoning;
+  return "";
+}
+
+function extractStreamPieces(payload: unknown): { content: string; reasoning: string } {
+  if (!payload || typeof payload !== "object") return { content: "", reasoning: "" };
+  const parsed = payload as {
+    choices?: Array<{
+      delta?: Record<string, unknown>;
+      message?: Record<string, unknown>;
+      text?: unknown;
+    }>;
+    delta?: Record<string, unknown>;
+    message?: Record<string, unknown>;
+    text?: unknown;
+    content?: unknown;
+    reasoning?: unknown;
+    reasoning_content?: unknown;
+    thinking?: unknown;
+  };
+  const choice = parsed.choices?.[0];
+  const delta = choice?.delta;
+  const message = choice?.message;
+  const content =
+    coerceStreamText(delta?.content) ||
+    coerceStreamText(message?.content) ||
+    coerceStreamText(choice?.text) ||
+    coerceStreamText(parsed.content) ||
+    coerceStreamText(parsed.text);
+  const reasoning =
+    coerceStreamText(delta?.reasoning_content) ||
+    coerceStreamText(delta?.reasoning) ||
+    coerceStreamText(delta?.thinking) ||
+    coerceStreamText(message?.reasoning_content) ||
+    coerceStreamText(message?.reasoning) ||
+    coerceStreamText(parsed.reasoning_content) ||
+    coerceStreamText(parsed.reasoning) ||
+    coerceStreamText(parsed.thinking);
+  return { content, reasoning };
+}
+
 async function callHfChat(params: {
   model: string;
   prompt: string;
   maxTokens: number;
   attachments?: AssistAttachment[];
   onToken?: (token: string) => void | Promise<void>;
+  onReasoningToken?: (token: string) => void | Promise<void>;
 }): Promise<string> {
   const token = getHfRouterToken();
   if (!token) {
@@ -932,16 +1005,14 @@ async function callHfChat(params: {
       if (!data || data === "[DONE]") return data === "[DONE]";
 
       try {
-        const parsed = JSON.parse(data) as {
-          choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }>;
-        };
-        const piece =
-          parsed.choices?.[0]?.delta?.content ??
-          parsed.choices?.[0]?.message?.content ??
-          "";
-        if (piece) {
-          out += piece;
-          if (params.onToken) await params.onToken(piece);
+        const parsed = JSON.parse(data) as unknown;
+        const { content, reasoning } = extractStreamPieces(parsed);
+        if (content) {
+          out += content;
+          if (params.onToken) await params.onToken(content);
+        }
+        if (reasoning && params.onReasoningToken) {
+          await params.onReasoningToken(reasoning);
         }
       } catch {
         // Ignore malformed or non-JSON chunks.
@@ -975,8 +1046,11 @@ async function callHfChat(params: {
     return out.trim();
   }
 
-  const body = (await r.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  const text = body.choices?.[0]?.message?.content?.trim() || "";
+  const body = (await r.json()) as unknown;
+  const { content, reasoning } = extractStreamPieces(body);
+  const text = content.trim();
+  const reasoningText = reasoning.trim();
+  if (reasoningText && params.onReasoningToken) await params.onReasoningToken(reasoningText);
   if (text && params.onToken) await params.onToken(text);
   return text;
 }
@@ -987,6 +1061,7 @@ async function callNvidiaChat(params: {
   maxTokens: number;
   attachments?: AssistAttachment[];
   onToken?: (token: string) => void | Promise<void>;
+  onReasoningToken?: (token: string) => void | Promise<void>;
   runtimeApiKey?: string;
 }): Promise<string> {
   const token = getNvidiaToken(params.runtimeApiKey);
@@ -1085,16 +1160,14 @@ async function callNvidiaChat(params: {
       if (!data || data === "[DONE]") return data === "[DONE]";
 
       try {
-        const parsed = JSON.parse(data) as {
-          choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }>;
-        };
-        const piece =
-          parsed.choices?.[0]?.delta?.content ??
-          parsed.choices?.[0]?.message?.content ??
-          "";
-        if (piece) {
-          out += piece;
-          if (params.onToken) await params.onToken(piece);
+        const parsed = JSON.parse(data) as unknown;
+        const { content, reasoning } = extractStreamPieces(parsed);
+        if (content) {
+          out += content;
+          if (params.onToken) await params.onToken(content);
+        }
+        if (reasoning && params.onReasoningToken) {
+          await params.onReasoningToken(reasoning);
         }
       } catch {
         // Ignore malformed or non-JSON chunks.
@@ -1128,8 +1201,11 @@ async function callNvidiaChat(params: {
     return out.trim();
   }
 
-  const body = (await r.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  const text = body.choices?.[0]?.message?.content?.trim() || "";
+  const body = (await r.json()) as unknown;
+  const { content, reasoning } = extractStreamPieces(body);
+  const text = content.trim();
+  const reasoningText = reasoning.trim();
+  if (reasoningText && params.onReasoningToken) await params.onReasoningToken(reasoningText);
   if (text && params.onToken) await params.onToken(text);
   return text;
 }
@@ -1492,8 +1568,12 @@ export function composeWarmAssistantResponse(input: {
     if (action.type === "edit" || action.type === "mkdir" || action.type === "write_file") return [action.path];
     return [];
   });
+  const hasFileActions = input.edits.length > 0 || actionPaths.length > 0;
+  const hasCommandActions =
+    input.commands.length > 0 ||
+    (input.actions ?? []).some((action) => action.type === "command");
 
-  if ((input.actions?.length ?? 0) > 0 || input.edits.length > 0) {
+  if (hasFileActions) {
     const touchedPaths = Array.from(new Set([...input.edits.map((edit) => edit.path), ...actionPaths])).slice(0, 3);
     const touched = touchedPaths.join(", ");
     const resultLine = firstNonEmptyLine(cleaned);
@@ -1504,12 +1584,23 @@ export function composeWarmAssistantResponse(input: {
           ? "Next action: auto-apply was requested. Confirm applied files and validation results in Execution and terminal."
           : "Next action: auto-apply was requested. Confirm what was actually applied in the Execution panel.";
     const headline = touched
-      ? `I prepared the requested update in ${touched}.`
-      : "I prepared an execution plan, but no file targets were identified yet.";
+      ? `I drafted a proposed update for ${touched}.`
+      : "I drafted a proposed implementation, but no concrete file target was identified yet.";
     return [
       headline,
       resultLine ? resultLine : "",
       nextAction,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (hasCommandActions) {
+    const resultLine = firstNonEmptyLine(cleaned);
+    return [
+      "I prepared validation/inspection commands, but no file edits are staged yet.",
+      resultLine ? resultLine : "",
+      "Next action: run commands manually, or ask me to generate concrete file edits first.",
     ]
       .filter(Boolean)
       .join("\n");
@@ -1769,7 +1860,13 @@ function hasExplicitCommandRunIntent(task: string): boolean {
 
 function hasCodeEditIntent(task: string): boolean {
   const normalized = normalizeIntentTypos(task);
-  if (/\b(create|make|add|implement|write|modify|edit|patch|refactor|fix|ship|strategy|indicator|trailing stop|stop loss)\b/i.test(normalized)) return true;
+  const strongEditVerb =
+    /\b(create|make|add|implement|write|modify|edit|patch|refactor|fix|ship|strategy|indicator|trailing stop|stop loss)\b/i;
+  if (strongEditVerb.test(normalized)) return true;
+  const weakEditVerb = /\b(update|change|adjust|set|increase|decrease|rename|replace|remove|toggle)\b/i;
+  const codeObjectHint =
+    /\b(code|file|path|function|method|class|variable|param(?:eter)?|input|length|period|setting|config|strategy|indicator|stop loss|trailing stop|logic)\b/i;
+  if (weakEditVerb.test(normalized) && codeObjectHint.test(normalized)) return true;
   const pathMention = hasPathMention(task);
   if (!pathMention) return false;
   if (/\b(in|inside|into|to|update|put|place|insert|apply|use|with)\b/i.test(normalized)) return true;
@@ -1785,15 +1882,20 @@ function isLikelyImplementationAsk(task: string): boolean {
   const normalized = normalizeIntentTypos(task).toLowerCase().trim();
   if (!normalized) return false;
   if (isGreetingLike(normalized) || isAcknowledgementLike(normalized)) return false;
+  const strongImplementationAsk = /\b(create|build|implement|write|make|add|edit|fix|refactor|patch|ship|strategy|indicator|trailing stop|stop loss)\b/;
+  const weakImplementationAsk = /\b(update|change|adjust|set|increase|decrease|rename|replace|remove|toggle)\b/.test(normalized);
+  const implementationObjectHint =
+    /\b(code|file|path|function|method|class|variable|parameter|param|input|length|period|setting|config|strategy|indicator|stop loss|trailing stop|logic)\b/.test(
+      normalized
+    );
   if (
     isQuestionLike(normalized) &&
-    !/\b(create|build|implement|write|make|add|edit|fix|refactor|patch|ship|strategy|indicator|trailing stop|stop loss)\b/.test(normalized)
+    !strongImplementationAsk.test(normalized) &&
+    !(weakImplementationAsk && implementationObjectHint)
   ) {
     return false;
   }
-  return /\b(create|build|implement|write|make|add|edit|fix|refactor|patch|ship|strategy|indicator|trailing stop|stop loss)\b/.test(
-    normalized
-  );
+  return strongImplementationAsk.test(normalized) || (weakImplementationAsk && implementationObjectHint);
 }
 
 function isPureConversationalTask(task: string): boolean {
@@ -2012,18 +2114,16 @@ function buildValidationPlan(input: {
   if (kinds.has("rust")) {
     checks.push("cargo test");
   }
-  if (checks.length === 0 && !kinds.has("docs")) {
-    checks.push(`git diff -- ${primaryFile}`);
-  }
-
   return {
-    scope: "targeted",
+    scope: checks.length > 0 ? "targeted" : "none",
     checks: Array.from(new Set(checks)).slice(0, 4),
     touchedFiles,
     reason:
-      input.decisionMode === "debug"
-        ? "Targeted validation selected to verify the specific fix path."
-        : "Targeted validation selected from touched files and language signals.",
+      checks.length === 0
+        ? "No reliable auto-validation command was inferred for touched files."
+        : input.decisionMode === "debug"
+          ? "Targeted validation selected to verify the specific fix path."
+          : "Targeted validation selected from touched files and language signals.",
   };
 }
 
@@ -2036,6 +2136,7 @@ function decideAutonomy(input: {
   executionPolicy?: "full_auto" | "yolo_only" | "preview_first";
   decisionMode: AssistDecisionMode;
   clientPreferences?: AssistClientPreferences;
+  autonomy?: AssistAutonomyConfig;
   riskBlocked?: boolean;
 }): {
   mode: "no_actions" | "preview_only" | "auto_apply_only" | "auto_apply_and_validate";
@@ -2067,6 +2168,9 @@ function decideAutonomy(input: {
     };
   }
 
+  const unboundedMode = input.autonomy?.mode === "unbounded";
+  const runUntilDoneCommands = input.autonomy?.commandPolicy === "run_until_done";
+
   if (input.executionPolicy === "preview_first") {
     return {
       mode: "preview_only",
@@ -2090,18 +2194,21 @@ function decideAutonomy(input: {
   }
 
   if (input.executionPolicy === "full_auto") {
+    const shouldRunValidation = input.hasCommandActions || runUntilDoneCommands;
     return {
-      mode: input.hasCommandActions ? "auto_apply_and_validate" : "auto_apply_only",
-      autoApplyEdits: input.hasEditActions || !input.hasCommandActions,
-      autoRunValidation: input.hasCommandActions,
+      mode: shouldRunValidation ? "auto_apply_and_validate" : "auto_apply_only",
+      autoApplyEdits: input.hasEditActions || !shouldRunValidation,
+      autoRunValidation: shouldRunValidation,
       confidence: input.confidence,
       thresholds: { autoApply: AUTO_APPLY_THRESHOLD, autoValidate: AUTO_VALIDATE_THRESHOLD },
-      rationale: "Execution policy enables full-auto for approved actions.",
+      rationale: runUntilDoneCommands
+        ? "Execution policy enables full-auto with run-until-done command policy."
+        : "Execution policy enables full-auto for approved actions.",
     };
   }
 
   const preferPreview = input.clientPreferences?.autonomy === "preview_first";
-  if (preferPreview) {
+  if (preferPreview && !unboundedMode) {
     return {
       mode: "preview_only",
       autoApplyEdits: false,
@@ -2109,6 +2216,17 @@ function decideAutonomy(input: {
       confidence: input.confidence,
       thresholds: { autoApply: AUTO_APPLY_THRESHOLD, autoValidate: AUTO_VALIDATE_THRESHOLD },
       rationale: "Client preference requests preview-first behavior.",
+    };
+  }
+
+  if (unboundedMode) {
+    return {
+      mode: "auto_apply_and_validate",
+      autoApplyEdits: true,
+      autoRunValidation: input.hasCommandActions || runUntilDoneCommands,
+      confidence: input.confidence,
+      thresholds: { autoApply: AUTO_APPLY_THRESHOLD, autoValidate: AUTO_VALIDATE_THRESHOLD },
+      rationale: "Unbounded autonomy mode forces auto-apply and run-until-done execution.",
     };
   }
 
@@ -2213,7 +2331,11 @@ export async function guardPlaygroundAccess(params: {
 
 export async function runAssist(
   req: AssistRequest,
-  hooks?: { onToken?: (token: string) => void | Promise<void>; onStatus?: (status: string) => void | Promise<void> },
+  hooks?: {
+    onToken?: (token: string) => void | Promise<void>;
+    onReasoningToken?: (token: string) => void | Promise<void>;
+    onStatus?: (status: string) => void | Promise<void>;
+  },
   runtimeOptions?: AssistRunRuntimeOptions
 ): Promise<AssistResult> {
   const aggressiveAllowed = process.env.PLAYGROUND_ENABLE_AGGRESSIVE_YOLO === "1";
@@ -2396,7 +2518,7 @@ export async function runAssist(
       `Safety profile: ${effectiveSafety}`,
       `Model: ${model}`,
       "",
-      profileToPrompt(req.userProfile, req.clientPreferences),
+      profileToPrompt(req.userProfile, req.clientPreferences, req.autonomy),
       "",
       conversationToPrompt(req.conversationHistory),
       "",
@@ -2433,6 +2555,7 @@ export async function runAssist(
       useStructuredOutput && shouldUseTwoPassCodeGeneration(req.task, codeEditIntent, budgetedContext, effectiveReasoning);
     const allowRawTokenStream =
       !useTwoPass && !hasExecutionIntent(req.task) && (STREAM_RAW_MODEL_TOKENS || !useStructuredOutput);
+    const allowReasoningTokenStream = !useTwoPass;
     const callPrimaryWithModelFallback = async (promptText: string, attachmentsForCall?: AssistAttachment[]) => {
       let lastError: unknown = null;
       for (let idx = 0; idx < modelFallbackChain.length; idx += 1) {
@@ -2455,6 +2578,7 @@ export async function runAssist(
                 maxTokens: Math.max(128, Math.min(req.max_tokens ?? 512, LONG_CONTEXT_LIMIT)),
                 attachments: attachmentsForCall,
                 onToken: allowRawTokenStream ? hooks?.onToken : undefined,
+                onReasoningToken: allowReasoningTokenStream ? hooks?.onReasoningToken : undefined,
                 runtimeApiKey: runtimeOptions?.nvidiaApiKey,
               });
             }
@@ -2464,6 +2588,7 @@ export async function runAssist(
               maxTokens: Math.max(128, Math.min(req.max_tokens ?? 512, LONG_CONTEXT_LIMIT)),
               attachments: attachmentsForCall,
               onToken: allowRawTokenStream ? hooks?.onToken : undefined,
+              onReasoningToken: allowReasoningTokenStream ? hooks?.onReasoningToken : undefined,
             });
           };
           return await callModel();
@@ -2717,12 +2842,23 @@ export async function runAssist(
         repromptStage = "fallback";
         reasonCodes.push("reprompt_fallback_to_clarification");
         logs.push("reprompt_fallback_to_clarification");
-        final =
-          primaryTargetPath
-            ? `I still could not produce a valid patch after recovery passes. I'll target ${primaryTargetPath} on the next run if you resend the request.`
-            : contextAnchorsAvailable
-              ? "I still could not produce a valid patch after recovery passes. I'll use the active IDE context as the target on your next run if you resend the request."
-            : "I need one more detail to generate actionable edits. Please share the exact file path and the target change, or paste the relevant code block.";
+        if (req.autonomy?.noClarifyToUser) {
+          reasonCodes.push("autonomy_no_clarify_enabled");
+          logs.push("autonomy_no_clarify_enabled");
+          final =
+            primaryTargetPath
+              ? `No repository changes were applied in this cycle. Autonomous retry required: no valid patch was produced for ${primaryTargetPath}.`
+              : contextAnchorsAvailable
+                ? "No repository changes were applied in this cycle. Autonomous retry required: no valid patch was produced from active IDE context."
+                : "No repository changes were applied in this cycle. Autonomous retry required: no valid patch was produced.";
+        } else {
+          final =
+            primaryTargetPath
+              ? `No repository changes were applied yet. I still could not produce a valid patch after recovery passes. I'll target ${primaryTargetPath} on the next run if you resend the request.`
+              : contextAnchorsAvailable
+                ? "No repository changes were applied yet. I still could not produce a valid patch after recovery passes. I'll use the active IDE context as the target on your next run if you resend the request."
+                : "No repository changes were applied yet. I need one more detail to generate actionable edits. Please share the exact file path and the target change, or paste the relevant code block.";
+        }
       }
     }
   }
@@ -2751,6 +2887,16 @@ export async function runAssist(
     commands: modelCommands,
     structuredActions,
   });
+  const hasFileActions = actions.some(
+    (action) => action.type === "edit" || action.type === "mkdir" || action.type === "write_file"
+  );
+  const hasCommandActions = actions.some((action) => action.type === "command");
+  const commandOnlyForEditIntent = codeEditIntent && hasCommandActions && !hasFileActions;
+  if (commandOnlyForEditIntent) {
+    reasonCodes.push("edit_intent_command_only_forced_reprompt");
+    logs.push("edit_intent_command_only_forced_reprompt");
+    if (repromptStage === "none") repromptStage = "tool_enforcement";
+  }
   const runnableCommandsCount = actions.filter((action) => action.type === "command").length;
   if (commandCandidatesCount > runnableCommandsCount) {
     logs.push(`dropped_non_shell_commands=${commandCandidatesCount - runnableCommandsCount}`);
@@ -2761,16 +2907,23 @@ export async function runAssist(
     explicitCommandRunIntent,
     decisionMode: decision.mode,
   });
-  const riskBlocked = isHighRiskActionPattern(req.task, actions);
+  const autonomySafetyDisabled =
+    req.autonomy?.safetyFloor === "allow_everything" || req.autonomy?.failsafe === "disabled";
+  const riskBlocked = autonomySafetyDisabled ? false : isHighRiskActionPattern(req.task, actions);
+  if (autonomySafetyDisabled) {
+    reasonCodes.push("autonomy_safety_floor_allow_everything");
+    logs.push("autonomy_safety_floor=allow_everything");
+  }
   const autonomyDecision = decideAutonomy({
     confidence,
     actionsCount: actions.length,
-    hasEditActions: actions.some((action) => action.type === "edit" || action.type === "mkdir" || action.type === "write_file"),
-    hasCommandActions: actions.some((action) => action.type === "command"),
+    hasEditActions: hasFileActions,
+    hasCommandActions,
     explicitCommandRunIntent,
     executionPolicy: req.executionPolicy,
     decisionMode: decision.mode,
     clientPreferences: req.clientPreferences,
+    autonomy: req.autonomy,
     riskBlocked,
   });
   reasonCodes.push(`autonomy_${autonomyDecision.mode}`);
@@ -2791,6 +2944,13 @@ export async function runAssist(
     actionability = {
       summary: "clarification_needed",
       reason: "No actionable edits/commands were produced for this request.",
+    };
+  } else if (codeEditIntent && !hasFileActions) {
+    actionability = {
+      summary: "clarification_needed",
+      reason: hasCommandActions
+        ? "Edit-intent task is incomplete: command-only output cannot satisfy a file-edit request."
+        : "No concrete file-edit actions were produced for this edit request.",
     };
   }
   if (
@@ -2853,8 +3013,9 @@ export async function runAssist(
     }
   }
   if (
-    actions.length === 0 &&
+    !hasFileActions &&
     actionability.summary === "clarification_needed" &&
+    repromptStage !== "fallback" &&
     !isClarificationResponseText(final) &&
     soundsLikeCompletedWorkClaim(final)
   ) {
@@ -2896,6 +3057,34 @@ export async function runAssist(
           ? ["Execute approved actions", "Review audit log", "Create PR summary"]
           : ["Review proposed changes", "Apply edits", "Run validation"];
 
+  const missingRequirements: string[] = [];
+  const addMissingRequirement = (value: string) => {
+    const item = String(value || "").trim();
+    if (!item) return;
+    if (!missingRequirements.includes(item)) missingRequirements.push(item);
+  };
+  const completionEligibleDecisionMode = decision.mode !== "plan";
+  if (completionEligibleDecisionMode && actionability.summary !== "valid_actions") {
+    addMissingRequirement(actionability.summary);
+  }
+  if (completionEligibleDecisionMode && codeEditIntent && !hasFileActions) {
+    addMissingRequirement("file_edit_actions_required");
+  }
+  if (completionEligibleDecisionMode && commandOnlyForEditIntent) {
+    addMissingRequirement("command_only_output_for_edit_intent");
+  }
+  if (completionEligibleDecisionMode && !readOnlyConversationRequest && actions.length === 0) {
+    addMissingRequirement("actionable_actions_required");
+  }
+  if (completionEligibleDecisionMode && req.autonomy?.noClarifyToUser && codeEditIntent && isClarificationResponseText(final)) {
+    addMissingRequirement("clarification_not_allowed");
+  }
+  let completionStatus: "complete" | "incomplete" = missingRequirements.length > 0 ? "incomplete" : "complete";
+  if (!completionEligibleDecisionMode) {
+    completionStatus = "complete";
+    missingRequirements.length = 0;
+  }
+
   return {
     decision,
     intent: {
@@ -2920,5 +3109,7 @@ export async function runAssist(
     nextBestActions,
     repromptStage,
     actionability,
+    completionStatus,
+    missingRequirements,
   };
 }

@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { GlobalSearchBar } from "@/components/search/GlobalSearchBar";
+import { useAutoHideHeader } from "@/lib/hooks/use-auto-hide-header";
 
 const NAV_LINKS = [
   { href: "/playground", label: "Playground" },
@@ -24,6 +25,42 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [planBadge, setPlanBadge] = useState<string | null>(null);
+  const isPlaygroundPage = pathname === "/playground" || pathname.startsWith("/playground/");
+  const headerHidden = useAutoHideHeader({ disabled: menuOpen || isPlaygroundPage });
+  const isSearchPage = pathname === "/search" || pathname.startsWith("/search/");
+  const isLightHeaderPage = isSearchPage;
+  const headerSurfaceClass = isPlaygroundPage
+    ? "border-b border-[#005EB8] bg-[#005EB8]"
+    : isSearchPage
+      ? "border-b border-[#ffffff] bg-[#ffffff]"
+      : "border-b border-[var(--border)] bg-[var(--bg-matte)]";
+  const navLinkClass = isLightHeaderPage
+    ? "px-2 py-1 text-sm text-black hover:text-black/80 transition-colors"
+    : "px-2 py-1 text-sm text-white hover:text-white transition-colors";
+  const authButtonClass = isLightHeaderPage
+    ? "rounded-full bg-black text-white px-3 py-1 text-sm font-medium hover:bg-black/90 transition-colors"
+    : "rounded-full bg-white text-black px-3 py-1 text-sm font-medium hover:bg-white/90 transition-colors";
+  const mobileMenuButtonShellClass = isLightHeaderPage
+    ? "flex h-9 w-10 items-center justify-center rounded-full border border-black/20 bg-black/5"
+    : "flex h-9 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-elevated)]";
+  const mobileMenuButtonClass = isLightHeaderPage
+    ? "flex h-full w-full items-center justify-center text-black"
+    : "flex h-full w-full items-center justify-center text-[var(--text-primary)]";
+  const mobileMenuPanelClass = isLightHeaderPage
+    ? "lg:hidden border-t border-black/10 bg-white"
+    : "lg:hidden border-t border-[var(--border)] bg-[var(--bg-deep)]";
+  const mobileMenuLinkClass = isLightHeaderPage
+    ? "block rounded-lg px-3 py-2 text-sm text-black hover:bg-black/5 hover:text-black transition-colors"
+    : "block rounded-lg px-3 py-2 text-sm text-white hover:bg-white/5 hover:text-white transition-colors";
+  const mobileMenuDividerClass = isLightHeaderPage
+    ? "pt-2 border-t border-black/10 space-y-2"
+    : "pt-2 border-t border-[var(--border)] space-y-2";
+  const mobileMenuSignInClass = isLightHeaderPage
+    ? "block rounded-lg px-3 py-2 text-sm text-black hover:bg-black/5 transition-colors"
+    : "block rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] hover:bg-white/5 transition-colors";
+  const mobileMenuAuthButtonClass = isLightHeaderPage
+    ? "block rounded-lg px-3 py-2 text-sm font-medium bg-black text-white hover:bg-black/90 transition-colors"
+    : "block rounded-lg px-3 py-2 text-sm font-medium bg-white text-black hover:bg-white/90 transition-colors";
 
   useEffect(() => {
     setMenuOpen(false);
@@ -69,7 +106,13 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
   }, [isAuthenticated]);
 
   return (
-    <header className="scroll-stable-layer sticky top-0 z-50 w-full border-b border-[var(--border)] bg-[var(--bg-matte)]">
+    <header
+      className={`scroll-stable-layer sticky top-0 z-50 w-full overflow-hidden transition-[max-height,transform,opacity,border-color,background-color] duration-300 ${headerSurfaceClass} ${
+        headerHidden
+          ? "max-h-0 -translate-y-2 opacity-0 pointer-events-none border-transparent"
+          : "max-h-[40rem] translate-y-0 opacity-100"
+      }`}
+    >
       <div className="mx-auto flex h-16 w-full max-w-[1260px] items-center gap-4 px-4 sm:px-6">
         <Link href="/" className="flex flex-none items-center gap-2">
           <Image
@@ -91,7 +134,7 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
             <Link
               key={link.href}
               href={link.href}
-              className="px-2 py-1 text-sm text-white hover:text-white transition-colors"
+              className={navLinkClass}
             >
               {link.label}
             </Link>
@@ -108,7 +151,7 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
               </span>
               <Link
                 href="/dashboard"
-                className="rounded-full bg-white text-black px-3 py-1 text-sm font-medium hover:bg-white/90 transition-colors"
+                className={authButtonClass}
               >
                 Dashboard
               </Link>
@@ -117,13 +160,13 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
             <>
               <Link
                 href="/auth/signin?callbackUrl=/dashboard"
-                className="px-2 py-1 text-sm text-white hover:text-white transition-colors"
+                className={navLinkClass}
               >
                 Sign in
               </Link>
               <Link
                 href="/auth/signup"
-                className="rounded-full bg-white text-black px-3 py-1 text-sm font-medium hover:bg-white/90 transition-colors"
+                className={authButtonClass}
               >
                 Sign up
               </Link>
@@ -132,11 +175,11 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
         </nav>
 
         <div className="lg:hidden flex flex-none items-center">
-          <div className="flex h-9 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-elevated)]">
+          <div className={mobileMenuButtonShellClass}>
             <button
               type="button"
               onClick={() => setMenuOpen((open) => !open)}
-              className="flex h-full w-full items-center justify-center text-[var(--text-primary)]"
+              className={mobileMenuButtonClass}
               aria-label={menuOpen ? "Close menu" : "Open menu"}
               aria-expanded={menuOpen}
             >
@@ -155,18 +198,18 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
       </div>
 
       {menuOpen && (
-        <div className="lg:hidden border-t border-[var(--border)] bg-[var(--bg-deep)]">
+        <div className={mobileMenuPanelClass}>
           <div className="mx-auto w-full max-w-[1260px] space-y-2 px-4 py-4">
             {NAV_LINKS.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
-                className="block rounded-lg px-3 py-2 text-sm text-white hover:bg-white/5 hover:text-white transition-colors"
+                className={mobileMenuLinkClass}
               >
                 {link.label}
               </Link>
             ))}
-            <div className="pt-2 border-t border-[var(--border)] space-y-2">
+            <div className={mobileMenuDividerClass}>
               {isAuthenticated ? (
                 <>
                   {planBadge ? (
@@ -179,7 +222,7 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
                   </div>
                   <Link
                     href="/dashboard"
-                    className="block rounded-lg px-3 py-2 text-sm font-medium bg-white text-black hover:bg-white/90 transition-colors"
+                    className={mobileMenuAuthButtonClass}
                   >
                     Dashboard
                   </Link>
@@ -188,13 +231,13 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
                 <>
                   <Link
                     href="/auth/signin?callbackUrl=/dashboard"
-                    className="block rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] hover:bg-white/5 transition-colors"
+                    className={mobileMenuSignInClass}
                   >
                     Sign in
                   </Link>
                   <Link
                     href="/auth/signup"
-                    className="block rounded-lg px-3 py-2 text-sm font-medium bg-white text-black hover:bg-white/90 transition-colors"
+                    className={mobileMenuAuthButtonClass}
                   >
                     Sign up
                   </Link>

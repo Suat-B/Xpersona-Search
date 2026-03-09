@@ -8,6 +8,7 @@ import type { ThemePresetId } from "@/lib/theme-presets";
 import { SearchSuggestions, type SearchSuggestionsHandle, type SuggestionAgent } from "./SearchSuggestions";
 import { addRecentSearch } from "@/lib/search-history";
 import { saveScrollPosition } from "@/lib/search/scroll-memory";
+import { useAutoHideHeader } from "@/lib/hooks/use-auto-hide-header";
 
 interface SearchResultsBarProps {
   query: string;
@@ -86,6 +87,7 @@ export function SearchResultsBar({
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<SearchSuggestionsHandle>(null);
   const router = useRouter();
+  const headerHidden = useAutoHideHeader({ disabled: showTools });
 
   const handleSuggestionSelect = (agent: SuggestionAgent) => {
     const params = new URLSearchParams(window.location.search);
@@ -155,7 +157,13 @@ export function SearchResultsBar({
   }, []);
 
   return (
-    <div className="sticky top-0 z-20 bg-[var(--bg-deep)]/95 backdrop-blur-sm border-b border-[var(--border)]">
+    <div
+      className={`sticky top-0 z-20 bg-[var(--bg-deep)]/95 backdrop-blur-sm border-b border-[var(--border)] overflow-hidden transition-[max-height,transform,opacity,border-color] duration-300 ${
+        headerHidden
+          ? "max-h-0 -translate-y-2 opacity-0 pointer-events-none border-transparent"
+          : "max-h-[30rem] translate-y-0 opacity-100"
+      }`}
+    >
       <div className="max-w-4xl mx-auto px-3 sm:px-4 py-3">
         {/* Top row: search */}
         <div className="flex flex-wrap items-stretch gap-2 sm:gap-4">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import Link from "next/link";
 
 type PricingTierKey = "starter" | "builder" | "studio";
 type DemoTab = "plan" | "generate" | "debug";
@@ -126,7 +127,7 @@ function CheckIcon({ className }: { className?: string }) {
   );
 }
 
-function Hero({ onStartTrial, onSeeDemo, isBusy }: { onStartTrial: () => void; onSeeDemo: () => void; isBusy: boolean }) {
+function Hero({ onStartTrial, isBusy }: { onStartTrial: () => void; isBusy: boolean }) {
   return (
     <section className="relative overflow-hidden bg-[var(--light-bg-primary)] px-4 pb-12 pt-12 sm:px-6 sm:pt-16">
       <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
@@ -141,7 +142,8 @@ function Hero({ onStartTrial, onSeeDemo, isBusy }: { onStartTrial: () => void; o
             Introducing Playground 1 ❤️
           </h1>
           <p className="max-w-2xl text-pretty text-base leading-relaxed text-[var(--light-text-secondary)] sm:text-lg">
-            Playground plans, writes, debugs, and executes in your real repo. Less context switching. More shipped features. Made in America &lt;3
+            Trained in America. Benchmarks the same as Kimi K2.5 and Gemini 3 Flash. ❤️ Playground plans, writes,
+            debugs, and executes in your real repo. Less context switching. More shipped features. Made in America ❤️
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <button
@@ -155,15 +157,26 @@ function Hero({ onStartTrial, onSeeDemo, isBusy }: { onStartTrial: () => void; o
               {isBusy ? "Starting checkout..." : "Start 2-day trial"}
               <ArrowRightIcon className="h-4 w-4" />
             </button>
-            <button
+            <Link
+              href="/chat"
               onClick={() => {
-                fireAnalyticsEvent("playground_hero_cta_click", { location: "hero", action: "see_demo" });
-                onSeeDemo();
+                fireAnalyticsEvent("playground_hero_cta_click", { location: "hero", action: "chat" });
               }}
               className="inline-flex items-center gap-2 rounded-2xl border border-[var(--light-border-strong)] bg-white/70 px-6 py-3.5 text-sm font-semibold text-[var(--light-text-primary)] backdrop-blur transition hover:border-[var(--light-accent)]/40 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--light-accent)] focus-visible:ring-offset-2"
             >
               See how it works
-            </button>
+            </Link>
+            <a
+              href="https://marketplace.visualstudio.com/items?itemName=playgroundai.xpersona-playground"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => {
+                fireAnalyticsEvent("playground_hero_cta_click", { location: "hero", action: "ide_extension" });
+              }}
+              className="inline-flex items-center gap-2 rounded-2xl border border-[var(--light-accent)]/30 bg-[var(--light-accent-light)] px-6 py-3.5 text-sm font-semibold text-[var(--light-accent-text)] transition hover:border-[var(--light-accent)]/50 hover:bg-[var(--light-accent-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--light-accent)] focus-visible:ring-offset-2"
+            >
+              IDE Extension {"<3"}
+            </a>
           </div>
           <p className="text-sm text-[var(--light-text-tertiary)]">Card required. Cancel before day 3 to avoid charges.</p>
         </div>
@@ -500,10 +513,6 @@ export function PlaygroundClient() {
   const [isCheckoutStarting, setIsCheckoutStarting] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
-  const scrollToDemo = useCallback(() => {
-    document.getElementById("playground-demo")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, []);
-
   const startCheckout = useCallback(
     async (tier: PricingTierKey) => {
       if (isCheckoutStarting) return;
@@ -552,7 +561,7 @@ export function PlaygroundClient() {
       className="light-mode light-theme relative left-1/2 right-1/2 w-screen -ml-[50vw] -mr-[50vw] overflow-x-hidden bg-[var(--light-bg-primary)] text-[var(--light-text-primary)]"
       style={{ colorScheme: "light" }}
     >
-      <Hero onStartTrial={() => startCheckout("builder")} onSeeDemo={scrollToDemo} isBusy={isCheckoutStarting} />
+      <Hero onStartTrial={() => startCheckout("builder")} isBusy={isCheckoutStarting} />
       <Pricing isYearly={isYearly} setIsYearly={setIsYearly} onStartTrial={startCheckout} isBusy={isCheckoutStarting} />
       <ProofStrip />
       {checkoutError ? <div className="mx-auto max-w-6xl px-4 text-sm text-red-600 sm:px-6">{checkoutError}</div> : null}

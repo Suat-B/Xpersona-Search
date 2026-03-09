@@ -94,6 +94,8 @@ export function buildAssistResponsePayload(input: {
     nextBestActions: result.nextBestActions,
     repromptStage: result.repromptStage,
     actionability: result.actionability,
+    completionStatus: result.completionStatus,
+    missingRequirements: result.missingRequirements,
     traceId: input.traceId,
   };
 }
