@@ -138,10 +138,10 @@ function Hero({ onStartTrial, onSeeDemo, isBusy }: { onStartTrial: () => void; o
             Most people start with Builder
           </div>
           <h1 className="text-balance text-4xl font-black leading-[1.05] text-[var(--light-text-primary)] sm:text-5xl lg:text-6xl">
-            New Large Language Model Made In America ❤️
+            Introducing Playground 1 ❤️
           </h1>
           <p className="max-w-2xl text-pretty text-base leading-relaxed text-[var(--light-text-secondary)] sm:text-lg">
-            Playground plans, writes, debugs, and executes in your real repo. Less context switching. More shipped features.
+            Playground plans, writes, debugs, and executes in your real repo. Less context switching. More shipped features. Made in America &lt;3
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <button
@@ -392,12 +392,15 @@ function Pricing({ isYearly, setIsYearly, onStartTrial, isBusy }: {
                 {isYearly ? <p className="mt-1 text-xs text-[var(--light-text-secondary)]">${tier.yearlyPrice}/yr billed annually</p> : null}
                 <p className="mt-3 text-sm text-[var(--light-text-secondary)]">{tier.description}</p>
                 <ul className="mt-5 space-y-2">
-                  {tier.features.map((feature) => (
-                    <li key={feature} className="flex items-start gap-2 text-sm text-[var(--light-text-secondary)]">
-                      <CheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-[var(--light-accent)]" />
-                      {feature}
-                    </li>
-                  ))}
+                  {tier.features.map((feature) => {
+                    const isUsageLimitFeature = feature.toLowerCase().includes("usage limits");
+                    return (
+                      <li key={feature} className="flex items-start gap-2 text-sm text-[var(--light-text-secondary)]">
+                        <CheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-[var(--light-accent)]" />
+                        <span className={isUsageLimitFeature ? "font-bold text-[var(--light-text-primary)]" : undefined}>{feature}</span>
+                      </li>
+                    );
+                  })}
                 </ul>
                 <button
                   onClick={() => {
@@ -420,7 +423,7 @@ function Pricing({ isYearly, setIsYearly, onStartTrial, isBusy }: {
         </div>
 
         <div className="mt-6 rounded-2xl border border-[var(--light-border)] bg-white/80 p-4 text-sm text-[var(--light-text-secondary)]">
-          Exact usage limits appear at checkout and in your dashboard and may change as capacity is tuned.
+          <span className="font-bold text-[var(--light-text-primary)]">Exact usage limits</span> appear at checkout and in your dashboard and may change as capacity is tuned.
         </div>
       </div>
     </section>
@@ -550,11 +553,11 @@ export function PlaygroundClient() {
       style={{ colorScheme: "light" }}
     >
       <Hero onStartTrial={() => startCheckout("builder")} onSeeDemo={scrollToDemo} isBusy={isCheckoutStarting} />
+      <Pricing isYearly={isYearly} setIsYearly={setIsYearly} onStartTrial={startCheckout} isBusy={isCheckoutStarting} />
       <ProofStrip />
       {checkoutError ? <div className="mx-auto max-w-6xl px-4 text-sm text-red-600 sm:px-6">{checkoutError}</div> : null}
       <Differentiators />
       <Showcase />
-      <Pricing isYearly={isYearly} setIsYearly={setIsYearly} onStartTrial={startCheckout} isBusy={isCheckoutStarting} />
       <TrustAndFaq />
       <FinalCta onStartTrial={() => startCheckout("builder")} isBusy={isCheckoutStarting} />
 

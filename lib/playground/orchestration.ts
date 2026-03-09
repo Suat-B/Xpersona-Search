@@ -68,6 +68,11 @@ export type AssistRequest = {
   clientTrace?: { extensionVersion: string; workspaceHash: string };
 };
 
+type AssistRunRuntimeOptions = {
+  provider?: "auto" | "hf" | "nvidia";
+  nvidiaApiKey?: string;
+};
+
 export type AssistPlan = {
   objective: string;
   constraints: string[];
@@ -130,9 +135,11 @@ type StructuredAssistOutput = {
 };
 
 const HF_ROUTER_BASE_URL = "https://router.huggingface.co/v1";
+const NVIDIA_INTEGRATE_BASE_URL = "https://integrate.api.nvidia.com/v1";
 const STANDARD_CONTEXT_LIMIT = 32_000;
 const LONG_CONTEXT_LIMIT = 262_144;
 const DEFAULT_PLAYGROUND_MODEL = "openai/gpt-oss-20b:fastest";
+const DEFAULT_NVIDIA_MODEL = "qwen/qwen3.5-122b-a10b";
 const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
 const IDENTITY_DENIAL_RESPONSE =
   "I'm Playground 1. I'm not Qwen, and I'm not nscale. I can still help with your task - what would you like to do next?";
@@ -143,6 +150,7 @@ const STREAM_RAW_MODEL_TOKENS = process.env.PLAYGROUND_STREAM_MODEL_TOKENS === "
 const PLAYGROUND_INTELLIGENCE_V2 = process.env.PLAYGROUND_INTELLIGENCE_V2 !== "0";
 const AUTO_APPLY_THRESHOLD = 0.72;
 const AUTO_VALIDATE_THRESHOLD = 0.8;
+type AssistProvider = "hf" | "nvidia";
 
 function resolveModelAlias(model: string | undefined, fallbackModel: string): string {
   const trimmed = (model || "").trim();
@@ -230,6 +238,10 @@ function isLikelyInvalidModelError(message: string): boolean {
   );
 }
 
+function isLikelyModelFallbackEligibleError(message: string): boolean {
+  return isLikelyInvalidModelError(message);
+}
+
 function isLikelyAttachmentUnsupportedError(message: string): boolean {
   const lower = message.toLowerCase();
   return (
@@ -247,8 +259,72 @@ function getHfRouterToken(): string | undefined {
   return process.env.HF_ROUTER_TOKEN || process.env.HF_TOKEN || process.env.HUGGINGFACE_TOKEN;
 }
 
+function getNvidiaToken(runtimeOverride?: string): string | undefined {
+  const direct = String(runtimeOverride || "").trim();
+  if (direct) return direct;
+  return (
+    process.env.PLAYGROUND_NVIDIA_API_KEY ||
+    process.env.NVIDIA_API_KEY ||
+    process.env.NVAPI_KEY ||
+    process.env.NVIDIA_INTEGRATE_API_KEY
+  );
+}
+
+function hasQwenModelHint(model: string | undefined): boolean {
+  const normalized = String(model || "").trim().toLowerCase();
+  if (!normalized) return false;
+  return normalized.startsWith("qwen/") || normalized.includes("qwen");
+}
+
+function resolveAssistProvider(params: {
+  model: string;
+  providerPreference?: string;
+  runtimeNvidiaApiKey?: string;
+}): AssistProvider {
+  const preference = String(params.providerPreference || "").trim().toLowerCase();
+  if (preference === "hf") return "hf";
+  if (preference === "nvidia") return "nvidia";
+  const nvidiaReady = Boolean(getNvidiaToken(params.runtimeNvidiaApiKey));
+  const hfReady = Boolean(getHfRouterToken());
+  if (nvidiaReady) return "nvidia";
+  if (hfReady) return "hf";
+  return "hf";
+}
+
+function resolveProviderModel(provider: AssistProvider, candidateModel: string): string {
+  const raw = String(candidateModel || "").trim();
+  if (provider !== "nvidia") return raw;
+  if (raw && hasQwenModelHint(raw)) return raw;
+  const configured = resolveModelAlias(process.env.PLAYGROUND_NVIDIA_MODEL, DEFAULT_NVIDIA_MODEL);
+  return configured || DEFAULT_NVIDIA_MODEL;
+}
+
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+function describeErrorWithCause(error: unknown): string {
+  if (error instanceof Error) {
+    const base = String(error.message || "unknown error").trim();
+    const cause = (error as Error & { cause?: unknown }).cause;
+    if (!cause) return base;
+    if (cause instanceof Error) {
+      const causeMsg = String(cause.message || "").trim();
+      if (!causeMsg) return base;
+      if (base.toLowerCase().includes(causeMsg.toLowerCase())) return base;
+      return `${base} (cause: ${causeMsg})`;
+    }
+    if (typeof cause === "object" && cause) {
+      const code = String((cause as { code?: unknown }).code || "").trim();
+      const msg = String((cause as { message?: unknown }).message || "").trim();
+      const detail = [code, msg].filter(Boolean).join(" ");
+      if (detail) return `${base} (cause: ${detail})`;
+    }
+    const raw = String(cause).trim();
+    if (!raw) return base;
+    return `${base} (cause: ${raw})`;
+  }
+  return String(error || "unknown error");
 }
 
 function trimContextByBudget(context: AssistContext | undefined, maxTokens: number, strategy: BudgetStrategy): AssistContext | undefined {
@@ -806,7 +882,7 @@ async function callHfChat(params: {
     if (controller.signal.aborted) {
       throw new Error(`HF router request timed out after ${HF_REQUEST_TIMEOUT_MS}ms.`);
     }
-    throw error;
+    throw new Error(`HF router request failed: ${describeErrorWithCause(error)}`);
   } finally {
     clearTimeout(timeout);
   }
@@ -832,6 +908,159 @@ async function callHfChat(params: {
           new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) => {
             timer = setTimeout(
               () => reject(new Error(`HF router stream idle timeout after ${HF_STREAM_IDLE_TIMEOUT_MS}ms.`)),
+              HF_STREAM_IDLE_TIMEOUT_MS
+            );
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+    const findSeparator = (value: string): { index: number; len: number } => {
+      const idxLf = value.indexOf("\n\n");
+      const idxCrlf = value.indexOf("\r\n\r\n");
+      if (idxLf < 0 && idxCrlf < 0) return { index: -1, len: 0 };
+      if (idxLf < 0) return { index: idxCrlf, len: 4 };
+      if (idxCrlf < 0) return { index: idxLf, len: 2 };
+      return idxLf < idxCrlf ? { index: idxLf, len: 2 } : { index: idxCrlf, len: 4 };
+    };
+
+    const handleEventChunk = async (eventChunk: string) => {
+      const lines = eventChunk
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const dataLines = lines
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trim());
+      if (!dataLines.length) return false;
+      const data = dataLines.join("\n");
+      if (!data || data === "[DONE]") return data === "[DONE]";
+
+      try {
+        const parsed = JSON.parse(data) as {
+          choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }>;
+        };
+        const piece =
+          parsed.choices?.[0]?.delta?.content ??
+          parsed.choices?.[0]?.message?.content ??
+          "";
+        if (piece) {
+          out += piece;
+          if (params.onToken) await params.onToken(piece);
+        }
+      } catch {
+        // Ignore malformed or non-JSON chunks.
+      }
+      return false;
+    };
+
+    let streamDone = false;
+    while (!streamDone) {
+      const { done, value } = await readWithIdleTimeout();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let sep = findSeparator(buffer);
+      while (sep.index >= 0) {
+        const eventChunk = buffer.slice(0, sep.index);
+        buffer = buffer.slice(sep.index + sep.len);
+        const sawDone = await handleEventChunk(eventChunk);
+        if (sawDone) {
+          streamDone = true;
+          break;
+        }
+        sep = findSeparator(buffer);
+      }
+    }
+
+    if (!streamDone && buffer.trim()) {
+      await handleEventChunk(buffer);
+    }
+
+    return out.trim();
+  }
+
+  const body = (await r.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const text = body.choices?.[0]?.message?.content?.trim() || "";
+  if (text && params.onToken) await params.onToken(text);
+  return text;
+}
+
+async function callNvidiaChat(params: {
+  model: string;
+  prompt: string;
+  maxTokens: number;
+  attachments?: AssistAttachment[];
+  onToken?: (token: string) => void | Promise<void>;
+  runtimeApiKey?: string;
+}): Promise<string> {
+  const token = getNvidiaToken(params.runtimeApiKey);
+  if (!token) {
+    throw new Error(
+      "NVIDIA provider not configured. Set PLAYGROUND_NVIDIA_API_KEY (or NVIDIA_API_KEY/NVAPI_KEY)."
+    );
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), HF_REQUEST_TIMEOUT_MS);
+  let r: Response;
+  try {
+    r = await fetch(`${NVIDIA_INTEGRATE_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify({
+        model: params.model,
+        stream: true,
+        max_tokens: params.maxTokens,
+        temperature: 0.6,
+        top_p: 0.95,
+        chat_template_kwargs: { enable_thinking: true },
+        messages: [
+          {
+            role: "system",
+            content:
+              `You are Playground AI. Be practical, concise, and execution-oriented. Return plain text suitable for a coding assistant. Be factual and avoid fabrications. If you are unsure, say so and suggest how to verify. If the user corrects you, acknowledge the correction and update your answer. If asked whether you are Qwen or nscale (or what nscale is in your identity/provider context), deny both and state you are ${PUBLIC_PLAYGROUND_MODEL_NAME}.`,
+          },
+          { role: "user", content: buildUserMessageContent(params.prompt, params.attachments) },
+        ],
+      }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`NVIDIA request timed out after ${HF_REQUEST_TIMEOUT_MS}ms.`);
+    }
+    throw new Error(`NVIDIA request failed: ${describeErrorWithCause(error)}`);
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!r.ok) {
+    const msg = (await r.text().catch(() => "")) || `NVIDIA error ${r.status}`;
+    throw new Error(msg);
+  }
+
+  const contentType = r.headers.get("content-type") || "";
+  if (contentType.includes("text/event-stream")) {
+    const reader = r.body?.getReader();
+    if (!reader) return "";
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let out = "";
+    const readWithIdleTimeout = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        return await Promise.race([
+          reader.read(),
+          new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error(`NVIDIA stream idle timeout after ${HF_STREAM_IDLE_TIMEOUT_MS}ms.`)),
               HF_STREAM_IDLE_TIMEOUT_MS
             );
           }),
@@ -973,6 +1202,32 @@ function extractJsonObjectCandidate(text: string): string | null {
   return null;
 }
 
+function patchContainsStructuredPayloadArtifacts(text: string): boolean {
+  const source = normalizeModelText(text).trim();
+  if (!source) return false;
+
+  const directEnvelope =
+    /^\s*\{/.test(source) &&
+    /"final"\s*:/i.test(source) &&
+    /("edits"\s*:|"actions"\s*:|"commands"\s*:)/i.test(source) &&
+    /("path"\s*:|"patch"\s*:)/i.test(source);
+  if (directEnvelope) return true;
+
+  const addedLines = source
+    .split("\n")
+    .filter((line) => line.startsWith("+") && !line.startsWith("+++ "))
+    .map((line) => line.slice(1))
+    .join("\n")
+    .trim();
+  if (!addedLines) return false;
+
+  return (
+    /\{\s*"final"\s*:/i.test(addedLines) &&
+    /("edits"\s*:|"actions"\s*:|"commands"\s*:)/i.test(addedLines) &&
+    /("path"\s*:|"patch"\s*:)/i.test(addedLines)
+  );
+}
+
 function parseStructuredAssistResponse(raw: string): StructuredAssistOutput | null {
   const candidate = extractJsonObjectCandidate(raw);
   if (!candidate) return null;
@@ -992,6 +1247,14 @@ function parseStructuredAssistResponse(raw: string): StructuredAssistOutput | nu
           ? raw.trim()
           : "";
 
+    const looksLikeStructuredPayloadText = (text: string): boolean => {
+      const normalized = normalizeModelText(text).trim();
+      if (!normalized) return false;
+      if (!/^\s*[{[]/.test(normalized)) return false;
+      if (!/"final"\s*:/i.test(normalized)) return false;
+      return /"edits"\s*:/i.test(normalized) || /"actions"\s*:/i.test(normalized) || /"commands"\s*:/i.test(normalized);
+    };
+
     const edits = Array.isArray(parsed.edits)
       ? parsed.edits
           .filter((e): e is { path: string; patch?: string; diff?: string; rationale?: string } => {
@@ -1007,7 +1270,16 @@ function parseStructuredAssistResponse(raw: string): StructuredAssistOutput | nu
             patch: String(e.patch ?? e.diff ?? "").trim(),
             ...(typeof e.rationale === "string" && e.rationale.trim() ? { rationale: e.rationale.trim() } : {}),
           }))
-          .filter((e) => e.path && e.patch && !e.path.includes("..") && !e.path.startsWith("/") && !/^[a-z]:\\/i.test(e.path))
+          .filter(
+            (e) =>
+              e.path &&
+              e.patch &&
+              !e.path.includes("..") &&
+              !e.path.startsWith("/") &&
+              !/^[a-z]:\\/i.test(e.path) &&
+              !looksLikeStructuredPayloadText(e.patch) &&
+              !patchContainsStructuredPayloadArtifacts(e.patch)
+          )
           .slice(0, 20)
       : [];
 
@@ -1028,7 +1300,9 @@ function parseStructuredAssistResponse(raw: string): StructuredAssistOutput | nu
         if (type === "edit") {
           const path = typeof obj.path === "string" ? obj.path.trim() : "";
           const patch = typeof obj.patch === "string" ? obj.patch.trim() : typeof obj.diff === "string" ? obj.diff.trim() : "";
-          if (path && patch) actions.push({ type: "edit", path, patch });
+          if (path && patch && !looksLikeStructuredPayloadText(patch) && !patchContainsStructuredPayloadArtifacts(patch)) {
+            actions.push({ type: "edit", path, patch });
+          }
           continue;
         }
         if (type === "command") {
@@ -1233,8 +1507,8 @@ export function composeWarmAssistantResponse(input: {
       input.autonomyDecision.mode === "preview_only"
         ? "Next action: review the preview, then reply \"apply now\" or use Actions -> Execute Pending Actions."
         : input.autonomyDecision.mode === "auto_apply_and_validate"
-          ? "Next action: changes were auto-applied and validation is running/complete. Review results in Execution and terminal."
-          : "Next action: changes were auto-applied. Review execution details in the Execution panel.";
+          ? "Next action: auto-apply was requested. Confirm applied files and validation results in Execution and terminal."
+          : "Next action: auto-apply was requested. Confirm what was actually applied in the Execution panel.";
     const headline = touched
       ? `I prepared the requested update in ${touched}.`
       : "I prepared an execution plan, but no file targets were identified yet.";
@@ -1296,6 +1570,37 @@ function extractFinalFromJsonLike(raw: string): string | null {
   }
 }
 
+function sanitizeCodeModeFinalText(raw: string): { text: string; changed: boolean } {
+  const normalized = normalizeModelText(raw).trim();
+  if (!normalized) return { text: "", changed: false };
+
+  const looksStructured =
+    looksLikeStructuredActionEnvelope(normalized) ||
+    (/^\s*```(?:json)?/i.test(normalized) && /"final"\s*:/i.test(normalized)) ||
+    (/^\s*[{[]/.test(normalized) && /"final"\s*:/i.test(normalized));
+  if (!looksStructured) {
+    return { text: normalized, changed: normalized !== raw };
+  }
+
+  const extractedFinal = extractFinalFromJsonLike(normalized);
+  if (extractedFinal?.trim()) {
+    const clean = normalizeModelText(extractedFinal).trim();
+    return { text: clean, changed: clean !== normalized };
+  }
+
+  const stripped = normalized
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```$/i, "")
+    .replace(/^\s*\{\s*"final"\s*:\s*/i, "")
+    .replace(/\s*,\s*"edits"\s*:\s*\[[\s\S]*$/i, "")
+    .replace(/\s*,\s*"actions"\s*:\s*\[[\s\S]*$/i, "")
+    .replace(/\s*,\s*"commands"\s*:\s*\[[\s\S]*$/i, "")
+    .replace(/\s*\}\s*$/, "")
+    .trim();
+  if (!stripped) return { text: normalized, changed: false };
+  return { text: stripped, changed: stripped !== normalized };
+}
+
 function isClarificationResponseText(text: string): boolean {
   const normalized = String(text || "").trim().toLowerCase();
   if (!normalized) return false;
@@ -1325,6 +1630,7 @@ function extractUnifiedDiffEdits(raw: string): Array<{ path: string; patch: stri
     const path = normalizeRelativePath((header?.[2] || header?.[1] || "").trim());
     if (!path) continue;
     if (!/^@@\s/m.test(patch) && !/\nnew file mode\s/.test(patch) && !/\ndeleted file mode\s/.test(patch)) continue;
+    if (patchContainsStructuredPayloadArtifacts(patch)) continue;
     out.push({
       path,
       patch,
@@ -1335,7 +1641,22 @@ function extractUnifiedDiffEdits(raw: string): Array<{ path: string; patch: stri
   return out;
 }
 
+function looksLikeStructuredActionEnvelope(raw: string): boolean {
+  const source = normalizeModelText(raw).trim();
+  if (!source) return false;
+  if (!/^\s*[{[]/.test(source)) return false;
+  const hasFinal = /"final"\s*:/i.test(source);
+  const hasEdits = /"edits"\s*:/i.test(source);
+  const hasActions = /"actions"\s*:/i.test(source);
+  const hasCommands = /"commands"\s*:/i.test(source);
+  return hasFinal && (hasEdits || hasActions || hasCommands);
+}
+
 function inferStructuredFallback(raw: string, task: string, targetPath?: string | null): StructuredAssistOutput | null {
+  if (looksLikeStructuredActionEnvelope(raw)) {
+    // Avoid writing schema wrappers like {"final":"...","edits":[...]} into source files.
+    return null;
+  }
   const taskPath = inferPathFromTask(task) || normalizeRelativePath(targetPath || "");
   const edits: Array<{ path: string; patch: string; rationale?: string }> = [];
   const diffEdits = extractUnifiedDiffEdits(raw);
@@ -1846,6 +2167,14 @@ export async function guardPlaygroundAccess(params: {
   | { allowed: true; maxTokens: number; unlimited: boolean }
   | { allowed: false; status: number; error: string; message: string; details?: unknown }
 > {
+  const localBypassEnabled =
+    process.env.PLAYGROUND_LOCAL_BYPASS === "1" ||
+    process.env.NEXT_PUBLIC_PLAYGROUND_LOCAL_BYPASS === "1" ||
+    process.env.NODE_ENV !== "production";
+  if (localBypassEnabled) {
+    return { allowed: true, maxTokens: Math.max(64, params.requestedMaxTokens), unlimited: true };
+  }
+
   const unlimited = hasUnlimitedPlaygroundAccess(params.email);
   if (unlimited) {
     return { allowed: true, maxTokens: Math.max(64, params.requestedMaxTokens), unlimited: true };
@@ -1890,7 +2219,8 @@ export async function guardPlaygroundAccess(params: {
 
 export async function runAssist(
   req: AssistRequest,
-  hooks?: { onToken?: (token: string) => void | Promise<void>; onStatus?: (status: string) => void | Promise<void> }
+  hooks?: { onToken?: (token: string) => void | Promise<void>; onStatus?: (status: string) => void | Promise<void> },
+  runtimeOptions?: AssistRunRuntimeOptions
 ): Promise<AssistResult> {
   const aggressiveAllowed = process.env.PLAYGROUND_ENABLE_AGGRESSIVE_YOLO === "1";
   const effectiveSafety: SafetyProfile =
@@ -1953,10 +2283,22 @@ export async function runAssist(
 
   const longContextRequested = budget.maxTokens > STANDARD_CONTEXT_LIMIT;
   const longContextEnabled = process.env.PLAYGROUND_ENABLE_LONG_CONTEXT === "1";
+  const providerPreference =
+    String(runtimeOptions?.provider || process.env.PLAYGROUND_PROVIDER || "auto")
+      .trim()
+      .toLowerCase() || "auto";
   const fallbackModel = (process.env.PLAYGROUND_MODEL || DEFAULT_PLAYGROUND_MODEL).trim() || DEFAULT_PLAYGROUND_MODEL;
   const requestedModel = resolveModelAlias(req.model, fallbackModel);
   const requestedLongContextModel = resolveModelAlias(process.env.PLAYGROUND_LONG_CONTEXT_MODEL, fallbackModel);
   const model = longContextRequested && longContextEnabled ? requestedLongContextModel : requestedModel;
+  const configuredBackupModel = resolveModelAlias(process.env.PLAYGROUND_BACKUP_MODEL, DEFAULT_PLAYGROUND_MODEL);
+  const modelFallbackChain = Array.from(
+    new Set(
+      [model, fallbackModel, configuredBackupModel, DEFAULT_PLAYGROUND_MODEL]
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean)
+    )
+  );
   let modelUsed = model;
 
   const logs: string[] = [];
@@ -2098,33 +2440,55 @@ export async function runAssist(
     const allowRawTokenStream =
       !useTwoPass && !hasExecutionIntent(req.task) && (STREAM_RAW_MODEL_TOKENS || !useStructuredOutput);
     const callPrimaryWithModelFallback = async (promptText: string, attachmentsForCall?: AssistAttachment[]) => {
-      try {
-        modelUsed = model;
-        return await callHfChat({
-          model,
-          prompt: promptText,
-          maxTokens: Math.max(128, Math.min(req.max_tokens ?? 512, LONG_CONTEXT_LIMIT)),
-          attachments: attachmentsForCall,
-          onToken: allowRawTokenStream ? hooks?.onToken : undefined,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (model !== fallbackModel && isLikelyInvalidModelError(message)) {
-          logs.push(`model_fallback from "${model}" to "${fallbackModel}"`);
-          if (hooks?.onStatus) {
-            await hooks.onStatus("Model unavailable. Retrying with backup model.");
-          }
-          modelUsed = fallbackModel;
-          return callHfChat({
-            model: fallbackModel,
-            prompt: promptText,
-            maxTokens: Math.max(128, Math.min(req.max_tokens ?? 512, LONG_CONTEXT_LIMIT)),
-            attachments: attachmentsForCall,
-            onToken: allowRawTokenStream ? hooks?.onToken : undefined,
+      let lastError: unknown = null;
+      for (let idx = 0; idx < modelFallbackChain.length; idx += 1) {
+        const candidateModel = modelFallbackChain[idx];
+        const nextModel = idx + 1 < modelFallbackChain.length ? modelFallbackChain[idx + 1] : null;
+        try {
+          modelUsed = candidateModel;
+          const provider = resolveAssistProvider({
+            model: candidateModel,
+            providerPreference,
+            runtimeNvidiaApiKey: runtimeOptions?.nvidiaApiKey,
           });
+          const providerModel = resolveProviderModel(provider, candidateModel);
+          logs.push(`provider=${provider} model=${providerModel}`);
+          const callModel = async () => {
+            if (provider === "nvidia") {
+              return callNvidiaChat({
+                model: providerModel,
+                prompt: promptText,
+                maxTokens: Math.max(128, Math.min(req.max_tokens ?? 512, LONG_CONTEXT_LIMIT)),
+                attachments: attachmentsForCall,
+                onToken: allowRawTokenStream ? hooks?.onToken : undefined,
+                runtimeApiKey: runtimeOptions?.nvidiaApiKey,
+              });
+            }
+            return callHfChat({
+              model: providerModel,
+              prompt: promptText,
+              maxTokens: Math.max(128, Math.min(req.max_tokens ?? 512, LONG_CONTEXT_LIMIT)),
+              attachments: attachmentsForCall,
+              onToken: allowRawTokenStream ? hooks?.onToken : undefined,
+            });
+          };
+          return await callModel();
+        } catch (error) {
+          lastError = error;
+          const message = error instanceof Error ? error.message : String(error);
+          if (nextModel && isLikelyModelFallbackEligibleError(message)) {
+            logs.push(
+              `model_fallback from "${candidateModel}" to "${nextModel}" reason="${message.slice(0, 140).replace(/\s+/g, " ")}"`
+            );
+            if (hooks?.onStatus) {
+              await hooks.onStatus("Primary model unavailable. Retrying with backup model.");
+            }
+            continue;
+          }
+          throw error;
         }
-        throw error;
       }
+      throw (lastError instanceof Error ? lastError : new Error(String(lastError || "Model request failed")));
     };
 
     const callWithAttachmentFallback = async (promptText: string, attachmentsForCall?: AssistAttachment[]) => {
@@ -2482,6 +2846,17 @@ export async function runAssist(
       actions,
       autonomyDecision,
     });
+  }
+  if (codeEditIntent) {
+    const sanitizedCodeFinal = sanitizeCodeModeFinalText(final);
+    if (sanitizedCodeFinal.changed) {
+      final = sanitizedCodeFinal.text;
+      logs.push("code_mode_final_sanitized");
+    }
+    if (!final.trim() && edits.length > 0) {
+      final = "Prepared actionable code edits. Review and apply.";
+      logs.push("code_mode_final_defaulted");
+    }
   }
   if (
     actions.length === 0 &&

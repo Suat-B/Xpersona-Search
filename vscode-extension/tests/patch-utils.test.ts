@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { applyUnifiedDiff, extractPatchTargetPath } from "../src/patch-utils";
+import {
+  applyUnifiedDiff,
+  extractPatchTargetPath,
+  patchContainsLeakedPatchArtifacts,
+  patchContainsWrappedToolPayload,
+  recoverUnifiedDiffFromWrappedPayload,
+  textContainsLeakedPatchArtifacts,
+} from "../src/patch-utils";
 
 describe("patch utils", () => {
   it("extracts target path from unified diff", () => {
@@ -154,5 +161,118 @@ describe("patch utils", () => {
     ].join("\n");
     const result = applyUnifiedDiff("a\n", patch);
     expect(result.status).toBe("rejected_invalid_patch");
+  });
+
+  it("detects wrapped tool payload artifacts embedded in added diff lines", () => {
+    const patch = [
+      "diff --git a/a.txt b/a.txt",
+      "--- a/a.txt",
+      "+++ b/a.txt",
+      "@@ -1,1 +1,2 @@",
+      "-alpha",
+      "+{\"final\":\"Updated a.txt\",\"edits\":[{\"path\":\"a.txt\",\"patch\":\"@@ -1,1 +1,1 @@\"}],\"commands\":[]}",
+      "+beta",
+    ].join("\n");
+    expect(patchContainsWrappedToolPayload(patch)).toBe(true);
+  });
+
+  it("rejects patches that contain wrapped tool payload artifacts", () => {
+    const patch = [
+      "diff --git a/a.txt b/a.txt",
+      "--- a/a.txt",
+      "+++ b/a.txt",
+      "@@ -1,1 +1,2 @@",
+      "-alpha",
+      "+{\"final\":\"Updated a.txt\",\"edits\":[{\"path\":\"a.txt\",\"patch\":\"@@ -1,1 +1,1 @@\"}],\"commands\":[]}",
+      "+beta",
+    ].join("\n");
+    const result = applyUnifiedDiff("alpha\n", patch);
+    expect(result.status).toBe("rejected_invalid_patch");
+    expect(result.reason).toContain("wrapped tool payload");
+  });
+
+  it("recovers inner unified diff from wrapped tool payload", () => {
+    const innerPatch = [
+      "diff --git a/a.txt b/a.txt",
+      "--- a/a.txt",
+      "+++ b/a.txt",
+      "@@ -1,1 +1,1 @@",
+      "-alpha",
+      "+beta",
+    ].join("\n");
+    const wrapped = JSON.stringify({
+      final: "Applied change",
+      edits: [{ path: "a.txt", patch: innerPatch }],
+      commands: [],
+    });
+    expect(recoverUnifiedDiffFromWrappedPayload(wrapped)).toBe(innerPatch);
+  });
+
+  it("applies patch after recovering wrapped tool payload", () => {
+    const innerPatch = [
+      "diff --git a/a.txt b/a.txt",
+      "--- a/a.txt",
+      "+++ b/a.txt",
+      "@@ -1,1 +1,1 @@",
+      "-alpha",
+      "+beta",
+    ].join("\n");
+    const wrapped = JSON.stringify({
+      final: "Applied change",
+      edits: [{ path: "a.txt", patch: innerPatch }],
+      commands: [],
+    });
+    const result = applyUnifiedDiff("alpha\n", wrapped);
+    expect(result.status).toBe("applied");
+    expect(result.content).toBe("beta\n");
+  });
+
+  it("detects leaked apply_patch markers in added patch lines", () => {
+    const patch = [
+      "diff --git a/a.ts b/a.ts",
+      "--- a/a.ts",
+      "+++ b/a.ts",
+      "@@ -1,1 +1,6 @@",
+      "-const x = 1;",
+      "+const x = 1;",
+      "+*** Begin Patch",
+      "+*** Update File: a.ts",
+      "+@@ -1,1 +1,1 @@",
+      "+-const x = 1;",
+      "++const x = 2;",
+      "+*** End Patch",
+    ].join("\n");
+    expect(patchContainsLeakedPatchArtifacts(patch)).toBe(true);
+  });
+
+  it("rejects patches that leak diff/apply_patch markers into file content", () => {
+    const patch = [
+      "diff --git a/a.ts b/a.ts",
+      "--- a/a.ts",
+      "+++ b/a.ts",
+      "@@ -1,1 +1,5 @@",
+      "-const value = 1;",
+      "+const value = 1;",
+      "+diff --git a/a.ts b/a.ts",
+      "+--- a/a.ts",
+      "++++ b/a.ts",
+      "+@@ -1,1 +1,1 @@",
+    ].join("\n");
+    const result = applyUnifiedDiff("const value = 1;\n", patch);
+    expect(result.status).toBe("rejected_invalid_patch");
+    expect(result.reason).toContain("leak diff");
+  });
+
+  it("detects leaked patch artifacts in raw write_file content", () => {
+    const content = [
+      "const one = 1;",
+      "*** Begin Patch",
+      "*** Update File: demo.ts",
+      "@@ -1,1 +1,1 @@",
+      "-const one = 1;",
+      "+const one = 2;",
+      "*** End Patch",
+    ].join("\n");
+    expect(textContainsLeakedPatchArtifacts(content)).toBe(true);
   });
 });

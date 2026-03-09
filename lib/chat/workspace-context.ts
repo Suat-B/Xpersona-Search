@@ -119,13 +119,13 @@ const STOP_WORDS = new Set([
   "your",
 ]);
 
-const MAX_SCAN_FILES = 900;
-const MAX_CANDIDATE_FILES = 28;
-const MAX_CONTEXT_FILES = 8;
-const MAX_SNIPPETS = 12;
+const MAX_SCAN_FILES = 1400;
+const MAX_CANDIDATE_FILES = 40;
+const MAX_CONTEXT_FILES = 12;
+const MAX_SNIPPETS = 16;
 const MAX_FILE_BYTES = 300 * 1024;
 const MAX_SCAN_MS = 1_600;
-const MAX_TOTAL_CONTEXT_CHARS = 170_000;
+const MAX_TOTAL_CONTEXT_CHARS = 220_000;
 
 const CATALOG_CACHE_TTL_MS = 60_000;
 let catalogCache: { root: string; at: number; files: WorkspaceFile[] } | null = null;
@@ -438,4 +438,3 @@ export async function buildWorkspaceAssistContext(task: string): Promise<AssistC
 
   return trimContextToMaxChars(context, MAX_TOTAL_CONTEXT_CHARS);
 }
-

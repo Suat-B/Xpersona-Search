@@ -67,8 +67,11 @@ const MAX_TOTAL_CONTEXT_CHARS = 350000;
 const INDEX_MAX_FILE_SIZE = 250 * 1024;
 const INDEX_CHUNK_SIZE = 1200;
 const INDEX_CHUNK_OVERLAP = 180;
-const INDEX_BATCH_SIZE = 400;
+const INDEX_BATCH_SIZE = 500;
 const INDEX_AUTO_INTERVAL_MS = 5 * 60 * 1000;
+const INDEX_AUTO_MIN_INTERVAL_MS = 15 * 60 * 1000;
+const INDEX_AUTO_FILE_LIMIT = 180;
+const INDEX_AUTO_CHUNK_LIMIT = 1200;
 const ATTACHMENT_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const MAX_ATTACHMENTS_PER_REQUEST = 3;
 const MAX_ATTACHMENT_DATAURL_CHARS = 8000000;
@@ -158,6 +161,18 @@ function patchHasLeakedPatchArtifacts(patchText) {
     if (!text)
         return false;
     return (0, patch_utils_1.patchContainsLeakedPatchArtifacts)(text);
+}
+function normalizeIncomingPatchText(patchText) {
+    const raw = String(patchText || "").trim();
+    if (!raw)
+        return { patch: "", recovered: false };
+    const recovered = (0, patch_utils_1.recoverUnifiedDiffFromWrappedPayload)(raw);
+    if (recovered && recovered.trim()) {
+        const normalized = recovered.trim();
+        if (normalized !== raw)
+            return { patch: normalized, recovered: true };
+    }
+    return { patch: raw, recovered: false };
 }
 function isLikelyInvalidModelError(message) {
     const lower = String(message || "").toLowerCase();
@@ -1442,13 +1457,18 @@ class Provider {
             return { status: "no-workspace", chunks: 0, message: "Open a workspace folder to build an index." };
         if (this.indexRunning)
             return { status: "busy", chunks: 0, message: "Index build already in progress." };
+        const manualRun = trigger === "manual";
+        if (!manualRun && this.lastIndexAt > 0 && Date.now() - this.lastIndexAt < INDEX_AUTO_MIN_INTERVAL_MS) {
+            return { status: "ok", chunks: 0, message: "Recent index is still fresh; skipping auto rebuild." };
+        }
         this.indexRunning = true;
         try {
             const include = "**/*.{ts,tsx,js,jsx,json,md,py,go,rs,java,cs,yaml,yml}";
             const exclude = "**/{node_modules,.git,.next,dist,build}/**";
-            const files = await vscode.workspace.findFiles(new vscode.RelativePattern(root, include), new vscode.RelativePattern(root, exclude), 800);
+            const fileLimit = manualRun ? 800 : INDEX_AUTO_FILE_LIMIT;
+            const files = await vscode.workspace.findFiles(new vscode.RelativePattern(root, include), new vscode.RelativePattern(root, exclude), fileLimit);
             const chunks = [];
-            for (const file of files) {
+            filesLoop: for (const file of files) {
                 try {
                     const stat = await vscode.workspace.fs.stat(file);
                     if (stat.type !== vscode.FileType.File || stat.size > INDEX_MAX_FILE_SIZE)
@@ -1470,6 +1490,9 @@ class Provider {
                             content: trimmed,
                             metadata: { language: doc.languageId || languageFromPath(relNorm), trigger },
                         });
+                        if (!manualRun && chunks.length >= INDEX_AUTO_CHUNK_LIMIT) {
+                            break filesLoop;
+                        }
                     }
                 }
                 catch {
@@ -2124,24 +2147,28 @@ class Provider {
                                 : typeof edit?.diff === "string"
                                     ? (edit.diff || "")
                                     : "";
+                            const normalizedPatch = normalizeIncomingPatchText(rawPatch);
                             if (!editPath) {
                                 recordGuardrailIssue("Blocked edit action: missing/invalid target path.");
                                 continue;
                             }
-                            if (!rawPatch.trim()) {
+                            if (!normalizedPatch.patch) {
                                 recordGuardrailIssue(`Blocked edit action for ${editPath}: missing patch/diff content.`);
                                 continue;
                             }
-                            if (patchHasWrappedToolPayloadArtifacts(rawPatch)) {
+                            if (patchHasWrappedToolPayloadArtifacts(normalizedPatch.patch)) {
                                 recordGuardrailIssue(`Blocked edit action for ${editPath}: wrapped tool payload detected in patch.`);
                                 continue;
                             }
-                            if (patchHasLeakedPatchArtifacts(rawPatch)) {
+                            if (patchHasLeakedPatchArtifacts(normalizedPatch.patch)) {
                                 recordGuardrailIssue(`Blocked edit action for ${editPath}: leaked diff/apply_patch markers detected.`);
                                 continue;
                             }
-                            if (editPath && rawPatch.trim()) {
-                                const editPatch = rawPatch.trim();
+                            if (normalizedPatch.recovered) {
+                                addDiagnosticEvent("patch_recovered", `Recovered wrapped patch payload for ${editPath}.`, "info");
+                            }
+                            if (editPath && normalizedPatch.patch) {
+                                const editPatch = normalizedPatch.patch;
                                 this.pendingActions.push({ type: "edit", path: editPath, patch: editPatch });
                                 this.postRun(runThreadId, { type: "editPreview", path: editPath, patch: editPatch });
                             }
@@ -2172,25 +2199,33 @@ class Provider {
                             const type = String(action.type || "").toLowerCase();
                             if (type === "edit") {
                                 const path = typeof action.path === "string" ? String(action.path).trim() : "";
-                                const patch = typeof action.patch === "string" ? String(action.patch).trim() : "";
+                                const patch = typeof action.patch === "string"
+                                    ? String(action.patch).trim()
+                                    : typeof action.diff === "string"
+                                        ? String(action.diff).trim()
+                                        : "";
+                                const normalizedPatch = normalizeIncomingPatchText(patch);
                                 if (!path) {
                                     recordGuardrailIssue("Blocked edit action: missing/invalid target path.");
                                     continue;
                                 }
-                                if (!patch) {
+                                if (!normalizedPatch.patch) {
                                     recordGuardrailIssue(`Blocked edit action for ${path}: missing patch/diff content.`);
                                     continue;
                                 }
-                                if (patchHasWrappedToolPayloadArtifacts(patch)) {
+                                if (patchHasWrappedToolPayloadArtifacts(normalizedPatch.patch)) {
                                     recordGuardrailIssue(`Blocked edit action for ${path}: wrapped tool payload detected in patch.`);
                                     continue;
                                 }
-                                if (patchHasLeakedPatchArtifacts(patch)) {
+                                if (patchHasLeakedPatchArtifacts(normalizedPatch.patch)) {
                                     recordGuardrailIssue(`Blocked edit action for ${path}: leaked diff/apply_patch markers detected.`);
                                     continue;
                                 }
-                                this.pendingActions.push({ type: "edit", path, patch });
-                                this.postRun(runThreadId, { type: "editPreview", path, patch });
+                                if (normalizedPatch.recovered) {
+                                    addDiagnosticEvent("patch_recovered", `Recovered wrapped patch payload for ${path}.`, "info");
+                                }
+                                this.pendingActions.push({ type: "edit", path, patch: normalizedPatch.patch });
+                                this.postRun(runThreadId, { type: "editPreview", path, patch: normalizedPatch.patch });
                                 continue;
                             }
                             if (type === "command") {
@@ -2910,7 +2945,9 @@ class Provider {
         const root = this.getWorkspaceRoot();
         if (!root)
             return { status: "rejected_path_policy", reason: "No workspace folder open." };
-        const patchText = action.patch || action.diff || "";
+        const incomingPatch = action.patch || action.diff || "";
+        const normalizedPatch = normalizeIncomingPatchText(incomingPatch);
+        const patchText = normalizedPatch.patch;
         if (!patchText)
             return { status: "rejected_invalid_patch", reason: "Missing patch/diff content for edit action." };
         if (patchHasWrappedToolPayloadArtifacts(patchText)) {
@@ -4734,6 +4771,14 @@ function html(webview, extensionUri) {
         justify-content: space-between;
         gap: 8px;
         font-size: 12px;
+      }
+      .mention-status {
+        padding: 10px 12px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .mention-empty {
+        color: color-mix(in srgb, var(--fg) 72%, var(--muted) 28%);
       }
       .mention-item:last-child { border-bottom: none; }
       .mention-item.active { background: #111a27; }
@@ -6580,13 +6625,25 @@ function html(webview, extensionUri) {
       .chips {
         display: none !important;
       }
-      /* Final hard lock: dock must always fit panel width */
+      /* Playground AI composer redesign */
       .chat-panel.active #chatDock.dock-shell {
-        width: calc(100% - 12px) !important;
-        max-width: calc(100% - 12px) !important;
-        margin: 0 6px 4px !important;
+        width: calc(100% - 10px) !important;
+        max-width: calc(100% - 10px) !important;
+        margin: 0 5px 6px !important;
         align-self: stretch !important;
         box-sizing: border-box !important;
+        border-radius: 18px !important;
+        border: 1px solid color-mix(in srgb, var(--border) 74%, var(--accent) 26%) !important;
+        background: linear-gradient(
+          180deg,
+          color-mix(in srgb, var(--surface) 94%, var(--accent) 6%) 0%,
+          color-mix(in srgb, var(--surface) 98%, var(--bg-0) 2%) 100%
+        ) !important;
+        padding: 8px 10px !important;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.26) !important;
+      }
+      .chat-panel.active #chatDock .input {
+        padding: 0 !important;
       }
       .chat-panel.active #chatDock .input,
       .chat-panel.active #chatDock .composer-form,
@@ -6595,11 +6652,97 @@ function html(webview, extensionUri) {
         max-width: 100% !important;
         min-width: 0 !important;
       }
+      .chat-panel.active #chatDock .composer-shell {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+        gap: 8px !important;
+        overflow: visible !important;
+        position: relative !important;
+      }
+      .chat-panel.active #chatDock textarea {
+        min-height: 72px !important;
+        max-height: 120px !important;
+        border-radius: 14px !important;
+        border: 1px solid color-mix(in srgb, var(--border) 78%, transparent) !important;
+        background: color-mix(in srgb, var(--bg-0) 86%, var(--surface) 14%) !important;
+        padding: 11px 12px !important;
+        box-sizing: border-box !important;
+      }
+      .chat-panel.active #chatDock .input-actions.minimal {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        flex-wrap: nowrap !important;
+      }
+      .chat-panel.active #chatDock .input-actions.minimal .spacer {
+        display: block !important;
+        flex: 1 1 auto !important;
+        min-width: 4px !important;
+      }
+      .chat-panel.active #chatDock .attach-btn,
+      .chat-panel.active #chatDock .send-round {
+        width: 34px !important;
+        height: 34px !important;
+        min-width: 34px !important;
+        border-radius: 999px !important;
+      }
+      .chat-panel.active #chatDock .context-pill {
+        max-width: 118px !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+      }
+      .chat-panel.active #chatDock #contextTelemetry {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        min-width: 0 !important;
+      }
+      .chat-panel.active #chatDock #contextTelemetryText {
+        display: block !important;
+        min-width: 0 !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+        font-size: 11px !important;
+        opacity: .9 !important;
+      }
+      .chat-panel.active #chatDock #mentionMenu.mention-menu {
+        position: absolute !important;
+        left: 8px !important;
+        right: 8px !important;
+        bottom: calc(100% + 6px) !important;
+        max-height: min(250px, 42vh) !important;
+        overflow: auto !important;
+        z-index: 9999 !important;
+        border: 1px solid color-mix(in srgb, var(--border) 78%, var(--accent) 22%) !important;
+        border-radius: 12px !important;
+        background: color-mix(in srgb, var(--bg-0) 92%, var(--surface) 8%) !important;
+        box-shadow: 0 16px 28px rgba(0, 0, 0, 0.42) !important;
+      }
       @media (max-width: 640px) {
         .chat-panel.active #chatDock.dock-shell {
           width: calc(100% - 6px) !important;
           max-width: calc(100% - 6px) !important;
-          margin: 0 3px 4px !important;
+          margin: 0 3px 6px !important;
+          padding: 7px 8px !important;
+        }
+        .chat-panel.active #chatDock #mentionMenu.mention-menu {
+          left: 6px !important;
+          right: 6px !important;
+          max-height: min(220px, 38vh) !important;
+        }
+        .chat-panel.active #chatDock textarea {
+          min-height: 66px !important;
+          max-height: 104px !important;
+        }
+        .chat-panel.active #chatDock .context-pill {
+          max-width: 86px !important;
+        }
+        .chat-panel.active #chatDock #contextTelemetryText {
+          display: none !important;
         }
       }
       @media (max-height: 480px) {
@@ -6611,94 +6754,1037 @@ function html(webview, extensionUri) {
           min-height: 38px !important;
         }
       }
+      /* Full-width responsive chat layout (final override) */
+      .app,
+      .chat-shell,
+      .stage-shell,
+      .chat-panel.active {
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+      .chat-panel.active {
+        padding: 0 2px 8px !important;
+      }
+      .chat-panel.active #msgs.messages {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 12px 4px 16px !important;
+        gap: 14px !important;
+      }
+      .chat-panel.active .m {
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+      .chat-panel.active .m.a {
+        margin-right: auto !important;
+      }
+      .chat-panel.active .m.a .m-body {
+        max-width: calc(100% - 22px) !important;
+      }
+      .chat-panel.active .m.u {
+        max-width: 92% !important;
+      }
+      .chat-panel.active .jump-wrap {
+        right: 8px !important;
+      }
+      @media (max-width: 640px) {
+        .chat-panel.active {
+          padding: 0 1px 6px !important;
+        }
+        .chat-panel.active #msgs.messages {
+          padding: 10px 2px 12px !important;
+          gap: 12px !important;
+        }
+        .chat-panel.active .m.u {
+          max-width: 96% !important;
+        }
+      }
+      /* Replica redesign overrides */
+      :root {
+        --rep-bg: color-mix(in srgb, var(--vscode-sideBar-background, #000) 88%, #000 12%);
+        --rep-surface: color-mix(in srgb, var(--rep-bg) 88%, var(--vscode-editor-foreground, #fff) 12%);
+        --rep-surface-2: color-mix(in srgb, var(--rep-bg) 82%, var(--vscode-editor-foreground, #fff) 18%);
+        --rep-border: color-mix(in srgb, var(--vscode-editor-foreground, #fff) 17%, transparent);
+        --rep-fg: var(--vscode-editor-foreground, #ededed);
+        --rep-muted: color-mix(in srgb, var(--rep-fg) 62%, transparent);
+      }
+      body {
+        background: var(--rep-bg) !important;
+        color: var(--rep-fg) !important;
+      }
+      .toolbar {
+        display: none !important;
+      }
+      .tabs {
+        display: none !important;
+      }
+      .global-top {
+        display: flex !important;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--rep-border);
+        background: var(--rep-bg);
+      }
+      .brand-block {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .brand-kicker {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: var(--rep-fg);
+      }
+      .toolbar-sub {
+        font-size: 11px;
+        color: var(--rep-muted);
+      }
+      .global-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .menu-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px !important;
+        border: 1px solid var(--rep-border) !important;
+        background: transparent !important;
+        color: var(--rep-fg) !important;
+        padding: 0 !important;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px !important;
+        line-height: 1;
+      }
+      .mode-banner {
+        border-bottom: 1px solid var(--rep-border);
+        background: transparent;
+        color: var(--rep-muted);
+        padding: 6px 12px;
+        font-size: 11px;
+      }
+      .chat-shell {
+        display: flex !important;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        background: var(--rep-bg);
+      }
+      .stage-shell {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+      }
+      .stage-shell .panel {
+        display: none;
+        height: 100%;
+        overflow: auto;
+      }
+      .stage-shell .panel.active {
+        display: block;
+      }
+      #chat.chat-panel.active {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        gap: 8px;
+        padding: 8px 12px 0 !important;
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .chip {
+        border: 1px solid var(--rep-border);
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: 10px;
+        color: var(--rep-muted);
+        background: transparent;
+      }
+      .chat-empty {
+        margin: auto 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: 10px;
+        padding: 10px 0 18px;
+      }
+      .chat-empty-hero-icon {
+        width: 48px;
+        height: 48px;
+        border: 1px solid var(--rep-border);
+        border-radius: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        color: var(--rep-muted);
+      }
+      .chat-empty-title {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 500;
+      }
+      .chat-empty-title strong {
+        font-weight: 700;
+      }
+      .chat-empty-sub {
+        margin: 0;
+        max-width: 380px;
+        font-size: 12px;
+        color: var(--rep-muted);
+        line-height: 1.5;
+      }
+      .chat-empty-history-head {
+        margin: 10px 0 0;
+        width: min(420px, 100%);
+        text-align: left;
+        font-size: 11px;
+        color: var(--rep-muted);
+      }
+      .chat-empty-history-list {
+        width: min(420px, 100%);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .chat-empty-history-row {
+        width: 100%;
+        border: 1px solid var(--rep-border);
+        border-radius: 10px;
+        background: transparent;
+        color: var(--rep-fg);
+        padding: 8px 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .chat-empty-history-row-title {
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .chat-empty-history-row-age {
+        font-size: 11px;
+        color: var(--rep-muted);
+        white-space: nowrap;
+      }
+      .chat-empty-history-empty {
+        text-align: left;
+        font-size: 11px;
+        color: var(--rep-muted);
+      }
+      .chat-empty-actions {
+        margin-top: 6px;
+        display: flex;
+        gap: 6px;
+      }
+      .chat-empty-action {
+        border-radius: 8px !important;
+        border: 1px solid var(--rep-border) !important;
+        background: transparent !important;
+        color: var(--rep-fg) !important;
+        padding: 6px 10px !important;
+        font-size: 11px !important;
+      }
+      #msgs.messages {
+        flex: 1;
+        min-height: 0;
+        margin: 0 !important;
+        padding: 0 0 12px !important;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .m {
+        border: 1px solid var(--rep-border);
+        border-radius: 12px;
+        background: var(--rep-surface);
+      }
+      .m .m-body {
+        padding: 11px 12px;
+        white-space: pre-wrap;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .m .m-time {
+        padding: 0 12px 8px;
+        color: var(--rep-muted);
+        font-size: 10px;
+      }
+      .m.u {
+        margin-left: auto;
+        max-width: 90%;
+        background: var(--rep-surface-2);
+      }
+      .m.e {
+        border-color: var(--err);
+      }
+      .jump-wrap {
+        right: 14px !important;
+        bottom: 132px !important;
+      }
+      .dock-shell {
+        border-top: 0 !important;
+        background: transparent !important;
+        padding: 0 12px 10px !important;
+        margin: 0 !important;
+      }
+      .composer-shell {
+        border: 1px solid var(--rep-border) !important;
+        border-radius: 16px !important;
+        background: var(--rep-bg) !important;
+        padding: 0 !important;
+        overflow: hidden;
+      }
+      .composer-shell textarea {
+        border: 0 !important;
+        background: transparent !important;
+        color: var(--rep-fg) !important;
+        min-height: 58px !important;
+        max-height: 180px !important;
+        padding: 14px 14px 8px !important;
+        font-size: 13px !important;
+      }
+      .composer-shell textarea::placeholder {
+        color: var(--rep-muted) !important;
+      }
+      .input-actions.minimal {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-top: 1px solid var(--rep-border);
+      }
+      .composer-inline-select {
+        max-width: 138px;
+        border: 1px solid var(--rep-border) !important;
+        border-radius: 8px !important;
+        background: transparent !important;
+        color: var(--rep-fg) !important;
+        font-size: 11px !important;
+        padding: 4px 8px !important;
+      }
+      .attach-btn {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px !important;
+        border: 1px solid var(--rep-border) !important;
+        background: transparent !important;
+        color: var(--rep-fg) !important;
+        padding: 0 !important;
+      }
+      .context-toggle-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .context-toggle-pill input {
+        display: none;
+      }
+      .context-pill,
+      .context-auto-badge {
+        color: var(--rep-muted) !important;
+        font-size: 11px !important;
+      }
+      .send-round {
+        width: 30px;
+        height: 30px;
+        border-radius: 50% !important;
+        border: 1px solid var(--rep-border) !important;
+        background: transparent !important;
+        color: var(--rep-fg) !important;
+        padding: 0 !important;
+        font-size: 14px !important;
+      }
+      .queue-pill {
+        font-size: 10px !important;
+        color: var(--rep-muted) !important;
+      }
+      .context-telemetry,
+      .composer-meta,
+      .footer-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 10px 8px;
+        color: var(--rep-muted);
+        font-size: 10px;
+        flex-wrap: wrap;
+      }
+      .composer-meta {
+        padding-top: 0;
+      }
+      .footer-row {
+        padding-top: 2px;
+      }
+      .mention-menu {
+        border: 1px solid var(--rep-border) !important;
+        border-radius: 10px !important;
+        background: var(--rep-bg) !important;
+      }
+      .tasks-head,
+      .history-toolbar {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--rep-border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .tasks-label {
+        font-size: 11px;
+        color: var(--rep-muted);
+      }
+      .task-list,
+      .thread-list,
+      .history-list {
+        padding: 8px 12px;
+      }
+      .task-entry,
+      .thread-row,
+      .history-row {
+        width: 100%;
+        border: 1px solid var(--rep-border);
+        border-radius: 10px;
+        background: transparent;
+        padding: 8px 10px;
+        margin-bottom: 6px;
+      }
+      .task-title,
+      .thread-title,
+      .history-row-title {
+        font-size: 12px;
+        color: var(--rep-fg);
+      }
+      .task-meta,
+      .thread-meta,
+      .history-row-age,
+      .history-row-mode,
+      .history-empty,
+      .history-status {
+        font-size: 11px;
+        color: var(--rep-muted);
+      }
+      .view-all {
+        margin: 0 12px 10px;
+        border: 1px solid var(--rep-border);
+        border-radius: 10px;
+        background: transparent;
+        color: var(--rep-fg);
+        padding: 8px 10px;
+      }
+      .history-shell {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+      .history-search {
+        border-radius: 10px !important;
+        border: 1px solid var(--rep-border) !important;
+        background: transparent !important;
+        color: var(--rep-fg) !important;
+      }
+      .history-filters {
+        display: flex;
+        gap: 8px;
+      }
+      .history-filter,
+      .history-count {
+        font-size: 10px;
+        color: var(--rep-muted);
+      }
+      .threads-overlay-backdrop {
+        background: rgba(0, 0, 0, 0.56) !important;
+      }
+      .action-menu {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+      }
+      .action-menu.hidden {
+        display: none !important;
+      }
+      .action-menu-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.56);
+      }
+      .action-menu-sheet {
+        position: absolute;
+        right: 10px;
+        top: 10px;
+        bottom: 10px;
+        width: min(430px, calc(100% - 20px));
+        border: 1px solid var(--rep-border);
+        border-radius: 14px;
+        background: var(--rep-bg);
+        overflow: auto;
+        padding: 10px;
+      }
+      .action-menu.page-mode {
+        position: static;
+      }
+      .action-menu.page-mode .action-menu-backdrop {
+        display: none;
+      }
+      .action-menu.page-mode .action-menu-sheet {
+        position: static;
+        width: 100%;
+        height: 100%;
+        max-height: none;
+        border: 0;
+        border-radius: 0;
+      }
+      .sheet-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .sheet-title {
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .sheet-sub {
+        font-size: 11px;
+        color: var(--rep-muted);
+      }
+      .sheet-grid {
+        display: grid;
+        gap: 8px;
+      }
+      .sheet-card {
+        border: 1px solid var(--rep-border);
+        border-radius: 10px;
+        background: transparent;
+        padding: 8px;
+      }
+      .sheet-card-title {
+        font-size: 11px;
+        color: var(--rep-muted);
+        margin-bottom: 6px;
+      }
+      .sheet-row {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .sheet-toggle .tool-toggle {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+      }
+      .composer-select,
+      .api-key-input,
+      .action-item,
+      .api-key-save,
+      .sheet-close {
+        border-radius: 8px !important;
+        border: 1px solid var(--rep-border) !important;
+        background: transparent !important;
+        color: var(--rep-fg) !important;
+      }
+      .api-key-row {
+        display: flex;
+        gap: 6px;
+      }
+      .attach-hint,
+      .api-key-hint,
+      .tool-muted {
+        color: var(--rep-muted);
+        font-size: 11px;
+      }
+      @media (max-width: 700px) {
+        .global-top {
+          padding: 10px;
+        }
+        .chat-empty-history-list {
+          width: 100%;
+        }
+        .dock-shell {
+          padding: 0 10px 10px !important;
+        }
+        .menu-icon {
+          width: 26px;
+          height: 26px;
+        }
+      }
+      /* Clean minimal polish */
+      .global-top {
+        padding: 9px 12px !important;
+        /* See-through header */
+        background: color-mix(in srgb, var(--rep-bg) 70%, transparent) !important;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+      }
+      .brand-block {
+        display: flex !important;
+        align-items: center !important;
+        gap: 10px !important;
+      }
+      .brand-name {
+        font-size: 12px !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.01em !important;
+        color: var(--rep-fg) !important;
+      }
+      .brand-kicker {
+        font-size: 11px !important;
+        letter-spacing: 0.18em !important;
+        color: var(--rep-fg) !important;
+        opacity: 0.9;
+      }
+      .toolbar-sub {
+        display: none !important;
+      }
+      .global-actions {
+        gap: 4px !important;
+      }
+      .menu-icon {
+        border: 0 !important;
+        background: transparent !important;
+        color: var(--rep-muted) !important;
+      }
+      .menu-icon:hover {
+        color: var(--rep-fg) !important;
+      }
+      #undoHeader,
+      #backToChatQuick {
+        border: 1px solid var(--rep-border) !important;
+        border-radius: 8px !important;
+        width: auto !important;
+        padding: 0 8px !important;
+      }
+      #chat.chat-panel.active {
+        padding: 6px 12px 0 !important;
+      }
+      .chat-empty {
+        gap: 8px !important;
+        padding: 12px 0 !important;
+      }
+      .chat-empty-hero-icon {
+        width: 42px !important;
+        height: 42px !important;
+      }
+      .chat-empty-title {
+        font-size: 14px !important;
+      }
+      .chat-empty-sub {
+        font-size: 11px !important;
+        max-width: 340px !important;
+      }
+      .chat-empty-actions {
+        display: none !important;
+      }
+      .chat-empty {
+        margin: 0 !important;
+        align-items: stretch !important;
+        text-align: left !important;
+        justify-content: flex-start !important;
+      }
+      .chat-home-recent,
+      .chat-home-hero {
+        width: min(520px, 100%) !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+      }
+      .chat-home-recent {
+        margin-top: 6px !important;
+      }
+      .chat-home-hero {
+        margin-top: 26px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        text-align: center !important;
+        gap: 8px !important;
+        opacity: 0.95;
+      }
+      .chat-empty-history-head {
+        margin: 0 0 6px !important;
+        width: 100% !important;
+      }
+      .chat-empty-history-list {
+        width: 100% !important;
+        gap: 2px !important;
+      }
+      .chat-empty-history-row {
+        border: 0 !important;
+        background: transparent !important;
+        border-radius: 10px !important;
+        padding: 6px 6px 6px 18px !important;
+        position: relative !important;
+      }
+      .chat-empty-history-row::before {
+        content: "" !important;
+        position: absolute !important;
+        left: 6px !important;
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+        width: 4px !important;
+        height: 4px !important;
+        border-radius: 999px !important;
+        background: var(--rep-muted) !important;
+        opacity: 0.9 !important;
+      }
+      .chat-empty-history-row:hover {
+        background: color-mix(in srgb, var(--rep-border) 14%, transparent) !important;
+      }
+      .chat-empty-history-row-title {
+        font-size: 12px !important;
+      }
+      .chat-empty-history-row-age {
+        font-size: 10px !important;
+        opacity: 0.85;
+      }
+      .chat-empty-history-empty {
+        padding-left: 18px !important;
+      }
+      .dock-shell {
+        padding: 0 12px 12px !important;
+      }
+      .composer-shell {
+        border-radius: 14px !important;
+        border-color: color-mix(in srgb, var(--rep-border) 82%, transparent) !important;
+      }
+      .composer-shell textarea {
+        min-height: 50px !important;
+        padding: 12px 14px 8px !important;
+        font-size: 12px !important;
+      }
+      .input-actions.minimal {
+        padding: 7px 10px !important;
+        gap: 6px !important;
+      }
+      .composer-inline-select {
+        border: 0 !important;
+        background: transparent !important;
+        color: var(--rep-muted) !important;
+        max-width: 120px !important;
+        padding: 2px 4px !important;
+      }
+      .composer-inline-select:hover,
+      .composer-inline-select:focus {
+        color: var(--rep-fg) !important;
+      }
+      .context-pill {
+        color: #63b3ff !important;
+      }
+      #queuePill {
+        display: none !important;
+      }
+      #queuePill.show {
+        display: inline-flex !important;
+        color: var(--rep-muted) !important;
+        font-size: 10px !important;
+      }
+      #contextTelemetry,
+      .composer-meta,
+      .footer-row {
+        display: none !important;
+      }
+      .queue-panel {
+        margin: 0 8px 8px !important;
+      }
+      /* Composer hard-fix: prevent collapsed/vertical textarea */
+      #chatDock .input,
+      #chatDock .composer-form,
+      #chatDock .composer-shell {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+        display: flex !important;
+        flex-direction: column !important;
+      }
+      #chatDock textarea#t {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+        display: block !important;
+        resize: none !important;
+        writing-mode: horizontal-tb !important;
+        text-orientation: mixed !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        line-height: 1.45 !important;
+        border: 0 !important;
+        outline: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
+      }
+      #chatDock .input-actions.minimal {
+        border-top: 0 !important;
+      }
+      #chatDock .composer-shell::before,
+      #chatDock .composer-shell::after,
+      #chatDock::before,
+      #chatDock::after {
+        content: none !important;
+        display: none !important;
+      }
+      /* Remove outer dock "box" so we don't get a double-container look */
+      #chatDock.dock-shell {
+        background: transparent !important;
+        border: 0 !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+      }
+
+      /* Override legacy "Playground AI composer redesign" rules that used higher specificity + !important */
+      .chat-panel.active #chatDock.dock-shell {
+        background: transparent !important;
+        border: 0 !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        /* Footer breathing room (like the screenshot dock). */
+        padding: 0 12px 18px !important;
+        margin: 0 !important;
+        position: relative !important;
+        overflow: visible !important;
+        z-index: 120 !important;
+      }
+      .chat-panel.active #chatDock .composer-shell {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 0 !important;
+        /* Ensure the composer always has a visible border. */
+        border: 1px solid rgba(255, 255, 255, 0.32) !important;
+        border-radius: 18px !important;
+        background: rgba(255, 255, 255, 0.05) !important;
+        overflow: hidden !important;
+        box-shadow:
+          0 0 0 1px rgba(255, 255, 255, 0.08) !important,
+          0 12px 32px rgba(0, 0, 0, 0.35) !important;
+        position: relative !important;
+        overflow: visible !important;
+      }
+      .chat-panel.active #chatDock textarea#t {
+        border: 0 !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+        padding: 12px 14px 10px !important;
+        min-height: 56px !important;
+        max-height: 160px !important;
+      }
+      .chat-panel.active #chatDock .input-actions.minimal {
+        border-top: 1px solid rgba(255, 255, 255, 0.18) !important;
+        background: transparent !important;
+        padding: 8px 10px !important;
+      }
+      .chat-panel.active #chatDock .composer-shell:focus-within {
+        border-color: rgba(255, 255, 255, 0.44) !important;
+        box-shadow:
+          0 0 0 1px rgba(255, 255, 255, 0.18),
+          0 12px 32px rgba(0, 0, 0, 0.4) !important;
+      }
+      /* Keep mention menu visible above chat bubbles. */
+      .chat-panel.active #chatDock .input,
+      .chat-panel.active #chatDock .composer-form,
+      .chat-panel.active #chatDock .composer-shell {
+        overflow: visible !important;
+      }
+      .chat-panel.active #chatDock #mentionMenu.mention-menu {
+        position: absolute !important;
+        left: 10px !important;
+        right: 10px !important;
+        bottom: calc(100% + 10px) !important;
+        max-height: min(260px, 46vh) !important;
+        overflow: auto !important;
+        z-index: 99999 !important;
+        border: 1px solid rgba(255, 255, 255, 0.35) !important;
+        border-radius: 12px !important;
+        background: rgba(18, 18, 18, 0.94) !important;
+        box-shadow: 0 18px 32px rgba(0, 0, 0, 0.55) !important;
+      }
+
+      /* iOS-like chat bubbles (final override) */
+      .chat-panel.active #msgs.messages {
+        padding: 14px 12px 18px !important;
+        gap: 8px !important;
+      }
+      .chat-panel.active #msgs.messages .m {
+        width: auto !important;
+        max-width: min(78%, 620px) !important;
+        border: 0 !important;
+        background: transparent !important;
+        border-radius: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 3px !important;
+      }
+      .chat-panel.active #msgs.messages .m::before {
+        content: none !important;
+        display: none !important;
+      }
+      .chat-panel.active #msgs.messages .m .m-body {
+        padding: 10px 12px !important;
+        border-radius: 18px !important;
+        border: 1px solid color-mix(in srgb, var(--rep-fg) 14%, transparent) !important;
+        background: color-mix(in srgb, var(--rep-fg) 7%, var(--rep-bg) 93%) !important;
+        box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22) !important;
+      }
+      .chat-panel.active #msgs.messages .m .m-time {
+        padding: 0 6px !important;
+        font-size: 10px !important;
+        color: var(--rep-muted) !important;
+        opacity: 0.9;
+      }
+      .chat-panel.active #msgs.messages .m.a {
+        align-self: flex-start !important;
+        margin: 0 auto 0 0 !important;
+      }
+      .chat-panel.active #msgs.messages .m.a .m-body {
+        border-radius: 18px 18px 18px 6px !important;
+      }
+      .chat-panel.active #msgs.messages .m.a .m-time {
+        text-align: left !important;
+      }
+      .chat-panel.active #msgs.messages .m.u {
+        align-self: flex-end !important;
+        margin: 0 0 0 auto !important;
+      }
+      .chat-panel.active #msgs.messages .m.u .m-body {
+        background: color-mix(in srgb, var(--rep-fg) 11%, var(--rep-bg) 89%) !important;
+        border-color: color-mix(in srgb, var(--rep-fg) 17%, transparent) !important;
+        border-radius: 18px 18px 6px 18px !important;
+      }
+      .chat-panel.active #msgs.messages .m.u .m-time {
+        text-align: right !important;
+      }
+      .chat-panel.active #msgs.messages .m.e .m-body {
+        border-color: var(--err) !important;
+      }
+      .chat-panel.active #msgs.messages .m.cmd .m-body {
+        background: transparent !important;
+        border: 1px dashed color-mix(in srgb, var(--rep-fg) 18%, transparent) !important;
+        box-shadow: none !important;
+        font-size: 11px !important;
+        opacity: 0.95;
+      }
+      .chat-panel.active #msgs.messages .m.change,
+      .chat-panel.active #msgs.messages .m.diagnostics {
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+      .chat-panel.active #msgs.messages .m.change .m-body,
+      .chat-panel.active #msgs.messages .m.diagnostics .m-body {
+        border-radius: 12px !important;
+      }
+      @media (max-width: 700px) {
+        .chat-panel.active #msgs.messages .m {
+          max-width: 86% !important;
+        }
+      }
+
+      /* Fix native select dropdown contrast (reasoning/model). */
+      .composer-inline-select,
+      .composer-select,
+      .api-key-input {
+        color-scheme: dark !important;
+      }
+      .composer-inline-select option,
+      .composer-select option {
+        background: var(--rep-bg) !important;
+        color: var(--rep-fg) !important;
+      }
     </style>
   </head>
   <body>
     <div id="jsGate" class="js-gate" role="status" aria-live="polite">
       <div class="js-gate-card">
-        <div class="js-gate-title">Loading Playground AI UI…</div>
-        <div class="js-gate-sub">If this doesn’t disappear, run <span class="kbd">Developer: Reload Window</span>.</div>
+        <div class="js-gate-title">Loading Playground UI...</div>
+        <div class="js-gate-sub">If this does not disappear, run <span class="kbd">Developer: Reload Window</span>.</div>
       </div>
     </div>
     <div id="setup" class="setup">
       <div class="setup-card">
-        <h3>Connect Playground AI</h3>
-        <p>Sign in with your Playground account (recommended), or paste an API key.</p>
-        <button id="signInSetup" class="primary" type="button">Sign in with Browser</button>
-        <div style="height:10px"></div>
-        <div style="opacity:.7;font-size:12px">or</div>
-        <div style="height:10px"></div>
-        <input id="k" type="password" placeholder="xp_..." />
+        <h3>Connect Playground</h3>
+        <p>Use browser sign-in or paste an API key.</p>
+        <button id="signInSetup" class="primary" type="button">Sign in with browser</button>
         <div style="height:8px"></div>
+        <div style="opacity:.7;font-size:12px">or</div>
+        <div style="height:8px"></div>
+        <input id="k" type="password" placeholder="xp_..." />
+        <div style="height:6px"></div>
         <button id="ks" class="primary">Save API Key</button>
       </div>
     </div>
 
     <div id="app" class="app">
-      <div class="toolbar">
-        <div class="toolbar-row">
-          <span class="title">PLAYGROUND AI</span>
-          <span class="toolbar-sub">Playground AI assistant</span>
-          <div class="spacer"></div>
-          <span id="ac" class="pill">images:0</span>
-          <span class="pill">Local tools: on</span>
+      <div class="global-top">
+        <div class="brand-block">
+          <span class="brand-name" title="Playground AI">Playground AI</span>
+          <span class="brand-kicker">CHAT</span>
         </div>
-        <div class="toolbar-row">
-          <select id="mode">
-            <option value="auto">Mode: Auto</option>
-            <option value="plan">Mode: Plan</option>
-            <option value="yolo">Mode: Full access</option>
-          </select>
-          <select id="safety">
-            <option value="standard">Safety: Standard</option>
-            <option value="aggressive">Safety: Aggressive</option>
-          </select>
-          <label class="pill"><input id="parallel" type="checkbox"> Parallel agents</label>
-          <button id="hist" class="ghost">History</button>
-          <button id="rep" class="ghost">Replay</button>
-          <button id="idx" class="ghost">Rebuild Index</button>
+        <div class="global-actions">
+          <button id="newThreadQuick" type="button" class="menu-icon quick-new" aria-label="Start new chat" title="New chat">&#43;</button>
+          <button id="historyQuick" type="button" class="menu-icon" aria-label="Open tasks" title="Tasks">&#8635;</button>
+          <button id="historyHeader" type="button" class="menu-icon hidden" aria-label="Open tasks" title="Tasks">&#8635;</button>
+          <button id="actionMenuBtn" type="button" class="menu-icon" aria-label="Settings" title="Settings" aria-expanded="false">&#9881;</button>
+          <button id="undoHeader" type="button" class="menu-icon hidden" aria-label="Undo last changes" title="Undo last changes">Undo</button>
+          <button id="backToChatQuick" type="button" class="menu-icon panel-icon hidden" aria-label="Back to chat" title="Back to chat">&#8592;</button>
         </div>
       </div>
-
       <div class="tabs">
         <button class="tab active" data-p="chat">Chat</button>
-        <button class="tab" data-p="timeline">Timeline</button>
+        <button class="tab" data-p="stageThreads">Tasks</button>
         <button class="tab" data-p="history">History</button>
         <button class="tab" data-p="index">Index</button>
         <button class="tab" data-p="agents">Agents</button>
         <button class="tab" data-p="exec">Execution</button>
       </div>
-      <div class="global-top">
-        <div class="brand-block">
-          <span class="brand-kicker">PLAYGROUND AI</span>
-        </div>
-        <div class="global-actions">
-          <button id="newThreadQuick" type="button" class="menu-icon quick-new" aria-label="Start new chat" title="New chat">&#43;</button>
-          <button id="historyHeader" type="button" class="menu-icon" aria-label="Open tasks" title="Tasks">&#9776;</button>
-          <button id="actionMenuBtn" type="button" class="menu-icon" aria-label="Settings" title="Settings" aria-expanded="false">&#9881;</button>
-          <button id="undoHeader" type="button" class="menu-icon hidden" aria-label="Undo last changes" title="Undo last changes">&#8630;</button>
-          <button id="backToChatQuick" type="button" class="menu-icon panel-icon hidden" aria-label="Back to blank stage" title="Back to blank stage">&#8592;</button>
-        </div>
-      </div>
-      <div id="modeBanner" class="mode-banner hidden">Plan mode active: I will plan before acting.</div>
+      <div id="modeBanner" class="mode-banner hidden">Plan mode enabled. I will propose steps before making changes.</div>
 
       <div class="chat-shell" role="region" aria-label="Playground chat">
         <div class="stage-shell" role="region" aria-label="Stage">
-          <div id="chat" class="panel chat-panel" aria-label="Chat">
+          <div id="chat" class="panel chat-panel active" aria-label="Chat">
             <div id="chips" class="chips"></div>
+            <div id="chatEmpty" class="chat-empty">
+              <div class="chat-home-recent" aria-label="Recent chats">
+                <p class="chat-empty-history-head">Recent chats</p>
+                <div id="chatEmptyHistoryList" class="chat-empty-history-list">
+                  <div class="chat-empty-history-empty">No conversations yet.</div>
+                </div>
+              </div>
+              <div class="chat-home-hero" aria-hidden="true">
+                <div class="chat-empty-hero-icon">&#x25A3;</div>
+                <p class="chat-empty-title">Work with <strong>Playground 1</strong></p>
+                <p class="chat-empty-sub">Automates routine development tasks end-to-end for faster and more efficient delivery.</p>
+              </div>
+              <div class="chat-empty-actions">
+                <button id="newThreadBtn" type="button" class="chat-empty-action">New chat</button>
+                <button id="chatEmptyHistory" type="button" class="chat-empty-action">History</button>
+                <button id="chatEmptySettings" type="button" class="chat-empty-action">Settings</button>
+              </div>
+            </div>
             <div id="msgs" class="messages"></div>
             <div class="jump-wrap">
-              <button id="jumpLatest" class="jump-btn" type="button" aria-label="Jump to latest" title="Jump to latest">&#8595;</button>
+              <button id="jumpLatest" class="jump-btn" type="button" aria-label="Jump to latest" title="Jump to latest">Latest</button>
             </div>
           </div>
           <div id="stageBlank" class="panel" aria-label="Blank stage"></div>
-          <div id="stageThreads" class="panel active" aria-label="Tasks">
+          <div id="stageThreads" class="panel" aria-label="Tasks">
             <div class="tasks-head">
               <span class="tasks-label">Tasks</span>
+              <button id="closeThreadsPopup" type="button" class="menu-icon hidden" aria-label="Close tasks panel" title="Close tasks panel">Close</button>
             </div>
             <div id="taskList" class="task-list">No task history yet.</div>
             <button id="viewAllTasks" class="view-all" type="button">View all (0)</button>
-            <div id="threadList" class="thread-list hidden-panel"></div>
+            <div id="threadList" class="thread-list"></div>
           </div>
           <div id="timeline" class="panel"></div>
           <div id="history" class="panel"></div>
@@ -6712,13 +7798,22 @@ function html(webview, extensionUri) {
           <div class="input">
             <form id="composerForm" class="composer-form" novalidate>
               <div class="composer-shell">
-                <textarea id="t" placeholder="Ask Playground AI anything, @ to add files, / for commands" enterkeyhint="send"></textarea>
+                <textarea id="t" placeholder="Ask Playground anything, @ to add files, / for commands" enterkeyhint="send"></textarea>
                 <div id="mentionMenu" class="mention-menu hidden" role="listbox" aria-label="Mention suggestions"></div>
                 <div class="input-actions minimal">
                   <button id="uploadBtn" class="icon-btn attach-btn" type="button" aria-label="Attach image" title="Attach">+</button>
+                  <select id="modelSel" class="composer-inline-select">
+                    <option value="${DEFAULT_PLAYGROUND_MODEL}">${modelLabelForUi(DEFAULT_PLAYGROUND_MODEL)}</option>
+                  </select>
+                  <select id="reasonSel" class="composer-inline-select">
+                    <option value="low">Low</option>
+                    <option value="medium" selected>Medium</option>
+                    <option value="high">High</option>
+                    <option value="max">Max</option>
+                  </select>
                   <label class="context-toggle-pill" for="ctxToggle" title="Toggle IDE context">
                     <input id="ctxToggle" type="checkbox" checked />
-                    <span id="contextPill" class="context-pill">IDE Context: ON</span>
+                    <span id="contextPill" class="context-pill">IDE Context: AUTO</span>
                   </label>
                   <div class="spacer"></div>
                   <button id="s" type="button" class="primary send-round" aria-label="Send">&#8593;</button>
@@ -6750,11 +7845,11 @@ function html(webview, extensionUri) {
                     <div class="sheet-head">
                       <div>
                         <div class="sheet-title">Settings</div>
-                        <div class="sheet-sub">Session, model, and account controls.</div>
+                        <div class="sheet-sub">Session, model, and account controls</div>
                       </div>
                       <div class="sheet-head-actions">
                         <button id="authSignOutQuick" class="action-item" type="button" style="display:none">Sign out</button>
-                        <button id="actionMenuClose" type="button" class="sheet-close" aria-label="Close settings">x</button>
+                        <button id="actionMenuClose" type="button" class="sheet-close" aria-label="Close settings">Close</button>
                       </div>
                     </div>
 
@@ -6766,12 +7861,6 @@ function html(webview, extensionUri) {
                             <option value="auto">Mode: Auto</option>
                             <option value="plan">Mode: Plan</option>
                             <option value="yolo">Mode: Full access</option>
-                          </select>
-                          <select id="reasonSel" class="composer-select">
-                            <option value="low">Low</option>
-                            <option value="medium" selected>Medium</option>
-                            <option value="high">High</option>
-                            <option value="max">Extra High</option>
                           </select>
                         </div>
                         <div class="sheet-row sheet-toggle">
@@ -6793,9 +7882,7 @@ function html(webview, extensionUri) {
                       <div class="sheet-card">
                         <div class="sheet-card-title">Model</div>
                         <div class="sheet-row">
-                          <select id="modelSel" class="composer-select">
-                            <option value="${DEFAULT_PLAYGROUND_MODEL}">${modelLabelForUi(DEFAULT_PLAYGROUND_MODEL)}</option>
-                          </select>
+                          <span class="tool-muted">Model and reasoning are controlled in the composer bar.</span>
                         </div>
                       </div>
                       <div class="sheet-card">
@@ -6820,16 +7907,20 @@ function html(webview, extensionUri) {
                         <div class="sheet-card-title">Attachments</div>
                         <div class="sheet-row">
                           <span id="uploadCount" class="tool-muted">No images selected.</span>
-                          <span class="tool-muted">PNG/JPEG/WEBP, up to 3 images, 4MB each.</span>
+                          <span class="tool-muted">PNG/JPEG/WEBP, up to 3 images, 4 MB each.</span>
                         </div>
                       </div>
-
-                    <div class="sheet-card">
-                      <div class="sheet-card-title">Utilities</div>
-                      <div class="sheet-grid">
-                        <button id="c" class="action-item" type="button">Clear Chat</button>
-                        <button class="action-item" type="button" data-menu-action="replay">Replay Session</button>
-                        <button class="action-item" type="button" data-menu-action="indexRebuild">Rebuild Index</button>
+                      <div class="sheet-card">
+                        <div class="sheet-card-title">Utilities</div>
+                        <div class="sheet-grid">
+                          <button id="c" class="action-item" type="button">Clear chat</button>
+                          <button id="undoLastBtn" class="action-item" type="button">Undo last changes</button>
+                          <button id="histQuick" class="action-item" type="button">Open tasks</button>
+                          <button id="repQuick" class="action-item" type="button">Replay session</button>
+                          <button id="idxQuick" class="action-item" type="button">Rebuild index</button>
+                          <button class="action-item" type="button" data-menu-action="replay">Replay session</button>
+                          <button class="action-item" type="button" data-menu-action="indexRebuild">Rebuild index</button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -6839,9 +7930,8 @@ function html(webview, extensionUri) {
               <div id="attachHint" class="attach-hint">No images attached.</div>
               <div class="footer-row">
                 <span id="runState" class="footer-muted">Local</span>
-                <span id="permState" class="footer-accent">Full access</span>
+                <span id="permState" class="footer-accent">Workspace tools on</span>
                 <span id="usagePct" class="footer-muted">0%</span>
-              </div>
               </div>
             </form>
           </div>

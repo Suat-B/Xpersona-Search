@@ -202,6 +202,8 @@ export async function POST(request: NextRequest): Promise<Response> {
   const traceId = getOrCreateRequestId(request);
   const stream = Boolean(body.stream);
   let sessionId = body.historySessionId;
+  const requestedHistorySessionId = sessionId;
+  let recoveredStaleHistorySession = false;
   if (!sessionId) {
     const created = await createSession({
       userId: auth.userId,
@@ -215,7 +217,20 @@ export async function POST(request: NextRequest): Promise<Response> {
   } else {
     const existing = await getSessionById({ userId: auth.userId, sessionId });
     if (!existing) {
-      return badRequest(request, "Unknown historySessionId");
+      const created = await createSession({
+        userId: auth.userId,
+        title: body.task.slice(0, 80),
+        mode: body.mode ?? "auto",
+        workspaceFingerprint: body.clientTrace?.workspaceHash,
+        metadata: {
+          source: "assist",
+          workflowIntentId: body.workflowIntentId ?? null,
+          recoveredFromHistorySessionId: sessionId,
+        },
+        traceId,
+      });
+      sessionId = created.id;
+      recoveredStaleHistorySession = true;
     }
   }
 
@@ -231,6 +246,9 @@ export async function POST(request: NextRequest): Promise<Response> {
     persisted: persistedConversationHistory,
     fromClient: body.conversationHistory,
   });
+  if (recoveredStaleHistorySession && requestedHistorySessionId) {
+    priorConversationHistory = [];
+  }
   const contextBudgetMax = Math.max(1024, body.contextBudget?.maxTokens ?? 8192);
   const historyTokens = estimateMessagesTokens(
     priorConversationHistory.map((turn) => ({ content: turn.content }))
@@ -359,7 +377,11 @@ export async function POST(request: NextRequest): Promise<Response> {
       }).catch(() => {});
       return runResult;
     });
-    return ok(request, buildAssistResponsePayload({ sessionId, traceId, result }));
+    const payload = buildAssistResponsePayload({ sessionId, traceId, result });
+    if (recoveredStaleHistorySession && requestedHistorySessionId) {
+      payload.logs = [...(payload.logs || []), "session_recovered_from_stale_history_session_id"];
+    }
+    return ok(request, payload);
   }
 
   const { readable, writable } = new TransformStream();
@@ -383,6 +405,16 @@ export async function POST(request: NextRequest): Promise<Response> {
   const wasQueued = isSessionQueued(sessionId);
   if (wasQueued) {
     void writer.write(encoder.encode(sse({ event: "status", data: "Queued behind another request" })));
+  }
+  if (recoveredStaleHistorySession && requestedHistorySessionId) {
+    void writer.write(
+      encoder.encode(
+        sse({
+          event: "status",
+          data: "Recovered stale session id and continued with a fresh session.",
+        })
+      )
+    );
   }
 
   void (async () => {

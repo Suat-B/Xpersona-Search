@@ -69,7 +69,7 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
   }, [isAuthenticated]);
 
   return (
-    <header className="scroll-stable-layer sticky top-0 z-50 w-full border-b border-[var(--border)] bg-[var(--bg-card)] backdrop-blur-xl">
+    <header className="scroll-stable-layer sticky top-0 z-50 w-full border-b border-[var(--border)] bg-[var(--bg-matte)]">
       <div className="mx-auto flex h-16 w-full max-w-[1260px] items-center gap-4 px-4 sm:px-6">
         <Link href="/" className="flex flex-none items-center gap-2">
           <Image
@@ -155,7 +155,7 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
       </div>
 
       {menuOpen && (
-        <div className="lg:hidden border-t border-[var(--border)] bg-[var(--bg-deep)]/95 backdrop-blur-xl">
+        <div className="lg:hidden border-t border-[var(--border)] bg-[var(--bg-deep)]">
           <div className="mx-auto w-full max-w-[1260px] space-y-2 px-4 py-4">
             {NAV_LINKS.map((link) => (
               <Link

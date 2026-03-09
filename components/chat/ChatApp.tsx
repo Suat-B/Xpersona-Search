@@ -102,6 +102,44 @@ function prettyTime(iso: string | null): string {
   });
 }
 
+function extractFinalFromStructuredText(raw: string): string | null {
+  const text = String(raw || "").trim();
+  if (!text) return null;
+  const candidates: string[] = [text];
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
+  if (fenced?.trim()) candidates.push(fenced.trim());
+
+  for (const candidate of candidates) {
+    const attempts = [candidate, candidate.replace(/\\"/g, '"')];
+    for (const attempt of attempts) {
+      try {
+        const parsed = JSON.parse(attempt) as { final?: unknown };
+        if (typeof parsed.final === "string" && parsed.final.trim()) {
+          return parsed.final.trim();
+        }
+      } catch {
+        // Ignore parse failures and keep trying other candidates.
+      }
+    }
+  }
+
+  const unescaped = text.includes('\\"final\\"') ? text.replace(/\\"/g, '"') : text;
+  const match = unescaped.match(/"final"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+  if (!match?.[1]) return null;
+  try {
+    return JSON.parse(`"${match[1]}"`);
+  } catch {
+    return match[1].replace(/\\n/g, "\n").trim();
+  }
+}
+
+function normalizeAssistantFinalText(raw: string): string {
+  const text = String(raw || "").trim();
+  if (!text) return "";
+  const extracted = extractFinalFromStructuredText(text);
+  return extracted?.trim() ? extracted.trim() : text;
+}
+
 function AssistantMessage({ message }: { message: ChatMessage }) {
   if (message.pending && !message.content.trim()) {
     return (
@@ -438,7 +476,7 @@ export function ChatApp() {
             assistantText += parsed.data;
             setAssistant(assistantText, true);
           } else if (parsed.event === "final" && typeof parsed.data === "string") {
-            assistantText = parsed.data;
+            assistantText = normalizeAssistantFinalText(parsed.data);
             setAssistant(assistantText, false);
             setStatusText(null);
           } else if (parsed.event === "status" && typeof parsed.data === "string") {
@@ -462,6 +500,7 @@ export function ChatApp() {
 
         if (!done && buffer.trim()) processFrame(buffer);
 
+        assistantText = normalizeAssistantFinalText(assistantText);
         if (!assistantText.trim()) {
           assistantText = "No response received.";
         }
@@ -539,7 +578,9 @@ export function ChatApp() {
         {statusText || "Enter to send, made with love in America."}
       </div>
       <p className="chat-editorial-subhint">
-        <span className="chat-editorial-subhint-label">Playground for Coding</span>
+        <Link href="/playground" className="chat-editorial-subhint-label">
+          Playground for Coding - $2.00 - $5.00 - $10.00
+        </Link>
       </p>
     </form>
   );

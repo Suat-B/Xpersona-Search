@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.patchContainsWrappedToolPayload = patchContainsWrappedToolPayload;
+exports.recoverUnifiedDiffFromWrappedPayload = recoverUnifiedDiffFromWrappedPayload;
 exports.textContainsLeakedPatchArtifacts = textContainsLeakedPatchArtifacts;
 exports.patchContainsLeakedPatchArtifacts = patchContainsLeakedPatchArtifacts;
 exports.extractPatchTargetPath = extractPatchTargetPath;
@@ -118,6 +119,140 @@ function patchContainsWrappedToolPayload(patchText) {
     return (/\{\s*"final"\s*:/i.test(addedText) &&
         /("edits"\s*:|"actions"\s*:|"commands"\s*:)/i.test(addedText) &&
         /("path"\s*:|"patch"\s*:)/i.test(addedText));
+}
+function patchLooksUsable(text) {
+    const normalized = normalizePatchText(text).trim();
+    if (!normalized)
+        return false;
+    const parsed = parsePatch(normalized);
+    if (!parsed)
+        return false;
+    if (!patchHasLineChanges(parsed))
+        return false;
+    if (patchContainsWrappedToolPayload(normalized))
+        return false;
+    if (patchContainsLeakedPatchArtifacts(normalized))
+        return false;
+    return true;
+}
+function parseJsonStringValue(value) {
+    try {
+        return JSON.parse(`"${value}"`);
+    }
+    catch {
+        return value.replace(/\\r/g, "").replace(/\\n/g, "\n").replace(/\\"/g, '"');
+    }
+}
+function collectPatchCandidatesFromValue(value, out, seen, depth = 0) {
+    if (depth > 8 || out.length >= 24 || value == null)
+        return;
+    if (typeof value === "string") {
+        const raw = value.trim();
+        if (!raw)
+            return;
+        const candidates = [raw];
+        if (/^"(?:\\.|[^"\\])*"$/.test(raw)) {
+            try {
+                candidates.push(JSON.parse(raw));
+            }
+            catch {
+                // ignore malformed quoted string
+            }
+        }
+        for (const candidate of candidates) {
+            const normalized = normalizePatchText(candidate).trim();
+            if (!normalized || seen.has(normalized))
+                continue;
+            seen.add(normalized);
+            if (patchLooksUsable(normalized))
+                out.push(normalized);
+        }
+        return;
+    }
+    if (Array.isArray(value)) {
+        for (const entry of value) {
+            collectPatchCandidatesFromValue(entry, out, seen, depth + 1);
+            if (out.length >= 24)
+                break;
+        }
+        return;
+    }
+    if (typeof value === "object") {
+        const obj = value;
+        const priorityKeys = ["patch", "diff", "content", "text", "payload"];
+        for (const key of priorityKeys) {
+            if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                collectPatchCandidatesFromValue(obj[key], out, seen, depth + 1);
+                if (out.length >= 24)
+                    return;
+            }
+        }
+        for (const [key, entry] of Object.entries(obj)) {
+            if (priorityKeys.includes(key))
+                continue;
+            collectPatchCandidatesFromValue(entry, out, seen, depth + 1);
+            if (out.length >= 24)
+                return;
+        }
+    }
+}
+function parseJsonCandidate(text) {
+    const trimmed = text.trim();
+    if (!trimmed)
+        return null;
+    const attempts = [];
+    const pushAttempt = (candidate) => {
+        const next = candidate.trim();
+        if (!next)
+            return;
+        if (!attempts.includes(next))
+            attempts.push(next);
+    };
+    pushAttempt(trimmed);
+    const fenced = /^```(?:json|text)?\s*([\s\S]*?)\s*```$/i.exec(trimmed);
+    if (fenced?.[1])
+        pushAttempt(fenced[1]);
+    const deEscaped = trimmed.replace(/\\"/g, '"');
+    if (deEscaped !== trimmed)
+        pushAttempt(deEscaped);
+    const firstBrace = trimmed.indexOf("{");
+    const lastBrace = trimmed.lastIndexOf("}");
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+        pushAttempt(trimmed.slice(firstBrace, lastBrace + 1));
+    }
+    for (const attempt of attempts) {
+        try {
+            return JSON.parse(attempt);
+        }
+        catch {
+            // try next shape
+        }
+    }
+    return null;
+}
+function recoverUnifiedDiffFromWrappedPayload(patchText) {
+    const raw = String(patchText || "").trim();
+    if (!raw)
+        return null;
+    if (patchLooksUsable(raw) && !patchContainsWrappedToolPayload(raw))
+        return null;
+    const candidates = [];
+    const seen = new Set();
+    const parsed = parseJsonCandidate(raw);
+    if (parsed != null) {
+        collectPatchCandidatesFromValue(parsed, candidates, seen, 0);
+    }
+    const fieldRegex = /"(?:patch|diff)"\s*:\s*"((?:\\.|[^"\\])*)"/gi;
+    for (const match of raw.matchAll(fieldRegex)) {
+        const decoded = parseJsonStringValue(match[1] || "");
+        const normalized = normalizePatchText(decoded).trim();
+        if (!normalized || seen.has(normalized))
+            continue;
+        seen.add(normalized);
+        if (patchLooksUsable(normalized))
+            candidates.push(normalized);
+    }
+    return candidates.length ? candidates[0] : null;
 }
 const PATCH_LEAK_MARKERS = [
     { key: "apply_patch_begin", re: /^\s*\*\*\*\s*Begin Patch\b/i },
@@ -304,13 +439,16 @@ function locateHunkStart(sourceLines, expectedStart, hunk, minStart) {
     return findRelaxedUniqueMatch(sourceLines, minStart, Math.max(minStart, sourceLines.length - 1), hunk);
 }
 function extractPatchTargetPath(patchText) {
-    const parsed = parsePatch(patchText);
+    const recovered = recoverUnifiedDiffFromWrappedPayload(patchText);
+    const parsed = parsePatch(recovered || patchText);
     if (!parsed)
         return null;
     return parsed.newPath || parsed.oldPath || null;
 }
 function applyUnifiedDiff(originalText, patchText) {
-    if (patchContainsWrappedToolPayload(patchText)) {
+    const recoveredPatch = recoverUnifiedDiffFromWrappedPayload(patchText);
+    const patchToApply = recoveredPatch || patchText;
+    if (patchContainsWrappedToolPayload(patchToApply)) {
         return {
             status: "rejected_invalid_patch",
             reason: "Patch appears to contain wrapped tool payload JSON instead of source-code diff.",
@@ -319,7 +457,7 @@ function applyUnifiedDiff(originalText, patchText) {
             targetPath: null,
         };
     }
-    if (patchContainsLeakedPatchArtifacts(patchText)) {
+    if (patchContainsLeakedPatchArtifacts(patchToApply)) {
         return {
             status: "rejected_invalid_patch",
             reason: "Patch appears to leak diff/apply_patch markers into file content.",
@@ -328,7 +466,7 @@ function applyUnifiedDiff(originalText, patchText) {
             targetPath: null,
         };
     }
-    const parsed = parsePatch(patchText);
+    const parsed = parsePatch(patchToApply);
     if (!parsed) {
         return {
             status: "rejected_invalid_patch",

@@ -1,10 +1,11 @@
 {
     "name":  "xpersona-playground",
     "displayName":  "Playground AI",
-    "description":  "Chat with AI agents directly in VS Code.",
+    "description":  "Minimal AI coding chat in VS Code.",
     "version":  "0.0.49",
     "publisher":  "playgroundai",
     "license":  "UNLICENSED",
+    "icon":  "media/icon.png",
     "engines":  {
                     "vscode":  "^1.90.0"
                 },
@@ -46,7 +47,7 @@
                                       "xpersona":  [
                                                        {
                                                            "id":  "xpersona.playgroundView",
-                                                           "name":  "Playground Chat",
+                                                           "name":  "Playground",
                                                            "type":  "webview",
                                                            "when":  "true"
                                                        }
@@ -55,7 +56,7 @@
                         "commands":  [
                                          {
                                              "command":  "xpersona.playground.prompt",
-                                             "title":  "Start Chat with Agent",
+                                             "title":  "New Chat",
                                              "category":  "Playground AI"
                                          },
                                          {
@@ -70,53 +71,53 @@
                                          },
                                          {
                                              "command":  "xpersona.playground.mode.auto",
-                                             "title":  "Set Mode: Auto",
+                                             "title":  "Mode: Auto",
                                              "category":  "Playground AI"
                                          },
                                          {
                                              "command":  "xpersona.playground.mode.plan",
-                                             "title":  "Set Mode: Plan",
+                                             "title":  "Mode: Plan",
                                              "category":  "Playground AI"
                                          },
                                          {
                                              "command":  "xpersona.playground.mode.yolo",
-                                             "title":  "Set Mode: Full access",
+                                             "title":  "Mode: Full Access",
                                              "category":  "Playground AI"
                                          },
                                          {
                                              "command":  "xpersona.playground.generate",
-                                             "title":  "Generate Code",
+                                             "title":  "Generate",
                                              "category":  "Playground AI"
                                          },
                                          {
                                              "command":  "xpersona.playground.debug",
-                                             "title":  "Debug with Playground",
+                                             "title":  "Debug",
                                              "category":  "Playground AI"
                                          },
                                          {
                                              "command":  "xpersona.playground.history.open",
-                                             "title":  "Open Playground History",
+                                             "title":  "Open History",
                                              "category":  "Playground AI"
                                          },
                                          {
                                              "command":  "xpersona.playground.image.attach",
-                                             "title":  "Attach Image to Playground",
+                                             "title":  "Attach Image",
                                              "category":  "Playground AI"
                                          },
                                          {
                                              "command":  "xpersona.playground.agents.parallelRun",
-                                             "title":  "Run Parallel Agents",
+                                             "title":  "Parallel Agents",
                                              "category":  "Playground AI"
                                          },
                                          {
                                              "command":  "xpersona.playground.index.rebuild",
-                                             "title":  "Rebuild Workspace Index",
+                                             "title":  "Rebuild Index",
                                              "category":  "Playground AI"
                                          },
                                          {
                                              "command":  "xpersona.playground.replay.session",
-                                             "title":  "Replay Latest Session",
-                                             "category":  "Xpersona"
+                                             "title":  "Replay Session",
+                                             "category":  "Playground AI"
                                          },
                                          {
                                              "title":  "Undo Playground Changes",
@@ -200,7 +201,7 @@
                         "viewsWelcome":  [
                                              {
                                                  "view":  "xpersona.playgroundView",
-                                                 "contents":  "Chat with Playground AI â€” your coding assistant.\n[Start Chat](command:xpersona.playground.prompt)\n[Chat with Selection](command:xpersona.playground.openWithSelection)\n[Sign in](command:xpersona.playground.signIn)\n[Set API Key](command:xpersona.playground.setApiKey)"
+                                                 "contents":  "Minimal coding chat in VS Code.\n[New Chat](command:xpersona.playground.prompt)\n[Chat with Selection](command:xpersona.playground.openWithSelection)\n[Sign In](command:xpersona.playground.signIn)\n[Set API Key](command:xpersona.playground.setApiKey)"
                                              }
                                          ],
                         "configuration":  {
@@ -208,17 +209,12 @@
                                               "properties":  {
                                                                  "xpersona.playground.baseApiUrl":  {
                                                                                                         "type":  "string",
-                                                                                                        "default":  "https://xpersona.co",
+                                                                                                        "default":  "http://localhost:3000",
                                                                                                         "description":  "Base URL for the Playground API. Use http://localhost:3000 for local development."
                                                                                                     },
-                                                                 "xpersona.playground.model":  {
-                                                                                                   "type":  "string",
-                                                                                                   "default":  "Qwen/Qwen3-235B-A22B-Instruct-2507:fastest",
-                                                                                                   "description":  "Model identifier for chat completions."
-                                                                                               },
                                                                  "xpersona.playground.systemPrompt":  {
                                                                                                           "type":  "string",
-                                                                                                          "default":  "You are an expert software engineer and coding assistant. Help the user with their code, answer questions clearly, and provide working examples.",
+                                                                                                          "default":  "You are an autonomous coding agent. Take ownership of implementation tasks end-to-end: inspect context, propose a concrete plan, apply code changes directly when safe, run validations, and report exact outcomes. Prioritize correctness, minimal diffs, and actionable results over explanations. If blocked by missing access or external constraints, state the blocker clearly and provide the shortest recovery path.",
                                                                                                           "description":  "System prompt sent to the AI agent."
                                                                                                       },
                                                                  "xpersona.playground.executionPolicy":  {

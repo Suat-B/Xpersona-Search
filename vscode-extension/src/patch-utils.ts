@@ -114,6 +114,210 @@ function normalizePatchText(patchText: string): string {
   return out.join("\n");
 }
 
+export function patchContainsWrappedToolPayload(patchText: string): boolean {
+  const normalized = normalizePatchText(patchText).trim();
+  if (!normalized) return false;
+
+  const directEnvelope =
+    /^\s*\{/.test(normalized) &&
+    /"final"\s*:/i.test(normalized) &&
+    /("edits"\s*:|"actions"\s*:|"commands"\s*:)/i.test(normalized) &&
+    /("path"\s*:|"patch"\s*:)/i.test(normalized);
+  if (directEnvelope) return true;
+
+  const addedText = normalized
+    .split("\n")
+    .filter((line) => line.startsWith("+") && !line.startsWith("+++ "))
+    .map((line) => line.slice(1))
+    .join("\n")
+    .trim();
+  if (!addedText) return false;
+
+  return (
+    /\{\s*"final"\s*:/i.test(addedText) &&
+    /("edits"\s*:|"actions"\s*:|"commands"\s*:)/i.test(addedText) &&
+    /("path"\s*:|"patch"\s*:)/i.test(addedText)
+  );
+}
+
+function patchLooksUsable(text: string): boolean {
+  const normalized = normalizePatchText(text).trim();
+  if (!normalized) return false;
+  const parsed = parsePatch(normalized);
+  if (!parsed) return false;
+  if (!patchHasLineChanges(parsed)) return false;
+  if (patchContainsWrappedToolPayload(normalized)) return false;
+  if (patchContainsLeakedPatchArtifacts(normalized)) return false;
+  return true;
+}
+
+function parseJsonStringValue(value: string): string {
+  try {
+    return JSON.parse(`"${value}"`) as string;
+  } catch {
+    return value.replace(/\\r/g, "").replace(/\\n/g, "\n").replace(/\\"/g, '"');
+  }
+}
+
+function collectPatchCandidatesFromValue(
+  value: unknown,
+  out: string[],
+  seen: Set<string>,
+  depth = 0
+): void {
+  if (depth > 8 || out.length >= 24 || value == null) return;
+
+  if (typeof value === "string") {
+    const raw = value.trim();
+    if (!raw) return;
+    const candidates = [raw];
+    if (/^"(?:\\.|[^"\\])*"$/.test(raw)) {
+      try {
+        candidates.push(JSON.parse(raw) as string);
+      } catch {
+        // ignore malformed quoted string
+      }
+    }
+    for (const candidate of candidates) {
+      const normalized = normalizePatchText(candidate).trim();
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      if (patchLooksUsable(normalized)) out.push(normalized);
+    }
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      collectPatchCandidatesFromValue(entry, out, seen, depth + 1);
+      if (out.length >= 24) break;
+    }
+    return;
+  }
+
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    const priorityKeys = ["patch", "diff", "content", "text", "payload"];
+    for (const key of priorityKeys) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        collectPatchCandidatesFromValue(obj[key], out, seen, depth + 1);
+        if (out.length >= 24) return;
+      }
+    }
+    for (const [key, entry] of Object.entries(obj)) {
+      if (priorityKeys.includes(key)) continue;
+      collectPatchCandidatesFromValue(entry, out, seen, depth + 1);
+      if (out.length >= 24) return;
+    }
+  }
+}
+
+function parseJsonCandidate(text: string): unknown | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const attempts: string[] = [];
+  const pushAttempt = (candidate: string) => {
+    const next = candidate.trim();
+    if (!next) return;
+    if (!attempts.includes(next)) attempts.push(next);
+  };
+
+  pushAttempt(trimmed);
+
+  const fenced = /^```(?:json|text)?\s*([\s\S]*?)\s*```$/i.exec(trimmed);
+  if (fenced?.[1]) pushAttempt(fenced[1]);
+
+  const deEscaped = trimmed.replace(/\\"/g, '"');
+  if (deEscaped !== trimmed) pushAttempt(deEscaped);
+
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    pushAttempt(trimmed.slice(firstBrace, lastBrace + 1));
+  }
+
+  for (const attempt of attempts) {
+    try {
+      return JSON.parse(attempt) as unknown;
+    } catch {
+      // try next shape
+    }
+  }
+  return null;
+}
+
+export function recoverUnifiedDiffFromWrappedPayload(patchText: string): string | null {
+  const raw = String(patchText || "").trim();
+  if (!raw) return null;
+  if (patchLooksUsable(raw) && !patchContainsWrappedToolPayload(raw)) return null;
+
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  const parsed = parseJsonCandidate(raw);
+  if (parsed != null) {
+    collectPatchCandidatesFromValue(parsed, candidates, seen, 0);
+  }
+
+  const fieldRegex = /"(?:patch|diff)"\s*:\s*"((?:\\.|[^"\\])*)"/gi;
+  for (const match of raw.matchAll(fieldRegex)) {
+    const decoded = parseJsonStringValue(match[1] || "");
+    const normalized = normalizePatchText(decoded).trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    if (patchLooksUsable(normalized)) candidates.push(normalized);
+  }
+
+  return candidates.length ? candidates[0] : null;
+}
+
+const PATCH_LEAK_MARKERS: Array<{ key: string; re: RegExp }> = [
+  { key: "apply_patch_begin", re: /^\s*\*\*\*\s*Begin Patch\b/i },
+  { key: "apply_patch_end", re: /^\s*\*\*\*\s*End Patch\b/i },
+  { key: "apply_patch_update", re: /^\s*\*\*\*\s*(Update|Add|Delete)\s+File:\s+/i },
+  { key: "diff_git", re: /^\s*diff --git\s+a\/.+\s+b\/.+/i },
+  { key: "header_old", re: /^\s*---\s+a\/.+/i },
+  { key: "header_new", re: /^\s*\+\+\+\s+b\/.+/i },
+  { key: "hunk_header", re: /^\s*@@\s+-\d+(?:,\d+)?\s+\+\d+(?:,\d+)?\s+@@/ },
+];
+
+function collectPatchLeakMarkerKeys(text: string): string[] {
+  const keys = new Set<string>();
+  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+  for (const line of lines) {
+    for (const marker of PATCH_LEAK_MARKERS) {
+      if (marker.re.test(line)) {
+        keys.add(marker.key);
+      }
+    }
+  }
+  return Array.from(keys);
+}
+
+function markerKeysLookLikePatchLeak(keys: string[]): boolean {
+  if (!keys.length) return false;
+  const set = new Set(keys);
+  if (set.has("apply_patch_begin") || set.has("apply_patch_update")) return true;
+  if (set.has("diff_git") && (set.has("header_old") || set.has("header_new") || set.has("hunk_header"))) return true;
+  if (set.has("hunk_header") && (set.has("header_old") || set.has("header_new"))) return true;
+  return set.size >= 3;
+}
+
+export function textContainsLeakedPatchArtifacts(text: string): boolean {
+  const keys = collectPatchLeakMarkerKeys(text);
+  return markerKeysLookLikePatchLeak(keys);
+}
+
+export function patchContainsLeakedPatchArtifacts(patchText: string): boolean {
+  const normalized = normalizePatchText(patchText);
+  const addedLines = normalized
+    .split("\n")
+    .filter((line) => line.startsWith("+") && !line.startsWith("+++ "))
+    .map((line) => line.slice(1));
+  if (!addedLines.length) return false;
+  const keys = collectPatchLeakMarkerKeys(addedLines.join("\n"));
+  return markerKeysLookLikePatchLeak(keys);
+}
+
 function parsePatch(patchText: string): ParsedPatch | null {
   const lines = normalizePatchText(patchText).split("\n");
   let oldPath: string | null = null;
@@ -243,13 +447,34 @@ function locateHunkStart(sourceLines: string[], expectedStart: number, hunk: Par
 }
 
 export function extractPatchTargetPath(patchText: string): string | null {
-  const parsed = parsePatch(patchText);
+  const recovered = recoverUnifiedDiffFromWrappedPayload(patchText);
+  const parsed = parsePatch(recovered || patchText);
   if (!parsed) return null;
   return parsed.newPath || parsed.oldPath || null;
 }
 
 export function applyUnifiedDiff(originalText: string, patchText: string): PatchApplyResult {
-  const parsed = parsePatch(patchText);
+  const recoveredPatch = recoverUnifiedDiffFromWrappedPayload(patchText);
+  const patchToApply = recoveredPatch || patchText;
+  if (patchContainsWrappedToolPayload(patchToApply)) {
+    return {
+      status: "rejected_invalid_patch",
+      reason: "Patch appears to contain wrapped tool payload JSON instead of source-code diff.",
+      hunksApplied: 0,
+      totalHunks: 0,
+      targetPath: null,
+    };
+  }
+  if (patchContainsLeakedPatchArtifacts(patchToApply)) {
+    return {
+      status: "rejected_invalid_patch",
+      reason: "Patch appears to leak diff/apply_patch markers into file content.",
+      hunksApplied: 0,
+      totalHunks: 0,
+      targetPath: null,
+    };
+  }
+  const parsed = parsePatch(patchToApply);
   if (!parsed) {
     return {
       status: "rejected_invalid_patch",

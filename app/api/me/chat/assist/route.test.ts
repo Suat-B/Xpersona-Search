@@ -106,11 +106,36 @@ describe("POST /api/me/chat/assist", () => {
         path: "/api/v1/playground/assist",
         acceptSse: true,
         body: expect.objectContaining({
-          task: "Build me a function",
+          task: expect.stringContaining('User request: "Build me a function".'),
           historySessionId: "sess-1",
           context: expect.objectContaining({
             activeFile: expect.objectContaining({ path: "components/chat/ChatApp.tsx" }),
           }),
+          mode: "yolo",
+          workflowIntentId: "reasoning:high",
+          contextBudget: { maxTokens: 65_536, strategy: "hybrid" },
+          model: "Qwen/Qwen3-235B-A22B-Instruct-2507:fastest",
+          stream: true,
+          safetyProfile: "standard",
+        }),
+      })
+    );
+  });
+
+  it("keeps non-code tasks in generate mode", async () => {
+    const req = new NextRequest("http://localhost/api/me/chat/assist", {
+      method: "POST",
+      body: JSON.stringify({
+        task: "How does this platform work?",
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    await POST(req);
+    expect(mockProxy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          task: "How does this platform work?",
           mode: "generate",
           model: "Qwen/Qwen3-235B-A22B-Instruct-2507:fastest",
           stream: true,

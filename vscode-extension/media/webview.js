@@ -30,7 +30,7 @@
           const parsed = parseSlashModeCommand(t.value || "");
           if (parsed.preventSend) {
             t.value = "";
-            addMessage("Plan mode enabled. Add your request after /plan.", "cmd");
+            if (SHOW_SYSTEM_ACTIVITY) addMessage("Plan mode enabled. Add your request after /plan.", "cmd");
             return;
           }
           const text = parsed.text;
@@ -96,6 +96,7 @@
       const app = document.getElementById("app");
       const msgs = document.getElementById("msgs");
       const chatPanel = document.getElementById("chat");
+      const stageBlank = document.getElementById("stageBlank");
       const chatDock = document.getElementById("chatDock");
       const chips = document.getElementById("chips");
       const timeline = document.getElementById("timeline");
@@ -104,6 +105,7 @@
       const agents = document.getElementById("agents");
       const exec = document.getElementById("exec");
       const taskList = document.getElementById("taskList");
+      const chatEmptyHistoryList = document.getElementById("chatEmptyHistoryList");
       const viewAllTasks = document.getElementById("viewAllTasks");
       const threadList = document.getElementById("threadList");
       const modeQuick = document.getElementById("modeQuick");
@@ -131,7 +133,9 @@
       const queueSummary = document.getElementById("queueSummary");
       const queueList = document.getElementById("queueList");
       const jumpLatestBtn = document.getElementById("jumpLatest");
-      const startup = document.querySelector(".startup");
+      const chatEmpty = document.getElementById("chatEmpty");
+      const chatEmptyHistory = document.getElementById("chatEmptyHistory");
+      const chatEmptySettings = document.getElementById("chatEmptySettings");
       const runState = document.getElementById("runState");
       const modeBanner = document.getElementById("modeBanner");
       const planModeChip = document.getElementById("planModeChip");
@@ -139,6 +143,8 @@
       const actionMenu = document.getElementById("actionMenu");
       const actionMenuSheet = actionMenu ? actionMenu.querySelector(".action-menu-sheet") : null;
       const actionMenuClose = document.getElementById("actionMenuClose");
+      const actionMenuHomeParent = actionMenu ? actionMenu.parentElement : null;
+      const actionMenuHomeNextSibling = actionMenu ? actionMenu.nextSibling : null;
       const threadsOverlayBackdrop = document.getElementById("threadsOverlayBackdrop");
       const newThreadQuick = document.getElementById("newThreadQuick");
       const historyQuick = document.getElementById("historyQuick");
@@ -170,6 +176,7 @@
       let threadsOverlayOpen = false;
       let responseStartedAtMs = 0;
       let lastAssistantBubble = null;
+      let latestActionOutcome = null;
       const DEFAULT_MODEL = "Playground 1";
       const MAX_DIFF_ROWS = 400;
       const seenEditPreviewKeys = new Set();
@@ -197,7 +204,7 @@
         if (contextAutoBadge) {
           contextAutoBadge.classList.remove("idle", "collecting", "ready");
           contextAutoBadge.classList.add(enabled ? phase : "idle");
-          contextAutoBadge.textContent = enabled ? "Auto Context" : "Context Off";
+          contextAutoBadge.textContent = enabled ? "IDE Context" : "Context Off";
         }
         if (contextPill) {
           contextPill.textContent = enabled
@@ -291,6 +298,7 @@
       let openChats = [];
       let recentHistory = [];
       let pinnedIds = [];
+      let historySearchQuery = "";
       const threadDrafts = {};
       let planDecisionBubble = null;
       let lastStatusText = "";
@@ -302,12 +310,19 @@
       let mentionActiveIndex = 0;
       let mentionSearchToken = null;
       let mentionDebounceTimer = null;
+      let mentionPending = false;
+      let mentionLastQuery = "";
       let creatingThread = false;
+      let activeRunThreadId = null;
+      let lastDiagnosticsFingerprint = "";
       let contextSummary = "";
       let contextPreviewTimer = null;
       let lastContextPreviewText = "";
       let undoAvailable = false;
       let undoCount = 0;
+      const TASK_PREVIEW_COUNT = 3;
+      const HOME_RECENT_COUNT = 8;
+      const SHOW_SYSTEM_ACTIVITY = false;
       const queuedMessages = [];
       let runProgressBubble = null;
       const runStepState = {
@@ -333,6 +348,7 @@
         "actionOutcome",
         "execLogs",
         "err",
+        "diagnosticsBundle",
       ]);
 
       function resetRunProgress() {
@@ -412,7 +428,7 @@
         const confirmText = "Undo last Playground-applied changes? This will revert the most recent batch.";
         if (!window.confirm(confirmText)) return;
         const suffix = sourceLabel ? " (" + sourceLabel + ")" : "";
-        addMessage("Undoing last changes" + suffix + "...", "cmd");
+        if (SHOW_SYSTEM_ACTIVITY) addMessage("Undoing last changes" + suffix + "...", "cmd");
         v.postMessage({ type: "undoLastChanges" });
         if (closeMenu) setActionMenuOpen(false);
       }
@@ -500,7 +516,7 @@
       function postSendFallback(rawText) {
         const parsed = parseSlashModeCommand(rawText);
         if (parsed.preventSend) {
-          addMessage("Plan mode enabled. Add your request after /plan.", "cmd");
+          if (SHOW_SYSTEM_ACTIVITY) addMessage("Plan mode enabled. Add your request after /plan.", "cmd");
           return;
         }
         const text = parsed.text;
@@ -646,7 +662,7 @@
             return;
           }
         }
-        addMessage((errored ? "Stopped after " : "Worked for ") + elapsedLabel + ".", "cmd");
+        if (SHOW_SYSTEM_ACTIVITY) addMessage((errored ? "Stopped after " : "Worked for ") + elapsedLabel + ".", "cmd");
       }
 
       function shortAgeLabel(isoValue) {
@@ -688,6 +704,8 @@
         mentionItems = [];
         mentionActiveIndex = 0;
         mentionSearchToken = null;
+        mentionPending = false;
+        mentionLastQuery = "";
         if (mentionMenu) {
           mentionMenu.classList.add("hidden");
           mentionMenu.innerHTML = "";
@@ -696,12 +714,24 @@
 
       function renderMentionMenu() {
         if (!mentionMenu) return;
-        if (!mentionItems.length) {
+        const activeCtx = mentionContextFromInput() || mentionSearchToken;
+        if (!activeCtx) {
           mentionMenu.classList.add("hidden");
           mentionMenu.innerHTML = "";
           return;
         }
+        if (!mentionItems.length && !mentionPending) {
+          mentionMenu.classList.remove("hidden");
+          mentionMenu.innerHTML =
+            '<div class="mention-status mention-empty" role="status" aria-live="polite">No matching files or folders.</div>';
+          return;
+        }
         mentionMenu.classList.remove("hidden");
+        if (mentionPending && !mentionItems.length) {
+          mentionMenu.innerHTML =
+            '<div class="mention-status" role="status" aria-live="polite">Searching workspace...</div>';
+          return;
+        }
         mentionMenu.innerHTML = mentionItems.map((item, index) => (
           '<button class="mention-item' + (index === mentionActiveIndex ? " active" : "") + '" type="button" data-mention-index="' + index + '">' +
             '<span class="mention-path">' + esc(item.path || "") + '</span>' +
@@ -795,6 +825,9 @@
           return;
         }
         mentionSearchToken = ctx;
+        mentionPending = true;
+        mentionLastQuery = ctx.query;
+        renderMentionMenu();
         if (mentionDebounceTimer) clearTimeout(mentionDebounceTimer);
         mentionDebounceTimer = setTimeout(() => {
           if (!mentionSearchToken) return;
@@ -896,12 +929,160 @@
         });
       }
 
+      function openSessionFromUi(id) {
+        const normalizedId = String(id || "").trim();
+        if (!normalizedId) return;
+        saveCurrentDraft();
+        creatingThread = false;
+        currentThreadId = normalizedId;
+        renderThreadList();
+        setRunState("Switching chat...");
+        v.postMessage({ type: "openSession", id: normalizedId });
+        if (threadsOverlayOpen) setThreadsOverlayOpen(false);
+      }
+
+      function renderTaskPreview(rows) {
+        if (!taskList) return;
+        const list = Array.isArray(rows) ? rows : [];
+        const previewRows = list.slice(0, TASK_PREVIEW_COUNT);
+        const homeRows = list.slice(0, HOME_RECENT_COUNT);
+        taskList.innerHTML = previewRows.map((x) => (
+          '<button class="task-entry" data-id="' + esc(x.id) + '" type="button">' +
+            '<div class="task-main">' +
+              '<div class="task-title">' + esc(x.title || "Untitled task") + '</div>' +
+            '</div>' +
+            '<div class="task-right">' +
+              '<span class="task-age">' + esc(shortAgeLabel(x.updatedAt)) + '</span>' +
+              '<span class="task-dot" aria-hidden="true"></span>' +
+            '</div>' +
+          '</button>'
+        )).join("") || '<div class="task-meta">No task history yet.</div>';
+        taskList.querySelectorAll(".task-entry").forEach((el) => {
+          el.onclick = () => openSessionFromUi(el.getAttribute("data-id"));
+        });
+        if (viewAllTasks) viewAllTasks.textContent = "View all (" + list.length + ")";
+
+        if (chatEmptyHistoryList) {
+          chatEmptyHistoryList.innerHTML = homeRows.map((x) => (
+            '<button class="chat-empty-history-row" data-id="' + esc(x.id) + '" type="button">' +
+              '<span class="chat-empty-history-row-title">' + esc(x.title || "Untitled task") + '</span>' +
+              '<span class="chat-empty-history-row-age">' + esc(shortAgeLabel(x.updatedAt)) + '</span>' +
+            '</button>'
+          )).join("") || '<div class="chat-empty-history-empty">No conversations yet.</div>';
+          chatEmptyHistoryList.querySelectorAll(".chat-empty-history-row").forEach((el) => {
+            el.onclick = () => openSessionFromUi(el.getAttribute("data-id"));
+          });
+        }
+      }
+
+      function filteredHistoryRows(rows, query) {
+        const list = Array.isArray(rows) ? rows : [];
+        const normalizedQuery = String(query || "").trim().toLowerCase();
+        if (!normalizedQuery) return list;
+        return list.filter((row) => {
+          const title = String(row?.title || "").toLowerCase();
+          const mode = String(row?.mode || "").toLowerCase();
+          const age = String(shortAgeLabel(row?.updatedAt) || "").toLowerCase();
+          return title.includes(normalizedQuery) || mode.includes(normalizedQuery) || age.includes(normalizedQuery);
+        });
+      }
+
+      function renderHistoryPanel(rows, options = {}) {
+        if (!history) return;
+        const list = Array.isArray(rows) ? rows : [];
+        const queryFromOptions = options && Object.prototype.hasOwnProperty.call(options, "query")
+          ? String(options.query || "")
+          : historySearchQuery;
+        historySearchQuery = queryFromOptions;
+        const query = String(historySearchQuery || "").trim();
+        const filtered = filteredHistoryRows(list, query);
+        const status = String((options && options.status) || "").trim();
+        history.innerHTML =
+          '<div class="history-shell">' +
+            '<div class="history-toolbar">' +
+              '<input id="historySearchInput" class="history-search" type="search" placeholder="Search recent tasks" value="' + esc(query) + '" />' +
+              '<div class="history-filters">' +
+                '<span class="history-filter">All tasks</span>' +
+                '<span class="history-count">' + esc(String(filtered.length)) + " / " + esc(String(list.length)) + '</span>' +
+              "</div>" +
+            "</div>" +
+            (status ? ('<div class="history-status">' + esc(status) + "</div>") : "") +
+            '<div id="historyRows" class="history-list">' +
+              (filtered.length
+                ? filtered.map((x) => (
+                    '<button class="history-row' + (String(x.id) === String(currentThreadId || "") ? " active" : "") + '" data-id="' + esc(x.id) + '" type="button">' +
+                      '<span class="history-row-main">' +
+                        '<span class="history-row-title">' + esc(x.title || "Untitled task") + '</span>' +
+                      "</span>" +
+                      '<span class="history-row-right">' +
+                        '<span class="history-row-mode">' + esc(String(x.mode || "auto")) + '</span>' +
+                        '<span class="history-row-age">' + esc(shortAgeLabel(x.updatedAt)) + "</span>" +
+                      "</span>" +
+                    "</button>"
+                  )).join("")
+                : '<div class="history-empty">No conversation history found.</div>') +
+            "</div>" +
+          "</div>";
+
+        const searchInput = document.getElementById("historySearchInput");
+        if (searchInput) {
+          searchInput.addEventListener("input", (event) => {
+            const target = eventTargetElement(event.target);
+            historySearchQuery = String(target?.value || "");
+            renderHistoryPanel(list, { query: historySearchQuery });
+          });
+          if (options && options.focusSearch) {
+            setTimeout(() => {
+              searchInput.focus();
+              searchInput.select();
+            }, 0);
+          }
+        }
+        history.querySelectorAll(".history-row").forEach((el) => {
+          el.onclick = () => {
+            const id = el.getAttribute("data-id");
+            if (!id) return;
+            openSessionFromUi(id);
+          };
+        });
+      }
+
       function esc(s) {
         return String(s ?? "")
           .replaceAll("&", "&amp;")
           .replaceAll("<", "&lt;")
           .replaceAll(">", "&gt;")
           .replaceAll('"', "&quot;");
+      }
+
+      async function copyTextToClipboard(text) {
+        const value = String(text || "");
+        if (!value) return false;
+        try {
+          if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+            await navigator.clipboard.writeText(value);
+            return true;
+          }
+        } catch {
+          // fall through to legacy copy method
+        }
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = value;
+          ta.setAttribute("readonly", "readonly");
+          ta.style.position = "fixed";
+          ta.style.top = "-9999px";
+          ta.style.left = "-9999px";
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          ta.setSelectionRange(0, ta.value.length);
+          const ok = typeof document.execCommand === "function" ? document.execCommand("copy") : false;
+          ta.remove();
+          return Boolean(ok);
+        } catch {
+          return false;
+        }
       }
 
       function hashPatch(text) {
@@ -915,8 +1096,23 @@
         return (h >>> 0).toString(16);
       }
 
+      let activePanelId = "chat";
+
+      function updateBackButtonVisibility() {
+        if (!backToChatQuick || !msgs) return;
+        const hasMessages = msgs.children.length > 0;
+        const show =
+          Boolean(threadsOverlayOpen) ||
+          (activePanelId === "chat" && (hasMessages || streaming));
+        backToChatQuick.classList.toggle("hidden", !show);
+      }
+
       function updateStartupVisibility() {
-        if (startup) startup.classList.remove("hidden");
+        if (!chatEmpty || !msgs) return;
+        const hasMessages = msgs.children.length > 0;
+        const shouldHide = hasMessages || streaming;
+        chatEmpty.classList.toggle("hidden", shouldHide);
+        updateBackButtonVisibility();
       }
 
       function applyModeUI(modeValue) {
@@ -1150,6 +1346,7 @@
         streamEndPending = false;
         setStreaming(false);
         streamBubble = null;
+        activeRunThreadId = null;
         activeProgressState = "";
         setRunState("Local");
         pinAssistantResponseToBottom();
@@ -1187,12 +1384,18 @@
       }
 
       function ensureRunProgressBubble() {
+        if (!SHOW_SYSTEM_ACTIVITY) return null;
         if (runProgressBubble && runProgressBubble.isConnected) return runProgressBubble;
         runProgressBubble = createBubble("cmd run-progress");
         return runProgressBubble;
       }
 
       function renderRunProgress() {
+        if (!SHOW_SYSTEM_ACTIVITY) {
+          if (runProgressBubble && runProgressBubble.isConnected) runProgressBubble.remove();
+          runProgressBubble = null;
+          return;
+        }
         const bubble = ensureRunProgressBubble();
         const body = bubble.querySelector(".m-body");
         if (!body) return;
@@ -1235,6 +1438,7 @@
       function updateRunStep(step, nextState, note) {
         if (step && runStepState[step] !== undefined) runStepState[step] = nextState;
         if (typeof note === "string" && note.trim()) appendRunNotes(note);
+        if (!SHOW_SYSTEM_ACTIVITY) return;
         renderRunProgress();
       }
 
@@ -1317,6 +1521,179 @@
         pinAssistantResponseToBottom();
       }
 
+      function extractGuardrailIssues(debug, summaryText) {
+        const issues = [];
+        const seen = new Set();
+        const addIssue = (value) => {
+          const text = String(value || "").trim();
+          if (!text) return;
+          if (seen.has(text)) return;
+          seen.add(text);
+          issues.push(text);
+        };
+        const normalizeGuardrailText = (line) => String(line || "").replace(/^guardrail\s*/i, "").trim();
+        const guardrailPattern =
+          /(wrapped tool payload|leaked diff\/apply_patch|missing\/invalid target path|missing patch\/diff|unsupported action type|blocked (edit|write_file|mkdir|command) action|guardrail)/i;
+
+        if (debug && typeof debug === "object") {
+          const rejectedSamples = Array.isArray(debug.rejectedSamples) ? debug.rejectedSamples : [];
+          const localRejectedSamples = Array.isArray(debug.localRejectedSamples) ? debug.localRejectedSamples : [];
+          const applyErrors = Array.isArray(debug.applyErrors) ? debug.applyErrors : [];
+          rejectedSamples.forEach((line) => {
+            const raw = String(line || "").trim();
+            if (!raw) return;
+            if (/^guardrail\b/i.test(raw) || guardrailPattern.test(raw)) {
+              addIssue(normalizeGuardrailText(raw));
+            }
+          });
+          localRejectedSamples.forEach((line) => {
+            const raw = String(line || "").trim();
+            if (!raw || !guardrailPattern.test(raw)) return;
+            addIssue(normalizeGuardrailText(raw));
+          });
+          applyErrors.forEach((line) => {
+            const raw = String(line || "").trim();
+            if (!raw || !guardrailPattern.test(raw)) return;
+            addIssue(normalizeGuardrailText(raw));
+          });
+        }
+
+        if (issues.length === 0 && /guardrails?\s+blocked/i.test(String(summaryText || ""))) {
+          addIssue(String(summaryText || "").trim());
+        }
+        return issues;
+      }
+
+      function showGuardrailCard(issues, summaryText, debug) {
+        const list = Array.isArray(issues) ? issues.filter(Boolean) : [];
+        if (!list.length) return;
+        const d = createBubble("a guardrail");
+        const body = d.querySelector(".m-body");
+        if (!body) return;
+        const requested = Number(debug && debug.requestedActions ? debug.requestedActions : 0);
+        const rejected = Number(debug && debug.rejectedActions ? debug.rejectedActions : list.length);
+        const normalizedRejected = Math.max(rejected, list.length);
+        const heading = "Guardrail report";
+        const subtitle = /guardrails?\s+blocked/i.test(String(summaryText || ""))
+          ? String(summaryText || "")
+          : "Blocked malformed AI actions before applying file changes.";
+        const rows = list.slice(0, 8).map((line) => "<li>" + esc(line) + "</li>").join("");
+        const overflow = list.length > 8
+          ? '<li class="guardrail-more">+' + esc(String(list.length - 8)) + " more blocked item(s)</li>"
+          : "";
+        body.innerHTML =
+          '<div class="guardrail-card">' +
+            '<div class="guardrail-title">' + esc(heading) + "</div>" +
+            '<div class="guardrail-sub">' + esc(subtitle) + "</div>" +
+            '<ul class="guardrail-list">' + rows + overflow + "</ul>" +
+            '<div class="guardrail-actions">' +
+              '<div class="guardrail-meta">requested=' + esc(String(requested)) + " | rejected=" + esc(String(normalizedRejected)) + "</div>" +
+              '<button class="guardrail-copy" type="button" data-guardrail-copy="1">Copy debug</button>' +
+            "</div>" +
+          "</div>";
+        const copyBtn = body.querySelector('[data-guardrail-copy="1"]');
+        if (copyBtn) {
+          copyBtn.addEventListener("click", async () => {
+            const originalLabel = copyBtn.textContent || "Copy debug";
+            const text = [
+              heading,
+              subtitle,
+              "requested=" + requested + " | rejected=" + normalizedRejected,
+              "",
+              ...list.map((line, idx) => (idx + 1) + ". " + line),
+            ].join("\n");
+            const ok = await copyTextToClipboard(text);
+            copyBtn.textContent = ok ? "Copied" : "Copy failed";
+            setTimeout(() => {
+              if (copyBtn && copyBtn.isConnected) copyBtn.textContent = originalLabel;
+            }, 1400);
+          });
+        }
+        pinAssistantResponseToBottom();
+      }
+
+      function diagnosticsFingerprint(data) {
+        const payload = data && typeof data === "object" ? data : {};
+        const traceId = String(payload.traceId || "");
+        const stage = String(payload.stage || "");
+        const summary = String(payload.summary || "");
+        const events = Array.isArray(payload.events) ? payload.events : [];
+        const tail = events.length ? String(events[events.length - 1]?.message || "") : "";
+        return [traceId, stage, summary, String(events.length), tail].join("|");
+      }
+
+      function showDiagnosticsBundleCard(data) {
+        const payload = data && typeof data === "object" ? data : {};
+        const events = Array.isArray(payload.events) ? payload.events : [];
+        const summary = String(payload.summary || "Run diagnostics");
+        const traceId = String(payload.traceId || "n/a");
+        const stage = String(payload.stage || "final");
+        const startedAt = Number(payload.startedAt || 0);
+        const endedAt = Number(payload.endedAt || 0);
+        const fingerprint = diagnosticsFingerprint(payload);
+        if (fingerprint && fingerprint === lastDiagnosticsFingerprint) return;
+        lastDiagnosticsFingerprint = fingerprint;
+
+        const d = createBubble("a diagnostics");
+        const body = d.querySelector(".m-body");
+        if (!body) return;
+        const eventRows = events.slice(-12).map((entry) => {
+          const severity = String(entry && entry.severity ? entry.severity : "warn").toLowerCase();
+          const sevClass = severity === "error" ? "error" : severity === "info" ? "info" : "warn";
+          const code = String(entry && entry.code ? entry.code : "issue");
+          const message = String(entry && entry.message ? entry.message : "");
+          const ts = Number(entry && entry.ts ? entry.ts : 0);
+          const timeLabel = ts > 0 ? new Date(ts).toLocaleTimeString() : "";
+          return (
+            '<li class="diag-item ' + sevClass + '">' +
+              '<span class="diag-code">' + esc(code) + "</span>" +
+              '<span class="diag-msg">' + esc(message) + "</span>" +
+              '<span class="diag-ts">' + esc(timeLabel) + "</span>" +
+            "</li>"
+          );
+        }).join("");
+        const startedLabel = startedAt > 0 ? new Date(startedAt).toLocaleTimeString() : "n/a";
+        const endedLabel = endedAt > 0 ? new Date(endedAt).toLocaleTimeString() : "n/a";
+        body.innerHTML =
+          '<div class="diag-card">' +
+            '<div class="diag-title">Diagnostics bundle</div>' +
+            '<div class="diag-sub">' + esc(summary) + "</div>" +
+            '<div class="diag-trace">trace: ' + esc(traceId) + " | stage: " + esc(stage) + "</div>" +
+            '<ul class="diag-list">' + (eventRows || '<li class="diag-item info"><span class="diag-msg">No event details provided.</span></li>') + "</ul>" +
+            '<div class="diag-actions">' +
+              '<div class="diag-meta">start=' + esc(startedLabel) + " | end=" + esc(endedLabel) + " | events=" + esc(String(events.length)) + "</div>" +
+              '<button class="guardrail-copy" type="button" data-diag-copy="1">Copy debug</button>' +
+            "</div>" +
+          "</div>";
+        const copyBtn = body.querySelector('[data-diag-copy="1"]');
+        if (copyBtn) {
+          copyBtn.addEventListener("click", async () => {
+            const originalLabel = copyBtn.textContent || "Copy debug";
+            const text = [
+              "Diagnostics bundle",
+              summary,
+              "trace=" + traceId,
+              "stage=" + stage,
+              "start=" + startedLabel,
+              "end=" + endedLabel,
+              "",
+              ...events.map((entry, idx) => {
+                const severity = String(entry && entry.severity ? entry.severity : "warn").toUpperCase();
+                const code = String(entry && entry.code ? entry.code : "issue");
+                const message = String(entry && entry.message ? entry.message : "");
+                return (idx + 1) + ". [" + severity + "] " + code + " - " + message;
+              }),
+            ].join("\n");
+            const ok = await copyTextToClipboard(text);
+            copyBtn.textContent = ok ? "Copied" : "Copy failed";
+            setTimeout(() => {
+              if (copyBtn && copyBtn.isConnected) copyBtn.textContent = originalLabel;
+            }, 1400);
+          });
+        }
+        pinAssistantResponseToBottom();
+      }
+
       function addTypingBubble() {
         const d = createBubble("a typing");
         const body = d.querySelector(".m-body");
@@ -1325,6 +1702,11 @@
       }
 
       function updateReasoningCard() {
+        if (!SHOW_SYSTEM_ACTIVITY) {
+          if (reasoningBubble && reasoningBubble.isConnected) reasoningBubble.remove();
+          reasoningBubble = null;
+          return;
+        }
         const meta = latestRunMeta && typeof latestRunMeta === "object" ? latestRunMeta : {};
         const reasonCodes = Array.isArray(latestReasonCodes)
           ? latestReasonCodes.filter((x) => typeof x === "string" && x.trim())
@@ -1397,6 +1779,7 @@
       }
 
       function ensureTerminalBubble() {
+        if (!SHOW_SYSTEM_ACTIVITY) return null;
         if (terminalBubble && terminalBubble.isConnected) return terminalBubble;
         terminalBubble = createBubble("cmd terminal-live");
         const body = terminalBubble.querySelector(".m-body");
@@ -1414,6 +1797,7 @@
       }
 
       function setTerminalState(label) {
+        if (!SHOW_SYSTEM_ACTIVITY) return;
         const b = ensureTerminalBubble();
         const state = b.querySelector("[data-term-state]");
         if (state) state.textContent = label;
@@ -1424,6 +1808,7 @@
       }
 
       function addTerminalLine(text, kind = "info") {
+        if (!SHOW_SYSTEM_ACTIVITY) return;
         const b = ensureTerminalBubble();
         const body = b.querySelector("[data-term-body]");
         if (!body) return;
@@ -1514,31 +1899,73 @@
         return null;
       }
 
-      function normalizeAssistantText(raw) {
+      function rewriteLegacyAutoApplyText(input, outcome) {
+        let text = String(input ?? "");
+        if (!text) return "";
+        const neutral =
+          "Next action: auto-apply was requested. Confirm what was actually applied in the Execution panel.";
+        const noEdits =
+          "Next action: no file edits were applied automatically. Open the Execution panel for exact reject reasons.";
+        text = text.replace(
+          /Next action:\s*changes were auto-applied\.?\s*Review execution details in the Execution panel\.?/gi,
+          neutral
+        );
+        text = text.replace(
+          /changes were auto-applied\.?\s*Review execution details in the Execution panel\.?/gi,
+          neutral
+        );
+        const filesChanged = Number(outcome && typeof outcome === "object" ? outcome.filesChanged : NaN);
+        if (!Number.isNaN(filesChanged) && filesChanged === 0) {
+          text = text.replace(
+            /Next action:\s*auto-apply was requested\.?\s*Confirm what was actually applied in the Execution panel\.?/gi,
+            noEdits
+          );
+        }
+        return text;
+      }
+
+      function recheckAssistantTextForOutcome(outcome) {
+        if (!msgs || !outcome || typeof outcome !== "object") return;
+        const bodies = msgs.querySelectorAll(".m.a .m-body");
+        if (!bodies || !bodies.length) return;
+        bodies.forEach((node) => {
+          if (!node) return;
+          const text = String(node.textContent || "");
+          if (!text) return;
+          const normalized = normalizeAssistantText(text, outcome);
+          if (normalized && normalized !== text) node.textContent = normalized;
+        });
+      }
+
+      function normalizeAssistantText(raw, outcomeOverride) {
         const text = String(raw ?? "").trim();
         if (!text) return "";
+        const outcome = outcomeOverride && typeof outcomeOverride === "object" ? outcomeOverride : latestActionOutcome;
 
         const candidate = extractJsonCandidate(text);
         if (candidate) {
           const parsed = parseFinalFromJson(candidate);
-          if (parsed) return parsed;
+          if (parsed) return rewriteLegacyAutoApplyText(parsed, outcome).trim();
           if (candidate.includes('\\"')) {
             const deEscaped = candidate.replace(/\\"/g, '"');
             const reparsed = parseFinalFromJson(deEscaped);
-            if (reparsed) return reparsed;
+            if (reparsed) return rewriteLegacyAutoApplyText(reparsed, outcome).trim();
           }
         }
 
         const normalized = text.includes('\\"final\\"') ? text.replace(/\\"/g, '"') : text;
         const m = normalized.match(/"final"\s*:\s*"([\s\S]*?)"/i);
         if (m && m[1]) {
-          return m[1]
+          return rewriteLegacyAutoApplyText(
+            m[1]
             .replace(/\\n/g, "\n")
             .replace(/\\"/g, '"')
             .replace(/\\\\/g, "\\")
-            .trim();
+            .trim(),
+            outcome
+          ).trim();
         }
-        return text;
+        return rewriteLegacyAutoApplyText(text, outcome).trim();
       }
 
       function isOmittedPlaceholder(line) {
@@ -1843,13 +2270,21 @@
         const raw = String(p || "");
         const id = raw;
         if (!STAGE_PANEL_IDS.has(id)) return;
+        if (id !== "stageBlank" && actionMenu && actionMenu.classList.contains("page-mode")) {
+          closeSettingsPage(false);
+        }
         document.querySelectorAll(".stage-shell .panel").forEach((t) => t.classList.remove("active"));
         const panel = document.getElementById(id);
         if (panel) panel.classList.add("active");
+        document.querySelectorAll(".tabs .tab").forEach((tabBtn) => {
+          const tabTarget = String(tabBtn.dataset.p || "");
+          tabBtn.classList.toggle("active", tabTarget === id);
+        });
+        activePanelId = id;
         if (threadsOverlayOpen) {
           setThreadsOverlayOpen(false);
         }
-        if (backToChatQuick && !threadsOverlayOpen) backToChatQuick.classList.toggle("hidden", id === "chat");
+        updateBackButtonVisibility();
       }
 
       function setThreadsOverlayOpen(open) {
@@ -1857,29 +2292,20 @@
         if (app) app.classList.toggle("threads-overlay-open", open);
         if (threadsOverlayBackdrop) threadsOverlayBackdrop.classList.toggle("show", open);
         if (threadsOverlayBackdrop) threadsOverlayBackdrop.setAttribute("aria-hidden", open ? "false" : "true");
-        if (backToChatQuick) backToChatQuick.classList.toggle("hidden", !open);
         if (closeThreadsPopupBtn) closeThreadsPopupBtn.classList.toggle("hidden", !open);
+        updateBackButtonVisibility();
       }
 
       function openChatsPopup(sourceLabel) {
-        setThreadsOverlayOpen(true);
-        setRunState(sourceLabel || "Loading chats...");
+        if (threadsOverlayOpen) setThreadsOverlayOpen(false);
+        showTab("stageThreads");
+        setRunState(sourceLabel || "Loading tasks...");
         v.postMessage({ type: "history" });
       }
 
       function showHistoryPanel(loadingText) {
         showTab("history");
-        if (history && loadingText) {
-          history.innerHTML =
-            '<div class="item">' +
-              '<div class="item-title">Session History</div>' +
-              '<div class="item-sub">' + esc(loadingText) + '</div>' +
-            '</div>' +
-            '<div class="item">' +
-              '<div class="item-title">Tip</div>' +
-              '<div class="item-sub">Select any row to load that conversation into chat.</div>' +
-            '</div>';
-        }
+        renderHistoryPanel(recentHistory, { status: loadingText || "" });
       }
 
       function openHistoryPanel(sourceLabel) {
@@ -1900,12 +2326,16 @@
       }
 
       function triggerReplayFromUI(sourceLabel) {
-        addMessage("Replaying latest session from " + sourceLabel + "...", "cmd");
+        if (SHOW_SYSTEM_ACTIVITY) addMessage("Replaying latest session from " + sourceLabel + "...", "cmd");
         v.postMessage({ type: "replay" });
       }
 
       function setActionMenuOpen(open) {
         if (!actionMenu) return;
+        if (!open && actionMenu.classList.contains("page-mode")) {
+          closeSettingsPage(false);
+          return;
+        }
         actionMenu.classList.toggle("hidden", !open);
         actionMenu.setAttribute("aria-hidden", open ? "false" : "true");
         if (actionMenuBtn) actionMenuBtn.setAttribute("aria-expanded", open ? "true" : "false");
@@ -1913,6 +2343,40 @@
           if (actionMenuSheet) actionMenuSheet.scrollTop = 0;
           if (apiKeyInline) setTimeout(() => apiKeyInline.focus(), 0);
         }
+      }
+
+      function restoreActionMenuHome() {
+        if (!actionMenu || !actionMenuHomeParent) return;
+        if (actionMenu.parentElement === actionMenuHomeParent) return;
+        if (actionMenuHomeNextSibling && actionMenuHomeNextSibling.parentNode === actionMenuHomeParent) {
+          actionMenuHomeParent.insertBefore(actionMenu, actionMenuHomeNextSibling);
+          return;
+        }
+        actionMenuHomeParent.appendChild(actionMenu);
+      }
+
+      function closeSettingsPage(returnToChat) {
+        if (!actionMenu) return;
+        actionMenu.classList.remove("page-mode");
+        actionMenu.classList.add("hidden");
+        actionMenu.setAttribute("aria-hidden", "true");
+        if (actionMenuBtn) actionMenuBtn.setAttribute("aria-expanded", "false");
+        restoreActionMenuHome();
+        if (returnToChat) showTab("chat");
+      }
+
+      function openSettingsPage(sourceLabel) {
+        if (!actionMenu || !stageBlank) return;
+        if (threadsOverlayOpen) setThreadsOverlayOpen(false);
+        if (actionMenu.parentElement !== stageBlank) stageBlank.replaceChildren(actionMenu);
+        actionMenu.classList.remove("hidden");
+        actionMenu.classList.add("page-mode");
+        actionMenu.setAttribute("aria-hidden", "false");
+        if (actionMenuBtn) actionMenuBtn.setAttribute("aria-expanded", "true");
+        if (actionMenuSheet) actionMenuSheet.scrollTop = 0;
+        showTab("stageBlank");
+        setRunState(sourceLabel || "Settings");
+        if (apiKeyInline) setTimeout(() => apiKeyInline.focus(), 0);
       }
 
       function startNewChat() {
@@ -1953,7 +2417,7 @@
         }
         if (action === "execute") {
           showTab("exec");
-          addMessage("Executing pending actions...", "cmd");
+          if (SHOW_SYSTEM_ACTIVITY) addMessage("Executing pending actions...", "cmd");
           v.postMessage({ type: "execute" });
           return;
         }
@@ -2078,13 +2542,15 @@
         };
         queuedMessages.push(payload);
         renderQueuedMessagesUI();
-        addMessage("Queued message (" + queuedMessages.length + "): " + queuePreviewText(text), "cmd");
+        if (SHOW_SYSTEM_ACTIVITY) addMessage("Queued message (" + queuedMessages.length + "): " + queuePreviewText(text), "cmd");
       }
 
       function dispatchPromptPayload(payload) {
         if (!payload || !payload.text) return;
+        showTab("chat");
         followLatest = true;
         clearPlanDecisionCard();
+        activeRunThreadId = payload.threadId ? String(payload.threadId) : (currentThreadId ? String(currentThreadId) : null);
         responseStartedAtMs = Date.now();
         lastAssistantBubble = null;
         const userBubble = addMessage(payload.text, "u");
@@ -2133,11 +2599,11 @@
           const parsed = parseSlashModeCommand(composerInput.value || "");
           if (creatingThread) {
             setRunState("Creating new chat...");
-            addMessage("Creating new chat. Send your message in a moment.", "cmd");
+            if (SHOW_SYSTEM_ACTIVITY) addMessage("Creating new chat. Send your message in a moment.", "cmd");
             return;
           }
           if (parsed.preventSend) {
-            addMessage("Plan mode enabled. Add your request after /plan.", "cmd");
+            if (SHOW_SYSTEM_ACTIVITY) addMessage("Plan mode enabled. Add your request after /plan.", "cmd");
             return;
           }
           const text = parsed.text;
@@ -2178,7 +2644,7 @@
         } catch (e) {
           setStreaming(false);
           streamBubble = null;
-          addMessage("Error: " + (e && e.message ? e.message : String(e)), "e");
+          if (SHOW_SYSTEM_ACTIVITY) addMessage("Error: " + (e && e.message ? e.message : String(e)), "e");
         }
       }
 
@@ -2186,17 +2652,28 @@
       if (newThreadBtn) {
         newThreadBtn.onclick = startNewChat;
       }
+      if (chatEmptyHistory) {
+        chatEmptyHistory.onclick = () => {
+          openHistoryPanel("Loading history...");
+          renderHistoryPanel(recentHistory, { status: "Loading all sessions...", focusSearch: true });
+        };
+      }
+      if (chatEmptySettings) {
+        chatEmptySettings.onclick = () => {
+          openSettingsPage("Settings");
+        };
+      }
       if (newThreadQuick) {
         newThreadQuick.onclick = startNewChat;
       }
       if (historyQuick) {
         historyQuick.onclick = () => {
-          openChatsPopup("Loading chats...");
+          openChatsPopup("Loading tasks...");
         };
       }
       if (historyHeader) {
         historyHeader.onclick = () => {
-          openChatsPopup("Loading chats...");
+          openChatsPopup("Loading tasks...");
         };
       }
       if (closeThreadsPopupBtn) {
@@ -2213,9 +2690,22 @@
         backToChatQuick.onclick = () => {
           if (threadsOverlayOpen) {
             setThreadsOverlayOpen(false);
+            showTab("chat");
             return;
           }
+
+          // In-chat: act as "Back" to home (fresh chat + recent list).
+          const hasMessages = msgs ? msgs.children.length > 0 : false;
+          if (activePanelId === "chat" && (hasMessages || streaming)) {
+            if (streaming) v.postMessage({ type: "cancel" });
+            startNewChat();
+            v.postMessage({ type: "history" });
+            if (textarea) setTimeout(() => textarea.focus(), 0);
+            return;
+          }
+
           showTab("chat");
+          if (textarea) setTimeout(() => textarea.focus(), 0);
         };
       }
       if (threadsOverlayBackdrop) {
@@ -2233,19 +2723,19 @@
       }
       if (signInSetup) {
         signInSetup.onclick = () => {
-          addMessage("Opening browser sign-in…", "cmd");
+          if (SHOW_SYSTEM_ACTIVITY) addMessage("Opening browser sign-in…", "cmd");
           v.postMessage({ type: "signIn" });
         };
       }
       if (authSignIn) {
         authSignIn.onclick = () => {
-          addMessage("Opening browser sign-in…", "cmd");
+          if (SHOW_SYSTEM_ACTIVITY) addMessage("Opening browser sign-in…", "cmd");
           v.postMessage({ type: "signIn" });
           setActionMenuOpen(false);
         };
       }
       const handleSignOut = () => {
-        addMessage("Signing out…", "cmd");
+        if (SHOW_SYSTEM_ACTIVITY) addMessage("Signing out…", "cmd");
         v.postMessage({ type: "signOut" });
         setActionMenuOpen(false);
       };
@@ -2265,7 +2755,7 @@
           if (!key) return;
           v.postMessage({ type: "saveKey", key });
           if (apiKeyInline) apiKeyInline.value = "";
-          addMessage("API key updated.", "cmd");
+          if (SHOW_SYSTEM_ACTIVITY) addMessage("API key updated.", "cmd");
           setActionMenuOpen(false);
         };
       }
@@ -2334,13 +2824,16 @@
         actionMenuBtn.onclick = (e) => {
           e.preventDefault();
           e.stopPropagation();
-          const willOpen = actionMenu.classList.contains("hidden");
-          setActionMenuOpen(willOpen);
+          openSettingsPage("Settings");
         };
         if (actionMenuClose) {
           actionMenuClose.onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
+            if (actionMenu.classList.contains("page-mode")) {
+              closeSettingsPage(true);
+              return;
+            }
             setActionMenuOpen(false);
           };
         }
@@ -2349,12 +2842,17 @@
             e.preventDefault();
             e.stopPropagation();
             onMenuAction(btn.getAttribute("data-menu-action"));
+            if (actionMenu.classList.contains("page-mode")) {
+              closeSettingsPage(false);
+              return;
+            }
             setActionMenuOpen(false);
           });
         });
         actionMenu.addEventListener("click", (e) => {
           const target = eventTargetElement(e.target);
           if (!target) return;
+          if (actionMenu.classList.contains("page-mode")) return;
           if (target.classList.contains("action-menu-backdrop")) {
             e.preventDefault();
             e.stopPropagation();
@@ -2400,6 +2898,7 @@
       document.addEventListener("keydown", (e) => {
         if (handleMentionKeydown(e)) return;
         if (e.key === "Escape") setActionMenuOpen(false);
+        if (e.key === "Escape" && actionMenu && actionMenu.classList.contains("page-mode")) closeSettingsPage(false);
         if (e.key === "Escape" && threadsOverlayOpen) setThreadsOverlayOpen(false);
       }, true);
       document.addEventListener("keyup", (e) => {
@@ -2568,8 +3067,8 @@
       }
       if (viewAllTasks) {
         viewAllTasks.onclick = () => {
-          showHistoryPanel("Loading all sessions...");
-          v.postMessage({ type: "history" });
+          openHistoryPanel("Loading all conversation history...");
+          renderHistoryPanel(recentHistory, { status: "Loading all sessions...", focusSearch: true });
         };
       }
       if (histQuick) {
@@ -2621,7 +3120,7 @@
           m &&
           RUN_SCOPED_MESSAGE_TYPES.has(String(m.type || "")) &&
           m.threadId &&
-          (creatingThread || (currentThreadId && String(m.threadId) !== String(currentThreadId)))
+          ((activeRunThreadId && String(m.threadId) !== String(activeRunThreadId)) || (!activeRunThreadId && currentThreadId && String(m.threadId) !== String(currentThreadId)))
         ) {
           return;
         }
@@ -2683,6 +3182,8 @@
                 .filter((item) => item.path)
             : [];
           mentionActiveIndex = 0;
+          mentionPending = false;
+          mentionLastQuery = incomingQuery;
           renderMentionMenu();
         } else if (m.type === "att") {
           const count = Number(m.count || 0);
@@ -2692,6 +3193,16 @@
               : (count === 1 ? "1 image selected." : count + " images selected.");
           }
         } else if (m.type === "start") {
+          lastDiagnosticsFingerprint = "";
+          if (m.threadId) {
+            activeRunThreadId = String(m.threadId);
+            if (!currentThreadId || creatingThread) {
+              currentThreadId = activeRunThreadId;
+              creatingThread = false;
+              renderThreadList();
+            }
+          }
+          latestActionOutcome = null;
           if (!responseStartedAtMs) responseStartedAtMs = Date.now();
           runProgressBubble = null;
           resetRunProgress();
@@ -2740,6 +3251,17 @@
           lastStatusText = statusText;
           lastStatusAt = now;
 
+          if (!SHOW_SYSTEM_ACTIVITY) {
+            if (isProgressOnlyStatus(statusText)) {
+              if (statusText === activeProgressState) return;
+              setProgressState(statusText);
+            } else if (/^Execute finished:/i.test(statusText)) {
+              activeProgressState = "";
+              setRunState(streaming ? "Working..." : "Local");
+            }
+            return;
+          }
+
           if (/^Executing\s+\d+\s+action\(s\)\.\.\./i.test(statusText)) {
             terminalBubble = null;
             setTerminalState("Running");
@@ -2778,6 +3300,7 @@
         } else if (m.type === "editPreview") {
           addEditPreview(m.path || "unknown", m.patch || "");
         } else if (m.type === "terminalCommand") {
+          if (!SHOW_SYSTEM_ACTIVITY) return;
           setTerminalState("Running");
           const commandText = String(m.command || "").trim();
           if (!seenRunCommands.has(commandText)) {
@@ -2787,6 +3310,7 @@
           updateRunStep("execution", "running");
           setProgressState("Executing");
         } else if (m.type === "fileAction") {
+          if (!SHOW_SYSTEM_ACTIVITY) return;
           const status = String(m.status || "applied");
           const reason = m.reason ? " (" + String(m.reason) + ")" : "";
           addMessage("[file] " + status + " " + (m.path || "unknown") + reason, "cmd");
@@ -2831,22 +3355,97 @@
           const checksRun = Number(data.checksRun || 0);
           const quality = String(data.quality || "unknown");
           const summary = String(data.summary || "");
+          latestActionOutcome = { filesChanged, checksRun, quality, summary };
+          recheckAssistantTextForOutcome(latestActionOutcome);
+          const perFile = Array.isArray(data.perFile) ? data.perFile : [];
+          const debug = data.debug && typeof data.debug === "object" ? data.debug : null;
+          const guardrailIssues = extractGuardrailIssues(debug, summary);
           const outcomeNote = "files=" + filesChanged + ", checks=" + checksRun + ", quality=" + quality + (summary ? " - " + summary : "");
           updateRunStep("plan", runStepState.plan === "pending" ? "done" : runStepState.plan);
           updateRunStep("actions", runStepState.actions === "pending" ? "done" : runStepState.actions);
           updateRunStep("execution", runStepState.execution === "pending" ? "done" : runStepState.execution);
           updateRunStep("outcome", quality === "good" ? "done" : "warn", outcomeNote);
-          const outcome = [
-            "Action outcome",
-            "Files changed: " + filesChanged,
-            "Checks run: " + checksRun,
-            "Result quality: " + quality,
-            summary ? summary : "",
-          ].filter(Boolean).join("\n");
-          addMessage(outcome, quality === "good" ? "cmd" : "a");
-          if (filesChanged === 0 && quality !== "good") {
-            addMessage("Warning: No edits were applied.", "a");
+
+          const outcomeRows = [
+            {
+              title: "OUTCOME",
+              body: "files=" + filesChanged + ", checks=" + checksRun + ", quality=" + quality + (summary ? " | " + summary : ""),
+            },
+          ];
+          if (perFile.length) {
+            perFile.slice(0, 20).forEach((row) => {
+              const status = String((row && row.status) || "unknown");
+              const path = String((row && row.path) || "unknown");
+              const reason = row && row.reason ? " | " + String(row.reason) : "";
+              outcomeRows.push({
+                title: "FILE " + status.toUpperCase(),
+                body: path + reason,
+              });
+            });
           }
+          if (debug) {
+            const requested = Number(debug.requestedActions || 0);
+            const approved = Number(debug.approvedActions || 0);
+            const rejected = Number(debug.rejectedActions || 0);
+            const localRejected = Number(debug.localRejectedEdits || 0);
+            outcomeRows.push({
+              title: "DEBUG SUMMARY",
+              body:
+                "requested=" + requested +
+                ", approved=" + approved +
+                ", rejected=" + rejected +
+                ", localRejected=" + localRejected,
+            });
+            const rejectedSamples = Array.isArray(debug.rejectedSamples) ? debug.rejectedSamples : [];
+            const localRejectedSamples = Array.isArray(debug.localRejectedSamples) ? debug.localRejectedSamples : [];
+            const applyErrors = Array.isArray(debug.applyErrors) ? debug.applyErrors : [];
+            rejectedSamples.slice(0, 8).forEach((line) => {
+              outcomeRows.push({ title: "SERVER REJECTED", body: String(line || "") });
+            });
+            localRejectedSamples.slice(0, 8).forEach((line) => {
+              outcomeRows.push({ title: "LOCAL REJECTED", body: String(line || "") });
+            });
+            applyErrors.slice(0, 8).forEach((line) => {
+              outcomeRows.push({ title: "APPLY ERROR", body: String(line || "") });
+            });
+          }
+          if (guardrailIssues.length > 0) {
+            showGuardrailCard(guardrailIssues, summary, debug);
+          }
+          if (exec) {
+            const appended = outcomeRows
+              .map((row) => (
+                '<div class="item">' +
+                  '<div class="item-title">' + esc(row.title) + " - " + esc(new Date().toLocaleTimeString()) + "</div>" +
+                  '<div class="item-sub">' + esc(row.body) + "</div>" +
+                "</div>"
+              ))
+              .join("");
+            const currentExec = typeof exec.innerHTML === "string" ? exec.innerHTML.trim() : "";
+            exec.innerHTML = (currentExec && currentExec !== "No execution logs" ? currentExec : "") + appended;
+          }
+          if (SHOW_SYSTEM_ACTIVITY) {
+            const outcome = [
+              "Action outcome",
+              "Files changed: " + filesChanged,
+              "Checks run: " + checksRun,
+              "Result quality: " + quality,
+              summary ? summary : "",
+            ].filter(Boolean).join("\n");
+            addMessage(outcome, quality === "good" ? "cmd" : "a");
+            if (filesChanged === 0 && quality !== "good") {
+              addMessage("Warning: No edits were applied.", "a");
+            }
+          }
+          if (filesChanged === 0) {
+            const detailHint =
+              quality === "good"
+                ? "Open Execution to confirm whether this run was command-only."
+                : "Open Execution for exact reject reasons.";
+            addMessage("Execution debug: no file edits were applied. " + detailHint, "a");
+          }
+        } else if (m.type === "diagnosticsBundle") {
+          showDiagnosticsBundleCard(m.data || {});
         } else if (m.type === "timeline") {
           const rows = m.data || [];
           timeline.innerHTML = rows.map((x) => (
@@ -2863,55 +3462,15 @@
           pinnedIds = Array.isArray(data.pinnedIds) ? data.pinnedIds.map((id) => String(id || "")) : [];
           if (currentThreadId) creatingThread = false;
           renderThreadList();
+          renderTaskPreview(recentHistory);
+          if (history && history.classList.contains("active")) renderHistoryPanel(recentHistory, { query: historySearchQuery });
           restoreDraftForThread(currentThreadId);
         } else if (m.type === "historyItems") {
-          const rows = m.data || [];
+          const rows = Array.isArray(m.data) ? m.data : [];
           recentHistory = rows;
           renderThreadList();
-          history.innerHTML = rows.map((x) => (
-            '<div class="item" data-id="' + esc(x.id) + '">' +
-              '<div class="item-title">' + esc(x.title) + '</div>' +
-              '<div class="item-sub">' + esc(x.mode) + ' - ' + esc(String(x.id).slice(0, 8)) + '</div>' +
-            '</div>'
-          )).join("") || "No history";
-          history.querySelectorAll(".item").forEach((el) => {
-            el.onclick = () => {
-              saveCurrentDraft();
-              const id = el.getAttribute("data-id");
-              creatingThread = false;
-              currentThreadId = id;
-              renderThreadList();
-              setRunState("Switching chat...");
-              v.postMessage({ type: "openSession", id });
-              if (threadsOverlayOpen) setThreadsOverlayOpen(false);
-            };
-          });
-          if (taskList) {
-            taskList.innerHTML = rows.slice(0, 8).map((x) => (
-              '<div class="task-entry" data-id="' + esc(x.id) + '">' +
-                '<div class="task-main">' +
-                  '<div class="task-title">' + esc(x.title || "Untitled task") + '</div>' +
-                '</div>' +
-                '<div class="task-right">' +
-                  '<span class="task-mode">' + esc(String(x.mode || "auto")) + '</span>' +
-                  '<span class="task-age">' + esc(shortAgeLabel(x.updatedAt)) + '</span>' +
-                '</div>' +
-              '</div>'
-            )).join("") || '<div class="task-meta">No task history yet.</div>';
-            taskList.querySelectorAll(".task-entry").forEach((el) => {
-              el.onclick = () => {
-                saveCurrentDraft();
-                const id = el.getAttribute("data-id");
-                creatingThread = false;
-                currentThreadId = id;
-                renderThreadList();
-                setRunState("Switching chat...");
-                v.postMessage({ type: "openSession", id });
-                if (threadsOverlayOpen) setThreadsOverlayOpen(false);
-              };
-            });
-          }
-          if (viewAllTasks) viewAllTasks.textContent = "View all (" + rows.length + ")";
+          renderTaskPreview(rows);
+          renderHistoryPanel(rows, { query: historySearchQuery });
         } else if (m.type === "indexState") {
           index.innerHTML =
             '<div class="item"><div class="item-title">Chunks</div><div class="item-sub">' + esc(m.data?.chunks || 0) + '</div></div>' +
@@ -2935,18 +3494,20 @@
           agents.textContent = JSON.stringify(m.data || {}, null, 2);
         } else if (m.type === "execLogs") {
           const rows = m.data || [];
-          rows.forEach((x) => {
-            const parsed = parseExecCommandResult(x.message || "");
-            if (parsed) {
-              const ok = parsed.status === "APPROVED";
-              const marker = ok ? "OK" : "ERR";
-              addTerminalLine(marker + " " + parsed.command + " (exit " + parsed.exit + ")", ok ? "ok" : "err");
-              if (parsed.reason) addTerminalLine("reason: " + parsed.reason, "info");
-              return;
-            }
-            const level = String(x.level || "").toLowerCase();
-            addTerminalLine(String(x.message || ""), level === "error" ? "err" : "info");
-          });
+          if (SHOW_SYSTEM_ACTIVITY) {
+            rows.forEach((x) => {
+              const parsed = parseExecCommandResult(x.message || "");
+              if (parsed) {
+                const ok = parsed.status === "APPROVED";
+                const marker = ok ? "OK" : "ERR";
+                addTerminalLine(marker + " " + parsed.command + " (exit " + parsed.exit + ")", ok ? "ok" : "err");
+                if (parsed.reason) addTerminalLine("reason: " + parsed.reason, "info");
+                return;
+              }
+              const level = String(x.level || "").toLowerCase();
+              addTerminalLine(String(x.message || ""), level === "error" ? "err" : "info");
+            });
+          }
           exec.innerHTML = rows.map((x) => (
             '<div class="item">' +
               '<div class="item-title">' + esc(String(x.level || "").toUpperCase()) + ' - ' + esc(new Date(x.ts).toLocaleTimeString()) + '</div>' +
@@ -2963,11 +3524,25 @@
           const failedBubble = streamBubble && streamBubble.isConnected ? streamBubble : null;
           creatingThread = false;
           clearPlanDecisionCard();
+          if (failedBubble) {
+            failedBubble.classList.remove("typing");
+            failedBubble.classList.remove("stream-pending");
+            const body = failedBubble.querySelector(".m-body");
+            if (body) {
+              const existing = String(body.textContent || "").trim();
+              const detail = String(m.text || "Request failed.").trim();
+              const summary = detail.length > 280 ? detail.slice(0, 277) + "..." : detail;
+              if (!existing || /^streaming response\.{0,3}$/i.test(existing)) {
+                body.textContent = "I hit an issue while generating a response. " + summary;
+              }
+            }
+          }
           setStreaming(false);
           streamBubble = null;
+          activeRunThreadId = null;
           if (failedBubble) lastAssistantBubble = failedBubble;
           updateRunStep("outcome", "warn", String(m.text || "Error"));
-          addMessage("Error: " + m.text, "e");
+          if (SHOW_SYSTEM_ACTIVITY || !failedBubble) addMessage("Error: " + m.text, "e");
           setRunState("Error");
           pinAssistantResponseToBottom();
           stampResponseDuration(failedBubble, true);
@@ -2976,13 +3551,16 @@
           syncComposerHeight();
           scheduleContextPreviewDispatch(true);
         } else if (m.type === "load") {
+          lastDiagnosticsFingerprint = "";
           responseStartedAtMs = 0;
           lastAssistantBubble = null;
+          latestActionOutcome = null;
           creatingThread = false;
           clearPlanDecisionCard();
           closeMentionMenu();
           setStreaming(false);
           streamBubble = null;
+          activeRunThreadId = null;
           terminalBubble = null;
           runProgressBubble = null;
           resetRunProgress();
@@ -2993,13 +3571,15 @@
           lastStatusAt = 0;
           setRunState("Local");
           if (m.threadId !== undefined) currentThreadId = m.threadId;
+          const loadedMessages = Array.isArray(m.data) ? m.data : [];
           while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
-          (m.data || []).forEach((x) => {
+          loadedMessages.forEach((x) => {
             const body = x.role === "assistant" ? normalizeAssistantText(x.content) : x.content;
             addMessage(body, x.role === "user" ? "u" : "a");
           });
           updateStartupVisibility();
           renderThreadList();
+          renderTaskPreview(recentHistory);
           restoreDraftForThread(currentThreadId);
           syncComposerHeight();
           showTab("chat");
@@ -3010,6 +3590,8 @@
 
       updateStartupVisibility();
       renderThreadList();
+      renderTaskPreview(recentHistory);
+      renderHistoryPanel(recentHistory);
       applyModeUI("auto");
       v.postMessage({ type: "check" });
 

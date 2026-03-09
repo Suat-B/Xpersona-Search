@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
+import { cn } from "@/lib/utils";
 
 type SubscriptionStatus = "active" | "trial" | "cancelled" | "past_due" | "inactive";
 
@@ -155,6 +156,94 @@ function formatDate(iso?: string | null): string {
   });
 }
 
+function GlassCard({
+  children,
+  className,
+  glow = "cyan",
+}: {
+  children: ReactNode;
+  className?: string;
+  glow?: "cyan" | "fuchsia" | "emerald" | "amber" | "slate";
+}) {
+  const glowClass =
+    glow === "emerald"
+      ? "bg-[radial-gradient(circle_at_15%_20%,rgba(16,185,129,0.22),transparent_55%),radial-gradient(circle_at_85%_0%,rgba(34,211,238,0.14),transparent_50%)]"
+      : glow === "fuchsia"
+        ? "bg-[radial-gradient(circle_at_15%_15%,rgba(217,70,239,0.18),transparent_55%),radial-gradient(circle_at_85%_0%,rgba(56,189,248,0.18),transparent_55%)]"
+        : glow === "amber"
+          ? "bg-[radial-gradient(circle_at_18%_25%,rgba(245,158,11,0.22),transparent_55%),radial-gradient(circle_at_85%_0%,rgba(56,189,248,0.14),transparent_55%)]"
+          : glow === "slate"
+            ? "bg-[radial-gradient(circle_at_25%_20%,rgba(148,163,184,0.18),transparent_60%),radial-gradient(circle_at_85%_0%,rgba(56,189,248,0.12),transparent_55%)]"
+            : "bg-[radial-gradient(circle_at_18%_25%,rgba(34,211,238,0.22),transparent_55%),radial-gradient(circle_at_85%_0%,rgba(59,130,246,0.18),transparent_55%)]";
+
+  return (
+    <div className={cn("neural-glass relative overflow-hidden rounded-3xl", className)}>
+      <div className={cn("pointer-events-none absolute inset-0 opacity-90", glowClass)} aria-hidden />
+      <div className="relative">{children}</div>
+    </div>
+  );
+}
+
+function MetricTile({
+  label,
+  value,
+  hint,
+  className,
+}: {
+  label: string;
+  value: ReactNode;
+  hint?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-4 shadow-sm transition hover:bg-white/[0.05]",
+        className
+      )}
+    >
+      <div
+        className="pointer-events-none absolute -right-20 -top-20 h-44 w-44 rounded-full bg-cyan-400/10 blur-3xl opacity-70 transition-opacity group-hover:opacity-100"
+        aria-hidden
+      />
+      <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-tertiary)]">{label}</p>
+      <p className="mt-2 text-2xl font-semibold tabular-nums text-[var(--text-primary)]">{value}</p>
+      {hint ? <p className="mt-2 text-sm text-[var(--text-secondary)]">{hint}</p> : null}
+    </div>
+  );
+}
+
+function ProgressRow({
+  label,
+  usedLabel,
+  pctValue,
+  tone = "cyan",
+  footer,
+}: {
+  label: string;
+  usedLabel: string;
+  pctValue: number;
+  tone?: "cyan" | "emerald";
+  footer?: ReactNode;
+}) {
+  const barClass = tone === "emerald" ? "bg-emerald-400" : "bg-cyan-400";
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-tertiary)]">{label}</p>
+        <p className="text-xs tabular-nums text-[var(--text-secondary)]">{usedLabel}</p>
+      </div>
+      <div className="mt-3 h-2.5 rounded-full bg-white/10 overflow-hidden">
+        <div className={cn("h-full rounded-full transition-[width] duration-500", barClass)} style={{ width: `${pctValue}%` }} />
+      </div>
+      <div className="mt-2 flex items-center justify-between text-xs text-[var(--text-secondary)]">
+        <span className="tabular-nums">{pctValue}% used</span>
+        {footer ? <span className="tabular-nums">{footer}</span> : null}
+      </div>
+    </div>
+  );
+}
+
 export default function PlaygroundDashboardPage() {
   const [data, setData] = useState<PlaygroundUsageData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -278,78 +367,123 @@ export default function PlaygroundDashboardPage() {
       },
       { requests: 0, tokens: 0 }
     );
-  }, [usage.topModels]);
+  }, [usage.cycleTopModels]);
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        <div className="h-56 rounded-2xl bg-white/[0.04] animate-pulse" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-28 rounded-2xl bg-white/[0.04] animate-pulse" />
-          ))}
+      <div className="space-y-6">
+        <div className="h-44 rounded-3xl bg-white/[0.04] animate-pulse" />
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          <div className="xl:col-span-2 space-y-6">
+            <div className="h-56 rounded-3xl bg-white/[0.04] animate-pulse" />
+            <div className="h-56 rounded-3xl bg-white/[0.04] animate-pulse" />
+            <div className="h-64 rounded-3xl bg-white/[0.04] animate-pulse" />
+          </div>
+          <div className="space-y-6">
+            <div className="h-56 rounded-3xl bg-white/[0.04] animate-pulse" />
+            <div className="h-56 rounded-3xl bg-white/[0.04] animate-pulse" />
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
-      <section className="relative overflow-hidden rounded-3xl border border-cyan-300/30 bg-[radial-gradient(circle_at_12%_18%,rgba(34,211,238,0.25),transparent_42%),radial-gradient(circle_at_88%_0%,rgba(59,130,246,0.24),transparent_42%),linear-gradient(135deg,#070b16,#0b1120)] p-5 sm:p-7">
-        <div className="pointer-events-none absolute -top-24 left-[-4rem] h-56 w-56 rounded-full bg-cyan-400/20 blur-3xl" aria-hidden />
-        <div className="pointer-events-none absolute -bottom-24 right-[-2rem] h-56 w-56 rounded-full bg-blue-500/15 blur-3xl" aria-hidden />
-
-        <div className="relative grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-6 items-start">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.2em] text-cyan-100/80">Instant API Generator</p>
-            <h1 className="mt-2 text-3xl sm:text-4xl font-semibold text-white leading-tight">
-              Create your Playground API key in seconds
-            </h1>
-            <p className="mt-3 max-w-xl text-sm text-slate-300">
-              Ship faster with a key-ready setup at the top of your workflow. Generate, copy, and plug into your agents without leaving this page.
+    <div className="relative space-y-6 animate-in fade-in duration-300">
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden>
+        <div className="absolute -top-48 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-cyan-400/10 blur-3xl" />
+        <div className="absolute -top-24 right-[-7rem] h-[520px] w-[520px] rounded-full bg-fuchsia-500/10 blur-3xl" />
+        <div className="absolute -bottom-40 left-[-10rem] h-[560px] w-[560px] rounded-full bg-sky-400/10 blur-3xl" />
+        <div className="absolute inset-0 opacity-[0.14] bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.06)_1px,transparent_0)] [background-size:26px_26px]" />
+      </div>
+      <GlassCard className="p-6 sm:p-8" glow="fuchsia">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-tertiary)]">
+              Dashboard • Playground
             </p>
+            <h1 className="mt-2 text-3xl sm:text-4xl font-semibold leading-tight text-[var(--text-primary)]">
+              <span className="bg-gradient-to-r from-cyan-200 via-sky-200 to-fuchsia-200 bg-clip-text text-transparent">
+                Keys, usage, and billing
+              </span>{" "}
+              in one place
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm text-[var(--text-secondary)]">
+              Generate your API key, monitor the current reset cycle, and manage your subscription.
+            </p>
+
             <div className="mt-4 flex flex-wrap gap-2">
-              <span className="rounded-full border border-cyan-200/35 bg-cyan-500/15 px-3 py-1 text-[11px] uppercase tracking-wide text-cyan-100">
-                5-hour reset ready
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full border px-3 py-1 text-xs uppercase tracking-wide",
+                  toneClass(usage.status)
+                )}
+              >
+                {usage.status.replaceAll("_", " ")}
               </span>
-              <span className="rounded-full border border-emerald-200/35 bg-emerald-500/15 px-3 py-1 text-[11px] uppercase tracking-wide text-emerald-100">
-                AI integration friendly
+              <span className="inline-flex items-center rounded-full border border-white/12 bg-white/[0.03] px-3 py-1 text-xs uppercase tracking-wide text-[var(--text-secondary)]">
+                plan {usage.plan ?? "none"}
+              </span>
+              <span className="inline-flex items-center rounded-full border border-white/12 bg-white/[0.03] px-3 py-1 text-xs uppercase tracking-wide text-[var(--text-secondary)]">
+                next reset {nextFiveHourReset}
               </span>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-cyan-300/35 bg-black/35 p-4 sm:p-5 backdrop-blur-sm">
-            <ApiKeySection />
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/playground"
+              className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-cyan-500 to-sky-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition hover:from-cyan-400 hover:to-sky-400 active:scale-[0.98]"
+            >
+              Open Playground
+            </Link>
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center justify-center rounded-xl border border-white/12 bg-white/[0.03] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition hover:bg-white/[0.06] active:scale-[0.98]"
+            >
+              Back to Dashboard
+            </Link>
           </div>
         </div>
-      </section>
+      </GlassCard>
 
-      {warning && (
-        <div className="agent-card p-4 text-sm text-amber-200 border border-amber-400/30 bg-amber-500/10">
-          {warning}
-        </div>
-      )}
+      {warning ? (
+        <GlassCard className="p-4" glow="amber">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 h-2.5 w-2.5 rounded-full bg-amber-300 shadow-[0_0_0_6px_rgba(245,158,11,0.14)]" aria-hidden />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-amber-100">Heads up</p>
+              <p className="mt-1 text-sm text-amber-100/80">{warning}</p>
+            </div>
+          </div>
+        </GlassCard>
+      ) : null}
 
-      <section className="relative overflow-hidden rounded-3xl border border-fuchsia-300/20 bg-[radial-gradient(circle_at_15%_15%,rgba(45,212,191,0.16),transparent_42%),radial-gradient(circle_at_82%_0%,rgba(59,130,246,0.2),transparent_42%),linear-gradient(140deg,#090a12,#0c1020)] p-5 sm:p-6">
-        <div className="absolute -top-20 right-0 h-48 w-48 rounded-full bg-cyan-400/15 blur-3xl" aria-hidden />
-        <div className="relative">
+      <GlassCard className="p-6 sm:p-7" glow="fuchsia">
+        <div>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.16em] text-cyan-100/80">Playground AI Access</p>
-              <h2 className="mt-1 text-xl sm:text-2xl font-semibold text-white">Start your 2-day free trial</h2>
-              <p className="mt-1 text-sm text-slate-300">Track usage in real time with a 5-hour reset rhythm for fast feedback loops.</p>
+              <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-tertiary)]">Playground AI Access</p>
+              <h2 className="mt-2 text-xl sm:text-2xl font-semibold text-[var(--text-primary)]">Start your free trial</h2>
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">Choose a billing cadence and get to building.</p>
             </div>
-            <div className="inline-flex rounded-xl border border-cyan-200/30 bg-black/35 p-1">
+            <div className="inline-flex rounded-2xl border border-white/12 bg-white/[0.03] p-1">
               <button
                 onClick={() => setBilling("monthly")}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${billing === "monthly" ? "bg-cyan-500 text-white" : "text-slate-300 hover:text-white"}`}
+                className={cn(
+                  "rounded-xl px-3 py-2 text-xs font-semibold transition",
+                  billing === "monthly" ? "bg-cyan-500 text-white shadow shadow-cyan-500/20" : "text-[var(--text-secondary)] hover:text-white"
+                )}
                 aria-label="Use monthly pricing"
               >
                 Monthly
               </button>
               <button
                 onClick={() => setBilling("yearly")}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${billing === "yearly" ? "bg-cyan-500 text-white" : "text-slate-300 hover:text-white"}`}
+                className={cn(
+                  "rounded-xl px-3 py-2 text-xs font-semibold transition",
+                  billing === "yearly" ? "bg-cyan-500 text-white shadow shadow-cyan-500/20" : "text-[var(--text-secondary)] hover:text-white"
+                )}
                 aria-label="Use yearly pricing"
               >
                 Yearly
@@ -363,179 +497,233 @@ export default function PlaygroundDashboardPage() {
               { tier: "builder" as const, name: "Builder", monthly: "$5", yearly: "$50", note: "1,000 requests per 5-hour cycle after trial" },
               { tier: "studio" as const, name: "Studio", monthly: "$10", yearly: "$100", note: "3,000 requests per 5-hour cycle after trial" },
             ].map((plan) => (
-              <div key={plan.tier} className={`rounded-2xl border p-4 ${plan.tier === "builder" ? "border-cyan-300/50 bg-cyan-500/10" : "border-white/15 bg-black/25"}`}>
+              <div
+                key={plan.tier}
+                className={cn(
+                  "relative overflow-hidden rounded-3xl border p-5",
+                  plan.tier === "builder"
+                    ? "border-cyan-300/40 bg-[linear-gradient(145deg,rgba(34,211,238,0.14),rgba(255,255,255,0.02))]"
+                    : "border-white/10 bg-white/[0.02]"
+                )}
+              >
+                <div className="pointer-events-none absolute -right-20 -top-20 h-48 w-48 rounded-full bg-cyan-400/15 blur-3xl" aria-hidden />
+                <div className="relative">
                 <div className="flex items-center justify-between">
                   <h3 className="text-base font-semibold text-white">{plan.name}</h3>
                   {plan.tier === "builder" ? (
-                    <span className="rounded-full border border-cyan-200/40 bg-cyan-500/20 px-2 py-0.5 text-[10px] uppercase tracking-wider text-cyan-100">Most chosen</span>
+                    <span className="rounded-full border border-cyan-200/40 bg-cyan-500/15 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-cyan-100">Most chosen</span>
                   ) : null}
                 </div>
                 <p className="mt-2 text-2xl font-semibold text-white tabular-nums">{billing === "monthly" ? plan.monthly : plan.yearly}</p>
-                <p className="mt-1 text-xs text-slate-300">{billing === "monthly" ? "per month" : "per year"} after trial</p>
-                <p className="mt-3 text-xs text-slate-300">{plan.note}</p>
+                <p className="mt-1 text-xs text-[var(--text-secondary)]">{billing === "monthly" ? "per month" : "per year"} after trial</p>
+                <p className="mt-3 text-xs text-[var(--text-secondary)]">{plan.note}</p>
                 <button
                   onClick={() => startCheckout(plan.tier)}
                   disabled={checkoutPlan !== null}
-                  className="mt-4 w-full rounded-xl bg-cyan-500 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-400 disabled:opacity-60"
+                  className={cn(
+                    "mt-5 w-full rounded-2xl px-4 py-2.5 text-sm font-semibold text-white transition active:scale-[0.98] disabled:opacity-60",
+                    plan.tier === "builder"
+                      ? "bg-gradient-to-r from-cyan-500 to-sky-500 hover:from-cyan-400 hover:to-sky-400 shadow-lg shadow-cyan-500/15"
+                      : "bg-white/[0.06] hover:bg-white/[0.1] border border-white/10"
+                  )}
                 >
                   {checkoutPlan === plan.tier ? "Starting checkout..." : "Start Free Trial"}
                 </button>
+                </div>
               </div>
             ))}
           </div>
 
-          <p className="mt-3 text-xs text-cyan-100/80">
+          <p className="mt-4 text-xs text-[var(--text-secondary)]">
             Trial cycle: 30 requests per reset window, 8K context, 256 max output. Paid packages: Starter 300 requests per
             cycle, Builder 1,000 requests per cycle, Studio 3,000 requests per cycle (16K context, 512 max output).
           </p>
-          {checkoutError ? <p className="mt-2 text-xs text-rose-300">{checkoutError}</p> : null}
+          {checkoutError ? <p className="mt-2 text-xs text-rose-200">{checkoutError}</p> : null}
         </div>
-      </section>
+      </GlassCard>
 
-      <section className="relative overflow-hidden rounded-3xl border border-sky-300/20 bg-[radial-gradient(circle_at_20%_20%,rgba(56,189,248,0.2),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(14,165,233,0.24),transparent_40%),linear-gradient(145deg,#090f18,#0a111d)] p-6 sm:p-8">
-        <div className="absolute -top-20 -right-16 h-56 w-56 rounded-full bg-cyan-400/15 blur-3xl" aria-hidden />
-        <div className="absolute -bottom-16 -left-14 h-48 w-48 rounded-full bg-sky-500/10 blur-3xl" aria-hidden />
-
-        <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+      <GlassCard className="p-6 sm:p-8" glow="cyan">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.18em] text-cyan-100/80">5-Hour Reset Overview</p>
-            <h1 className="mt-2 text-3xl sm:text-4xl font-semibold text-white font-display leading-tight">
-              Playground Usage by Reset Cycle
-            </h1>
-            <p className="mt-3 max-w-xl text-sm text-slate-300">
-              Stay within your plan by watching request and token usage in each 5-hour reset cycle.
+            <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-tertiary)]">Reset Cycle</p>
+            <h2 className="mt-2 text-2xl sm:text-3xl font-semibold text-[var(--text-primary)]">Usage overview</h2>
+            <p className="mt-2 max-w-xl text-sm text-[var(--text-secondary)]">
+              Requests and tokens inside the current 5‑hour window.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
-              <span className={`rounded-full border px-3 py-1 text-xs uppercase tracking-wide ${toneClass(usage.status)}`}>
+              <span className={cn("rounded-full border px-3 py-1 text-xs uppercase tracking-wide", toneClass(usage.status))}>
                 {usage.status.replaceAll("_", " ")}
               </span>
-              <span className="rounded-full border border-cyan-300/35 bg-cyan-500/10 px-3 py-1 text-xs uppercase tracking-wide text-cyan-100">
+              <span className="rounded-full border border-white/12 bg-white/[0.03] px-3 py-1 text-xs uppercase tracking-wide text-[var(--text-secondary)]">
                 plan {usage.plan ?? "none"}
               </span>
+              <span className="rounded-full border border-white/12 bg-white/[0.03] px-3 py-1 text-xs uppercase tracking-wide text-[var(--text-secondary)]">
+                next reset {nextFiveHourReset}
+              </span>
             </div>
-          </div>
-
-          <div className="rounded-2xl border border-cyan-300/30 bg-black/30 p-5 backdrop-blur-sm space-y-4">
-            <div>
-              <div className="flex items-center justify-between text-xs uppercase tracking-wider text-cyan-100/80">
-                <span>Cycle requests used</span>
-                <span>{usage.cycle.requestsUsed}/{usage.cycle.requestsLimit}</span>
-              </div>
-              <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
-                <div className="h-full bg-cyan-400" style={{ width: `${dailyUsedPct}%` }} />
-              </div>
-              <p className="mt-1 text-xs text-slate-300">{dailyUsedPct}% used - {usage.cycle.requestsRemaining} remaining this cycle</p>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between text-xs uppercase tracking-wider text-cyan-100/80">
-                <span>Cycle output tokens used</span>
-                <span>{usage.cycle.tokensOutput.toLocaleString()}/{usage.cycle.tokensLimit.toLocaleString()}</span>
-              </div>
-              <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
-                <div className="h-full bg-emerald-400" style={{ width: `${monthlyUsedPct}%` }} />
-              </div>
-              <p className="mt-1 text-xs text-slate-300">{monthlyUsedPct}% used - {usage.cycle.tokensRemaining.toLocaleString()} tokens remaining in cycle view</p>
-            </div>
-
-            <p className="text-xs text-slate-300">
-              Next 5-hour reset: {nextFiveHourReset}
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="agent-card p-5">
-          <p className="text-xs uppercase tracking-wider text-[var(--dash-text-secondary)]">Cycle used</p>
-          <p className="mt-2 text-2xl font-semibold text-[var(--text-primary)] tabular-nums">{usage.cycle.requestsUsed.toLocaleString()}</p>
-          <p className="mt-2 text-sm text-[var(--text-tertiary)]">Requests consumed this cycle</p>
-        </div>
-        <div className="agent-card p-5">
-          <p className="text-xs uppercase tracking-wider text-[var(--dash-text-secondary)]">Cycle remaining</p>
-          <p className="mt-2 text-2xl font-semibold text-[var(--text-primary)] tabular-nums">{usage.cycle.requestsRemaining.toLocaleString()}</p>
-          <p className="mt-2 text-sm text-[var(--text-tertiary)]">Requests left before 5-hour reset</p>
-        </div>
-        <div className="agent-card p-5">
-          <p className="text-xs uppercase tracking-wider text-[var(--dash-text-secondary)]">Cycle tokens used</p>
-          <p className="mt-2 text-2xl font-semibold text-[var(--text-primary)] tabular-nums">{usage.cycle.tokensOutput.toLocaleString()}</p>
-          <p className="mt-2 text-sm text-[var(--text-tertiary)]">Output tokens consumed in cycle view</p>
-        </div>
-        <div className="agent-card p-5">
-          <p className="text-xs uppercase tracking-wider text-[var(--dash-text-secondary)]">Cycle tokens remaining</p>
-          <p className="mt-2 text-2xl font-semibold text-[var(--text-primary)] tabular-nums">{usage.cycle.tokensRemaining.toLocaleString()}</p>
-          <p className="mt-2 text-sm text-[var(--text-tertiary)]">Tokens available in cycle view</p>
-        </div>
-      </section>
-
-      <section className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <div className="agent-card p-5 xl:col-span-2">
-          <h2 className="text-base font-semibold text-[var(--text-primary)]">Usage Health</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3 text-sm text-[var(--text-secondary)]">
-              <p className="text-xs uppercase tracking-wider text-[var(--dash-text-secondary)]">Success rate (24h)</p>
-              <p className="mt-2 text-xl font-semibold text-emerald-300">{(usage.last24h.successRate * 100).toFixed(0)}%</p>
-            </div>
-            <div className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3 text-sm text-[var(--text-secondary)]">
-              <p className="text-xs uppercase tracking-wider text-[var(--dash-text-secondary)]">Avg latency (24h)</p>
-              <p className="mt-2 text-xl font-semibold text-[var(--text-primary)] tabular-nums">
-                {usage.last24h.avgLatencyMs == null ? "--" : `${Math.round(usage.last24h.avgLatencyMs)} ms`}
+            <div className="mt-5 rounded-2xl border border-white/12 bg-white/[0.03] px-4 py-3 text-sm">
+              <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-tertiary)]">Cycle</p>
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                {formatReset(usage.cycle.startsAt)} → {formatReset(usage.cycle.endsAt)}
               </p>
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-5">
-            <div className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">
-              Success: {(usage.statusBreakdown?.success ?? 0).toLocaleString()}
-            </div>
-            <div className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">
-              Errors: {(usage.statusBreakdown?.error ?? 0).toLocaleString()}
-            </div>
-            <div className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">
-              Rate limited: {(usage.statusBreakdown?.rateLimited ?? 0).toLocaleString()}
-            </div>
-            <div className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">
-              Limit exceeded: {(usage.statusBreakdown?.quotaExceeded ?? 0).toLocaleString()}
-            </div>
-            <div className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">
-              Validation errors: {(usage.statusBreakdown?.validationError ?? 0).toLocaleString()}
-            </div>
-          </div>
+          <div className="space-y-4">
+            <ProgressRow
+              label="Requests"
+              usedLabel={`${usage.cycle.requestsUsed.toLocaleString()} / ${usage.cycle.requestsLimit.toLocaleString()}`}
+              pctValue={dailyUsedPct}
+              tone="cyan"
+              footer={`${usage.cycle.requestsRemaining.toLocaleString()} remaining`}
+            />
+            <ProgressRow
+              label="Output tokens"
+              usedLabel={`${usage.cycle.tokensOutput.toLocaleString()} / ${usage.cycle.tokensLimit.toLocaleString()}`}
+              pctValue={monthlyUsedPct}
+              tone="emerald"
+              footer={`${usage.cycle.tokensRemaining.toLocaleString()} remaining`}
+            />
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Link href="/playground" className="rounded-xl bg-cyan-500 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-500/90">
-              Open Playground
-            </Link>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <MetricTile label="Requests used" value={usage.cycle.requestsUsed.toLocaleString()} hint="This cycle" />
+              <MetricTile label="Tokens used" value={usage.cycle.tokensOutput.toLocaleString()} hint="Output tokens" />
+            </div>
           </div>
         </div>
 
-        <div className="xl:col-span-1 space-y-4">
-          <div className="agent-card p-5">
-            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Manage Subscription</h3>
-            <div className="mt-3 space-y-2">
-              <div className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">
-                <p>Status: <span className="font-medium text-[var(--text-primary)]">{usage.status.replaceAll("_", " ")}</span></p>
-                <p className="mt-1">Plan: <span className="font-medium text-[var(--text-primary)]">{usage.plan ?? "none"}</span></p>
+        <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+            <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-tertiary)]">Context cap</p>
+            <p className="mt-1 text-sm font-semibold text-[var(--text-primary)] tabular-nums">
+              {usage.limits?.contextHardCap?.toLocaleString?.() ?? "--"}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+            <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-tertiary)]">Max input</p>
+            <p className="mt-1 text-sm font-semibold text-[var(--text-primary)] tabular-nums">
+              {usage.limits?.maxInputTokensPerRequest?.toLocaleString?.() ?? "--"}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+            <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-tertiary)]">Max output</p>
+            <p className="mt-1 text-sm font-semibold text-[var(--text-primary)] tabular-nums">
+              {usage.limits?.maxOutputTokens?.toLocaleString?.() ?? "--"}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+            <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-tertiary)]">Req cap</p>
+            <p className="mt-1 text-sm font-semibold text-[var(--text-primary)] tabular-nums">
+              {usage.limits?.maxRequestsPerCycle?.toLocaleString?.() ?? "--"}
+            </p>
+          </div>
+        </div>
+      </GlassCard>
+
+      <GlassCard className="p-6" glow="slate">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-tertiary)]">At a glance</p>
+            <h3 className="mt-2 text-lg font-semibold text-[var(--text-primary)]">Today and this month</h3>
+          </div>
+          <p className="text-sm text-[var(--text-secondary)]">Fast sanity-check numbers.</p>
+        </div>
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <MetricTile label="Today requests used" value={usage.today.requestsUsed.toLocaleString()} hint={`limit ${usage.today.requestsLimit.toLocaleString()}`} />
+          <MetricTile label="Today requests remaining" value={usage.today.requestsRemaining.toLocaleString()} hint="resets every 5 hours" />
+          <MetricTile label="Month tokens output" value={usage.thisMonth.tokensOutput.toLocaleString()} hint={`limit ${usage.thisMonth.tokensLimit.toLocaleString()}`} />
+          <MetricTile label="Month tokens remaining" value={usage.thisMonth.tokensRemaining.toLocaleString()} hint="output tokens" />
+        </div>
+      </GlassCard>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <GlassCard className="p-6 sm:p-7 xl:col-span-2" glow="emerald">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-tertiary)]">Health</p>
+              <h2 className="mt-2 text-xl font-semibold text-[var(--text-primary)]">Reliability and performance</h2>
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">A pulse check from the last 24 hours.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/playground"
+                className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-cyan-500 to-sky-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/15 transition hover:from-cyan-400 hover:to-sky-400 active:scale-[0.98]"
+              >
+                Open Playground
+              </Link>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <MetricTile label="Success rate (24h)" value={`${(usage.last24h.successRate * 100).toFixed(0)}%`} hint={`${usage.last24h.requests.toLocaleString()} requests`} />
+            <MetricTile
+              label="Avg latency (24h)"
+              value={usage.last24h.avgLatencyMs == null ? "--" : `${Math.round(usage.last24h.avgLatencyMs)} ms`}
+              hint="client-side avg"
+            />
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {[
+              { label: "Success", value: usage.statusBreakdown?.success ?? 0, tone: "text-emerald-200" },
+              { label: "Errors", value: usage.statusBreakdown?.error ?? 0, tone: "text-rose-200" },
+              { label: "Rate limited", value: usage.statusBreakdown?.rateLimited ?? 0, tone: "text-amber-200" },
+              { label: "Quota", value: usage.statusBreakdown?.quotaExceeded ?? 0, tone: "text-sky-200" },
+              { label: "Validation", value: usage.statusBreakdown?.validationError ?? 0, tone: "text-slate-200" },
+            ].map((item) => (
+              <div key={item.label} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-tertiary)]">{item.label}</p>
+                <p className={cn("mt-1 text-sm font-semibold tabular-nums", item.tone)}>{item.value.toLocaleString()}</p>
+              </div>
+            ))}
+          </div>
+        </GlassCard>
+
+        <div className="space-y-6">
+          <GlassCard className="p-6" glow="cyan">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--text-tertiary)]">API Key</p>
+                <h3 className="mt-2 text-lg font-semibold text-[var(--text-primary)]">Your Playground key</h3>
+                <p className="mt-1 text-sm text-[var(--text-secondary)]">Generate and copy safely.</p>
+              </div>
+              <div className="h-10 w-10 rounded-2xl border border-cyan-200/30 bg-cyan-500/10 flex items-center justify-center text-cyan-200" aria-hidden>
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              </div>
+            </div>
+            <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+              <ApiKeySection compact />
+            </div>
+          </GlassCard>
+
+          <GlassCard className="p-6" glow="slate">
+            <h3 className="text-lg font-semibold text-[var(--text-primary)]">Manage subscription</h3>
+            <div className="mt-4 space-y-3">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-[var(--text-secondary)]">
+                <p>
+                  Status: <span className="font-semibold text-[var(--text-primary)]">{usage.status.replaceAll("_", " ")}</span>
+                </p>
+                <p className="mt-1">
+                  Plan: <span className="font-semibold text-[var(--text-primary)]">{usage.plan ?? "none"}</span>
+                </p>
                 <p className="mt-1">
                   Renewal date:{" "}
-                  <span className="font-medium text-[var(--text-primary)]">{formatDate(usage.billing?.currentPeriodEndsAt)}</span>
+                  <span className="font-semibold text-[var(--text-primary)]">{formatDate(usage.billing?.currentPeriodEndsAt)}</span>
                 </p>
                 {usage.billing?.cancelAtPeriodEnd ? (
-                  <p className="mt-1 text-amber-300">
+                  <p className="mt-2 text-amber-200">
                     Cancellation scheduled for {formatDate(usage.billing.currentPeriodEndsAt)}.
                   </p>
                 ) : null}
-                {usage.trial?.isActive ? (
-                  <p className="mt-1 text-cyan-200">
-                    Trial ends on {formatDate(usage.trial.endsAt)}.
-                  </p>
-                ) : null}
+                {usage.trial?.isActive ? <p className="mt-2 text-cyan-200">Trial ends on {formatDate(usage.trial.endsAt)}.</p> : null}
               </div>
 
               <button
                 onClick={() => manageSubscription("portal")}
                 disabled={subscriptionAction !== null || usage.plan == null}
-                className="w-full rounded-xl border border-cyan-300/40 bg-cyan-500/10 px-3 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-60"
+                className="w-full rounded-2xl border border-white/12 bg-white/[0.03] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition hover:bg-white/[0.06] disabled:opacity-60 active:scale-[0.98]"
               >
                 {subscriptionAction === "portal" ? "Opening billing portal..." : "Manage Billing"}
               </button>
@@ -544,7 +732,7 @@ export default function PlaygroundDashboardPage() {
                 <button
                   onClick={() => manageSubscription("resume")}
                   disabled={subscriptionAction !== null}
-                  className="w-full rounded-xl border border-emerald-300/40 bg-emerald-500/10 px-3 py-2 text-sm font-medium text-emerald-100 hover:bg-emerald-500/20 disabled:opacity-60"
+                  className="w-full rounded-2xl bg-emerald-500/10 border border-emerald-300/30 px-4 py-2.5 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/15 disabled:opacity-60 active:scale-[0.98]"
                 >
                   {subscriptionAction === "resume" ? "Resuming..." : "Resume Renewal"}
                 </button>
@@ -552,30 +740,40 @@ export default function PlaygroundDashboardPage() {
                 <button
                   onClick={() => manageSubscription("cancel")}
                   disabled={subscriptionAction !== null || usage.plan == null}
-                  className="w-full rounded-xl border border-rose-300/40 bg-rose-500/10 px-3 py-2 text-sm font-medium text-rose-100 hover:bg-rose-500/20 disabled:opacity-60"
+                  className="w-full rounded-2xl bg-rose-500/10 border border-rose-300/30 px-4 py-2.5 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/15 disabled:opacity-60 active:scale-[0.98]"
                 >
                   {subscriptionAction === "cancel" ? "Scheduling cancellation..." : "Cancel at Period End"}
                 </button>
               )}
-              {subscriptionError ? <p className="text-xs text-rose-300">{subscriptionError}</p> : null}
-            </div>
-          </div>
 
-          <div className="agent-card p-5">
-            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Model in current cycle</h3>
-            <div className="mt-3 space-y-2">
-              <div className="rounded-xl border border-[var(--dash-divider)] bg-[var(--bg-elevated)] p-3">
-                <p className="text-xs text-[var(--text-secondary)] break-all">Playground AI</p>
-                <p className="mt-1 text-xs text-[var(--text-tertiary)]">
-                  {modelTotals.requests.toLocaleString()} req - {modelTotals.tokens.toLocaleString()} tokens
-                </p>
-              </div>
+              {subscriptionError ? <p className="text-xs text-rose-200">{subscriptionError}</p> : null}
             </div>
-          </div>
+          </GlassCard>
 
-          <ApiKeySection />
+          <GlassCard className="p-6" glow="cyan">
+            <h3 className="text-lg font-semibold text-[var(--text-primary)]">Top models (cycle)</h3>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">
+              {modelTotals.requests.toLocaleString()} req • {modelTotals.tokens.toLocaleString()} tokens
+            </p>
+            <div className="mt-4 space-y-2">
+              {(usage.cycleTopModels ?? []).slice(0, 4).length ? (
+                (usage.cycleTopModels ?? []).slice(0, 4).map((m) => (
+                  <div key={m.model} className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                    <p className="text-sm font-semibold text-[var(--text-primary)] break-all">{m.model}</p>
+                    <p className="mt-1 text-xs text-[var(--text-secondary)] tabular-nums">
+                      {m.requests.toLocaleString()} req • {m.tokensOutput.toLocaleString()} tokens
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-[var(--text-secondary)]">
+                  No model usage yet in this cycle.
+                </div>
+              )}
+            </div>
+          </GlassCard>
         </div>
-      </section>
+      </div>
     </div>
   );
 }
