@@ -6102,7 +6102,7 @@ function html(webview, extensionUri) {
       }
       .composer-shell {
         position: relative;
-        border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+        border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
         border-radius: 16px;
         background: color-mix(in srgb, var(--surface) 92%, black 8%);
         padding: 8px;

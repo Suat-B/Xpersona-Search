@@ -1726,6 +1726,77 @@ function extractUnifiedDiffEdits(raw: string): Array<{ path: string; patch: stri
   return out;
 }
 
+function extractApplyPatchEdits(raw: string): Array<{ path: string; patch: string; rationale?: string }> {
+  const source = normalizeModelText(raw);
+  const out: Array<{ path: string; patch: string; rationale?: string }> = [];
+  const blocks: string[] = [];
+  const blockRegex = /(?:^|\n)\*\*\*\s*Begin Patch[\s\S]*?\*\*\*\s*End Patch/g;
+  let match: RegExpExecArray | null = null;
+  while ((match = blockRegex.exec(source)) !== null) {
+    const block = String(match[0] || "").trim();
+    if (block) blocks.push(block);
+  }
+  if (!blocks.length && /\*\*\*\s*(Update|Add|Delete)\s+File:/i.test(source)) {
+    blocks.push(source.trim());
+  }
+  for (const block of blocks) {
+    const lines = block.split(/\r?\n/);
+    let currentPath = "";
+    let currentType = "";
+    let headerLine = "";
+    let sectionLines: string[] = [];
+    const flush = () => {
+      if (!currentPath) return;
+      const normalized = normalizeRelativePath(currentPath);
+      if (!normalized) {
+        currentPath = "";
+        currentType = "";
+        headerLine = "";
+        sectionLines = [];
+        return;
+      }
+      if (currentType === "add") {
+        const contentLines = sectionLines
+          .filter((line) => line.startsWith("+") && !line.startsWith("+++ "))
+          .map((line) => line.slice(1));
+        out.push({
+          path: normalized,
+          patch: buildAddOrReplacePatch(normalized, contentLines.join("\n")),
+          rationale: "Inferred file creation from apply_patch output.",
+        });
+      } else {
+        const patch = [headerLine, ...sectionLines].join("\n").trim();
+        if (patch) {
+          out.push({
+            path: normalized,
+            patch,
+            rationale: "Inferred edit from apply_patch output.",
+          });
+        }
+      }
+      currentPath = "";
+      currentType = "";
+      headerLine = "";
+      sectionLines = [];
+    };
+    for (const line of lines) {
+      const headerMatch = line.match(/^\s*\*\*\*\s*(Update|Add|Delete)\s+File:\s*(.+)\s*$/i);
+      if (headerMatch) {
+        flush();
+        currentType = headerMatch[1].toLowerCase();
+        currentPath = headerMatch[2].trim();
+        headerLine = line;
+        sectionLines = [];
+        continue;
+      }
+      if (currentPath) sectionLines.push(line);
+    }
+    flush();
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
 function looksLikeStructuredActionEnvelope(raw: string): boolean {
   const source = normalizeModelText(raw).trim();
   if (!source) return false;
@@ -1744,6 +1815,14 @@ function inferStructuredFallback(raw: string, task: string, targetPath?: string 
   }
   const taskPath = inferPathFromTask(task) || normalizeRelativePath(targetPath || "");
   const edits: Array<{ path: string; patch: string; rationale?: string }> = [];
+  const applyPatchEdits = extractApplyPatchEdits(raw);
+  if (applyPatchEdits.length) {
+    return {
+      final: normalizeModelText(raw),
+      edits: applyPatchEdits,
+      commands: [],
+    };
+  }
   const diffEdits = extractUnifiedDiffEdits(raw);
   if (diffEdits.length) {
     return {

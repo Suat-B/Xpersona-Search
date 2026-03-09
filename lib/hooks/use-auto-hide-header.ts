@@ -23,6 +23,7 @@ interface VisibilityControllerOptions {
 interface VisibilityController {
   update: (currentPosition: number) => void;
   reset: (currentPosition: number) => void;
+  sync: (currentPosition: number) => void;
 }
 
 function createVisibilityController({
@@ -44,6 +45,10 @@ function createVisibilityController({
     if (!hidden) return;
     hidden = false;
     onHiddenChange(false);
+  };
+
+  const sync = (currentPosition: number) => {
+    previousPosition = currentPosition;
   };
 
   const update = (currentPosition: number) => {
@@ -82,7 +87,7 @@ function createVisibilityController({
     }
   };
 
-  return { update, reset };
+  return { update, reset, sync };
 }
 
 function resolveScrollElement(target: EventTarget | null, selector: string): Element | null {
@@ -102,6 +107,7 @@ export function useAutoHideHeader({
   const pathname = usePathname();
   const [hidden, setHidden] = useState(false);
   const hiddenRef = useRef(false);
+  const controllerRef = useRef<VisibilityController | null>(null);
 
   useEffect(() => {
     hiddenRef.current = false;
@@ -115,6 +121,8 @@ export function useAutoHideHeader({
       setHidden(nextHidden);
     };
 
+    controllerRef.current = null;
+
     if (disabled) {
       hiddenRef.current = false;
       setHidden(false);
@@ -122,6 +130,7 @@ export function useAutoHideHeader({
     }
 
     if (scrollContainerSelector) {
+      controllerRef.current = null;
       const controllers = new WeakMap<Element, VisibilityController>();
 
       const getController = (element: Element): VisibilityController => {
@@ -159,6 +168,7 @@ export function useAutoHideHeader({
       revealDistancePx,
       onHiddenChange,
     });
+    controllerRef.current = controller;
     controller.reset(window.scrollY);
 
     let rafId = 0;
@@ -172,6 +182,7 @@ export function useAutoHideHeader({
 
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => {
+      controllerRef.current = null;
       window.removeEventListener("scroll", onScroll);
       if (rafId) window.cancelAnimationFrame(rafId);
     };
@@ -183,6 +194,13 @@ export function useAutoHideHeader({
     thresholdPx,
     topOffsetPx,
   ]);
+
+  useEffect(() => {
+    if (disabled) return;
+    const controller = controllerRef.current;
+    if (!controller || typeof window === "undefined") return;
+    controller.sync(window.scrollY);
+  }, [hidden, disabled]);
 
   return hidden;
 }

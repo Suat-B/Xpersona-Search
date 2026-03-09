@@ -382,6 +382,41 @@ describe("playground agentic behavior", () => {
     expect(result.autonomyDecision.mode).toBe("auto_apply_and_validate");
   });
 
+  it("infers apply_patch output into edit actions", async () => {
+    process.env.HF_TOKEN = "test-token";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: [
+                  "*** Begin Patch",
+                  "*** Update File: hello.py",
+                  "@@",
+                  "-print('hi')",
+                  "+print('hello')",
+                  "*** End Patch",
+                ].join("\n"),
+              },
+            },
+          ],
+        }),
+      }))
+    );
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "update hello.py to print hello",
+    });
+
+    expect(result.actions.some((action) => action.type === "edit" && action.path === "hello.py")).toBe(true);
+    expect(result.actionability.summary).toBe("valid_actions");
+  });
+
   it("does not claim completion when no actions were produced", async () => {
     process.env.HF_TOKEN = "test-token";
     vi.stubGlobal(
