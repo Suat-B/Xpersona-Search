@@ -40,7 +40,10 @@ export function DashboardChrome({
   }
 
   return (
-    <div className="dashboard-theme flex h-[100dvh] min-h-dvh w-full flex-col overflow-hidden bg-[var(--dash-bg)] md:flex-row">
+    <div
+      className="dashboard-theme flex w-full flex-col overflow-hidden bg-[var(--dash-bg)] md:flex-row"
+      style={{ height: "var(--app-shell-height, 100dvh)", minHeight: "var(--app-shell-height, 100dvh)" }}
+    >
       <MobileDashboardNav displayName={displayName} isAdmin={isAdmin} isPermanent={isPermanent} />
       <aside className="scroll-stable-layer dashboard-sidebar hidden w-[280px] min-w-[280px] flex-col md:flex sticky top-0 h-screen border-r border-[var(--dash-divider)] overflow-x-hidden bg-[var(--dash-bg)]">
         <div className="relative flex h-full flex-col">

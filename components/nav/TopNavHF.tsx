@@ -91,7 +91,7 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
             <Link
               key={link.href}
               href={link.href}
-              className="px-2 py-1 text-sm text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+              className="px-2 py-1 text-sm text-white hover:text-white transition-colors"
             >
               {link.label}
             </Link>
@@ -117,7 +117,7 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
             <>
               <Link
                 href="/auth/signin?callbackUrl=/dashboard"
-                className="px-2 py-1 text-sm text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                className="px-2 py-1 text-sm text-white hover:text-white transition-colors"
               >
                 Sign in
               </Link>
@@ -161,7 +161,7 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
               <Link
                 key={link.href}
                 href={link.href}
-                className="block rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] hover:bg-white/5 transition-colors"
+                className="block rounded-lg px-3 py-2 text-sm text-white hover:bg-white/5 hover:text-white transition-colors"
               >
                 {link.label}
               </Link>

@@ -35,7 +35,10 @@ export function GameChrome({
   }
 
   return (
-    <div className="dashboard-theme flex h-[100dvh] min-h-dvh w-full flex-col overflow-hidden bg-[var(--dash-bg)] md:flex-row">
+    <div
+      className="dashboard-theme flex w-full flex-col overflow-hidden bg-[var(--dash-bg)] md:flex-row"
+      style={{ height: "var(--app-shell-height, 100dvh)", minHeight: "var(--app-shell-height, 100dvh)" }}
+    >
       <MobileDashboardNav
         displayName={displayName}
         isAdmin={isAdmin}

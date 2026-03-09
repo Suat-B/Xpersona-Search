@@ -45,6 +45,8 @@ const fs = __importStar(require("fs"));
 const child_process_1 = require("child_process");
 const patch_utils_1 = require("./patch-utils");
 const API_KEY_SECRET = "xpersona.apiKey";
+const API_KEY_LEGACY_SECRET = "xpersona.playground.apiKey";
+const API_KEY_FALLBACK_STATE_KEY = "xpersona.playground.apiKeyFallback";
 const VSCODE_REFRESH_TOKEN_SECRET = "xpersona.playground.vscodeRefreshToken";
 const VSCODE_PENDING_PKCE_KEY = "xpersona.playground.vscodePendingPkce";
 const MODE_KEY = "xpersona.playground.mode";
@@ -53,14 +55,11 @@ const OPEN_THREADS_KEY = "xpersona.playground.openThreads";
 const PINNED_THREADS_KEY = "xpersona.playground.pinnedThreads";
 const EXECUTION_POLICY_CONFIG_KEY = "executionPolicy";
 const MENTIONS_ENABLED_FLAG = "mentions.enabled";
-const DEFAULT_PLAYGROUND_MODEL = "qwen/qwen3.5-122b-a10b";
+const DEFAULT_PLAYGROUND_MODEL = "mistralai/mistral-nemotron";
 const BACKUP_PLAYGROUND_MODEL = "qwen/qwen3.5-122b-a10b";
 const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
 function modelLabelForUi(model) {
-    const raw = String(model || "").trim();
-    if (!raw)
-        return PUBLIC_PLAYGROUND_MODEL_NAME;
-    return /qwen/i.test(raw) ? PUBLIC_PLAYGROUND_MODEL_NAME : raw;
+    return PUBLIC_PLAYGROUND_MODEL_NAME;
 }
 const IDE_CONTEXT_FLAG = "xpersona.playground.ideContextV2";
 const MAX_TOTAL_CONTEXT_CHARS = 350000;
@@ -160,19 +159,20 @@ function patchHasLeakedPatchArtifacts(patchText) {
     const text = String(patchText || "").trim();
     if (!text)
         return false;
-    return (0, patch_utils_1.patchContainsLeakedPatchArtifacts)(text);
+    if (!(0, patch_utils_1.patchContainsLeakedPatchArtifacts)(text))
+        return false;
+    const recovered = (0, patch_utils_1.recoverUnifiedDiffFromLeakedPatchArtifacts)(text);
+    return !(recovered && recovered.trim());
 }
 function normalizeIncomingPatchText(patchText) {
     const raw = String(patchText || "").trim();
     if (!raw)
         return { patch: "", recovered: false };
-    const recovered = (0, patch_utils_1.recoverUnifiedDiffFromWrappedPayload)(raw);
-    if (recovered && recovered.trim()) {
-        const normalized = recovered.trim();
-        if (normalized !== raw)
-            return { patch: normalized, recovered: true };
-    }
-    return { patch: raw, recovered: false };
+    const wrapped = (0, patch_utils_1.recoverUnifiedDiffFromWrappedPayload)(raw);
+    const primary = wrapped && wrapped.trim() ? wrapped.trim() : raw;
+    const leaked = (0, patch_utils_1.recoverUnifiedDiffFromLeakedPatchArtifacts)(primary);
+    const normalized = leaked && leaked.trim() ? leaked.trim() : primary;
+    return { patch: normalized, recovered: normalized !== raw };
 }
 function isLikelyInvalidModelError(message) {
     const lower = String(message || "").toLowerCase();
@@ -433,8 +433,12 @@ class Provider {
     pkceChallenge(verifier) {
         return (0, crypto_1.createHash)("sha256").update(verifier, "utf8").digest("base64url");
     }
+    vscodeCallbackAuthority() {
+        return String(this.ctx.extension.id || "playgroundai.xpersona-playground").trim() || "playgroundai.xpersona-playground";
+    }
     vscodeRedirectUri() {
-        return "vscode://playgroundai.xpersona-playground/auth-callback";
+        const scheme = String(vscode.env.uriScheme || "vscode").trim().toLowerCase() || "vscode";
+        return `${scheme}://${this.vscodeCallbackAuthority()}/auth-callback`;
     }
     async loadPendingPkce() {
         const fresh = this.pendingPkce && Date.now() - this.pendingPkce.createdAtMs < 10 * 60 * 1000;
@@ -467,17 +471,64 @@ class Provider {
             return null;
         }
     }
+    async getStoredApiKey() {
+        const readSecret = async (secretKey) => {
+            try {
+                const value = await this.ctx.secrets.get(secretKey);
+                return value && value.trim() ? value.trim() : null;
+            }
+            catch {
+                return null;
+            }
+        };
+        let key = await readSecret(API_KEY_SECRET);
+        if (!key) {
+            const legacy = await readSecret(API_KEY_LEGACY_SECRET);
+            if (legacy) {
+                key = legacy;
+                try {
+                    await this.ctx.secrets.store(API_KEY_SECRET, legacy);
+                }
+                catch {
+                    // Ignore migration failures; fallback state handles non-secret environments.
+                }
+            }
+        }
+        if (key)
+            return key;
+        const fallback = String(this.ctx.globalState.get(API_KEY_FALLBACK_STATE_KEY, "") || "").trim();
+        if (!fallback)
+            return null;
+        // Best effort: migrate fallback back into secure storage when available.
+        try {
+            await this.ctx.secrets.store(API_KEY_SECRET, fallback);
+            await this.ctx.globalState.update(API_KEY_FALLBACK_STATE_KEY, null);
+        }
+        catch {
+            // Keep fallback when secure storage is unavailable.
+        }
+        return fallback;
+    }
+    async storeApiKey(rawKey) {
+        const key = String(rawKey || "").trim();
+        if (!key)
+            throw new Error("API key cannot be empty.");
+        try {
+            await this.ctx.secrets.store(API_KEY_SECRET, key);
+            await this.ctx.globalState.update(API_KEY_FALLBACK_STATE_KEY, null);
+            return "secret";
+        }
+        catch {
+            await this.ctx.globalState.update(API_KEY_FALLBACK_STATE_KEY, key);
+            return "fallback";
+        }
+    }
     async hasAnyAuth() {
         const refreshToken = await this.getRefreshToken();
         if (refreshToken)
             return true;
-        try {
-            const k = await this.ctx.secrets.get(API_KEY_SECRET);
-            return Boolean(k && k.trim());
-        }
-        catch {
-            return false;
-        }
+        const key = await this.getStoredApiKey();
+        return Boolean(key && key.trim());
     }
     async ensureVscodeAccessToken() {
         const now = Date.now();
@@ -511,13 +562,7 @@ class Provider {
         }
         if (token)
             return { bearer: token };
-        let key = null;
-        try {
-            key = (await this.ctx.secrets.get(API_KEY_SECRET)) ?? null;
-        }
-        catch {
-            key = null;
-        }
+        const key = await this.getStoredApiKey();
         if (key && key.trim())
             return { apiKey: key.trim() };
         return null;
@@ -552,7 +597,7 @@ class Provider {
     }
     async handleAuthCallback(uri) {
         const authority = String(uri.authority || "");
-        if (authority !== "playgroundai.xpersona-playground")
+        if (authority !== this.vscodeCallbackAuthority())
             return;
         const pathName = String(uri.path || "");
         if (!pathName.endsWith("auth-callback"))
@@ -1673,14 +1718,8 @@ class Provider {
         v.webview.html = html(v.webview, this.ctx.extensionUri);
         v.webview.onDidReceiveMessage(async (m) => {
             if (m.type === "check") {
-                let hasApiKey = false;
-                try {
-                    const k = await this.ctx.secrets.get(API_KEY_SECRET);
-                    hasApiKey = !!(k && k.trim());
-                }
-                catch (e) {
-                    this.post({ type: "err", text: `Failed to read API key: ${err(e)}` });
-                }
+                const savedKey = await this.getStoredApiKey();
+                const hasApiKey = Boolean(savedKey && savedKey.trim());
                 const hasRefresh = Boolean(await this.getRefreshToken());
                 if (hasRefresh)
                     await this.refreshSignedInEmail().catch(() => { });
@@ -1712,13 +1751,31 @@ class Provider {
                 await this.signOut();
             }
             else if (m.type === "saveKey") {
-                if (m.key?.trim())
-                    await this.ctx.secrets.store(API_KEY_SECRET, m.key.trim());
-                this.post({ type: "api", ok: true });
-                await this.postAuthState();
-                await this.loadHistory();
-                if (this.isIdeContextV2Enabled()) {
-                    void this.runBackgroundIndexing("auth-check");
+                const provided = String(m.key || "").trim();
+                if (!provided) {
+                    this.post({ type: "apiKeySaved", ok: false, reason: "API key cannot be empty." });
+                    return;
+                }
+                try {
+                    const savedIn = await this.storeApiKey(provided);
+                    this.post({ type: "api", ok: true });
+                    this.post({ type: "apiKeySaved", ok: true, storage: savedIn });
+                    if (savedIn === "fallback") {
+                        this.post({
+                            type: "status",
+                            text: "API key saved using fallback storage because secure secret storage was unavailable.",
+                        });
+                    }
+                    await this.postAuthState();
+                    await this.loadHistory();
+                    if (this.isIdeContextV2Enabled()) {
+                        void this.runBackgroundIndexing("auth-check");
+                    }
+                }
+                catch (e) {
+                    const message = err(e);
+                    this.post({ type: "apiKeySaved", ok: false, reason: message });
+                    this.post({ type: "err", text: `Failed to save API key: ${message}` });
                 }
             }
             else if (m.type === "setMode") {
@@ -1821,8 +1878,9 @@ class Provider {
         const k = await vscode.window.showInputBox({ title: "API key", password: true });
         if (!k?.trim())
             return;
-        await this.ctx.secrets.store(API_KEY_SECRET, k.trim());
+        const savedIn = await this.storeApiKey(k.trim());
         this.post({ type: "api", ok: true });
+        this.post({ type: "apiKeySaved", ok: true, storage: savedIn });
         await this.postAuthState();
     }
     async cycleMode() {
@@ -3200,7 +3258,7 @@ function req(method, u, auth, body) {
 }
 function stream(u, auth, body, options, onEvent) {
     return new Promise((resolve, reject) => {
-        const CONNECT_TIMEOUT_MS = 20000;
+        const CONNECT_TIMEOUT_MS = 60000;
         const IDLE_TIMEOUT_MS = 45000;
         const x = new url_1.URL(u);
         const c = x.protocol === "https:" ? https : http;
@@ -3315,6 +3373,8 @@ function stream(u, auth, body, options, onEvent) {
                 "Content-Length": Buffer.byteLength(p),
             },
         }, (res) => {
+            // We reached response headers; from here rely on SSE idle timeout, not connect timeout.
+            r.setTimeout(0);
             armIdleTimer();
             if ((res.statusCode || 500) >= 400) {
                 let t = "";
@@ -7028,6 +7088,12 @@ function html(webview, extensionUri) {
         max-width: 90%;
         background: var(--rep-surface-2);
       }
+      .m.u.queued {
+        opacity: 0.88;
+      }
+      .m.u.queued .m-body {
+        border-style: dashed;
+      }
       .m.e {
         border-color: var(--err);
       }
@@ -7329,6 +7395,7 @@ function html(webview, extensionUri) {
         background: color-mix(in srgb, var(--rep-bg) 70%, transparent) !important;
         backdrop-filter: blur(10px);
         -webkit-backdrop-filter: blur(10px);
+        justify-content: flex-start !important;
       }
       .brand-block {
         display: flex !important;
@@ -7352,6 +7419,7 @@ function html(webview, extensionUri) {
       }
       .global-actions {
         gap: 4px !important;
+        margin-left: auto !important;
       }
       .menu-icon {
         border: 0 !important;
@@ -7367,6 +7435,10 @@ function html(webview, extensionUri) {
         border-radius: 8px !important;
         width: auto !important;
         padding: 0 8px !important;
+      }
+      #backToChatQuick.header-left {
+        margin-right: 2px !important;
+        flex: 0 0 auto !important;
       }
       #chat.chat-panel.active {
         padding: 6px 12px 0 !important;
@@ -7662,6 +7734,11 @@ function html(webview, extensionUri) {
         border-color: color-mix(in srgb, var(--rep-fg) 17%, transparent) !important;
         border-radius: 18px 18px 6px 18px !important;
       }
+      .chat-panel.active #msgs.messages .m.u.queued .m-body {
+        border-style: dashed !important;
+        border-color: color-mix(in srgb, var(--rep-fg) 24%, transparent) !important;
+        opacity: 0.92;
+      }
       .chat-panel.active #msgs.messages .m.u .m-time {
         text-align: right !important;
       }
@@ -7690,6 +7767,49 @@ function html(webview, extensionUri) {
         }
       }
 
+      /* Final composer safety override:
+         keep a visible border and keep @ mention suggestions above the dock. */
+      #chatDock.dock-shell {
+        position: relative !important;
+        z-index: 320 !important;
+      }
+      #chatDock .input,
+      #chatDock .composer-form,
+      #chatDock .composer-shell {
+        overflow: visible !important;
+      }
+      #chatDock .composer-shell {
+        position: relative !important;
+        border: 1px solid rgba(255, 255, 255, 0.3) !important;
+        border-radius: 16px !important;
+        background: rgba(255, 255, 255, 0.04) !important;
+        box-shadow:
+          0 0 0 1px rgba(255, 255, 255, 0.07) !important,
+          0 10px 30px rgba(0, 0, 0, 0.28) !important;
+      }
+      #chatDock .composer-shell:focus-within {
+        border-color: rgba(255, 255, 255, 0.42) !important;
+        box-shadow:
+          0 0 0 1px rgba(255, 255, 255, 0.14) !important,
+          0 12px 32px rgba(0, 0, 0, 0.34) !important;
+      }
+      #chatDock .input-actions.minimal {
+        border-top: 1px solid rgba(255, 255, 255, 0.14) !important;
+      }
+      #chatDock #mentionMenu.mention-menu {
+        position: absolute !important;
+        left: 10px !important;
+        right: 10px !important;
+        bottom: calc(100% + 10px) !important;
+        max-height: min(260px, 46vh) !important;
+        overflow: auto !important;
+        z-index: 2147483000 !important;
+        border: 1px solid rgba(255, 255, 255, 0.34) !important;
+        border-radius: 12px !important;
+        background: rgba(14, 14, 14, 0.96) !important;
+        box-shadow: 0 18px 34px rgba(0, 0, 0, 0.52) !important;
+      }
+
       /* Fix native select dropdown contrast (reasoning/model). */
       .composer-inline-select,
       .composer-select,
@@ -7700,6 +7820,170 @@ function html(webview, extensionUri) {
       .composer-select option {
         background: var(--rep-bg) !important;
         color: var(--rep-fg) !important;
+      }
+
+      /* Final narrow-panel fit fixes */
+      .global-top,
+      .brand-block,
+      .global-actions,
+      #chat.chat-panel.active,
+      #msgs.messages,
+      #chatDock.dock-shell,
+      #chatDock .input,
+      #chatDock .composer-form,
+      #chatDock .composer-shell,
+      #chatDock .input-actions.minimal,
+      #chatDock .input-actions.minimal > * {
+        min-width: 0 !important;
+      }
+
+      #msgs.messages .m .m-body,
+      #msgs.messages .m .m-time,
+      .chat-empty-history-row-title,
+      .chat-empty-history-row-age {
+        overflow-wrap: anywhere;
+      }
+
+      @media (max-width: 430px) {
+        .global-top {
+          gap: 6px !important;
+          padding: 7px 8px !important;
+        }
+        .brand-block {
+          gap: 6px !important;
+          max-width: calc(100% - 94px) !important;
+        }
+        .brand-name {
+          font-size: 11px !important;
+          max-width: 130px !important;
+          white-space: nowrap !important;
+          overflow: hidden !important;
+          text-overflow: ellipsis !important;
+        }
+        .brand-kicker {
+          font-size: 10px !important;
+          letter-spacing: 0.12em !important;
+        }
+        .global-actions {
+          gap: 2px !important;
+        }
+        .menu-icon {
+          width: 24px !important;
+          height: 24px !important;
+          min-width: 24px !important;
+          font-size: 11px !important;
+          border-radius: 7px !important;
+        }
+        #undoHeader,
+        #backToChatQuick {
+          padding: 0 6px !important;
+          font-size: 10px !important;
+        }
+
+        #chat.chat-panel.active {
+          padding: 4px 8px 0 !important;
+        }
+        #msgs.messages {
+          gap: 6px !important;
+          padding: 8px 0 10px !important;
+        }
+        #msgs.messages .m {
+          max-width: 94% !important;
+        }
+        #msgs.messages .m .m-body {
+          padding: 8px 10px !important;
+          font-size: 11px !important;
+          line-height: 1.4 !important;
+          border-radius: 14px !important;
+        }
+        #msgs.messages .m .m-time {
+          font-size: 9px !important;
+          padding: 0 4px !important;
+        }
+
+        #chatDock.dock-shell,
+        .chat-panel.active #chatDock.dock-shell {
+          padding: 0 8px 8px !important;
+        }
+        #chatDock .composer-shell,
+        .chat-panel.active #chatDock .composer-shell {
+          border-radius: 12px !important;
+        }
+        #chatDock textarea#t,
+        .chat-panel.active #chatDock textarea#t {
+          min-height: 44px !important;
+          max-height: 120px !important;
+          font-size: 11px !important;
+          line-height: 1.35 !important;
+          padding: 10px 10px 7px !important;
+        }
+        #chatDock .input-actions.minimal,
+        .chat-panel.active #chatDock .input-actions.minimal {
+          display: flex !important;
+          flex-wrap: wrap !important;
+          gap: 4px !important;
+          row-gap: 5px !important;
+          padding: 6px 8px !important;
+          align-items: center !important;
+        }
+        #chatDock .input-actions.minimal .spacer,
+        .chat-panel.active #chatDock .input-actions.minimal .spacer {
+          display: none !important;
+        }
+        #chatDock .composer-inline-select {
+          flex: 1 1 88px !important;
+          max-width: 100px !important;
+          min-width: 0 !important;
+          font-size: 10px !important;
+          padding: 2px 4px !important;
+          text-overflow: ellipsis !important;
+        }
+        #chatDock .context-toggle-pill {
+          display: none !important;
+        }
+        #chatDock .attach-btn,
+        #chatDock .send-round,
+        .chat-panel.active #chatDock .attach-btn,
+        .chat-panel.active #chatDock .send-round {
+          width: 26px !important;
+          height: 26px !important;
+          min-width: 26px !important;
+          font-size: 12px !important;
+        }
+
+        .chat-empty {
+          gap: 6px !important;
+        }
+        .chat-empty-sub {
+          font-size: 10px !important;
+          max-width: 100% !important;
+        }
+        .chat-empty-history-row {
+          padding: 5px 4px 5px 14px !important;
+          gap: 6px !important;
+        }
+        .chat-empty-history-row-title {
+          font-size: 11px !important;
+        }
+        .chat-empty-history-row-age {
+          font-size: 9px !important;
+        }
+      }
+
+      @media (max-width: 340px) {
+        .brand-kicker {
+          display: none !important;
+        }
+        .brand-name {
+          max-width: 110px !important;
+        }
+        #chatDock .composer-inline-select {
+          flex-basis: 78px !important;
+          max-width: 88px !important;
+        }
+        #msgs.messages .m {
+          max-width: 96% !important;
+        }
       }
     </style>
   </head>
@@ -7726,6 +8010,7 @@ function html(webview, extensionUri) {
 
     <div id="app" class="app">
       <div class="global-top">
+        <button id="backToChatQuick" type="button" class="menu-icon panel-icon hidden header-left" aria-label="Back to chat" title="Back to chat">&#8592;</button>
         <div class="brand-block">
           <span class="brand-name" title="Playground AI">Playground AI</span>
           <span class="brand-kicker">CHAT</span>
@@ -7736,7 +8021,6 @@ function html(webview, extensionUri) {
           <button id="historyHeader" type="button" class="menu-icon hidden" aria-label="Open tasks" title="Tasks">&#8635;</button>
           <button id="actionMenuBtn" type="button" class="menu-icon" aria-label="Settings" title="Settings" aria-expanded="false">&#9881;</button>
           <button id="undoHeader" type="button" class="menu-icon hidden" aria-label="Undo last changes" title="Undo last changes">Undo</button>
-          <button id="backToChatQuick" type="button" class="menu-icon panel-icon hidden" aria-label="Back to chat" title="Back to chat">&#8592;</button>
         </div>
       </div>
       <div class="tabs">
@@ -7761,7 +8045,6 @@ function html(webview, extensionUri) {
                 </div>
               </div>
               <div class="chat-home-hero" aria-hidden="true">
-                <div class="chat-empty-hero-icon">&#x25A3;</div>
                 <p class="chat-empty-title">Work with <strong>Playground 1</strong></p>
                 <p class="chat-empty-sub">Automates routine development tasks end-to-end for faster and more efficient delivery.</p>
               </div>

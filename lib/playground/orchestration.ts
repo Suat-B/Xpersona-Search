@@ -139,7 +139,7 @@ const NVIDIA_INTEGRATE_BASE_URL = "https://integrate.api.nvidia.com/v1";
 const STANDARD_CONTEXT_LIMIT = 32_000;
 const LONG_CONTEXT_LIMIT = 262_144;
 const DEFAULT_PLAYGROUND_MODEL = "openai/gpt-oss-20b:fastest";
-const DEFAULT_NVIDIA_MODEL = "qwen/qwen3.5-122b-a10b";
+const DEFAULT_NVIDIA_MODEL = "mistralai/mistral-nemotron";
 const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
 const IDENTITY_DENIAL_RESPONSE =
   "I'm Playground 1. I'm not Qwen, and I'm not nscale. I can still help with your task - what would you like to do next?";
@@ -270,12 +270,6 @@ function getNvidiaToken(runtimeOverride?: string): string | undefined {
   );
 }
 
-function hasQwenModelHint(model: string | undefined): boolean {
-  const normalized = String(model || "").trim().toLowerCase();
-  if (!normalized) return false;
-  return normalized.startsWith("qwen/") || normalized.includes("qwen");
-}
-
 function resolveAssistProvider(params: {
   model: string;
   providerPreference?: string;
@@ -294,7 +288,7 @@ function resolveAssistProvider(params: {
 function resolveProviderModel(provider: AssistProvider, candidateModel: string): string {
   const raw = String(candidateModel || "").trim();
   if (provider !== "nvidia") return raw;
-  if (raw && hasQwenModelHint(raw)) return raw;
+  if (raw) return raw;
   const configured = resolveModelAlias(process.env.PLAYGROUND_NVIDIA_MODEL, DEFAULT_NVIDIA_MODEL);
   return configured || DEFAULT_NVIDIA_MODEL;
 }

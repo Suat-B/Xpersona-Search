@@ -312,6 +312,7 @@
       let mentionDebounceTimer = null;
       let mentionPending = false;
       let mentionLastQuery = "";
+      let apiKeySavePending = false;
       let creatingThread = false;
       let activeRunThreadId = null;
       let lastDiagnosticsFingerprint = "";
@@ -393,9 +394,7 @@
       }
 
       function modelLabelForUi(value) {
-        const raw = String(value || "").trim();
-        if (!raw) return DEFAULT_MODEL;
-        return /qwen/i.test(raw) ? DEFAULT_MODEL : raw;
+        return DEFAULT_MODEL;
       }
 
       function updateComposerState() {
@@ -755,7 +754,7 @@
         const text = String(input.value || "");
         const caret = Number(input.selectionStart || 0);
         const before = text.slice(0, caret);
-        const match = before.match(/(^|\s)@([^\s@]*)$/);
+        const match = before.match(/(^|[\s([{])@([^\s@]*)$/);
         if (match) {
           const query = String(match[2] || "");
           const atIndex = caret - query.length - 1;
@@ -1364,6 +1363,16 @@
           streamTimer = setInterval(() => flushStreamBuffer(false), 18);
         }
         flushStreamBuffer(false);
+      }
+
+      function updatePendingStreamBubble(statusText) {
+        if (!streamBubble || !streamBubble.isConnected) return;
+        if (!streamBubble.classList.contains("stream-pending")) return;
+        const body = streamBubble.querySelector(".m-body");
+        if (!body) return;
+        const next = String(statusText || "").trim();
+        if (!next) return;
+        body.textContent = next;
       }
 
       function addMessage(text, cls) {
@@ -2393,8 +2402,7 @@
         setStreaming(false);
         streamBubble = null;
         terminalBubble = null;
-        queuedMessages.length = 0;
-        renderQueuedMessagesUI();
+        clearQueuedMessages();
         activeProgressState = "";
         lastStatusText = "";
         lastStatusAt = 0;
@@ -2406,6 +2414,33 @@
         setRunState("Creating new chat...");
         v.postMessage({ type: "newThread" });
         setActionMenuOpen(false);
+      }
+
+      function returnToChatHomeLocal() {
+        responseStartedAtMs = 0;
+        lastAssistantBubble = null;
+        latestActionOutcome = null;
+        creatingThread = false;
+        clearPlanDecisionCard();
+        closeMentionMenu();
+        setStreaming(false);
+        streamBubble = null;
+        activeRunThreadId = null;
+        terminalBubble = null;
+        runProgressBubble = null;
+        resetRunProgress();
+        clearQueuedMessages();
+        activeProgressState = "";
+        lastStatusText = "";
+        lastStatusAt = 0;
+        setRunState("Local");
+        if (msgs) {
+          while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
+        }
+        updateStartupVisibility();
+        showTab("chat");
+        followLatest = true;
+        scrollToLatest(true);
       }
 
       function onMenuAction(action) {
@@ -2504,6 +2539,33 @@
         return raw.length > 120 ? raw.slice(0, 117) + "..." : raw;
       }
 
+      function queuedMetaLabel(item, idx) {
+        const position = Number(idx) + 1;
+        const queuedAt = String(item && item.queuedAt ? item.queuedAt : timeLabel());
+        return "Queued #" + position + " | " + queuedAt;
+      }
+
+      function removeQueuedBubble(item) {
+        if (!item || !item.queuedBubble) return;
+        if (item.queuedBubble.isConnected) item.queuedBubble.remove();
+        item.queuedBubble = null;
+        updateStartupVisibility();
+      }
+
+      function syncQueuedBubbles() {
+        queuedMessages.forEach((item, idx) => {
+          if (!item || !item.queuedBubble || !item.queuedBubble.isConnected) return;
+          const meta = item.queuedBubble.querySelector(".m-time");
+          if (meta) meta.textContent = queuedMetaLabel(item, idx);
+        });
+      }
+
+      function clearQueuedMessages() {
+        queuedMessages.forEach((item) => removeQueuedBubble(item));
+        queuedMessages.length = 0;
+        renderQueuedMessagesUI();
+      }
+
       function renderQueuedMessagesUI() {
         const count = queuedMessages.length;
         if (queuePill) {
@@ -2539,9 +2601,17 @@
           includeIdeContext: true,
           workspaceContextLevel: "max",
           threadId: currentThreadId,
+          queuedAt: timeLabel(),
+          queuedBubble: null,
         };
+        const queuedBubble = addMessage(payload.text, "u queued");
+        appendUserAttachmentPreview(queuedBubble, payload.attachments || []);
+        const queuedMeta = queuedBubble.querySelector(".m-time");
+        if (queuedMeta) queuedMeta.textContent = queuedMetaLabel(payload, queuedMessages.length);
+        payload.queuedBubble = queuedBubble;
         queuedMessages.push(payload);
         renderQueuedMessagesUI();
+        syncQueuedBubbles();
         if (SHOW_SYSTEM_ACTIVITY) addMessage("Queued message (" + queuedMessages.length + "): " + queuePreviewText(text), "cmd");
       }
 
@@ -2553,8 +2623,17 @@
         activeRunThreadId = payload.threadId ? String(payload.threadId) : (currentThreadId ? String(currentThreadId) : null);
         responseStartedAtMs = Date.now();
         lastAssistantBubble = null;
-        const userBubble = addMessage(payload.text, "u");
-        appendUserAttachmentPreview(userBubble, payload.attachments || []);
+        let userBubble = payload.queuedBubble && payload.queuedBubble.isConnected ? payload.queuedBubble : null;
+        if (userBubble) {
+          userBubble.classList.remove("queued");
+          const meta = userBubble.querySelector(".m-time");
+          if (meta) meta.textContent = timeLabel();
+          payload.queuedBubble = null;
+          if (msgs && userBubble.parentElement === msgs && msgs.lastElementChild !== userBubble) msgs.appendChild(userBubble);
+        } else {
+          userBubble = addMessage(payload.text, "u");
+          appendUserAttachmentPreview(userBubble, payload.attachments || []);
+        }
         if (input) {
           input.value = "";
           syncComposerHeight();
@@ -2588,6 +2667,7 @@
         const next = queuedMessages.shift();
         if (!next) return;
         renderQueuedMessagesUI();
+        syncQueuedBubbles();
         dispatchPromptPayload(next);
       }
 
@@ -2698,14 +2778,13 @@
           const hasMessages = msgs ? msgs.children.length > 0 : false;
           if (activePanelId === "chat" && (hasMessages || streaming)) {
             if (streaming) v.postMessage({ type: "cancel" });
-            startNewChat();
-            v.postMessage({ type: "history" });
-            if (textarea) setTimeout(() => textarea.focus(), 0);
+            returnToChatHomeLocal();
+            if (input) setTimeout(() => input.focus(), 0);
             return;
           }
 
           showTab("chat");
-          if (textarea) setTimeout(() => textarea.focus(), 0);
+          if (input) setTimeout(() => input.focus(), 0);
         };
       }
       if (threadsOverlayBackdrop) {
@@ -2753,10 +2832,9 @@
         apiKeyInlineSave.onclick = () => {
           const key = apiKeyInline ? apiKeyInline.value.trim() : "";
           if (!key) return;
+          apiKeySavePending = true;
+          apiKeyInlineSave.disabled = true;
           v.postMessage({ type: "saveKey", key });
-          if (apiKeyInline) apiKeyInline.value = "";
-          if (SHOW_SYSTEM_ACTIVITY) addMessage("API key updated.", "cmd");
-          setActionMenuOpen(false);
         };
       }
       if (apiKeyInline) {
@@ -2994,7 +3072,8 @@
           const idx = Number(actEl.getAttribute("data-queue-idx"));
           if (!Number.isFinite(idx) || idx < 0 || idx >= queuedMessages.length) return;
           if (act === "remove") {
-            queuedMessages.splice(idx, 1);
+            const removed = queuedMessages.splice(idx, 1)[0];
+            removeQueuedBubble(removed);
           } else if (act === "up" && idx > 0) {
             const tmp = queuedMessages[idx - 1];
             queuedMessages[idx - 1] = queuedMessages[idx];
@@ -3005,6 +3084,7 @@
             queuedMessages[idx] = tmp;
           }
           renderQueuedMessagesUI();
+          syncQueuedBubbles();
         });
       }
       // Full composer wiring is complete; the early fallback sender can stand down.
@@ -3041,8 +3121,7 @@
           clearPlanDecisionCard();
           while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
           chips.innerHTML = "";
-          queuedMessages.length = 0;
-          renderQueuedMessagesUI();
+          clearQueuedMessages();
           updateStartupVisibility();
           setStreaming(false);
           v.postMessage({ type: "clear" });
@@ -3156,6 +3235,19 @@
           if (authSignIn) authSignIn.style.display = signedIn ? "none" : "";
           if (authSignOut) authSignOut.style.display = signedIn ? "" : "none";
           if (authSignOutQuick) authSignOutQuick.style.display = signedIn ? "" : "none";
+        } else if (m.type === "apiKeySaved") {
+          const ok = m.ok !== false;
+          const reason = String(m.reason || "").trim();
+          apiKeySavePending = false;
+          if (apiKeyInlineSave) apiKeyInlineSave.disabled = false;
+          if (!ok) {
+            addMessage("Failed to save API key" + (reason ? ": " + reason : "."), "e");
+            if (apiKeyInline) setTimeout(() => apiKeyInline.focus(), 0);
+            return;
+          }
+          if (apiKeyInline) apiKeyInline.value = "";
+          if (SHOW_SYSTEM_ACTIVITY) addMessage("API key updated.", "cmd");
+          setActionMenuOpen(false);
         } else if (m.type === "openUploadPicker") {
           if (uploadInput) uploadInput.click();
         } else if (m.type === "mode") {
@@ -3250,6 +3342,7 @@
           if (statusText) seenRunStatuses.add(statusText);
           lastStatusText = statusText;
           lastStatusAt = now;
+          updatePendingStreamBubble(statusText);
 
           if (!SHOW_SYSTEM_ACTIVITY) {
             if (isProgressOnlyStatus(statusText)) {
@@ -3564,8 +3657,7 @@
           terminalBubble = null;
           runProgressBubble = null;
           resetRunProgress();
-          queuedMessages.length = 0;
-          renderQueuedMessagesUI();
+          clearQueuedMessages();
           activeProgressState = "";
           lastStatusText = "";
           lastStatusAt = 0;

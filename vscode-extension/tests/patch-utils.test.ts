@@ -4,6 +4,7 @@ import {
   extractPatchTargetPath,
   patchContainsLeakedPatchArtifacts,
   patchContainsWrappedToolPayload,
+  recoverUnifiedDiffFromLeakedPatchArtifacts,
   recoverUnifiedDiffFromWrappedPayload,
   textContainsLeakedPatchArtifacts,
 } from "../src/patch-utils";
@@ -208,6 +209,57 @@ describe("patch utils", () => {
     expect(recoverUnifiedDiffFromWrappedPayload(wrapped)).toBe(innerPatch);
   });
 
+  it("recovers inner unified diff from single-quoted wrapped tool payload", () => {
+    const innerPatch = [
+      "diff --git a/a.txt b/a.txt",
+      "--- a/a.txt",
+      "+++ b/a.txt",
+      "@@ -1,1 +1,1 @@",
+      "-alpha",
+      "+beta",
+    ].join("\n");
+    const wrapped = [
+      "{",
+      "  'final': 'Applied change',",
+      "  'edits': [",
+      "    { 'path': 'a.txt', 'patch': 'diff --git a/a.txt b/a.txt\\n--- a/a.txt\\n+++ b/a.txt\\n@@ -1,1 +1,1 @@\\n-alpha\\n+beta' }",
+      "  ],",
+      "  'commands': []",
+      "}",
+    ].join("\n");
+    expect(recoverUnifiedDiffFromWrappedPayload(wrapped)).toBe(innerPatch);
+  });
+
+  it("recovers inner unified diff from fenced patch field payload", () => {
+    const innerPatch = [
+      "diff --git a/a.txt b/a.txt",
+      "--- a/a.txt",
+      "+++ b/a.txt",
+      "@@ -1,1 +1,1 @@",
+      "-alpha",
+      "+beta",
+    ].join("\n");
+    const wrapped = [
+      "{",
+      "  final: \"Applied change\",",
+      "  edits: [",
+      "    {",
+      "      path: \"a.txt\",",
+      "      patch: ```diff",
+      "diff --git a/a.txt b/a.txt",
+      "--- a/a.txt",
+      "+++ b/a.txt",
+      "@@ -1,1 +1,1 @@",
+      "-alpha",
+      "+beta",
+      "```",
+      "    }",
+      "  ]",
+      "}",
+    ].join("\n");
+    expect(recoverUnifiedDiffFromWrappedPayload(wrapped)).toBe(innerPatch);
+  });
+
   it("applies patch after recovering wrapped tool payload", () => {
     const innerPatch = [
       "diff --git a/a.txt b/a.txt",
@@ -243,6 +295,51 @@ describe("patch utils", () => {
       "+*** End Patch",
     ].join("\n");
     expect(patchContainsLeakedPatchArtifacts(patch)).toBe(true);
+  });
+
+  it("recovers inner diff body from leaked apply_patch markers", () => {
+    const leaked = [
+      "diff --git a/a.ts b/a.ts",
+      "--- a/a.ts",
+      "+++ b/a.ts",
+      "@@ -1,1 +1,6 @@",
+      "-const x = 1;",
+      "+const x = 1;",
+      "+*** Begin Patch",
+      "+*** Update File: a.ts",
+      "+@@ -1,1 +1,1 @@",
+      "+-const x = 1;",
+      "++const x = 2;",
+      "+*** End Patch",
+    ].join("\n");
+    const recovered = recoverUnifiedDiffFromLeakedPatchArtifacts(leaked);
+    expect(recovered).toBe(
+      [
+        "@@ -1,1 +1,1 @@",
+        "-const x = 1;",
+        "+const x = 2;",
+      ].join("\n")
+    );
+  });
+
+  it("applies patch after recovering leaked apply_patch markers", () => {
+    const leaked = [
+      "diff --git a/a.ts b/a.ts",
+      "--- a/a.ts",
+      "+++ b/a.ts",
+      "@@ -1,1 +1,6 @@",
+      "-const x = 1;",
+      "+const x = 1;",
+      "+*** Begin Patch",
+      "+*** Update File: a.ts",
+      "+@@ -1,1 +1,1 @@",
+      "+-const x = 1;",
+      "++const x = 2;",
+      "+*** End Patch",
+    ].join("\n");
+    const result = applyUnifiedDiff("const x = 1;\n", leaked);
+    expect(result.status).toBe("applied");
+    expect(result.content).toBe("const x = 2;\n");
   });
 
   it("rejects patches that leak diff/apply_patch markers into file content", () => {

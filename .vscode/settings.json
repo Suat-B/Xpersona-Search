@@ -1,5 +1,5 @@
 {
     "chatgpt.openOnStartup": true,
-    "xpersona.playground.baseApiUrl": "http://localhost:3001",
+    "xpersona.playground.baseApiUrl": "http://localhost:3000",
     "xpersona.playground.model": "Playground 1"
 }

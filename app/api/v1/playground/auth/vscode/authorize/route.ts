@@ -7,8 +7,20 @@ import { randomBytes } from "crypto";
 import { eq } from "drizzle-orm";
 
 const EXPECTED_CLIENT_IDS = new Set(["vscode", "cli"]);
-const VSCODE_REDIRECT_URI = "vscode://playgroundai.xpersona-playground/auth-callback";
+const VSCODE_REDIRECT_AUTHORITY = "playgroundai.xpersona-playground";
+const DEFAULT_VSCODE_REDIRECT_SCHEMES = ["vscode", "vscode-insiders", "cursor", "windsurf", "vscodium", "code-oss"];
 const AUTH_CODE_TTL_MS = 5 * 60 * 1000;
+
+function getAllowedVscodeRedirectSchemes(): Set<string> {
+  const raw = String(process.env.PLAYGROUND_VSCODE_REDIRECT_SCHEMES || "").trim();
+  if (!raw) return new Set(DEFAULT_VSCODE_REDIRECT_SCHEMES);
+  const entries = raw
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+    .filter((item) => /^[a-z][a-z0-9+\-.]{1,31}$/.test(item));
+  return new Set(entries.length ? entries : DEFAULT_VSCODE_REDIRECT_SCHEMES);
+}
 
 function isSafePkceChallenge(value: string): boolean {
   // base64url-ish; keep permissive but bounded
@@ -30,7 +42,20 @@ export async function GET(request: NextRequest): Promise<Response> {
   }
 
   const isValidRedirect = (() => {
-    if (clientId === "vscode") return redirectUri === VSCODE_REDIRECT_URI;
+    if (clientId === "vscode") {
+      try {
+        const parsed = new URL(redirectUri);
+        const scheme = parsed.protocol.replace(/:$/, "").toLowerCase();
+        const allowedSchemes = getAllowedVscodeRedirectSchemes();
+        if (!allowedSchemes.has(scheme)) return false;
+        if (parsed.hostname !== VSCODE_REDIRECT_AUTHORITY) return false;
+        if (parsed.pathname !== "/auth-callback") return false;
+        if (parsed.search || parsed.hash || parsed.username || parsed.password || parsed.port) return false;
+        return true;
+      } catch {
+        return false;
+      }
+    }
     if (clientId !== "cli") return false;
     try {
       const parsed = new URL(redirectUri);

@@ -114,15 +114,29 @@ function normalizePatchText(patchText: string): string {
   return out.join("\n");
 }
 
+function hasEnvelopeKey(text: string, keyPattern: string): boolean {
+  const re = new RegExp(
+    `(?:^|[\\[{,]\\s*)(?:"(?:${keyPattern})"|'(?:${keyPattern})'|(?:${keyPattern}))\\s*:`,
+    "i"
+  );
+  return re.test(text);
+}
+
+function looksLikeWrappedToolEnvelope(text: string): boolean {
+  const normalized = String(text || "").trim();
+  if (!normalized) return false;
+  if (!/^\s*[\[{]/.test(normalized)) return false;
+  const hasFinal = hasEnvelopeKey(normalized, "final");
+  const hasCollection = hasEnvelopeKey(normalized, "edits|actions|commands");
+  const hasPathOrPatch = hasEnvelopeKey(normalized, "path|patch");
+  return hasFinal && hasCollection && hasPathOrPatch;
+}
+
 export function patchContainsWrappedToolPayload(patchText: string): boolean {
   const normalized = normalizePatchText(patchText).trim();
   if (!normalized) return false;
 
-  const directEnvelope =
-    /^\s*\{/.test(normalized) &&
-    /"final"\s*:/i.test(normalized) &&
-    /("edits"\s*:|"actions"\s*:|"commands"\s*:)/i.test(normalized) &&
-    /("path"\s*:|"patch"\s*:)/i.test(normalized);
+  const directEnvelope = looksLikeWrappedToolEnvelope(normalized);
   if (directEnvelope) return true;
 
   const addedText = normalized
@@ -133,11 +147,7 @@ export function patchContainsWrappedToolPayload(patchText: string): boolean {
     .trim();
   if (!addedText) return false;
 
-  return (
-    /\{\s*"final"\s*:/i.test(addedText) &&
-    /("edits"\s*:|"actions"\s*:|"commands"\s*:)/i.test(addedText) &&
-    /("path"\s*:|"patch"\s*:)/i.test(addedText)
-  );
+  return looksLikeWrappedToolEnvelope(addedText);
 }
 
 function patchLooksUsable(text: string): boolean {
@@ -157,6 +167,15 @@ function parseJsonStringValue(value: string): string {
   } catch {
     return value.replace(/\\r/g, "").replace(/\\n/g, "\n").replace(/\\"/g, '"');
   }
+}
+
+function parseSingleQuotedStringValue(value: string): string {
+  return value
+    .replace(/\\r/g, "")
+    .replace(/\\n/g, "\n")
+    .replace(/\\'/g, "'")
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\");
 }
 
 function collectPatchCandidatesFromValue(
@@ -267,6 +286,33 @@ export function recoverUnifiedDiffFromWrappedPayload(patchText: string): string 
     if (patchLooksUsable(normalized)) candidates.push(normalized);
   }
 
+  const singleQuotedFieldRegex = /'(?:patch|diff)'\s*:\s*'((?:\\.|[^'\\])*)'/gi;
+  for (const match of raw.matchAll(singleQuotedFieldRegex)) {
+    const decoded = parseSingleQuotedStringValue(match[1] || "");
+    const normalized = normalizePatchText(decoded).trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    if (patchLooksUsable(normalized)) candidates.push(normalized);
+  }
+
+  const backtickFieldRegex = /(?:^|[{\s,])(?:patch|diff)\s*:\s*`([\s\S]*?)`/gi;
+  for (const match of raw.matchAll(backtickFieldRegex)) {
+    const decoded = String(match[1] || "").trim();
+    const normalized = normalizePatchText(decoded).trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    if (patchLooksUsable(normalized)) candidates.push(normalized);
+  }
+
+  const fencedFieldRegex = /(?:^|[{\s,])(?:patch|diff)\s*:\s*```(?:diff|patch|text)?\s*([\s\S]*?)\s*```/gi;
+  for (const match of raw.matchAll(fencedFieldRegex)) {
+    const decoded = String(match[1] || "").trim();
+    const normalized = normalizePatchText(decoded).trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    if (patchLooksUsable(normalized)) candidates.push(normalized);
+  }
+
   return candidates.length ? candidates[0] : null;
 }
 
@@ -316,6 +362,76 @@ export function patchContainsLeakedPatchArtifacts(patchText: string): boolean {
   if (!addedLines.length) return false;
   const keys = collectPatchLeakMarkerKeys(addedLines.join("\n"));
   return markerKeysLookLikePatchLeak(keys);
+}
+
+function extractDiffLikeLinesFromLeakedAddedText(addedLines: string[]): string {
+  const out: string[] = [];
+  let inDiffBody = false;
+  for (const raw of addedLines) {
+    const line = String(raw || "");
+    const trimmed = line.trim();
+    if (!trimmed) {
+      if (inDiffBody) out.push("");
+      continue;
+    }
+    if (/^\*\*\*\s*Begin Patch\b/i.test(trimmed)) continue;
+    if (/^\*\*\*\s*End Patch\b/i.test(trimmed)) continue;
+    if (/^\*\*\*\s*(Update|Add|Delete)\s+File:\s+/i.test(trimmed)) continue;
+    if (/^\*\*\*\s*Move to:\s+/i.test(trimmed)) continue;
+
+    if (line.startsWith("diff --git ") || line.startsWith("--- ") || line.startsWith("+++ ") || line.startsWith("@@")) {
+      inDiffBody = true;
+      out.push(line);
+      continue;
+    }
+    if (inDiffBody && (line.startsWith("+") || line.startsWith("-") || line.startsWith(" "))) {
+      out.push(line);
+      continue;
+    }
+  }
+  return out.join("\n");
+}
+
+export function recoverUnifiedDiffFromLeakedPatchArtifacts(patchText: string): string | null {
+  const raw = String(patchText || "").trim();
+  if (!raw) return null;
+  if (!patchContainsLeakedPatchArtifacts(raw)) return null;
+
+  const normalized = normalizePatchText(raw);
+  const addedLines = normalized
+    .split("\n")
+    .filter((line) => line.startsWith("+") && !line.startsWith("+++ "))
+    .map((line) => line.slice(1));
+  if (!addedLines.length) return null;
+
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  const addCandidate = (candidateText: string) => {
+    const candidate = normalizePatchText(candidateText).trim();
+    if (!candidate || seen.has(candidate)) return;
+    seen.add(candidate);
+    if (patchLooksUsable(candidate)) candidates.push(candidate);
+  };
+
+  const diffLikeBody = extractDiffLikeLinesFromLeakedAddedText(addedLines);
+  if (diffLikeBody) addCandidate(diffLikeBody);
+  if (!candidates.length) addCandidate(addedLines.join("\n"));
+
+  if (!candidates.length && diffLikeBody.startsWith("@@")) {
+    const outerParsed = parsePatch(normalized);
+    const targetPath = outerParsed?.newPath || outerParsed?.oldPath || null;
+    if (targetPath) {
+      const withHeaders = [
+        `diff --git a/${targetPath} b/${targetPath}`,
+        `--- a/${targetPath}`,
+        `+++ b/${targetPath}`,
+        diffLikeBody,
+      ].join("\n");
+      addCandidate(withHeaders);
+    }
+  }
+
+  return candidates.length ? candidates[0] : null;
 }
 
 function parsePatch(patchText: string): ParsedPatch | null {
@@ -447,15 +563,17 @@ function locateHunkStart(sourceLines: string[], expectedStart: number, hunk: Par
 }
 
 export function extractPatchTargetPath(patchText: string): string | null {
-  const recovered = recoverUnifiedDiffFromWrappedPayload(patchText);
-  const parsed = parsePatch(recovered || patchText);
+  const wrapped = recoverUnifiedDiffFromWrappedPayload(patchText);
+  const leaked = recoverUnifiedDiffFromLeakedPatchArtifacts(wrapped || patchText);
+  const parsed = parsePatch(leaked || wrapped || patchText);
   if (!parsed) return null;
   return parsed.newPath || parsed.oldPath || null;
 }
 
 export function applyUnifiedDiff(originalText: string, patchText: string): PatchApplyResult {
-  const recoveredPatch = recoverUnifiedDiffFromWrappedPayload(patchText);
-  const patchToApply = recoveredPatch || patchText;
+  const wrapped = recoverUnifiedDiffFromWrappedPayload(patchText);
+  const leaked = recoverUnifiedDiffFromLeakedPatchArtifacts(wrapped || patchText);
+  const patchToApply = leaked || wrapped || patchText;
   if (patchContainsWrappedToolPayload(patchToApply)) {
     return {
       status: "rejected_invalid_patch",

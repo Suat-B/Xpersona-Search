@@ -29,7 +29,7 @@ const PRICING_TIERS: PricingTier[] = [
     yearlyPrice: 20,
     bestFor: "Best for side projects",
     description: "A fast onramp for focused coding sessions with plan, generate, and debug.",
-    features: ["2-day trial", "Core workflows", "Standard usage limits", "VS Code context support"],
+    features: ["2-day trial", "Core workflows", "Standard usage limits", "All IDE's Supported"],
   },
   {
     key: "builder",
