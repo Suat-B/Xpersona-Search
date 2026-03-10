@@ -403,8 +403,9 @@
         const style = document.createElement("style");
         style.id = "runtimeStripStyles";
         style.textContent = [
-          ".runtime-strip{position:sticky;top:0;z-index:6;margin:0 0 10px;border:1px solid #1f1f1f;border-radius:10px;background:#070707;padding:8px;display:grid;gap:7px}",
+          ".runtime-strip{position:sticky;top:0;z-index:6;margin:0 0 10px;border:0;border-radius:0;background:transparent;padding:0;display:grid;gap:4px}",
           ".runtime-strip.hidden{display:none}",
+          ".runtime-strip .rt-head,.runtime-strip .rt-mid{display:none!important}",
           ".rt-head{display:flex;gap:6px;align-items:center;flex-wrap:wrap}",
           ".rt-pill{font-size:11px;border:1px solid #2b2b2b;border-radius:999px;padding:2px 8px;color:#d7d7d7;background:#0d0d0d}",
           ".rt-phase{font-weight:700;text-transform:uppercase;letter-spacing:.04em}",
@@ -523,7 +524,7 @@
           const hint = [missing, blocker].filter(Boolean).join(" | ");
           whyEl.classList.toggle("done", !incomplete);
           whyEl.textContent = incomplete
-            ? "Why not done yet: " + (hint || "awaiting completion contract")
+            ? "Why not done yet: " + (hint || "working on completion requirements")
             : "";
         }
       }
@@ -1256,9 +1257,7 @@
       function updateBackButtonVisibility() {
         if (!backToChatQuick || !msgs) return;
         const hasMessages = msgs.children.length > 0;
-        const show =
-          Boolean(threadsOverlayOpen) ||
-          (activePanelId === "chat" && (hasMessages || streaming));
+        const show = Boolean(threadsOverlayOpen) || hasMessages || streaming;
         backToChatQuick.classList.toggle("hidden", !show);
       }
 
@@ -1417,7 +1416,8 @@
 
         msgs.appendChild(d);
         updateStartupVisibility();
-        if (streaming || followLatest) scrollToLatest(streaming);
+        followLatest = true;
+        scrollToLatest(true);
         return d;
       }
 
@@ -1509,7 +1509,7 @@
         setRunState("Local");
         pinAssistantResponseToBottom();
         stampResponseDuration(completedBubble, false);
-        if (followLatest) scrollToLatest();
+        scrollToLatest(true);
       }
 
       function queueStreamText(text) {
@@ -1870,6 +1870,10 @@
       }
 
       function updateReasoningCard() {
+        // Reasoning UI disabled.
+        if (reasoningBubble && reasoningBubble.isConnected) reasoningBubble.remove();
+        reasoningBubble = null;
+        return;
         const reasoningText = String(liveReasoningText || "").trim();
         const allowMetaSignals = SHOW_SYSTEM_ACTIVITY;
         if (!allowMetaSignals && !reasoningText) {
@@ -1961,6 +1965,7 @@
         }
         body.appendChild(details);
         pinAssistantResponseToBottom();
+        scrollToLatest(true);
       }
 
       function ensureTerminalBubble() {
@@ -2699,6 +2704,9 @@
 
       function setStreaming(isBusy) {
         streaming = isBusy;
+        if (isBusy) {
+          followLatest = true;
+        }
         const activeSendBtn = sendBtn || document.getElementById("s");
         if (activeSendBtn) activeSendBtn.disabled = false;
         if (modelSel) modelSel.disabled = isBusy;
@@ -3049,17 +3057,18 @@
             return;
           }
 
-          // In-chat: act as "Back" to home (fresh chat + recent list).
           const hasMessages = msgs ? msgs.children.length > 0 : false;
           if (activePanelId === "chat" && (hasMessages || streaming)) {
-            if (streaming) v.postMessage({ type: "cancel" });
-            returnToChatHomeLocal();
-            if (input) setTimeout(() => input.focus(), 0);
+            // Toggle to home without cancelling active runs; keep chat alive in background.
+            showTab("stageBlank");
+            updateBackButtonVisibility();
             return;
           }
 
+          // From any other panel, jump back to the live chat thread.
           showTab("chat");
           if (input) setTimeout(() => input.focus(), 0);
+          updateBackButtonVisibility();
         };
       }
       if (threadsOverlayBackdrop) {
@@ -3249,10 +3258,23 @@
         triggerSendSafe(e);
       }, true);
       document.addEventListener("keydown", (e) => {
+        const isEsc =
+          e.key === "Escape" ||
+          e.code === "Escape" ||
+          e.key === "Esc" ||
+          e.code === "Esc" ||
+          e.keyCode === 27 ||
+          e.which === 27;
+        if (streaming && isEsc && !e.repeat) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+          requestCancel();
+        }
         if (handleMentionKeydown(e)) return;
-        if (e.key === "Escape") setActionMenuOpen(false);
-        if (e.key === "Escape" && actionMenu && actionMenu.classList.contains("page-mode")) closeSettingsPage(false);
-        if (e.key === "Escape" && threadsOverlayOpen) setThreadsOverlayOpen(false);
+        if (isEsc) setActionMenuOpen(false);
+        if (isEsc && actionMenu && actionMenu.classList.contains("page-mode")) closeSettingsPage(false);
+        if (isEsc && threadsOverlayOpen) setThreadsOverlayOpen(false);
       }, true);
       document.addEventListener("keyup", (e) => {
         if (e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter") {
@@ -3452,11 +3474,8 @@
       }
       if (chatPanel) {
         chatPanel.addEventListener("scroll", () => {
-          if (Date.now() < autoScrollLockUntil) {
-            updateJump();
-            return;
-          }
-          followLatest = isNearBottom(chatPanel);
+          // Always keep followLatest on; ignore manual scroll position.
+          followLatest = true;
           updateJump();
         });
       }
@@ -3628,12 +3647,15 @@
         } else if (m.type === "token") {
           if (!streaming) setStreaming(true);
           queueStreamText(String(m.text || ""));
+          followLatest = true;
+          scrollToLatest(true);
         } else if (m.type === "reasoningToken") {
           const chunk = String(m.text || "");
           if (chunk) {
             liveReasoningText = (liveReasoningText + chunk).slice(-MAX_REASONING_CHARS);
             updateReasoningCard();
-            if (streaming || followLatest) scrollToLatest(streaming);
+            followLatest = true;
+            scrollToLatest(true);
           }
         } else if (m.type === "reasonCodes") {
           latestReasonCodes = Array.isArray(m.codes) ? m.codes : [];
@@ -3831,6 +3853,8 @@
           updateRunStep("actions", runStepState.actions === "pending" ? "done" : runStepState.actions);
           updateRunStep("execution", runStepState.execution === "pending" ? "done" : runStepState.execution);
           updateRunStep("outcome", quality === "good" ? "done" : "warn", outcomeNote);
+          followLatest = true;
+          scrollToLatest(true);
 
           const outcomeRows = [
             {
@@ -3908,7 +3932,9 @@
               quality === "good"
                 ? "Open Execution to confirm whether this run was command-only."
                 : "Open Execution for exact reject reasons.";
-            addMessage("Execution debug: no file edits were applied. " + detailHint, "a assistant-response");
+            const outcomeReason = String((latestActionOutcome?.summary || runtimeState.blocker) || "").trim();
+            const reasonHint = outcomeReason ? "Reason: " + outcomeReason + ". " : "";
+            addMessage("Execution debug: no file edits were applied. " + reasonHint + detailHint, "a assistant-response");
           }
         } else if (m.type === "diagnosticsBundle") {
           showDiagnosticsBundleCard(m.data || {});

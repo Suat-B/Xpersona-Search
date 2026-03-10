@@ -4,21 +4,23 @@ from openai import OpenAI
 from huggingface_hub import InferenceClient
 
 
-MODEL = "Qwen/Qwen2.5-Coder-7B-Instruct:nscale"
+# Default to NVIDIA's router with the Bytedance 36B Instruct model.
+MODEL = "bytedance/seed-oss-36b-instruct"
 PROMPT = "What is the capital of France?"
+NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 
 def main() -> None:
-    api_key = os.environ.get("HF_TOKEN")
-    if not api_key:
-        raise RuntimeError("HF_TOKEN is not set")
+    nvidia_key = os.environ.get("NVIDIA_API_KEY")
+    hf_key = os.environ.get("HF_TOKEN")
+    provider = (sys.argv[1] if len(sys.argv) > 1 else "nvidia").strip().lower()
 
-    provider = (sys.argv[1] if len(sys.argv) > 1 else "openai").strip().lower()
-
-    if provider == "openai":
+    if provider in {"nvidia", "openai"}:
+        if not nvidia_key:
+            raise RuntimeError("NVIDIA_API_KEY is not set")
         client = OpenAI(
-            base_url="https://router.huggingface.co/v1",
-            api_key=api_key,
+            base_url=NVIDIA_BASE_URL,
+            api_key=nvidia_key,
         )
         stream = client.chat.completions.create(
             model=MODEL,
@@ -28,10 +30,16 @@ def main() -> None:
                     "content": PROMPT,
                 }
             ],
+            temperature=1.1,
+            top_p=0.95,
+            max_tokens=512,
             stream=True,
+            extra_body={"thinking_budget": -1},
         )
     elif provider in {"huggingface_hub", "hfhub", "hf"}:
-        client = InferenceClient(api_key=api_key)
+        if not hf_key:
+            raise RuntimeError("HF_TOKEN is not set")
+        client = InferenceClient(api_key=hf_key)
         stream = client.chat.completions.create(
             model=MODEL,
             messages=[
@@ -43,7 +51,7 @@ def main() -> None:
             stream=True,
         )
     else:
-        raise ValueError("Provider must be one of: openai, huggingface_hub")
+        raise ValueError("Provider must be one of: nvidia, openai, huggingface_hub")
 
     for chunk in stream:
         content = chunk.choices[0].delta.content

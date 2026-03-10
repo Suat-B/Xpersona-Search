@@ -2,7 +2,7 @@
     "name": "xpersona-playground",
     "displayName": "Playground 1",
     "description": "Minimal AI coding chat in VS Code.",
-    "version": "0.0.51",
+    "version": "0.0.52",
     "publisher": "playgroundai",
     "license": "UNLICENSED",
     "icon": "media/icon.png",
@@ -39,7 +39,7 @@
                 {
                     "id": "xpersona",
                     "title": "Playground 1",
-                    "icon": "media/xpersona.svg"
+                    "icon": "media/xpersona.png"
                 }
             ]
         },

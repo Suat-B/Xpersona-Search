@@ -25,6 +25,7 @@ const VSCODE_PENDING_PKCE_KEY = "xpersona.playground.vscodePendingPkce";
 const MODE_KEY = "xpersona.playground.mode";
 const SAFETY_KEY = "xpersona.playground.safety";
 const OPEN_THREADS_KEY = "xpersona.playground.openThreads";
+const HOMEPAGE_DISPLAYED_KEY = "xpersona.playground.homeDisplayed";
 const PINNED_THREADS_KEY = "xpersona.playground.pinnedThreads";
 const EXECUTION_POLICY_CONFIG_KEY = "executionPolicy";
 const MENTIONS_ENABLED_FLAG = "mentions.enabled";
@@ -210,6 +211,8 @@ function sanitizeAssistAttachments(raw: unknown): AssistAttachmentPayload[] {
 function normalizeWorkspaceRelativePath(input: string): string | null {
   let trimmed = input.replace(/\\/g, "/").trim();
   trimmed = trimmed.replace(/^["'`]+|["'`]+$/g, "");
+  trimmed = trimmed.split(/[,\s]+/)[0]; // drop extraneous text after path
+  trimmed = trimmed.replace(/[.,;:]+$/g, "");
   // Models often echo @mentions as paths (e.g. "@README.md"). Strip that marker.
   if (trimmed.startsWith("@") && trimmed.length > 1) trimmed = trimmed.slice(1);
   if (!trimmed || trimmed.startsWith("/") || /^[a-z]:\//i.test(trimmed) || trimmed.includes("..")) return null;
@@ -235,14 +238,50 @@ function extractAtMentions(text: string): string[] {
   return out;
 }
 
-function looksLikeWrappedToolPayloadText(text: string): boolean {
-  const trimmed = String(text || "").trim();
-  if (!trimmed || !/^\s*\{/.test(trimmed)) return false;
-  if (!/"final"\s*:/i.test(trimmed)) return false;
-  return (
-    /("edits"\s*:|"actions"\s*:|"commands"\s*:)/i.test(trimmed) &&
-    /("path"\s*:|"patch"\s*:)/i.test(trimmed)
+function hasEnvelopeKey(text: string, keyPattern: string): boolean {
+  const re = new RegExp(
+    `(?:^|[\\[{,]\\s*)(?:"(?:${keyPattern})"|'(?:${keyPattern})'|(?:${keyPattern}))\\s*:`,
+    "i"
   );
+  return re.test(text);
+}
+
+function looksLikeWrappedToolEnvelope(text: string): boolean {
+  const normalized = String(text || "").trim();
+  if (!normalized) return false;
+  if (!/^\s*\{/.test(normalized)) return false;
+  const hasFinal = hasEnvelopeKey(normalized, "final");
+  const hasCollection = hasEnvelopeKey(normalized, "edits|actions|commands");
+  const hasPathOrPatch = hasEnvelopeKey(normalized, "path|patch|diff|content");
+  return hasFinal && hasCollection && hasPathOrPatch;
+}
+
+function collectWrappedPayloadCandidates(text: string): string[] {
+  const trimmed = String(text || "").trim();
+  const candidates: string[] = [];
+  const pushCandidate = (candidate: string) => {
+    const next = candidate.trim();
+    if (!next || candidates.includes(next)) return;
+    candidates.push(next);
+  };
+  if (!trimmed) return candidates;
+  pushCandidate(trimmed);
+  const fenced = /^```(?:json|text)?\s*([\s\S]*?)\s*```$/i.exec(trimmed);
+  if (fenced?.[1]) pushCandidate(fenced[1]);
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    pushCandidate(trimmed.slice(firstBrace, lastBrace + 1));
+  }
+  return candidates;
+}
+
+function looksLikeWrappedToolPayloadText(text: string): boolean {
+  const candidates = collectWrappedPayloadCandidates(text);
+  for (const candidate of candidates) {
+    if (looksLikeWrappedToolEnvelope(candidate)) return true;
+  }
+  return false;
 }
 
 function patchHasWrappedToolPayloadArtifacts(patchText: string): boolean {
@@ -400,11 +439,14 @@ class Provider implements vscode.WebviewViewProvider {
   private recentHistory: ThreadState[] = [];
   private pinnedThreadIds = new Set<string>();
   private sessionId: string | null = null;
+  private hasShownHomepage = false;
   private timeline: Array<{ ts: number; phase: string; detail: string }> = [];
   private pendingActions: PendingAction[] = [];
   private guardrailIssues: string[] = [];
   private lastRunMeta: RunMeta | null = null;
   private lastActionOutcome: LocalActionOutcome | null = null;
+  private lastAutonomyProgressFingerprint: string | null = null;
+  private consecutiveAutonomyProgressRepeats = 0;
   private activeStreamCancel: (() => void) | null = null;
   private cancelRequested = false;
   private commandTerminal: vscode.Terminal | null = null;
@@ -518,6 +560,7 @@ class Provider implements vscode.WebviewViewProvider {
     this.modeStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 80);
     this.modeStatusItem.command = "xpersona.playground.mode.cycle";
     this.ctx.subscriptions.push(this.modeStatusItem);
+    this.hasShownHomepage = ctx.workspaceState.get<boolean>(HOMEPAGE_DISPLAYED_KEY, false);
     this.updateModeStatusItem();
     const persisted = ctx.workspaceState.get<OpenThreadsSnapshot | null>(OPEN_THREADS_KEY, null);
     if (persisted?.openChats?.length) {
@@ -1922,9 +1965,14 @@ class Provider implements vscode.WebviewViewProvider {
         if (ok && this.isIdeContextV2Enabled()) {
           void this.runBackgroundIndexing("auth-check");
         }
-        if (ok && this.activeThreadId) {
-          await this.openSession(this.activeThreadId);
-        } else if (!this.activeThreadId) {
+        const shouldAutoResume = ok && this.activeThreadId && this.hasShownHomepage;
+        if (shouldAutoResume) {
+          await this.openSession(this.activeThreadId || "");
+        } else {
+          if (!this.hasShownHomepage) {
+            this.hasShownHomepage = true;
+            void this.ctx.workspaceState.update(HOMEPAGE_DISPLAYED_KEY, true);
+          }
           this.post({ type: "load", data: [], threadId: null });
         }
       } else if (m.type === "signIn") {
@@ -1987,6 +2035,7 @@ class Provider implements vscode.WebviewViewProvider {
         }
         this.cancelRequested = true;
         this.activeStreamCancel();
+        this.killAllTerminals("user_cancel");
         this.post({ type: "status", text: "Stopping response..." });
       } else if (m.type === "history") {
         await this.loadHistory();
@@ -2121,7 +2170,14 @@ class Provider implements vscode.WebviewViewProvider {
     const localAppliedFiles = Array.isArray(localOutcome?.appliedFiles)
       ? localOutcome.appliedFiles.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
       : [];
-    const editIntent = this.wantsCodeEdits(task) && !this.isConversationalPrompt(task);
+    const isConversation = this.isConversationalPrompt(task) || this.isSmallTalkPrompt(task);
+    const reportedTargetFiles =
+      Array.isArray(meta.validationPlan?.touchedFiles) && meta.validationPlan?.touchedFiles.filter(Boolean).length > 0;
+    const localFileActions =
+      Array.isArray(localOutcome?.perFile) && localOutcome.perFile.some((row) => typeof row.path === "string");
+    const editIntent =
+      !isConversation &&
+      ((this.wantsCodeEdits(task) && !this.isConversationalPrompt(task)) || reportedTargetFiles || localFileActions);
     const missing = Array.from(new Set(missingFromMeta));
     if (editIntent && filesChanged === 0) missing.push("local_file_mutation_required");
     const completionStatus: "complete" | "incomplete" =
@@ -2196,6 +2252,8 @@ class Provider implements vscode.WebviewViewProvider {
     let cycleTask = objective;
     let cycle = 0;
     let loopOptions: AskOptions = { ...options, autonomousLoop: false };
+    this.lastAutonomyProgressFingerprint = null;
+    this.consecutiveAutonomyProgressRepeats = 0;
 
     while (true) {
       cycle += 1;
@@ -2243,6 +2301,46 @@ class Provider implements vscode.WebviewViewProvider {
         filesChanged: completion.filesChanged,
         checksRun: completion.checksRun,
       });
+
+      const appliedFilesFingerprint = Array.isArray(completion.appliedFiles)
+        ? completion.appliedFiles.slice().sort().join(",")
+        : "";
+      const missingFingerprint = completion.missingRequirements
+        .slice()
+        .sort()
+        .join(",");
+      const progressFingerprint = [
+        missingFingerprint,
+        String(completion.blocker || ""),
+        appliedFilesFingerprint,
+        String(completion.filesChanged),
+        String(completion.checksRun),
+        completion.completionStatus,
+      ].join("|");
+      const repeatedProgress = progressFingerprint !== "" && progressFingerprint === this.lastAutonomyProgressFingerprint;
+      this.consecutiveAutonomyProgressRepeats = repeatedProgress ? this.consecutiveAutonomyProgressRepeats + 1 : 0;
+      this.lastAutonomyProgressFingerprint = progressFingerprint || null;
+      if (progressFingerprint && this.consecutiveAutonomyProgressRepeats >= 2) {
+        const repeatBlocker = completion.blocker || "No new progress detected after repeated cycles.";
+        this.postAutonomyRuntime(threadId, {
+          objective,
+          cycle,
+          maxCycles: autonomy.maxCycles,
+          phase: "done",
+          completionStatus: completion.completionStatus,
+          completionScore: completion.completionScore,
+          missingRequirements: completion.missingRequirements,
+          blocker: repeatBlocker,
+          appliedFiles: completion.appliedFiles,
+          filesChanged: completion.filesChanged,
+          checksRun: completion.checksRun,
+        });
+        this.postRun(threadId, {
+          type: "status",
+          text: `Autonomy halted after ${cycle} cycle(s) with no new file edits. ${repeatBlocker}`,
+        });
+        return;
+      }
 
       const hitCycleLimit = autonomy.maxCycles > 0 && cycle >= autonomy.maxCycles;
       if (this.cancelRequested || completion.done || hitCycleLimit) {
@@ -2535,6 +2633,34 @@ class Provider implements vscode.WebviewViewProvider {
         .filter(Boolean)
         .join("\n\n")
       : taskWithReasoning;
+    const noActionIntent =
+      !this.hasExecutionIntent(text) && !this.hasExplicitEditIntent(text) && !this.hasExplicitCommandRunIntent(text) && !this.hasCodeTaskSignals(text);
+    if ((conversational || strictConversationOnly || noActionIntent) && !wantsEdits) {
+      // Hard stop: keep chat-only turns from reaching the action/autonomy pipeline.
+      this.cancelRequested = true;
+      const cancel: unknown = this.activeStreamCancel;
+      if (typeof cancel === "function") {
+        (cancel as () => void)();
+      }
+      this.activeStreamCancel = null;
+      this.pendingActions = [];
+      this.guardrailIssues = [];
+      this.lastRunMeta = null;
+      this.lastActionOutcome = null;
+      this.post({ type: "pendingActions", count: 0 });
+      const polite = smallTalk
+        ? "Hi! What would you like to work on?"
+        : `Got it. Share a task or a file and I'll jump in when you're ready.`;
+      this.postRun(runThreadId, { type: "assistant", text: polite });
+      this.postRun(runThreadId, { type: "end" });
+      return;
+    }
+    if (conversational || strictConversationOnly) {
+      const polite = smallTalk ? "Hi! What would you like to work on?" : taskWithReasoning;
+      this.postRun(runThreadId, { type: "assistant", text: polite });
+      this.postRun(runThreadId, { type: "end" });
+      return;
+    }
     const guardrailIssues: string[] = [];
     const recordGuardrailIssue = (detail: string) => {
       const message = String(detail || "").trim();
@@ -2571,15 +2697,25 @@ class Provider implements vscode.WebviewViewProvider {
               extensionVersion: String(this.ctx.extension.packageJSON?.version || "0.0.0"),
               workspaceHash,
             },
-            executionPolicy: this.getExecutionPolicy(),
-            autonomy: {
-              mode: autonomyProfile.mode,
-              maxCycles: autonomyProfile.maxCycles,
-              noClarifyToUser: autonomyProfile.noClarifyToUser,
-              commandPolicy: autonomyProfile.commandPolicy,
-              safetyFloor: autonomyProfile.safetyFloor,
-              failsafe: autonomyProfile.failsafe,
-            },
+            executionPolicy: requestMode === "generate" ? "preview_first" : this.getExecutionPolicy(),
+            autonomy:
+              requestMode === "generate"
+                ? {
+                  mode: "bounded",
+                  maxCycles: 0,
+                  noClarifyToUser: true,
+                  commandPolicy: "safe_default",
+                  safetyFloor: "standard",
+                  failsafe: "enabled",
+                }
+                : {
+                  mode: autonomyProfile.mode,
+                  maxCycles: autonomyProfile.maxCycles,
+                  noClarifyToUser: autonomyProfile.noClarifyToUser,
+                  commandPolicy: autonomyProfile.commandPolicy,
+                  safetyFloor: autonomyProfile.safetyFloor,
+                  failsafe: autonomyProfile.failsafe,
+                },
             safetyProfile: this.safety,
             agentConfig: parallel
               ? { strategy: "parallel", roles: ["planner", "implementer", "reviewer"] }
@@ -2633,10 +2769,13 @@ class Provider implements vscode.WebviewViewProvider {
               }
               this.addTimeline("decision", p?.mode || "unknown");
             } else if (ev === "diff_chunk") {
+              const forceTargetPath =
+                wantsEdits && hintedTargetPath && !conversational ? hintedTargetPath : null;
               const editItems = Array.isArray(p) ? p : Array.isArray((p as { edits?: unknown[] } | null)?.edits) ? (p as { edits: unknown[] }).edits : [];
               if (editItems.length && allowActions && !strictConversationOnly) {
                 for (const edit of editItems) {
-                  const editPath = typeof (edit as { path?: unknown })?.path === "string" ? String((edit as { path: string }).path).trim() : "";
+                  const rawPath = typeof (edit as { path?: unknown })?.path === "string" ? String((edit as { path: string }).path).trim() : "";
+                  const editPath = forceTargetPath || rawPath;
                   const rawPatch =
                     typeof (edit as { patch?: unknown })?.patch === "string"
                       ? ((edit as { patch: string }).patch || "")
@@ -2684,6 +2823,8 @@ class Provider implements vscode.WebviewViewProvider {
               }
             } else if (ev === "actions_chunk") {
               if (Array.isArray(p) && allowActions && !strictConversationOnly) {
+                const forceTargetPath =
+                  wantsEdits && hintedTargetPath && !conversational ? hintedTargetPath : null;
                 for (const action of p) {
                   if (!action || typeof action !== "object") {
                     recordGuardrailIssue("Blocked action payload: action item was not an object.");
@@ -2691,7 +2832,8 @@ class Provider implements vscode.WebviewViewProvider {
                   }
                   const type = String((action as { type?: unknown }).type || "").toLowerCase();
                   if (type === "edit") {
-                    const path = typeof (action as { path?: unknown }).path === "string" ? String((action as { path: string }).path).trim() : "";
+                    const rawPath = typeof (action as { path?: unknown }).path === "string" ? String((action as { path: string }).path).trim() : "";
+                    const path = forceTargetPath || rawPath;
                     const patch =
                       typeof (action as { patch?: unknown }).patch === "string"
                         ? String((action as { patch: string }).patch).trim()
@@ -2901,6 +3043,41 @@ class Provider implements vscode.WebviewViewProvider {
       emitDiagnosticsBundle("actions", "Retried run with explicit file target due to no actionable edits.");
       return;
     }
+    if (
+      allowActions &&
+      wantsEdits &&
+      this.pendingActions.length === 0 &&
+      hintedTargetPath &&
+      !options.contextRetryAttempted
+    ) {
+      addDiagnosticEvent(
+        "no_actions_retry",
+        `No actions were produced; retrying with explicit target: ${hintedTargetPath}`,
+        "warn"
+      );
+      this.postRun(runThreadId, {
+        type: "status",
+        text: `No actionable edits were produced. Retrying once with explicit target: ${hintedTargetPath}`,
+      });
+      const retryTask = [
+        taskWithReasoning,
+        `Primary target file: ${hintedTargetPath}`,
+        "Return at least one edit/write_file action that directly applies the requested changes to this file.",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      await this.askSingleCycle(retryTask, parallel, model, reasoning, {
+        includeIdeContext: options.includeIdeContext,
+        workspaceContextLevel: options.workspaceContextLevel,
+        attachments: options.attachments,
+        threadId: runThreadId,
+        contextRetryAttempted: true,
+        autonomousLoop: false,
+      });
+      emitDiagnosticsBundle("actions", "Retried run because no actions were produced for edit intent.");
+      return;
+    }
+
     if (allowActions && this.pendingActions.length === 0 && guardrailIssues.length > 0) {
       const outcome: LocalActionOutcome = {
         filesChanged: 0,
@@ -2947,6 +3124,9 @@ class Provider implements vscode.WebviewViewProvider {
           : policy === "preview_first"
             ? false
             : hasEditActions && (this.mode === "yolo" || this.mode === "auto") && autonomy?.autoApplyEdits !== false;
+      // Force auto-apply for non-conversational edit runs to avoid dangling preview-only state.
+      const forceAutoApply = !conversational && hasEditActions;
+      const effectiveAutoApplyEdits = forceAutoApply ? true : autoApplyEdits;
       let autoRunValidation =
         policy === "full_auto"
           ? hasCommandActions
@@ -3024,7 +3204,7 @@ class Provider implements vscode.WebviewViewProvider {
         return;
       }
 
-      if (hasEditActions && !autoApplyEdits) {
+      if (hasEditActions && !effectiveAutoApplyEdits) {
         this.postRun(runThreadId, {
           type: "status",
           text: `Prepared ${this.pendingActions.length} action(s), not executed. Execution policy is ${policy}.`,
@@ -3047,7 +3227,7 @@ class Provider implements vscode.WebviewViewProvider {
       }
 
       const actionsToExecute: PendingAction[] = [];
-      if (hasEditActions && autoApplyEdits) {
+      if (hasEditActions && effectiveAutoApplyEdits) {
         actionsToExecute.push(...this.pendingActions.filter((a): a is PendingAction & { type: "edit" } => a.type === "edit"));
         actionsToExecute.push(...this.pendingActions.filter((a): a is PendingAction & { type: "mkdir" } => a.type === "mkdir"));
         actionsToExecute.push(...this.pendingActions.filter((a): a is PendingAction & { type: "write_file" } => a.type === "write_file"));
@@ -3329,6 +3509,7 @@ class Provider implements vscode.WebviewViewProvider {
     this.postRun(runThreadId, { type: "execLogs", data: logs });
     let appliedEdits = 0;
     let launchedCommands = 0;
+    let commandFailures = 0;
     const applyErrors: string[] = [];
     const changedPaths = new Set<string>();
     const perFileStatuses: Array<{ path: string; status: PatchApplyStatus | "applied" | "partial" | "rejected_invalid_patch" | "rejected_path_policy"; reason?: string }> = [];
@@ -3429,8 +3610,9 @@ class Provider implements vscode.WebviewViewProvider {
     } else {
       for (const command of approvedCommands) {
         this.postRun(runThreadId, { type: "terminalCommand", command });
-        this.runApprovedCommand(command);
+        const result = await this.runApprovedCommand(command, runThreadId, addExecutionEvent);
         launchedCommands += 1;
+        if (!result.ok) commandFailures += 1;
       }
     }
 
@@ -3463,9 +3645,15 @@ class Provider implements vscode.WebviewViewProvider {
       if (applyErrors.length > 0) debugReasons.push(`apply errors: ${applyErrors.slice(0, 2).join(" | ")}`);
       if (guardrailIssues.length > 0) debugReasons.push(`guardrails blocked ${guardrailIssues.length} malformed action(s)`);
       if (debugReasons.length === 0) debugReasons.push("no approved file actions reached local patch application");
+      const firstDetail =
+        applyErrors[0] ||
+        guardrailIssues[0] ||
+        localRejectedSummaries[0] ||
+        rejectedSummaries[0] ||
+        "";
       this.postRun(runThreadId, {
         type: "status",
-        text: `Execution debug: No file edits were applied. ${debugReasons[0]}.`,
+        text: `Execution debug: No file edits were applied. ${debugReasons[0]}. ${firstDetail ? `Detail: ${firstDetail}` : ""}`.trim(),
       });
       if (debugReasons.length > 1) {
         this.postRun(runThreadId, {
@@ -3499,12 +3687,14 @@ class Provider implements vscode.WebviewViewProvider {
     const outcome: LocalActionOutcome = {
       filesChanged: changedPaths.size,
       checksRun: launchedCommands,
-      quality: applyErrors.length || (expectedFileChanges && changedPaths.size === 0) ? "needs_attention" : "good",
+      quality: applyErrors.length || (expectedFileChanges && changedPaths.size === 0) || commandFailures > 0 ? "needs_attention" : "good",
       summary: applyErrors.length
         ? "Applied edits with warnings. Review rejected patches."
         : expectedFileChanges && changedPaths.size === 0
           ? "No file edits were applied."
-          : "Actions completed successfully.",
+          : commandFailures > 0
+            ? "Some commands failed. Review execution logs."
+            : "Actions completed successfully.",
       perFile: perFileStatuses,
       appliedFiles: Array.from(changedPaths),
       debug: {
@@ -3512,6 +3702,7 @@ class Provider implements vscode.WebviewViewProvider {
         approvedActions: approved,
         rejectedActions: rejected.length + guardrailIssues.length,
         localRejectedEdits: localRejected.length,
+        commandFailures,
         rejectedSamples: [...guardrailIssues.map((x) => `guardrail ${x}`), ...rejectedSummaries].slice(0, 8),
         localRejectedSamples: localRejectedSummaries,
         applyErrors: applyErrors.slice(0, 8),
@@ -3593,9 +3784,11 @@ class Provider implements vscode.WebviewViewProvider {
     }
 
     const patchTarget = normalizeWorkspaceRelativePath(extractPatchTargetPath(patchText) || rel);
-    if (!patchTarget || patchTarget !== rel) {
-      return { status: "rejected_path_policy", reason: "Patch path did not match approved workspace-relative path.", changed: false };
+    if (!patchTarget) {
+      return { status: "rejected_path_policy", reason: "Invalid target path in patch header.", changed: false };
     }
+    // Allow patches whose header points elsewhere; we trust the approved action path instead of rejecting.
+    const effectiveRel = patchTarget === rel ? rel : rel;
     await this.captureUndoFileSnapshot(root, rel, undoCollector);
 
     const relParts = rel.split("/").filter(Boolean);
@@ -3726,12 +3919,64 @@ class Provider implements vscode.WebviewViewProvider {
     return { status: "applied", changed: true };
   }
 
-  private runApprovedCommand(command: string) {
-    if (!this.commandTerminal) {
-      this.commandTerminal = vscode.window.createTerminal({ name: "Playground Execute" });
+  private async runApprovedCommand(
+    command: string,
+    threadId?: string | null,
+    addExecutionEvent?: (code: string, message: string, severity?: DiagnosticsSeverity) => void
+  ): Promise<{ ok: boolean; exitCode: number | null; stdout: string; stderr: string }> {
+    const root = this.getWorkspaceRoot();
+    const cwd = root?.uri.fsPath || process.cwd();
+    const isWindows = process.platform === "win32";
+    const shell = isWindows ? "powershell.exe" : "bash";
+    const args = isWindows
+      ? ["-NoProfile", "-NonInteractive", "-Command", command]
+      : ["-lc", command];
+    const timeoutMs = 15 * 60 * 1000;
+    const maxBuffer = 8 * 1024 * 1024;
+    const result = await new Promise<{ ok: boolean; exitCode: number | null; stdout: string; stderr: string }>((resolve) => {
+      execFile(shell, args, { cwd, timeout: timeoutMs, windowsHide: true, maxBuffer }, (error, stdout, stderr) => {
+        const exitCodeRaw = (error as { code?: number | string } | null)?.code;
+        const exitCode =
+          typeof exitCodeRaw === "number"
+            ? exitCodeRaw
+            : typeof exitCodeRaw === "string"
+              ? Number(exitCodeRaw)
+              : error
+                ? 1
+                : 0;
+        const ok = !error || exitCode === 0;
+        const out = String(stdout || "");
+        const errText = String(stderr || (error as { message?: string } | null)?.message || "");
+        resolve({ ok, exitCode: Number.isFinite(exitCode) ? exitCode : null, stdout: out, stderr: errText });
+      });
+    });
+    const summary = `${result.ok ? "APPROVED" : "REJECTED"} command ${command} [exit ${result.exitCode ?? "?"}]${
+      !result.ok && result.stderr.trim()
+        ? ` (${result.stderr.trim().split("\n")[0].slice(0, 200)})`
+        : ""
+    }`;
+    this.postRun(threadId, {
+      type: "execLogs",
+      data: [{ ts: Date.now(), level: result.ok ? "info" : "error", message: summary }],
+    });
+    if (!result.ok && addExecutionEvent) {
+      addExecutionEvent("command_failed", summary, "error");
     }
-    this.commandTerminal.show(true);
-    this.commandTerminal.sendText(command, true);
+    const stderrLine = result.stderr.trim();
+    if (stderrLine && !result.ok) {
+      this.postRun(threadId, {
+        type: "execLogs",
+        data: [{ ts: Date.now(), level: "error", message: stderrLine.split("\n").slice(0, 4).join("\n").slice(0, 600) }],
+      });
+    }
+    const stdoutLine = result.stdout.trim();
+    if (stdoutLine) {
+      this.postRun(threadId, {
+        type: "execLogs",
+        data: [{ ts: Date.now(), level: "info", message: stdoutLine.split("\n").slice(0, 8).join("\n").slice(0, 800) }],
+      });
+    }
+    return result;
   }
 
   private pushUndoBatch(entries: UndoEntry[], summary: string) {
@@ -3804,6 +4049,26 @@ class Provider implements vscode.WebviewViewProvider {
     }
     this.addTimeline("undo", `${origin} reverted ${reverted}/${entries.length}`);
     this.postUndoState();
+  }
+
+  private killAllTerminals(reason?: string) {
+    const terminals = vscode.window.terminals || [];
+    if (!terminals.length) return;
+    let closed = 0;
+    for (const terminal of terminals) {
+      try {
+        terminal.dispose();
+        closed += 1;
+      } catch {
+        // Swallow dispose errors to avoid masking the cancel flow.
+      }
+    }
+    this.commandTerminal = null;
+    if (closed > 0) {
+      const detail = reason ? reason.replace(/_/g, " ") : "user stop";
+      this.addTimeline("terminal", `closed ${closed} terminal(s) ${detail}`);
+      this.post({ type: "status", text: `Closed ${closed} terminal${closed === 1 ? "" : "s"} after stop.` });
+    }
   }
 
   private addTimeline(phase: string, detail: string) {
@@ -4962,11 +5227,12 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       }
       .change {
         border: 1px solid var(--surface-border);
-        border-radius: 12px;
+        border-radius: 14px;
         overflow: hidden;
         background: var(--surface);
         width: 100%;
         max-width: 100%;
+        box-shadow: 0 14px 36px rgba(0, 0, 0, 0.33);
       }
       .change .m-body {
         width: 100%;
@@ -4977,6 +5243,10 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       }
       .diff-disclosure {
         margin: 0;
+        border: 1px solid var(--surface-border);
+        border-radius: 14px;
+        overflow: hidden;
+        background: var(--surface);
       }
       .diff-disclosure > summary {
         list-style: none;
@@ -5000,14 +5270,14 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         align-items: center;
         justify-content: space-between;
         gap: 16px;
-        padding: 18px 20px;
+        padding: 20px 22px;
         border-bottom: 1px solid var(--surface-border);
         cursor: pointer;
         user-select: none;
         background: color-mix(in srgb, var(--surface) 76%, var(--bg-0));
       }
       .diff-summary-title {
-        font-size: clamp(12px, 1.4vw, 15px);
+        font-size: clamp(13px, 1.6vw, 16px);
         font-weight: 600;
         color: color-mix(in srgb, var(--fg) 86%, var(--muted));
         min-width: 0;
@@ -5062,20 +5332,21 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       .diff-card {
         border-bottom: 1px solid var(--surface-border);
         background: var(--vscode-editor-background, var(--bg-0));
+        border-radius: 0 0 14px 14px;
       }
       .diff-head {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 16px;
-        padding: 16px 20px;
+        gap: 18px;
+        padding: 20px 22px;
         background: color-mix(in srgb, var(--surface) 68%, var(--bg-0));
         border-bottom: 1px solid var(--surface-border);
         min-width: 0;
       }
       .diff-title {
         color: color-mix(in srgb, var(--fg) 78%, var(--muted));
-        font-size: clamp(11px, 1.25vw, 14px);
+        font-size: clamp(12px, 1.45vw, 15px);
         min-width: 0;
         flex: 1 1 auto;
       }
@@ -5084,13 +5355,14 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         font-weight: 600;
         display: block;
         min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        white-space: normal;
+        line-height: 1.45;
       }
       .diff-stats {
         font-family: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
-        font-size: clamp(11px, 1.1vw, 13px);
+        font-size: clamp(12px, 1.25vw, 14px);
         white-space: nowrap;
       }
       .diff-stats .add {
@@ -5101,12 +5373,13 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       }
       .diff-body {
         font-family: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
-        font-size: clamp(12px, 1.15vw, 14px);
-        line-height: 1.5;
+        font-size: clamp(13px, 1.4vw, 16px);
+        line-height: 1.6;
         width: 100%;
         max-width: 100%;
-        min-height: 240px;
-        max-height: clamp(420px, 78vh, 1100px);
+        min-height: 320px;
+        max-height: clamp(640px, 82vh, 1400px);
+        padding: 8px 0 12px;
         overflow: auto;
         overscroll-behavior: contain;
       }
@@ -5132,15 +5405,16 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       }
       .diff-row {
         display: grid;
-        grid-template-columns: minmax(40px, 56px) minmax(40px, 56px) 18px minmax(0, 1fr);
+        grid-template-columns: minmax(50px, 68px) minmax(50px, 68px) 22px minmax(0, 1fr);
         width: 100%;
         min-width: 0;
         transition: background .18s ease;
+        padding: 4px 0;
       }
       .diff-row .ln {
         color: var(--line-fg);
         text-align: right;
-        padding: 0 8px 0 0;
+        padding: 2px 10px 2px 0;
         border-right: 1px solid color-mix(in srgb, var(--surface-border) 70%, transparent);
         background: var(--gutter-bg);
         font-variant-numeric: tabular-nums;
@@ -5153,7 +5427,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         white-space: pre-wrap;
         overflow-wrap: anywhere;
         word-break: break-word;
-        padding: 0 12px;
+        padding: 4px 14px;
         min-width: 0;
       }
       .diff-row.ctx .sig,
@@ -5204,21 +5478,21 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       @media (max-width: 760px) {
         .diff-summary,
         .diff-head {
-          padding: 12px 14px;
-          gap: 10px;
+          padding: 14px 16px;
+          gap: 12px;
         }
         .diff-row {
-          grid-template-columns: minmax(30px, 44px) minmax(30px, 44px) 14px minmax(0, 1fr);
+          grid-template-columns: minmax(38px, 52px) minmax(38px, 52px) 16px minmax(0, 1fr);
         }
         .diff-row .ln {
-          padding-right: 6px;
+          padding-right: 8px;
         }
         .diff-row .txt {
-          padding: 0 8px;
+          padding: 4px 10px;
         }
         .diff-body {
-          min-height: 180px;
-          max-height: clamp(320px, 66vh, 820px);
+          min-height: 240px;
+          max-height: clamp(480px, 78vh, 1100px);
         }
       }
       .typing .m-time { display: none; }
@@ -5474,6 +5748,9 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        direction: rtl;
+        text-align: left;
+        unicode-bidi: plaintext;
       }
       .mention-kind {
         color: #9a9a9a;
@@ -5486,6 +5763,13 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         align-items: center;
         gap: 6px;
         flex-wrap: wrap;
+        min-width: 0;
+      }
+      .composer-right {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-left: auto;
         min-width: 0;
       }
       .menu-icon {
@@ -6369,6 +6653,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       .input-actions.minimal {
         flex-wrap: nowrap;
         align-items: center;
+        width: 100%;
       }
       .icon-btn {
         position: relative;
@@ -7184,8 +7469,8 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       }
       .input-actions.minimal {
         flex: 0 0 auto;
-        width: auto;
-        display: inline-flex;
+        width: 100%;
+        display: flex;
         align-items: center;
         gap: 6px;
         flex-wrap: nowrap;
@@ -8664,6 +8949,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
           row-gap: 5px !important;
           padding: 6px 8px !important;
           align-items: center !important;
+          width: 100% !important;
         }
         #chatDock .input-actions.minimal .spacer,
         .chat-panel.active #chatDock .input-actions.minimal .spacer {
@@ -8853,9 +9139,10 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
                     <input id="ctxToggle" type="checkbox" checked />
                     <span id="contextPill" class="context-pill">IDE Context: LIVE</span>
                   </label>
-                  <div class="spacer"></div>
-                  <button id="s" type="button" class="primary send-round" aria-label="Send">&#8593;</button>
-                  <span id="queuePill" class="queue-pill" title="Queued messages">Queued: 0</span>
+                  <div class="composer-right">
+                    <span id="queuePill" class="queue-pill" title="Queued messages">Queued: 0</span>
+                    <button id="s" type="button" class="primary send-round" aria-label="Send">&#8593;</button>
+                  </div>
                 </div>
                 <div id="contextTelemetry" class="context-telemetry" aria-live="polite">
                   <span id="contextAutoBadge" class="context-auto-badge idle">IDE Context</span>

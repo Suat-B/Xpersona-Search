@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { SearchSuggestions, type SearchSuggestionsHandle, type SuggestionAgent } from "./SearchSuggestions";
 import { addRecentSearch } from "@/lib/search-history";
 import { saveScrollPosition } from "@/lib/search/scroll-memory";
-import { useAutoHideHeader } from "@/lib/hooks/use-auto-hide-header";
 
 interface SearchTopControlsBarProps {
   query: string;
@@ -43,7 +42,7 @@ export function SearchTopControlsBar({
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<SearchSuggestionsHandle>(null);
   const router = useRouter();
-  const headerHidden = useAutoHideHeader({ disabled: filtersOpen });
+  const headerHidden = false;
 
   const handleSuggestionSelect = (agent: SuggestionAgent) => {
     const params = new URLSearchParams(window.location.search);
@@ -114,7 +113,7 @@ export function SearchTopControlsBar({
 
   return (
     <div
-      className={`sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--bg-deep)]/95 backdrop-blur-sm overflow-hidden transition-[max-height,transform,opacity,border-color] duration-300 ${
+      className={`sticky top-0 z-20 border-b border-[var(--border)] bg-black/95 backdrop-blur-sm overflow-hidden transition-[max-height,transform,opacity,border-color] duration-300 ${
         headerHidden
           ? "max-h-0 -translate-y-2 opacity-0 pointer-events-none border-transparent"
           : "max-h-[24rem] translate-y-0 opacity-100"

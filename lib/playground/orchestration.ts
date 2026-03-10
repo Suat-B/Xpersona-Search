@@ -150,7 +150,7 @@ const HF_ROUTER_BASE_URL = "https://router.huggingface.co/v1";
 const NVIDIA_INTEGRATE_BASE_URL = "https://integrate.api.nvidia.com/v1";
 const STANDARD_CONTEXT_LIMIT = 32_000;
 const LONG_CONTEXT_LIMIT = 262_144;
-const DEFAULT_PLAYGROUND_MODEL = "openai/gpt-oss-20b:fastest";
+const DEFAULT_PLAYGROUND_MODEL = "stepfun-ai/step-3.5-flash";
 const DEFAULT_NVIDIA_MODEL = "mistralai/mistral-nemotron";
 const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
 const IDENTITY_DENIAL_RESPONSE =
@@ -263,7 +263,8 @@ function isLikelyAttachmentUnsupportedError(message: string): boolean {
     lower.includes("image input") ||
     (lower.includes("unsupported") && lower.includes("image")) ||
     (lower.includes("invalid") && lower.includes("image")) ||
-    (lower.includes("content") && lower.includes("type"))
+    (lower.includes("content") && lower.includes("type")) ||
+    lower.includes("textencodeinput")
   );
 }
 
@@ -290,10 +291,14 @@ function resolveAssistProvider(params: {
   const preference = String(params.providerPreference || "").trim().toLowerCase();
   if (preference === "hf") return "hf";
   if (preference === "nvidia") return "nvidia";
-  const nvidiaReady = Boolean(getNvidiaToken(params.runtimeNvidiaApiKey));
   const hfReady = Boolean(getHfRouterToken());
-  if (nvidiaReady) return "nvidia";
+  const nvidiaReady = Boolean(getNvidiaToken(params.runtimeNvidiaApiKey));
+
+  // Default to HF when both providers are configured because the primary models
+  // (e.g., stepfun-ai/step-3.5-flash) live on HuggingFace Router and NVIDIA
+  // will 404 on those identifiers. Explicit prefs can still force NVIDIA.
   if (hfReady) return "hf";
+  if (nvidiaReady) return "nvidia";
   return "hf";
 }
 
@@ -1415,7 +1420,9 @@ function parseStructuredAssistResponse(raw: string): StructuredAssistOutput | nu
 }
 
 function normalizeRelativePath(value: string): string | null {
-  const cleaned = value.replace(/\\/g, "/").trim().replace(/^["'`]+|["'`]+$/g, "");
+  let cleaned = value.replace(/\\/g, "/").trim().replace(/^["'`]+|["'`]+$/g, "");
+  cleaned = cleaned.split(/[,\s]+/)[0];
+  cleaned = cleaned.replace(/[.,;:]+$/g, "");
   if (!cleaned) return null;
   if (cleaned.includes("..")) return null;
   if (cleaned.startsWith("/") || /^[a-z]:\//i.test(cleaned)) return null;
