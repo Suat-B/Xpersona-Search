@@ -350,7 +350,7 @@ function Pricing({ isYearly, setIsYearly, onStartTrial, isBusy }: {
       <div className="mx-auto max-w-6xl">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 className="text-3xl font-black text-[var(--light-text-primary)] sm:text-4xl">Pricing that scales with your velocity</h2>
+            <h2 className="text-3xl font-black text-[var(--light-text-primary)] sm:text-4xl">Get an automatic AI coding agent for your IDE</h2>
             <p className="mt-2 text-[var(--light-text-secondary)]">Every plan starts with a 2-day trial. Builder is the most popular for daily shipping.</p>
           </div>
           <div className="rounded-full border border-[var(--light-border)] bg-white/80 p-1 shadow-[var(--light-shadow-sm)]">

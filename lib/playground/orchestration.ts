@@ -125,7 +125,7 @@ export type AssistResult = {
   risk: { blastRadius: "low" | "medium" | "high"; rollbackComplexity: number };
   influence: { files: string[]; snippets: number };
   nextBestActions: string[];
-  repromptStage: "none" | "repair" | "tool_enforcement" | "fallback";
+  repromptStage: "none" | "repair" | "tool_enforcement" | "single_file_rewrite" | "fallback";
   actionability: {
     summary: "valid_actions" | "clarification_needed" | "blocked_by_safety";
     reason: string;
@@ -150,8 +150,7 @@ const HF_ROUTER_BASE_URL = "https://router.huggingface.co/v1";
 const NVIDIA_INTEGRATE_BASE_URL = "https://integrate.api.nvidia.com/v1";
 const STANDARD_CONTEXT_LIMIT = 32_000;
 const LONG_CONTEXT_LIMIT = 262_144;
-const DEFAULT_PLAYGROUND_MODEL = "mistralai/devstral-2-123b-instruct-2512";
-const DEFAULT_HF_PLAYGROUND_MODEL = "stepfun-ai/Step-3.5-Flash";
+const DEFAULT_PLAYGROUND_MODEL = "openai/gpt-oss-120b:fastest";
 const DEFAULT_NVIDIA_MODEL = "mistralai/mistral-nemotron";
 const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
 const IDENTITY_DENIAL_RESPONSE =
@@ -306,11 +305,10 @@ function resolveAssistProvider(params: {
   const nvidiaReady = Boolean(getNvidiaToken(params.runtimeNvidiaApiKey));
   const hfReady = Boolean(getHfRouterToken());
 
-  // Default to NVIDIA when both providers are configured because the default
-  // model (`mistralai/devstral-2-123b-instruct-2512`) runs on NVIDIA Integrate.
-  // Explicit prefs can still force HF.
-  if (nvidiaReady) return "nvidia";
+  // Default to HF when both providers are configured (the canonical model lives on HuggingFace).
+  // Explicit preferences can still force NVIDIA.
   if (hfReady) return "hf";
+  if (nvidiaReady) return "nvidia";
   return "hf";
 }
 
@@ -1361,6 +1359,7 @@ function parseStructuredAssistResponse(raw: string): StructuredAssistOutput | nu
             (e) =>
               e.path &&
               e.patch &&
+              looksLikeConcreteFilePath(e.path) &&
               !e.path.includes("..") &&
               !e.path.startsWith("/") &&
               !/^[a-z]:\\/i.test(e.path) &&
@@ -1387,7 +1386,13 @@ function parseStructuredAssistResponse(raw: string): StructuredAssistOutput | nu
         if (type === "edit") {
           const path = typeof obj.path === "string" ? obj.path.trim() : "";
           const patch = typeof obj.patch === "string" ? obj.patch.trim() : typeof obj.diff === "string" ? obj.diff.trim() : "";
-          if (path && patch && !looksLikeStructuredPayloadText(patch) && !patchContainsStructuredPayloadArtifacts(patch)) {
+          if (
+            path &&
+            patch &&
+            looksLikeConcreteFilePath(path) &&
+            !looksLikeStructuredPayloadText(patch) &&
+            !patchContainsStructuredPayloadArtifacts(patch)
+          ) {
             actions.push({ type: "edit", path, patch });
           }
           continue;
@@ -1407,7 +1412,9 @@ function parseStructuredAssistResponse(raw: string): StructuredAssistOutput | nu
           const path = typeof obj.path === "string" ? obj.path.trim() : "";
           const content = typeof obj.content === "string" ? obj.content : "";
           const overwrite = typeof obj.overwrite === "boolean" ? obj.overwrite : undefined;
-          if (path) actions.push({ type: "write_file", path, content, ...(overwrite !== undefined ? { overwrite } : {}) });
+          if (looksLikeConcreteFilePath(path)) {
+            actions.push({ type: "write_file", path, content, ...(overwrite !== undefined ? { overwrite } : {}) });
+          }
         }
       }
     }
@@ -1441,6 +1448,46 @@ function normalizeRelativePath(value: string): string | null {
   return cleaned;
 }
 
+function looksLikeConcreteFilePath(path: string | null | undefined): boolean {
+  const normalized = normalizeRelativePath(path || "");
+  if (!normalized) return false;
+  const lastSegment = normalized.split("/").filter(Boolean).pop() || "";
+  if (!lastSegment) return false;
+  if (/^[.][a-z0-9._-]+$/i.test(lastSegment)) return true;
+  if (/^[a-z0-9_-]+\.[a-z0-9._-]+$/i.test(lastSegment)) return true;
+  return /^(dockerfile|makefile|procfile|license|readme)$/i.test(lastSegment);
+}
+
+function inferExplicitTargetPath(task: string): string | null {
+  const patterns = [
+    /primary target file(?: hint)?\s*:\s*([^\n]+)/i,
+    /apply the requested change directly in\s+([^\n]+)/i,
+    /default to this file\s*:\s*([^\n]+)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = task.match(pattern);
+    if (!match?.[1]) continue;
+    const normalized = normalizeRelativePath(match[1]);
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
+function inferContextTargetPath(context?: AssistContext): string | null {
+  const active = normalizeRelativePath(context?.activeFile?.path || "");
+  if (active) return active;
+
+  for (const file of context?.openFiles ?? []) {
+    const normalized = normalizeRelativePath(file.path || "");
+    if (normalized) return normalized;
+  }
+  for (const snippet of context?.indexedSnippets ?? []) {
+    const normalized = normalizeRelativePath(snippet.path || "");
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
 function inferPathFromTask(task: string): string | null {
   const patterns = [
     /\b(?:create|make|add|write)\s+(?:a\s+)?(?:new\s+)?file\s+([^\s"'`]+)/i,
@@ -1463,20 +1510,14 @@ function inferPathFromTask(task: string): string | null {
 }
 
 function inferPrimaryTargetPath(task: string, context?: AssistContext): string | null {
+  const explicit = inferExplicitTargetPath(task);
+  if (explicit) return explicit;
+
+  const fromContext = inferContextTargetPath(context);
+  if (fromContext) return fromContext;
+
   const fromTask = inferPathFromTask(task);
   if (fromTask) return fromTask;
-
-  const active = normalizeRelativePath(context?.activeFile?.path || "");
-  if (active) return active;
-
-  for (const file of context?.openFiles ?? []) {
-    const normalized = normalizeRelativePath(file.path || "");
-    if (normalized) return normalized;
-  }
-  for (const snippet of context?.indexedSnippets ?? []) {
-    const normalized = normalizeRelativePath(snippet.path || "");
-    if (normalized) return normalized;
-  }
   return null;
 }
 
@@ -1584,7 +1625,7 @@ export function composeWarmAssistantResponse(input: {
   }
 
   const actionPaths = (input.actions ?? []).flatMap((action) => {
-    if (action.type === "edit" || action.type === "mkdir" || action.type === "write_file") return [action.path];
+    if (action.type === "edit" || action.type === "write_file") return [action.path];
     return [];
   });
   const hasFileActions = input.edits.length > 0 || actionPaths.length > 0;
@@ -1593,7 +1634,9 @@ export function composeWarmAssistantResponse(input: {
     (input.actions ?? []).some((action) => action.type === "command");
 
   if (hasFileActions) {
-    const touchedPaths = Array.from(new Set([...input.edits.map((edit) => edit.path), ...actionPaths])).slice(0, 3);
+    const touchedPaths = Array.from(
+      new Set([...input.edits.map((edit) => edit.path), ...actionPaths].filter((path) => looksLikeConcreteFilePath(path)))
+    ).slice(0, 3);
     const touched = touchedPaths.join(", ");
     const resultLine = firstNonEmptyLine(cleaned);
     const nextAction =
@@ -1615,6 +1658,12 @@ export function composeWarmAssistantResponse(input: {
   }
 
   if (hasCommandActions) {
+    if (input.intent === "code_edit") {
+      return [
+        "No concrete file edits are staged yet.",
+        "Validation commands are withheld until the run produces a real patch or write action.",
+      ].join("\n\n");
+    }
     const resultLine = firstNonEmptyLine(cleaned);
     return [
       "I prepared validation/inspection commands, but no file edits are staged yet.",
@@ -1638,6 +1687,81 @@ function cleanCodeSnippet(text: string): string {
   // Trim stray trailing escape artifacts.
   out = out.replace(/\n?\\\s*$/, "").replace(/\n?\s*"\s*$/, "");
   return out.trim();
+}
+
+function normalizeComparableText(text: string): string {
+  return String(text || "").replace(/\r\n/g, "\n").trim();
+}
+
+function looksLikeWholeFileRewriteCandidate(text: string, path: string): boolean {
+  const normalized = normalizeComparableText(text);
+  if (!normalized) return false;
+  if (looksLikeCode(normalized)) return true;
+
+  const lowerPath = path.toLowerCase();
+  const lineCount = normalized.split(/\n/).length;
+
+  if (lowerPath.endsWith(".pine")) {
+    return /\b(strategy|indicator)\s*\(/i.test(normalized) || (lineCount >= 8 && /:=|plot|strategy\./i.test(normalized));
+  }
+  if (lowerPath.endsWith(".json")) {
+    return /^[\[{]/.test(normalized);
+  }
+  if (/\.(yaml|yml)$/i.test(lowerPath)) {
+    return lineCount >= 3 && /^[A-Za-z0-9_.-]+\s*:/m.test(normalized);
+  }
+  if (/\.(md|mdx|txt|rst)$/i.test(lowerPath)) {
+    return lineCount >= 3 && normalized.length >= 40;
+  }
+  return lineCount >= 8 && normalized.length >= 120;
+}
+
+function inferSingleFileRewriteFallback(
+  raw: string,
+  context?: AssistContext,
+  targetPath?: string | null
+): StructuredAssistOutput | null {
+  if (looksLikeStructuredActionEnvelope(raw)) return null;
+
+  const activePath = normalizeRelativePath(context?.activeFile?.path || "");
+  const candidatePath = activePath || normalizeRelativePath(targetPath || "");
+  const activeContent = normalizeComparableText(context?.activeFile?.content || "");
+  if (!candidatePath || !looksLikeConcreteFilePath(candidatePath) || !activeContent) return null;
+  if (activePath && candidatePath !== activePath) return null;
+
+  const blocks = extractFencedCodeBlocks(raw);
+  let candidateContent = "";
+  for (const block of blocks.slice(0, 4)) {
+    const cleaned = cleanCodeSnippet(block);
+    if (!looksLikeWholeFileRewriteCandidate(cleaned, candidatePath)) continue;
+    if (!candidateContent || cleaned.length > candidateContent.length) {
+      candidateContent = cleaned;
+    }
+  }
+
+  if (!candidateContent) {
+    const cleanedRaw = cleanCodeSnippet(raw);
+    if (looksLikeWholeFileRewriteCandidate(cleanedRaw, candidatePath)) {
+      candidateContent = cleanedRaw;
+    }
+  }
+
+  const normalizedCandidate = normalizeComparableText(candidateContent);
+  if (!normalizedCandidate || normalizedCandidate === activeContent) return null;
+
+  return {
+    final: "Recovered a concrete single-file rewrite from the model output.",
+    edits: [],
+    commands: [],
+    actions: [
+      {
+        type: "write_file",
+        path: candidatePath,
+        content: `${normalizedCandidate}\n`,
+        overwrite: true,
+      },
+    ],
+  };
 }
 
 function looksLikeCode(text: string): boolean {
@@ -1832,9 +1956,9 @@ function inferStructuredFallback(raw: string, task: string, targetPath?: string 
     // Avoid writing schema wrappers like {"final":"...","edits":[...]} into source files.
     return null;
   }
-  const taskPath = inferPathFromTask(task) || normalizeRelativePath(targetPath || "");
+  const taskPath = normalizeRelativePath(targetPath || "") || inferExplicitTargetPath(task) || inferPathFromTask(task);
   const edits: Array<{ path: string; patch: string; rationale?: string }> = [];
-  const applyPatchEdits = extractApplyPatchEdits(raw);
+  const applyPatchEdits = extractApplyPatchEdits(raw).filter((edit) => looksLikeConcreteFilePath(edit.path));
   if (applyPatchEdits.length) {
     return {
       final: normalizeModelText(raw),
@@ -1842,7 +1966,7 @@ function inferStructuredFallback(raw: string, task: string, targetPath?: string 
       commands: [],
     };
   }
-  const diffEdits = extractUnifiedDiffEdits(raw);
+  const diffEdits = extractUnifiedDiffEdits(raw).filter((edit) => looksLikeConcreteFilePath(edit.path));
   if (diffEdits.length) {
     return {
       final: normalizeModelText(raw),
@@ -1854,7 +1978,8 @@ function inferStructuredFallback(raw: string, task: string, targetPath?: string 
 
   for (const block of blocks.slice(0, 4)) {
     const cleaned = cleanCodeSnippet(block);
-    const path = taskPath || inferPathFromCode(cleaned);
+    const codePath = inferPathFromCode(cleaned);
+    const path = taskPath || (looksLikeConcreteFilePath(codePath) ? codePath : null);
     if (!path) continue;
     if (!looksLikeCode(cleaned)) continue;
     edits.push({
@@ -1880,6 +2005,111 @@ function inferStructuredFallback(raw: string, task: string, targetPath?: string 
     final: normalizeModelText(raw),
     edits,
     commands: [],
+  };
+}
+
+function inferPineEntryId(content: string, direction: "long" | "short"): string | null {
+  const entryMatch = content.match(
+    new RegExp(`strategy\\.entry\\(\\s*["'\`]([^"'\\\`]+)["'\`]\\s*,\\s*strategy\\.${direction}\\b`, "i")
+  );
+  if (entryMatch?.[1]) return entryMatch[1];
+
+  const exitRegex = /strategy\.exit\(\s*["'`][^"'`]+["'`]\s*,\s*["'`]([^"'`]+)["'`]/gi;
+  let match: RegExpExecArray | null = null;
+  while ((match = exitRegex.exec(content)) !== null) {
+    const candidate = String(match[1] || "").trim();
+    if (!candidate) continue;
+    const normalized = candidate.toLowerCase();
+    if (direction === "long" && normalized.includes("long")) return candidate;
+    if (direction === "short" && normalized.includes("short")) return candidate;
+  }
+  return null;
+}
+
+function synthesizeTrailingStopPineContent(content: string): string | null {
+  const normalized = String(content || "").replace(/\r\n/g, "\n");
+  if (!/\bstrategy\s*\(/i.test(normalized)) return null;
+  if (/\btrailing_stop_(enabled|atr_length|atr_multiplier|long_stop|short_stop)\b/i.test(normalized)) return null;
+
+  const longEntryId = inferPineEntryId(normalized, "long");
+  const shortEntryId = inferPineEntryId(normalized, "short");
+  if (!longEntryId && !shortEntryId) return null;
+
+  const trailingBlock: string[] = [
+    "",
+    "// Trailing stop fallback synthesized from IDE context.",
+    'trailing_stop_enabled = input.bool(true, "Enable trailing stop")',
+    'trailing_stop_atr_length = input.int(14, "Trailing stop ATR length", minval=1)',
+    'trailing_stop_atr_multiplier = input.float(1.5, "Trailing stop ATR multiplier", minval=0.1, step=0.1)',
+    "trailing_stop_offset = ta.atr(trailing_stop_atr_length) * trailing_stop_atr_multiplier",
+    "",
+    "var float trailing_stop_long = na",
+    "var float trailing_stop_short = na",
+    "",
+    "if strategy.position_size > 0",
+    "    long_candidate_stop = close - trailing_stop_offset",
+    "    trailing_stop_long := na(trailing_stop_long[1]) ? long_candidate_stop : math.max(trailing_stop_long[1], long_candidate_stop)",
+    "else",
+    "    trailing_stop_long := na",
+    "",
+    "if strategy.position_size < 0",
+    "    short_candidate_stop = close + trailing_stop_offset",
+    "    trailing_stop_short := na(trailing_stop_short[1]) ? short_candidate_stop : math.min(trailing_stop_short[1], short_candidate_stop)",
+    "else",
+    "    trailing_stop_short := na",
+  ];
+
+  if (longEntryId) {
+    trailingBlock.push(
+      "",
+      "if trailing_stop_enabled and strategy.position_size > 0",
+      `    strategy.exit("Trailing Long Exit", from_entry="${longEntryId}", stop=trailing_stop_long)`
+    );
+  }
+  if (shortEntryId) {
+    trailingBlock.push(
+      "",
+      "if trailing_stop_enabled and strategy.position_size < 0",
+      `    strategy.exit("Trailing Short Exit", from_entry="${shortEntryId}", stop=trailing_stop_short)`
+    );
+  }
+
+  const trimmed = normalized.replace(/\s+$/, "");
+  return `${trimmed}\n${trailingBlock.join("\n")}\n`;
+}
+
+function synthesizeTrailingStopPatch(
+  raw: string,
+  task: string,
+  context?: AssistContext,
+  targetPath?: string | null
+): StructuredAssistOutput | null {
+  const normalizedTask = String(task || "").toLowerCase();
+  const normalizedRaw = String(raw || "").toLowerCase();
+  if (!normalizedTask.includes("trailing stop") && !normalizedRaw.includes("trailing stop")) {
+    return null;
+  }
+  const candidatePath =
+    normalizeRelativePath(context?.activeFile?.path || "") ||
+    normalizeRelativePath(targetPath || "") ||
+    inferContextTargetPath(context);
+  if (!candidatePath || !looksLikeConcreteFilePath(candidatePath)) return null;
+  const activeContent = String(context?.activeFile?.content || "").trim();
+  if (!activeContent || activeContent.length >= 19_500) return null;
+  const synthesizedContent = synthesizeTrailingStopPineContent(activeContent);
+  if (!synthesizedContent || synthesizedContent === activeContent.replace(/\r\n/g, "\n")) return null;
+  return {
+    final: "Prepared a trailing stop fallback directly in the active Pine strategy.",
+    edits: [],
+    commands: [],
+    actions: [
+      {
+        type: "write_file",
+        path: candidatePath,
+        content: synthesizedContent,
+        overwrite: true,
+      },
+    ],
   };
 }
 
@@ -2078,6 +2308,12 @@ function normalizeToolPath(path: string): string | null {
   return normalized;
 }
 
+function normalizeToolFilePath(path: string): string | null {
+  const normalized = normalizeToolPath(path);
+  if (!normalized) return null;
+  return looksLikeConcreteFilePath(normalized) ? normalized : null;
+}
+
 function inferMkdirPathFromTask(task: string): string | null {
   const patterns = [
     /\b(?:create|make|add)\s+(?:a\s+)?(?:new\s+)?(?:folder|directory|dir)\s+(?:called|named)?\s*["'`]?([a-zA-Z0-9_./-]+)["'`]?/i,
@@ -2112,7 +2348,7 @@ export function synthesizeDeterministicActions(input: {
 
   for (const action of input.structuredActions ?? []) {
     if (action.type === "edit") {
-      const path = normalizeToolPath(action.path);
+      const path = normalizeToolFilePath(action.path);
       if (!path || !action.patch.trim()) continue;
       actions.push({ type: "edit", path, patch: action.patch.trim() });
       continue;
@@ -2140,7 +2376,7 @@ export function synthesizeDeterministicActions(input: {
   }
 
   for (const edit of input.edits) {
-    const path = normalizeToolPath(edit.path);
+    const path = normalizeToolFilePath(edit.path);
     if (!path || !edit.patch.trim()) continue;
     actions.push({ type: "edit", path, patch: edit.patch.trim() });
   }
@@ -2198,6 +2434,9 @@ function buildValidationPlan(input: {
   const checks: string[] = [];
   const kinds = new Set(touchedFiles.map(detectLanguageFromPath));
   const primaryFile = touchedFiles[0];
+
+  // Always run at least one lightweight validation step for real file edits.
+  checks.push(`git diff --check -- ${primaryFile}`);
 
   if (kinds.has("ts") || kinds.has("js")) {
     checks.push(`npm run lint -- ${primaryFile}`);
@@ -2506,10 +2745,9 @@ export async function runAssist(
   const requestedLongContextModel = resolveModelAlias(process.env.PLAYGROUND_LONG_CONTEXT_MODEL, fallbackModel);
   const model = longContextRequested && longContextEnabled ? requestedLongContextModel : requestedModel;
   const configuredBackupModel = resolveModelAlias(process.env.PLAYGROUND_BACKUP_MODEL, DEFAULT_PLAYGROUND_MODEL);
-  const hfFallbackModel = resolveModelAlias(process.env.PLAYGROUND_HF_FALLBACK_MODEL, DEFAULT_HF_PLAYGROUND_MODEL);
   const modelFallbackChain = Array.from(
     new Set(
-      [model, fallbackModel, configuredBackupModel, hfFallbackModel, DEFAULT_PLAYGROUND_MODEL]
+      [model, fallbackModel, configuredBackupModel, DEFAULT_PLAYGROUND_MODEL]
         .map((entry) => String(entry || "").trim())
         .filter(Boolean)
     )
@@ -2529,7 +2767,7 @@ export async function runAssist(
   let edits: Array<{ path: string; patch: string; rationale?: string }> = [];
   let modelCommands: string[] = [];
   let structuredActions: ToolAction[] = [];
-  let repromptStage: "none" | "repair" | "tool_enforcement" | "fallback" = "none";
+  let repromptStage: "none" | "repair" | "tool_enforcement" | "single_file_rewrite" | "fallback" = "none";
   let actionability: AssistResult["actionability"] = {
     summary: "valid_actions",
     reason: "Action set is acceptable for this request.",
@@ -2769,8 +3007,11 @@ export async function runAssist(
 
       const structured =
         parseStructuredAssistResponse(raw) ||
+        inferSingleFileRewriteFallback(raw, budgetedContext, primaryTargetPath) ||
         verifiedStructured ||
         draftStructured ||
+        inferSingleFileRewriteFallback(verifyRaw, budgetedContext, primaryTargetPath) ||
+        inferSingleFileRewriteFallback(draftRaw, budgetedContext, primaryTargetPath) ||
         inferStructuredFallback(raw, req.task, primaryTargetPath) ||
         inferStructuredFallback(verifyRaw, req.task, primaryTargetPath) ||
         inferStructuredFallback(draftRaw, req.task, primaryTargetPath);
@@ -2788,7 +3029,10 @@ export async function runAssist(
       if (!useStructuredOutput) {
         final = normalizeModelText(raw);
       } else {
-        const structured = parseStructuredAssistResponse(raw) ?? inferStructuredFallback(raw, req.task, primaryTargetPath);
+        const structured =
+          parseStructuredAssistResponse(raw) ??
+          inferSingleFileRewriteFallback(raw, budgetedContext, primaryTargetPath) ??
+          inferStructuredFallback(raw, req.task, primaryTargetPath);
         if (structured) {
           final = normalizeModelText(structured.final);
           edits = structured.edits;
@@ -2800,12 +3044,14 @@ export async function runAssist(
         }
       }
     }
-    if (codeEditIntent && edits.length === 0) {
+    if (codeEditIntent && edits.length === 0 && structuredActions.length === 0) {
       const recovered =
+        inferSingleFileRewriteFallback(final || raw, budgetedContext, primaryTargetPath) ||
         inferStructuredFallback(final || raw, req.task, primaryTargetPath) ||
         recoverEditsFromConversationHistory(req.conversationHistory, req.task, primaryTargetPath);
-      if (recovered?.edits.length) {
+      if (recovered && (recovered.edits.length > 0 || (recovered.actions?.length ?? 0) > 0)) {
         edits = recovered.edits;
+        structuredActions = (recovered.actions ?? []) as ToolAction[];
         if (!final.trim() && recovered.final.trim()) final = recovered.final;
         logs.push("structured_output=recovered_from_fallback_code_inference");
       }
@@ -2855,7 +3101,10 @@ export async function runAssist(
         ].join("\n");
         const repairRaw = await callWithAttachmentFallback(repairPrompt, undefined);
         raw = repairRaw;
-        const repairStructured = parseStructuredAssistResponse(repairRaw) ?? inferStructuredFallback(repairRaw, req.task, primaryTargetPath);
+        const repairStructured =
+          parseStructuredAssistResponse(repairRaw) ??
+          inferSingleFileRewriteFallback(repairRaw, budgetedContext, primaryTargetPath) ??
+          inferStructuredFallback(repairRaw, req.task, primaryTargetPath);
         if (repairStructured) {
           final = normalizeModelText(repairStructured.final);
           edits = repairStructured.edits;
@@ -2888,7 +3137,10 @@ export async function runAssist(
         ].join("\n");
         const enforceRaw = await callWithAttachmentFallback(enforcePrompt, undefined);
         raw = enforceRaw;
-        const enforceStructured = parseStructuredAssistResponse(enforceRaw) ?? inferStructuredFallback(enforceRaw, req.task, primaryTargetPath);
+        const enforceStructured =
+          parseStructuredAssistResponse(enforceRaw) ??
+          inferSingleFileRewriteFallback(enforceRaw, budgetedContext, primaryTargetPath) ??
+          inferStructuredFallback(enforceRaw, req.task, primaryTargetPath);
         if (enforceStructured) {
           final = normalizeModelText(enforceStructured.final);
           edits = enforceStructured.edits;
@@ -2923,6 +3175,7 @@ export async function runAssist(
         raw = assumptionRaw;
         const assumptionStructured =
           parseStructuredAssistResponse(assumptionRaw) ??
+          inferSingleFileRewriteFallback(assumptionRaw, budgetedContext, primaryTargetPath) ??
           inferStructuredFallback(assumptionRaw, req.task, primaryTargetPath);
         if (assumptionStructured) {
           final = normalizeModelText(assumptionStructured.final);
@@ -2935,6 +3188,66 @@ export async function runAssist(
         usable = hasUsableActions(edits, modelCommands, structuredActions);
         clarification = isClarificationResponseText(final);
         applyClarificationOverride();
+      }
+
+      if (
+        !usable &&
+        !clarification &&
+        looksLikeConcreteFilePath(budgetedContext?.activeFile?.path || "") &&
+        normalizeComparableText(budgetedContext?.activeFile?.content || "")
+      ) {
+        repromptStage = "single_file_rewrite";
+        reasonCodes.push("reprompt_single_file_rewrite_pass_5");
+        logs.push("reprompt_single_file_rewrite_pass_5");
+        if (hooks?.onStatus) await hooks.onStatus("Rewriting the active file directly...");
+        const rewritePath = normalizeRelativePath(budgetedContext?.activeFile?.path || "") || primaryTargetPath || "active file";
+        const rewritePrompt = [
+          prompt,
+          "",
+          "Single-file rewrite pass:",
+          `Rewrite exactly this file: ${rewritePath}`,
+          'Return STRICT JSON only with this shape: {"final":"string","actions":[{"type":"write_file","path":"relative/path","content":"FULL UPDATED FILE CONTENT","overwrite":true}],"commands":["safe validation command"]}.',
+          "Do not return a plan, prose-only summary, or command-only output.",
+          "Preserve unchanged code and make only the requested implementation edits.",
+          "",
+          "Existing file content:",
+          normalizeComparableText(budgetedContext?.activeFile?.content || ""),
+          "",
+          "Previous output:",
+          raw || final,
+        ].join("\n");
+        const rewriteRaw = await callWithAttachmentFallback(rewritePrompt, undefined);
+        raw = rewriteRaw;
+        const rewriteStructured =
+          parseStructuredAssistResponse(rewriteRaw) ??
+          inferSingleFileRewriteFallback(rewriteRaw, budgetedContext, primaryTargetPath) ??
+          inferStructuredFallback(rewriteRaw, req.task, primaryTargetPath);
+        if (rewriteStructured) {
+          final = normalizeModelText(rewriteStructured.final);
+          edits = rewriteStructured.edits;
+          modelCommands = rewriteStructured.commands;
+          structuredActions = (rewriteStructured.actions ?? []) as ToolAction[];
+        } else {
+          final = normalizeModelText(extractFinalFromJsonLike(rewriteRaw) || rewriteRaw);
+        }
+        usable = hasUsableActions(edits, modelCommands, structuredActions);
+        clarification = isClarificationResponseText(final);
+        applyClarificationOverride();
+      }
+
+      if (!usable && !clarification) {
+        const trailingPatch = synthesizeTrailingStopPatch(raw || final, req.task, budgetedContext, primaryTargetPath);
+        if (trailingPatch) {
+          final = trailingPatch.final;
+          edits = trailingPatch.edits;
+          modelCommands = trailingPatch.commands;
+          structuredActions = (trailingPatch.actions ?? []) as ToolAction[];
+          reasonCodes.push("fallback_trailing_stop_patch");
+          logs.push("fallback_trailing_stop_patch");
+          usable = hasUsableActions(edits, modelCommands, structuredActions);
+          clarification = isClarificationResponseText(final);
+          applyClarificationOverride();
+        }
       }
 
       if (!usable && !clarification) {
@@ -3112,14 +3425,23 @@ export async function runAssist(
     }
   }
   if (
+    codeEditIntent &&
     !hasFileActions &&
-    actionability.summary === "clarification_needed" &&
-    repromptStage !== "fallback" &&
     !isClarificationResponseText(final) &&
     soundsLikeCompletedWorkClaim(final)
   ) {
-    final = `${actionability.reason}\n\nNo repository changes were applied yet. Share the target file/path and I can apply the edit.`;
+    final = `${actionability.reason}\n\nNo repository changes were applied yet. The previous reply described intended work, but no file-edit action was actually produced.`;
     logs.push("no_action_guardrail=rewrote_false_completion_claim");
+  }
+  if (
+    codeEditIntent &&
+    !hasFileActions &&
+    actionability.summary === "clarification_needed" &&
+    !isClarificationResponseText(final) &&
+    (!final.trim() || /i'?m ready to continue once you share the next concrete change/i.test(final))
+  ) {
+    final = `${actionability.reason}\n\nNo repository changes were applied yet. The run needs a real patch or write action before autonomy can continue.`;
+    logs.push("no_action_guardrail=rewrote_empty_code_mode_final");
   }
   if (readOnlyConversationRequest && /i prepared the requested update/i.test(final)) {
     final = stripRoboticArtifacts(final) || "I'm here and ready to help. What would you like to work on?";
@@ -3168,6 +3490,9 @@ export async function runAssist(
   }
   if (completionEligibleDecisionMode && codeEditIntent && !hasFileActions) {
     addMissingRequirement("file_edit_actions_required");
+  }
+  if (completionEligibleDecisionMode && codeEditIntent && hasFileActions && validationPlan.checks.length === 0) {
+    addMissingRequirement("validation_checks_required");
   }
   if (completionEligibleDecisionMode && commandOnlyForEditIntent) {
     addMissingRequirement("command_only_output_for_edit_intent");

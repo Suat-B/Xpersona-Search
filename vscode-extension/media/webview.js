@@ -181,7 +181,7 @@
       let responseStartedAtMs = 0;
       let lastAssistantBubble = null;
       let latestActionOutcome = null;
-      const DEFAULT_MODEL = "mistralai/devstral-2-123b-instruct-2512";
+      const DEFAULT_MODEL = "openai/gpt-oss-120b:fastest";
       const PUBLIC_MODEL_LABEL = "Playground 1";
       const MAX_DIFF_ROWS = 400;
       const MAX_REASONING_CHARS = 24000;
@@ -1125,9 +1125,18 @@
               '<span class="chat-empty-history-row-age">' + esc(shortAgeLabel(x.updatedAt)) + '</span>' +
             '</button>'
           )).join("") || '<div class="chat-empty-history-empty">No conversations yet.</div>';
-          chatEmptyHistoryList.querySelectorAll(".chat-empty-history-row").forEach((el) => {
-            el.onclick = () => openSessionFromUi(el.getAttribute("data-id"));
-          });
+          if (!chatEmptyHistoryList.dataset.historyClickBound) {
+            chatEmptyHistoryList.addEventListener("click", (event) => {
+              const target = event.target;
+              if (!(target instanceof HTMLElement)) return;
+              const row = target.closest(".chat-empty-history-row");
+              if (!row) return;
+              const id = String(row.getAttribute("data-id") || "").trim();
+              if (!id) return;
+              openSessionFromUi(id);
+            });
+            chatEmptyHistoryList.dataset.historyClickBound = "1";
+          }
         }
       }
 

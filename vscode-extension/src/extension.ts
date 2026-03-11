@@ -16,6 +16,12 @@ import {
   textContainsLeakedPatchArtifacts,
   type PatchApplyStatus,
 } from "./patch-utils";
+import {
+  normalizeValidationAdapters,
+  planQuickValidationForFile,
+  type ValidationAdapter,
+  type ValidationStatus,
+} from "./validation-utils";
 
 const API_KEY_SECRET = "xpersona.apiKey";
 const API_KEY_LEGACY_SECRET = "xpersona.playground.apiKey";
@@ -35,7 +41,8 @@ const AUTONOMY_NO_CLARIFY_CONFIG_KEY = "autonomy.noClarifyToUser";
 const AUTONOMY_COMMAND_POLICY_CONFIG_KEY = "autonomy.commandPolicy";
 const AUTONOMY_SAFETY_FLOOR_CONFIG_KEY = "autonomy.safetyFloor";
 const AUTONOMY_FAILSAFE_CONFIG_KEY = "autonomy.failsafe";
-const DEFAULT_PLAYGROUND_MODEL = "mistralai/devstral-2-123b-instruct-2512";
+const VALIDATION_ADAPTERS_CONFIG_KEY = "validationAdapters";
+const DEFAULT_PLAYGROUND_MODEL = "openai/gpt-oss-120b:fastest";
 const BACKUP_PLAYGROUND_MODEL = "mistralai/mistral-nemotron";
 const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
 
@@ -65,7 +72,7 @@ type RunMeta = {
     rationale?: string;
   };
   validationPlan?: { scope?: string; checks?: string[]; touchedFiles?: string[]; reason?: string };
-  repromptStage?: "none" | "repair" | "tool_enforcement" | "fallback";
+  repromptStage?: "none" | "repair" | "tool_enforcement" | "single_file_rewrite" | "fallback";
   actionability?: { summary?: "valid_actions" | "clarification_needed" | "blocked_by_safety"; reason?: string };
   completionStatus?: "complete" | "incomplete";
   missingRequirements?: string[];
@@ -93,12 +100,22 @@ type AutonomyProfile = {
   safetyFloor: "allow_everything" | "standard";
   failsafe: "disabled" | "enabled";
 };
+type LocalPerFileOutcome = {
+  path: string;
+  editStatus: PatchApplyStatus | "applied" | "partial" | "rejected_invalid_patch" | "rejected_path_policy";
+  editReason?: string;
+  validationStatus: ValidationStatus;
+  validationReason?: string;
+  validationCommands?: string[];
+  changed?: boolean;
+  resourceKind?: "file" | "directory";
+};
 type LocalActionOutcome = {
   filesChanged: number;
   checksRun: number;
   quality: "good" | "needs_attention" | "preview_only";
   summary: string;
-  perFile?: Array<{ path: string; status: string; reason?: string }>;
+  perFile?: LocalPerFileOutcome[];
   debug?: Record<string, unknown>;
   appliedFiles?: string[];
 };
@@ -217,6 +234,16 @@ function normalizeWorkspaceRelativePath(input: string): string | null {
   if (trimmed.startsWith("@") && trimmed.length > 1) trimmed = trimmed.slice(1);
   if (!trimmed || trimmed.startsWith("/") || /^[a-z]:\//i.test(trimmed) || trimmed.includes("..")) return null;
   return trimmed;
+}
+
+function looksLikeWorkspaceFilePath(input: string | null | undefined): boolean {
+  const normalized = normalizeWorkspaceRelativePath(input || "");
+  if (!normalized) return false;
+  const lastSegment = normalized.split("/").filter(Boolean).pop() || "";
+  if (!lastSegment) return false;
+  if (/^[.][a-z0-9._-]+$/i.test(lastSegment)) return true;
+  if (/^[a-z0-9_-]+\.[a-z0-9._-]+$/i.test(lastSegment)) return true;
+  return /^(dockerfile|makefile|procfile|license|readme)$/i.test(lastSegment);
 }
 
 function extractAtMentions(text: string): string[] {
@@ -468,6 +495,8 @@ class Provider implements vscode.WebviewViewProvider {
   private vscodeSignedInEmail: string | null = null;
   private pendingPkce: { state: string; verifier: string; createdAtMs: number } | null = null;
   private undoBatches: UndoBatch[] = [];
+  private commandAvailabilityCache = new Map<string, Promise<boolean>>();
+  private workspaceLintScriptCache: Promise<boolean> | null = null;
   private hasExecutionIntent(task: string): boolean {
     return /\b(create|make|add|build|implement|refactor|fix|debug|run|test|lint|typecheck|command|patch|edit|ship|git|commit|push|pull|checkout|merge|rebase|branch)\b/i.test(task);
   }
@@ -2167,6 +2196,7 @@ class Provider implements vscode.WebviewViewProvider {
     const localOutcome = this.lastActionOutcome;
     const filesChanged = Number(localOutcome?.filesChanged || 0);
     const checksRun = Number(localOutcome?.checksRun || 0);
+    const perFileRows = Array.isArray(localOutcome?.perFile) ? localOutcome.perFile : [];
     const localAppliedFiles = Array.isArray(localOutcome?.appliedFiles)
       ? localOutcome.appliedFiles.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
       : [];
@@ -2174,12 +2204,30 @@ class Provider implements vscode.WebviewViewProvider {
     const reportedTargetFiles =
       Array.isArray(meta.validationPlan?.touchedFiles) && meta.validationPlan?.touchedFiles.filter(Boolean).length > 0;
     const localFileActions =
-      Array.isArray(localOutcome?.perFile) && localOutcome.perFile.some((row) => typeof row.path === "string");
+      perFileRows.some((row) => typeof row.path === "string");
+    const plannedChecks =
+      Array.isArray(meta.validationPlan?.checks)
+        ? meta.validationPlan.checks.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
+        : [];
     const editIntent =
       !isConversation &&
       ((this.wantsCodeEdits(task) && !this.isConversationalPrompt(task)) || reportedTargetFiles || localFileActions);
     const missing = Array.from(new Set(missingFromMeta));
-    if (editIntent && filesChanged === 0) missing.push("local_file_mutation_required");
+    const changedFileRows = perFileRows.filter((row) => row.changed && row.resourceKind !== "directory");
+    const changedButNotValidated = changedFileRows.filter((row) => row.validationStatus !== "passed");
+    if (editIntent && changedFileRows.length === 0) missing.push("local_file_mutation_required");
+    for (const row of changedButNotValidated) {
+      if (row.validationStatus === "missing_runner") {
+        missing.push(row.validationReason || `missing_validation_runner:${row.path}`);
+      } else if (row.validationStatus === "failed") {
+        missing.push(row.validationReason || `validation_failed:${row.path}`);
+      } else {
+        missing.push(row.validationReason || "validation_run_required");
+      }
+    }
+    if (editIntent && changedFileRows.length > 0 && changedButNotValidated.length === 0 && plannedChecks.length > 0 && checksRun === 0) {
+      missing.push("validation_run_required");
+    }
     const completionStatus: "complete" | "incomplete" =
       meta.completionStatus === "incomplete" || missing.length > 0 ? "incomplete" : "complete";
     const done = completionStatus === "complete" && (!editIntent || filesChanged > 0);
@@ -2191,7 +2239,8 @@ class Provider implements vscode.WebviewViewProvider {
     let completionScore = 0;
     if (completionStatus === "complete") completionScore += 50;
     if (filesChanged > 0) completionScore += 35;
-    if (checksRun > 0) completionScore += 15;
+    if (changedFileRows.length > 0 && changedButNotValidated.length === 0) completionScore += 15;
+    else if (checksRun > 0) completionScore += 5;
     if (done) completionScore = 100;
     completionScore = Math.max(0, Math.min(100, completionScore));
     return {
@@ -2227,10 +2276,167 @@ class Provider implements vscode.WebviewViewProvider {
       `Observed local outcomes: filesChanged=${input.filesChanged}, checksRun=${input.checksRun}.`,
       "Rules: do not ask the user for clarification. Infer targets from available IDE context and return concrete file actions.",
       "Rules: for edit-intent tasks, command-only output is invalid. Return at least one edit/write_file/mkdir action.",
+      "Rules: each changed file only counts as complete after a real quick validation runner passes for that file.",
       input.hintedTargetPath ? `Primary target file hint: ${input.hintedTargetPath}` : "",
-      "Then include any validation commands needed to confirm the change.",
+      "Then include any batch validation commands needed after the file edits.",
     ];
     return parts.filter(Boolean).join("\n");
+  }
+
+  private async resolveExistingWorkspaceFilePath(candidate: string | null | undefined): Promise<string | null> {
+    const rel = normalizeWorkspaceRelativePath(String(candidate || "").replace(/\\/g, "/"));
+    if (!rel || !looksLikeWorkspaceFilePath(rel)) return null;
+    const root = this.getWorkspaceRoot();
+    if (!root) return null;
+    const target = vscode.Uri.joinPath(root.uri, ...rel.split("/").filter(Boolean));
+    try {
+      const stat = await vscode.workspace.fs.stat(target);
+      if ((stat.type & vscode.FileType.Directory) === vscode.FileType.Directory) return null;
+      return rel;
+    } catch {
+      return null;
+    }
+  }
+
+  private getValidationAdapters(): ValidationAdapter[] {
+    const config = vscode.workspace.getConfiguration("xpersona.playground");
+    return normalizeValidationAdapters(config.get<unknown[]>(VALIDATION_ADAPTERS_CONFIG_KEY, []));
+  }
+
+  private async workspaceHasLintScript(): Promise<boolean> {
+    if (this.workspaceLintScriptCache) return this.workspaceLintScriptCache;
+    this.workspaceLintScriptCache = (async () => {
+      const root = this.getWorkspaceRoot();
+      if (!root) return false;
+      try {
+        const packageJsonUri = vscode.Uri.joinPath(root.uri, "package.json");
+        const buf = await vscode.workspace.fs.readFile(packageJsonUri);
+        const parsed = JSON.parse(Buffer.from(buf).toString("utf8")) as { scripts?: Record<string, unknown> };
+        return typeof parsed?.scripts?.lint === "string" && parsed.scripts.lint.trim().length > 0;
+      } catch {
+        return false;
+      }
+    })();
+    return this.workspaceLintScriptCache;
+  }
+
+  private async commandExists(command: string): Promise<boolean> {
+    const normalized = String(command || "").trim().toLowerCase();
+    if (!normalized) return false;
+    const cached = this.commandAvailabilityCache.get(normalized);
+    if (cached) return cached;
+    const probe = new Promise<boolean>((resolve) => {
+      if (process.platform === "win32") {
+        execFile("where.exe", [normalized], { windowsHide: true, timeout: 8_000 }, (error) => resolve(!error));
+        return;
+      }
+      execFile("bash", ["-lc", `command -v ${normalized}`], { windowsHide: true, timeout: 8_000 }, (error) => resolve(!error));
+    });
+    this.commandAvailabilityCache.set(normalized, probe);
+    return probe;
+  }
+
+  private async runQuickValidationForFile(input: {
+    path: string;
+    changed: boolean;
+    undoSnapshot?: { kind: "file"; path: string; existed: boolean; content: string };
+    threadId?: string | null;
+    addExecutionEvent?: (code: string, message: string, severity?: DiagnosticsSeverity) => void;
+  }): Promise<{ status: ValidationStatus; reason?: string; commandsRun: number; commands: string[] }> {
+    const rel = normalizeWorkspaceRelativePath(input.path || "");
+    if (!rel || !looksLikeWorkspaceFilePath(rel) || !input.changed) {
+      return { status: "skipped", reason: "No file content changed.", commandsRun: 0, commands: [] };
+    }
+    const root = this.getWorkspaceRoot();
+    if (!root) {
+      return { status: "failed", reason: `validation_failed:${rel}`, commandsRun: 0, commands: [] };
+    }
+    const snapshot = input.undoSnapshot;
+    if (!snapshot) {
+      input.addExecutionEvent?.("quick_validation_missing_snapshot", `${rel}: missing pre-edit snapshot.`, "error");
+      return { status: "failed", reason: `validation_failed:${rel}`, commandsRun: 0, commands: [] };
+    }
+
+    const target = vscode.Uri.joinPath(root.uri, ...rel.split("/").filter(Boolean));
+    let currentContent = "";
+    try {
+      const buf = await vscode.workspace.fs.readFile(target);
+      currentContent = Buffer.from(buf).toString("utf8");
+    } catch {
+      input.addExecutionEvent?.("quick_validation_missing_file", `${rel}: edited file could not be read back.`, "error");
+      return { status: "failed", reason: `validation_failed:${rel}`, commandsRun: 0, commands: [] };
+    }
+    if (snapshot.existed ? currentContent === snapshot.content : currentContent.length === 0) {
+      input.addExecutionEvent?.("quick_validation_mutation_assert_failed", `${rel}: file content did not differ from the pre-edit snapshot.`, "error");
+      return { status: "failed", reason: `validation_failed:${rel}`, commandsRun: 0, commands: [] };
+    }
+
+    const [hasWorkspaceLintScript, pythonAvailable] = await Promise.all([
+      this.workspaceHasLintScript(),
+      this.commandExists("python"),
+    ]);
+    const plan = planQuickValidationForFile({
+      filePath: rel,
+      absFile: target.fsPath,
+      workspaceFolder: root.uri.fsPath,
+      changed: true,
+      adapters: this.getValidationAdapters(),
+      hasWorkspaceLintScript,
+      pythonAvailable,
+    });
+    if (plan.status === "skipped") {
+      return { status: "skipped", reason: plan.reason, commandsRun: 0, commands: [] };
+    }
+
+    const executedCommands: string[] = [];
+    let commandsRun = 0;
+    let hadRunnerFailure = false;
+    for (const step of plan.steps) {
+      this.postRun(input.threadId, { type: "terminalCommand", command: step.command });
+      const result = await this.runApprovedCommand(step.command, input.threadId, input.addExecutionEvent, {
+        timeoutMs: step.timeoutMs,
+      });
+      executedCommands.push(step.command);
+      commandsRun += 1;
+      if (!result.ok) {
+        hadRunnerFailure = true;
+        const code = step.kind === "sanity" ? "quick_validation_sanity_failed" : "quick_validation_failed";
+        input.addExecutionEvent?.(code, `${rel}: ${step.label} failed.`, "error");
+        if (!step.continueOnFailure) {
+          return {
+            status: "failed",
+            reason: `validation_failed:${rel}`,
+            commandsRun,
+            commands: executedCommands,
+          };
+        }
+      }
+    }
+
+    if (plan.status === "missing_runner") {
+      const reason = String(plan.reason || `missing_validation_runner:${rel}`);
+      input.addExecutionEvent?.("quick_validation_missing_runner", `${rel}: ${reason}`, "warn");
+      return {
+        status: "missing_runner",
+        reason,
+        commandsRun,
+        commands: executedCommands.length > 0 ? executedCommands : plan.commands,
+      };
+    }
+    if (hadRunnerFailure) {
+      return {
+        status: "failed",
+        reason: `validation_failed:${rel}`,
+        commandsRun,
+        commands: executedCommands,
+      };
+    }
+    input.addExecutionEvent?.("quick_validation_passed", `${rel}: quick validation passed.`, "info");
+    return {
+      status: "passed",
+      commandsRun,
+      commands: executedCommands,
+    };
   }
 
   async ask(
@@ -2284,8 +2490,8 @@ class Provider implements vscode.WebviewViewProvider {
       };
       await this.askSingleCycle(cycleTask, parallel, model, reasoning, cycleOptions);
       const threadId = this.activeThreadId || runThreadId;
-      const hintedTargetPath = normalizeWorkspaceRelativePath(
-        String(this.lastRunMeta?.validationPlan?.touchedFiles?.[0] || "").replace(/\\/g, "/")
+      const hintedTargetPath = await this.resolveExistingWorkspaceFilePath(
+        String(this.lastRunMeta?.validationPlan?.touchedFiles?.[0] || "")
       );
       const completion = this.evaluateAutonomyCompletion(objective);
       this.postAutonomyRuntime(threadId, {
@@ -2617,8 +2823,8 @@ class Provider implements vscode.WebviewViewProvider {
       this.postRun(runThreadId, { type: "status", text: contextStatus.notes.join(" | ") });
     }
 
-    const hintedTargetPath = normalizeWorkspaceRelativePath(
-      String(collectedContext?.activeFile?.path || collectedContext?.openFiles?.[0]?.path || "").replace(/\\/g, "/")
+    const hintedTargetPath = await this.resolveExistingWorkspaceFilePath(
+      String(collectedContext?.activeFile?.path || collectedContext?.openFiles?.[0]?.path || "")
     );
     const selectedCodeHint = String(collectedContext?.activeFile?.selection || "").trim();
     const taskForAssist = wantsEdits
@@ -2775,7 +2981,6 @@ class Provider implements vscode.WebviewViewProvider {
               if (editItems.length && allowActions && !strictConversationOnly) {
                 for (const edit of editItems) {
                   const rawPath = typeof (edit as { path?: unknown })?.path === "string" ? String((edit as { path: string }).path).trim() : "";
-                  const editPath = forceTargetPath || rawPath;
                   const rawPatch =
                     typeof (edit as { patch?: unknown })?.patch === "string"
                       ? ((edit as { patch: string }).patch || "")
@@ -2783,6 +2988,11 @@ class Provider implements vscode.WebviewViewProvider {
                         ? ((edit as { diff: string }).diff || "")
                         : "";
                   const normalizedPatch = normalizeIncomingPatchText(rawPatch);
+                  const patchTarget = normalizeWorkspaceRelativePath(extractPatchTargetPath(normalizedPatch.patch) || "");
+                  const editPath =
+                    forceTargetPath ||
+                    (looksLikeWorkspaceFilePath(rawPath) ? normalizeWorkspaceRelativePath(rawPath) : null) ||
+                    (looksLikeWorkspaceFilePath(patchTarget) ? patchTarget : null);
                   if (!editPath) {
                     recordGuardrailIssue("Blocked edit action: missing/invalid target path.");
                     continue;
@@ -2833,7 +3043,6 @@ class Provider implements vscode.WebviewViewProvider {
                   const type = String((action as { type?: unknown }).type || "").toLowerCase();
                   if (type === "edit") {
                     const rawPath = typeof (action as { path?: unknown }).path === "string" ? String((action as { path: string }).path).trim() : "";
-                    const path = forceTargetPath || rawPath;
                     const patch =
                       typeof (action as { patch?: unknown }).patch === "string"
                         ? String((action as { patch: string }).patch).trim()
@@ -2841,6 +3050,11 @@ class Provider implements vscode.WebviewViewProvider {
                           ? String((action as { diff: string }).diff).trim()
                           : "";
                     const normalizedPatch = normalizeIncomingPatchText(patch);
+                    const patchTarget = normalizeWorkspaceRelativePath(extractPatchTargetPath(normalizedPatch.patch) || "");
+                    const path =
+                      forceTargetPath ||
+                      (looksLikeWorkspaceFilePath(rawPath) ? normalizeWorkspaceRelativePath(rawPath) : null) ||
+                      (looksLikeWorkspaceFilePath(patchTarget) ? patchTarget : null);
                     if (!path) {
                       recordGuardrailIssue("Blocked edit action: missing/invalid target path.");
                       continue;
@@ -2884,7 +3098,7 @@ class Provider implements vscode.WebviewViewProvider {
                     const path = typeof (action as { path?: unknown }).path === "string" ? String((action as { path: string }).path).trim() : "";
                     const content = typeof (action as { content?: unknown }).content === "string" ? (action as { content: string }).content : "";
                     const overwrite = typeof (action as { overwrite?: unknown }).overwrite === "boolean" ? (action as { overwrite: boolean }).overwrite : undefined;
-                    if (!path) {
+                    if (!looksLikeWorkspaceFilePath(path)) {
                       recordGuardrailIssue("Blocked write_file action: missing/invalid target path.");
                       continue;
                     }
@@ -3150,7 +3364,8 @@ class Provider implements vscode.WebviewViewProvider {
         hasCommandActions &&
         !hasEditActions;
       if (commandOnlyForEditRequest) {
-        const retryTarget = hintedTargetPath || normalizeWorkspaceRelativePath(String(validation?.touchedFiles?.[0] || ""));
+        const retryTarget =
+          hintedTargetPath || (await this.resolveExistingWorkspaceFilePath(String(validation?.touchedFiles?.[0] || "")));
         if (!options.contextRetryAttempted) {
           const retryTask = [
             text.trim(),
@@ -3510,55 +3725,102 @@ class Provider implements vscode.WebviewViewProvider {
     let appliedEdits = 0;
     let launchedCommands = 0;
     let commandFailures = 0;
+    let validationFailures = 0;
+    let missingValidationRunners = 0;
     const applyErrors: string[] = [];
     const changedPaths = new Set<string>();
-    const perFileStatuses: Array<{ path: string; status: PatchApplyStatus | "applied" | "partial" | "rejected_invalid_patch" | "rejected_path_policy"; reason?: string }> = [];
+    const perFileStatuses: LocalPerFileOutcome[] = [];
     const undoFileSnapshots = new Map<string, { kind: "file"; path: string; existed: boolean; content: string }>();
     const undoCreatedDirs = new Set<string>();
     const approvedCommands: string[] = [];
+    let haltedValidation: { path: string; status: ValidationStatus; reason?: string } | null = null;
+    let haltedAtResultIndex: number | null = null;
 
-    for (const row of results) {
+    for (let index = 0; index < results.length; index += 1) {
+      const row = results[index];
+      if (haltedValidation) {
+        haltedAtResultIndex = index - 1;
+        break;
+      }
       if (row.status !== "approved" || !row.action) continue;
       if (row.action.type === "edit") {
         const previewPatch = row.action.patch || row.action.diff || "";
         if (previewPatch.trim()) {
           this.postRun(runThreadId, { type: "editPreview", path: row.action.path || "unknown", patch: previewPatch });
         }
+        const relPath = normalizeWorkspaceRelativePath(row.action.path || "") || row.action.path || "unknown";
         const applied = await this.applyEditAction({
           path: row.action.path,
           patch: row.action.patch,
           diff: row.action.diff,
         }, undoFileSnapshots);
-        perFileStatuses.push({
-          path: row.action.path || "unknown",
-          status: applied.status,
-          ...(applied.reason ? { reason: applied.reason } : {}),
-        });
+        const perFileEntry: LocalPerFileOutcome = {
+          path: relPath,
+          editStatus: applied.status,
+          ...(applied.reason ? { editReason: applied.reason } : {}),
+          validationStatus: "skipped",
+          validationReason: applied.changed ? "validation_run_required" : "No file content changed.",
+          validationCommands: [],
+          changed: applied.changed,
+          resourceKind: "file",
+        };
+        perFileStatuses.push(perFileEntry);
         if (applied.status === "applied" || applied.status === "partial") {
           if (applied.changed) {
             appliedEdits += 1;
-            changedPaths.add(row.action.path || "unknown");
+            changedPaths.add(relPath);
+            const validation = await this.runQuickValidationForFile({
+              path: relPath,
+              changed: true,
+              undoSnapshot: undoFileSnapshots.get(relPath),
+              threadId: runThreadId,
+              addExecutionEvent,
+            });
+            launchedCommands += validation.commandsRun;
+            perFileEntry.validationStatus = validation.status;
+            perFileEntry.validationReason = validation.reason;
+            perFileEntry.validationCommands = validation.commands;
+            if (validation.status === "failed") {
+              validationFailures += 1;
+              commandFailures += 1;
+              haltedValidation = { path: relPath, status: validation.status, reason: validation.reason };
+            } else if (validation.status === "missing_runner") {
+              missingValidationRunners += 1;
+              haltedValidation = { path: relPath, status: validation.status, reason: validation.reason };
+            }
           }
           this.postRun(runThreadId, {
             type: "fileAction",
-            path: row.action.path || "unknown",
+            path: relPath,
             status: applied.status,
-            reason: applied.reason || (applied.changed ? "" : "Patch produced no file changes."),
+            reason:
+              applied.reason ||
+              (applied.changed
+                ? haltedValidation?.path === relPath && haltedValidation.reason
+                  ? haltedValidation.reason
+                  : perFileEntry.validationStatus === "passed"
+                    ? "Patch applied and quick validation passed."
+                    : "Patch applied."
+                : "Patch produced no file changes."),
           });
         } else if (applied.reason) {
-          applyErrors.push(`${row.action.path || "unknown"}: ${applied.reason}`);
+          applyErrors.push(`${relPath}: ${applied.reason}`);
         }
       } else if (row.action.type === "mkdir" && row.action.path) {
         const applied = await this.applyMkdirAction({ path: row.action.path }, undoCreatedDirs);
         perFileStatuses.push({
           path: row.action.path,
-          status: applied.status,
-          ...(applied.reason ? { reason: applied.reason } : {}),
+          editStatus: applied.status,
+          ...(applied.reason ? { editReason: applied.reason } : {}),
+          validationStatus: "skipped",
+          validationReason: "Quick validation only runs for file edits.",
+          validationCommands: [],
+          changed: applied.changed,
+          resourceKind: "directory",
         });
         if (applied.status === "applied") {
           if (applied.changed) {
             appliedEdits += 1;
-            changedPaths.add(row.action.path);
           }
           this.postRun(runThreadId, {
             type: "fileAction",
@@ -3570,42 +3832,88 @@ class Provider implements vscode.WebviewViewProvider {
           applyErrors.push(`${row.action.path}: ${applied.reason}`);
         }
       } else if (row.action.type === "write_file" && row.action.path) {
+        const relPath = normalizeWorkspaceRelativePath(row.action.path || "") || row.action.path;
         const applied = await this.applyWriteFileAction({
           path: row.action.path,
           content: typeof row.action.content === "string" ? row.action.content : "",
           overwrite: typeof row.action.overwrite === "boolean" ? row.action.overwrite : true,
         }, undoFileSnapshots);
-        perFileStatuses.push({
-          path: row.action.path,
-          status: applied.status,
-          ...(applied.reason ? { reason: applied.reason } : {}),
-        });
+        const perFileEntry: LocalPerFileOutcome = {
+          path: relPath,
+          editStatus: applied.status,
+          ...(applied.reason ? { editReason: applied.reason } : {}),
+          validationStatus: "skipped",
+          validationReason: applied.changed ? "validation_run_required" : "No file content changed.",
+          validationCommands: [],
+          changed: applied.changed,
+          resourceKind: "file",
+        };
+        perFileStatuses.push(perFileEntry);
         if (applied.status === "applied") {
           if (applied.changed) {
             appliedEdits += 1;
-            changedPaths.add(row.action.path);
+            changedPaths.add(relPath);
+            const validation = await this.runQuickValidationForFile({
+              path: relPath,
+              changed: true,
+              undoSnapshot: undoFileSnapshots.get(relPath),
+              threadId: runThreadId,
+              addExecutionEvent,
+            });
+            launchedCommands += validation.commandsRun;
+            perFileEntry.validationStatus = validation.status;
+            perFileEntry.validationReason = validation.reason;
+            perFileEntry.validationCommands = validation.commands;
+            if (validation.status === "failed") {
+              validationFailures += 1;
+              commandFailures += 1;
+              haltedValidation = { path: relPath, status: validation.status, reason: validation.reason };
+            } else if (validation.status === "missing_runner") {
+              missingValidationRunners += 1;
+              haltedValidation = { path: relPath, status: validation.status, reason: validation.reason };
+            }
           }
           this.postRun(runThreadId, {
             type: "fileAction",
-            path: row.action.path,
+            path: relPath,
             status: "applied",
-            reason: applied.reason || (applied.changed ? "File created/updated" : "File already matched requested content."),
+            reason:
+              applied.reason ||
+              (applied.changed
+                ? haltedValidation?.path === relPath && haltedValidation.reason
+                  ? haltedValidation.reason
+                  : perFileEntry.validationStatus === "passed"
+                    ? "File created/updated and quick validation passed."
+                    : "File created/updated."
+                : "File already matched requested content."),
           });
         } else if (applied.reason) {
-          applyErrors.push(`${row.action.path}: ${applied.reason}`);
+          applyErrors.push(`${relPath}: ${applied.reason}`);
         }
       } else if (row.action.type === "command" && row.action.command) {
         approvedCommands.push(row.action.command);
       }
     }
 
-    const shouldRunApprovedCommands = !expectedFileChanges || changedPaths.size > 0;
+    const skippedApprovedActionsAfterHalt =
+      haltedAtResultIndex !== null
+        ? results.slice(haltedAtResultIndex + 1).filter((result) => result.status === "approved").length
+        : 0;
+    const shouldRunApprovedCommands = (!expectedFileChanges || changedPaths.size > 0) && !haltedValidation;
     if (!shouldRunApprovedCommands && approvedCommands.length > 0) {
-      const skippedMessage = `Skipped ${approvedCommands.length} command(s) because no file edits were actually applied.`;
-      addExecutionEvent("validation_skipped_no_file_change", skippedMessage, "warn");
+      const skippedMessage = haltedValidation
+        ? `Skipped ${approvedCommands.length} command(s) because quick validation halted execution for ${haltedValidation.path}.`
+        : `Skipped ${approvedCommands.length} command(s) because no file edits were actually applied.`;
+      addExecutionEvent(
+        haltedValidation ? "validation_skipped_after_quick_validation_halt" : "validation_skipped_no_file_change",
+        skippedMessage,
+        "warn"
+      );
       this.postRun(runThreadId, {
         type: "status",
-        text: "Skipped validation commands because no file edits were actually applied.",
+        text: haltedValidation
+          ? `Skipped batch validation commands because quick validation stopped the run for ${haltedValidation.path}.`
+          : "Skipped validation commands because no file edits were actually applied.",
       });
     } else {
       for (const command of approvedCommands) {
@@ -3615,10 +3923,27 @@ class Provider implements vscode.WebviewViewProvider {
         if (!result.ok) commandFailures += 1;
       }
     }
+    if (haltedValidation) {
+      const haltMessage =
+        haltedValidation.status === "missing_runner"
+          ? `Quick validation stopped after ${haltedValidation.path}: ${haltedValidation.reason || "missing validation runner"}.`
+          : `Quick validation failed for ${haltedValidation.path}.`;
+      addExecutionEvent("quick_validation_halted_execution", haltMessage, "warn");
+      this.postRun(runThreadId, { type: "status", text: haltMessage });
+      if (skippedApprovedActionsAfterHalt > 0) {
+        this.postRun(runThreadId, {
+          type: "status",
+          text: `Skipped ${skippedApprovedActionsAfterHalt} remaining approved action(s) after the validation halt.`,
+        });
+      }
+    }
 
     const approved = results.filter((x) => x.status === "approved").length;
     const rejected = results.filter((x) => x.status !== "approved");
-    const localRejected = perFileStatuses.filter((row) => row.status !== "applied" && row.status !== "partial");
+    const localRejected = perFileStatuses.filter((row) => row.editStatus !== "applied" && row.editStatus !== "partial");
+    const localValidationIssues = perFileStatuses.filter(
+      (row) => row.changed && row.resourceKind !== "directory" && row.validationStatus !== "passed"
+    );
     const rejectedSummaries = rejected
       .map((row) => {
         const type = String(row.action?.type || "action");
@@ -3631,10 +3956,14 @@ class Provider implements vscode.WebviewViewProvider {
       })
       .slice(0, 8);
     const localRejectedSummaries = localRejected
-      .map((row) => `${row.path}: ${row.reason || row.status}`)
+      .map((row) => `${row.path}: ${row.editReason || row.editStatus}`)
+      .slice(0, 8);
+    const localValidationSummaries = localValidationIssues
+      .map((row) => `${row.path}: ${row.validationReason || row.validationStatus}`)
       .slice(0, 8);
     rejectedSummaries.forEach((message) => addExecutionEvent("server_rejected", message, "warn"));
     localRejectedSummaries.forEach((message) => addExecutionEvent("local_rejected", message, "warn"));
+    localValidationSummaries.forEach((message) => addExecutionEvent("local_validation_issue", message, "warn"));
     applyErrors.forEach((message) => addExecutionEvent("apply_error", message, "error"));
     guardrailIssues.forEach((message) => addExecutionEvent("guardrail_blocked", message, "warn"));
 
@@ -3651,9 +3980,12 @@ class Provider implements vscode.WebviewViewProvider {
         localRejectedSummaries[0] ||
         rejectedSummaries[0] ||
         "";
+      const failureSummary =
+        firstDetail ||
+        "The model described a change, but no concrete patch or write action successfully applied to the workspace.";
       this.postRun(runThreadId, {
         type: "status",
-        text: `Execution debug: No file edits were applied. ${debugReasons[0]}. ${firstDetail ? `Detail: ${firstDetail}` : ""}`.trim(),
+        text: `Execution debug: No file edits were applied. ${debugReasons[0]}. Detail: ${failureSummary}`.trim(),
       });
       if (debugReasons.length > 1) {
         this.postRun(runThreadId, {
@@ -3666,14 +3998,16 @@ class Provider implements vscode.WebviewViewProvider {
     const localExecLogs = [
       {
         ts: Date.now(),
-        level: changedPaths.size > 0 ? "info" : "error",
+        level: changedPaths.size > 0 && localValidationIssues.length === 0 ? "info" : "error",
         message:
           `LOCAL_SUMMARY requested=${actionList.length} approved=${approved} rejected=${rejected.length} ` +
-          `applied_edits=${appliedEdits} files_changed=${changedPaths.size} commands_launched=${launchedCommands} guardrail_blocked=${guardrailIssues.length}`,
+          `applied_edits=${appliedEdits} files_changed=${changedPaths.size} commands_launched=${launchedCommands} ` +
+          `validation_failures=${validationFailures} missing_runners=${missingValidationRunners} guardrail_blocked=${guardrailIssues.length}`,
       },
       ...guardrailIssues.slice(0, 8).map((message) => ({ ts: Date.now(), level: "error", message: `GUARDRAIL_BLOCKED ${message}` })),
       ...rejectedSummaries.map((message) => ({ ts: Date.now(), level: "error", message: `SERVER_REJECTED ${message}` })),
       ...localRejectedSummaries.map((message) => ({ ts: Date.now(), level: "error", message: `LOCAL_REJECTED ${message}` })),
+      ...localValidationSummaries.map((message) => ({ ts: Date.now(), level: "error", message: `LOCAL_VALIDATION ${message}` })),
     ];
     this.postRun(runThreadId, { type: "execLogs", data: localExecLogs });
 
@@ -3687,11 +4021,22 @@ class Provider implements vscode.WebviewViewProvider {
     const outcome: LocalActionOutcome = {
       filesChanged: changedPaths.size,
       checksRun: launchedCommands,
-      quality: applyErrors.length || (expectedFileChanges && changedPaths.size === 0) || commandFailures > 0 ? "needs_attention" : "good",
+      quality:
+        applyErrors.length ||
+        (expectedFileChanges && changedPaths.size === 0) ||
+        commandFailures > 0 ||
+        validationFailures > 0 ||
+        missingValidationRunners > 0
+          ? "needs_attention"
+          : "good",
       summary: applyErrors.length
         ? "Applied edits with warnings. Review rejected patches."
         : expectedFileChanges && changedPaths.size === 0
           ? "No file edits were applied."
+          : missingValidationRunners > 0
+            ? "A changed file needs a configured validation runner before the run can complete."
+            : validationFailures > 0
+              ? "Quick validation failed for a changed file. Review execution logs."
           : commandFailures > 0
             ? "Some commands failed. Review execution logs."
             : "Actions completed successfully.",
@@ -3703,8 +4048,11 @@ class Provider implements vscode.WebviewViewProvider {
         rejectedActions: rejected.length + guardrailIssues.length,
         localRejectedEdits: localRejected.length,
         commandFailures,
+        validationFailures,
+        missingValidationRunners,
         rejectedSamples: [...guardrailIssues.map((x) => `guardrail ${x}`), ...rejectedSummaries].slice(0, 8),
         localRejectedSamples: localRejectedSummaries,
+        localValidationSamples: localValidationSummaries,
         applyErrors: applyErrors.slice(0, 8),
       },
     };
@@ -3714,7 +4062,13 @@ class Provider implements vscode.WebviewViewProvider {
       data: outcome,
     });
     emitExecutionDiagnostics(
-      applyErrors.length || rejected.length || localRejected.length || guardrailIssues.length
+      applyErrors.length ||
+      rejected.length ||
+      localRejected.length ||
+      localValidationIssues.length ||
+      guardrailIssues.length ||
+      (expectedFileChanges && changedPaths.size === 0) ||
+      (approvedCommands.length > 0 && !shouldRunApprovedCommands)
         ? "Execution completed with warnings/errors."
         : "Execution completed successfully."
     );
@@ -3759,11 +4113,6 @@ class Provider implements vscode.WebviewViewProvider {
     action: { path?: string; patch?: string; diff?: string },
     undoCollector?: Map<string, { kind: "file"; path: string; existed: boolean; content: string }>
   ): Promise<{ status: PatchApplyStatus; reason?: string; changed: boolean }> {
-    const rel = normalizeWorkspaceRelativePath(action.path || "");
-    if (!rel) return { status: "rejected_path_policy", reason: "Invalid relative path in edit action.", changed: false };
-    const root = this.getWorkspaceRoot();
-    if (!root) return { status: "rejected_path_policy", reason: "No workspace folder open.", changed: false };
-
     const incomingPatch = action.patch || action.diff || "";
     const normalizedPatch = normalizeIncomingPatchText(incomingPatch);
     const patchText = normalizedPatch.patch;
@@ -3783,12 +4132,17 @@ class Provider implements vscode.WebviewViewProvider {
       };
     }
 
-    const patchTarget = normalizeWorkspaceRelativePath(extractPatchTargetPath(patchText) || rel);
-    if (!patchTarget) {
+    const root = this.getWorkspaceRoot();
+    if (!root) return { status: "rejected_path_policy", reason: "No workspace folder open.", changed: false };
+
+    const requestedRel = normalizeWorkspaceRelativePath(action.path || "");
+    const patchTarget = normalizeWorkspaceRelativePath(extractPatchTargetPath(patchText) || "");
+    const rel =
+      (looksLikeWorkspaceFilePath(requestedRel) ? requestedRel : null) ||
+      (looksLikeWorkspaceFilePath(patchTarget) ? patchTarget : null);
+    if (!rel) {
       return { status: "rejected_path_policy", reason: "Invalid target path in patch header.", changed: false };
     }
-    // Allow patches whose header points elsewhere; we trust the approved action path instead of rejecting.
-    const effectiveRel = patchTarget === rel ? rel : rel;
     await this.captureUndoFileSnapshot(root, rel, undoCollector);
 
     const relParts = rel.split("/").filter(Boolean);
@@ -3858,7 +4212,9 @@ class Provider implements vscode.WebviewViewProvider {
     undoCollector?: Map<string, { kind: "file"; path: string; existed: boolean; content: string }>
   ): Promise<{ status: "applied" | "rejected_path_policy"; reason?: string; changed: boolean }> {
     const rel = normalizeWorkspaceRelativePath(action.path || "");
-    if (!rel) return { status: "rejected_path_policy", reason: "Invalid relative path for write_file action.", changed: false };
+    if (!rel || !looksLikeWorkspaceFilePath(rel)) {
+      return { status: "rejected_path_policy", reason: "Invalid relative path for write_file action.", changed: false };
+    }
     const root = this.getWorkspaceRoot();
     if (!root) return { status: "rejected_path_policy", reason: "No workspace folder open.", changed: false };
     await this.captureUndoFileSnapshot(root, rel, undoCollector);
@@ -9090,7 +9446,6 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
               </div>
               <div class="chat-home-hero" aria-hidden="true">
                 <p class="chat-empty-title">Work with <strong>Playground 1</strong></p>
-                <p class="chat-empty-sub">Automates routine development tasks end-to-end for faster and more efficient delivery.</p>
               </div>
               <div class="chat-empty-actions">
                 <button id="newThreadBtn" type="button" class="chat-empty-action">New chat</button>

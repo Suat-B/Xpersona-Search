@@ -62,7 +62,7 @@ const AUTONOMY_NO_CLARIFY_CONFIG_KEY = "autonomy.noClarifyToUser";
 const AUTONOMY_COMMAND_POLICY_CONFIG_KEY = "autonomy.commandPolicy";
 const AUTONOMY_SAFETY_FLOOR_CONFIG_KEY = "autonomy.safetyFloor";
 const AUTONOMY_FAILSAFE_CONFIG_KEY = "autonomy.failsafe";
-const DEFAULT_PLAYGROUND_MODEL = "mistralai/devstral-2-123b-instruct-2512";
+const DEFAULT_PLAYGROUND_MODEL = "openai/gpt-oss-120b:fastest";
 const BACKUP_PLAYGROUND_MODEL = "mistralai/mistral-nemotron";
 const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
 function modelLabelForUi(model) {
@@ -123,6 +123,19 @@ function normalizeWorkspaceRelativePath(input) {
     if (!trimmed || trimmed.startsWith("/") || /^[a-z]:\//i.test(trimmed) || trimmed.includes(".."))
         return null;
     return trimmed;
+}
+function looksLikeWorkspaceFilePath(input) {
+    const normalized = normalizeWorkspaceRelativePath(input || "");
+    if (!normalized)
+        return false;
+    const lastSegment = normalized.split("/").filter(Boolean).pop() || "";
+    if (!lastSegment)
+        return false;
+    if (/^[.][a-z0-9._-]+$/i.test(lastSegment))
+        return true;
+    if (/^[a-z0-9_-]+\.[a-z0-9._-]+$/i.test(lastSegment))
+        return true;
+    return /^(dockerfile|makefile|procfile|license|readme)$/i.test(lastSegment);
 }
 function extractAtMentions(text) {
     const input = String(text || "");
@@ -2021,11 +2034,17 @@ class Provider {
         const isConversation = this.isConversationalPrompt(task) || this.isSmallTalkPrompt(task);
         const reportedTargetFiles = Array.isArray(meta.validationPlan?.touchedFiles) && meta.validationPlan?.touchedFiles.filter(Boolean).length > 0;
         const localFileActions = Array.isArray(localOutcome?.perFile) && localOutcome.perFile.some((row) => typeof row.path === "string");
+        const plannedChecks = Array.isArray(meta.validationPlan?.checks)
+            ? meta.validationPlan.checks.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
+            : [];
         const editIntent = !isConversation &&
             ((this.wantsCodeEdits(task) && !this.isConversationalPrompt(task)) || reportedTargetFiles || localFileActions);
         const missing = Array.from(new Set(missingFromMeta));
         if (editIntent && filesChanged === 0)
             missing.push("local_file_mutation_required");
+        if (editIntent && filesChanged > 0 && plannedChecks.length > 0 && checksRun === 0) {
+            missing.push("validation_run_required");
+        }
         const completionStatus = meta.completionStatus === "incomplete" || missing.length > 0 ? "incomplete" : "complete";
         const done = completionStatus === "complete" && (!editIntent || filesChanged > 0);
         const blocker = (missing.length > 0 ? missing.join(", ") : "") ||
@@ -2071,6 +2090,24 @@ class Provider {
         ];
         return parts.filter(Boolean).join("\n");
     }
+    async resolveExistingWorkspaceFilePath(candidate) {
+        const rel = normalizeWorkspaceRelativePath(String(candidate || "").replace(/\\/g, "/"));
+        if (!rel || !looksLikeWorkspaceFilePath(rel))
+            return null;
+        const root = this.getWorkspaceRoot();
+        if (!root)
+            return null;
+        const target = vscode.Uri.joinPath(root.uri, ...rel.split("/").filter(Boolean));
+        try {
+            const stat = await vscode.workspace.fs.stat(target);
+            if ((stat.type & vscode.FileType.Directory) === vscode.FileType.Directory)
+                return null;
+            return rel;
+        }
+        catch {
+            return null;
+        }
+    }
     async ask(text, parallel, model = DEFAULT_PLAYGROUND_MODEL, reasoning = "medium", options = {}) {
         const autonomy = this.getAutonomyProfile();
         const loopEnabled = options.autonomousLoop !== false && autonomy.mode === "unbounded";
@@ -2114,7 +2151,7 @@ class Provider {
             };
             await this.askSingleCycle(cycleTask, parallel, model, reasoning, cycleOptions);
             const threadId = this.activeThreadId || runThreadId;
-            const hintedTargetPath = normalizeWorkspaceRelativePath(String(this.lastRunMeta?.validationPlan?.touchedFiles?.[0] || "").replace(/\\/g, "/"));
+            const hintedTargetPath = await this.resolveExistingWorkspaceFilePath(String(this.lastRunMeta?.validationPlan?.touchedFiles?.[0] || ""));
             const completion = this.evaluateAutonomyCompletion(objective);
             this.postAutonomyRuntime(threadId, {
                 objective,
@@ -2433,7 +2470,7 @@ class Provider {
         if (contextStatus.notes?.length) {
             this.postRun(runThreadId, { type: "status", text: contextStatus.notes.join(" | ") });
         }
-        const hintedTargetPath = normalizeWorkspaceRelativePath(String(collectedContext?.activeFile?.path || collectedContext?.openFiles?.[0]?.path || "").replace(/\\/g, "/"));
+        const hintedTargetPath = await this.resolveExistingWorkspaceFilePath(String(collectedContext?.activeFile?.path || collectedContext?.openFiles?.[0]?.path || ""));
         const selectedCodeHint = String(collectedContext?.activeFile?.selection || "").trim();
         const taskForAssist = wantsEdits
             ? [
@@ -2590,13 +2627,16 @@ class Provider {
                     if (editItems.length && allowActions && !strictConversationOnly) {
                         for (const edit of editItems) {
                             const rawPath = typeof edit?.path === "string" ? String(edit.path).trim() : "";
-                            const editPath = forceTargetPath || rawPath;
                             const rawPatch = typeof edit?.patch === "string"
                                 ? (edit.patch || "")
                                 : typeof edit?.diff === "string"
                                     ? (edit.diff || "")
                                     : "";
                             const normalizedPatch = normalizeIncomingPatchText(rawPatch);
+                            const patchTarget = normalizeWorkspaceRelativePath((0, patch_utils_1.extractPatchTargetPath)(normalizedPatch.patch) || "");
+                            const editPath = forceTargetPath ||
+                                (looksLikeWorkspaceFilePath(rawPath) ? normalizeWorkspaceRelativePath(rawPath) : null) ||
+                                (looksLikeWorkspaceFilePath(patchTarget) ? patchTarget : null);
                             if (!editPath) {
                                 recordGuardrailIssue("Blocked edit action: missing/invalid target path.");
                                 continue;
@@ -2649,13 +2689,16 @@ class Provider {
                             const type = String(action.type || "").toLowerCase();
                             if (type === "edit") {
                                 const rawPath = typeof action.path === "string" ? String(action.path).trim() : "";
-                                const path = forceTargetPath || rawPath;
                                 const patch = typeof action.patch === "string"
                                     ? String(action.patch).trim()
                                     : typeof action.diff === "string"
                                         ? String(action.diff).trim()
                                         : "";
                                 const normalizedPatch = normalizeIncomingPatchText(patch);
+                                const patchTarget = normalizeWorkspaceRelativePath((0, patch_utils_1.extractPatchTargetPath)(normalizedPatch.patch) || "");
+                                const path = forceTargetPath ||
+                                    (looksLikeWorkspaceFilePath(rawPath) ? normalizeWorkspaceRelativePath(rawPath) : null) ||
+                                    (looksLikeWorkspaceFilePath(patchTarget) ? patchTarget : null);
                                 if (!path) {
                                     recordGuardrailIssue("Blocked edit action: missing/invalid target path.");
                                     continue;
@@ -2702,7 +2745,7 @@ class Provider {
                                 const path = typeof action.path === "string" ? String(action.path).trim() : "";
                                 const content = typeof action.content === "string" ? action.content : "";
                                 const overwrite = typeof action.overwrite === "boolean" ? action.overwrite : undefined;
-                                if (!path) {
+                                if (!looksLikeWorkspaceFilePath(path)) {
                                     recordGuardrailIssue("Blocked write_file action: missing/invalid target path.");
                                     continue;
                                 }
@@ -2957,7 +3000,7 @@ class Provider {
                 hasCommandActions &&
                 !hasEditActions;
             if (commandOnlyForEditRequest) {
-                const retryTarget = hintedTargetPath || normalizeWorkspaceRelativePath(String(validation?.touchedFiles?.[0] || ""));
+                const retryTarget = hintedTargetPath || (await this.resolveExistingWorkspaceFilePath(String(validation?.touchedFiles?.[0] || "")));
                 if (!options.contextRetryAttempted) {
                     const retryTask = [
                         text.trim(),
@@ -3455,9 +3498,11 @@ class Provider {
                 localRejectedSummaries[0] ||
                 rejectedSummaries[0] ||
                 "";
+            const failureSummary = firstDetail ||
+                "The model described a change, but no concrete patch or write action successfully applied to the workspace.";
             this.postRun(runThreadId, {
                 type: "status",
-                text: `Execution debug: No file edits were applied. ${debugReasons[0]}. ${firstDetail ? `Detail: ${firstDetail}` : ""}`.trim(),
+                text: `Execution debug: No file edits were applied. ${debugReasons[0]}. Detail: ${failureSummary}`.trim(),
             });
             if (debugReasons.length > 1) {
                 this.postRun(runThreadId, {
@@ -3514,7 +3559,12 @@ class Provider {
             type: "actionOutcome",
             data: outcome,
         });
-        emitExecutionDiagnostics(applyErrors.length || rejected.length || localRejected.length || guardrailIssues.length
+        emitExecutionDiagnostics(applyErrors.length ||
+            rejected.length ||
+            localRejected.length ||
+            guardrailIssues.length ||
+            (expectedFileChanges && changedPaths.size === 0) ||
+            (approvedCommands.length > 0 && !shouldRunApprovedCommands)
             ? "Execution completed with warnings/errors."
             : "Execution completed successfully.");
         if (appliedEdits > 0) {
@@ -3550,12 +3600,6 @@ class Provider {
         }
     }
     async applyEditAction(action, undoCollector) {
-        const rel = normalizeWorkspaceRelativePath(action.path || "");
-        if (!rel)
-            return { status: "rejected_path_policy", reason: "Invalid relative path in edit action.", changed: false };
-        const root = this.getWorkspaceRoot();
-        if (!root)
-            return { status: "rejected_path_policy", reason: "No workspace folder open.", changed: false };
         const incomingPatch = action.patch || action.diff || "";
         const normalizedPatch = normalizeIncomingPatchText(incomingPatch);
         const patchText = normalizedPatch.patch;
@@ -3575,12 +3619,16 @@ class Provider {
                 changed: false,
             };
         }
-        const patchTarget = normalizeWorkspaceRelativePath((0, patch_utils_1.extractPatchTargetPath)(patchText) || rel);
-        if (!patchTarget) {
+        const root = this.getWorkspaceRoot();
+        if (!root)
+            return { status: "rejected_path_policy", reason: "No workspace folder open.", changed: false };
+        const requestedRel = normalizeWorkspaceRelativePath(action.path || "");
+        const patchTarget = normalizeWorkspaceRelativePath((0, patch_utils_1.extractPatchTargetPath)(patchText) || "");
+        const rel = (looksLikeWorkspaceFilePath(requestedRel) ? requestedRel : null) ||
+            (looksLikeWorkspaceFilePath(patchTarget) ? patchTarget : null);
+        if (!rel) {
             return { status: "rejected_path_policy", reason: "Invalid target path in patch header.", changed: false };
         }
-        // Allow patches whose header points elsewhere; we trust the approved action path instead of rejecting.
-        const effectiveRel = patchTarget === rel ? rel : rel;
         await this.captureUndoFileSnapshot(root, rel, undoCollector);
         const relParts = rel.split("/").filter(Boolean);
         const target = vscode.Uri.joinPath(root.uri, ...relParts);
@@ -3642,8 +3690,9 @@ class Provider {
     }
     async applyWriteFileAction(action, undoCollector) {
         const rel = normalizeWorkspaceRelativePath(action.path || "");
-        if (!rel)
+        if (!rel || !looksLikeWorkspaceFilePath(rel)) {
             return { status: "rejected_path_policy", reason: "Invalid relative path for write_file action.", changed: false };
+        }
         const root = this.getWorkspaceRoot();
         if (!root)
             return { status: "rejected_path_policy", reason: "No workspace folder open.", changed: false };
@@ -7745,16 +7794,17 @@ function html(webview, extensionUri) {
         border-radius: 12px;
         background: var(--rep-surface);
       }
+      /* Larger chat message text keeps conversations easier to follow. */
       .m .m-body {
         padding: 11px 12px;
         white-space: pre-wrap;
-        font-size: 12px;
-        line-height: 1.5;
+        font-size: 14px;
+        line-height: 1.6;
       }
       .m .m-time {
         padding: 0 12px 8px;
         color: var(--rep-muted);
-        font-size: 10px;
+        font-size: 11px;
       }
       .m.assistant-response {
         border: 0;
@@ -8222,7 +8272,7 @@ function html(webview, extensionUri) {
       .composer-shell textarea {
         min-height: 50px !important;
         padding: 12px 14px 8px !important;
-        font-size: 12px !important;
+        font-size: 14px !important;
       }
       .input-actions.minimal {
         padding: 7px 10px !important;
@@ -8279,6 +8329,7 @@ function html(webview, extensionUri) {
         overflow-x: hidden !important;
         overflow-y: auto !important;
         line-height: 1.45 !important;
+        font-size: 14px !important;
         border: 0 !important;
         outline: none !important;
         box-shadow: none !important;
@@ -8336,6 +8387,7 @@ function html(webview, extensionUri) {
         border-radius: 0 !important;
         background: transparent !important;
         padding: 12px 14px 10px !important;
+        font-size: 14px !important;
         min-height: 56px !important;
         max-height: 160px !important;
       }
@@ -8398,7 +8450,7 @@ function html(webview, extensionUri) {
       }
       .chat-panel.active #msgs.messages .m .m-time {
         padding: 0 6px !important;
-        font-size: 10px !important;
+        font-size: 11px !important;
         color: var(--rep-muted) !important;
         opacity: 0.9;
       }
@@ -8677,12 +8729,12 @@ function html(webview, extensionUri) {
         }
         #msgs.messages .m .m-body {
           padding: 8px 10px !important;
-          font-size: 12px !important;
-          line-height: 1.4 !important;
+          font-size: 13px !important;
+          line-height: 1.5 !important;
           border-radius: 14px !important;
         }
         #msgs.messages .m .m-time {
-          font-size: 10px !important;
+          font-size: 11px !important;
           padding: 0 4px !important;
         }
 
@@ -8698,8 +8750,8 @@ function html(webview, extensionUri) {
         .chat-panel.active #chatDock textarea#t {
           min-height: 44px !important;
           max-height: 120px !important;
-          font-size: 12px !important;
-          line-height: 1.35 !important;
+          font-size: 13px !important;
+          line-height: 1.45 !important;
           padding: 10px 10px 7px !important;
         }
         #chatDock .input-actions.minimal,
@@ -8848,7 +8900,6 @@ function html(webview, extensionUri) {
               </div>
               <div class="chat-home-hero" aria-hidden="true">
                 <p class="chat-empty-title">Work with <strong>Playground 1</strong></p>
-                <p class="chat-empty-sub">Automates routine development tasks end-to-end for faster and more efficient delivery.</p>
               </div>
               <div class="chat-empty-actions">
                 <button id="newThreadBtn" type="button" class="chat-empty-action">New chat</button>
