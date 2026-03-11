@@ -118,6 +118,7 @@ export default async function MarketingLayout({
     <div className="flex h-[100dvh] min-h-dvh w-full flex-col overflow-hidden bg-[#1e1e1e]">
       {service === "trading" ? <TradingMinimalHeader /> : <HomeMinimalHeader />}
       <main data-header-scroll-root="marketing" className="scroll-contain-paint flex-1 min-h-0 overflow-y-auto">
+        <div data-marketing-header-sentinel className="h-px" aria-hidden />
         <div className="w-full max-w-7xl mx-auto px-4 py-6 sm:p-6 md:p-8 space-y-6 min-w-0">{children}</div>
       </main>
     </div>

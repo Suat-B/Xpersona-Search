@@ -150,7 +150,8 @@ const HF_ROUTER_BASE_URL = "https://router.huggingface.co/v1";
 const NVIDIA_INTEGRATE_BASE_URL = "https://integrate.api.nvidia.com/v1";
 const STANDARD_CONTEXT_LIMIT = 32_000;
 const LONG_CONTEXT_LIMIT = 262_144;
-const DEFAULT_PLAYGROUND_MODEL = "stepfun-ai/step-3.5-flash";
+const DEFAULT_PLAYGROUND_MODEL = "mistralai/devstral-2-123b-instruct-2512";
+const DEFAULT_HF_PLAYGROUND_MODEL = "stepfun-ai/Step-3.5-Flash";
 const DEFAULT_NVIDIA_MODEL = "mistralai/mistral-nemotron";
 const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
 const IDENTITY_DENIAL_RESPONSE =
@@ -250,8 +251,19 @@ function isLikelyInvalidModelError(message: string): boolean {
   );
 }
 
+function isLikelyProviderLimitError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("monthly included credits") ||
+    lower.includes("pre-paid credits") ||
+    lower.includes("purchase pre-paid credits") ||
+    lower.includes("subscribe to pro") ||
+    lower.includes("credits to continue")
+  );
+}
+
 function isLikelyModelFallbackEligibleError(message: string): boolean {
-  return isLikelyInvalidModelError(message);
+  return isLikelyInvalidModelError(message) || isLikelyProviderLimitError(message);
 }
 
 function isLikelyAttachmentUnsupportedError(message: string): boolean {
@@ -291,14 +303,14 @@ function resolveAssistProvider(params: {
   const preference = String(params.providerPreference || "").trim().toLowerCase();
   if (preference === "hf") return "hf";
   if (preference === "nvidia") return "nvidia";
-  const hfReady = Boolean(getHfRouterToken());
   const nvidiaReady = Boolean(getNvidiaToken(params.runtimeNvidiaApiKey));
+  const hfReady = Boolean(getHfRouterToken());
 
-  // Default to HF when both providers are configured because the primary models
-  // (e.g., stepfun-ai/step-3.5-flash) live on HuggingFace Router and NVIDIA
-  // will 404 on those identifiers. Explicit prefs can still force NVIDIA.
-  if (hfReady) return "hf";
+  // Default to NVIDIA when both providers are configured because the default
+  // model (`mistralai/devstral-2-123b-instruct-2512`) runs on NVIDIA Integrate.
+  // Explicit prefs can still force HF.
   if (nvidiaReady) return "nvidia";
+  if (hfReady) return "hf";
   return "hf";
 }
 
@@ -2494,9 +2506,10 @@ export async function runAssist(
   const requestedLongContextModel = resolveModelAlias(process.env.PLAYGROUND_LONG_CONTEXT_MODEL, fallbackModel);
   const model = longContextRequested && longContextEnabled ? requestedLongContextModel : requestedModel;
   const configuredBackupModel = resolveModelAlias(process.env.PLAYGROUND_BACKUP_MODEL, DEFAULT_PLAYGROUND_MODEL);
+  const hfFallbackModel = resolveModelAlias(process.env.PLAYGROUND_HF_FALLBACK_MODEL, DEFAULT_HF_PLAYGROUND_MODEL);
   const modelFallbackChain = Array.from(
     new Set(
-      [model, fallbackModel, configuredBackupModel, DEFAULT_PLAYGROUND_MODEL]
+      [model, fallbackModel, configuredBackupModel, hfFallbackModel, DEFAULT_PLAYGROUND_MODEL]
         .map((entry) => String(entry || "").trim())
         .filter(Boolean)
     )

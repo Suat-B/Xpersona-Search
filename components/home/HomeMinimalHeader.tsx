@@ -1,19 +1,38 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { ContinueAsAIButton } from "@/components/auth/ContinueAsAIButton";
 import { getTradingUrl } from "@/lib/service-urls";
-import { useAutoHideHeader } from "@/lib/hooks/use-auto-hide-header";
 
 /**
  * Minimal header for the game subdomain when user is not logged in.
  * Matches the dashboard theme (logo treatment, colors).
  */
 export function HomeMinimalHeader() {
-  const headerHidden = useAutoHideHeader({
-    scrollContainerSelector: '[data-header-scroll-root="marketing"]',
-  });
+  const [headerHidden, setHeaderHidden] = useState(false);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.querySelector<HTMLElement>('[data-header-scroll-root="marketing"]');
+    if (!root) return;
+    const sentinel = root.querySelector<HTMLElement>("[data-marketing-header-sentinel]");
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setHeaderHidden(!(entry?.isIntersecting ?? false));
+      },
+      {
+        root,
+        threshold: 0.01,
+      }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <header

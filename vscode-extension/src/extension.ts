@@ -35,7 +35,7 @@ const AUTONOMY_NO_CLARIFY_CONFIG_KEY = "autonomy.noClarifyToUser";
 const AUTONOMY_COMMAND_POLICY_CONFIG_KEY = "autonomy.commandPolicy";
 const AUTONOMY_SAFETY_FLOOR_CONFIG_KEY = "autonomy.safetyFloor";
 const AUTONOMY_FAILSAFE_CONFIG_KEY = "autonomy.failsafe";
-const DEFAULT_PLAYGROUND_MODEL = "stepfun-ai/step-3.5-flash";
+const DEFAULT_PLAYGROUND_MODEL = "mistralai/devstral-2-123b-instruct-2512";
 const BACKUP_PLAYGROUND_MODEL = "mistralai/mistral-nemotron";
 const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
 
@@ -7984,16 +7984,17 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         border-radius: 12px;
         background: var(--rep-surface);
       }
+      /* Larger chat message text keeps conversations easier to follow. */
       .m .m-body {
         padding: 11px 12px;
         white-space: pre-wrap;
-        font-size: 12px;
-        line-height: 1.5;
+        font-size: 14px;
+        line-height: 1.6;
       }
       .m .m-time {
         padding: 0 12px 8px;
         color: var(--rep-muted);
-        font-size: 10px;
+        font-size: 11px;
       }
       .m.assistant-response {
         border: 0;
@@ -8461,7 +8462,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       .composer-shell textarea {
         min-height: 50px !important;
         padding: 12px 14px 8px !important;
-        font-size: 12px !important;
+        font-size: 14px !important;
       }
       .input-actions.minimal {
         padding: 7px 10px !important;
@@ -8518,6 +8519,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         overflow-x: hidden !important;
         overflow-y: auto !important;
         line-height: 1.45 !important;
+        font-size: 14px !important;
         border: 0 !important;
         outline: none !important;
         box-shadow: none !important;
@@ -8575,6 +8577,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         border-radius: 0 !important;
         background: transparent !important;
         padding: 12px 14px 10px !important;
+        font-size: 14px !important;
         min-height: 56px !important;
         max-height: 160px !important;
       }
@@ -8637,7 +8640,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       }
       .chat-panel.active #msgs.messages .m .m-time {
         padding: 0 6px !important;
-        font-size: 10px !important;
+        font-size: 11px !important;
         color: var(--rep-muted) !important;
         opacity: 0.9;
       }
@@ -8916,12 +8919,12 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         }
         #msgs.messages .m .m-body {
           padding: 8px 10px !important;
-          font-size: 12px !important;
-          line-height: 1.4 !important;
+          font-size: 13px !important;
+          line-height: 1.5 !important;
           border-radius: 14px !important;
         }
         #msgs.messages .m .m-time {
-          font-size: 10px !important;
+          font-size: 11px !important;
           padding: 0 4px !important;
         }
 
@@ -8937,8 +8940,8 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         .chat-panel.active #chatDock textarea#t {
           min-height: 44px !important;
           max-height: 120px !important;
-          font-size: 12px !important;
-          line-height: 1.35 !important;
+          font-size: 13px !important;
+          line-height: 1.45 !important;
           padding: 10px 10px 7px !important;
         }
         #chatDock .input-actions.minimal,

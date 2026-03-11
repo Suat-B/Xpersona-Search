@@ -181,7 +181,7 @@
       let responseStartedAtMs = 0;
       let lastAssistantBubble = null;
       let latestActionOutcome = null;
-      const DEFAULT_MODEL = "stepfun-ai/step-3.5-flash";
+      const DEFAULT_MODEL = "mistralai/devstral-2-123b-instruct-2512";
       const PUBLIC_MODEL_LABEL = "Playground 1";
       const MAX_DIFF_ROWS = 400;
       const MAX_REASONING_CHARS = 24000;

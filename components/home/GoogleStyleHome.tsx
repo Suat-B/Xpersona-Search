@@ -214,7 +214,7 @@ export function GoogleStyleHome({
           }`}
       >
         <section className="w-full max-w-5xl mb-5 sm:mb-7 md:mb-9 animate-fade-in-up animate-delay-75">
-          <div className="relative overflow-hidden rounded-2xl border border-white/15 bg-black/35 px-4 py-4 sm:px-6 sm:py-5 shadow-[0_20px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl">
+          <div className="relative overflow-hidden rounded-2xl bg-black/35 px-4 py-4 sm:px-6 sm:py-5 shadow-[0_20px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl">
             <div className="pointer-events-none absolute -top-20 -right-24 h-56 w-56 rounded-full bg-[var(--accent-heart)]/20 blur-3xl" />
             <div className="pointer-events-none absolute -bottom-28 -left-20 h-56 w-56 rounded-full bg-[var(--accent-neural)]/20 blur-3xl" />
             <div className="relative">

@@ -6,7 +6,7 @@ export function HomeHeroHF() {
   return (
     <section className="relative w-full">
       <div className="container mx-auto flex min-h-[calc(100vh-64px)] max-w-[1260px] items-center justify-center px-4 py-8 sm:px-6 sm:py-10">
-        <div className="relative w-full max-w-[1100px] overflow-hidden rounded-[32px] border border-white/10 bg-gradient-to-br from-[#0b0f14] via-[#0a0f15] to-[#080b10] px-5 py-8 shadow-[0_40px_120px_rgba(0,0,0,0.55)] sm:px-12 sm:py-12 lg:min-h-[560px]">
+        <div className="relative w-full max-w-[1100px] overflow-hidden rounded-[32px] bg-gradient-to-br from-[#0b0f14] via-[#0a0f15] to-[#080b10] px-5 py-8 shadow-[0_40px_120px_rgba(0,0,0,0.55)] sm:px-12 sm:py-12 lg:min-h-[560px]">
           <div className="grid gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] items-center">
             <div className="relative z-10 mx-auto w-full max-w-[580px] text-center sm:text-left">
               <Image

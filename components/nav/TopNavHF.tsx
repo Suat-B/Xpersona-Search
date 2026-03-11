@@ -115,14 +115,18 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
     >
       <div className="mx-auto flex h-16 w-full max-w-[1260px] items-center gap-4 px-4 sm:px-6">
         <Link href="/" className="flex flex-none items-center gap-2">
-          <Image
-            src="/xpersona-logo-1.png"
-            alt="Xpersona"
-            width={112}
-            height={28}
-            className="h-7 w-auto"
-            priority
-          />
+          {isSearchPage ? (
+            <span className="text-xl font-black tracking-tight text-black">Xpersona</span>
+          ) : (
+            <Image
+              src="/xpersona-logo-1.png"
+              alt="Xpersona"
+              width={112}
+              height={28}
+              className="h-7 w-auto"
+              priority
+            />
+          )}
         </Link>
 
         <div className="flex-1 max-w-md">
