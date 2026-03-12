@@ -42,13 +42,14 @@
             v.postMessage({
               type: "send",
               text,
-              parallel: false,
+              runProfile: "standard",
               model: DEFAULT_MODEL,
               reasoning: "medium",
               includeIdeContext,
               workspaceContextLevel: "max",
               attachments: [],
               threadId: currentThreadId,
+              excludedContextPaths,
             });
           } catch {
             // no-op
@@ -110,7 +111,7 @@
       const threadList = document.getElementById("threadList");
       const modeQuick = document.getElementById("modeQuick");
       const safetyQuick = document.getElementById("safetyQuick");
-      const parallelQuick = document.getElementById("parallelQuick");
+      const deepFocusQuick = document.getElementById("deepFocusQuick");
       const uploadBtn = document.getElementById("uploadBtn");
       const uploadInput = document.getElementById("uploadInput");
       const uploadCount = document.getElementById("uploadCount");
@@ -126,6 +127,8 @@
       const contextAutoBadge = document.getElementById("contextAutoBadge");
       const contextTelemetryText = document.getElementById("contextTelemetryText");
       const contextTelemetryMeta = document.getElementById("contextTelemetryMeta");
+      const contextSelectionPanel = document.getElementById("contextSelectionPanel");
+      const contextSelectionBody = document.getElementById("contextSelectionBody");
       const composerShell = document.querySelector(".composer-shell");
       const composerState = document.getElementById("composerState");
       const chatContextMeter = document.getElementById("chatContextMeter");
@@ -184,6 +187,8 @@
       let lastAssistantBubble = null;
       let latestActionOutcome = null;
       let availableModels = [];
+      let latestContextSelection = null;
+      let excludedContextPaths = [];
       const DEFAULT_MODEL = "playground-default";
       const PUBLIC_MODEL_LABEL = "Playground";
       const CHAT_CONTEXT_TOKEN_BUDGET = 65536;
@@ -333,7 +338,7 @@
         if (!text) {
           if (lastContextPreviewText) {
             lastContextPreviewText = "";
-            v.postMessage({ type: "contextPreview", text: "", threadId: currentThreadId });
+            v.postMessage({ type: "contextPreview", text: "", threadId: currentThreadId, excludedContextPaths });
           }
           setContextTelemetryState({
             enabled: true,
@@ -368,7 +373,7 @@
             notes: ["Auto context scanning workspace..."],
           });
           updateComposerState();
-          v.postMessage({ type: "contextPreview", text: latest, threadId: currentThreadId });
+          v.postMessage({ type: "contextPreview", text: latest, threadId: currentThreadId, excludedContextPaths });
         }, 480);
       }
       const MAX_ATTACHMENTS = 3;
@@ -457,6 +462,8 @@
         "fileAction",
         "meta",
         "actionOutcome",
+        "contextStatus",
+        "contextSelectionPreview",
         "autonomyRuntime",
         "execLogs",
         "err",
@@ -703,17 +710,90 @@
         return provider ? provider + suffix : suffix.replace(/^\s+\|\s+/, "");
       }
 
+      function currentRunProfile() {
+        return deepFocusQuick && deepFocusQuick.checked ? "deep_focus" : "standard";
+      }
+
+      function selectedModelSupportsImages() {
+        const selected = String(modelSel ? modelSel.value : DEFAULT_MODEL).trim().toLowerCase();
+        const match = availableModels.find((entry) => String(entry.alias || "").trim().toLowerCase() === selected);
+        return Boolean(match && match.capabilities && match.capabilities.supportsImages === true);
+      }
+
+      function renderContextSelectionPanel(payload) {
+        if (!contextSelectionPanel || !contextSelectionBody) return;
+        latestContextSelection = payload && typeof payload === "object" ? payload : null;
+        const data = latestContextSelection || {};
+        const files = Array.isArray(data.files) ? data.files : [];
+        const target = data.targetInference && typeof data.targetInference === "object" ? data.targetInference : null;
+        const validationPlan = data.validationPlan && typeof data.validationPlan === "object" ? data.validationPlan : null;
+        const fallbackRoute = String(data.fallbackRoute || "").trim();
+        const usedCloudIndex = data.usedCloudIndex === true;
+        const snippets = Number(data.snippets || 0);
+        const hasData = files.length > 0 || target || validationPlan || fallbackRoute || snippets > 0;
+        contextSelectionPanel.classList.toggle("hidden", !hasData);
+        if (!hasData) {
+          contextSelectionBody.innerHTML = '<div class="context-selection-empty">Context preview will appear here.</div>';
+          return;
+        }
+
+        const filesMarkup = files.length
+          ? files.map((file) => {
+              const pathValue = String(file && file.path ? file.path : "").trim();
+              const reasonValue = String(file && file.reason ? file.reason : "Selected context").trim();
+              const scoreValue = typeof file.score === "number" ? " <span class=\"context-selection-score\">score " + Math.round(file.score * 100) / 100 + "</span>" : "";
+              const excluded = excludedContextPaths.includes(pathValue);
+              return (
+                '<div class="context-selection-item">' +
+                  '<div class="context-selection-main">' +
+                    '<div class="context-selection-path" title="' + esc(pathValue) + '">' + esc(pathValue) + "</div>" +
+                    '<div class="context-selection-reason">' + esc(reasonValue) + scoreValue + "</div>" +
+                  "</div>" +
+                  '<button class="context-selection-exclude" type="button" data-context-path="' + esc(pathValue) + '"' + (excluded ? " disabled" : "") + ">" + (excluded ? "Excluded" : "Exclude") + "</button>" +
+                "</div>"
+              );
+            }).join("")
+          : '<div class="context-selection-empty">No file context selected yet.</div>';
+
+        const targetMarkup = target
+          ? '<div class="context-selection-meta-row"><span class="context-selection-label">Target</span><span class="context-selection-value">' +
+              esc(String(target.path || "Not inferred")) +
+              " (" + esc(String(target.source || "retrieval").replace(/_/g, " ")) +
+              ", " + esc(String(Math.round(Number(target.confidence || 0) * 100))) + "%)</span></div>"
+          : "";
+        const validationMarkup = validationPlan
+          ? '<div class="context-selection-meta-row"><span class="context-selection-label">Validation</span><span class="context-selection-value">' +
+              esc(Array.isArray(validationPlan.checks) && validationPlan.checks.length ? validationPlan.checks.slice(0, 2).join(" | ") : String(validationPlan.reason || "Targeted checks will follow touched files.")) +
+              "</span></div>"
+          : "";
+        const retrievalMarkup =
+          '<div class="context-selection-meta-row"><span class="context-selection-label">Retrieval</span><span class="context-selection-value">' +
+            (usedCloudIndex ? "Cloud index" : "Local fallback") +
+            " | snippets " + snippets +
+            (fallbackRoute ? " | route " + esc(fallbackRoute.replace(/_/g, " ")) : "") +
+            "</span></div>";
+        const exclusionsMarkup = excludedContextPaths.length
+          ? '<button id="contextSelectionReset" class="context-selection-reset" type="button">Reset exclusions (' + excludedContextPaths.length + ")</button>"
+          : "";
+
+        contextSelectionBody.innerHTML =
+          '<div class="context-selection-meta">' + targetMarkup + validationMarkup + retrievalMarkup + "</div>" +
+          '<div class="context-selection-list">' + filesMarkup + "</div>" +
+          exclusionsMarkup;
+      }
+
       function renderModelOptions(payload) {
         if (!modelSel) return;
         const models = payload && Array.isArray(payload.models) ? payload.models : [];
         const defaultModel = payload && payload.defaultModel ? String(payload.defaultModel) : DEFAULT_MODEL;
-        const selectedModel = defaultModel;
+        const selectedModel = payload && payload.selectedModel ? String(payload.selectedModel) : defaultModel;
         availableModels = models
           .map((item) => ({
             alias: String(item && item.alias || ""),
             displayName: String(item && item.displayName || ""),
             provider: String(item && item.provider || ""),
             certification: String(item && item.certification || ""),
+            capabilities: item && item.capabilities && typeof item.capabilities === "object" ? item.capabilities : undefined,
           }))
           .filter((item) => item.alias && item.displayName);
         modelSel.innerHTML = "";
@@ -734,6 +814,7 @@
         if (!composerState) return;
         const modeLabel = labelForMode(modeQuick ? modeQuick.value : currentMode);
         const reasoningLabel = labelForReasoning(reasonSel ? reasonSel.value : "medium");
+        const runProfileLabel = currentRunProfile() === "deep_focus" ? "Deep Focus" : "Standard";
         const modelLabel = modelLabelForUi(modelSel ? modelSel.value : DEFAULT_MODEL);
         const modelMeta = modelMetaLabel(modelSel ? modelSel.value : DEFAULT_MODEL);
         const modelSuffix = modelMeta ? " - Model: " + modelLabel + " [" + modelMeta + "]" : " - Model: " + modelLabel;
@@ -742,7 +823,7 @@
             ? " - Resolved: " + String(latestRunMeta.modelResolvedAlias)
             : "";
         const tail = contextSummary ? " - " + contextSummary : "";
-        composerState.textContent = "Mode: " + modeLabel + " - Reasoning: " + reasoningLabel + modelSuffix + resolvedModel + tail;
+        composerState.textContent = "Mode: " + modeLabel + " - Focus: " + runProfileLabel + " - Reasoning: " + reasoningLabel + modelSuffix + resolvedModel + tail;
       }
 
       function updateUndoButtonState() {
@@ -898,18 +979,19 @@
         }
         const text = parsed.text;
         if (!text) return;
-        const parallelEnabled = Boolean(parallelQuick && parallelQuick.checked);
+        const runProfile = currentRunProfile();
         const includeIdeContext = true;
         v.postMessage({
           type: "send",
           text,
-          parallel: parallelEnabled,
+          runProfile,
           model: modelSel ? modelSel.value : DEFAULT_MODEL,
           reasoning: reasonSel ? reasonSel.value : "medium",
           includeIdeContext,
           workspaceContextLevel: "max",
           attachments: attachedFiles.map((f) => ({ mimeType: f.mimeType, name: f.name, dataUrl: f.dataUrl })),
           threadId: currentThreadId,
+          excludedContextPaths,
         });
       }
 
@@ -1530,19 +1612,29 @@
 
       function updateAttachmentUI(statusText, isError = false) {
         const count = attachedFiles.length;
+        const supportsImages = selectedModelSupportsImages();
         if (uploadBtn) {
           uploadBtn.dataset.count = count > 0 ? String(count) : "";
-          const label = count > 0 ? "Attach image (" + count + " selected)" : "Attach image";
+          const label = supportsImages
+            ? (count > 0 ? "Attach image (" + count + " selected)" : "Attach image")
+            : "Image attachments unavailable";
           uploadBtn.setAttribute("aria-label", label);
-          uploadBtn.title = count > 0 ? "Attach (" + count + ")" : "Attach";
+          uploadBtn.title = supportsImages
+            ? (count > 0 ? "Attach (" + count + ")" : "Attach")
+            : "This model does not support image input";
+          uploadBtn.disabled = streaming || !supportsImages;
         }
         if (uploadCount) {
-          uploadCount.textContent = count === 0
-            ? "No images selected."
-            : (count === 1 ? "1 image selected." : count + " images selected.");
+          uploadCount.textContent = !supportsImages
+            ? "Image input unavailable for this model."
+            : count === 0
+              ? "No images selected."
+              : (count === 1 ? "1 image selected." : count + " images selected.");
         }
         if (statusText) {
           setAttachHint(statusText, isError);
+        } else if (!supportsImages) {
+          setAttachHint("Image attachments are disabled until a supported model is available.");
         } else if (count > 0) {
           setAttachHint(count + " image(s) ready.");
         } else {
@@ -1562,6 +1654,12 @@
       async function appendAttachments(files) {
         const queue = Array.from(files || []);
         if (!queue.length) return;
+        if (!selectedModelSupportsImages()) {
+          attachedFiles = [];
+          if (uploadInput) uploadInput.value = "";
+          updateAttachmentUI("Image attachments are not available for the selected model.", true);
+          return;
+        }
 
         const next = attachedFiles.slice();
         const errors = [];
@@ -2899,11 +2997,14 @@
         liveReasoningText = "";
         latestReasonCodes = [];
         latestRunMeta = null;
+        latestContextSelection = null;
+        excludedContextPaths = [];
         if (reasoningBubble && reasoningBubble.isConnected) reasoningBubble.remove();
         reasoningBubble = null;
         if (msgs) {
           while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
         }
+        renderContextSelectionPanel(null);
         renderThreadList();
         restoreDraftForThread(currentThreadId);
         setRunState("Creating new chat...");
@@ -2933,12 +3034,15 @@
         liveReasoningText = "";
         latestReasonCodes = [];
         latestRunMeta = null;
+        latestContextSelection = null;
+        excludedContextPaths = [];
         if (reasoningBubble && reasoningBubble.isConnected) reasoningBubble.remove();
         reasoningBubble = null;
         setRunState("Local");
         if (msgs) {
           while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
         }
+        renderContextSelectionPanel(null);
         updateStartupVisibility();
         showTab("chat");
         followLatest = true;
@@ -3012,7 +3116,6 @@
         if (activeSendBtn) activeSendBtn.disabled = false;
         if (modelSel) modelSel.disabled = isBusy;
         if (reasonSel) reasonSel.disabled = isBusy;
-        if (uploadBtn) uploadBtn.disabled = isBusy;
         if (activeSendBtn) {
           const sendLabel = currentMode === "plan" ? "Send planning request" : "Send";
           activeSendBtn.textContent = isBusy ? "\u23f9" : "\u2191";
@@ -3029,6 +3132,7 @@
         if (!isBusy) updateJump();
         updateStartupVisibility();
         if (!isBusy) updateComposerState();
+        updateAttachmentUI();
         updateReasoningCard();
       }
 
@@ -3104,12 +3208,13 @@
         const payload = {
           text,
           attachments: Array.isArray(previewAttachments) ? previewAttachments : [],
-          parallel: Boolean(parallelQuick && parallelQuick.checked),
+          runProfile: currentRunProfile(),
           model: modelSel ? modelSel.value : DEFAULT_MODEL,
           reasoning: reasonSel ? reasonSel.value : "medium",
           includeIdeContext: true,
           workspaceContextLevel: "max",
           threadId: currentThreadId,
+          excludedContextPaths: excludedContextPaths.slice(),
           queuedAt: timeLabel(),
           queuedBubble: null,
         };
@@ -3215,13 +3320,14 @@
         v.postMessage({
           type: "send",
           text: payload.text,
-          parallel: Boolean(payload.parallel),
+          runProfile: payload.runProfile || currentRunProfile(),
           model: payload.model || DEFAULT_MODEL,
           reasoning: payload.reasoning || "medium",
           includeIdeContext: payload.includeIdeContext !== false,
           workspaceContextLevel: payload.workspaceContextLevel === "max" ? "max" : "max",
           attachments: Array.isArray(payload.attachments) ? payload.attachments : [],
           threadId: payload.threadId || currentThreadId,
+          excludedContextPaths: Array.isArray(payload.excludedContextPaths) ? payload.excludedContextPaths : excludedContextPaths,
         });
         setRunState("Sent");
         scrollToLatest(true);
@@ -3272,12 +3378,13 @@
           const payload = {
             text,
             attachments: previewAttachments,
-            parallel: Boolean(parallelQuick && parallelQuick.checked),
+            runProfile: currentRunProfile(),
             model: modelSel ? modelSel.value : DEFAULT_MODEL,
             reasoning: reasonSel ? reasonSel.value : "medium",
             includeIdeContext: true,
             workspaceContextLevel: "max",
             threadId: currentThreadId,
+            excludedContextPaths: excludedContextPaths.slice(),
           };
 
           if (creatingThread) {
@@ -3434,6 +3541,12 @@
       if (uploadBtn && uploadInput) {
         uploadBtn.onclick = (e) => {
           e.preventDefault();
+          if (!selectedModelSupportsImages()) {
+            updateAttachmentUI("Image attachments are not available for the selected model.", true);
+            attachedFiles = [];
+            uploadInput.value = "";
+            return;
+          }
           uploadInput.click();
         };
         uploadInput.onchange = async () => {
@@ -3463,6 +3576,8 @@
       }
       updateAttachmentUI();
       renderModelOptions({ defaultModel: DEFAULT_MODEL, selectedModel: DEFAULT_MODEL, models: [] });
+      renderContextSelectionPanel(null);
+      updateAttachmentUI();
       setContextTelemetryState({
         enabled: true,
         phase: "idle",
@@ -3720,10 +3835,13 @@
           responseStartedAtMs = 0;
           lastAssistantBubble = null;
           clearPlanDecisionCard();
+          latestContextSelection = null;
+          excludedContextPaths = [];
           while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
           chips.innerHTML = "";
           clearQueuedMessages();
           resetRuntimeState();
+          renderContextSelectionPanel(null);
           requestChatContextMeterUpdate();
           updateStartupVisibility();
           setStreaming(false);
@@ -3739,6 +3857,11 @@
       }
       if (modelSel) {
         modelSel.addEventListener("change", () => {
+          if (!selectedModelSupportsImages() && attachedFiles.length > 0) {
+            attachedFiles = [];
+            if (uploadInput) uploadInput.value = "";
+          }
+          updateAttachmentUI();
           updateComposerState();
         });
       }
@@ -3747,9 +3870,36 @@
           updateComposerState();
         });
       }
+      if (deepFocusQuick) {
+        deepFocusQuick.addEventListener("change", () => {
+          updateComposerState();
+          scheduleContextPreviewDispatch(true);
+        });
+      }
       if (safetyQuick) {
         safetyQuick.addEventListener("change", (e) => {
           v.postMessage({ type: "setSafety", value: e.target.value });
+        });
+      }
+      if (contextSelectionPanel) {
+        contextSelectionPanel.addEventListener("click", (event) => {
+          const target = eventTargetElement(event.target);
+          if (!target) return;
+          if (target.id === "contextSelectionReset") {
+            excludedContextPaths = [];
+            renderContextSelectionPanel(latestContextSelection);
+            scheduleContextPreviewDispatch(true);
+            return;
+          }
+          const excludeBtn = target.closest("[data-context-path]");
+          if (!excludeBtn) return;
+          const pathValue = String(excludeBtn.getAttribute("data-context-path") || "").trim();
+          if (!pathValue) return;
+          if (!excludedContextPaths.includes(pathValue)) {
+            excludedContextPaths.push(pathValue);
+          }
+          renderContextSelectionPanel(latestContextSelection);
+          scheduleContextPreviewDispatch(true);
         });
       }
       if (viewAllTasks) {
@@ -3844,7 +3994,20 @@
             selectedModel: m.selectedModel || (modelSel ? modelSel.value : DEFAULT_MODEL),
             models: Array.isArray(m.models) ? m.models : [],
           });
+          if (!selectedModelSupportsImages() && attachedFiles.length > 0) {
+            attachedFiles = [];
+            if (uploadInput) uploadInput.value = "";
+          }
+          updateAttachmentUI();
           updateComposerState();
+        } else if (m.type === "contextSelectionPreview") {
+          renderContextSelectionPanel(m.data || {});
+        } else if (m.type === "attachmentsCapability") {
+          if (m.enabled === false && attachedFiles.length > 0) {
+            attachedFiles = [];
+            if (uploadInput) uploadInput.value = "";
+          }
+          updateAttachmentUI(typeof m.reason === "string" ? m.reason : "", m.enabled === false);
         } else if (m.type === "authState") {
           const signedIn = m.signedIn === true;
           const browserSignedIn = m.browserSignedIn === true;
@@ -4100,6 +4263,14 @@
               runtimeState.toolFailureCategory = String(m.data.toolState.lastFailureCategory || runtimeState.toolFailureCategory || "");
             }
             renderRuntimeStrip();
+            if (m.data.contextSelection || m.data.targetInference) {
+              renderContextSelectionPanel({
+                ...(m.data.contextSelection || {}),
+                ...(m.data.targetInference ? { targetInference: m.data.targetInference } : {}),
+                ...(m.data.validationPlan ? { validationPlan: m.data.validationPlan } : {}),
+                ...(m.data.toolState && m.data.toolState.route ? { fallbackRoute: m.data.toolState.route } : {}),
+              });
+            }
           }
           chips.innerHTML = "";
           if (m.data?.modelResolvedAlias || modelSel?.value) {

@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import type { CSSProperties } from "react";
 import { TopNavHF } from "@/components/nav/TopNavHF";
+import { PlaygroundMarketingProvider } from "@/components/playground/PlaygroundMarketingProvider";
 
 interface HFChromeProps {
   isAuthenticated: boolean;
@@ -12,12 +13,13 @@ interface HFChromeProps {
 export function HFChrome({ isAuthenticated, children }: HFChromeProps) {
   const pathname = usePathname();
   const isChatRoute = pathname === "/chat" || pathname.startsWith("/chat/");
+  const isPlaygroundRoute = pathname === "/playground" || pathname.startsWith("/playground/");
 
   if (isChatRoute) {
     return <div className="min-h-dvh">{children}</div>;
   }
 
-  return (
+  const shell = (
     <div className="min-h-dvh flex flex-col">
       <TopNavHF isAuthenticated={isAuthenticated} />
       <div
@@ -28,4 +30,10 @@ export function HFChrome({ isAuthenticated, children }: HFChromeProps) {
       </div>
     </div>
   );
+
+  if (isPlaygroundRoute) {
+    return <PlaygroundMarketingProvider>{shell}</PlaygroundMarketingProvider>;
+  }
+
+  return shell;
 }

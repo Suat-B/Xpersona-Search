@@ -69,11 +69,13 @@ export function buildCompactSessionSummary(input: {
 export function buildAssistResponsePayload(input: {
   sessionId: string;
   traceId: string;
+  runId?: string;
   result: AssistResult;
 }) {
   const { result } = input;
   return {
     sessionId: input.sessionId,
+    ...(input.runId ? { runId: input.runId } : {}),
     decision: result.decision,
     intent: result.intent,
     reasonCodes: result.reasonCodes,
@@ -98,12 +100,22 @@ export function buildAssistResponsePayload(input: {
     confidence: result.confidence,
     risk: result.risk,
     influence: result.influence,
+    targetInference: result.targetInference,
+    contextSelection: result.contextSelection,
     toolState: result.toolState,
     nextBestActions: result.nextBestActions,
     repromptStage: result.repromptStage,
     actionability: result.actionability,
     completionStatus: result.completionStatus,
     missingRequirements: result.missingRequirements,
+    lane: result.lane,
+    taskGraph: result.taskGraph,
+    checkpoint: result.checkpoint,
+    receipt: result.receipt,
+    contextTrace: result.contextTrace,
+    delegateRuns: result.delegateRuns,
+    memoryWrites: result.memoryWrites,
+    reviewState: result.reviewState,
     traceId: input.traceId,
   };
 }

@@ -22,7 +22,6 @@ interface GameChromeProps {
 export function GameChrome({
   displayName,
   userEmail = null,
-  isAdmin = false,
   isPermanent = false,
   accountType = null,
   children,
@@ -41,7 +40,6 @@ export function GameChrome({
     >
       <MobileDashboardNav
         displayName={displayName}
-        isAdmin={isAdmin}
         isPermanent={isPermanent}
         service="game"
       />
@@ -60,7 +58,7 @@ export function GameChrome({
               accountType={accountType}
             />
           </div>
-          <GameSidebarNav isAdmin={isAdmin} />
+          <GameSidebarNav />
         </div>
       </aside>
       <main data-header-scroll-root="dashboard" className="scroll-contain-paint relative z-0 flex-1 min-h-0 overflow-y-auto bg-[var(--dash-bg)]">

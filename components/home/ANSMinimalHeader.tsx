@@ -16,11 +16,7 @@ export function ANSMinimalHeader({
   const isDark = variant === "dark";
   const navLinks = [
     { href: "/playground", label: "Playground" },
-    { href: "/search", label: "Search" },
-    { href: "/marketplace", label: "Marketplace" },
-    { href: "/graph", label: "Graph" },
-    { href: "/reliability", label: "Reliability" },
-    { href: "/tool-pack", label: "Tool Pack" },
+    { href: "/chat", label: "Chat" },
   ];
 
   const headerClasses = isDark

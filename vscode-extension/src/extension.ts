@@ -32,6 +32,15 @@ import {
   type LocalApplyFailureCategory,
   type LocalRecoveryStage,
 } from "./apply-recovery-utils";
+import {
+  buildIndexChunkMetadata,
+  buildRetrievalHints,
+  modelSupportsImages,
+  normalizeContextPath,
+  resolveRunProfileFromLegacyParallel,
+  type RetrievalHints,
+  type RunProfile,
+} from "./intelligence-utils";
 
 const API_KEY_SECRET = "xpersona.apiKey";
 const API_KEY_LEGACY_SECRET = "xpersona.playground.apiKey";
@@ -158,6 +167,16 @@ type RunMeta = {
     retryStage?: LocalRecoveryStage | "final_failure";
     attemptedStages?: LocalRecoveryStage[];
   };
+  targetInference?: {
+    path?: string;
+    confidence?: number;
+    source?: "mention" | "active_file" | "session_memory" | "diagnostic" | "retrieval";
+  };
+  contextSelection?: {
+    files?: Array<{ path?: string; reason?: string; score?: number }>;
+    snippets?: number;
+    usedCloudIndex?: boolean;
+  };
 };
 type AssistAttachmentPayload = {
   mimeType: "image/png" | "image/jpeg" | "image/webp";
@@ -169,12 +188,27 @@ type AskOptions = {
   workspaceContextLevel?: ContextLevel;
   attachments?: AssistAttachmentPayload[];
   threadId?: string | null;
+  runProfile?: RunProfile;
+  excludedContextPaths?: string[];
   contextRetryAttempted?: boolean;
   noEditApplyRetryAttempted?: boolean;
   modelFallbackAttempted?: boolean;
   localApplyRecoveryAttempted?: LocalRecoveryStage[];
   autonomousLoop?: boolean;
   autonomyCycle?: { objective: string; cycle: number; maxCycles: number };
+};
+type ContextSelectionFile = { path: string; reason: string; score?: number };
+type ContextSelectionPreview = {
+  files: ContextSelectionFile[];
+  snippets: number;
+  usedCloudIndex: boolean;
+  targetInference?: {
+    path?: string;
+    confidence: number;
+    source: "mention" | "active_file" | "session_memory" | "diagnostic" | "retrieval";
+  };
+  validationPlan?: { checks: string[]; touchedFiles: string[]; reason: string };
+  fallbackRoute?: string;
 };
 type AutonomyProfile = {
   mode: "unbounded" | "bounded";
@@ -211,7 +245,13 @@ type IdeContext = {
   openFiles?: Array<{ path: string; language?: string; excerpt?: string }>;
   diagnostics?: Array<{ file?: string; severity?: string | number; message: string; line?: number }>;
   git?: { status?: string[]; diffSummary?: string };
-  indexedSnippets?: Array<{ path?: string; score?: number; content: string }>;
+  indexedSnippets?: Array<{
+    path?: string;
+    score?: number;
+    content: string;
+    source?: "cloud" | "local_fallback";
+    reason?: string;
+  }>;
 };
 type ContextStatus = {
   enabled: boolean;
@@ -555,8 +595,8 @@ export function activate(context: vscode.ExtensionContext) {
       await view.openImagePicker();
     }),
     vscode.commands.registerCommand("xpersona.playground.agents.parallelRun", async () => {
-      const t = await vscode.window.showInputBox({ prompt: "Parallel task" });
-      if (t) view.ask(t, true);
+      const t = await vscode.window.showInputBox({ prompt: "Deep focus task" });
+      if (t) view.ask(t, true, undefined, undefined, { runProfile: "deep_focus" });
     }),
     vscode.commands.registerCommand("xpersona.playground.index.rebuild", async () => {
       await view.show();
@@ -618,6 +658,7 @@ class Provider implements vscode.WebviewViewProvider {
     | {
         task: string;
         parallel: boolean;
+        runProfile: RunProfile;
         model: string;
         reasoning: ReasoningLevel;
         options: AskOptions;
@@ -917,7 +958,7 @@ class Provider implements vscode.WebviewViewProvider {
     this.post({
       type: "modelsCatalog",
       defaultModel: this.defaultModelAlias,
-      selectedModel: this.defaultModelAlias,
+      selectedModel: this.selectedModelAlias || this.defaultModelAlias,
       models: visibleModels,
     });
   }
@@ -1266,7 +1307,362 @@ class Provider implements vscode.WebviewViewProvider {
     this.postRun(threadId, { type: "contextStatus", data: status });
   }
 
-  private scheduleContextPreview(rawQuery: string, threadId?: string | null) {
+  private postContextSelectionPreview(
+    threadId: string | null | undefined,
+    data: ContextSelectionPreview
+  ) {
+    this.postRun(threadId, { type: "contextSelectionPreview", data });
+  }
+
+  private selectedModelSupportsImages(modelAlias?: string | null): boolean {
+    return modelSupportsImages(modelAlias || this.selectedModelAlias || this.defaultModelAlias, this.modelCatalog);
+  }
+
+  private normalizeWorkspacePathCandidate(candidate: string | null | undefined): string | null {
+    const raw = String(candidate || "").trim();
+    const direct = normalizeWorkspaceRelativePath(raw.replace(/\\/g, "/"));
+    if (direct) return direct;
+    const root = this.getWorkspaceRoot();
+    if (!root || !raw) return null;
+    if (path.isAbsolute(raw)) {
+      const relative = path.relative(root.uri.fsPath, raw).replace(/\\/g, "/");
+      return normalizeWorkspaceRelativePath(relative);
+    }
+    const normalized = normalizeContextPath(raw);
+    if (!normalized) return null;
+    if (path.isAbsolute(normalized)) {
+      const relative = path.relative(root.uri.fsPath, normalized).replace(/\\/g, "/");
+      return normalizeWorkspaceRelativePath(relative);
+    }
+    return normalizeWorkspaceRelativePath(normalized);
+  }
+
+  private getRecentTouchedPaths(limit = 8): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    const inputs = [
+      ...(this.lastActionOutcome?.appliedFiles || []),
+      ...(this.lastRunMeta?.validationPlan?.touchedFiles || []),
+      ...(this.lastRunMeta?.contextSelection?.files?.map((item) => item?.path || "") || []),
+    ];
+    for (const candidate of inputs) {
+      const normalized = this.normalizeWorkspacePathCandidate(candidate);
+      const key = String(normalized || "").toLowerCase();
+      if (!normalized || seen.has(key)) continue;
+      seen.add(key);
+      out.push(normalized);
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+
+  private async collectWorkspaceFilesByPath(
+    paths: string[],
+    maxItems: number,
+    maxCharsPerItem: number
+  ): Promise<Array<{ path: string; language?: string; excerpt?: string }>> {
+    const root = this.getWorkspaceRoot();
+    if (!root) return [];
+    const out: Array<{ path: string; language?: string; excerpt?: string }> = [];
+    const seen = new Set<string>();
+    for (const candidate of paths) {
+      if (out.length >= maxItems) break;
+      const resolved = (await this.resolveExistingWorkspaceFilePath(candidate)) || this.normalizeWorkspacePathCandidate(candidate);
+      const key = String(resolved || "").toLowerCase();
+      if (!resolved || seen.has(key)) continue;
+      seen.add(key);
+      const uri = vscode.Uri.joinPath(root.uri, ...resolved.split("/").filter(Boolean));
+      try {
+        const stat = await vscode.workspace.fs.stat(uri);
+        if ((stat.type & vscode.FileType.Directory) === vscode.FileType.Directory) continue;
+        if (stat.size > 2_000_000) {
+          out.push({
+            path: resolved,
+            language: languageFromPath(resolved),
+            excerpt: `Skipped excerpt for ${resolved}: file too large (${stat.size} bytes).`,
+          });
+          continue;
+        }
+        const doc = await vscode.workspace.openTextDocument(uri);
+        const content = doc.getText().replace(/\r\n/g, "\n");
+        out.push({
+          path: resolved,
+          language: doc.languageId || languageFromPath(resolved),
+          excerpt: content.slice(0, maxCharsPerItem),
+        });
+      } catch (e) {
+        out.push({
+          path: resolved,
+          language: languageFromPath(resolved),
+          excerpt: `Failed to read ${resolved}: ${err(e)}`.slice(0, maxCharsPerItem),
+        });
+      }
+    }
+    return out;
+  }
+
+  private inferDiagnosticTargetPath(
+    diagnostics: Array<{ file?: string; severity?: string | number; message: string; line?: number }>,
+    limit = 6
+  ): string[] {
+    const scored = new Map<string, number>();
+    for (const diagnostic of diagnostics) {
+      const normalized = this.normalizeWorkspacePathCandidate(String(diagnostic.file || ""));
+      if (!normalized) continue;
+      const severityValue =
+        typeof diagnostic.severity === "number"
+          ? diagnostic.severity
+          : /error/i.test(String(diagnostic.severity || ""))
+            ? 0
+            : /warn/i.test(String(diagnostic.severity || ""))
+              ? 1
+              : 2;
+      const weight = severityValue === 0 ? 4 : severityValue === 1 ? 2 : 1;
+      scored.set(normalized, (scored.get(normalized) || 0) + weight);
+    }
+    return [...scored.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([file]) => file);
+  }
+
+  private async inferTargetFromContext(input: {
+    query: string;
+    mentionedFiles: Array<{ path: string }>;
+    activeFile?: IdeContext["activeFile"] | null;
+    diagnostics: Array<{ file?: string; severity?: string | number; message: string; line?: number }>;
+    recentTouchedPaths: string[];
+  }): Promise<NonNullable<ContextSelectionPreview["targetInference"]>> {
+    const mentionedPath = input.mentionedFiles[0]?.path || "";
+    if (mentionedPath) {
+      return { path: mentionedPath, confidence: 0.98, source: "mention" };
+    }
+    const activePath = await this.resolveExistingWorkspaceFilePath(String(input.activeFile?.path || ""));
+    if (activePath) {
+      return { path: activePath, confidence: 0.84, source: "active_file" };
+    }
+    if (input.recentTouchedPaths.length > 0) {
+      return { path: input.recentTouchedPaths[0], confidence: 0.75, source: "session_memory" };
+    }
+    const diagnosticPath = this.inferDiagnosticTargetPath(input.diagnostics, 1)[0];
+    if (diagnosticPath) {
+      return { path: diagnosticPath, confidence: 0.7, source: "diagnostic" };
+    }
+    const explicitFile = await this.resolveExistingWorkspaceFilePath(input.query);
+    if (explicitFile) {
+      return { path: explicitFile, confidence: 0.66, source: "retrieval" };
+    }
+    return { confidence: 0.24, source: "retrieval" };
+  }
+
+  private async collectSmartIdeContext(
+    query: string,
+    workspaceHash: string,
+    auth: HttpAuth,
+    options?: { preview?: boolean; excludedContextPaths?: string[] }
+  ): Promise<{
+    context: IdeContext;
+    retrievalHints: RetrievalHints;
+    contextSelection: ContextSelectionPreview;
+    contextStatus: ContextStatus;
+  }> {
+    const preview = options?.preview === true;
+    const excluded = new Set(
+      (options?.excludedContextPaths || [])
+        .map((item) => this.normalizeWorkspacePathCandidate(item))
+        .filter((item): item is string => Boolean(item))
+        .map((item) => item.toLowerCase())
+    );
+    const root = this.getWorkspaceRoot();
+    const activeFileRaw = await this.collectActiveFileContext(preview ? 14_000 : 20_000);
+    const activePath = this.normalizeWorkspacePathCandidate(String(activeFileRaw?.path || ""));
+    const activeFile =
+      activeFileRaw && activePath && !excluded.has(activePath.toLowerCase())
+        ? { ...activeFileRaw, path: activePath }
+        : undefined;
+    const openEditors = (await this.collectOpenEditorsContext(preview ? 10 : 20, preview ? 4_500 : 6_000))
+      .map((file) => {
+        const normalizedPath = this.normalizeWorkspacePathCandidate(file.path);
+        return normalizedPath ? { ...file, path: normalizedPath } : null;
+      })
+      .filter((file): file is { path: string; language?: string; excerpt?: string } => Boolean(file))
+      .filter((file) => !excluded.has(file.path.toLowerCase()));
+    const diagnostics = this.collectDiagnostics(preview ? 80 : 200);
+    const mentionTokens = this.mentionsEnabled() ? extractAtMentions(query) : [];
+    const mentionedFiles = this.mentionsEnabled()
+      ? (await this.collectMentionedWorkspaceContext(query, preview ? 6 : 8, preview ? 8_000 : 20_000, mentionTokens))
+          .map((file) => {
+            const normalizedPath = this.normalizeWorkspacePathCandidate(file.path);
+            return normalizedPath ? { ...file, path: normalizedPath } : null;
+          })
+          .filter((file): file is { path: string; language?: string; excerpt?: string } => Boolean(file))
+          .filter((file) => !excluded.has(file.path.toLowerCase()))
+      : [];
+    const recentTouchedPaths = this.getRecentTouchedPaths(preview ? 6 : 10).filter((file) => !excluded.has(file.toLowerCase()));
+    const targetInference = await this.inferTargetFromContext({
+      query,
+      mentionedFiles,
+      activeFile,
+      diagnostics,
+      recentTouchedPaths,
+    });
+    const preferredTargetPath =
+      (targetInference.path && !excluded.has(targetInference.path.toLowerCase()) ? targetInference.path : undefined) ||
+      undefined;
+    const candidateSymbols = this.extractLikelyLookupTokens(query, 6);
+    const retrievalHints = buildRetrievalHints({
+      mentionPaths: mentionedFiles.map((file) => file.path),
+      candidateSymbols,
+      diagnostics,
+      preferredTargetPath,
+      recentTouchedPaths,
+    });
+    const diagnosticPaths = this.inferDiagnosticTargetPath(diagnostics, preview ? 4 : 6).filter(
+      (file) => !excluded.has(file.toLowerCase())
+    );
+    const recentTouchedFiles = await this.collectWorkspaceFilesByPath(recentTouchedPaths, preview ? 4 : 6, preview ? 5_000 : 8_000);
+    const diagnosticFiles = await this.collectWorkspaceFilesByPath(diagnosticPaths, preview ? 4 : 5, preview ? 5_000 : 8_000);
+    const targetFiles = preferredTargetPath
+      ? await this.collectWorkspaceFilesByPath([preferredTargetPath], 1, preview ? 10_000 : 14_000)
+      : [];
+    const queryWorkspaceFiles = await this.collectQueryWorkspaceContext(query, preview ? 6 : 10, preview ? 5_000 : 10_000);
+    const git = root ? await this.collectGitSummary(root) : { status: [], diffSummary: "" };
+
+    let indexedSnippets: Array<{ path?: string; score?: number; content: string; source?: "cloud" | "local_fallback"; reason?: string }> = [];
+    if (root && auth) {
+      indexedSnippets = (await this.queryIndexForPrompt(workspaceHash, query, auth, preview ? 8 : 12, retrievalHints)).filter((snippet) => {
+        const normalized = this.normalizeWorkspacePathCandidate(String(snippet.path || ""));
+        return !normalized || !excluded.has(normalized.toLowerCase());
+      });
+    }
+    const usedCloudIndex = indexedSnippets.length > 0;
+    if (!usedCloudIndex) {
+      indexedSnippets = queryWorkspaceFiles
+        .filter((file) => !excluded.has(String(file.path || "").toLowerCase()))
+        .map((file) => ({
+          path: file.path,
+          score: 0.42,
+          content: String(file.excerpt || "").slice(0, preview ? 3_500 : 5_000),
+          source: "local_fallback" as const,
+          reason: "Local workspace fallback hit",
+        }));
+    }
+
+    const selectionFiles: ContextSelectionFile[] = [];
+    const selectionSeen = new Set<string>();
+    const openFilesMap = new Map<string, { path: string; language?: string; excerpt?: string }>();
+    const pushSelectionFile = (
+      file: { path?: string; language?: string; excerpt?: string } | undefined | null,
+      reason: string,
+      score?: number
+    ) => {
+      const normalizedPath = this.normalizeWorkspacePathCandidate(String(file?.path || ""));
+      const key = String(normalizedPath || "").toLowerCase();
+      if (!normalizedPath || excluded.has(key) || selectionSeen.has(key)) return;
+      selectionSeen.add(key);
+      selectionFiles.push({
+        path: normalizedPath,
+        reason,
+        ...(typeof score === "number" ? { score } : {}),
+      });
+      if ((!activeFile || activeFile.path !== normalizedPath) && file) {
+        openFilesMap.set(normalizedPath, { ...file, path: normalizedPath });
+      }
+    };
+
+    mentionedFiles.forEach((file) => pushSelectionFile(file, "Explicit @mention"));
+    targetFiles.forEach((file) =>
+      pushSelectionFile(
+        file,
+        `Inferred target from ${targetInference.source.replace(/_/g, " ")} (${Math.round(targetInference.confidence * 100)}%)`
+      )
+    );
+    if (activeFile) {
+      pushSelectionFile(activeFile, "Active editor");
+    }
+    recentTouchedFiles.forEach((file) => pushSelectionFile(file, "Recent applied or validated file"));
+    diagnosticFiles.forEach((file) => pushSelectionFile(file, "Diagnostic-heavy file"));
+    indexedSnippets.forEach((snippet) =>
+      pushSelectionFile(
+        { path: snippet.path, excerpt: snippet.content },
+        snippet.reason || (snippet.source === "local_fallback" ? "Local workspace fallback" : "Cloud index hit"),
+        snippet.score
+      )
+    );
+    openEditors.forEach((file) => pushSelectionFile(file, "Open editor"));
+
+    const notes: string[] = [];
+    if (selectionFiles.length > 0) {
+      notes.push(
+        `Why this context: ${selectionFiles
+          .slice(0, 4)
+          .map((file) => file.path)
+          .join(", ")}${selectionFiles.length > 4 ? ` (+${selectionFiles.length - 4} more)` : ""}.`
+      );
+    }
+    notes.push(
+      usedCloudIndex
+        ? "Using cloud index for ranked retrieval."
+        : root
+          ? "Cloud index unavailable or cold; using local workspace fallback."
+          : "No workspace root detected."
+    );
+    if (preferredTargetPath) {
+      notes.push(`Target inference: ${preferredTargetPath} (${targetInference.source.replace(/_/g, " ")}).`);
+    }
+
+    const context: IdeContext = trimContextToMaxChars(
+      {
+        ...(activeFile ? { activeFile } : {}),
+        openFiles: Array.from(openFilesMap.values()),
+        diagnostics,
+        git: {
+          status: git.status.slice(0, 200),
+          diffSummary: String(git.diffSummary || "").slice(0, 24_000),
+        },
+        indexedSnippets,
+      },
+      MAX_TOTAL_CONTEXT_CHARS
+    );
+    const sections = [
+      context.activeFile ? 1 : 0,
+      (context.openFiles?.length ?? 0) > 0 ? 1 : 0,
+      (context.diagnostics?.length ?? 0) > 0 ? 1 : 0,
+      context.git ? 1 : 0,
+      (context.indexedSnippets?.length ?? 0) > 0 ? 1 : 0,
+    ].reduce((acc, value) => acc + value, 0);
+
+    return {
+      context,
+      retrievalHints,
+      contextSelection: {
+        files: selectionFiles.slice(0, 16),
+        snippets: context.indexedSnippets?.length ?? 0,
+        usedCloudIndex,
+        targetInference,
+        validationPlan: {
+          checks: Array.isArray(this.lastRunMeta?.validationPlan?.checks) ? this.lastRunMeta!.validationPlan!.checks!.slice(0, 6) : [],
+          touchedFiles: preferredTargetPath ? [preferredTargetPath] : [],
+          reason: preferredTargetPath ? "Targeted validation will bias toward the inferred file." : "Validation will follow touched files.",
+        },
+        fallbackRoute: usedCloudIndex ? "cloud_index" : "local_workspace_fallback",
+      },
+      contextStatus: {
+        enabled: true,
+        phase: "ready",
+        source: preview ? "preview" : "send",
+        sections,
+        snippets: context.indexedSnippets?.length ?? 0,
+        workspaceMatches: context.openFiles?.length ?? 0,
+        indexFreshness: usedCloudIndex ? this.indexFreshness : this.indexFreshness === "fresh" ? "stale" : this.indexFreshness,
+        discoveryCommands: (context.git?.status?.length ?? 0) > 0 || context.git?.diffSummary ? 2 : 0,
+        preflightMs: 0,
+        notes,
+      },
+    };
+  }
+
+  private scheduleContextPreview(rawQuery: string, threadId?: string | null, excludedContextPaths?: string[]) {
     const query = String(rawQuery || "").trim();
     const runThreadId = typeof threadId === "string" && threadId.trim() ? threadId.trim() : this.activeThreadId;
     if (this.contextPreviewDebounceTimer) {
@@ -1287,19 +1683,26 @@ class Provider implements vscode.WebviewViewProvider {
         preflightMs: 0,
         notes: ["Auto context idle."],
       });
+      this.postContextSelectionPreview(runThreadId, {
+        files: [],
+        snippets: 0,
+        usedCloudIndex: false,
+        fallbackRoute: "idle",
+      });
       return;
     }
 
     this.contextPreviewDebounceTimer = setTimeout(() => {
       const seq = ++this.contextPreviewSeq;
-      void this.runContextPreview(seq, query, runThreadId);
+      void this.runContextPreview(seq, query, runThreadId, excludedContextPaths);
     }, 420);
   }
 
   private async runContextPreview(
     seq: number,
     query: string,
-    threadId: string | null | undefined
+    threadId: string | null | undefined,
+    excludedContextPaths?: string[]
   ) {
     const startedAt = Date.now();
     this.postContextStatus(threadId, {
@@ -1317,58 +1720,26 @@ class Provider implements vscode.WebviewViewProvider {
 
     try {
       const now = Date.now();
-      if (query === this.contextPreviewLastQuery && now - this.contextPreviewLastAt < 1200) {
+      const previewFingerprint = `${query}::${(excludedContextPaths || []).join("|")}`;
+      if (previewFingerprint === this.contextPreviewLastQuery && now - this.contextPreviewLastAt < 1200) {
         return;
       }
 
       const root = this.getWorkspaceRoot();
-      const openFiles = await this.collectOpenEditorsContext(8, 3_000);
-      const workspaceMatches = await this.collectQueryWorkspaceContext(query, 8, 4_500);
-      let indexedSnippets: Array<{ path?: string; score?: number; content: string }> = [];
-      if (root) {
-        const auth = await this.resolveRequestAuth();
-        if (auth) {
-          const workspaceHash = this.computeWorkspaceHash(root);
-          indexedSnippets = await this.queryIndexForPrompt(workspaceHash, query, auth, 8);
-        }
-      }
+      const auth = root ? await this.resolveRequestAuth() : null;
+      const workspaceHash = this.computeWorkspaceHash(root);
+      const smartContext = await this.collectSmartIdeContext(query, workspaceHash, auth, {
+        preview: true,
+        excludedContextPaths,
+      });
       if (seq !== this.contextPreviewSeq) return;
-
-      const dedup = new Set<string>();
-      const mergedOpenFiles = [...workspaceMatches, ...openFiles].filter((item) => {
-        const key = String(item.path || "");
-        if (!key || dedup.has(key)) return false;
-        dedup.add(key);
-        return true;
-      });
-      const queryMatches = workspaceMatches.length;
-      const fileMatches = mergedOpenFiles.length;
-
-      const sections = [
-        mergedOpenFiles.length > 0 ? 1 : 0,
-        indexedSnippets.length > 0 ? 1 : 0,
-      ].reduce((acc, value) => acc + value, 0);
-      const preflightMs = Date.now() - startedAt;
-      const notes: string[] = [
-        `Auto context ready: ${fileMatches} file${fileMatches === 1 ? "" : "s"} (${queryMatches} query match${queryMatches === 1 ? "" : "es"}).`,
-      ];
-      if (!indexedSnippets.length && root) {
-        notes.push("Index snippets unavailable yet; running workspace fallback.");
-      }
-
+      this.postContextSelectionPreview(threadId, smartContext.contextSelection);
       this.postContextStatus(threadId, {
-        enabled: true,
-        phase: "ready",
+        ...smartContext.contextStatus,
         source: "preview",
-        sections,
-        snippets: indexedSnippets.length,
-        workspaceMatches: fileMatches,
-        indexFreshness: this.indexFreshness,
-        discoveryCommands: 0,
-        preflightMs,
-        notes,
+        preflightMs: Date.now() - startedAt,
       });
-      this.contextPreviewLastQuery = query;
+      this.contextPreviewLastQuery = previewFingerprint;
       this.contextPreviewLastAt = Date.now();
     } catch (e) {
       if (seq !== this.contextPreviewSeq) return;
@@ -1384,53 +1755,30 @@ class Provider implements vscode.WebviewViewProvider {
         preflightMs: Date.now() - startedAt,
         notes: [`Auto context preview failed: ${err(e)}`],
       });
+      this.postContextSelectionPreview(threadId, {
+        files: [],
+        snippets: 0,
+        usedCloudIndex: false,
+        fallbackRoute: "preview_failed",
+      });
     }
   }
 
-  private async collectIdeContext(query: string, workspaceHash: string, auth: HttpAuth): Promise<IdeContext> {
-    const root = this.getWorkspaceRoot();
-    const activeFile = await this.collectActiveFileContext(20_000);
-    const openFiles = await this.collectOpenEditorsContext(20, 6_000);
-    const queryWorkspaceFiles = await this.collectQueryWorkspaceContext(query, 10, 10_000);
-    const diagnostics = this.collectDiagnostics(200);
-    const git = await this.collectGitSummary(root);
-    const discovery = await this.runSafeDiscovery(root);
-    const indexedSnippets = await this.queryIndexForPrompt(workspaceHash, query, auth, 12);
-    const mergedOpenFilesMap = new Map<string, { path: string; language?: string; excerpt?: string }>();
-    for (const file of [...queryWorkspaceFiles, ...openFiles]) {
-      if (!file.path || mergedOpenFilesMap.has(file.path)) continue;
-      mergedOpenFilesMap.set(file.path, file);
-    }
-    const mergedSnippets = [
-      ...indexedSnippets,
-      ...queryWorkspaceFiles
-        .map((file) => ({
-          path: file.path,
-          score: 0.45,
-          content: String(file.excerpt || "").slice(0, 4_000),
-        }))
-        .filter((snippet) => snippet.content.length > 0),
-    ];
-    if (discovery.rgFiles) {
-      mergedSnippets.push({
-        path: ".workspace/files",
-        score: 0.3,
-        content: discovery.rgFiles,
-      });
-    }
-    return trimContextToMaxChars(
-      {
-        activeFile: activeFile || undefined,
-        openFiles: Array.from(mergedOpenFilesMap.values()),
-        diagnostics,
-        git: {
-          status: [...(git.status || []), ...(discovery.gitStatus || [])].slice(0, 200),
-          diffSummary: [git.diffSummary, discovery.gitDiff].filter(Boolean).join("\n").slice(0, 120_000),
-        },
-        indexedSnippets: mergedSnippets,
-      },
-      MAX_TOTAL_CONTEXT_CHARS
-    );
+  private async collectIdeContext(
+    query: string,
+    workspaceHash: string,
+    auth: HttpAuth,
+    options?: { excludedContextPaths?: string[] }
+  ): Promise<{
+    context: IdeContext;
+    retrievalHints: RetrievalHints;
+    contextSelection: ContextSelectionPreview;
+    contextStatus: ContextStatus;
+  }> {
+    return this.collectSmartIdeContext(query, workspaceHash, auth, {
+      preview: false,
+      excludedContextPaths: options?.excludedContextPaths,
+    });
   }
 
   private extractLikelyLookupTokens(text: string, max = 3): string[] {
@@ -1902,12 +2250,19 @@ class Provider implements vscode.WebviewViewProvider {
     };
   }
 
-  private async queryIndexForPrompt(projectKey: string, query: string, auth: HttpAuth, limit: number): Promise<Array<{ path?: string; score?: number; content: string }>> {
+  private async queryIndexForPrompt(
+    projectKey: string,
+    query: string,
+    auth: HttpAuth,
+    limit: number,
+    retrievalHints?: RetrievalHints
+  ): Promise<Array<{ path?: string; score?: number; content: string; source?: "cloud" | "local_fallback"; reason?: string }>> {
     try {
       const response = await req<any>("POST", `${base()}/api/v1/playground/index/query`, auth, {
         projectKey,
         query: query.slice(0, 2000),
         limit: Math.max(1, Math.min(limit, 50)),
+        ...(retrievalHints ? { retrievalHints } : {}),
       });
       const rows = Array.isArray(response?.data) ? response.data : Array.isArray(response) ? response : [];
       return rows
@@ -1915,6 +2270,13 @@ class Provider implements vscode.WebviewViewProvider {
           path: String(r.pathDisplay || r.path || ""),
           score: typeof r.score === "number" ? r.score : undefined,
           content: String(r.content || "").slice(0, 60_000),
+          source: r?.source === "cloud" || r?.source === "local_fallback" ? r.source : "cloud",
+          reason:
+            typeof r?.metadata?.reason === "string" && r.metadata.reason.trim()
+              ? String(r.metadata.reason).trim()
+              : Array.isArray(r?.explanations) && r.explanations.length > 0
+                ? String(r.explanations.slice(0, 3).join("; "))
+                : "Cloud index match",
         }))
         .filter((x: { content: string }) => x.content.length > 0)
         .slice(0, limit);
@@ -1962,7 +2324,16 @@ class Provider implements vscode.WebviewViewProvider {
               chunkHash: sha(`${relNorm}:${trimmed}`),
               pathDisplay: relNorm,
               content: trimmed,
-              metadata: { language: doc.languageId || languageFromPath(relNorm), trigger },
+              metadata: {
+                ...buildIndexChunkMetadata({
+                  pathDisplay: relNorm,
+                  language: doc.languageId || languageFromPath(relNorm),
+                  content: trimmed,
+                  source: "cloud",
+                  reason: "Workspace index chunk",
+                }),
+                trigger,
+              },
             });
             if (!manualRun && chunks.length >= INDEX_AUTO_CHUNK_LIMIT) {
               break filesLoop;
@@ -2221,20 +2592,33 @@ class Provider implements vscode.WebviewViewProvider {
         this.post({ type: "sendAck" });
         const attachments = sanitizeAssistAttachments(m.attachments);
         const threadId = typeof m.threadId === "string" ? String(m.threadId).trim() : "";
-        const requestedModel = String(this.defaultModelAlias || this.selectedModelAlias || DEFAULT_PLAYGROUND_MODEL).trim() || DEFAULT_PLAYGROUND_MODEL;
+        const requestedModel = String(m.model || this.selectedModelAlias || this.defaultModelAlias || DEFAULT_PLAYGROUND_MODEL).trim() || DEFAULT_PLAYGROUND_MODEL;
         this.selectedModelAlias = requestedModel;
+        const runProfile = resolveRunProfileFromLegacyParallel({
+          runProfile: typeof m.runProfile === "string" ? String(m.runProfile) : undefined,
+          parallel: Boolean(m.parallel),
+        });
+        const supportsImages = this.selectedModelSupportsImages(requestedModel);
+        const safeAttachments = supportsImages ? attachments : [];
         if (Array.isArray(m.attachments) && m.attachments.length > attachments.length) {
           this.post({ type: "status", text: "Some image attachments were skipped because they were invalid or unsupported." });
         }
+        if (attachments.length > 0 && !supportsImages) {
+          this.post({ type: "status", text: `Image attachments are disabled for ${modelLabelForUi(requestedModel, this.modelCatalog)}.` });
+        }
         await this.ask(
           String(m.text || ""),
-          Boolean(m.parallel),
+          runProfile === "deep_focus",
           requestedModel,
           String(m.reasoning || "medium") as ReasoningLevel,
           {
             includeIdeContext: m.includeIdeContext !== undefined ? Boolean(m.includeIdeContext) : true,
             workspaceContextLevel: (m.workspaceContextLevel === "max" ? "max" : "max") as ContextLevel,
-            attachments,
+            attachments: safeAttachments,
+            runProfile,
+            excludedContextPaths: Array.isArray(m.excludedContextPaths)
+              ? m.excludedContextPaths.map((item: unknown) => String(item || "").trim()).filter(Boolean)
+              : [],
             ...(threadId ? { threadId } : {}),
           }
         );
@@ -2284,7 +2668,12 @@ class Provider implements vscode.WebviewViewProvider {
       } else if (m.type === "contextPreview") {
         const query = String(m.text || "");
         const threadId = typeof m.threadId === "string" ? String(m.threadId).trim() : "";
-        this.scheduleContextPreview(query, threadId || undefined);
+        const excludedContextPaths = Array.isArray(m.excludedContextPaths)
+          ? m.excludedContextPaths
+              .map((item: unknown) => String(item || "").trim())
+              .filter(Boolean)
+          : [];
+        this.scheduleContextPreview(query, threadId || undefined, excludedContextPaths);
       } else if (m.type === "pinThread") {
         await this.setThreadPinned(String(m.id || ""), Boolean(m.pinned));
       }
@@ -2299,6 +2688,11 @@ class Provider implements vscode.WebviewViewProvider {
 
   async openImagePicker() {
     await this.show();
+    if (!this.selectedModelSupportsImages()) {
+      this.post({ type: "status", text: "Image attachments are not available for the selected model." });
+      this.post({ type: "attachmentsCapability", enabled: false, reason: "Selected model does not support image input." });
+      return;
+    }
     await new Promise((resolve) => setTimeout(resolve, 60));
     this.post({ type: "openUploadPicker" });
   }
@@ -2924,12 +3318,18 @@ class Provider implements vscode.WebviewViewProvider {
     reasoning: ReasoningLevel = "medium",
     options: AskOptions = {}
   ) {
+    const runProfile = resolveRunProfileFromLegacyParallel({
+      runProfile: options.runProfile,
+      parallel,
+    });
+    const parallelAlias = runProfile === "deep_focus";
     this.lastAssistRequest = {
       task: text,
-      parallel,
+      parallel: parallelAlias,
+      runProfile,
       model,
       reasoning,
-      options: { ...options },
+      options: { ...options, runProfile },
     };
     this.lastActionOutcome = null;
     const cycleContext = options.autonomyCycle;
@@ -3040,14 +3440,14 @@ class Provider implements vscode.WebviewViewProvider {
         : text;
     const requestMode: RequestMode = conversational || strictConversationOnly ? "generate" : this.mode;
     const requestReasoning: ReasoningLevel = smallTalk ? "low" : reasoning;
-    const fileInfoQuestion = this.isFileInfoQuestion(text);
     const mentionTokens = this.mentionsEnabled() ? extractAtMentions(text) : [];
-    const shouldAttachContextForTask = true;
     const ideContextEnabled = true;
     const root = this.getWorkspaceRoot();
     const workspaceHash = this.computeWorkspaceHash(root);
     const preflightStarted = Date.now();
     let collectedContext: IdeContext | undefined;
+    let retrievalHints: RetrievalHints | undefined;
+    let contextSelectionPreview: ContextSelectionPreview | undefined;
     let contextStatus: ContextStatus = {
       enabled: ideContextEnabled,
       phase: "collecting",
@@ -3064,71 +3464,22 @@ class Provider implements vscode.WebviewViewProvider {
 
     if (ideContextEnabled && !strictConversationOnly) {
       try {
-        collectedContext = await this.collectIdeContext(text, workspaceHash, auth);
+        const collected = await this.collectIdeContext(text, workspaceHash, auth, {
+          excludedContextPaths: options.excludedContextPaths,
+        });
+        collectedContext = collected.context;
+        retrievalHints = collected.retrievalHints;
+        contextSelectionPreview = collected.contextSelection;
+        contextStatus = { ...collected.contextStatus };
+        if (mentionTokens.length) {
+          const mentionLabel = mentionTokens.slice(0, 6).join(", ");
+          contextStatus.notes = [...(contextStatus.notes || []), `@mentions: ${mentionLabel}${mentionTokens.length > 6 ? ` (+${mentionTokens.length - 6} more)` : ""}`];
+        }
+        this.postContextSelectionPreview(runThreadId, contextSelectionPreview);
       } catch (e) {
         const message = err(e);
         contextStatus.notes?.push(`context partial: ${message}`);
         addDiagnosticEvent("context_partial", message, "warn");
-      }
-
-      if (this.mentionsEnabled()) {
-        try {
-          const mentioned = await this.collectMentionedWorkspaceContext(text, 8, 20_000, mentionTokens);
-          if (mentioned.length) {
-            collectedContext = collectedContext || {};
-            const existing = new Set((collectedContext.openFiles ?? []).map((x) => x.path));
-            collectedContext.openFiles = [
-              ...mentioned.filter((x) => !existing.has(x.path)),
-              ...(collectedContext.openFiles ?? []),
-            ];
-            const label = mentioned
-              .slice(0, 6)
-              .map((x) => x.path)
-              .join(", ");
-            contextStatus.notes?.push(`@mentions: ${label}${mentioned.length > 6 ? ` (+${mentioned.length - 6} more)` : ""}`);
-          }
-        } catch (e) {
-          const message = err(e);
-          contextStatus.notes?.push(`mentions partial: ${message}`);
-          addDiagnosticEvent("mentions_partial", message, "warn");
-        }
-      }
-
-      try {
-        const symbolMatches = await this.collectSymbolWorkspaceContext(text, 6, 8_000);
-        if (symbolMatches.length) {
-          collectedContext = collectedContext || {};
-          const existing = new Set((collectedContext.openFiles ?? []).map((x) => x.path));
-          collectedContext.openFiles = [
-            ...symbolMatches.filter((x) => !existing.has(x.path)),
-            ...(collectedContext.openFiles ?? []),
-          ];
-          const label = symbolMatches.slice(0, 4).map((x) => x.path).join(", ");
-          contextStatus.notes?.push(`symbol lookup: ${label}${symbolMatches.length > 4 ? ` (+${symbolMatches.length - 4} more)` : ""}`);
-        }
-      } catch (e) {
-        const message = err(e);
-        contextStatus.notes?.push(`symbol lookup partial: ${message}`);
-        addDiagnosticEvent("symbol_lookup_partial", message, "warn");
-      }
-
-      if (collectedContext) {
-        const sectionCount = [
-          collectedContext.activeFile ? 1 : 0,
-          (collectedContext.openFiles?.length ?? 0) > 0 ? 1 : 0,
-          (collectedContext.diagnostics?.length ?? 0) > 0 ? 1 : 0,
-          collectedContext.git ? 1 : 0,
-          (collectedContext.indexedSnippets?.length ?? 0) > 0 ? 1 : 0,
-        ].reduce((acc, v) => acc + v, 0);
-        contextStatus = {
-          ...contextStatus,
-          phase: "ready",
-          sections: sectionCount,
-          snippets: collectedContext.indexedSnippets?.length ?? 0,
-          workspaceMatches: collectedContext.openFiles?.length ?? 0,
-          indexFreshness: this.indexFreshness,
-          discoveryCommands: (collectedContext.git?.status?.length ?? 0) > 0 || collectedContext.git?.diffSummary ? 3 : 0,
-        };
       }
     }
     contextStatus.phase = "ready";
@@ -3139,7 +3490,12 @@ class Provider implements vscode.WebviewViewProvider {
     }
 
     const hintedTargetPath = await this.resolveExistingWorkspaceFilePath(
-      String(collectedContext?.activeFile?.path || collectedContext?.openFiles?.[0]?.path || "")
+      String(
+        contextSelectionPreview?.targetInference?.path ||
+          collectedContext?.activeFile?.path ||
+          collectedContext?.openFiles?.[0]?.path ||
+          ""
+      )
     );
     const selectedCodeHint = String(collectedContext?.activeFile?.selection || "").trim();
     const taskForAssist = wantsEdits
@@ -3214,6 +3570,11 @@ class Provider implements vscode.WebviewViewProvider {
             ...(historySessionId ? { historySessionId } : {}),
             workflowIntentId: `reasoning:${requestReasoning}`,
             contextBudget: { maxTokens: 65536, strategy: "hybrid" },
+            clientPreferences: {
+              reasoning: requestReasoning,
+              runProfile,
+            },
+            ...(retrievalHints ? { retrievalHints } : {}),
             clientTrace: {
               extensionVersion: String(this.ctx.extension.packageJSON?.version || "0.0.0"),
               workspaceHash,
@@ -3238,9 +3599,6 @@ class Provider implements vscode.WebviewViewProvider {
                   failsafe: autonomyProfile.failsafe,
                 },
             safetyProfile: this.safety,
-            agentConfig: parallel
-              ? { strategy: "parallel", roles: ["planner", "implementer", "reviewer"] }
-              : { strategy: "single" },
           },
           {
             onCancelReady: (cancel) => {
@@ -8700,6 +9058,89 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
         text-overflow: ellipsis;
         display: none;
       }
+      .context-selection-panel {
+        border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+        border-radius: 14px;
+        background: color-mix(in srgb, var(--bg-0) 82%, var(--surface) 18%);
+        padding: 10px 12px;
+        display: grid;
+        gap: 8px;
+      }
+      .context-selection-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .context-selection-title {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        color: var(--muted);
+      }
+      .context-selection-body {
+        display: grid;
+        gap: 8px;
+      }
+      .context-selection-meta,
+      .context-selection-list {
+        display: grid;
+        gap: 6px;
+      }
+      .context-selection-meta-row,
+      .context-selection-item {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .context-selection-label {
+        min-width: 70px;
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: .06em;
+      }
+      .context-selection-value,
+      .context-selection-reason {
+        color: color-mix(in srgb, var(--fg) 88%, var(--muted) 12%);
+        font-size: 12px;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+      }
+      .context-selection-main {
+        min-width: 0;
+        display: grid;
+        gap: 2px;
+      }
+      .context-selection-path {
+        font-family: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
+        font-size: 12px;
+        color: var(--fg);
+        overflow-wrap: anywhere;
+      }
+      .context-selection-score {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .context-selection-exclude,
+      .context-selection-reset {
+        border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+        background: transparent;
+        color: var(--fg);
+        border-radius: 999px;
+        padding: 4px 9px;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .context-selection-exclude[disabled] {
+        opacity: .55;
+        cursor: default;
+      }
+      .context-selection-empty {
+        color: var(--muted);
+        font-size: 12px;
+      }
       @media (max-width: 460px) {
         .context-telemetry-meta {
           flex-basis: 100%;
@@ -8905,9 +9346,9 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
       }
       /* Replica redesign overrides */
       :root {
-        --rep-bg: color-mix(in srgb, var(--vscode-sideBar-background, #000) 88%, #000 12%);
-        --rep-surface: color-mix(in srgb, var(--rep-bg) 88%, var(--vscode-editor-foreground, #fff) 12%);
-        --rep-surface-2: color-mix(in srgb, var(--rep-bg) 82%, var(--vscode-editor-foreground, #fff) 18%);
+        --rep-bg: var(--vscode-sideBar-background, var(--vscode-panel-background, var(--vscode-editor-background, #1e1e1e)));
+        --rep-surface: var(--vscode-editorWidget-background, var(--vscode-sideBar-background, var(--rep-bg)));
+        --rep-surface-2: color-mix(in srgb, var(--rep-surface) 92%, var(--vscode-editor-foreground, #fff) 8%);
         --rep-border: color-mix(in srgb, var(--vscode-editor-foreground, #fff) 17%, transparent);
         --rep-fg: var(--vscode-editor-foreground, #ededed);
         --rep-muted: color-mix(in srgb, var(--rep-fg) 62%, transparent);
@@ -10334,6 +10775,260 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
           max-width: 96% !important;
         }
       }
+
+      /* Minimal monochrome refinement */
+      #app.app {
+        background: var(--rep-bg) !important;
+      }
+      .global-top {
+        padding: 10px 14px 8px !important;
+        border-bottom: 1px solid color-mix(in srgb, var(--rep-fg) 10%, transparent) !important;
+        background: var(--rep-bg) !important;
+        box-shadow: none !important;
+      }
+      .brand-block {
+        gap: 1px !important;
+      }
+      .brand-kicker {
+        color: color-mix(in srgb, var(--rep-fg) 42%, transparent) !important;
+        letter-spacing: 0.18em !important;
+      }
+      .menu-icon,
+      .chat-empty-action,
+      .action-item,
+      .sheet-close,
+      .api-key-save,
+      .jump-btn,
+      .composer-inline-select,
+      .composer-select,
+      .api-key-input {
+        background: color-mix(in srgb, var(--rep-bg) 92%, var(--rep-fg) 8%) !important;
+        border: 1px solid color-mix(in srgb, var(--rep-fg) 12%, transparent) !important;
+        color: color-mix(in srgb, var(--rep-fg) 88%, transparent) !important;
+        box-shadow: none !important;
+      }
+      .menu-icon:hover,
+      .chat-empty-action:hover,
+      .action-item:hover,
+      .sheet-close:hover,
+      .api-key-save:hover,
+      .jump-btn:hover,
+      .composer-inline-select:hover,
+      .composer-inline-select:focus,
+      .composer-select:hover,
+      .composer-select:focus,
+      .api-key-input:focus {
+        background: color-mix(in srgb, var(--rep-bg) 88%, var(--rep-fg) 12%) !important;
+        border-color: color-mix(in srgb, var(--rep-fg) 18%, transparent) !important;
+        color: var(--rep-fg) !important;
+        transform: none !important;
+      }
+      .chat-empty-history-list,
+      .sheet-card,
+      .action-menu-sheet,
+      .stage-shell .panel.active {
+        border-color: color-mix(in srgb, var(--rep-fg) 10%, transparent) !important;
+        background: var(--rep-surface) !important;
+        box-shadow: none !important;
+      }
+      #modeBanner.mode-banner {
+        border-color: color-mix(in srgb, var(--rep-fg) 12%, transparent) !important;
+        background: var(--rep-surface) !important;
+        box-shadow: none !important;
+      }
+      #modeBanner .mode-banner-mark {
+        border-color: color-mix(in srgb, var(--rep-fg) 14%, transparent) !important;
+        background: var(--rep-surface-2) !important;
+        color: color-mix(in srgb, var(--rep-fg) 72%, transparent) !important;
+      }
+      #chatDock.dock-shell,
+      .chat-panel.active #chatDock.dock-shell {
+        padding: 0 12px 14px !important;
+      }
+      #chatDock .composer-shell,
+      .chat-panel.active #chatDock .composer-shell {
+        border: 1px solid color-mix(in srgb, var(--rep-fg) 12%, transparent) !important;
+        border-radius: 14px !important;
+        background: var(--rep-surface) !important;
+        box-shadow: 0 8px 18px rgba(0, 0, 0, 0.14) !important;
+      }
+      #chatDock .composer-shell:focus-within,
+      .chat-panel.active #chatDock .composer-shell:focus-within {
+        border-color: color-mix(in srgb, var(--rep-fg) 18%, transparent) !important;
+        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.16) !important;
+      }
+      #chatDock textarea#t,
+      .chat-panel.active #chatDock textarea#t {
+        min-height: 54px !important;
+        padding: 12px 14px 9px !important;
+        line-height: 1.5 !important;
+        color: color-mix(in srgb, var(--rep-fg) 94%, transparent) !important;
+      }
+      #chatDock .composer-shell textarea::placeholder,
+      .chat-panel.active #chatDock .composer-shell textarea::placeholder {
+        color: color-mix(in srgb, var(--rep-fg) 34%, transparent) !important;
+      }
+      #chatDock .input-actions.minimal,
+      .chat-panel.active #chatDock .input-actions.minimal {
+        padding: 8px 10px !important;
+        gap: 8px !important;
+        border-top: 1px solid color-mix(in srgb, var(--rep-fg) 8%, transparent) !important;
+        background: var(--rep-bg) !important;
+      }
+      #chatDock .composer-inline-select,
+      .chat-panel.active #chatDock .composer-inline-select {
+        height: 28px !important;
+        padding: 0 10px !important;
+        border-radius: 999px !important;
+        max-width: 132px !important;
+        font-size: 11px !important;
+      }
+      #chatDock .context-toggle-pill .context-pill,
+      .chat-panel.active #chatDock .context-toggle-pill .context-pill {
+        color: color-mix(in srgb, var(--rep-fg) 62%, transparent) !important;
+      }
+      #chatDock .mode-plan-chip,
+      .chat-panel.active #chatDock .mode-plan-chip {
+        color: color-mix(in srgb, var(--rep-fg) 58%, transparent) !important;
+      }
+      #chatDock .attach-btn,
+      #chatDock .send-round,
+      .chat-panel.active #chatDock .attach-btn,
+      .chat-panel.active #chatDock .send-round {
+        width: 30px !important;
+        height: 30px !important;
+        min-width: 30px !important;
+        padding: 0 !important;
+        border-radius: 999px !important;
+        background: color-mix(in srgb, var(--rep-bg) 90%, var(--rep-fg) 10%) !important;
+        border: 1px solid color-mix(in srgb, var(--rep-fg) 14%, transparent) !important;
+        color: color-mix(in srgb, var(--rep-fg) 92%, transparent) !important;
+        box-shadow: none !important;
+      }
+      #chatDock .send-round.is-streaming,
+      .chat-panel.active #chatDock .send-round.is-streaming {
+        background: color-mix(in srgb, var(--rep-bg) 84%, var(--rep-fg) 16%) !important;
+        border-color: color-mix(in srgb, var(--rep-fg) 22%, transparent) !important;
+        color: var(--rep-fg) !important;
+      }
+      #chatDock .footer-row,
+      .chat-panel.active #chatDock .footer-row {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        width: 100% !important;
+        padding: 7px 2px 0 !important;
+        margin-top: 2px !important;
+        color: color-mix(in srgb, var(--rep-fg) 44%, transparent) !important;
+        font-size: 10px !important;
+        letter-spacing: 0.08em !important;
+        text-transform: uppercase !important;
+      }
+      #chatDock .footer-row #runState,
+      #chatDock .footer-row #permState,
+      .chat-panel.active #chatDock .footer-row #runState,
+      .chat-panel.active #chatDock .footer-row #permState {
+        min-width: 0 !important;
+        max-width: 34% !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        color: inherit !important;
+      }
+      #chatDock .footer-row #usagePct,
+      .chat-panel.active #chatDock .footer-row #usagePct {
+        display: none !important;
+      }
+      #chatDock .footer-row #chatContextMeter,
+      .chat-panel.active #chatDock .footer-row #chatContextMeter {
+        --context-meter-accent: color-mix(in srgb, var(--rep-fg) 74%, transparent);
+        margin-left: auto !important;
+        width: 24px !important;
+        height: 24px !important;
+        min-width: 24px !important;
+        background: conic-gradient(
+          from -90deg,
+          var(--context-meter-accent) calc(var(--context-progress) * 1turn),
+          color-mix(in srgb, var(--rep-fg) 9%, transparent) 0
+        ) !important;
+        box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rep-fg) 10%, transparent) !important;
+      }
+      #chatDock .footer-row #chatContextMeter::before,
+      .chat-panel.active #chatDock .footer-row #chatContextMeter::before {
+        inset: 2px !important;
+        background: color-mix(in srgb, var(--rep-bg) 98%, var(--rep-fg) 2%) !important;
+        border: 1px solid color-mix(in srgb, var(--rep-fg) 10%, transparent) !important;
+      }
+      #chatDock .footer-row #chatContextMeterValue,
+      .chat-panel.active #chatDock .footer-row #chatContextMeterValue {
+        font-size: 7px !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.02em !important;
+        color: color-mix(in srgb, var(--rep-fg) 76%, transparent) !important;
+      }
+      #chatDock #mentionMenu.mention-menu,
+      .chat-panel.active #chatDock #mentionMenu.mention-menu {
+        border-color: color-mix(in srgb, var(--rep-fg) 12%, transparent) !important;
+        background: var(--rep-surface) !important;
+        box-shadow: 0 12px 26px rgba(0, 0, 0, 0.22) !important;
+      }
+      .mention-item.active {
+        background: color-mix(in srgb, var(--rep-bg) 84%, var(--rep-fg) 16%) !important;
+      }
+      .typing-dots i {
+        background: color-mix(in srgb, var(--rep-fg) 62%, transparent) !important;
+      }
+      .chat-panel.active #msgs.messages {
+        padding: 12px 12px 16px !important;
+        gap: 10px !important;
+      }
+      .chat-panel.active #msgs.messages .m .m-body {
+        border-radius: 14px !important;
+        border: 1px solid color-mix(in srgb, var(--rep-fg) 10%, transparent) !important;
+        background: var(--rep-surface) !important;
+        box-shadow: none !important;
+      }
+      .chat-panel.active #msgs.messages .m.a .m-body {
+        padding: 10px 12px !important;
+        border-radius: 14px !important;
+        border: 1px solid color-mix(in srgb, var(--rep-fg) 9%, transparent) !important;
+        background: var(--rep-surface) !important;
+      }
+      .chat-panel.active #msgs.messages .m.u .m-body {
+        background: var(--rep-surface-2) !important;
+        border-color: color-mix(in srgb, var(--rep-fg) 14%, transparent) !important;
+        border-radius: 14px 14px 5px 14px !important;
+      }
+      .chat-panel.active #msgs.messages .m.cmd .m-body,
+      .chat-panel.active #msgs.messages .m.change .m-body,
+      .chat-panel.active #msgs.messages .m.diagnostics .m-body {
+        background: var(--rep-surface) !important;
+        border-color: color-mix(in srgb, var(--rep-fg) 12%, transparent) !important;
+      }
+      .chat-panel.active #msgs.messages .m .m-time {
+        color: color-mix(in srgb, var(--rep-fg) 40%, transparent) !important;
+      }
+
+      @media (max-width: 430px) {
+        #chatDock .footer-row,
+        .chat-panel.active #chatDock .footer-row {
+          padding-top: 6px !important;
+          gap: 6px !important;
+          letter-spacing: 0.06em !important;
+        }
+        #chatDock .footer-row #runState,
+        #chatDock .footer-row #permState,
+        .chat-panel.active #chatDock .footer-row #runState,
+        .chat-panel.active #chatDock .footer-row #permState {
+          max-width: 38% !important;
+        }
+        #chatDock .footer-row #chatContextMeter,
+        .chat-panel.active #chatDock .footer-row #chatContextMeter {
+          width: 22px !important;
+          height: 22px !important;
+          min-width: 22px !important;
+        }
+      }
     </style>
   </head>
   <body>
@@ -10464,15 +11159,6 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
                   </div>
                   <div class="composer-right">
                     <span id="queuePill" class="queue-pill" title="Queued messages">Queued: 0</span>
-                    <div
-                      id="chatContextMeter"
-                      class="chat-context-meter"
-                      role="status"
-                      aria-label="Current chat context length"
-                      title="Approximate current chat context length"
-                    >
-                      <span id="chatContextMeterValue" class="chat-context-meter-value">0</span>
-                    </div>
                     <button id="s" type="button" class="primary send-round" aria-label="Send">&#8593;</button>
                   </div>
                 </div>
@@ -10480,6 +11166,14 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
                   <span id="contextAutoBadge" class="context-auto-badge idle">IDE Context</span>
                   <span id="contextTelemetryText" class="context-telemetry-text">Background sync standing by.</span>
                   <span id="contextTelemetryMeta" class="context-telemetry-meta">idle</span>
+                </div>
+                <div id="contextSelectionPanel" class="context-selection-panel hidden" aria-live="polite">
+                  <div class="context-selection-head">
+                    <span class="context-selection-title">Why This Context</span>
+                  </div>
+                  <div id="contextSelectionBody" class="context-selection-body">
+                    <div class="context-selection-empty">Context preview will appear here.</div>
+                  </div>
                 </div>
                 <div class="composer-meta">
                   <span id="composerState" class="composer-state">Mode: Auto - Reasoning: Medium</span>
@@ -10523,8 +11217,8 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
                         </div>
                         <div class="sheet-row sheet-toggle">
                           <label class="tool-toggle">
-                            <span>Parallel agents</span>
-                            <input id="parallelQuick" type="checkbox" />
+                            <span>Deep focus</span>
+                            <input id="deepFocusQuick" type="checkbox" />
                           </label>
                         </div>
                       </div>
@@ -10556,7 +11250,7 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
                         <div class="sheet-card-title">Attachments</div>
                         <div class="sheet-row">
                           <span id="uploadCount" class="tool-muted">No images selected.</span>
-                          <span class="tool-muted">PNG/JPEG/WEBP, up to 3 images, 4 MB each.</span>
+                          <span class="tool-muted">PNG/JPEG/WEBP, up to 3 images, 4 MB each when the selected model supports image input.</span>
                         </div>
                       </div>
                       <div class="sheet-card">
@@ -10581,6 +11275,15 @@ function html(webview: vscode.Webview, extensionUri: vscode.Uri) {
                 <span id="runState" class="footer-muted">Local</span>
                 <span id="permState" class="footer-accent">Workspace tools on</span>
                 <span id="usagePct" class="footer-muted">0%</span>
+                <div
+                  id="chatContextMeter"
+                  class="chat-context-meter"
+                  role="status"
+                  aria-label="Current chat context length"
+                  title="Approximate current chat context length"
+                >
+                  <span id="chatContextMeterValue" class="chat-context-meter-value">0</span>
+                </div>
               </div>
             </form>
           </div>

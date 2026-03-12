@@ -8,6 +8,18 @@ import {
   type PlaygroundModelProvider,
   resolvePlaygroundModelSelection,
 } from "@/lib/playground/model-registry";
+import {
+  buildAssistAgentArtifacts,
+  type AssistContextTrace,
+  type AssistDelegateRun,
+  type AssistExecutionLane,
+  type AssistExecutionReceipt,
+  type AssistMemoryWrite,
+  type AssistReviewState,
+  type AssistRunCheckpoint,
+  type AssistTaskGraphStage,
+  type WorkspaceMemoryState,
+} from "@/lib/playground/agent-os";
 import { looksLikeShellCommand } from "@/lib/playground/policy";
 
 export type AssistMode = "auto" | "plan" | "yolo" | "generate" | "debug";
@@ -20,7 +32,13 @@ export type AssistContext = {
   openFiles?: Array<{ path: string; language?: string; excerpt?: string }>;
   diagnostics?: Array<{ file?: string; severity?: string | number; message: string; line?: number }>;
   git?: { status?: string[]; diffSummary?: string };
-  indexedSnippets?: Array<{ path?: string; score?: number; content: string }>;
+  indexedSnippets?: Array<{
+    path?: string;
+    score?: number;
+    content: string;
+    source?: "cloud" | "local_fallback";
+    reason?: string;
+  }>;
 };
 
 export type AssistAttachment = {
@@ -44,6 +62,15 @@ export type AssistClientPreferences = {
   autonomy?: "full_auto" | "preview_first";
   responseStyle?: "concise" | "balanced" | "detailed";
   reasoning?: "low" | "medium" | "high" | "max";
+  runProfile?: "standard" | "deep_focus";
+};
+
+export type AssistRetrievalHints = {
+  mentionedPaths?: string[];
+  candidateSymbols?: string[];
+  candidateErrors?: string[];
+  preferredTargetPath?: string;
+  recentTouchedPaths?: string[];
 };
 
 export type AssistAutonomyConfig = {
@@ -76,6 +103,7 @@ export type AssistRequest = {
   historySessionId?: string;
   conversationHistory?: AssistConversationTurn[];
   clientPreferences?: AssistClientPreferences;
+  retrievalHints?: AssistRetrievalHints;
   autonomy?: AssistAutonomyConfig;
   executionPolicy?: "full_auto" | "yolo_only" | "preview_first";
   userProfile?: AssistUserProfile | null;
@@ -182,6 +210,16 @@ export type AssistResult = {
   confidence: number;
   risk: { blastRadius: "low" | "medium" | "high"; rollbackComplexity: number };
   influence: { files: string[]; snippets: number };
+  targetInference: {
+    path?: string;
+    confidence: number;
+    source: "mention" | "active_file" | "session_memory" | "diagnostic" | "retrieval";
+  };
+  contextSelection: {
+    files: Array<{ path: string; reason: string; score?: number }>;
+    snippets: number;
+    usedCloudIndex: boolean;
+  };
   toolState: AssistToolState;
   nextBestActions: string[];
   repromptStage: AssistRecoveryStage;
@@ -191,6 +229,14 @@ export type AssistResult = {
   };
   completionStatus: "complete" | "incomplete";
   missingRequirements: string[];
+  lane: AssistExecutionLane;
+  taskGraph: AssistTaskGraphStage[];
+  checkpoint: AssistRunCheckpoint;
+  receipt: AssistExecutionReceipt;
+  contextTrace: AssistContextTrace;
+  delegateRuns: AssistDelegateRun[];
+  memoryWrites: AssistMemoryWrite[];
+  reviewState: AssistReviewState;
 };
 
 type StructuredAssistOutput = {
@@ -923,7 +969,12 @@ export function contextToPrompt(context?: AssistContext, attachments?: AssistAtt
     parts.push(
       `Indexed snippets:\n${context.indexedSnippets
         .slice(0, 12)
-        .map((s) => `- ${s.path ?? "path"}: ${s.content.slice(0, 600)}`)
+        .map((s) => {
+          const prefix = [s.path ?? "path", s.reason ? `(${s.reason})` : "", s.source ? `[${s.source}]` : ""]
+            .filter(Boolean)
+            .join(" ");
+          return `- ${prefix}: ${s.content.slice(0, 600)}`;
+        })
         .join("\n")}`
     );
   }
@@ -964,8 +1015,16 @@ function profileToPrompt(
   const autonomy = clientPreferences?.autonomy || profile?.autonomyMode || "full_auto";
   const style = clientPreferences?.responseStyle || profile?.responseStyle || "balanced";
   const reasoning = clientPreferences?.reasoning || profile?.reasoningPreference || "medium";
+  const stablePreferences =
+    profile?.stablePreferences && typeof profile.stablePreferences === "object"
+      ? (profile.stablePreferences as Record<string, unknown>)
+      : {};
+  const runProfile =
+    clientPreferences?.runProfile ||
+    (typeof stablePreferences.runProfile === "string" ? stablePreferences.runProfile : "") ||
+    "standard";
 
-  parts.push(`User preference: tone=${tone}, autonomy=${autonomy}, style=${style}, reasoning=${reasoning}.`);
+  parts.push(`User preference: tone=${tone}, autonomy=${autonomy}, style=${style}, reasoning=${reasoning}, runProfile=${runProfile}.`);
   if (autonomyConfig) {
     parts.push(
       `Autonomy runtime: mode=${autonomyConfig.mode || "bounded"}, maxCycles=${autonomyConfig.maxCycles ?? "default"}, noClarify=${autonomyConfig.noClarifyToUser === true ? "true" : "false"}, commandPolicy=${autonomyConfig.commandPolicy || "safe_default"}, safetyFloor=${autonomyConfig.safetyFloor || "standard"}, failsafe=${autonomyConfig.failsafe || "enabled"}.`
@@ -974,20 +1033,111 @@ function profileToPrompt(
   return parts.join("\n");
 }
 
+function getStablePreferences(profile?: AssistUserProfile | null): Record<string, unknown> {
+  return profile?.stablePreferences && typeof profile.stablePreferences === "object"
+    ? (profile.stablePreferences as Record<string, unknown>)
+    : {};
+}
+
+function toCleanPathArray(value: unknown, limit = 12): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const normalized = normalizeRelativePath(String(item || ""));
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function toCleanStringArray(value: unknown, limit = 12, maxLen = 512): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const normalized = String(item || "").trim();
+    const key = normalized.toLowerCase();
+    if (!normalized || normalized.length > maxLen || seen.has(key)) continue;
+    seen.add(key);
+    out.push(normalized);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function resolveRunProfile(
+  clientPreferences?: AssistClientPreferences,
+  profile?: AssistUserProfile | null
+): "standard" | "deep_focus" {
+  if (clientPreferences?.runProfile === "deep_focus" || clientPreferences?.runProfile === "standard") {
+    return clientPreferences.runProfile;
+  }
+  const stablePreferences = getStablePreferences(profile);
+  return stablePreferences.runProfile === "deep_focus" ? "deep_focus" : "standard";
+}
+
+function readSessionMemory(profile?: AssistUserProfile | null): {
+  lastTargetPath?: string;
+  recentTouchedPaths: string[];
+  lastValidationCommands: string[];
+  latestCompletionBlockers: string[];
+} {
+  const stablePreferences = getStablePreferences(profile);
+  const rawMemory =
+    stablePreferences.sessionMemory && typeof stablePreferences.sessionMemory === "object"
+      ? (stablePreferences.sessionMemory as Record<string, unknown>)
+      : {};
+  const lastTargetPath = normalizeRelativePath(String(rawMemory.lastTargetPath || ""));
+  return {
+    ...(lastTargetPath ? { lastTargetPath } : {}),
+    recentTouchedPaths: toCleanPathArray(rawMemory.recentTouchedPaths, 12),
+    lastValidationCommands: toCleanStringArray(rawMemory.lastValidationCommands, 8, 2000),
+    latestCompletionBlockers: toCleanStringArray(rawMemory.latestCompletionBlockers, 8, 1000),
+  };
+}
+
+function readWorkspaceMemory(profile?: AssistUserProfile | null, workspaceFingerprint?: string): WorkspaceMemoryState | null {
+  const stablePreferences = getStablePreferences(profile);
+  const workspaceMemory =
+    stablePreferences.workspaceMemory && typeof stablePreferences.workspaceMemory === "object"
+      ? (stablePreferences.workspaceMemory as Record<string, unknown>)
+      : {};
+  const workspaceKey = String(workspaceFingerprint || "").trim();
+  const record =
+    workspaceKey && workspaceMemory[workspaceKey] && typeof workspaceMemory[workspaceKey] === "object"
+      ? (workspaceMemory[workspaceKey] as Record<string, unknown>)
+      : null;
+  if (!record) return null;
+  return {
+    workspaceFingerprint: workspaceKey,
+    ...(typeof record.summary === "string" && record.summary.trim()
+      ? { summary: String(record.summary).trim().slice(0, 4000) }
+      : {}),
+    promotedMemories: toCleanStringArray(record.promotedMemories, 12, 512),
+    touchedPaths: toCleanPathArray(record.touchedPaths, 16),
+    enabled: record.enabled !== false,
+    updatedAt: typeof record.updatedAt === "string" ? String(record.updatedAt) : undefined,
+  };
+}
+
 function shouldUseTwoPassCodeGeneration(
   task: string,
   codeEditIntent: boolean,
   context?: AssistContext,
-  reasoningPreference?: AssistClientPreferences["reasoning"] | string | null
+  reasoningPreference?: AssistClientPreferences["reasoning"] | string | null,
+  runProfile: "standard" | "deep_focus" = "standard"
 ): boolean {
   if (!PLAYGROUND_INTELLIGENCE_V2 || !codeEditIntent) return false;
-  if (reasoningPreference === "low" || reasoningPreference === "medium") return false;
+  if (runProfile !== "deep_focus" && (reasoningPreference === "low" || reasoningPreference === "medium")) return false;
   const complexitySignal =
     task.length > 220 ||
     /\b(robust|end-to-end|production|architecture|multi-file|refactor|migration|validate|guardrail|comprehensive|optimize|performance|latency|scaling)\b/i.test(task) ||
     (context?.openFiles?.length ?? 0) >= 6 ||
     (context?.diagnostics?.length ?? 0) >= 8;
-  return complexitySignal;
+  return runProfile === "deep_focus" || complexitySignal;
 }
 
 function sanitizeAttachmentsForModel(attachments?: AssistAttachment[]): AssistAttachment[] {
@@ -1699,6 +1849,154 @@ function inferPathFromTask(task: string): string | null {
     if (normalized) return normalized;
   }
   return null;
+}
+
+function inferDiagnosticTargetPath(context?: AssistContext): string | null {
+  const counts = new Map<string, number>();
+  for (const diagnostic of context?.diagnostics ?? []) {
+    const normalized = normalizeRelativePath(String(diagnostic.file || ""));
+    if (!normalized) continue;
+    counts.set(normalized, (counts.get(normalized) || 0) + 1);
+  }
+  const ranked = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  return ranked[0]?.[0] || null;
+}
+
+function buildTargetInference(input: {
+  task: string;
+  context?: AssistContext;
+  retrievalHints?: AssistRetrievalHints;
+  profile?: AssistUserProfile | null;
+  codeEditIntent: boolean;
+  debugIntent: boolean;
+}): {
+  path?: string;
+  confidence: number;
+  source: "mention" | "active_file" | "session_memory" | "diagnostic" | "retrieval";
+} {
+  const sessionMemory = readSessionMemory(input.profile);
+  const mentionedPaths = toCleanPathArray(input.retrievalHints?.mentionedPaths, 12);
+  if (mentionedPaths[0]) {
+    return { path: mentionedPaths[0], confidence: 0.98, source: "mention" };
+  }
+
+  const explicit = inferExplicitTargetPath(input.task) || inferPathFromTask(input.task);
+  if (explicit) {
+    return { path: explicit, confidence: 0.95, source: "mention" };
+  }
+
+  const preferredTarget = normalizeRelativePath(input.retrievalHints?.preferredTargetPath || "");
+  if (preferredTarget) {
+    return { path: preferredTarget, confidence: 0.9, source: "retrieval" };
+  }
+
+  const activePath = normalizeRelativePath(input.context?.activeFile?.path || "");
+  if (activePath && input.codeEditIntent) {
+    return { path: activePath, confidence: 0.83, source: "active_file" };
+  }
+
+  if (sessionMemory.lastTargetPath && input.codeEditIntent) {
+    return { path: sessionMemory.lastTargetPath, confidence: 0.74, source: "session_memory" };
+  }
+
+  const recentTouched = toCleanPathArray(input.retrievalHints?.recentTouchedPaths, 12);
+  if (recentTouched[0] && input.codeEditIntent) {
+    return { path: recentTouched[0], confidence: 0.72, source: "session_memory" };
+  }
+
+  const diagnosticPath = inferDiagnosticTargetPath(input.context);
+  if (diagnosticPath && input.debugIntent) {
+    return { path: diagnosticPath, confidence: 0.7, source: "diagnostic" };
+  }
+
+  const contextPath = inferContextTargetPath(input.context);
+  if (contextPath) {
+    return { path: contextPath, confidence: 0.66, source: "retrieval" };
+  }
+
+  return { confidence: 0.24, source: "retrieval" };
+}
+
+function targetReasonLabel(source: "mention" | "active_file" | "session_memory" | "diagnostic" | "retrieval"): string {
+  if (source === "mention") return "Explicitly mentioned in the request";
+  if (source === "active_file") return "Selected as the active editor target";
+  if (source === "session_memory") return "Selected from recent session memory";
+  if (source === "diagnostic") return "Selected from current diagnostics";
+  return "Selected from retrieval context";
+}
+
+function buildContextSelection(input: {
+  context?: AssistContext;
+  retrievalHints?: AssistRetrievalHints;
+  targetInference: {
+    path?: string;
+    confidence: number;
+    source: "mention" | "active_file" | "session_memory" | "diagnostic" | "retrieval";
+  };
+}): {
+  files: Array<{ path: string; reason: string; score?: number }>;
+  snippets: number;
+  usedCloudIndex: boolean;
+} {
+  const out: Array<{ path: string; reason: string; score?: number }> = [];
+  const seen = new Set<string>();
+  const mentionedPaths = toCleanPathArray(input.retrievalHints?.mentionedPaths, 12);
+  const recentTouchedPaths = toCleanPathArray(input.retrievalHints?.recentTouchedPaths, 12);
+  const activePath = normalizeRelativePath(input.context?.activeFile?.path || "");
+  const diagnosticCounts = new Map<string, number>();
+  for (const diagnostic of input.context?.diagnostics ?? []) {
+    const normalized = normalizeRelativePath(String(diagnostic.file || ""));
+    if (!normalized) continue;
+    diagnosticCounts.set(normalized, (diagnosticCounts.get(normalized) || 0) + 1);
+  }
+  const snippetByPath = new Map<string, { score?: number; reason: string; source: "cloud" | "local_fallback" }>();
+  for (const snippet of input.context?.indexedSnippets ?? []) {
+    const normalized = normalizeRelativePath(snippet.path || "");
+    if (!normalized) continue;
+    const source = snippet.source === "local_fallback" ? "local_fallback" : "cloud";
+    const existing = snippetByPath.get(normalized);
+    const score = typeof snippet.score === "number" ? Number(snippet.score.toFixed(4)) : undefined;
+    if (!existing || (score || 0) > (existing.score || 0)) {
+      snippetByPath.set(normalized, {
+        score,
+        source,
+        reason:
+          snippet.reason ||
+          (source === "cloud" ? "Cloud index hit" : "Local fallback hit"),
+      });
+    }
+  }
+  const push = (path: string | null | undefined, reason: string, score?: number) => {
+    const normalized = normalizeRelativePath(path || "");
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    out.push({ path: normalized, reason, ...(typeof score === "number" ? { score } : {}) });
+  };
+
+  for (const path of mentionedPaths) push(path, "Explicitly mentioned via @ or file reference");
+  if (input.targetInference.path) {
+    push(
+      input.targetInference.path,
+      `${targetReasonLabel(input.targetInference.source)} (confidence ${Math.round(input.targetInference.confidence * 100)}%)`
+    );
+  }
+  if (activePath) push(activePath, "Active editor context");
+  for (const path of recentTouchedPaths) push(path, "Recently changed in this session");
+  for (const [path, count] of Array.from(diagnosticCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 6)) {
+    push(path, `${count} active diagnostic${count === 1 ? "" : "s"}`);
+  }
+  for (const [path, info] of Array.from(snippetByPath.entries()).sort((a, b) => (b[1].score || 0) - (a[1].score || 0)).slice(0, 8)) {
+    push(path, info.reason, info.score);
+  }
+  for (const file of input.context?.openFiles ?? []) {
+    push(file.path, "Open editor context");
+  }
+
+  return {
+    files: out.slice(0, 16),
+    snippets: input.context?.indexedSnippets?.length ?? 0,
+    usedCloudIndex: (input.context?.indexedSnippets ?? []).some((snippet) => snippet.source !== "local_fallback"),
+  };
 }
 
 function inferPrimaryTargetPath(task: string, context?: AssistContext): string | null {
@@ -2533,6 +2831,17 @@ function summarizeExplicitToolActions(input: {
   };
 }
 
+function actionsTouchTargetPath(actions: ToolAction[], targetPath: string | null | undefined): boolean {
+  const normalizedTarget = normalizeRelativePath(targetPath || "");
+  if (!normalizedTarget) return true;
+  return actions.some((action) => {
+    if (action.type !== "edit" && action.type !== "write_file" && action.type !== "mkdir") return false;
+    const normalizedPath = normalizeRelativePath(action.path || "");
+    if (!normalizedPath) return false;
+    return normalizedPath === normalizedTarget || normalizedPath.endsWith(`/${normalizedTarget}`);
+  });
+}
+
 function classifyToolFailureCategory(input: {
   codeEditIntent: boolean;
   hasFileActions: boolean;
@@ -3022,11 +3331,49 @@ export async function runAssist(
     reasonCodes.push("identity_guardrail_qwen_nscale");
   }
 
+  const runProfile = resolveRunProfile(req.clientPreferences, req.userProfile);
+  const sessionMemory = readSessionMemory(req.userProfile);
+  const explicitCommandRunIntent = hasExplicitCommandRunIntent(req.task);
+  const pureConversationalTask = isPureConversationalTask(req.task);
+  const preflightCodeEditIntent =
+    !pureConversationalTask &&
+    (hasCodeEditIntent(req.task) || intentResolution.intent === "code_edit" || requested === "yolo");
+  const preflightDebugIntent = decision.mode === "debug" || intentResolution.intent === "debug";
   const budget = {
-    maxTokens: req.contextBudget?.maxTokens ?? 8_192,
+    maxTokens: Math.max(
+      req.contextBudget?.maxTokens ?? (runProfile === "deep_focus" ? 16_384 : 8_192),
+      runProfile === "deep_focus" && !pureConversationalTask ? 16_384 : 8_192
+    ),
     strategy: req.contextBudget?.strategy ?? ("hybrid" as const),
   };
   const budgetedContext = trimContextByBudget(req.context, budget.maxTokens, budget.strategy);
+  const targetInference = buildTargetInference({
+    task: req.task,
+    context: budgetedContext,
+    retrievalHints: req.retrievalHints,
+    profile: req.userProfile,
+    codeEditIntent: preflightCodeEditIntent,
+    debugIntent: preflightDebugIntent,
+  });
+  const contextSelection = buildContextSelection({
+    context: budgetedContext,
+    retrievalHints: req.retrievalHints,
+    targetInference,
+  });
+  const preflightTaskShape =
+    pureConversationalTask
+      ? "conversation"
+      : preflightDebugIntent
+        ? "debug"
+        : preflightCodeEditIntent && contextSelection.files.length > 4
+          ? "multi_file_edit"
+          : preflightCodeEditIntent
+            ? "single_file_edit"
+            : explicitCommandRunIntent
+              ? "execution"
+              : "general";
+  reasonCodes.push(`run_profile_${runProfile}`);
+  reasonCodes.push(`preflight_${preflightTaskShape}`);
   const plan = decision.mode === "plan" || decision.mode === "yolo" ? buildPlan(req.task, budgetedContext) : null;
 
   const longContextRequested = budget.maxTokens > STANDARD_CONTEXT_LIMIT;
@@ -3037,6 +3384,14 @@ export async function runAssist(
   logs.push(`intent=${intentResolution.intent} delta=${intentResolution.delta.toFixed(2)} clarified=${intentResolution.clarified ? 1 : 0}`);
   logs.push(`decision=${decision.mode} confidence=${decision.confidence.toFixed(2)}`);
   logs.push(`contextBudget=${budget.maxTokens}/${budget.strategy}`);
+  logs.push(`run_profile=${runProfile}`);
+  logs.push(`preflight_task_shape=${preflightTaskShape}`);
+  logs.push(
+    `target_inference=${targetInference.path || "none"}:${targetInference.source}:${targetInference.confidence.toFixed(2)}`
+  );
+  logs.push(
+    `context_selection=${contextSelection.files.map((file) => file.path).slice(0, 8).join(",") || "none"}`
+  );
   logs.push(`reasonCodes=${reasonCodes.join(",")}`);
 
   let final = "";
@@ -3065,8 +3420,6 @@ export async function runAssist(
         structuredActions: ToolAction[];
       }
     | null = null;
-  const explicitCommandRunIntent = hasExplicitCommandRunIntent(req.task);
-  const pureConversationalTask = isPureConversationalTask(req.task);
   const deterministicConversationReply =
     pureConversationalTask && !isCountryOriginProbeTask && !isIdentityProbe
       ? getDeterministicConversationalReply(req.task)
@@ -3081,11 +3434,20 @@ export async function runAssist(
     (req.executionPolicy === "full_auto" || req.mode === "yolo");
   const codeEditIntent =
     !pureConversationalTask &&
-    (hasCodeEditIntent(req.task) || intentResolution.intent === "code_edit" || autonomousNoActionRetryEligible);
+    (
+      hasCodeEditIntent(req.task) ||
+      intentResolution.intent === "code_edit" ||
+      autonomousNoActionRetryEligible ||
+      (runProfile === "deep_focus" && likelyImplementationAsk)
+    );
   if (autonomousNoActionRetryEligible && intentResolution.intent === "conversation") {
     reasonCodes.push("autonomy_forced_code_edit_from_task");
   }
-  const primaryTargetPath = codeEditIntent ? inferPrimaryTargetPath(req.task, budgetedContext) : null;
+  const primaryTargetPath =
+    targetInference.path ||
+    (codeEditIntent ? inferPrimaryTargetPath(req.task, budgetedContext) : null) ||
+    sessionMemory.lastTargetPath ||
+    null;
   const contextAnchorsAvailable =
     !!primaryTargetPath ||
     !!budgetedContext?.activeFile?.selection?.trim() ||
@@ -3093,14 +3455,15 @@ export async function runAssist(
     (budgetedContext?.openFiles?.length ?? 0) > 0;
   if (primaryTargetPath) {
     reasonCodes.push("context_target_path_inferred");
+    logs.push(`context_target_source=${targetInference.source}`);
   }
   const commandPolicyResolved = req.autonomy?.commandPolicy === "run_until_done" ? "run_until_done" : "safe_default";
   const maxAgenticTooling =
-    commandPolicyResolved === "run_until_done" &&
+    (commandPolicyResolved === "run_until_done" || runProfile === "deep_focus") &&
     (codeEditIntent || decision.mode === "debug" || decision.mode === "yolo");
   const reasoningPreference = extractReasoningPreference(req.workflowIntentId);
   const preferredReasoning = req.clientPreferences?.reasoning || req.userProfile?.reasoningPreference || null;
-  const effectiveReasoning = reasoningPreference || preferredReasoning;
+  const effectiveReasoning = reasoningPreference || preferredReasoning || (runProfile === "deep_focus" ? "high" : null);
   const reasoningInstruction =
     effectiveReasoning === "low"
       ? "Reasoning preference: low. Optimize for speed and concise output."
@@ -3360,7 +3723,7 @@ export async function runAssist(
     const useTwoPass =
       !routeUsesNativeTools(activeToolRoute) &&
       useStructuredOutput &&
-      shouldUseTwoPassCodeGeneration(req.task, codeEditIntent, budgetedContext, effectiveReasoning);
+      shouldUseTwoPassCodeGeneration(req.task, codeEditIntent, budgetedContext, effectiveReasoning, runProfile);
     const allowRawTokenStream =
       !useTwoPass && !hasExecutionIntent(req.task) && (STREAM_RAW_MODEL_TOKENS || !useStructuredOutput);
     const allowReasoningTokenStream = !useTwoPass;
@@ -3795,7 +4158,7 @@ export async function runAssist(
 
     // Quality reprompt loop: ensure actionable tool output for code-edit requests.
     if (codeEditIntent) {
-      const hasUsableActions = (candidateEdits: typeof edits, candidateCommands: string[], candidateStructured: ToolAction[]) => {
+      const evaluateCandidateActions = (candidateEdits: typeof edits, candidateCommands: string[], candidateStructured: ToolAction[]) => {
         const candidateActions = synthesizeDeterministicActions({
           task: req.task,
           edits: candidateEdits,
@@ -3805,10 +4168,19 @@ export async function runAssist(
         const hasCandidateFileActions = candidateActions.some(
           (action) => action.type === "edit" || action.type === "mkdir" || action.type === "write_file"
         );
-        return hasCandidateFileActions;
+        const targetMismatch =
+          hasCandidateFileActions &&
+          !!primaryTargetPath &&
+          !actionsTouchTargetPath(candidateActions, primaryTargetPath);
+        return {
+          usable: hasCandidateFileActions && !targetMismatch,
+          targetMismatch,
+        };
       };
 
-      let usable = hasUsableActions(edits, modelCommands, structuredActions);
+      let evaluatedActions = evaluateCandidateActions(edits, modelCommands, structuredActions);
+      let usable = evaluatedActions.usable;
+      let targetMismatch = evaluatedActions.targetMismatch;
       let clarification = isClarificationResponseText(final);
       let clarificationOverridden = false;
       const applyClarificationOverride = () => {
@@ -3827,8 +4199,16 @@ export async function runAssist(
         }
         logs.push("narrative_edit_claim_without_actions");
       };
+      const recordTargetMismatchIfNeeded = () => {
+        if (!targetMismatch || !primaryTargetPath) return;
+        if (!reasonCodes.includes("target_path_mismatch_repair")) {
+          reasonCodes.push("target_path_mismatch_repair");
+        }
+        logs.push(`target_path_mismatch_repair expected=${primaryTargetPath}`);
+      };
       recordNarrativeClaimIfNeeded(raw || final);
       applyClarificationOverride();
+      recordTargetMismatchIfNeeded();
 
       if (!usable && !clarification) {
         repromptStage = "repair";
@@ -3841,6 +4221,9 @@ export async function runAssist(
           "Repair pass: the prior output was not actionable.",
           "Return STRICT JSON only and ensure at least one concrete file edit action when code changes are requested.",
           "Command-only output is invalid for this task.",
+          targetMismatch && primaryTargetPath
+            ? `The next file action must target ${primaryTargetPath}.`
+            : "",
           `Valid example: ${validWriteFileActionExample}`,
           `Invalid example: ${invalidCommandOnlyActionExample}`,
           "",
@@ -3862,10 +4245,13 @@ export async function runAssist(
         } else {
           final = repairCandidate.finalText;
         }
-        usable = hasUsableActions(edits, modelCommands, structuredActions);
+        evaluatedActions = evaluateCandidateActions(edits, modelCommands, structuredActions);
+        usable = evaluatedActions.usable;
+        targetMismatch = evaluatedActions.targetMismatch;
         clarification = isClarificationResponseText(final);
         recordNarrativeClaimIfNeeded(repairRaw || final);
         applyClarificationOverride();
+        recordTargetMismatchIfNeeded();
       }
 
       if (!usable && !clarification) {
@@ -3882,6 +4268,9 @@ export async function runAssist(
             : "You MUST return at least one actionable file edit OR an explicit clarification question if required context is missing.",
           "Command-only output cannot satisfy this edit request.",
           "Do not return non-actionable summaries.",
+          targetMismatch && primaryTargetPath
+            ? `The file action must target ${primaryTargetPath}; do not edit a different file.`
+            : "",
           `Valid example: ${validWriteFileActionExample}`,
           `Invalid example: ${invalidCommandOnlyActionExample}`,
           "",
@@ -3903,10 +4292,13 @@ export async function runAssist(
         } else {
           final = enforceCandidate.finalText;
         }
-        usable = hasUsableActions(edits, modelCommands, structuredActions);
+        evaluatedActions = evaluateCandidateActions(edits, modelCommands, structuredActions);
+        usable = evaluatedActions.usable;
+        targetMismatch = evaluatedActions.targetMismatch;
         clarification = isClarificationResponseText(final);
         recordNarrativeClaimIfNeeded(enforceRaw || final);
         applyClarificationOverride();
+        recordTargetMismatchIfNeeded();
       }
 
       if (!usable && contextAnchorsAvailable) {
@@ -3941,10 +4333,13 @@ export async function runAssist(
         } else {
           final = assumptionCandidate.finalText;
         }
-        usable = hasUsableActions(edits, modelCommands, structuredActions);
+        evaluatedActions = evaluateCandidateActions(edits, modelCommands, structuredActions);
+        usable = evaluatedActions.usable;
+        targetMismatch = evaluatedActions.targetMismatch;
         clarification = isClarificationResponseText(final);
         recordNarrativeClaimIfNeeded(assumptionRaw || final);
         applyClarificationOverride();
+        recordTargetMismatchIfNeeded();
       }
 
       if (
@@ -3989,10 +4384,13 @@ export async function runAssist(
         } else {
           final = rewriteCandidate.finalText;
         }
-        usable = hasUsableActions(edits, modelCommands, structuredActions);
+        evaluatedActions = evaluateCandidateActions(edits, modelCommands, structuredActions);
+        usable = evaluatedActions.usable;
+        targetMismatch = evaluatedActions.targetMismatch;
         clarification = isClarificationResponseText(final);
         recordNarrativeClaimIfNeeded(rewriteRaw || final);
         applyClarificationOverride();
+        recordTargetMismatchIfNeeded();
       }
 
       if (!usable && !clarification) {
@@ -4033,10 +4431,13 @@ export async function runAssist(
           applyDetectedCandidate(trailingCandidate);
           reasonCodes.push("fallback_trailing_stop_patch");
           logs.push("fallback_trailing_stop_patch");
-          usable = hasUsableActions(edits, modelCommands, structuredActions);
+          evaluatedActions = evaluateCandidateActions(edits, modelCommands, structuredActions);
+          usable = evaluatedActions.usable;
+          targetMismatch = evaluatedActions.targetMismatch;
           clarification = isClarificationResponseText(final);
           recordNarrativeClaimIfNeeded(raw || final);
           applyClarificationOverride();
+          recordTargetMismatchIfNeeded();
         }
       }
 
@@ -4081,8 +4482,11 @@ export async function runAssist(
         toolRouteUsed = bestAttempt.route;
         toolActionSource = bestAttempt.actionSource;
         repromptStage = bestAttempt.recoveryStage;
-        usable = hasUsableActions(edits, modelCommands, structuredActions);
+        evaluatedActions = evaluateCandidateActions(edits, modelCommands, structuredActions);
+        usable = evaluatedActions.usable;
+        targetMismatch = evaluatedActions.targetMismatch;
         clarification = isClarificationResponseText(final);
+        recordTargetMismatchIfNeeded();
         logs.push("restored_best_scored_tool_attempt");
       }
 
@@ -4509,6 +4913,33 @@ function structuredFromNativeToolCalls(result: ProviderChatResult): StructuredAs
     attempts: toolAttempts.slice(-16),
     lastFailureCategory: lastToolFailureCategory,
   };
+  const agentArtifacts = buildAssistAgentArtifacts({
+    mode: req.mode,
+    task: req.task,
+    runProfile,
+    context: req.context,
+    intent: {
+      type: intentResolution.intent,
+      confidence: intentResolution.confidence,
+    },
+    decision,
+    autonomyDecision,
+    validationPlan,
+    actions,
+    commands,
+    risk,
+    targetInference,
+    contextSelection,
+    toolState,
+    modelMetadata: {
+      modelResolvedAlias: modelMetadata.modelResolvedAlias,
+      providerResolved: modelMetadata.providerResolved,
+    },
+    completionStatus,
+    missingRequirements,
+    nextBestActions,
+    workspaceMemory: readWorkspaceMemory(req.userProfile, req.clientTrace?.workspaceHash),
+  });
 
   return {
     decision,
@@ -4532,11 +4963,21 @@ function structuredFromNativeToolCalls(result: ProviderChatResult): StructuredAs
     confidence,
     risk,
     influence,
+    targetInference,
+    contextSelection,
     toolState,
     nextBestActions,
     repromptStage,
     actionability,
     completionStatus,
     missingRequirements,
+    lane: agentArtifacts.lane,
+    taskGraph: agentArtifacts.taskGraph,
+    checkpoint: agentArtifacts.checkpoint,
+    receipt: agentArtifacts.receipt,
+    contextTrace: agentArtifacts.contextTrace,
+    delegateRuns: agentArtifacts.delegateRuns,
+    memoryWrites: agentArtifacts.memoryWrites,
+    reviewState: agentArtifacts.reviewState,
   };
 }

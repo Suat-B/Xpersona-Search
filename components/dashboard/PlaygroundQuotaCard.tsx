@@ -23,7 +23,6 @@ interface UsageData {
     tokensOutput: number;
     tokensRemaining: number;
     tokensLimit: number;
-    estimatedCostUsd: number;
   };
   nextResetAt: string;
 }
@@ -283,13 +282,8 @@ export function PlaygroundQuotaCard() {
               color={tokenColor}
             />
 
-            <div className="flex items-center justify-between text-xs">
+            <div className="text-xs">
               <CountdownTimer targetDate={usage.nextResetAt} />
-              {usage.thisMonth.estimatedCostUsd > 0 && (
-                <span className="text-[var(--text-quaternary)]">
-                  Est. cost: <span className="font-medium text-emerald-400">${usage.thisMonth.estimatedCostUsd.toFixed(4)}</span>
-                </span>
-              )}
             </div>
           </>
         ) : (

@@ -9,7 +9,8 @@ import {
   playgroundSessions,
   playgroundUserProfiles,
 } from "@/lib/db/playground-schema";
-import { and, desc, eq, gte, ilike, lte, sql } from "drizzle-orm";
+import { rankPlaygroundIndexRows, type PlaygroundIndexRetrievalHints } from "@/lib/playground/index-ranking";
+import { and, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
 
 type SessionRecord = {
   id: string;
@@ -50,10 +51,26 @@ export type PlaygroundUserProfileRecord = {
   updatedAt: Date | null;
 };
 
+export type AgentRunRecord = {
+  id: string;
+  sessionId: string;
+  userId: string;
+  role: "planner" | "implementer" | "reviewer" | "single";
+  status: "queued" | "running" | "completed" | "failed";
+  confidence: number | null;
+  riskLevel: string | null;
+  input: unknown;
+  output: unknown;
+  errorMessage: string | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
 const memory = {
   sessions: new Map<string, SessionRecord[]>(),
   messages: new Map<string, MessageRecord[]>(),
   userProfiles: new Map<string, PlaygroundUserProfileRecord>(),
+  runs: new Map<string, AgentRunRecord[]>(),
 };
 
 export async function listSessions(input: {
@@ -469,15 +486,34 @@ export async function queryIndex(input: {
   projectKey: string;
   query: string;
   limit: number;
+  retrievalHints?: PlaygroundIndexRetrievalHints;
 }) {
-  const terms = input.query
-    .toLowerCase()
-    .split(/\s+/)
-    .map((term) => term.trim())
-    .filter((term) => term.length >= 2)
-    .slice(0, 12);
+  const terms = Array.from(
+    new Set(
+      [
+        ...String(input.query || "")
+          .toLowerCase()
+          .split(/\s+/)
+          .map((term) => term.trim())
+          .filter((term) => term.length >= 2),
+        ...((input.retrievalHints?.candidateSymbols || []).map((term) => String(term || "").trim().toLowerCase())),
+        ...((input.retrievalHints?.candidateErrors || []).map((term) => String(term || "").trim().toLowerCase())),
+      ].filter((term) => term.length >= 2)
+    )
+  ).slice(0, 12);
 
   try {
+    const lexicalWhere = terms
+      .slice(0, 8)
+      .flatMap((term) => [
+        ilike(playgroundIndexChunks.content, `%${term}%`),
+        ilike(playgroundIndexChunks.pathDisplay, `%${term}%`),
+      ]);
+    const where = [
+      eq(playgroundIndexChunks.userId, input.userId),
+      eq(playgroundIndexChunks.projectKey, input.projectKey),
+      lexicalWhere.length > 0 ? or(...lexicalWhere) : undefined,
+    ].filter(Boolean) as any[];
     const rows = await db
       .select({
         id: playgroundIndexChunks.id,
@@ -486,33 +522,20 @@ export async function queryIndex(input: {
         chunkHash: playgroundIndexChunks.chunkHash,
         content: playgroundIndexChunks.content,
         metadata: playgroundIndexChunks.metadata,
+        embedding: playgroundIndexChunks.embedding,
         updatedAt: playgroundIndexChunks.updatedAt,
       })
       .from(playgroundIndexChunks)
-      .where(
-        and(
-          eq(playgroundIndexChunks.userId, input.userId),
-          eq(playgroundIndexChunks.projectKey, input.projectKey),
-          ilike(playgroundIndexChunks.content, `%${terms[0] ?? input.query}%`)
-        )
-      )
+      .where(where.length > 1 ? and(...where) : where[0])
       .orderBy(desc(playgroundIndexChunks.updatedAt))
-      .limit(Math.max(1, Math.min(input.limit * 4, 120)));
+      .limit(Math.max(80, Math.min(input.limit * 20, 240)));
 
-    return rows
-      .map((row) => {
-        const content = row.content.toLowerCase();
-        const matchedTerms = terms.filter((term) => content.includes(term));
-        const score = matchedTerms.length / Math.max(1, terms.length);
-        return {
-          ...row,
-          score,
-          source: "cloud" as const,
-          matchedTerms,
-        };
-      })
-      .sort((a, b) => b.score - a.score)
-      .slice(0, Math.max(1, Math.min(input.limit, 50)));
+    return rankPlaygroundIndexRows({
+      rows,
+      query: input.query,
+      limit: Math.max(1, Math.min(input.limit, 50)),
+      hints: input.retrievalHints,
+    });
   } catch {
     return [];
   }
@@ -527,6 +550,27 @@ export async function logAgentRun(input: {
   confidence?: number;
   riskLevel?: "low" | "medium" | "high";
 }) {
+  const row = await createAgentRun({
+    userId: input.userId,
+    sessionId: input.sessionId,
+    role: input.role,
+    status: input.status,
+    input: input.payload,
+    confidence: input.confidence,
+    riskLevel: input.riskLevel,
+  });
+  return row.id;
+}
+
+export async function createAgentRun(input: {
+  userId: string;
+  sessionId: string;
+  role: "planner" | "implementer" | "reviewer" | "single";
+  status: "queued" | "running" | "completed" | "failed";
+  input: Record<string, unknown>;
+  confidence?: number;
+  riskLevel?: "low" | "medium" | "high";
+}): Promise<AgentRunRecord> {
   try {
     const [row] = await db
       .insert(playgroundAgentRuns)
@@ -537,13 +581,124 @@ export async function logAgentRun(input: {
         status: input.status,
         confidence: input.confidence ?? null,
         riskLevel: input.riskLevel ?? null,
-        input: input.payload as any,
+        input: input.input as any,
         output: null,
       })
-      .returning({ id: playgroundAgentRuns.id });
-    return row.id;
+      .returning({
+        id: playgroundAgentRuns.id,
+        sessionId: playgroundAgentRuns.sessionId,
+        userId: playgroundAgentRuns.userId,
+        role: playgroundAgentRuns.role,
+        status: playgroundAgentRuns.status,
+        confidence: playgroundAgentRuns.confidence,
+        riskLevel: playgroundAgentRuns.riskLevel,
+        input: playgroundAgentRuns.input,
+        output: playgroundAgentRuns.output,
+        errorMessage: playgroundAgentRuns.errorMessage,
+        createdAt: playgroundAgentRuns.createdAt,
+        updatedAt: playgroundAgentRuns.updatedAt,
+      });
+    return row;
   } catch {
-    return crypto.randomUUID();
+    const row: AgentRunRecord = {
+      id: crypto.randomUUID(),
+      sessionId: input.sessionId,
+      userId: input.userId,
+      role: input.role,
+      status: input.status,
+      confidence: input.confidence ?? null,
+      riskLevel: input.riskLevel ?? null,
+      input: input.input,
+      output: null,
+      errorMessage: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const existing = memory.runs.get(input.userId) ?? [];
+    memory.runs.set(input.userId, [row, ...existing]);
+    return row;
+  }
+}
+
+export async function updateAgentRun(input: {
+  userId: string;
+  runId: string;
+  status?: "queued" | "running" | "completed" | "failed";
+  output?: Record<string, unknown> | null;
+  errorMessage?: string | null;
+  confidence?: number | null;
+  riskLevel?: "low" | "medium" | "high" | null;
+}): Promise<AgentRunRecord | null> {
+  try {
+    const [row] = await db
+      .update(playgroundAgentRuns)
+      .set({
+        ...(input.status ? { status: input.status } : {}),
+        ...(input.output !== undefined ? { output: input.output as any } : {}),
+        ...(input.errorMessage !== undefined ? { errorMessage: input.errorMessage ?? null } : {}),
+        ...(input.confidence !== undefined ? { confidence: input.confidence } : {}),
+        ...(input.riskLevel !== undefined ? { riskLevel: input.riskLevel } : {}),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(playgroundAgentRuns.userId, input.userId), eq(playgroundAgentRuns.id, input.runId)))
+      .returning({
+        id: playgroundAgentRuns.id,
+        sessionId: playgroundAgentRuns.sessionId,
+        userId: playgroundAgentRuns.userId,
+        role: playgroundAgentRuns.role,
+        status: playgroundAgentRuns.status,
+        confidence: playgroundAgentRuns.confidence,
+        riskLevel: playgroundAgentRuns.riskLevel,
+        input: playgroundAgentRuns.input,
+        output: playgroundAgentRuns.output,
+        errorMessage: playgroundAgentRuns.errorMessage,
+        createdAt: playgroundAgentRuns.createdAt,
+        updatedAt: playgroundAgentRuns.updatedAt,
+      });
+    return row ?? null;
+  } catch {
+    const existing = memory.runs.get(input.userId) ?? [];
+    const index = existing.findIndex((row) => row.id === input.runId);
+    if (index < 0) return null;
+    const row: AgentRunRecord = {
+      ...existing[index],
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.output !== undefined ? { output: input.output } : {}),
+      ...(input.errorMessage !== undefined ? { errorMessage: input.errorMessage ?? null } : {}),
+      ...(input.confidence !== undefined ? { confidence: input.confidence } : {}),
+      ...(input.riskLevel !== undefined ? { riskLevel: input.riskLevel } : {}),
+      updatedAt: new Date(),
+    };
+    existing[index] = row;
+    memory.runs.set(input.userId, existing);
+    return row;
+  }
+}
+
+export async function getAgentRunById(input: { userId: string; runId: string }): Promise<AgentRunRecord | null> {
+  try {
+    const rows = await db
+      .select({
+        id: playgroundAgentRuns.id,
+        sessionId: playgroundAgentRuns.sessionId,
+        userId: playgroundAgentRuns.userId,
+        role: playgroundAgentRuns.role,
+        status: playgroundAgentRuns.status,
+        confidence: playgroundAgentRuns.confidence,
+        riskLevel: playgroundAgentRuns.riskLevel,
+        input: playgroundAgentRuns.input,
+        output: playgroundAgentRuns.output,
+        errorMessage: playgroundAgentRuns.errorMessage,
+        createdAt: playgroundAgentRuns.createdAt,
+        updatedAt: playgroundAgentRuns.updatedAt,
+      })
+      .from(playgroundAgentRuns)
+      .where(and(eq(playgroundAgentRuns.userId, input.userId), eq(playgroundAgentRuns.id, input.runId)))
+      .limit(1);
+    return rows[0] ?? null;
+  } catch {
+    const existing = memory.runs.get(input.userId) ?? [];
+    return existing.find((row) => row.id === input.runId) ?? null;
   }
 }
 

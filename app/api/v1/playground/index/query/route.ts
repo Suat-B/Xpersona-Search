@@ -17,6 +17,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     projectKey: body.projectKey,
     query: body.query,
     limit: Math.max(1, Math.min(body.limit ?? 8, 50)),
+    retrievalHints: body.retrievalHints,
   });
   return ok(request, chunks);
 }

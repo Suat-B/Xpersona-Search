@@ -46,6 +46,7 @@ describe("assist route helpers", () => {
     const payload = buildAssistResponsePayload({
       sessionId: "sess-1",
       traceId: "trace-1",
+      runId: "run-1",
       result: {
         decision: { mode: "generate", reason: "x", confidence: 0.8 },
         intent: { type: "code_edit", confidence: 0.8, delta: 0.2, clarified: false },
@@ -96,6 +97,16 @@ describe("assist route helpers", () => {
         confidence: 0.8,
         risk: { blastRadius: "low", rollbackComplexity: 1 },
         influence: { files: ["hello.py"], snippets: 1 },
+        targetInference: {
+          path: "hello.py",
+          confidence: 0.96,
+          source: "mention",
+        },
+        contextSelection: {
+          files: [{ path: "hello.py", reason: "Explicit mention", score: 4.2 }],
+          snippets: 1,
+          usedCloudIndex: true,
+        },
         toolState: {
           strategy: "standard",
           route: "text_actions",
@@ -114,8 +125,63 @@ describe("assist route helpers", () => {
         },
         completionStatus: "complete",
         missingRequirements: [],
-      },
+        lane: "interactive-fast",
+        taskGraph: [
+          { id: "scout", title: "Scout", status: "completed", summary: "Resolved likely target hello.py.", evidence: ["Target hello.py"] },
+        ],
+        checkpoint: {
+          id: "run-1:checkpoint",
+          status: "planned",
+          summary: "Create a local checkpoint immediately before applying the prepared workspace changes.",
+          touchedFiles: ["hello.py"],
+          undoHint: "Use the latest Playground undo batch to revert the checkpoint.",
+          createdAt: "2026-03-12T00:00:00.000Z",
+        },
+        receipt: {
+          id: "run-1:receipt",
+          title: "GENERATE run for code edit",
+          status: "ready",
+          intent: "code_edit",
+          lane: "interactive-fast",
+          route: "text_actions",
+          model: "playground-default",
+          provider: "hf",
+          touchedFiles: ["hello.py"],
+          commands: [],
+          validationEvidence: ["npm run lint -- hello.py", "targeted"],
+          unresolvedRisk: [],
+          checkpointId: "run-1:checkpoint",
+          reviewState: "ready",
+          delegateRunIds: ["run-1:scout"],
+          memoryWriteIds: ["run-1:memory:1"],
+          generatedAt: "2026-03-12T00:00:00.000Z",
+        },
+        contextTrace: {
+          sources: [{ kind: "retrieval", label: "hello.py", detail: "Explicit mention", confidence: 4.2 }],
+          target: { path: "hello.py", source: "mention", confidence: 0.96 },
+          budget: { files: 1, snippets: 1, usedCloudIndex: true },
+        },
+        delegateRuns: [{ id: "run-1:scout", role: "scout", status: "completed", summary: "Resolved likely target hello.py." }],
+        memoryWrites: [
+          {
+            id: "run-1:memory:1",
+            scope: "session",
+            key: "sessionMemory",
+            summary: "Remember hello.py as the most recent working target. (2026-03-12)",
+            reason: "Successful edit-oriented runs should preserve recent target continuity.",
+            status: "planned",
+          },
+        ],
+        reviewState: {
+          status: "ready",
+          reason: "The run is compact enough to continue from native chat or the Playground panel.",
+          recommendedAction: "Continue with the current flow or open Playground for richer execution details.",
+          surface: "native_chat",
+          controlActions: ["pause", "cancel", "repair"],
+        },
+      } as any,
     });
+    expect(payload.runId).toBe("run-1");
     expect(payload.reasonCodes).toEqual(["intent_code_edit"]);
     expect(payload.autonomyDecision.mode).toBe("auto_apply_only");
     expect(payload.validationPlan.scope).toBe("targeted");
@@ -125,5 +191,19 @@ describe("assist route helpers", () => {
     expect(payload.missingRequirements).toEqual([]);
     expect(payload.model).toBe("playground-default");
     expect(payload.providerResolved).toBe("hf");
+    expect(payload.targetInference).toEqual({
+      path: "hello.py",
+      confidence: 0.96,
+      source: "mention",
+    });
+    expect(payload.contextSelection).toEqual({
+      files: [{ path: "hello.py", reason: "Explicit mention", score: 4.2 }],
+      snippets: 1,
+      usedCloudIndex: true,
+    });
+    expect(payload.lane).toBe("interactive-fast");
+    expect(payload.checkpoint.id).toBe("run-1:checkpoint");
+    expect(payload.receipt.id).toBe("run-1:receipt");
+    expect(payload.reviewState.status).toBe("ready");
   });
 });

@@ -26,12 +26,6 @@ type ChatViewer = {
   source: string;
 };
 
-const CODING_PLAN_PROMO_PLANS = [
-  { name: "Starter", price: "$2.00" },
-  { name: "Builder", price: "$5.00" },
-  { name: "Studio", price: "$10.00" },
-] as const;
-
 function makeId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -196,7 +190,6 @@ export function ChatApp() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showCodingPlansBanner, setShowCodingPlansBanner] = useState(false);
 
   const messageViewportRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -403,7 +396,6 @@ export function ChatApp() {
       const task = input.trim();
       if (!task) return;
 
-      setShowCodingPlansBanner(true);
       setInput("");
       try {
         window.localStorage.removeItem(draftStorageKey);
@@ -541,26 +533,48 @@ export function ChatApp() {
     [activeSessionId, draftStorageKey, input, refreshSessions, sending]
   );
 
+  const shellTitle = activeSession?.title || "New chat";
+  const viewerLabel = viewer && !viewer.isAnonymous ? viewer.email : "Personal workspace";
+  const sidebarAccountLabel = viewer?.isAnonymous ? "Guest access" : "Signed in";
+  const sessionTimestamp = prettyTime(activeSession?.updatedAt ?? null);
+
   const composer = (
-    <form onSubmit={onSend} className="mx-auto w-full max-w-[720px]">
-      <div className="chat-editorial-composer rounded-full px-4 py-2.5">
-        <div className="chat-editorial-input-row">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                if (sending || !input.trim()) return;
-                event.currentTarget.form?.requestSubmit();
-              }
-            }}
-            rows={1}
-            placeholder="Ask anything"
-            className="chat-editorial-textarea chat-editorial-textarea-inline"
-            aria-label="Message input"
-          />
+    <form onSubmit={onSend} className="chat-editorial-composer-form mx-auto w-full max-w-[920px]">
+      <div className="chat-editorial-composer rounded-[2rem] px-5 py-4 sm:px-6 sm:py-5">
+        <div className="chat-editorial-composer-head">
+          <div>
+            <p className="chat-editorial-composer-kicker">Playground 1</p>
+            <p className="chat-editorial-composer-subtitle">
+              {activeSessionId ? "Continue the current thread" : "Start a fresh conversation"}
+            </p>
+          </div>
+          <span className="chat-editorial-model-pill">{sending ? "Thinking" : "Text chat"}</span>
+        </div>
+
+        <textarea
+          ref={inputRef}
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              if (sending || !input.trim()) return;
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
+          rows={1}
+          placeholder="Message Playground 1 about your code, workflow, or next step"
+          className="chat-editorial-textarea chat-editorial-textarea-inline"
+          aria-label="Message input"
+        />
+
+        <div className="chat-editorial-composer-footer">
+          <div className="chat-editorial-composer-meta">
+            <Link href="/playground" className="chat-editorial-composer-link">
+              Explore Playground plans
+            </Link>
+            <span className="chat-editorial-composer-helper">Shift+Enter for a new line</span>
+          </div>
           <div className="chat-editorial-input-actions">
             <button
               type="submit"
@@ -568,45 +582,27 @@ export function ChatApp() {
               className="chat-editorial-send chat-editorial-send-icon"
               aria-label="Send"
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M5.5 12h12m0 0-4-4m4 4-4 4"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              {sending ? (
+                <span className="chat-editorial-spinner chat-editorial-spinner-sm" aria-hidden="true" />
+              ) : (
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M5.5 12h12m0 0-4-4m4 4-4 4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
             </button>
           </div>
         </div>
       </div>
       <div className="chat-editorial-hint" role="status" aria-live="polite">
-        {statusText || "Enter to send, made with love in America."}
+        {statusText || "Enter to send. Playground 1 keeps this page text-only for now."}
       </div>
-      {showCodingPlansBanner ? (
-        <Link href="/playground" className="chat-editorial-promo-banner animate-fade-in-up">
-          <span className="chat-editorial-promo-label">
-            Playground for <strong>Coding</strong>
-          </span>
-          <div className="chat-editorial-promo-plans" aria-label="Playground coding plan prices">
-            {CODING_PLAN_PROMO_PLANS.map((plan) => (
-              <span key={plan.name} className="chat-editorial-promo-plan">
-                <span>{plan.name}</span>
-                <strong>{plan.price}</strong>
-              </span>
-            ))}
-          </div>
-          <span className="chat-editorial-promo-cta">See plans</span>
-        </Link>
-      ) : (
-        <p className="chat-editorial-subhint">
-          <Link href="/playground" className="chat-editorial-subhint-label">
-            Playground for Coding - $2.00 - $5.00 - $10.00
-          </Link>
-        </p>
-      )}
     </form>
   );
 

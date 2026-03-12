@@ -2,13 +2,15 @@ import { NextRequest } from "next/server";
 import { authenticatePlaygroundRequest } from "@/lib/playground/auth";
 import { estimateMessagesTokens, incrementUsage } from "@/lib/hf-router/rate-limit";
 import { guardPlaygroundAccess, runAssist } from "@/lib/playground/orchestration";
+import { attachAssistArtifactIdentifiers } from "@/lib/playground/agent-os";
 import {
   appendSessionMessage,
+  createAgentRun,
   createSession,
   getSessionById,
+  updateAgentRun,
   getUserPlaygroundProfile,
   listSessionMessages,
-  logAgentRun,
   upsertUserPlaygroundProfile,
 } from "@/lib/playground/store";
 import { zAssistRequest } from "@/lib/playground/contracts";
@@ -181,6 +183,202 @@ function estimateOutputTokens(text: string): number {
   const normalized = String(text || "");
   if (!normalized) return 0;
   return Math.max(1, Math.ceil(normalized.length / 4));
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function normalizeSessionPath(value: unknown): string {
+  return String(value || "")
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\.\//, "")
+    .replace(/^\/+/, "");
+}
+
+function toUniqueStringList(value: Iterable<unknown>, limit = 16, maxLen = 2000): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const normalized = String(item || "").trim();
+    const key = normalized.toLowerCase();
+    if (!normalized || normalized.length > maxLen || seen.has(key)) continue;
+    seen.add(key);
+    out.push(normalized);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function toUniquePathList(value: Iterable<unknown>, limit = 16): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const normalized = normalizeSessionPath(item);
+    const key = normalized.toLowerCase();
+    if (!normalized || seen.has(key)) continue;
+    seen.add(key);
+    out.push(normalized);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function collectActionPaths(
+  actions: Array<{ path?: string } | { type?: string; path?: string }> | undefined
+): string[] {
+  if (!Array.isArray(actions)) return [];
+  return toUniquePathList(actions.map((action) => (action && typeof action === "object" ? action.path : "")), 16);
+}
+
+function mergeStablePreferencesForRequest(input: {
+  existingStablePreferences: Record<string, unknown>;
+  clientPreferences?: Record<string, unknown>;
+}): Record<string, unknown> {
+  const existing = input.existingStablePreferences;
+  const clientPreferences = input.clientPreferences ?? {};
+  const existingSessionMemory = asRecord(existing.sessionMemory);
+  const nextRunProfile =
+    clientPreferences.runProfile === "deep_focus" || clientPreferences.runProfile === "standard"
+      ? clientPreferences.runProfile
+      : existing.runProfile === "deep_focus"
+        ? "deep_focus"
+        : "standard";
+  return {
+    ...existing,
+    ...(clientPreferences || {}),
+    source:
+      Object.keys(clientPreferences).length > 0
+        ? "clientPreferences"
+        : typeof existing.source === "string"
+          ? existing.source
+          : "session_memory",
+    runProfile: nextRunProfile,
+    sessionMemory: existingSessionMemory,
+  };
+}
+
+function mergeStablePreferencesForResult(input: {
+  existingStablePreferences: Record<string, unknown>;
+  clientPreferences?: Record<string, unknown>;
+  retrievalHints?: Record<string, unknown>;
+  result: Awaited<ReturnType<typeof runAssist>>;
+  workspaceFingerprint?: string | null;
+}) {
+  const base = mergeStablePreferencesForRequest({
+    existingStablePreferences: input.existingStablePreferences,
+    clientPreferences: input.clientPreferences,
+  });
+  const existingSessionMemory = asRecord(base.sessionMemory);
+  const workspaceMemoryRoot = asRecord(base.workspaceMemory);
+  const workspaceFingerprint = String(input.workspaceFingerprint || "").trim();
+  const existingWorkspaceMemory =
+    workspaceFingerprint && workspaceMemoryRoot[workspaceFingerprint] && typeof workspaceMemoryRoot[workspaceFingerprint] === "object"
+      ? asRecord(workspaceMemoryRoot[workspaceFingerprint])
+      : {};
+  const recentTouchedPaths = toUniquePathList(
+    [
+      ...(Array.isArray(input.retrievalHints?.recentTouchedPaths) ? input.retrievalHints.recentTouchedPaths : []),
+      ...(Array.isArray(existingSessionMemory.recentTouchedPaths) ? existingSessionMemory.recentTouchedPaths : []),
+      ...(input.result.validationPlan?.touchedFiles || []),
+      ...collectActionPaths(input.result.actions as Array<{ path?: string }>),
+      ...collectActionPaths(input.result.edits as Array<{ path?: string }>),
+    ],
+    16
+  );
+  const lastValidationCommands = toUniqueStringList(
+    (input.result.validationPlan?.checks?.length
+      ? input.result.validationPlan.checks
+      : Array.isArray(existingSessionMemory.lastValidationCommands)
+        ? existingSessionMemory.lastValidationCommands
+        : []) as Iterable<unknown>,
+    10
+  );
+  const latestCompletionBlockers = toUniqueStringList(
+    (input.result.completionStatus === "incomplete" ? input.result.missingRequirements : []) as Iterable<unknown>,
+    10,
+    512
+  );
+  const lastTargetPath =
+    normalizeSessionPath(input.result.targetInference?.path) ||
+    normalizeSessionPath(existingSessionMemory.lastTargetPath) ||
+    undefined;
+
+  return {
+    ...base,
+    sessionMemory: {
+      ...(lastTargetPath ? { lastTargetPath } : {}),
+      recentTouchedPaths,
+      lastValidationCommands,
+      latestCompletionBlockers,
+    },
+    workspaceMemory:
+      workspaceFingerprint
+        ? {
+            ...workspaceMemoryRoot,
+            [workspaceFingerprint]: {
+              summary: buildCompactSessionSummary({
+                history: [
+                  { role: "user", content: input.result.receipt.title || "Playground run" },
+                  { role: "assistant", content: input.result.final },
+                ],
+                latestTask: input.result.receipt.title || "Playground run",
+                latestFinal: input.result.final,
+              }),
+              promotedMemories: toUniqueStringList(
+                [
+                  ...(Array.isArray(existingWorkspaceMemory.promotedMemories) ? existingWorkspaceMemory.promotedMemories : []),
+                  ...input.result.memoryWrites
+                    .filter((write) => write.scope === "workspace")
+                    .map((write) => write.summary),
+                ],
+                12,
+                512
+              ),
+              touchedPaths: toUniquePathList(
+                [
+                  ...(Array.isArray(existingWorkspaceMemory.touchedPaths) ? existingWorkspaceMemory.touchedPaths : []),
+                  ...recentTouchedPaths,
+                ],
+                20
+              ),
+              enabled: existingWorkspaceMemory.enabled !== false,
+              updatedAt: new Date().toISOString(),
+            },
+          }
+        : workspaceMemoryRoot,
+  };
+}
+
+function attachRunArtifactsToResult(
+  result: Awaited<ReturnType<typeof runAssist>>,
+  input: { runId: string; traceId: string }
+): Awaited<ReturnType<typeof runAssist>> {
+  const artifacts = attachAssistArtifactIdentifiers(
+    {
+      lane: result.lane,
+      taskGraph: result.taskGraph,
+      checkpoint: result.checkpoint,
+      receipt: result.receipt,
+      contextTrace: result.contextTrace,
+      delegateRuns: result.delegateRuns,
+      memoryWrites: result.memoryWrites,
+      reviewState: result.reviewState,
+    },
+    input
+  );
+  return {
+    ...result,
+    lane: artifacts.lane,
+    taskGraph: artifacts.taskGraph,
+    checkpoint: artifacts.checkpoint,
+    receipt: artifacts.receipt,
+    contextTrace: artifacts.contextTrace,
+    delegateRuns: artifacts.delegateRuns,
+    memoryWrites: artifacts.memoryWrites,
+    reviewState: artifacts.reviewState,
+  };
 }
 
 function calculateEstimatedCost(tokensInput: number, tokensOutput: number): number {
@@ -413,6 +611,14 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
   }
   const userProfile = await getUserPlaygroundProfile({ userId: auth.userId }).catch(() => null);
+  const existingStablePreferences = asRecord(userProfile?.stablePreferences);
+  const mergedStablePreferences = mergeStablePreferencesForRequest({
+    existingStablePreferences,
+    clientPreferences:
+      body.clientPreferences && typeof body.clientPreferences === "object"
+        ? (body.clientPreferences as Record<string, unknown>)
+        : undefined,
+  });
 
   if (body.clientPreferences) {
     await upsertUserPlaygroundProfile({
@@ -422,10 +628,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       ...(body.clientPreferences.responseStyle ? { responseStyle: body.clientPreferences.responseStyle } : {}),
       ...(body.clientPreferences.reasoning ? { reasoningPreference: body.clientPreferences.reasoning } : {}),
       ...(body.model ? { preferredModelAlias: body.model } : {}),
-      stablePreferences: {
-        source: "clientPreferences",
-        ...(body.clientPreferences || {}),
-      },
+      stablePreferences: mergedStablePreferences,
     }).catch(() => {});
   }
   const effectiveUserProfile = {
@@ -435,6 +638,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     ...(body.clientPreferences?.responseStyle ? { responseStyle: body.clientPreferences.responseStyle } : {}),
     ...(body.clientPreferences?.reasoning ? { reasoningPreference: body.clientPreferences.reasoning } : {}),
     ...(body.model ? { preferredModelAlias: body.model } : {}),
+    stablePreferences: mergedStablePreferences,
   };
 
   await appendSessionMessage({
@@ -449,110 +653,159 @@ export async function POST(request: NextRequest): Promise<Response> {
     },
     tokenCount: estimatedInputTokens,
   });
+  const runRecord = await createAgentRun({
+    userId: auth.userId,
+    sessionId,
+    role: "single",
+    status: "running",
+    input: {
+      mode: body.mode ?? "auto",
+      task: body.task,
+      traceId,
+      contextSummary: {
+        hasActiveFile: Boolean(body.context?.activeFile?.path),
+        openFiles: body.context?.openFiles?.length ?? 0,
+        diagnostics: body.context?.diagnostics?.length ?? 0,
+        indexedSnippets: body.context?.indexedSnippets?.length ?? 0,
+      },
+      clientTrace: body.clientTrace ?? null,
+    },
+  });
 
   if (!stream) {
-    const result = await enqueueSessionTask(sessionId, async () => {
-      const startedAt = Date.now();
-      let runResult: Awaited<ReturnType<typeof runAssist>> | null = null;
-      let lastError: unknown = null;
-      for (let attempt = 1; attempt <= ASSIST_MAX_ATTEMPTS; attempt += 1) {
-        try {
-          const task = attempt === 1 ? body.task : buildRecoveryTask(body.task, String(lastError ?? "unknown error"), attempt);
-          runResult = await runAssist({
-            ...body,
-            task,
-            mode: body.mode ?? "auto",
-            conversationHistory: priorConversationHistory,
-            clientPreferences: body.clientPreferences,
-            userProfile: effectiveUserProfile,
-          });
-          if (
-            runResult &&
-            isStaleRepeatResponse({
-              final: runResult.final,
-              task: body.task,
-              priorConversationHistory,
-            })
-          ) {
-            lastError = new Error("stale_repeat_detected: previous answer was repeated instead of answering the latest user task");
-            if (attempt < ASSIST_MAX_ATTEMPTS) {
-              continue;
+    try {
+      const result = await enqueueSessionTask(sessionId, async () => {
+        const startedAt = Date.now();
+        let runResult: Awaited<ReturnType<typeof runAssist>> | null = null;
+        let lastError: unknown = null;
+        for (let attempt = 1; attempt <= ASSIST_MAX_ATTEMPTS; attempt += 1) {
+          try {
+            const task = attempt === 1 ? body.task : buildRecoveryTask(body.task, String(lastError ?? "unknown error"), attempt);
+            runResult = await runAssist({
+              ...body,
+              task,
+              mode: body.mode ?? "auto",
+              conversationHistory: priorConversationHistory,
+              clientPreferences: body.clientPreferences,
+              userProfile: effectiveUserProfile,
+            });
+            if (
+              runResult &&
+              isStaleRepeatResponse({
+                final: runResult.final,
+                task: body.task,
+                priorConversationHistory,
+              })
+            ) {
+              lastError = new Error("stale_repeat_detected: previous answer was repeated instead of answering the latest user task");
+              if (attempt < ASSIST_MAX_ATTEMPTS) {
+                continue;
+              }
             }
+            break;
+          } catch (error) {
+            lastError = error;
+            if (attempt < ASSIST_MAX_ATTEMPTS) await sleep(ASSIST_RETRY_DELAY_MS);
           }
-          break;
-        } catch (error) {
-          lastError = error;
-          if (attempt < ASSIST_MAX_ATTEMPTS) await sleep(ASSIST_RETRY_DELAY_MS);
         }
-      }
-      if (!runResult) throw lastError ?? new Error("Unknown assist failure");
-      const latencyMs = Date.now() - startedAt;
-      await appendSessionMessage({
-        userId: auth.userId,
-        sessionId,
-        role: "assistant",
-        content: runResult.final,
-        payload: runResult,
-        tokenCount: Math.ceil(runResult.final.length / 4),
-        latencyMs,
-      });
-      await logAgentRun({
-        userId: auth.userId,
-        sessionId,
-        role: "single",
-        status: "completed",
-        confidence: runResult.confidence,
-        riskLevel: runResult.risk.blastRadius,
-        payload: {
-          mode: body.mode ?? "auto",
-          decision: runResult.decision,
-          intent: runResult.intent,
-          reasonCodes: runResult.reasonCodes,
-          autonomyDecision: runResult.autonomyDecision,
-          validationPlan: runResult.validationPlan,
-          completionStatus: runResult.completionStatus,
-          missingRequirements: runResult.missingRequirements,
-          traceId,
-        },
-      });
-      await upsertUserPlaygroundProfile({
-        userId: auth.userId,
-        sessionSummary: buildCompactSessionSummary({
-          history: [...priorConversationHistory, { role: "user", content: body.task }, { role: "assistant", content: runResult.final }],
-          latestTask: body.task,
-          latestFinal: runResult.final,
-        }),
-        ...(body.model ? { preferredModelAlias: body.model } : {}),
-      }).catch(() => {});
+        if (!runResult) throw lastError ?? new Error("Unknown assist failure");
+        const enrichedRunResult = attachRunArtifactsToResult(runResult, { runId: runRecord.id, traceId });
+        const latencyMs = Date.now() - startedAt;
+        await appendSessionMessage({
+          userId: auth.userId,
+          sessionId,
+          role: "assistant",
+          content: enrichedRunResult.final,
+          payload: enrichedRunResult,
+          tokenCount: Math.ceil(enrichedRunResult.final.length / 4),
+          latencyMs,
+        });
+        await updateAgentRun({
+          userId: auth.userId,
+          runId: runRecord.id,
+          status: "completed",
+          confidence: enrichedRunResult.confidence,
+          riskLevel: enrichedRunResult.risk.blastRadius,
+          output: buildAssistResponsePayload({
+            sessionId,
+            traceId,
+            runId: runRecord.id,
+            result: enrichedRunResult,
+          }),
+        });
+        const mergedStablePreferencesForResult = mergeStablePreferencesForResult({
+          existingStablePreferences,
+          clientPreferences:
+            body.clientPreferences && typeof body.clientPreferences === "object"
+              ? (body.clientPreferences as Record<string, unknown>)
+              : undefined,
+          retrievalHints:
+            body.retrievalHints && typeof body.retrievalHints === "object"
+              ? (body.retrievalHints as Record<string, unknown>)
+              : undefined,
+          result: enrichedRunResult,
+          workspaceFingerprint: body.clientTrace?.workspaceHash,
+        });
+        await upsertUserPlaygroundProfile({
+          userId: auth.userId,
+          sessionSummary: buildCompactSessionSummary({
+            history: [...priorConversationHistory, { role: "user", content: body.task }, { role: "assistant", content: enrichedRunResult.final }],
+            latestTask: body.task,
+            latestFinal: enrichedRunResult.final,
+          }),
+          ...(body.model ? { preferredModelAlias: body.model } : {}),
+          stablePreferences: mergedStablePreferencesForResult,
+        }).catch(() => {});
 
-      const provider = inferProviderFromAssistLogs(runResult.logs);
-      await recordAssistUsage({
+        const provider = inferProviderFromAssistLogs(enrichedRunResult.logs);
+        await recordAssistUsage({
+          userId: auth.userId,
+          model: enrichedRunResult.modelUsed || body.model || PUBLIC_PLAYGROUND_MODEL_NAME,
+          provider,
+          tokensInput: estimatedInputTokens,
+          tokensOutput: estimateOutputTokens(enrichedRunResult.final),
+          latencyMs,
+          status: "success",
+          requestPayload: buildAssistUsagePayload({
+            body,
+            attachments: attachmentsSummary,
+            stream: false,
+            sessionId,
+            traceId,
+            resolvedModel: enrichedRunResult.modelUsed || body.model || PUBLIC_PLAYGROUND_MODEL_NAME,
+            provider,
+            reasonCodes: enrichedRunResult.reasonCodes,
+            repromptStage: enrichedRunResult.repromptStage,
+          }),
+        });
+        return enrichedRunResult;
+      });
+      const payload = buildAssistResponsePayload({ sessionId, traceId, runId: runRecord.id, result });
+      if (recoveredStaleHistorySession && requestedHistorySessionId) {
+        payload.logs = [...(payload.logs || []), "session_recovered_from_stale_history_session_id"];
+      }
+      return ok(request, payload);
+    } catch (error) {
+      await updateAgentRun({
         userId: auth.userId,
-        model: runResult.modelUsed || body.model || PUBLIC_PLAYGROUND_MODEL_NAME,
-        provider,
-        tokensInput: estimatedInputTokens,
-        tokensOutput: estimateOutputTokens(runResult.final),
-        latencyMs,
-        status: "success",
-        requestPayload: buildAssistUsagePayload({
-          body,
-          attachments: attachmentsSummary,
-          stream: false,
+        runId: runRecord.id,
+        status: "failed",
+        errorMessage: error instanceof Error ? error.message : String(error),
+        output: {
           sessionId,
           traceId,
-          resolvedModel: runResult.modelUsed || body.model || PUBLIC_PLAYGROUND_MODEL_NAME,
-          provider,
-          reasonCodes: runResult.reasonCodes,
-          repromptStage: runResult.repromptStage,
-        }),
+          runId: runRecord.id,
+          reviewState: {
+            status: "blocked",
+            reason: "Assist run failed before a complete receipt could be generated.",
+            recommendedAction: "Repair the run and retry from Playground.",
+            surface: "playground_panel",
+            controlActions: ["repair", "cancel"],
+          },
+        },
       });
-      return runResult;
-    });
-    const payload = buildAssistResponsePayload({ sessionId, traceId, result });
-    if (recoveredStaleHistorySession && requestedHistorySessionId) {
-      payload.logs = [...(payload.logs || []), "session_recovered_from_stale_history_session_id"];
+      throw error;
     }
-    return ok(request, payload);
   }
 
   const { readable, writable } = new TransformStream();
@@ -560,6 +813,24 @@ export async function POST(request: NextRequest): Promise<Response> {
   const encoder = new TextEncoder();
   const emitStreamError = async (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
+    await updateAgentRun({
+      userId: auth.userId,
+      runId: runRecord.id,
+      status: "failed",
+      errorMessage: message,
+      output: {
+        sessionId,
+        traceId,
+        runId: runRecord.id,
+        reviewState: {
+          status: "blocked",
+          reason: "Streaming assist run failed before completion.",
+          recommendedAction: "Repair the run and re-open it in Playground.",
+          surface: "playground_panel",
+          controlActions: ["repair", "cancel"],
+        },
+      },
+    }).catch(() => {});
     await writer.write(
       encoder.encode(
         sse({
@@ -607,7 +878,7 @@ export async function POST(request: NextRequest): Promise<Response> {
                 );
               }
               const task = attempt === 1 ? body.task : buildRecoveryTask(body.task, String(lastError ?? "unknown error"), attempt);
-              result = await runAssist(
+              const rawResult = await runAssist(
                 {
                   ...body,
                   task,
@@ -631,6 +902,7 @@ export async function POST(request: NextRequest): Promise<Response> {
                   },
                 }
               );
+              result = attachRunArtifactsToResult(rawResult, { runId: runRecord.id, traceId });
               if (
                 result &&
                 isStaleRepeatResponse({
@@ -676,6 +948,7 @@ export async function POST(request: NextRequest): Promise<Response> {
               sse({
                 event: "meta",
                 data: {
+                  runId: runRecord.id,
                   intent: result.intent,
                   reasonCodes: result.reasonCodes,
                   autonomyDecision: result.autonomyDecision,
@@ -701,6 +974,16 @@ export async function POST(request: NextRequest): Promise<Response> {
                   actionability: result.actionability,
                   completionStatus: result.completionStatus,
                   missingRequirements: result.missingRequirements,
+                  lane: result.lane,
+                  taskGraph: result.taskGraph,
+                  checkpoint: result.checkpoint,
+                  receipt: result.receipt,
+                  contextTrace: result.contextTrace,
+                  delegateRuns: result.delegateRuns,
+                  memoryWrites: result.memoryWrites,
+                  reviewState: result.reviewState,
+                  targetInference: result.targetInference,
+                  contextSelection: result.contextSelection,
                 },
               })
             )
@@ -718,24 +1001,31 @@ export async function POST(request: NextRequest): Promise<Response> {
             tokenCount: Math.ceil(result.final.length / 4),
             latencyMs,
           });
-          await logAgentRun({
+          await updateAgentRun({
             userId: auth.userId,
-            sessionId,
-            role: "single",
+            runId: runRecord.id,
             status: "completed",
             confidence: result.confidence,
             riskLevel: result.risk.blastRadius,
-            payload: {
-              mode: body.mode ?? "auto",
-              decision: result.decision,
-              intent: result.intent,
-              reasonCodes: result.reasonCodes,
-              autonomyDecision: result.autonomyDecision,
-              validationPlan: result.validationPlan,
-              completionStatus: result.completionStatus,
-              missingRequirements: result.missingRequirements,
+            output: buildAssistResponsePayload({
+              sessionId,
               traceId,
-            },
+              runId: runRecord.id,
+              result,
+            }),
+          });
+          const mergedStablePreferencesForResult = mergeStablePreferencesForResult({
+            existingStablePreferences,
+            clientPreferences:
+              body.clientPreferences && typeof body.clientPreferences === "object"
+                ? (body.clientPreferences as Record<string, unknown>)
+                : undefined,
+            retrievalHints:
+              body.retrievalHints && typeof body.retrievalHints === "object"
+                ? (body.retrievalHints as Record<string, unknown>)
+                : undefined,
+            result,
+            workspaceFingerprint: body.clientTrace?.workspaceHash,
           });
           await upsertUserPlaygroundProfile({
             userId: auth.userId,
@@ -745,6 +1035,7 @@ export async function POST(request: NextRequest): Promise<Response> {
               latestFinal: result.final,
             }),
             ...(body.model ? { preferredModelAlias: body.model } : {}),
+            stablePreferences: mergedStablePreferencesForResult,
           }).catch(() => {});
 
           const provider = inferProviderFromAssistLogs(result.logs);

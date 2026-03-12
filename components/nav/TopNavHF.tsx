@@ -5,16 +5,15 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { GlobalSearchBar } from "@/components/search/GlobalSearchBar";
+import {
+  firePlaygroundAnalyticsEvent,
+  useOptionalPlaygroundMarketing,
+} from "@/components/playground/PlaygroundMarketingProvider";
 import { useAutoHideHeader } from "@/lib/hooks/use-auto-hide-header";
 
 const NAV_LINKS = [
   { href: "/playground", label: "Playground" },
   { href: "/chat", label: "Chat" },
-  { href: "/search", label: "Search" },
-  { href: "/marketplace", label: "Marketplace" },
-  { href: "/graph", label: "Graph" },
-  { href: "/reliability", label: "Reliability" },
-  { href: "/tool-pack", label: "Tool Pack" },
 ] as const;
 
 interface TopNavHFProps {
@@ -25,6 +24,7 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [planBadge, setPlanBadge] = useState<string | null>(null);
+  const playgroundMarketing = useOptionalPlaygroundMarketing();
   const isPlaygroundPage = pathname === "/playground" || pathname.startsWith("/playground/");
   const headerHidden = useAutoHideHeader({ disabled: menuOpen || isPlaygroundPage });
   const isSearchPage = pathname === "/search" || pathname.startsWith("/search/");
@@ -104,6 +104,125 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
       cancelled = true;
     };
   }, [isAuthenticated]);
+
+  const handlePlaygroundTrialClick = (location: "header" | "mobile_menu") => {
+    firePlaygroundAnalyticsEvent("playground_header_cta_click", {
+      location,
+      action: "start_trial",
+    });
+
+    if (playgroundMarketing) {
+      void playgroundMarketing.startCheckout("builder");
+      return;
+    }
+
+    if (typeof window !== "undefined") {
+      window.location.hash = "playground-pricing";
+    }
+  };
+
+  if (isPlaygroundPage) {
+    return (
+      <header
+        className={`playground-nav-shell sticky top-0 z-50 w-full overflow-hidden transition-[max-height,transform,opacity,border-color,background-color] duration-300 ${
+          headerHidden
+            ? "max-h-0 -translate-y-2 opacity-0 pointer-events-none border-transparent"
+            : "max-h-[40rem] translate-y-0 opacity-100"
+        }`}
+      >
+        <div className="mx-auto flex h-20 w-full max-w-[1260px] items-center gap-3 px-4 sm:px-6">
+          <Link href="/playground" className="playground-nav-brand">
+            <span className="playground-nav-brand-stamp">PL-1</span>
+            <span className="min-w-0">
+              <span className="block text-base font-black leading-none tracking-tight text-[#1d1d1d] sm:text-lg">
+                Playground
+              </span>
+              <span className="mt-1 hidden text-[10px] font-bold uppercase tracking-[0.22em] text-[#6d6258] sm:block">
+                Plan. Patch. Ship.
+              </span>
+            </span>
+          </Link>
+
+          <nav className="ml-auto hidden items-center gap-1 rounded-full border border-black/10 bg-white/65 p-1 shadow-[0_12px_30px_rgba(44,31,14,0.08)] backdrop-blur lg:flex" aria-label="Primary">
+            {NAV_LINKS.map((link) => (
+              <Link key={link.href} href={link.href} className="playground-nav-link">
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+
+          <div className="hidden items-center gap-2 lg:flex">
+            {planBadge ? <span className="playground-nav-chip">{planBadge}</span> : null}
+            <Link
+              href={isAuthenticated ? "/dashboard" : "/auth/signin?callbackUrl=/dashboard"}
+              className="playground-nav-secondary"
+            >
+              {isAuthenticated ? "Dashboard" : "Sign in"}
+            </Link>
+            <button
+              type="button"
+              onClick={() => handlePlaygroundTrialClick("header")}
+              disabled={playgroundMarketing?.isCheckoutStarting}
+              className="playground-nav-cta"
+            >
+              {playgroundMarketing?.isCheckoutStarting ? "Starting checkout..." : "Start 2-day trial"}
+            </button>
+          </div>
+
+          <div className="ml-auto flex flex-none items-center lg:hidden">
+            <div className="rounded-full border border-black/10 bg-white/70 shadow-[0_10px_24px_rgba(44,31,14,0.08)] backdrop-blur">
+              <button
+                type="button"
+                onClick={() => setMenuOpen((open) => !open)}
+                className="flex h-11 w-11 items-center justify-center text-[#1d1d1d]"
+                aria-label={menuOpen ? "Close menu" : "Open menu"}
+                aria-expanded={menuOpen}
+              >
+                {menuOpen ? (
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                ) : (
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {menuOpen ? (
+          <div className="border-t border-black/10 bg-white/95 backdrop-blur">
+            <div className="mx-auto w-full max-w-[1260px] space-y-2 px-4 py-4">
+              {NAV_LINKS.map((link) => (
+                <Link key={link.href} href={link.href} className="playground-nav-mobile-link">
+                  {link.label}
+                </Link>
+              ))}
+              <div className="space-y-2 border-t border-black/10 pt-3">
+                {planBadge ? <div className="playground-nav-chip inline-flex">{planBadge}</div> : null}
+                <Link
+                  href={isAuthenticated ? "/dashboard" : "/auth/signin?callbackUrl=/dashboard"}
+                  className="playground-nav-mobile-link"
+                >
+                  {isAuthenticated ? "Dashboard" : "Sign in"}
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => handlePlaygroundTrialClick("mobile_menu")}
+                  disabled={playgroundMarketing?.isCheckoutStarting}
+                  className="playground-nav-cta w-full justify-center"
+                >
+                  {playgroundMarketing?.isCheckoutStarting ? "Starting checkout..." : "Start 2-day trial"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </header>
+    );
+  }
 
   return (
     <header

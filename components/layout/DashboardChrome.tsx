@@ -27,7 +27,6 @@ interface DashboardChromeProps {
 export function DashboardChrome({
   displayName,
   userEmail = null,
-  isAdmin = false,
   isPermanent = false,
   accountType = null,
   children,
@@ -44,7 +43,7 @@ export function DashboardChrome({
       className="dashboard-theme flex w-full flex-col overflow-hidden bg-[var(--dash-bg)] md:flex-row"
       style={{ height: "var(--app-shell-height, 100dvh)", minHeight: "var(--app-shell-height, 100dvh)" }}
     >
-      <MobileDashboardNav displayName={displayName} isAdmin={isAdmin} isPermanent={isPermanent} />
+      <MobileDashboardNav displayName={displayName} isPermanent={isPermanent} />
       <aside className="scroll-stable-layer dashboard-sidebar hidden w-[280px] min-w-[280px] flex-col md:flex sticky top-0 h-screen border-r border-[var(--dash-divider)] overflow-x-hidden bg-[var(--dash-bg)]">
         <div className="relative flex h-full flex-col">
           <div className="px-6 pt-6 pb-4 border-b border-[var(--dash-divider)]">
@@ -60,7 +59,7 @@ export function DashboardChrome({
               accountType={accountType}
             />
           </div>
-          <DashboardSidebarNav isAdmin={isAdmin} />
+          <DashboardSidebarNav />
         </div>
       </aside>
       <main data-header-scroll-root="dashboard" className="scroll-contain-paint relative z-0 flex-1 min-h-0 overflow-y-auto bg-[var(--dash-bg)]">

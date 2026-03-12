@@ -46,6 +46,7 @@ const child_process_1 = require("child_process");
 const patch_utils_1 = require("./patch-utils");
 const validation_utils_1 = require("./validation-utils");
 const apply_recovery_utils_1 = require("./apply-recovery-utils");
+const intelligence_utils_1 = require("./intelligence-utils");
 const API_KEY_SECRET = "xpersona.apiKey";
 const API_KEY_LEGACY_SECRET = "xpersona.playground.apiKey";
 const API_KEY_FALLBACK_STATE_KEY = "xpersona.playground.apiKeyFallback";
@@ -372,9 +373,9 @@ function activate(context) {
             await view.openImagePicker();
         }),
         vscode.commands.registerCommand("xpersona.playground.agents.parallelRun", async () => {
-            const t = await vscode.window.showInputBox({ prompt: "Parallel task" });
+            const t = await vscode.window.showInputBox({ prompt: "Deep focus task" });
             if (t)
-                view.ask(t, true);
+                view.ask(t, true, undefined, undefined, { runProfile: "deep_focus" });
         }),
         vscode.commands.registerCommand("xpersona.playground.index.rebuild", async () => {
             await view.show();
@@ -713,7 +714,7 @@ class Provider {
         this.post({
             type: "modelsCatalog",
             defaultModel: this.defaultModelAlias,
-            selectedModel: this.defaultModelAlias,
+            selectedModel: this.selectedModelAlias || this.defaultModelAlias,
             models: visibleModels,
         });
     }
@@ -1038,7 +1039,305 @@ class Provider {
     postContextStatus(threadId, status) {
         this.postRun(threadId, { type: "contextStatus", data: status });
     }
-    scheduleContextPreview(rawQuery, threadId) {
+    postContextSelectionPreview(threadId, data) {
+        this.postRun(threadId, { type: "contextSelectionPreview", data });
+    }
+    selectedModelSupportsImages(modelAlias) {
+        return (0, intelligence_utils_1.modelSupportsImages)(modelAlias || this.selectedModelAlias || this.defaultModelAlias, this.modelCatalog);
+    }
+    normalizeWorkspacePathCandidate(candidate) {
+        const raw = String(candidate || "").trim();
+        const direct = normalizeWorkspaceRelativePath(raw.replace(/\\/g, "/"));
+        if (direct)
+            return direct;
+        const root = this.getWorkspaceRoot();
+        if (!root || !raw)
+            return null;
+        if (path.isAbsolute(raw)) {
+            const relative = path.relative(root.uri.fsPath, raw).replace(/\\/g, "/");
+            return normalizeWorkspaceRelativePath(relative);
+        }
+        const normalized = (0, intelligence_utils_1.normalizeContextPath)(raw);
+        if (!normalized)
+            return null;
+        if (path.isAbsolute(normalized)) {
+            const relative = path.relative(root.uri.fsPath, normalized).replace(/\\/g, "/");
+            return normalizeWorkspaceRelativePath(relative);
+        }
+        return normalizeWorkspaceRelativePath(normalized);
+    }
+    getRecentTouchedPaths(limit = 8) {
+        const out = [];
+        const seen = new Set();
+        const inputs = [
+            ...(this.lastActionOutcome?.appliedFiles || []),
+            ...(this.lastRunMeta?.validationPlan?.touchedFiles || []),
+            ...(this.lastRunMeta?.contextSelection?.files?.map((item) => item?.path || "") || []),
+        ];
+        for (const candidate of inputs) {
+            const normalized = this.normalizeWorkspacePathCandidate(candidate);
+            const key = String(normalized || "").toLowerCase();
+            if (!normalized || seen.has(key))
+                continue;
+            seen.add(key);
+            out.push(normalized);
+            if (out.length >= limit)
+                break;
+        }
+        return out;
+    }
+    async collectWorkspaceFilesByPath(paths, maxItems, maxCharsPerItem) {
+        const root = this.getWorkspaceRoot();
+        if (!root)
+            return [];
+        const out = [];
+        const seen = new Set();
+        for (const candidate of paths) {
+            if (out.length >= maxItems)
+                break;
+            const resolved = (await this.resolveExistingWorkspaceFilePath(candidate)) || this.normalizeWorkspacePathCandidate(candidate);
+            const key = String(resolved || "").toLowerCase();
+            if (!resolved || seen.has(key))
+                continue;
+            seen.add(key);
+            const uri = vscode.Uri.joinPath(root.uri, ...resolved.split("/").filter(Boolean));
+            try {
+                const stat = await vscode.workspace.fs.stat(uri);
+                if ((stat.type & vscode.FileType.Directory) === vscode.FileType.Directory)
+                    continue;
+                if (stat.size > 2000000) {
+                    out.push({
+                        path: resolved,
+                        language: languageFromPath(resolved),
+                        excerpt: `Skipped excerpt for ${resolved}: file too large (${stat.size} bytes).`,
+                    });
+                    continue;
+                }
+                const doc = await vscode.workspace.openTextDocument(uri);
+                const content = doc.getText().replace(/\r\n/g, "\n");
+                out.push({
+                    path: resolved,
+                    language: doc.languageId || languageFromPath(resolved),
+                    excerpt: content.slice(0, maxCharsPerItem),
+                });
+            }
+            catch (e) {
+                out.push({
+                    path: resolved,
+                    language: languageFromPath(resolved),
+                    excerpt: `Failed to read ${resolved}: ${err(e)}`.slice(0, maxCharsPerItem),
+                });
+            }
+        }
+        return out;
+    }
+    inferDiagnosticTargetPath(diagnostics, limit = 6) {
+        const scored = new Map();
+        for (const diagnostic of diagnostics) {
+            const normalized = this.normalizeWorkspacePathCandidate(String(diagnostic.file || ""));
+            if (!normalized)
+                continue;
+            const severityValue = typeof diagnostic.severity === "number"
+                ? diagnostic.severity
+                : /error/i.test(String(diagnostic.severity || ""))
+                    ? 0
+                    : /warn/i.test(String(diagnostic.severity || ""))
+                        ? 1
+                        : 2;
+            const weight = severityValue === 0 ? 4 : severityValue === 1 ? 2 : 1;
+            scored.set(normalized, (scored.get(normalized) || 0) + weight);
+        }
+        return [...scored.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, limit)
+            .map(([file]) => file);
+    }
+    async inferTargetFromContext(input) {
+        const mentionedPath = input.mentionedFiles[0]?.path || "";
+        if (mentionedPath) {
+            return { path: mentionedPath, confidence: 0.98, source: "mention" };
+        }
+        const activePath = await this.resolveExistingWorkspaceFilePath(String(input.activeFile?.path || ""));
+        if (activePath) {
+            return { path: activePath, confidence: 0.84, source: "active_file" };
+        }
+        if (input.recentTouchedPaths.length > 0) {
+            return { path: input.recentTouchedPaths[0], confidence: 0.75, source: "session_memory" };
+        }
+        const diagnosticPath = this.inferDiagnosticTargetPath(input.diagnostics, 1)[0];
+        if (diagnosticPath) {
+            return { path: diagnosticPath, confidence: 0.7, source: "diagnostic" };
+        }
+        const explicitFile = await this.resolveExistingWorkspaceFilePath(input.query);
+        if (explicitFile) {
+            return { path: explicitFile, confidence: 0.66, source: "retrieval" };
+        }
+        return { confidence: 0.24, source: "retrieval" };
+    }
+    async collectSmartIdeContext(query, workspaceHash, auth, options) {
+        const preview = options?.preview === true;
+        const excluded = new Set((options?.excludedContextPaths || [])
+            .map((item) => this.normalizeWorkspacePathCandidate(item))
+            .filter((item) => Boolean(item))
+            .map((item) => item.toLowerCase()));
+        const root = this.getWorkspaceRoot();
+        const activeFileRaw = await this.collectActiveFileContext(preview ? 14000 : 20000);
+        const activePath = this.normalizeWorkspacePathCandidate(String(activeFileRaw?.path || ""));
+        const activeFile = activeFileRaw && activePath && !excluded.has(activePath.toLowerCase())
+            ? { ...activeFileRaw, path: activePath }
+            : undefined;
+        const openEditors = (await this.collectOpenEditorsContext(preview ? 10 : 20, preview ? 4500 : 6000))
+            .map((file) => {
+            const normalizedPath = this.normalizeWorkspacePathCandidate(file.path);
+            return normalizedPath ? { ...file, path: normalizedPath } : null;
+        })
+            .filter((file) => Boolean(file))
+            .filter((file) => !excluded.has(file.path.toLowerCase()));
+        const diagnostics = this.collectDiagnostics(preview ? 80 : 200);
+        const mentionTokens = this.mentionsEnabled() ? extractAtMentions(query) : [];
+        const mentionedFiles = this.mentionsEnabled()
+            ? (await this.collectMentionedWorkspaceContext(query, preview ? 6 : 8, preview ? 8000 : 20000, mentionTokens))
+                .map((file) => {
+                const normalizedPath = this.normalizeWorkspacePathCandidate(file.path);
+                return normalizedPath ? { ...file, path: normalizedPath } : null;
+            })
+                .filter((file) => Boolean(file))
+                .filter((file) => !excluded.has(file.path.toLowerCase()))
+            : [];
+        const recentTouchedPaths = this.getRecentTouchedPaths(preview ? 6 : 10).filter((file) => !excluded.has(file.toLowerCase()));
+        const targetInference = await this.inferTargetFromContext({
+            query,
+            mentionedFiles,
+            activeFile,
+            diagnostics,
+            recentTouchedPaths,
+        });
+        const preferredTargetPath = (targetInference.path && !excluded.has(targetInference.path.toLowerCase()) ? targetInference.path : undefined) ||
+            undefined;
+        const candidateSymbols = this.extractLikelyLookupTokens(query, 6);
+        const retrievalHints = (0, intelligence_utils_1.buildRetrievalHints)({
+            mentionPaths: mentionedFiles.map((file) => file.path),
+            candidateSymbols,
+            diagnostics,
+            preferredTargetPath,
+            recentTouchedPaths,
+        });
+        const diagnosticPaths = this.inferDiagnosticTargetPath(diagnostics, preview ? 4 : 6).filter((file) => !excluded.has(file.toLowerCase()));
+        const recentTouchedFiles = await this.collectWorkspaceFilesByPath(recentTouchedPaths, preview ? 4 : 6, preview ? 5000 : 8000);
+        const diagnosticFiles = await this.collectWorkspaceFilesByPath(diagnosticPaths, preview ? 4 : 5, preview ? 5000 : 8000);
+        const targetFiles = preferredTargetPath
+            ? await this.collectWorkspaceFilesByPath([preferredTargetPath], 1, preview ? 10000 : 14000)
+            : [];
+        const queryWorkspaceFiles = await this.collectQueryWorkspaceContext(query, preview ? 6 : 10, preview ? 5000 : 10000);
+        const git = root ? await this.collectGitSummary(root) : { status: [], diffSummary: "" };
+        let indexedSnippets = [];
+        if (root && auth) {
+            indexedSnippets = (await this.queryIndexForPrompt(workspaceHash, query, auth, preview ? 8 : 12, retrievalHints)).filter((snippet) => {
+                const normalized = this.normalizeWorkspacePathCandidate(String(snippet.path || ""));
+                return !normalized || !excluded.has(normalized.toLowerCase());
+            });
+        }
+        const usedCloudIndex = indexedSnippets.length > 0;
+        if (!usedCloudIndex) {
+            indexedSnippets = queryWorkspaceFiles
+                .filter((file) => !excluded.has(String(file.path || "").toLowerCase()))
+                .map((file) => ({
+                path: file.path,
+                score: 0.42,
+                content: String(file.excerpt || "").slice(0, preview ? 3500 : 5000),
+                source: "local_fallback",
+                reason: "Local workspace fallback hit",
+            }));
+        }
+        const selectionFiles = [];
+        const selectionSeen = new Set();
+        const openFilesMap = new Map();
+        const pushSelectionFile = (file, reason, score) => {
+            const normalizedPath = this.normalizeWorkspacePathCandidate(String(file?.path || ""));
+            const key = String(normalizedPath || "").toLowerCase();
+            if (!normalizedPath || excluded.has(key) || selectionSeen.has(key))
+                return;
+            selectionSeen.add(key);
+            selectionFiles.push({
+                path: normalizedPath,
+                reason,
+                ...(typeof score === "number" ? { score } : {}),
+            });
+            if ((!activeFile || activeFile.path !== normalizedPath) && file) {
+                openFilesMap.set(normalizedPath, { ...file, path: normalizedPath });
+            }
+        };
+        mentionedFiles.forEach((file) => pushSelectionFile(file, "Explicit @mention"));
+        targetFiles.forEach((file) => pushSelectionFile(file, `Inferred target from ${targetInference.source.replace(/_/g, " ")} (${Math.round(targetInference.confidence * 100)}%)`));
+        if (activeFile) {
+            pushSelectionFile(activeFile, "Active editor");
+        }
+        recentTouchedFiles.forEach((file) => pushSelectionFile(file, "Recent applied or validated file"));
+        diagnosticFiles.forEach((file) => pushSelectionFile(file, "Diagnostic-heavy file"));
+        indexedSnippets.forEach((snippet) => pushSelectionFile({ path: snippet.path, excerpt: snippet.content }, snippet.reason || (snippet.source === "local_fallback" ? "Local workspace fallback" : "Cloud index hit"), snippet.score));
+        openEditors.forEach((file) => pushSelectionFile(file, "Open editor"));
+        const notes = [];
+        if (selectionFiles.length > 0) {
+            notes.push(`Why this context: ${selectionFiles
+                .slice(0, 4)
+                .map((file) => file.path)
+                .join(", ")}${selectionFiles.length > 4 ? ` (+${selectionFiles.length - 4} more)` : ""}.`);
+        }
+        notes.push(usedCloudIndex
+            ? "Using cloud index for ranked retrieval."
+            : root
+                ? "Cloud index unavailable or cold; using local workspace fallback."
+                : "No workspace root detected.");
+        if (preferredTargetPath) {
+            notes.push(`Target inference: ${preferredTargetPath} (${targetInference.source.replace(/_/g, " ")}).`);
+        }
+        const context = trimContextToMaxChars({
+            ...(activeFile ? { activeFile } : {}),
+            openFiles: Array.from(openFilesMap.values()),
+            diagnostics,
+            git: {
+                status: git.status.slice(0, 200),
+                diffSummary: String(git.diffSummary || "").slice(0, 24000),
+            },
+            indexedSnippets,
+        }, MAX_TOTAL_CONTEXT_CHARS);
+        const sections = [
+            context.activeFile ? 1 : 0,
+            (context.openFiles?.length ?? 0) > 0 ? 1 : 0,
+            (context.diagnostics?.length ?? 0) > 0 ? 1 : 0,
+            context.git ? 1 : 0,
+            (context.indexedSnippets?.length ?? 0) > 0 ? 1 : 0,
+        ].reduce((acc, value) => acc + value, 0);
+        return {
+            context,
+            retrievalHints,
+            contextSelection: {
+                files: selectionFiles.slice(0, 16),
+                snippets: context.indexedSnippets?.length ?? 0,
+                usedCloudIndex,
+                targetInference,
+                validationPlan: {
+                    checks: Array.isArray(this.lastRunMeta?.validationPlan?.checks) ? this.lastRunMeta.validationPlan.checks.slice(0, 6) : [],
+                    touchedFiles: preferredTargetPath ? [preferredTargetPath] : [],
+                    reason: preferredTargetPath ? "Targeted validation will bias toward the inferred file." : "Validation will follow touched files.",
+                },
+                fallbackRoute: usedCloudIndex ? "cloud_index" : "local_workspace_fallback",
+            },
+            contextStatus: {
+                enabled: true,
+                phase: "ready",
+                source: preview ? "preview" : "send",
+                sections,
+                snippets: context.indexedSnippets?.length ?? 0,
+                workspaceMatches: context.openFiles?.length ?? 0,
+                indexFreshness: usedCloudIndex ? this.indexFreshness : this.indexFreshness === "fresh" ? "stale" : this.indexFreshness,
+                discoveryCommands: (context.git?.status?.length ?? 0) > 0 || context.git?.diffSummary ? 2 : 0,
+                preflightMs: 0,
+                notes,
+            },
+        };
+    }
+    scheduleContextPreview(rawQuery, threadId, excludedContextPaths) {
         const query = String(rawQuery || "").trim();
         const runThreadId = typeof threadId === "string" && threadId.trim() ? threadId.trim() : this.activeThreadId;
         if (this.contextPreviewDebounceTimer) {
@@ -1058,14 +1357,20 @@ class Provider {
                 preflightMs: 0,
                 notes: ["Auto context idle."],
             });
+            this.postContextSelectionPreview(runThreadId, {
+                files: [],
+                snippets: 0,
+                usedCloudIndex: false,
+                fallbackRoute: "idle",
+            });
             return;
         }
         this.contextPreviewDebounceTimer = setTimeout(() => {
             const seq = ++this.contextPreviewSeq;
-            void this.runContextPreview(seq, query, runThreadId);
+            void this.runContextPreview(seq, query, runThreadId, excludedContextPaths);
         }, 420);
     }
-    async runContextPreview(seq, query, threadId) {
+    async runContextPreview(seq, query, threadId, excludedContextPaths) {
         const startedAt = Date.now();
         this.postContextStatus(threadId, {
             enabled: true,
@@ -1081,56 +1386,26 @@ class Provider {
         });
         try {
             const now = Date.now();
-            if (query === this.contextPreviewLastQuery && now - this.contextPreviewLastAt < 1200) {
+            const previewFingerprint = `${query}::${(excludedContextPaths || []).join("|")}`;
+            if (previewFingerprint === this.contextPreviewLastQuery && now - this.contextPreviewLastAt < 1200) {
                 return;
             }
             const root = this.getWorkspaceRoot();
-            const openFiles = await this.collectOpenEditorsContext(8, 3000);
-            const workspaceMatches = await this.collectQueryWorkspaceContext(query, 8, 4500);
-            let indexedSnippets = [];
-            if (root) {
-                const auth = await this.resolveRequestAuth();
-                if (auth) {
-                    const workspaceHash = this.computeWorkspaceHash(root);
-                    indexedSnippets = await this.queryIndexForPrompt(workspaceHash, query, auth, 8);
-                }
-            }
+            const auth = root ? await this.resolveRequestAuth() : null;
+            const workspaceHash = this.computeWorkspaceHash(root);
+            const smartContext = await this.collectSmartIdeContext(query, workspaceHash, auth, {
+                preview: true,
+                excludedContextPaths,
+            });
             if (seq !== this.contextPreviewSeq)
                 return;
-            const dedup = new Set();
-            const mergedOpenFiles = [...workspaceMatches, ...openFiles].filter((item) => {
-                const key = String(item.path || "");
-                if (!key || dedup.has(key))
-                    return false;
-                dedup.add(key);
-                return true;
-            });
-            const queryMatches = workspaceMatches.length;
-            const fileMatches = mergedOpenFiles.length;
-            const sections = [
-                mergedOpenFiles.length > 0 ? 1 : 0,
-                indexedSnippets.length > 0 ? 1 : 0,
-            ].reduce((acc, value) => acc + value, 0);
-            const preflightMs = Date.now() - startedAt;
-            const notes = [
-                `Auto context ready: ${fileMatches} file${fileMatches === 1 ? "" : "s"} (${queryMatches} query match${queryMatches === 1 ? "" : "es"}).`,
-            ];
-            if (!indexedSnippets.length && root) {
-                notes.push("Index snippets unavailable yet; running workspace fallback.");
-            }
+            this.postContextSelectionPreview(threadId, smartContext.contextSelection);
             this.postContextStatus(threadId, {
-                enabled: true,
-                phase: "ready",
+                ...smartContext.contextStatus,
                 source: "preview",
-                sections,
-                snippets: indexedSnippets.length,
-                workspaceMatches: fileMatches,
-                indexFreshness: this.indexFreshness,
-                discoveryCommands: 0,
-                preflightMs,
-                notes,
+                preflightMs: Date.now() - startedAt,
             });
-            this.contextPreviewLastQuery = query;
+            this.contextPreviewLastQuery = previewFingerprint;
             this.contextPreviewLastAt = Date.now();
         }
         catch (e) {
@@ -1148,50 +1423,19 @@ class Provider {
                 preflightMs: Date.now() - startedAt,
                 notes: [`Auto context preview failed: ${err(e)}`],
             });
-        }
-    }
-    async collectIdeContext(query, workspaceHash, auth) {
-        const root = this.getWorkspaceRoot();
-        const activeFile = await this.collectActiveFileContext(20000);
-        const openFiles = await this.collectOpenEditorsContext(20, 6000);
-        const queryWorkspaceFiles = await this.collectQueryWorkspaceContext(query, 10, 10000);
-        const diagnostics = this.collectDiagnostics(200);
-        const git = await this.collectGitSummary(root);
-        const discovery = await this.runSafeDiscovery(root);
-        const indexedSnippets = await this.queryIndexForPrompt(workspaceHash, query, auth, 12);
-        const mergedOpenFilesMap = new Map();
-        for (const file of [...queryWorkspaceFiles, ...openFiles]) {
-            if (!file.path || mergedOpenFilesMap.has(file.path))
-                continue;
-            mergedOpenFilesMap.set(file.path, file);
-        }
-        const mergedSnippets = [
-            ...indexedSnippets,
-            ...queryWorkspaceFiles
-                .map((file) => ({
-                path: file.path,
-                score: 0.45,
-                content: String(file.excerpt || "").slice(0, 4000),
-            }))
-                .filter((snippet) => snippet.content.length > 0),
-        ];
-        if (discovery.rgFiles) {
-            mergedSnippets.push({
-                path: ".workspace/files",
-                score: 0.3,
-                content: discovery.rgFiles,
+            this.postContextSelectionPreview(threadId, {
+                files: [],
+                snippets: 0,
+                usedCloudIndex: false,
+                fallbackRoute: "preview_failed",
             });
         }
-        return trimContextToMaxChars({
-            activeFile: activeFile || undefined,
-            openFiles: Array.from(mergedOpenFilesMap.values()),
-            diagnostics,
-            git: {
-                status: [...(git.status || []), ...(discovery.gitStatus || [])].slice(0, 200),
-                diffSummary: [git.diffSummary, discovery.gitDiff].filter(Boolean).join("\n").slice(0, 120000),
-            },
-            indexedSnippets: mergedSnippets,
-        }, MAX_TOTAL_CONTEXT_CHARS);
+    }
+    async collectIdeContext(query, workspaceHash, auth, options) {
+        return this.collectSmartIdeContext(query, workspaceHash, auth, {
+            preview: false,
+            excludedContextPaths: options?.excludedContextPaths,
+        });
     }
     extractLikelyLookupTokens(text, max = 3) {
         const input = String(text || "");
@@ -1666,12 +1910,13 @@ class Provider {
             rgFiles: rgFiles.ok ? rgFiles.stdout.split(/\r?\n/).slice(0, 300).join("\n") : "",
         };
     }
-    async queryIndexForPrompt(projectKey, query, auth, limit) {
+    async queryIndexForPrompt(projectKey, query, auth, limit, retrievalHints) {
         try {
             const response = await req("POST", `${base()}/api/v1/playground/index/query`, auth, {
                 projectKey,
                 query: query.slice(0, 2000),
                 limit: Math.max(1, Math.min(limit, 50)),
+                ...(retrievalHints ? { retrievalHints } : {}),
             });
             const rows = Array.isArray(response?.data) ? response.data : Array.isArray(response) ? response : [];
             return rows
@@ -1679,6 +1924,12 @@ class Provider {
                 path: String(r.pathDisplay || r.path || ""),
                 score: typeof r.score === "number" ? r.score : undefined,
                 content: String(r.content || "").slice(0, 60000),
+                source: r?.source === "cloud" || r?.source === "local_fallback" ? r.source : "cloud",
+                reason: typeof r?.metadata?.reason === "string" && r.metadata.reason.trim()
+                    ? String(r.metadata.reason).trim()
+                    : Array.isArray(r?.explanations) && r.explanations.length > 0
+                        ? String(r.explanations.slice(0, 3).join("; "))
+                        : "Cloud index match",
             }))
                 .filter((x) => x.content.length > 0)
                 .slice(0, limit);
@@ -1726,7 +1977,16 @@ class Provider {
                             chunkHash: sha(`${relNorm}:${trimmed}`),
                             pathDisplay: relNorm,
                             content: trimmed,
-                            metadata: { language: doc.languageId || languageFromPath(relNorm), trigger },
+                            metadata: {
+                                ...(0, intelligence_utils_1.buildIndexChunkMetadata)({
+                                    pathDisplay: relNorm,
+                                    language: doc.languageId || languageFromPath(relNorm),
+                                    content: trimmed,
+                                    source: "cloud",
+                                    reason: "Workspace index chunk",
+                                }),
+                                trigger,
+                            },
                         });
                         if (!manualRun && chunks.length >= INDEX_AUTO_CHUNK_LIMIT) {
                             break filesLoop;
@@ -1988,15 +2248,28 @@ class Provider {
                 this.post({ type: "sendAck" });
                 const attachments = sanitizeAssistAttachments(m.attachments);
                 const threadId = typeof m.threadId === "string" ? String(m.threadId).trim() : "";
-                const requestedModel = String(this.defaultModelAlias || this.selectedModelAlias || DEFAULT_PLAYGROUND_MODEL).trim() || DEFAULT_PLAYGROUND_MODEL;
+                const requestedModel = String(m.model || this.selectedModelAlias || this.defaultModelAlias || DEFAULT_PLAYGROUND_MODEL).trim() || DEFAULT_PLAYGROUND_MODEL;
                 this.selectedModelAlias = requestedModel;
+                const runProfile = (0, intelligence_utils_1.resolveRunProfileFromLegacyParallel)({
+                    runProfile: typeof m.runProfile === "string" ? String(m.runProfile) : undefined,
+                    parallel: Boolean(m.parallel),
+                });
+                const supportsImages = this.selectedModelSupportsImages(requestedModel);
+                const safeAttachments = supportsImages ? attachments : [];
                 if (Array.isArray(m.attachments) && m.attachments.length > attachments.length) {
                     this.post({ type: "status", text: "Some image attachments were skipped because they were invalid or unsupported." });
                 }
-                await this.ask(String(m.text || ""), Boolean(m.parallel), requestedModel, String(m.reasoning || "medium"), {
+                if (attachments.length > 0 && !supportsImages) {
+                    this.post({ type: "status", text: `Image attachments are disabled for ${modelLabelForUi(requestedModel, this.modelCatalog)}.` });
+                }
+                await this.ask(String(m.text || ""), runProfile === "deep_focus", requestedModel, String(m.reasoning || "medium"), {
                     includeIdeContext: m.includeIdeContext !== undefined ? Boolean(m.includeIdeContext) : true,
                     workspaceContextLevel: (m.workspaceContextLevel === "max" ? "max" : "max"),
-                    attachments,
+                    attachments: safeAttachments,
+                    runProfile,
+                    excludedContextPaths: Array.isArray(m.excludedContextPaths)
+                        ? m.excludedContextPaths.map((item) => String(item || "").trim()).filter(Boolean)
+                        : [],
                     ...(threadId ? { threadId } : {}),
                 });
             }
@@ -2059,7 +2332,12 @@ class Provider {
             else if (m.type === "contextPreview") {
                 const query = String(m.text || "");
                 const threadId = typeof m.threadId === "string" ? String(m.threadId).trim() : "";
-                this.scheduleContextPreview(query, threadId || undefined);
+                const excludedContextPaths = Array.isArray(m.excludedContextPaths)
+                    ? m.excludedContextPaths
+                        .map((item) => String(item || "").trim())
+                        .filter(Boolean)
+                    : [];
+                this.scheduleContextPreview(query, threadId || undefined, excludedContextPaths);
             }
             else if (m.type === "pinThread") {
                 await this.setThreadPinned(String(m.id || ""), Boolean(m.pinned));
@@ -2074,6 +2352,11 @@ class Provider {
     }
     async openImagePicker() {
         await this.show();
+        if (!this.selectedModelSupportsImages()) {
+            this.post({ type: "status", text: "Image attachments are not available for the selected model." });
+            this.post({ type: "attachmentsCapability", enabled: false, reason: "Selected model does not support image input." });
+            return;
+        }
         await new Promise((resolve) => setTimeout(resolve, 60));
         this.post({ type: "openUploadPicker" });
     }
@@ -2608,12 +2891,18 @@ class Provider {
         }
     }
     async askSingleCycle(text, parallel, model = DEFAULT_PLAYGROUND_MODEL, reasoning = "medium", options = {}) {
+        const runProfile = (0, intelligence_utils_1.resolveRunProfileFromLegacyParallel)({
+            runProfile: options.runProfile,
+            parallel,
+        });
+        const parallelAlias = runProfile === "deep_focus";
         this.lastAssistRequest = {
             task: text,
-            parallel,
+            parallel: parallelAlias,
+            runProfile,
             model,
             reasoning,
-            options: { ...options },
+            options: { ...options, runProfile },
         };
         this.lastActionOutcome = null;
         const cycleContext = options.autonomyCycle;
@@ -2724,14 +3013,14 @@ class Provider {
                 : text;
         const requestMode = conversational || strictConversationOnly ? "generate" : this.mode;
         const requestReasoning = smallTalk ? "low" : reasoning;
-        const fileInfoQuestion = this.isFileInfoQuestion(text);
         const mentionTokens = this.mentionsEnabled() ? extractAtMentions(text) : [];
-        const shouldAttachContextForTask = true;
         const ideContextEnabled = true;
         const root = this.getWorkspaceRoot();
         const workspaceHash = this.computeWorkspaceHash(root);
         const preflightStarted = Date.now();
         let collectedContext;
+        let retrievalHints;
+        let contextSelectionPreview;
         let contextStatus = {
             enabled: ideContextEnabled,
             phase: "collecting",
@@ -2747,71 +3036,23 @@ class Provider {
         this.postContextStatus(runThreadId, { ...contextStatus });
         if (ideContextEnabled && !strictConversationOnly) {
             try {
-                collectedContext = await this.collectIdeContext(text, workspaceHash, auth);
+                const collected = await this.collectIdeContext(text, workspaceHash, auth, {
+                    excludedContextPaths: options.excludedContextPaths,
+                });
+                collectedContext = collected.context;
+                retrievalHints = collected.retrievalHints;
+                contextSelectionPreview = collected.contextSelection;
+                contextStatus = { ...collected.contextStatus };
+                if (mentionTokens.length) {
+                    const mentionLabel = mentionTokens.slice(0, 6).join(", ");
+                    contextStatus.notes = [...(contextStatus.notes || []), `@mentions: ${mentionLabel}${mentionTokens.length > 6 ? ` (+${mentionTokens.length - 6} more)` : ""}`];
+                }
+                this.postContextSelectionPreview(runThreadId, contextSelectionPreview);
             }
             catch (e) {
                 const message = err(e);
                 contextStatus.notes?.push(`context partial: ${message}`);
                 addDiagnosticEvent("context_partial", message, "warn");
-            }
-            if (this.mentionsEnabled()) {
-                try {
-                    const mentioned = await this.collectMentionedWorkspaceContext(text, 8, 20000, mentionTokens);
-                    if (mentioned.length) {
-                        collectedContext = collectedContext || {};
-                        const existing = new Set((collectedContext.openFiles ?? []).map((x) => x.path));
-                        collectedContext.openFiles = [
-                            ...mentioned.filter((x) => !existing.has(x.path)),
-                            ...(collectedContext.openFiles ?? []),
-                        ];
-                        const label = mentioned
-                            .slice(0, 6)
-                            .map((x) => x.path)
-                            .join(", ");
-                        contextStatus.notes?.push(`@mentions: ${label}${mentioned.length > 6 ? ` (+${mentioned.length - 6} more)` : ""}`);
-                    }
-                }
-                catch (e) {
-                    const message = err(e);
-                    contextStatus.notes?.push(`mentions partial: ${message}`);
-                    addDiagnosticEvent("mentions_partial", message, "warn");
-                }
-            }
-            try {
-                const symbolMatches = await this.collectSymbolWorkspaceContext(text, 6, 8000);
-                if (symbolMatches.length) {
-                    collectedContext = collectedContext || {};
-                    const existing = new Set((collectedContext.openFiles ?? []).map((x) => x.path));
-                    collectedContext.openFiles = [
-                        ...symbolMatches.filter((x) => !existing.has(x.path)),
-                        ...(collectedContext.openFiles ?? []),
-                    ];
-                    const label = symbolMatches.slice(0, 4).map((x) => x.path).join(", ");
-                    contextStatus.notes?.push(`symbol lookup: ${label}${symbolMatches.length > 4 ? ` (+${symbolMatches.length - 4} more)` : ""}`);
-                }
-            }
-            catch (e) {
-                const message = err(e);
-                contextStatus.notes?.push(`symbol lookup partial: ${message}`);
-                addDiagnosticEvent("symbol_lookup_partial", message, "warn");
-            }
-            if (collectedContext) {
-                const sectionCount = [
-                    collectedContext.activeFile ? 1 : 0,
-                    (collectedContext.openFiles?.length ?? 0) > 0 ? 1 : 0,
-                    (collectedContext.diagnostics?.length ?? 0) > 0 ? 1 : 0,
-                    collectedContext.git ? 1 : 0,
-                    (collectedContext.indexedSnippets?.length ?? 0) > 0 ? 1 : 0,
-                ].reduce((acc, v) => acc + v, 0);
-                contextStatus = {
-                    ...contextStatus,
-                    phase: "ready",
-                    sections: sectionCount,
-                    snippets: collectedContext.indexedSnippets?.length ?? 0,
-                    workspaceMatches: collectedContext.openFiles?.length ?? 0,
-                    indexFreshness: this.indexFreshness,
-                    discoveryCommands: (collectedContext.git?.status?.length ?? 0) > 0 || collectedContext.git?.diffSummary ? 3 : 0,
-                };
             }
         }
         contextStatus.phase = "ready";
@@ -2820,7 +3061,10 @@ class Provider {
         if (contextStatus.notes?.length) {
             this.postRun(runThreadId, { type: "status", text: contextStatus.notes.join(" | ") });
         }
-        const hintedTargetPath = await this.resolveExistingWorkspaceFilePath(String(collectedContext?.activeFile?.path || collectedContext?.openFiles?.[0]?.path || ""));
+        const hintedTargetPath = await this.resolveExistingWorkspaceFilePath(String(contextSelectionPreview?.targetInference?.path ||
+            collectedContext?.activeFile?.path ||
+            collectedContext?.openFiles?.[0]?.path ||
+            ""));
         const selectedCodeHint = String(collectedContext?.activeFile?.selection || "").trim();
         const taskForAssist = wantsEdits
             ? [
@@ -2891,6 +3135,11 @@ class Provider {
                 ...(historySessionId ? { historySessionId } : {}),
                 workflowIntentId: `reasoning:${requestReasoning}`,
                 contextBudget: { maxTokens: 65536, strategy: "hybrid" },
+                clientPreferences: {
+                    reasoning: requestReasoning,
+                    runProfile,
+                },
+                ...(retrievalHints ? { retrievalHints } : {}),
                 clientTrace: {
                     extensionVersion: String(this.ctx.extension.packageJSON?.version || "0.0.0"),
                     workspaceHash,
@@ -2914,9 +3163,6 @@ class Provider {
                         failsafe: autonomyProfile.failsafe,
                     },
                 safetyProfile: this.safety,
-                agentConfig: parallel
-                    ? { strategy: "parallel", roles: ["planner", "implementer", "reviewer"] }
-                    : { strategy: "single" },
             }, {
                 onCancelReady: (cancel) => {
                     this.activeStreamCancel = cancel;
@@ -6710,8 +6956,8 @@ function html(webview, extensionUri) {
         color: color-mix(in srgb, var(--fg) 55%, var(--muted) 45%);
       }
       .footer-accent {
-        color: color-mix(in srgb, var(--accent) 74%, #f2d74e 26%);
-        font-weight: 600;
+        color: color-mix(in srgb, var(--fg) 72%, var(--muted) 28%);
+        font-weight: 500;
       }
       .footer-row #usagePct {
         margin-left: auto;
@@ -8264,6 +8510,89 @@ function html(webview, extensionUri) {
         text-overflow: ellipsis;
         display: none;
       }
+      .context-selection-panel {
+        border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+        border-radius: 14px;
+        background: color-mix(in srgb, var(--bg-0) 82%, var(--surface) 18%);
+        padding: 10px 12px;
+        display: grid;
+        gap: 8px;
+      }
+      .context-selection-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .context-selection-title {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        color: var(--muted);
+      }
+      .context-selection-body {
+        display: grid;
+        gap: 8px;
+      }
+      .context-selection-meta,
+      .context-selection-list {
+        display: grid;
+        gap: 6px;
+      }
+      .context-selection-meta-row,
+      .context-selection-item {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .context-selection-label {
+        min-width: 70px;
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: .06em;
+      }
+      .context-selection-value,
+      .context-selection-reason {
+        color: color-mix(in srgb, var(--fg) 88%, var(--muted) 12%);
+        font-size: 12px;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+      }
+      .context-selection-main {
+        min-width: 0;
+        display: grid;
+        gap: 2px;
+      }
+      .context-selection-path {
+        font-family: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
+        font-size: 12px;
+        color: var(--fg);
+        overflow-wrap: anywhere;
+      }
+      .context-selection-score {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .context-selection-exclude,
+      .context-selection-reset {
+        border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+        background: transparent;
+        color: var(--fg);
+        border-radius: 999px;
+        padding: 4px 9px;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .context-selection-exclude[disabled] {
+        opacity: .55;
+        cursor: default;
+      }
+      .context-selection-empty {
+        color: var(--muted);
+        font-size: 12px;
+      }
       @media (max-width: 460px) {
         .context-telemetry-meta {
           flex-basis: 100%;
@@ -8469,9 +8798,9 @@ function html(webview, extensionUri) {
       }
       /* Replica redesign overrides */
       :root {
-        --rep-bg: color-mix(in srgb, var(--vscode-sideBar-background, #000) 88%, #000 12%);
-        --rep-surface: color-mix(in srgb, var(--rep-bg) 88%, var(--vscode-editor-foreground, #fff) 12%);
-        --rep-surface-2: color-mix(in srgb, var(--rep-bg) 82%, var(--vscode-editor-foreground, #fff) 18%);
+        --rep-bg: var(--vscode-sideBar-background, var(--vscode-panel-background, var(--vscode-editor-background, #1e1e1e)));
+        --rep-surface: var(--vscode-editorWidget-background, var(--vscode-sideBar-background, var(--rep-bg)));
+        --rep-surface-2: color-mix(in srgb, var(--rep-surface) 92%, var(--vscode-editor-foreground, #fff) 8%);
         --rep-border: color-mix(in srgb, var(--vscode-editor-foreground, #fff) 17%, transparent);
         --rep-fg: var(--vscode-editor-foreground, #ededed);
         --rep-muted: color-mix(in srgb, var(--rep-fg) 62%, transparent);
@@ -9188,55 +9517,52 @@ function html(webview, extensionUri) {
       #chatDock .composer-right {
         display: inline-flex !important;
         align-items: center !important;
-        gap: 8px !important;
+        gap: 6px !important;
       }
       #chatDock .chat-context-meter {
         --context-progress: 0;
-        --context-meter-accent: #63b3ff;
+        --context-meter-accent: color-mix(in srgb, var(--rep-fg) 68%, transparent);
         display: inline-flex !important;
         align-items: center !important;
         justify-content: center !important;
         position: relative !important;
-        width: 30px !important;
-        height: 30px !important;
-        min-width: 30px !important;
+        width: 28px !important;
+        height: 28px !important;
+        min-width: 28px !important;
         border-radius: 999px !important;
         flex: 0 0 auto !important;
         background: conic-gradient(
           from -90deg,
           var(--context-meter-accent) calc(var(--context-progress) * 1turn),
-          rgba(255, 255, 255, 0.12) 0
+          color-mix(in srgb, var(--rep-fg) 10%, transparent) 0
         ) !important;
-        box-shadow:
-          inset 0 0 0 1px rgba(255, 255, 255, 0.1),
-          0 8px 20px rgba(0, 0, 0, 0.22) !important;
+        box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rep-fg) 10%, transparent) !important;
         color: var(--context-meter-accent) !important;
       }
       #chatDock .chat-context-meter::before {
         content: "" !important;
         position: absolute !important;
-        inset: 3px !important;
+        inset: 2px !important;
         border-radius: inherit !important;
-        background: rgba(9, 12, 18, 0.96) !important;
-        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        background: color-mix(in srgb, var(--rep-bg) 98%, var(--rep-fg) 2%) !important;
+        border: 1px solid color-mix(in srgb, var(--rep-fg) 9%, transparent) !important;
       }
       #chatDock .chat-context-meter-value {
         position: relative !important;
         z-index: 1 !important;
-        font-size: 9px !important;
+        font-size: 8px !important;
         font-weight: 700 !important;
         line-height: 1 !important;
         letter-spacing: -0.03em !important;
       }
       #chatDock .chat-context-meter.warn {
-        --context-meter-accent: #f2c46f;
+        --context-meter-accent: color-mix(in srgb, var(--rep-fg) 80%, transparent);
       }
       #chatDock .chat-context-meter.danger {
-        --context-meter-accent: #ff8d7b;
+        --context-meter-accent: color-mix(in srgb, var(--rep-fg) 94%, transparent);
       }
       #contextTelemetry,
-      .composer-meta,
-      .footer-row {
+      .composer-meta {
         display: none !important;
       }
       .queue-panel {
@@ -9306,13 +9632,11 @@ function html(webview, extensionUri) {
         align-items: stretch !important;
         gap: 0 !important;
         /* Ensure the composer always has a visible border. */
-        border: 1px solid rgba(255, 255, 255, 0.32) !important;
+        border: 1px solid color-mix(in srgb, var(--rep-fg) 16%, transparent) !important;
         border-radius: 18px !important;
-        background: transparent !important;
+        background: color-mix(in srgb, var(--rep-bg) 97%, var(--rep-fg) 3%) !important;
         overflow: hidden !important;
-        box-shadow:
-          0 0 0 1px rgba(255, 255, 255, 0.08) !important,
-          0 12px 32px rgba(0, 0, 0, 0.35) !important;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18) !important;
         position: relative !important;
         overflow: visible !important;
       }
@@ -9326,15 +9650,13 @@ function html(webview, extensionUri) {
         max-height: 160px !important;
       }
       .chat-panel.active #chatDock .input-actions.minimal {
-        border-top: 1px solid rgba(255, 255, 255, 0.18) !important;
+        border-top: 1px solid color-mix(in srgb, var(--rep-fg) 10%, transparent) !important;
         background: transparent !important;
         padding: 8px 10px !important;
       }
       .chat-panel.active #chatDock .composer-shell:focus-within {
-        border-color: rgba(255, 255, 255, 0.44) !important;
-        box-shadow:
-          0 0 0 1px rgba(255, 255, 255, 0.18),
-          0 12px 32px rgba(0, 0, 0, 0.4) !important;
+        border-color: color-mix(in srgb, var(--rep-fg) 24%, transparent) !important;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24) !important;
       }
       /* Keep mention menu visible above chat bubbles. */
       .chat-panel.active #chatDock .input,
@@ -9457,21 +9779,17 @@ function html(webview, extensionUri) {
       }
       #chatDock .composer-shell {
         position: relative !important;
-        border: 1px solid rgba(255, 255, 255, 0.3) !important;
+        border: 1px solid color-mix(in srgb, var(--rep-fg) 16%, transparent) !important;
         border-radius: 16px !important;
-        background: transparent !important;
-        box-shadow:
-          0 0 0 1px rgba(255, 255, 255, 0.07) !important,
-          0 10px 30px rgba(0, 0, 0, 0.28) !important;
+        background: color-mix(in srgb, var(--rep-bg) 97%, var(--rep-fg) 3%) !important;
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18) !important;
       }
       #chatDock .composer-shell:focus-within {
-        border-color: rgba(255, 255, 255, 0.42) !important;
-        box-shadow:
-          0 0 0 1px rgba(255, 255, 255, 0.14) !important,
-          0 12px 32px rgba(0, 0, 0, 0.34) !important;
+        border-color: color-mix(in srgb, var(--rep-fg) 24%, transparent) !important;
+        box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22) !important;
       }
       #chatDock .input-actions.minimal {
-        border-top: 1px solid rgba(255, 255, 255, 0.14) !important;
+        border-top: 1px solid color-mix(in srgb, var(--rep-fg) 10%, transparent) !important;
       }
       #chatDock .context-toggle-pill {
         gap: 0 !important;
@@ -9488,6 +9806,33 @@ function html(webview, extensionUri) {
       #chatDock .context-toggle-pill .context-pill::before {
         content: none !important;
         display: none !important;
+      }
+      #chatDock .footer-row {
+        display: flex !important;
+        align-items: center !important;
+        gap: 10px !important;
+        width: 100% !important;
+        padding: 6px 2px 0 !important;
+        margin-top: 4px !important;
+        color: var(--rep-muted) !important;
+        font-size: 10px !important;
+        letter-spacing: 0.01em !important;
+      }
+      #chatDock .footer-row #runState,
+      #chatDock .footer-row #permState {
+        min-width: 0 !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+      }
+      #chatDock .footer-row #permState {
+        color: color-mix(in srgb, var(--rep-fg) 72%, transparent) !important;
+      }
+      #chatDock .footer-row #usagePct {
+        display: none !important;
+      }
+      #chatDock .footer-row #chatContextMeter {
+        margin-left: auto !important;
       }
       #chatDock #mentionMenu.mention-menu {
         position: absolute !important;
@@ -9771,24 +10116,19 @@ function html(webview, extensionUri) {
         margin: 10px 10px 10px;
         padding: 12px 14px;
         border-radius: 16px;
-        border: 1px solid rgba(133, 214, 255, 0.34);
-        background:
-          radial-gradient(circle at top left, rgba(96, 165, 250, 0.22), transparent 54%),
-          linear-gradient(135deg, rgba(9, 18, 34, 0.96), rgba(10, 46, 73, 0.92));
-        color: #e7f6ff;
-        box-shadow:
-          0 16px 40px rgba(2, 12, 27, 0.34),
-          inset 0 1px 0 rgba(255, 255, 255, 0.08),
-          inset 0 0 0 1px rgba(125, 211, 252, 0.06);
+        border: 1px solid color-mix(in srgb, var(--rep-fg) 16%, transparent);
+        background: color-mix(in srgb, var(--rep-bg) 96%, var(--rep-fg) 4%);
+        color: var(--rep-fg);
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
       }
       #modeBanner .mode-banner-mark {
         flex: 0 0 auto;
         min-width: 54px;
         padding: 7px 10px;
         border-radius: 999px;
-        border: 1px solid rgba(147, 197, 253, 0.3);
-        background: linear-gradient(135deg, rgba(59, 130, 246, 0.26), rgba(34, 211, 238, 0.12));
-        color: #bfe8ff;
+        border: 1px solid color-mix(in srgb, var(--rep-fg) 16%, transparent);
+        background: color-mix(in srgb, var(--rep-fg) 4%, transparent);
+        color: color-mix(in srgb, var(--rep-fg) 72%, transparent);
         font-size: 10px;
         font-weight: 800;
         letter-spacing: 0.18em;
@@ -9804,12 +10144,12 @@ function html(webview, extensionUri) {
         font-size: 13px;
         font-weight: 700;
         letter-spacing: 0.01em;
-        color: #f3fbff;
+        color: var(--rep-fg);
       }
       #modeBanner .mode-banner-sub {
         font-size: 11px;
         line-height: 1.45;
-        color: rgba(219, 241, 255, 0.8);
+        color: color-mix(in srgb, var(--rep-fg) 66%, transparent);
       }
       #chatDock .composer-status-pills {
         display: inline-flex;
@@ -9828,7 +10168,7 @@ function html(webview, extensionUri) {
         border: none;
         border-radius: 0;
         background: transparent;
-        color: #8fd8ff;
+        color: color-mix(in srgb, var(--rep-fg) 70%, transparent);
         box-shadow: none;
         font-size: 11px;
         font-weight: 700;
@@ -9839,8 +10179,8 @@ function html(webview, extensionUri) {
         transform: none;
         border: none;
         background: transparent;
-        color: #c5ebff;
-        text-shadow: 0 0 14px rgba(56, 189, 248, 0.24);
+        color: var(--rep-fg);
+        text-shadow: none;
       }
       #chatDock .mode-plan-chip:active {
         transform: translateY(0);
@@ -9885,6 +10225,260 @@ function html(webview, extensionUri) {
         }
         #msgs.messages .m {
           max-width: 96% !important;
+        }
+      }
+
+      /* Minimal monochrome refinement */
+      #app.app {
+        background: var(--rep-bg) !important;
+      }
+      .global-top {
+        padding: 10px 14px 8px !important;
+        border-bottom: 1px solid color-mix(in srgb, var(--rep-fg) 10%, transparent) !important;
+        background: var(--rep-bg) !important;
+        box-shadow: none !important;
+      }
+      .brand-block {
+        gap: 1px !important;
+      }
+      .brand-kicker {
+        color: color-mix(in srgb, var(--rep-fg) 42%, transparent) !important;
+        letter-spacing: 0.18em !important;
+      }
+      .menu-icon,
+      .chat-empty-action,
+      .action-item,
+      .sheet-close,
+      .api-key-save,
+      .jump-btn,
+      .composer-inline-select,
+      .composer-select,
+      .api-key-input {
+        background: color-mix(in srgb, var(--rep-bg) 92%, var(--rep-fg) 8%) !important;
+        border: 1px solid color-mix(in srgb, var(--rep-fg) 12%, transparent) !important;
+        color: color-mix(in srgb, var(--rep-fg) 88%, transparent) !important;
+        box-shadow: none !important;
+      }
+      .menu-icon:hover,
+      .chat-empty-action:hover,
+      .action-item:hover,
+      .sheet-close:hover,
+      .api-key-save:hover,
+      .jump-btn:hover,
+      .composer-inline-select:hover,
+      .composer-inline-select:focus,
+      .composer-select:hover,
+      .composer-select:focus,
+      .api-key-input:focus {
+        background: color-mix(in srgb, var(--rep-bg) 88%, var(--rep-fg) 12%) !important;
+        border-color: color-mix(in srgb, var(--rep-fg) 18%, transparent) !important;
+        color: var(--rep-fg) !important;
+        transform: none !important;
+      }
+      .chat-empty-history-list,
+      .sheet-card,
+      .action-menu-sheet,
+      .stage-shell .panel.active {
+        border-color: color-mix(in srgb, var(--rep-fg) 10%, transparent) !important;
+        background: var(--rep-surface) !important;
+        box-shadow: none !important;
+      }
+      #modeBanner.mode-banner {
+        border-color: color-mix(in srgb, var(--rep-fg) 12%, transparent) !important;
+        background: var(--rep-surface) !important;
+        box-shadow: none !important;
+      }
+      #modeBanner .mode-banner-mark {
+        border-color: color-mix(in srgb, var(--rep-fg) 14%, transparent) !important;
+        background: var(--rep-surface-2) !important;
+        color: color-mix(in srgb, var(--rep-fg) 72%, transparent) !important;
+      }
+      #chatDock.dock-shell,
+      .chat-panel.active #chatDock.dock-shell {
+        padding: 0 12px 14px !important;
+      }
+      #chatDock .composer-shell,
+      .chat-panel.active #chatDock .composer-shell {
+        border: 1px solid color-mix(in srgb, var(--rep-fg) 12%, transparent) !important;
+        border-radius: 14px !important;
+        background: var(--rep-surface) !important;
+        box-shadow: 0 8px 18px rgba(0, 0, 0, 0.14) !important;
+      }
+      #chatDock .composer-shell:focus-within,
+      .chat-panel.active #chatDock .composer-shell:focus-within {
+        border-color: color-mix(in srgb, var(--rep-fg) 18%, transparent) !important;
+        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.16) !important;
+      }
+      #chatDock textarea#t,
+      .chat-panel.active #chatDock textarea#t {
+        min-height: 54px !important;
+        padding: 12px 14px 9px !important;
+        line-height: 1.5 !important;
+        color: color-mix(in srgb, var(--rep-fg) 94%, transparent) !important;
+      }
+      #chatDock .composer-shell textarea::placeholder,
+      .chat-panel.active #chatDock .composer-shell textarea::placeholder {
+        color: color-mix(in srgb, var(--rep-fg) 34%, transparent) !important;
+      }
+      #chatDock .input-actions.minimal,
+      .chat-panel.active #chatDock .input-actions.minimal {
+        padding: 8px 10px !important;
+        gap: 8px !important;
+        border-top: 1px solid color-mix(in srgb, var(--rep-fg) 8%, transparent) !important;
+        background: var(--rep-bg) !important;
+      }
+      #chatDock .composer-inline-select,
+      .chat-panel.active #chatDock .composer-inline-select {
+        height: 28px !important;
+        padding: 0 10px !important;
+        border-radius: 999px !important;
+        max-width: 132px !important;
+        font-size: 11px !important;
+      }
+      #chatDock .context-toggle-pill .context-pill,
+      .chat-panel.active #chatDock .context-toggle-pill .context-pill {
+        color: color-mix(in srgb, var(--rep-fg) 62%, transparent) !important;
+      }
+      #chatDock .mode-plan-chip,
+      .chat-panel.active #chatDock .mode-plan-chip {
+        color: color-mix(in srgb, var(--rep-fg) 58%, transparent) !important;
+      }
+      #chatDock .attach-btn,
+      #chatDock .send-round,
+      .chat-panel.active #chatDock .attach-btn,
+      .chat-panel.active #chatDock .send-round {
+        width: 30px !important;
+        height: 30px !important;
+        min-width: 30px !important;
+        padding: 0 !important;
+        border-radius: 999px !important;
+        background: color-mix(in srgb, var(--rep-bg) 90%, var(--rep-fg) 10%) !important;
+        border: 1px solid color-mix(in srgb, var(--rep-fg) 14%, transparent) !important;
+        color: color-mix(in srgb, var(--rep-fg) 92%, transparent) !important;
+        box-shadow: none !important;
+      }
+      #chatDock .send-round.is-streaming,
+      .chat-panel.active #chatDock .send-round.is-streaming {
+        background: color-mix(in srgb, var(--rep-bg) 84%, var(--rep-fg) 16%) !important;
+        border-color: color-mix(in srgb, var(--rep-fg) 22%, transparent) !important;
+        color: var(--rep-fg) !important;
+      }
+      #chatDock .footer-row,
+      .chat-panel.active #chatDock .footer-row {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        width: 100% !important;
+        padding: 7px 2px 0 !important;
+        margin-top: 2px !important;
+        color: color-mix(in srgb, var(--rep-fg) 44%, transparent) !important;
+        font-size: 10px !important;
+        letter-spacing: 0.08em !important;
+        text-transform: uppercase !important;
+      }
+      #chatDock .footer-row #runState,
+      #chatDock .footer-row #permState,
+      .chat-panel.active #chatDock .footer-row #runState,
+      .chat-panel.active #chatDock .footer-row #permState {
+        min-width: 0 !important;
+        max-width: 34% !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        color: inherit !important;
+      }
+      #chatDock .footer-row #usagePct,
+      .chat-panel.active #chatDock .footer-row #usagePct {
+        display: none !important;
+      }
+      #chatDock .footer-row #chatContextMeter,
+      .chat-panel.active #chatDock .footer-row #chatContextMeter {
+        --context-meter-accent: color-mix(in srgb, var(--rep-fg) 74%, transparent);
+        margin-left: auto !important;
+        width: 24px !important;
+        height: 24px !important;
+        min-width: 24px !important;
+        background: conic-gradient(
+          from -90deg,
+          var(--context-meter-accent) calc(var(--context-progress) * 1turn),
+          color-mix(in srgb, var(--rep-fg) 9%, transparent) 0
+        ) !important;
+        box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rep-fg) 10%, transparent) !important;
+      }
+      #chatDock .footer-row #chatContextMeter::before,
+      .chat-panel.active #chatDock .footer-row #chatContextMeter::before {
+        inset: 2px !important;
+        background: color-mix(in srgb, var(--rep-bg) 98%, var(--rep-fg) 2%) !important;
+        border: 1px solid color-mix(in srgb, var(--rep-fg) 10%, transparent) !important;
+      }
+      #chatDock .footer-row #chatContextMeterValue,
+      .chat-panel.active #chatDock .footer-row #chatContextMeterValue {
+        font-size: 7px !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.02em !important;
+        color: color-mix(in srgb, var(--rep-fg) 76%, transparent) !important;
+      }
+      #chatDock #mentionMenu.mention-menu,
+      .chat-panel.active #chatDock #mentionMenu.mention-menu {
+        border-color: color-mix(in srgb, var(--rep-fg) 12%, transparent) !important;
+        background: var(--rep-surface) !important;
+        box-shadow: 0 12px 26px rgba(0, 0, 0, 0.22) !important;
+      }
+      .mention-item.active {
+        background: color-mix(in srgb, var(--rep-bg) 84%, var(--rep-fg) 16%) !important;
+      }
+      .typing-dots i {
+        background: color-mix(in srgb, var(--rep-fg) 62%, transparent) !important;
+      }
+      .chat-panel.active #msgs.messages {
+        padding: 12px 12px 16px !important;
+        gap: 10px !important;
+      }
+      .chat-panel.active #msgs.messages .m .m-body {
+        border-radius: 14px !important;
+        border: 1px solid color-mix(in srgb, var(--rep-fg) 10%, transparent) !important;
+        background: var(--rep-surface) !important;
+        box-shadow: none !important;
+      }
+      .chat-panel.active #msgs.messages .m.a .m-body {
+        padding: 10px 12px !important;
+        border-radius: 14px !important;
+        border: 1px solid color-mix(in srgb, var(--rep-fg) 9%, transparent) !important;
+        background: var(--rep-surface) !important;
+      }
+      .chat-panel.active #msgs.messages .m.u .m-body {
+        background: var(--rep-surface-2) !important;
+        border-color: color-mix(in srgb, var(--rep-fg) 14%, transparent) !important;
+        border-radius: 14px 14px 5px 14px !important;
+      }
+      .chat-panel.active #msgs.messages .m.cmd .m-body,
+      .chat-panel.active #msgs.messages .m.change .m-body,
+      .chat-panel.active #msgs.messages .m.diagnostics .m-body {
+        background: var(--rep-surface) !important;
+        border-color: color-mix(in srgb, var(--rep-fg) 12%, transparent) !important;
+      }
+      .chat-panel.active #msgs.messages .m .m-time {
+        color: color-mix(in srgb, var(--rep-fg) 40%, transparent) !important;
+      }
+
+      @media (max-width: 430px) {
+        #chatDock .footer-row,
+        .chat-panel.active #chatDock .footer-row {
+          padding-top: 6px !important;
+          gap: 6px !important;
+          letter-spacing: 0.06em !important;
+        }
+        #chatDock .footer-row #runState,
+        #chatDock .footer-row #permState,
+        .chat-panel.active #chatDock .footer-row #runState,
+        .chat-panel.active #chatDock .footer-row #permState {
+          max-width: 38% !important;
+        }
+        #chatDock .footer-row #chatContextMeter,
+        .chat-panel.active #chatDock .footer-row #chatContextMeter {
+          width: 22px !important;
+          height: 22px !important;
+          min-width: 22px !important;
         }
       }
     </style>
@@ -10017,15 +10611,6 @@ function html(webview, extensionUri) {
                   </div>
                   <div class="composer-right">
                     <span id="queuePill" class="queue-pill" title="Queued messages">Queued: 0</span>
-                    <div
-                      id="chatContextMeter"
-                      class="chat-context-meter"
-                      role="status"
-                      aria-label="Current chat context length"
-                      title="Approximate current chat context length"
-                    >
-                      <span id="chatContextMeterValue" class="chat-context-meter-value">0</span>
-                    </div>
                     <button id="s" type="button" class="primary send-round" aria-label="Send">&#8593;</button>
                   </div>
                 </div>
@@ -10033,6 +10618,14 @@ function html(webview, extensionUri) {
                   <span id="contextAutoBadge" class="context-auto-badge idle">IDE Context</span>
                   <span id="contextTelemetryText" class="context-telemetry-text">Background sync standing by.</span>
                   <span id="contextTelemetryMeta" class="context-telemetry-meta">idle</span>
+                </div>
+                <div id="contextSelectionPanel" class="context-selection-panel hidden" aria-live="polite">
+                  <div class="context-selection-head">
+                    <span class="context-selection-title">Why This Context</span>
+                  </div>
+                  <div id="contextSelectionBody" class="context-selection-body">
+                    <div class="context-selection-empty">Context preview will appear here.</div>
+                  </div>
                 </div>
                 <div class="composer-meta">
                   <span id="composerState" class="composer-state">Mode: Auto - Reasoning: Medium</span>
@@ -10076,8 +10669,8 @@ function html(webview, extensionUri) {
                         </div>
                         <div class="sheet-row sheet-toggle">
                           <label class="tool-toggle">
-                            <span>Parallel agents</span>
-                            <input id="parallelQuick" type="checkbox" />
+                            <span>Deep focus</span>
+                            <input id="deepFocusQuick" type="checkbox" />
                           </label>
                         </div>
                       </div>
@@ -10109,7 +10702,7 @@ function html(webview, extensionUri) {
                         <div class="sheet-card-title">Attachments</div>
                         <div class="sheet-row">
                           <span id="uploadCount" class="tool-muted">No images selected.</span>
-                          <span class="tool-muted">PNG/JPEG/WEBP, up to 3 images, 4 MB each.</span>
+                          <span class="tool-muted">PNG/JPEG/WEBP, up to 3 images, 4 MB each when the selected model supports image input.</span>
                         </div>
                       </div>
                       <div class="sheet-card">
@@ -10134,6 +10727,15 @@ function html(webview, extensionUri) {
                 <span id="runState" class="footer-muted">Local</span>
                 <span id="permState" class="footer-accent">Workspace tools on</span>
                 <span id="usagePct" class="footer-muted">0%</span>
+                <div
+                  id="chatContextMeter"
+                  class="chat-context-meter"
+                  role="status"
+                  aria-label="Current chat context length"
+                  title="Approximate current chat context length"
+                >
+                  <span id="chatContextMeterValue" class="chat-context-meter-value">0</span>
+                </div>
               </div>
             </form>
           </div>

@@ -937,4 +937,134 @@ describe("playground agentic behavior", () => {
     expect(result.final.toLowerCase()).not.toContain("please share the exact file path");
     expect(fetchMock).toHaveBeenCalledTimes(5);
   });
+
+  it("returns target inference and context selection for deep focus active-file runs", async () => {
+    process.env.HF_TOKEN = "test-token";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content:
+                  '{"final":"Prepared update.","actions":[{"type":"write_file","path":"src/hello.py","content":"print(\\"hello\\")\\n","overwrite":true}],"commands":["python -m py_compile src/hello.py"]}',
+              },
+            },
+          ],
+        }),
+      }))
+    );
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "update this file to print hello",
+      clientPreferences: { runProfile: "deep_focus" },
+      context: {
+        activeFile: {
+          path: "src/hello.py",
+          language: "python",
+          content: "print('old')\n",
+        },
+      },
+    });
+
+    expect(result.targetInference).toEqual({
+      path: "src/hello.py",
+      confidence: 0.83,
+      source: "active_file",
+    });
+    expect(result.contextSelection.files.some((file) => file.path === "src/hello.py")).toBe(true);
+    expect(result.contextSelection.usedCloudIndex).toBe(false);
+  });
+
+  it("uses session memory to keep follow-up target continuity", async () => {
+    process.env.HF_TOKEN = "test-token";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content:
+                  '{"final":"Prepared update.","actions":[{"type":"write_file","path":"src/session.ts","content":"export const ok = true;\\n","overwrite":true}],"commands":[]}',
+              },
+            },
+          ],
+        }),
+      }))
+    );
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "apply the follow-up change",
+      userProfile: {
+        stablePreferences: {
+          runProfile: "standard",
+          sessionMemory: {
+            lastTargetPath: "src/session.ts",
+            recentTouchedPaths: ["src/session.ts"],
+            lastValidationCommands: ["npm run lint -- src/session.ts"],
+            latestCompletionBlockers: [],
+          },
+        },
+      },
+    });
+
+    expect(result.targetInference).toEqual({
+      path: "src/session.ts",
+      confidence: 0.74,
+      source: "session_memory",
+    });
+  });
+
+  it("repairs wrong-path actions by re-targeting the inferred file", async () => {
+    process.env.HF_TOKEN = "test-token";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content:
+                  '{"final":"Prepared update.","actions":[{"type":"write_file","path":"wrong.py","content":"print(\\"oops\\")\\n","overwrite":true}],"commands":[]}',
+              },
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content:
+                  '{"final":"Prepared update.","actions":[{"type":"write_file","path":"hello.py","content":"print(\\"hi\\")\\n","overwrite":true}],"commands":[]}',
+              },
+            },
+          ],
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "edit hello.py to print hi",
+      executionPolicy: "full_auto",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.reasonCodes).toContain("target_path_mismatch_repair");
+    expect(result.actions.some((action) => action.type === "write_file" && action.path === "hello.py")).toBe(true);
+  });
 });
