@@ -12,6 +12,7 @@ vi.mock("@/lib/hf-router/rate-limit", () => ({
 let composeWarmAssistantResponse: typeof import("@/lib/playground/orchestration").composeWarmAssistantResponse;
 let contextToPrompt: typeof import("@/lib/playground/orchestration").contextToPrompt;
 let resolveIntentRouting: typeof import("@/lib/playground/orchestration").resolveIntentRouting;
+let shouldUseNvidiaChatTemplateThinking: typeof import("@/lib/playground/orchestration").shouldUseNvidiaChatTemplateThinking;
 let synthesizeDeterministicActions: typeof import("@/lib/playground/orchestration").synthesizeDeterministicActions;
 let runAssist: typeof import("@/lib/playground/orchestration").runAssist;
 
@@ -20,6 +21,7 @@ beforeAll(async () => {
   composeWarmAssistantResponse = mod.composeWarmAssistantResponse;
   contextToPrompt = mod.contextToPrompt;
   resolveIntentRouting = mod.resolveIntentRouting;
+  shouldUseNvidiaChatTemplateThinking = mod.shouldUseNvidiaChatTemplateThinking;
   synthesizeDeterministicActions = mod.synthesizeDeterministicActions;
   runAssist = mod.runAssist;
 });
@@ -29,9 +31,19 @@ afterEach(() => {
   delete process.env.HF_ROUTER_TOKEN;
   delete process.env.HF_TOKEN;
   delete process.env.HUGGINGFACE_TOKEN;
+  delete process.env.PLAYGROUND_NVIDIA_API_KEY;
+  delete process.env.NVIDIA_API_KEY;
+  delete process.env.NVAPI_KEY;
+  delete process.env.NVIDIA_INTEGRATE_API_KEY;
 });
 
 describe("playground orchestration intent routing", () => {
+  it("disables NVIDIA chat-template thinking for Mistral-family models", () => {
+    expect(shouldUseNvidiaChatTemplateThinking("mistralai/devstral-2-123b-instruct-2512")).toBe(false);
+    expect(shouldUseNvidiaChatTemplateThinking("mistralai/mistral-nemotron")).toBe(false);
+    expect(shouldUseNvidiaChatTemplateThinking("openai/gpt-oss-120b")).toBe(true);
+  });
+
   it("routes direct informational question to conversation intent", () => {
     const routed = resolveIntentRouting({
       task: "What is my AI model based on?",
@@ -217,6 +229,66 @@ describe("playground conversational guardrails", () => {
 });
 
 describe("playground agentic behavior", () => {
+  it("uses a conversational system prompt for non-code chat asks", async () => {
+    process.env.HF_TOKEN = "test-token";
+    const fetchMock = vi.fn(async (_url, init) => ({
+      ok: true,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: async () => ({ choices: [{ message: { content: "I'm here to help with questions, ideas, and code when you want it." } }] }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await runAssist({
+      mode: "auto",
+      task: "can you describe what you do here?",
+    });
+
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body || "{}")) as {
+      messages?: Array<{ role?: string; content?: string }>;
+    };
+    const systemPrompt = payload.messages?.find((message) => message.role === "system")?.content || "";
+    expect(systemPrompt).toContain("helpful, natural, and concise in conversation");
+    expect(systemPrompt).toContain("Do not claim to be inspecting, analyzing, scanning, or reading project files");
+    expect(systemPrompt).not.toContain("plain text suitable for a coding assistant");
+  });
+
+  it("describes concrete backend file actions for code-edit asks", async () => {
+    process.env.HF_TOKEN = "test-token";
+    const fetchMock = vi.fn(async (_url, init) => ({
+      ok: true,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content:
+                '{"final":"Prepared change.","actions":[{"type":"write_file","path":"hello.py","content":"print(\\"hi\\")\\n","overwrite":true}],"commands":[]}',
+            },
+          },
+        ],
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await runAssist({
+      mode: "auto",
+      task: "edit hello.py to add a greeting",
+      executionPolicy: "full_auto",
+    });
+
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body || "{}")) as {
+      messages?: Array<{ role?: string; content?: string }>;
+    };
+    const systemPrompt = payload.messages?.find((message) => message.role === "system")?.content || "";
+    expect(systemPrompt).toContain("Available JSON action types:");
+    expect(systemPrompt).toContain("edit(path, patch)");
+    expect(systemPrompt).toContain("write_file(path, content, overwrite)");
+    expect(systemPrompt).toContain("For edit-intent tasks, at least one file action is required.");
+    expect(systemPrompt).toContain("Prefer edit for targeted modifications. Prefer write_file for full rewrites or new files.");
+    expect(systemPrompt).toContain('Valid edit-task JSON example: {"final":"Prepared update."');
+    expect(systemPrompt).toContain('Invalid edit-task JSON example: {"final":"done","actions":[{"type":"command"');
+  });
+
   it("keeps greeting requests conversational without fake actions", async () => {
     process.env.HF_TOKEN = "test-token";
     vi.stubGlobal(
@@ -427,6 +499,7 @@ describe("playground agentic behavior", () => {
     expect(result.edits.some((edit) => edit.path === "hello.py")).toBe(true);
     expect(result.modelMetadata.contractVersion).toBe("2026-03-actions-v1");
     expect(result.modelMetadata.modelResolvedAlias).toBe("playground-default");
+    expect(result.modelMetadata.providerResolved).toBe("hf");
   });
 
   it("normalizes native tool calls into canonical actions", async () => {
@@ -469,6 +542,175 @@ describe("playground agentic behavior", () => {
     expect(result.modelMetadata.adapter).toBe("native_tools_v1");
     expect(result.actions.some((action) => action.type === "write_file" && action.path === "hello.py")).toBe(true);
     expect(result.actionability.summary).toBe("valid_actions");
+  });
+
+  it("tries native tools first in run_until_done mode, then falls back to text actions", async () => {
+    process.env.HF_TOKEN = "test-token";
+    process.env.NVIDIA_API_KEY = "test-nvidia";
+    const fetchMock = vi.fn(async (_url, init) => {
+      const payload = JSON.parse(String(init && typeof init === "object" ? init.body || "{}" : "{}")) as {
+        tools?: unknown[];
+        messages?: Array<{ role?: string; content?: string }>;
+      };
+      if (Array.isArray(payload.tools) && payload.tools.length > 0) {
+        return {
+          ok: true,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: "I will run validation next.",
+                  tool_calls: [
+                    {
+                      function: {
+                        name: "run_command",
+                        arguments: JSON.stringify({
+                          command: "npm run lint",
+                          category: "validation",
+                        }),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+        };
+      }
+      const systemPrompt = payload.messages?.find((message) => message.role === "system")?.content || "";
+      expect(systemPrompt).toMatch(/For edit-intent tasks|Available JSON action types|Available backend tools/);
+      return {
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content:
+                  '{"final":"Prepared update.","actions":[{"type":"write_file","path":"hello.py","content":"print(\\"hello\\")\\n","overwrite":true}],"commands":[]}',
+              },
+            },
+          ],
+        }),
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "edit hello.py to print hello",
+      autonomy: {
+        mode: "unbounded",
+        maxCycles: 0,
+        noClarifyToUser: true,
+        commandPolicy: "run_until_done",
+        safetyFloor: "allow_everything",
+        failsafe: "disabled",
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstPayload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body || "{}")) as { tools?: unknown[] };
+    const secondPayload = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body || "{}")) as { tools?: unknown[] };
+    expect(Array.isArray(firstPayload.tools)).toBe(true);
+    expect(secondPayload.tools).toBeUndefined();
+    expect(result.reasonCodes).toContain("native_tools_route_enabled");
+    expect(result.reasonCodes).toContain("native_tools_route_fallback_to_text_actions");
+    expect(result.toolState.strategy).toBe("max_agentic");
+    expect(result.toolState.route).toBe("text_actions");
+    expect(result.toolState.commandPolicyResolved).toBe("run_until_done");
+    expect(result.actions.some((action) => action.type === "write_file" && action.path === "hello.py")).toBe(true);
+    expect(result.completionStatus).toBe("complete");
+  });
+
+  it("falls back to text actions when native tool arguments are rejected by the provider", async () => {
+    process.env.HF_TOKEN = "test-token";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        headers: new Headers({ "content-type": "application/json" }),
+        text: async () =>
+          '{"error":{"message":"Failed to parse tool call arguments as JSON","type":"invalid_request_error","code":"tool_use_failed","failed_generation":"{\\"name\\": \\"write_file\\", \\"arguments\\":"}}',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content:
+                  '{"final":"Prepared update.","actions":[{"type":"write_file","path":"hello.py","content":"print(\\"hello\\")\\n","overwrite":true}],"commands":[]}',
+              },
+            },
+          ],
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "edit hello.py to print hello",
+      autonomy: {
+        mode: "unbounded",
+        maxCycles: 0,
+        noClarifyToUser: true,
+        commandPolicy: "run_until_done",
+        safetyFloor: "allow_everything",
+        failsafe: "disabled",
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.reasonCodes).toContain("native_tools_provider_error_fallback");
+    expect(result.reasonCodes).toContain("native_tools_route_fallback_to_text_actions");
+    expect(result.toolState.strategy).toBe("max_agentic");
+    expect(result.toolState.route).toBe("text_actions");
+    expect(result.toolState.lastFailureCategory).toBe(null);
+    expect(result.toolState.attempts.some((attempt) => attempt.route === "native_tools" && attempt.failureCategory === "schema_invalid")).toBe(true);
+    expect(result.actions.some((action) => action.type === "write_file" && action.path === "hello.py")).toBe(true);
+    expect(result.completionStatus).toBe("complete");
+  });
+
+  it("keeps safe-default edit runs on the production text-actions route", async () => {
+    process.env.HF_TOKEN = "test-token";
+    process.env.NVIDIA_API_KEY = "test-nvidia";
+    const fetchMock = vi.fn(async (_url, init) => {
+      const payload = JSON.parse(String(init && typeof init === "object" ? init.body || "{}" : "{}")) as {
+        tools?: unknown[];
+        messages?: Array<{ role?: string; content?: string }>;
+      };
+      const systemPrompt = payload.messages?.find((message) => message.role === "system")?.content || "";
+      expect(systemPrompt).toContain("Available JSON action types:");
+      expect(payload.tools).toBeUndefined();
+      return {
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content:
+                  '{"final":"Prepared update.","actions":[{"type":"write_file","path":"hello.py","content":"print(\\"hello\\")\\n","overwrite":true}],"commands":[]}',
+              },
+            },
+          ],
+        }),
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "edit hello.py to print hello",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.toolState.strategy).toBe("standard");
+    expect(result.toolState.route).toBe("text_actions");
+    expect(result.toolState.commandPolicyResolved).toBe("safe_default");
   });
 
   it("infers apply_patch output into edit actions", async () => {
@@ -571,6 +813,100 @@ describe("playground agentic behavior", () => {
     expect(result.missingRequirements).toContain("command_only_output_for_edit_intent");
   });
 
+  it("re-prompts command-only edit output into a real file action", async () => {
+    process.env.HF_TOKEN = "test-token";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: '{"final":"done","edits":[],"commands":["npm run lint"],"actions":[{"type":"command","command":"npm run lint","category":"validation"}]}',
+              },
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content:
+                  '{"final":"Prepared update.","actions":[{"type":"write_file","path":"hello.py","content":"print(\\"hello\\")\\n","overwrite":true}],"commands":[]}',
+              },
+            },
+          ],
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "edit hello.py to add logging",
+      executionPolicy: "full_auto",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.actions.some((action) => action.type === "write_file" && action.path === "hello.py")).toBe(true);
+    expect(result.completionStatus).toBe("complete");
+    expect(result.missingRequirements).not.toContain("file_edit_actions_required");
+  });
+
+  it("keeps retrying edit-intent recovery when outputs stay command-only", async () => {
+    process.env.HF_TOKEN = "test-token";
+    const commandOnlyResponse = {
+      ok: true,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content:
+                '{"final":"run validation","edits":[],"commands":["npm run lint"],"actions":[{"type":"command","command":"npm run lint","category":"validation"}]}',
+            },
+          },
+        ],
+      }),
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(commandOnlyResponse)
+      .mockResolvedValueOnce(commandOnlyResponse)
+      .mockResolvedValueOnce(commandOnlyResponse)
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content:
+                  '{"final":"Prepared update.","actions":[{"type":"write_file","path":"hello.py","content":"print(\\"hello\\")\\n","overwrite":true}],"commands":[]}',
+              },
+            },
+          ],
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "edit hello.py to add logging",
+      executionPolicy: "full_auto",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(result.actions.some((action) => action.type === "write_file" && action.path === "hello.py")).toBe(true);
+    expect(result.completionStatus).toBe("complete");
+    expect(result.missingRequirements).not.toContain("command_only_output_for_edit_intent");
+  });
+
   it("respects no-clarify autonomy profile by returning autonomous retry text instead of user clarification", async () => {
     process.env.HF_TOKEN = "test-token";
     const fetchMock = vi
@@ -599,6 +935,6 @@ describe("playground agentic behavior", () => {
     expect(result.reasonCodes).toContain("autonomy_no_clarify_enabled");
     expect(result.final.toLowerCase()).toContain("autonomous retry required");
     expect(result.final.toLowerCase()).not.toContain("please share the exact file path");
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 });

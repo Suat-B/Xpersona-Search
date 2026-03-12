@@ -1,6 +1,6 @@
 {
     "name": "xpersona-playground",
-    "displayName": "Playground 1",
+    "displayName": "Playground",
     "description": "Minimal AI coding chat in VS Code.",
     "version": "0.0.55",
     "publisher": "playgroundai",
@@ -38,7 +38,7 @@
             "activitybar": [
                 {
                     "id": "xpersona",
-                    "title": "Playground 1",
+                    "title": "Playground",
                     "icon": "media/xpersona.png"
                 }
             ]
@@ -47,7 +47,7 @@
             "xpersona": [
                 {
                     "id": "xpersona.playgroundView",
-                    "name": "Playground 1",
+                    "name": "Playground",
                     "type": "webview",
                     "when": "true"
                 }
@@ -57,82 +57,82 @@
             {
                 "command": "xpersona.playground.prompt",
                 "title": "New Chat",
-                "category": "Playground 1"
+                "category": "Playground"
             },
             {
                 "command": "xpersona.playground.openWithSelection",
                 "title": "Chat with Selection",
-                "category": "Playground 1"
+                "category": "Playground"
             },
             {
                 "command": "xpersona.playground.setApiKey",
                 "title": "Set API Key",
-                "category": "Playground 1"
+                "category": "Playground"
             },
             {
                 "command": "xpersona.playground.mode.auto",
                 "title": "Mode: Auto",
-                "category": "Playground 1"
+                "category": "Playground"
             },
             {
                 "command": "xpersona.playground.mode.plan",
                 "title": "Mode: Plan",
-                "category": "Playground 1"
+                "category": "Playground"
             },
             {
                 "command": "xpersona.playground.mode.yolo",
                 "title": "Mode: Full Access",
-                "category": "Playground 1"
+                "category": "Playground"
             },
             {
                 "command": "xpersona.playground.generate",
                 "title": "Generate",
-                "category": "Playground 1"
+                "category": "Playground"
             },
             {
                 "command": "xpersona.playground.debug",
                 "title": "Debug",
-                "category": "Playground 1"
+                "category": "Playground"
             },
             {
                 "command": "xpersona.playground.history.open",
                 "title": "Open History",
-                "category": "Playground 1"
+                "category": "Playground"
             },
             {
                 "command": "xpersona.playground.image.attach",
                 "title": "Attach Image",
-                "category": "Playground 1"
+                "category": "Playground"
             },
             {
                 "command": "xpersona.playground.agents.parallelRun",
                 "title": "Parallel Agents",
-                "category": "Playground 1"
+                "category": "Playground"
             },
             {
                 "command": "xpersona.playground.index.rebuild",
                 "title": "Rebuild Index",
-                "category": "Playground 1"
+                "category": "Playground"
             },
             {
                 "command": "xpersona.playground.replay.session",
                 "title": "Replay Session",
-                "category": "Playground 1"
+                "category": "Playground"
             },
             {
-                "title": "Undo Playground 1 Changes",
+                "title": "Undo Playground Changes",
                 "command": "xpersona.playground.undoLastChanges",
-                "category": "Playground 1"
+                "category": "Playground"
             },
             {
                 "title": "Sign In (Browser)",
                 "command": "xpersona.playground.signIn",
-                "category": "Playground 1"
+                "category": "Playground"
             },
             {
                 "title": "Sign Out",
                 "command": "xpersona.playground.signOut",
-                "category": "Playground 1"
+                "category": "Playground"
             }
         ],
         "menus": {
@@ -205,12 +205,12 @@
             }
         ],
         "configuration": {
-            "title": "Playground 1",
+            "title": "Playground",
             "properties": {
                 "xpersona.playground.baseApiUrl": {
                     "type": "string",
                     "default": "http://localhost:3000",
-                    "description": "Base URL for the Playground 1 API. Use http://localhost:3000 for local development."
+                    "description": "Base URL for the Playground API. Use http://localhost:3000 for local development."
                 },
                 "xpersona.playground.systemPrompt": {
                     "type": "string",
@@ -277,12 +277,12 @@
                 "xpersona.playground.ideContextV2": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Include IDE context by default so Playground 1 can read active files, open files, diagnostics, and indexed workspace snippets."
+                    "description": "Include IDE context by default so Playground can read active files, open files, diagnostics, and indexed workspace snippets."
                 },
                 "xpersona.playground.mentions.enabled": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Enable @ mention autocomplete for workspace files and folders in Playground 1 chat."
+                    "description": "Enable @ mention autocomplete for workspace files and folders in Playground chat."
                 },
                 "xpersona.playground.validationAdapters": {
                     "type": "array",

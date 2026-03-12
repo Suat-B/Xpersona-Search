@@ -128,6 +128,8 @@
       const contextTelemetryMeta = document.getElementById("contextTelemetryMeta");
       const composerShell = document.querySelector(".composer-shell");
       const composerState = document.getElementById("composerState");
+      const chatContextMeter = document.getElementById("chatContextMeter");
+      const chatContextMeterValue = document.getElementById("chatContextMeterValue");
       const queuePill = document.getElementById("queuePill");
       const queuePanel = document.getElementById("queuePanel");
       const queueSummary = document.getElementById("queueSummary");
@@ -183,10 +185,85 @@
       let latestActionOutcome = null;
       let availableModels = [];
       const DEFAULT_MODEL = "playground-default";
-      const PUBLIC_MODEL_LABEL = "Playground 1";
+      const PUBLIC_MODEL_LABEL = "Playground";
+      const CHAT_CONTEXT_TOKEN_BUDGET = 65536;
       const MAX_DIFF_ROWS = 400;
       const MAX_REASONING_CHARS = 24000;
       const seenEditPreviewKeys = new Set();
+      let chatContextMeterRaf = 0;
+      let chatMutationObserver = null;
+
+      function estimateTokenCount(text) {
+        const normalized = String(text || "").replace(/\s+/g, " ").trim();
+        if (!normalized) return 0;
+        return Math.max(1, Math.ceil(normalized.length / 4));
+      }
+
+      function formatCompactCount(value) {
+        const rounded = Math.max(0, Math.round(Number(value) || 0));
+        if (rounded < 1000) return String(rounded);
+        if (rounded < 10000) return (rounded / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+        return Math.round(rounded / 1000) + "k";
+      }
+
+      function formatCount(value) {
+        return Math.max(0, Math.round(Number(value) || 0)).toLocaleString();
+      }
+
+      function getCurrentChatContextMetrics() {
+        const bodies = msgs ? Array.from(msgs.querySelectorAll(".m .m-body")) : [];
+        let messages = 0;
+        let approxTokens = 0;
+        for (const body of bodies) {
+          const text = String(body && body.textContent ? body.textContent : "").trim();
+          if (!text) continue;
+          messages += 1;
+          approxTokens += estimateTokenCount(text) + 6;
+        }
+        const draftText = input ? String(input.value || "").trim() : "";
+        const hasDraft = draftText.length > 0;
+        if (hasDraft) approxTokens += estimateTokenCount(draftText) + 4;
+        return {
+          messages,
+          approxTokens,
+          hasDraft,
+        };
+      }
+
+      function updateChatContextMeterNow() {
+        if (!chatContextMeter || !chatContextMeterValue) return;
+        const metrics = getCurrentChatContextMetrics();
+        const ratio = CHAT_CONTEXT_TOKEN_BUDGET > 0
+          ? Math.min(metrics.approxTokens / CHAT_CONTEXT_TOKEN_BUDGET, 1)
+          : 0;
+        chatContextMeter.style.setProperty("--context-progress", String(ratio));
+        chatContextMeter.classList.remove("warn", "danger");
+        if (ratio >= 0.85) chatContextMeter.classList.add("danger");
+        else if (ratio >= 0.6) chatContextMeter.classList.add("warn");
+        chatContextMeterValue.textContent = formatCompactCount(metrics.approxTokens);
+        const draftLabel = metrics.hasDraft ? " Includes current draft." : "";
+        const title =
+          "Approx. current chat context: " +
+          formatCount(metrics.approxTokens) +
+          " tokens across " +
+          formatCount(metrics.messages) +
+          " visible messages." +
+          draftLabel +
+          " Budget target: " +
+          formatCount(CHAT_CONTEXT_TOKEN_BUDGET) +
+          " tokens.";
+        chatContextMeter.title = title;
+        chatContextMeter.setAttribute("aria-label", title);
+      }
+
+      function requestChatContextMeterUpdate() {
+        if (!chatContextMeter || !chatContextMeterValue) return;
+        if (chatContextMeterRaf) return;
+        chatContextMeterRaf = requestAnimationFrame(() => {
+          chatContextMeterRaf = 0;
+          updateChatContextMeterNow();
+        });
+      }
 
       function applyIdeContextVisualState(enabled) {
         if (composerShell) composerShell.classList.toggle("ide-context-on", enabled);
@@ -357,6 +434,13 @@
         commandPass: 0,
         commandFail: 0,
         lastCommandBlocker: "",
+        toolStrategy: "",
+        toolRoute: "",
+        toolAdapter: "",
+        toolActionSource: "",
+        toolRecoveryStage: "",
+        commandPolicy: "",
+        toolFailureCategory: "",
       };
       const seenRunCommands = new Set();
       const seenRunStatuses = new Set();
@@ -389,6 +473,27 @@
         seenRunStatuses.clear();
       }
 
+      function summarizeToolStateForUi(toolState) {
+        const state = toolState && typeof toolState === "object" ? toolState : {};
+        const bits = [];
+        if (state.strategy) bits.push("strategy=" + String(state.strategy));
+        if (state.route) bits.push("route=" + String(state.route));
+        if (state.adapter) bits.push("adapter=" + String(state.adapter));
+        if (state.actionSource) bits.push("source=" + String(state.actionSource));
+        if (state.recoveryStage) bits.push("recovery=" + String(state.recoveryStage));
+        if (state.commandPolicyResolved) bits.push("policy=" + String(state.commandPolicyResolved));
+        if (state.lastFailureCategory) bits.push("failure=" + String(state.lastFailureCategory));
+        return bits.join(" | ");
+      }
+
+      function toolFailureScopeForUi(category) {
+        const value = String(category || "").trim().toLowerCase();
+        if (!value) return "";
+        if (value === "validation_failed") return "validation";
+        if (value === "no_content_delta" || value === "local_apply_failed") return "local apply";
+        return "backend generation";
+      }
+
       function planAwareStateLabel(baseLabel) {
         const label = String(baseLabel || "Local");
         return currentMode === "plan" ? "Plan mode | " + label : label;
@@ -416,8 +521,10 @@
           ".rt-objective{font-size:12px;color:#efefef;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
           ".rt-mid{display:flex;gap:8px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}",
           ".rt-files,.rt-commands{display:flex;gap:6px;flex-wrap:wrap;align-items:center}",
+          ".rt-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center}",
           ".rt-chip{font-size:11px;border:1px solid #2a2a2a;border-radius:999px;padding:2px 8px;background:#0f0f0f;color:#d6d6d6;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
           ".rt-chip.file{border-color:#2f4f73;background:#0d141d}",
+          ".rt-chip.tool{border-color:#36527b;background:#101826;color:#cddcff}",
           ".rt-chip.pass{border-color:#2d6636;background:#0f1a12;color:#a5e7ae}",
           ".rt-chip.fail{border-color:#7a3131;background:#1b0f0f;color:#ffb4b4}",
           ".rt-why{font-size:11px;color:#ffbf82;background:#1a1209;border:1px solid #5b3a12;border-radius:8px;padding:5px 7px}",
@@ -443,6 +550,7 @@
             '<div id="rtFiles" class="rt-files"></div>' +
             '<div id="rtCommands" class="rt-commands"></div>' +
           "</div>" +
+          '<div id="rtTools" class="rt-tools"></div>' +
           '<div id="rtWhy" class="rt-why"></div>';
         if (chips && chips.parentElement === chatPanel) {
           chatPanel.insertBefore(runtimeStrip, chips.nextSibling);
@@ -469,6 +577,13 @@
         runtimeState.commandPass = 0;
         runtimeState.commandFail = 0;
         runtimeState.lastCommandBlocker = "";
+        runtimeState.toolStrategy = "";
+        runtimeState.toolRoute = "";
+        runtimeState.toolAdapter = "";
+        runtimeState.toolActionSource = "";
+        runtimeState.toolRecoveryStage = "";
+        runtimeState.commandPolicy = "";
+        runtimeState.toolFailureCategory = "";
         renderRuntimeStrip();
       }
 
@@ -484,6 +599,7 @@
         const scoreEl = strip.querySelector("#rtScore");
         const filesEl = strip.querySelector("#rtFiles");
         const commandsEl = strip.querySelector("#rtCommands");
+        const toolsEl = strip.querySelector("#rtTools");
         const whyEl = strip.querySelector("#rtWhy");
         if (objectiveEl) objectiveEl.textContent = "Objective: " + String(runtimeState.objective || "").replace(/\s+/g, " ").trim();
         const cycleLabel = runtimeState.maxCycles > 0
@@ -516,13 +632,29 @@
           cmdBits.push('<span class="rt-chip">files=' + Number(runtimeState.filesChanged || 0) + ", checks=" + Number(runtimeState.checksRun || 0) + "</span>");
           commandsEl.innerHTML = cmdBits.join("");
         }
+        if (toolsEl) {
+          const toolBits = [];
+          if (runtimeState.toolRoute) toolBits.push('<span class="rt-chip tool">route=' + esc(runtimeState.toolRoute) + "</span>");
+          if (runtimeState.toolAdapter) toolBits.push('<span class="rt-chip tool">adapter=' + esc(runtimeState.toolAdapter) + "</span>");
+          if (runtimeState.toolActionSource) toolBits.push('<span class="rt-chip tool">source=' + esc(runtimeState.toolActionSource) + "</span>");
+          if (runtimeState.toolRecoveryStage) toolBits.push('<span class="rt-chip tool">recovery=' + esc(runtimeState.toolRecoveryStage) + "</span>");
+          if (runtimeState.commandPolicy) toolBits.push('<span class="rt-chip tool">policy=' + esc(runtimeState.commandPolicy) + "</span>");
+          if (runtimeState.toolFailureCategory) {
+            toolBits.push('<span class="rt-chip fail">failure=' + esc(runtimeState.toolFailureCategory) + "</span>");
+          }
+          toolsEl.innerHTML = toolBits.join("");
+        }
         if (whyEl) {
           const incomplete = runtimeState.completionStatus === "incomplete" || String(runtimeState.phase) === "reprompt";
           const missing = Array.isArray(runtimeState.missingRequirements) && runtimeState.missingRequirements.length
             ? runtimeState.missingRequirements.join(", ")
             : "";
           const blocker = runtimeState.lastCommandBlocker || runtimeState.blocker || "";
-          const hint = [missing, blocker].filter(Boolean).join(" | ");
+          const toolScope = toolFailureScopeForUi(runtimeState.toolFailureCategory);
+          const toolHint = runtimeState.toolFailureCategory
+            ? ((toolScope ? "scope=" + toolScope + " | " : "") + "failure=" + runtimeState.toolFailureCategory)
+            : "";
+          const hint = [toolHint, missing, blocker].filter(Boolean).join(" | ");
           whyEl.classList.toggle("done", !incomplete);
           whyEl.textContent = incomplete
             ? "Why not done yet: " + (hint || "working on completion requirements")
@@ -555,7 +687,7 @@
         const selected = String(value || "").trim().toLowerCase();
         const match = availableModels.find((entry) => String(entry.alias || "").trim().toLowerCase() === selected);
         if (match && match.displayName) return String(match.displayName);
-        if (selected === "playground-default") return "Playground Default";
+        if (selected === "playground-default") return PUBLIC_MODEL_LABEL;
         if (selected === "playground-backup") return "Playground Backup";
         if (value) return String(value);
         return PUBLIC_MODEL_LABEL;
@@ -575,7 +707,7 @@
         if (!modelSel) return;
         const models = payload && Array.isArray(payload.models) ? payload.models : [];
         const defaultModel = payload && payload.defaultModel ? String(payload.defaultModel) : DEFAULT_MODEL;
-        const selectedModel = payload && payload.selectedModel ? String(payload.selectedModel) : (modelSel.value || defaultModel);
+        const selectedModel = defaultModel;
         availableModels = models
           .map((item) => ({
             alias: String(item && item.alias || ""),
@@ -585,18 +717,17 @@
           }))
           .filter((item) => item.alias && item.displayName);
         modelSel.innerHTML = "";
-        const fallbackModels = availableModels.length
-          ? availableModels
-          : [{ alias: defaultModel || DEFAULT_MODEL, displayName: PUBLIC_MODEL_LABEL, provider: "", certification: "" }];
-        fallbackModels.forEach((entry) => {
+        const visibleModel = availableModels.find((entry) => entry.alias === defaultModel)
+          || availableModels[0]
+          || { alias: defaultModel || DEFAULT_MODEL, displayName: PUBLIC_MODEL_LABEL, provider: "", certification: "" };
+        [visibleModel].forEach((entry) => {
           const option = document.createElement("option");
           option.value = entry.alias;
           const meta = modelMetaLabel(entry.alias);
           option.textContent = meta ? modelLabelForUi(entry.alias) + " (" + meta + ")" : modelLabelForUi(entry.alias);
           modelSel.appendChild(option);
         });
-        const selectedExists = fallbackModels.some((entry) => entry.alias === selectedModel);
-        modelSel.value = selectedExists ? selectedModel : fallbackModels[0].alias;
+        modelSel.value = visibleModel.alias || selectedModel || DEFAULT_MODEL;
       }
 
       function updateComposerState() {
@@ -641,32 +772,70 @@
         if (closeMenu) setActionMenuOpen(false);
       }
 
+      function resolveSlashModeTarget(rawText, options) {
+        const raw = String(rawText || "");
+        const requireSeparator = !options || options.requireSeparator !== false;
+        const match = raw.match(/^\s*\/(plan|auto|yolo|full)(\s+|$)/i);
+        if (!match) return null;
+        if (requireSeparator && !/\s/.test(String(match[2] || ""))) return null;
+        const command = String(match[1] || "").toLowerCase();
+        const mode = command === "plan" ? "plan" : command === "auto" ? "auto" : "yolo";
+        return {
+          mode,
+          matchedText: match[0],
+          remainingText: raw.slice(match[0].length),
+        };
+      }
+
+      function applySlashMode(modeValue) {
+        const normalized = modeValue === "plan" || modeValue === "yolo" ? modeValue : "auto";
+        const changed = currentMode !== normalized;
+        if (changed) {
+          applyModeUI(normalized);
+          v.postMessage({ type: "setMode", value: normalized });
+        }
+        return changed;
+      }
+
       function parseSlashModeCommand(rawText) {
         const trimmed = String(rawText || "").replace(/\r?\n+$/g, "").trim();
         if (!trimmed) {
-          return { text: "", modeChanged: false, matchedPlan: false, preventSend: true };
+          return { text: "", modeChanged: false, matchedMode: null, preventSend: true };
         }
 
         let text = trimmed;
         let modeChanged = false;
-        let matchedPlan = false;
+        let matchedMode = null;
+        const slashMode = resolveSlashModeTarget(text, { requireSeparator: false });
 
-        if (/^\/plan(?:\s+|$)/i.test(text)) {
-          matchedPlan = true;
-          if (currentMode !== "plan") {
-            modeChanged = true;
-            applyModeUI("plan");
-            v.postMessage({ type: "setMode", value: "plan" });
-          }
-          text = text.replace(/^\/plan(?:\s+|$)/i, "").trim();
+        if (slashMode) {
+          matchedMode = slashMode.mode;
+          modeChanged = applySlashMode(slashMode.mode);
+          text = String(slashMode.remainingText || "").trim();
         }
 
         return {
           text,
           modeChanged,
-          matchedPlan,
-          preventSend: matchedPlan && !text,
+          matchedMode,
+          preventSend: Boolean(matchedMode) && !text,
         };
+      }
+
+      function applyInlineSlashModeCommand() {
+        if (!input) return false;
+        const slashMode = resolveSlashModeTarget(input.value || "", { requireSeparator: true });
+        if (!slashMode) return false;
+
+        applySlashMode(slashMode.mode);
+        input.value = String(slashMode.remainingText || "").replace(/^\s+/, "");
+        if (currentThreadId) {
+          threadDrafts[currentThreadId] = input.value || "";
+        }
+        syncComposerHeight();
+        scheduleMentionSearch();
+        scheduleContextPreviewDispatch();
+        return true;
       }
 
       function eventTargetElement(target) {
@@ -724,7 +893,7 @@
       function postSendFallback(rawText) {
         const parsed = parseSlashModeCommand(rawText);
         if (parsed.preventSend) {
-          if (SHOW_SYSTEM_ACTIVITY) addMessage("Plan mode enabled. Add your request after /plan.", "cmd");
+          if (SHOW_SYSTEM_ACTIVITY) addMessage("Mode updated. Add your request after the slash command.", "cmd");
           return;
         }
         const text = parsed.text;
@@ -890,6 +1059,7 @@
         input.style.height = "auto";
         const next = Math.max(64, Math.min(220, input.scrollHeight || 64));
         input.style.height = next + "px";
+        requestChatContextMeterUpdate();
       }
 
       function saveCurrentDraft() {
@@ -1325,7 +1495,13 @@
       function updateStartupVisibility() {
         if (!chatEmpty || !msgs) return;
         const hasMessages = msgs.children.length > 0;
-        const shouldHide = hasMessages || streaming;
+        const shouldHide =
+          hasMessages ||
+          streaming ||
+          creatingThread ||
+          Boolean(pendingPromptAfterThread) ||
+          Boolean(currentThreadId) ||
+          Boolean(activeRunThreadId);
         chatEmpty.classList.toggle("hidden", shouldHide);
         updateBackButtonVisibility();
       }
@@ -1477,17 +1653,51 @@
 
         msgs.appendChild(d);
         updateStartupVisibility();
+        requestChatContextMeterUpdate();
         followLatest = true;
         scrollToLatest(true);
         return d;
       }
 
+      function canScrollElement(el) {
+        if (!el || typeof window.getComputedStyle !== "function") return false;
+        const style = window.getComputedStyle(el);
+        const overflowY = String(style && style.overflowY ? style.overflowY : style && style.overflow ? style.overflow : "");
+        return /(auto|scroll|overlay)/i.test(overflowY);
+      }
+
+      function getChatScrollContainer() {
+        const seen = new Set();
+        const candidates = [msgs, chatPanel];
+        let parent = msgs ? msgs.parentElement : null;
+        while (parent) {
+          candidates.push(parent);
+          if (parent === chatPanel) break;
+          parent = parent.parentElement;
+        }
+        for (const candidate of candidates) {
+          if (!candidate || seen.has(candidate)) continue;
+          seen.add(candidate);
+          if (canScrollElement(candidate)) return candidate;
+        }
+        return chatPanel || msgs || null;
+      }
+
+      function getLatestScrollAnchor() {
+        if (streamBubble && streamBubble.isConnected) return streamBubble;
+        if (msgs && msgs.lastElementChild) return msgs.lastElementChild;
+        if (runtimeStrip && runtimeStrip.isConnected && !runtimeStrip.classList.contains("hidden")) return runtimeStrip;
+        return null;
+      }
+
       function isNearBottom(el, threshold = 80) {
+        if (!el) return true;
         return el.scrollHeight - (el.scrollTop + el.clientHeight) <= threshold;
       }
 
       function scrollToLatest(force = false) {
-        if (!chatPanel) return;
+        const scrollContainer = getChatScrollContainer();
+        if (!scrollContainer) return;
         if (force) followLatest = true;
         const shouldFollow = force || followLatest;
         if (!shouldFollow) {
@@ -1500,7 +1710,8 @@
 
         scrollToLatestRaf = requestAnimationFrame(() => {
           scrollToLatestRaf = 0;
-          if (!chatPanel) return;
+          const liveScrollContainer = getChatScrollContainer();
+          if (!liveScrollContainer) return;
 
           const keepFollowing = scrollToLatestForcePending || followLatest;
           scrollToLatestForcePending = false;
@@ -1510,16 +1721,38 @@
           }
 
           autoScrollLockUntil = Date.now() + 120;
-          const nextTop = Math.max(0, chatPanel.scrollHeight - chatPanel.clientHeight);
-          chatPanel.scrollTop = nextTop;
+          const anchor = getLatestScrollAnchor();
+          if (anchor && anchor !== liveScrollContainer && typeof anchor.scrollIntoView === "function") {
+            anchor.scrollIntoView({ block: "end", inline: "nearest" });
+          }
+          const nextTop = Math.max(0, liveScrollContainer.scrollHeight - liveScrollContainer.clientHeight);
+          liveScrollContainer.scrollTop = nextTop;
           updateJump();
         });
       }
 
       function updateJump() {
-        if (!chatPanel || !jumpLatestBtn) return;
-        const shouldShow = !isNearBottom(chatPanel);
+        if (!jumpLatestBtn) return;
+        const scrollContainer = getChatScrollContainer();
+        const shouldShow = !isNearBottom(scrollContainer);
         jumpLatestBtn.classList.toggle("show", shouldShow);
+      }
+
+      function bindChatMutationObserver() {
+        if (!chatPanel || chatMutationObserver || typeof MutationObserver !== "function") return;
+        // Re-anchor after any chat DOM/text growth so streamed tokens stay in view.
+        chatMutationObserver = new MutationObserver(() => {
+          if (streaming || followLatest) {
+            scrollToLatest(streaming);
+            return;
+          }
+          updateJump();
+        });
+        chatMutationObserver.observe(chatPanel, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+        });
       }
 
       function flushStreamBuffer(force = false) {
@@ -1545,6 +1778,7 @@
         const chunk = streamBuffer.slice(0, chunkSize);
         streamBuffer = streamBuffer.slice(chunkSize);
         body.textContent += chunk;
+        requestChatContextMeterUpdate();
         if (streaming || followLatest) scrollToLatest(streaming);
         if (!streamBuffer && streamTimer) {
           clearInterval(streamTimer);
@@ -1568,6 +1802,7 @@
         activeRunThreadId = null;
         activeProgressState = "";
         setRunState("Local");
+        requestChatContextMeterUpdate();
         pinAssistantResponseToBottom();
         stampResponseDuration(completedBubble, false);
         scrollToLatest(true);
@@ -1846,9 +2081,10 @@
         const traceId = String(payload.traceId || "");
         const stage = String(payload.stage || "");
         const summary = String(payload.summary || "");
+        const toolSummary = summarizeToolStateForUi(payload.toolState || {});
         const events = Array.isArray(payload.events) ? payload.events : [];
         const tail = events.length ? String(events[events.length - 1]?.message || "") : "";
-        return [traceId, stage, summary, String(events.length), tail].join("|");
+        return [traceId, stage, summary, toolSummary, String(events.length), tail].join("|");
       }
 
       function showDiagnosticsBundleCard(data) {
@@ -1857,6 +2093,7 @@
         const summary = String(payload.summary || "Run diagnostics");
         const traceId = String(payload.traceId || "n/a");
         const stage = String(payload.stage || "final");
+        const toolSummary = summarizeToolStateForUi(payload.toolState || {});
         const startedAt = Number(payload.startedAt || 0);
         const endedAt = Number(payload.endedAt || 0);
         const fingerprint = diagnosticsFingerprint(payload);
@@ -1888,6 +2125,7 @@
             '<div class="diag-title">Diagnostics bundle</div>' +
             '<div class="diag-sub">' + esc(summary) + "</div>" +
             '<div class="diag-trace">trace: ' + esc(traceId) + " | stage: " + esc(stage) + "</div>" +
+            (toolSummary ? '<div class="diag-meta">tool: ' + esc(toolSummary) + "</div>" : "") +
             '<ul class="diag-list">' + (eventRows || '<li class="diag-item info"><span class="diag-msg">No event details provided.</span></li>') + "</ul>" +
             '<div class="diag-actions">' +
               '<div class="diag-meta">start=' + esc(startedLabel) + " | end=" + esc(endedLabel) + " | events=" + esc(String(events.length)) + "</div>" +
@@ -1903,6 +2141,7 @@
               summary,
               "trace=" + traceId,
               "stage=" + stage,
+              toolSummary ? "tool=" + toolSummary : "",
               "start=" + startedLabel,
               "end=" + endedLabel,
               "",
@@ -2668,6 +2907,7 @@
         renderThreadList();
         restoreDraftForThread(currentThreadId);
         setRunState("Creating new chat...");
+        updateStartupVisibility();
         v.postMessage({ type: "newThread" });
         setActionMenuOpen(false);
       }
@@ -2889,6 +3129,7 @@
         const bubble = pendingPromptAfterThread.queuedBubble;
         if (bubble && bubble.isConnected) bubble.remove();
         pendingPromptAfterThread = null;
+        requestChatContextMeterUpdate();
         updateStartupVisibility();
       }
 
@@ -3398,6 +3639,7 @@
           }
         });
         input.addEventListener("input", () => {
+          applyInlineSlashModeCommand();
           if (currentThreadId) {
             threadDrafts[currentThreadId] = input.value || "";
           }
@@ -3482,6 +3724,7 @@
           chips.innerHTML = "";
           clearQueuedMessages();
           resetRuntimeState();
+          requestChatContextMeterUpdate();
           updateStartupVisibility();
           setStreaming(false);
           v.postMessage({ type: "clear" });
@@ -3546,6 +3789,13 @@
           updateJump();
         });
       }
+      if (msgs) {
+        msgs.addEventListener("scroll", () => {
+          followLatest = true;
+          updateJump();
+        });
+      }
+      bindChatMutationObserver();
       bindChatDockClickToFocus();
       if (undoLastBtn) {
         undoLastBtn.onclick = () => {
@@ -3840,6 +4090,15 @@
             if (m.data.actionability && typeof m.data.actionability.reason === "string") {
               runtimeState.blocker = String(m.data.actionability.reason || "");
             }
+            if (m.data.toolState && typeof m.data.toolState === "object") {
+              runtimeState.toolStrategy = String(m.data.toolState.strategy || runtimeState.toolStrategy || "");
+              runtimeState.toolRoute = String(m.data.toolState.route || runtimeState.toolRoute || "");
+              runtimeState.toolAdapter = String(m.data.toolState.adapter || runtimeState.toolAdapter || "");
+              runtimeState.toolActionSource = String(m.data.toolState.actionSource || runtimeState.toolActionSource || "");
+              runtimeState.toolRecoveryStage = String(m.data.toolState.recoveryStage || runtimeState.toolRecoveryStage || "");
+              runtimeState.commandPolicy = String(m.data.toolState.commandPolicyResolved || runtimeState.commandPolicy || "");
+              runtimeState.toolFailureCategory = String(m.data.toolState.lastFailureCategory || runtimeState.toolFailureCategory || "");
+            }
             renderRuntimeStrip();
           }
           chips.innerHTML = "";
@@ -3868,6 +4127,30 @@
             d.className = "chip";
             d.textContent = "Mode " + m.data.decision;
             chips.appendChild(d);
+          }
+          if (m.data?.toolState?.route) {
+            const route = document.createElement("span");
+            route.className = "chip";
+            route.textContent = "Route " + String(m.data.toolState.route).replace(/_/g, " ");
+            chips.appendChild(route);
+          }
+          if (m.data?.toolState?.commandPolicyResolved) {
+            const policy = document.createElement("span");
+            policy.className = "chip";
+            policy.textContent = "Policy " + String(m.data.toolState.commandPolicyResolved);
+            chips.appendChild(policy);
+          }
+          if (m.data?.toolState?.recoveryStage && m.data.toolState.recoveryStage !== "none") {
+            const recovery = document.createElement("span");
+            recovery.className = "chip";
+            recovery.textContent = "Recovery " + String(m.data.toolState.recoveryStage).replace(/_/g, " ");
+            chips.appendChild(recovery);
+          }
+          if (m.data?.localApplyFailure?.retryStage && m.data.localApplyFailure.retryStage !== "final_failure") {
+            const localRecovery = document.createElement("span");
+            localRecovery.className = "chip";
+            localRecovery.textContent = "Local recovery " + String(m.data.localApplyFailure.retryStage).replace(/_/g, " ");
+            chips.appendChild(localRecovery);
           }
           if (m.data?.confidence !== undefined) {
             const c = document.createElement("span");
@@ -3900,6 +4183,15 @@
             : runtimeState.appliedFiles;
           runtimeState.filesChanged = Math.max(0, Number(data.filesChanged || runtimeState.filesChanged || 0));
           runtimeState.checksRun = Math.max(0, Number(data.checksRun || runtimeState.checksRun || 0));
+          if (data.toolState && typeof data.toolState === "object") {
+            runtimeState.toolStrategy = String(data.toolState.strategy || runtimeState.toolStrategy || "");
+            runtimeState.toolRoute = String(data.toolState.route || runtimeState.toolRoute || "");
+            runtimeState.toolAdapter = String(data.toolState.adapter || runtimeState.toolAdapter || "");
+            runtimeState.toolActionSource = String(data.toolState.actionSource || runtimeState.toolActionSource || "");
+            runtimeState.toolRecoveryStage = String(data.toolState.recoveryStage || runtimeState.toolRecoveryStage || "");
+            runtimeState.commandPolicy = String(data.toolState.commandPolicyResolved || runtimeState.commandPolicy || "");
+            runtimeState.toolFailureCategory = String(data.toolState.lastFailureCategory || runtimeState.toolFailureCategory || "");
+          }
           renderRuntimeStrip();
         } else if (m.type === "actionOutcome") {
           const data = m.data || {};
@@ -4031,15 +4323,23 @@
           )).join("") || "No timeline";
         } else if (m.type === "threadState") {
           const data = m.data || {};
-          currentThreadId = data.activeThreadId || null;
+          const incomingActiveThreadId = data.activeThreadId || null;
+          const shouldPreservePendingThread =
+            creatingThread &&
+            Boolean(pendingPromptAfterThread) &&
+            !incomingActiveThreadId;
+          if (!shouldPreservePendingThread) {
+            currentThreadId = incomingActiveThreadId;
+          }
           openChats = Array.isArray(data.openChats) ? data.openChats : [];
           recentHistory = Array.isArray(data.recentHistory) ? data.recentHistory : [];
           pinnedIds = Array.isArray(data.pinnedIds) ? data.pinnedIds.map((id) => String(id || "")) : [];
-          if (currentThreadId) creatingThread = false;
+          if (incomingActiveThreadId) creatingThread = false;
           renderThreadList();
           renderTaskPreview(recentHistory);
           if (history && history.classList.contains("active")) renderHistoryPanel(recentHistory, { query: historySearchQuery });
           restoreDraftForThread(currentThreadId);
+          updateStartupVisibility();
           flushPendingPromptAfterThread();
         } else if (m.type === "historyItems") {
           const rows = Array.isArray(m.data) ? m.data : [];
@@ -4167,6 +4467,21 @@
           syncComposerHeight();
           scheduleContextPreviewDispatch(true);
         } else if (m.type === "load") {
+          const incomingThreadId =
+            m.threadId === undefined
+              ? undefined
+              : m.threadId === null
+                ? null
+                : String(m.threadId);
+          const loadedMessages = Array.isArray(m.data) ? m.data : [];
+          const isStaleEmptyHomeLoad =
+            creatingThread &&
+            Boolean(pendingPromptAfterThread) &&
+            incomingThreadId === null &&
+            loadedMessages.length === 0;
+          if (isStaleEmptyHomeLoad) {
+            return;
+          }
           lastDiagnosticsFingerprint = "";
           responseStartedAtMs = 0;
           lastAssistantBubble = null;
@@ -4186,8 +4501,7 @@
           lastStatusAt = 0;
           resetRuntimeState();
           setRunState("Local");
-          if (m.threadId !== undefined) currentThreadId = m.threadId;
-          const loadedMessages = Array.isArray(m.data) ? m.data : [];
+          if (incomingThreadId !== undefined) currentThreadId = incomingThreadId;
           while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
           loadedMessages.forEach((x) => {
             const body = x.role === "assistant" ? normalizeAssistantText(x.content) : x.content;
@@ -4198,6 +4512,7 @@
           renderTaskPreview(recentHistory);
           restoreDraftForThread(currentThreadId);
           syncComposerHeight();
+          requestChatContextMeterUpdate();
           flushPendingPromptAfterThread();
           showTab("chat");
           followLatest = true;
@@ -4211,6 +4526,7 @@
       renderHistoryPanel(recentHistory);
       resetRuntimeState();
       applyModeUI("auto");
+      requestChatContextMeterUpdate();
       v.postMessage({ type: "check" });
 
       // If host handshake is delayed/blocked, fail open to setup so the panel never appears blank.

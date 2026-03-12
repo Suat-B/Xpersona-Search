@@ -1,8 +1,20 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.NO_CONTENT_DELTA_REASON_PREFIX = void 0;
 exports.classifyLocalApplyFailure = classifyLocalApplyFailure;
+exports.isNoContentDeltaReason = isNoContentDeltaReason;
+exports.collapseConflictingFileActions = collapseConflictingFileActions;
 exports.nextLocalRecoveryStage = nextLocalRecoveryStage;
 exports.buildLocalApplyRetryTask = buildLocalApplyRetryTask;
+exports.NO_CONTENT_DELTA_REASON_PREFIX = "no_content_delta:";
+function normalizeActionPath(path) {
+    return String(path || "")
+        .replace(/\\/g, "/")
+        .replace(/^\.\/+/, "")
+        .replace(/^\/+/, "")
+        .trim()
+        .toLowerCase();
+}
 function classifyLocalApplyFailure(input) {
     const reason = String(input.reason || "").trim();
     const normalized = reason.toLowerCase();
@@ -32,13 +44,53 @@ function classifyLocalApplyFailure(input) {
     }
     return { category: "unknown_apply_failure", summary: `${input.path}: local apply failed${normalized ? ` (${reason})` : ""}.`, retryable: true };
 }
-function nextLocalRecoveryStage(attemptedStages, filePath) {
-    const ordered = [
-        "patch_repair",
-        "target_path_repair",
-        "single_file_rewrite",
-        ...(filePath.toLowerCase().endsWith(".pine") ? ["pine_specialization"] : []),
-    ];
+function isNoContentDeltaReason(reason) {
+    const normalized = String(reason || "").trim().toLowerCase();
+    return normalized.startsWith(exports.NO_CONTENT_DELTA_REASON_PREFIX) || /no file content changed/i.test(normalized);
+}
+function collapseConflictingFileActions(actions) {
+    const latestFileActionIndexByPath = new Map();
+    for (let index = 0; index < actions.length; index += 1) {
+        const action = actions[index];
+        if (!action || (action.type !== "edit" && action.type !== "write_file"))
+            continue;
+        const normalizedPath = normalizeActionPath(action.path);
+        if (!normalizedPath)
+            continue;
+        latestFileActionIndexByPath.set(normalizedPath, index);
+    }
+    const collapsedCounts = new Map();
+    const filtered = actions.filter((action, index) => {
+        if (!action || (action.type !== "edit" && action.type !== "write_file"))
+            return true;
+        const normalizedPath = normalizeActionPath(action.path);
+        if (!normalizedPath)
+            return true;
+        const keep = latestFileActionIndexByPath.get(normalizedPath) === index;
+        if (!keep) {
+            const label = String(action.path || normalizedPath);
+            collapsedCounts.set(label, (collapsedCounts.get(label) || 0) + 1);
+        }
+        return keep;
+    });
+    return {
+        actions: filtered,
+        collapsedPaths: Array.from(collapsedCounts.entries()).map(([filePath, count]) => count > 1 ? `${filePath} (${count} earlier actions)` : filePath),
+    };
+}
+function nextLocalRecoveryStage(attemptedStages, filePath, category) {
+    const isPine = filePath.toLowerCase().endsWith(".pine");
+    const ordered = category === "no_content_delta"
+        ? [
+            ...(isPine ? ["pine_specialization"] : []),
+            "single_file_rewrite",
+        ]
+        : [
+            "patch_repair",
+            "target_path_repair",
+            "single_file_rewrite",
+            ...(isPine ? ["pine_specialization"] : []),
+        ];
     for (const stage of ordered) {
         if (!attemptedStages.includes(stage))
             return stage;
@@ -77,6 +129,8 @@ function buildLocalApplyRetryTask(input) {
             ...shared,
             "Recovery stage: single_file_rewrite.",
             'Return a single write_file action for exactly this file with the full updated file contents.',
+            "The returned file content must differ from the current workspace file and implement a real semantic change.",
+            "Do not echo the existing file contents back unchanged.",
             "Preserve unchanged code and only implement the requested change.",
         ].join("\n");
     }
@@ -84,6 +138,8 @@ function buildLocalApplyRetryTask(input) {
         ...shared,
         "Recovery stage: pine_specialization.",
         'Return a single write_file action for exactly this .pine strategy file.',
+        "The returned Pine file content must differ from the current workspace file and implement a real strategy change.",
+        "Do not echo the existing .pine file back unchanged.",
         "Use Pine strategy structure from the active file and implement the requested strategy change without commentary.",
     ].join("\n");
 }

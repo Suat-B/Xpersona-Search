@@ -46,22 +46,24 @@ export type PlaygroundResolvedModelSelection = {
 export const PLAYGROUND_CONTRACT_VERSION = "2026-03-actions-v1";
 export const DEFAULT_PLAYGROUND_MODEL_ALIAS = "playground-default";
 export const BACKUP_PLAYGROUND_MODEL_ALIAS = "playground-backup";
+export const HF_BACKUP_PLAYGROUND_MODEL_ALIAS = "playground-hf-backup";
+const PUBLIC_PLAYGROUND_MODEL_ALIASES = new Set([DEFAULT_PLAYGROUND_MODEL_ALIAS]);
 
 const LONG_CONTEXT_CAP = 262_144;
 
 const MODEL_REGISTRY: PlaygroundModelRegistryEntry[] = [
   {
     alias: DEFAULT_PLAYGROUND_MODEL_ALIAS,
-    displayName: "Playground Default",
-    description: "Primary text-contract coding model for production use.",
+    displayName: "Playground 1",
+    description: "Default IDE and /playground model backed by Hugging Face Router.",
     provider: "hf",
-    model: "openai/gpt-oss-120b:fastest",
-    fallbackAliases: [BACKUP_PLAYGROUND_MODEL_ALIAS],
+    model: "Qwen/Qwen2.5-Coder-7B-Instruct:fastest",
+    fallbackAliases: [BACKUP_PLAYGROUND_MODEL_ALIAS, HF_BACKUP_PLAYGROUND_MODEL_ALIAS],
     capabilities: {
-      maxContextTokens: LONG_CONTEXT_CAP,
+      maxContextTokens: 128_000,
       supportsStreaming: true,
-      supportsReasoningStream: true,
-      supportsImages: true,
+      supportsReasoningStream: false,
+      supportsImages: false,
       supportsNativeTools: false,
       supportsTextActions: true,
       supportsUnifiedDiff: true,
@@ -78,11 +80,33 @@ const MODEL_REGISTRY: PlaygroundModelRegistryEntry[] = [
     description: "Fallback production model for coding and repair passes.",
     provider: "nvidia",
     model: "mistralai/mistral-nemotron",
-    fallbackAliases: [DEFAULT_PLAYGROUND_MODEL_ALIAS],
+    fallbackAliases: [HF_BACKUP_PLAYGROUND_MODEL_ALIAS, DEFAULT_PLAYGROUND_MODEL_ALIAS],
     capabilities: {
       maxContextTokens: 128_000,
       supportsStreaming: true,
       supportsReasoningStream: true,
+      supportsImages: false,
+      supportsNativeTools: false,
+      supportsTextActions: true,
+      supportsUnifiedDiff: true,
+      supportsWriteFile: true,
+      supportsMkdir: true,
+      supportsShellCommands: true,
+    },
+    certification: "tool_ready",
+    enabled: true,
+  },
+  {
+    alias: HF_BACKUP_PLAYGROUND_MODEL_ALIAS,
+    displayName: "Playground HF Backup",
+    description: "HF router fallback for coding when NVIDIA is unavailable.",
+    provider: "hf",
+    model: "stepfun-ai/Step-3.5-Flash",
+    fallbackAliases: [DEFAULT_PLAYGROUND_MODEL_ALIAS, BACKUP_PLAYGROUND_MODEL_ALIAS],
+    capabilities: {
+      maxContextTokens: LONG_CONTEXT_CAP,
+      supportsStreaming: true,
+      supportsReasoningStream: false,
       supportsImages: false,
       supportsNativeTools: false,
       supportsTextActions: true,
@@ -100,7 +124,7 @@ const MODEL_REGISTRY: PlaygroundModelRegistryEntry[] = [
     description: "Experimental native-tools adapter target for compatibility testing.",
     provider: "hf",
     model: "openai/gpt-oss-120b:fastest",
-    fallbackAliases: [DEFAULT_PLAYGROUND_MODEL_ALIAS, BACKUP_PLAYGROUND_MODEL_ALIAS],
+    fallbackAliases: [DEFAULT_PLAYGROUND_MODEL_ALIAS, BACKUP_PLAYGROUND_MODEL_ALIAS, HF_BACKUP_PLAYGROUND_MODEL_ALIAS],
     capabilities: {
       maxContextTokens: LONG_CONTEXT_CAP,
       supportsStreaming: false,
@@ -145,7 +169,13 @@ function meetsRequirements(
 function collectFallbackChain(seed: PlaygroundModelRegistryEntry): PlaygroundModelRegistryEntry[] {
   const byAlias = new Map(MODEL_REGISTRY.map((entry) => [normalizeKey(entry.alias), entry] as const));
   const out: PlaygroundModelRegistryEntry[] = [];
-  const queue = [seed.alias, ...seed.fallbackAliases, DEFAULT_PLAYGROUND_MODEL_ALIAS, BACKUP_PLAYGROUND_MODEL_ALIAS];
+  const queue = [
+    seed.alias,
+    ...seed.fallbackAliases,
+    DEFAULT_PLAYGROUND_MODEL_ALIAS,
+    BACKUP_PLAYGROUND_MODEL_ALIAS,
+    HF_BACKUP_PLAYGROUND_MODEL_ALIAS,
+  ];
   const seen = new Set<string>();
   while (queue.length > 0) {
     const alias = normalizeKey(queue.shift());
@@ -168,6 +198,10 @@ export function listPlaygroundModels(): PlaygroundModelRegistryEntry[] {
     fallbackAliases: [...entry.fallbackAliases],
     capabilities: { ...entry.capabilities },
   }));
+}
+
+export function listPublicPlaygroundModels(): PlaygroundModelRegistryEntry[] {
+  return listPlaygroundModels().filter((entry) => PUBLIC_PLAYGROUND_MODEL_ALIASES.has(entry.alias));
 }
 
 export function getPlaygroundModelEntry(requested: string | undefined): PlaygroundModelRegistryEntry | null {

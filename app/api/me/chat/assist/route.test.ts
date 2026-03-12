@@ -100,6 +100,7 @@ describe("POST /api/me/chat/assist", () => {
     expect(res.status).toBe(200);
     expect(mockEnsureTrial).toHaveBeenCalledWith("u1");
     expect(mockCreateBearer).toHaveBeenCalled();
+    expect(mockBuildWorkspaceContext).not.toHaveBeenCalled();
     expect(mockProxy).toHaveBeenCalledWith(
       expect.objectContaining({
         method: "POST",
@@ -108,13 +109,40 @@ describe("POST /api/me/chat/assist", () => {
         body: expect.objectContaining({
           task: expect.stringContaining('User request: "Build me a function".'),
           historySessionId: "sess-1",
+          mode: "generate",
+          workflowIntentId: "reasoning:medium",
+          model: "playground-default",
+          stream: true,
+          safetyProfile: "standard",
+        }),
+      })
+    );
+  });
+
+  it("uses workspace mode only for repo-scoped coding tasks", async () => {
+    const req = new NextRequest("http://localhost/api/me/chat/assist", {
+      method: "POST",
+      body: JSON.stringify({
+        task: "Update components/chat/ChatApp.tsx to improve the composer state",
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    await POST(req);
+    expect(mockBuildWorkspaceContext).toHaveBeenCalledWith(
+      "Update components/chat/ChatApp.tsx to improve the composer state"
+    );
+    expect(mockProxy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          task: expect.stringContaining('User request: "Update components/chat/ChatApp.tsx to improve the composer state".'),
           context: expect.objectContaining({
             activeFile: expect.objectContaining({ path: "components/chat/ChatApp.tsx" }),
           }),
           mode: "yolo",
-          workflowIntentId: "reasoning:high",
-          contextBudget: { maxTokens: 65_536, strategy: "hybrid" },
-          model: "Qwen/Qwen3-235B-A22B-Instruct-2507:fastest",
+          workflowIntentId: "reasoning:medium",
+          contextBudget: { maxTokens: 16_384, strategy: "hybrid" },
+          model: "playground-default",
           stream: true,
           safetyProfile: "standard",
         }),
@@ -132,14 +160,35 @@ describe("POST /api/me/chat/assist", () => {
     });
 
     await POST(req);
+    expect(mockBuildWorkspaceContext).not.toHaveBeenCalled();
     expect(mockProxy).toHaveBeenCalledWith(
       expect.objectContaining({
         body: expect.objectContaining({
-          task: "How does this platform work?",
+          task: expect.stringContaining('User message: "How does this platform work?".'),
           mode: "generate",
-          model: "Qwen/Qwen3-235B-A22B-Instruct-2507:fastest",
+          model: "playground-default",
           stream: true,
           safetyProfile: "standard",
+        }),
+      })
+    );
+  });
+
+  it("does not auto-infer workspace context for plain chat prompts", async () => {
+    const req = new NextRequest("http://localhost/api/me/chat/assist", {
+      method: "POST",
+      body: JSON.stringify({
+        task: "what are u doing",
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    await POST(req);
+    expect(mockBuildWorkspaceContext).not.toHaveBeenCalled();
+    expect(mockProxy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.not.objectContaining({
+          context: expect.anything(),
         }),
       })
     );

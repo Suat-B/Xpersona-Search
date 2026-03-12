@@ -24,6 +24,7 @@ export type QuickValidationPlan = {
   commands: string[];
   steps: ValidationCommand[];
   runnerLabel?: string;
+  coverage: "full" | "sanity_only";
 };
 
 type BuiltInRunner = {
@@ -189,6 +190,7 @@ export function planQuickValidationForFile(input: {
       reason: "No file content changed.",
       commands: [],
       steps: [],
+      coverage: "full",
     };
   }
 
@@ -219,6 +221,7 @@ export function planQuickValidationForFile(input: {
       commands: steps.map((step) => step.command),
       steps,
       runnerLabel: adapter.name,
+      coverage: "full",
     };
   }
 
@@ -241,13 +244,16 @@ export function planQuickValidationForFile(input: {
       commands: steps.map((step) => step.command),
       steps,
       runnerLabel: builtIn.label,
+      coverage: "full",
     };
   }
 
   return {
-    status: "missing_runner",
-    reason: `missing_validation_runner:${describeMissingRunnerTarget(relPath)}`,
+    status: "ready",
+    reason: `sanity_only_validation:${describeMissingRunnerTarget(relPath)}`,
     commands: [sanityStep.command],
     steps: [sanityStep],
+    runnerLabel: sanityStep.label,
+    coverage: "sanity_only",
   };
 }

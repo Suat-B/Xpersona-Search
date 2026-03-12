@@ -26,6 +26,12 @@ type ChatViewer = {
   source: string;
 };
 
+const CODING_PLAN_PROMO_PLANS = [
+  { name: "Starter", price: "$2.00" },
+  { name: "Builder", price: "$5.00" },
+  { name: "Studio", price: "$10.00" },
+] as const;
+
 function makeId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -190,6 +196,7 @@ export function ChatApp() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showCodingPlansBanner, setShowCodingPlansBanner] = useState(false);
 
   const messageViewportRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -396,6 +403,7 @@ export function ChatApp() {
       const task = input.trim();
       if (!task) return;
 
+      setShowCodingPlansBanner(true);
       setInput("");
       try {
         window.localStorage.removeItem(draftStorageKey);
@@ -577,11 +585,28 @@ export function ChatApp() {
       <div className="chat-editorial-hint" role="status" aria-live="polite">
         {statusText || "Enter to send, made with love in America."}
       </div>
-      <p className="chat-editorial-subhint">
-        <Link href="/playground" className="chat-editorial-subhint-label">
-          Playground for Coding - $2.00 - $5.00 - $10.00
+      {showCodingPlansBanner ? (
+        <Link href="/playground" className="chat-editorial-promo-banner animate-fade-in-up">
+          <span className="chat-editorial-promo-label">
+            Playground for <strong>Coding</strong>
+          </span>
+          <div className="chat-editorial-promo-plans" aria-label="Playground coding plan prices">
+            {CODING_PLAN_PROMO_PLANS.map((plan) => (
+              <span key={plan.name} className="chat-editorial-promo-plan">
+                <span>{plan.name}</span>
+                <strong>{plan.price}</strong>
+              </span>
+            ))}
+          </div>
+          <span className="chat-editorial-promo-cta">See plans</span>
         </Link>
-      </p>
+      ) : (
+        <p className="chat-editorial-subhint">
+          <Link href="/playground" className="chat-editorial-subhint-label">
+            Playground for Coding - $2.00 - $5.00 - $10.00
+          </Link>
+        </p>
+      )}
     </form>
   );
 

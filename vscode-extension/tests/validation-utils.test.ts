@@ -114,7 +114,7 @@ describe("validation utils", () => {
     ]);
   });
 
-  it("marks pine files without an adapter as missing a runner", () => {
+  it("falls back to sanity-only validation for pine files without an adapter", () => {
     const plan = planQuickValidationForFile({
       filePath: "One/strategies/pending/Emergent_Swarm_Intelligence.pine",
       absFile: "C:/repo/One/strategies/pending/Emergent_Swarm_Intelligence.pine",
@@ -125,8 +125,10 @@ describe("validation utils", () => {
       pythonAvailable: false,
     });
 
-    expect(plan.status).toBe("missing_runner");
-    expect(plan.reason).toBe("missing_validation_runner:.pine");
+    expect(plan.status).toBe("ready");
+    expect(plan.reason).toBe("sanity_only_validation:.pine");
+    expect(plan.runnerLabel).toBe("git diff sanity");
+    expect(plan.coverage).toBe("sanity_only");
     expect(plan.commands).toEqual(["git diff --check -- One/strategies/pending/Emergent_Swarm_Intelligence.pine"]);
   });
 

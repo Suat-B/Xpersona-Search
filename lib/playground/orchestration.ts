@@ -111,6 +111,43 @@ export type AssistPlan = {
   riskFlags: string[];
 };
 
+export type AssistRecoveryStage = "none" | "repair" | "tool_enforcement" | "single_file_rewrite" | "fallback";
+export type AssistToolRoute = "native_tools" | "text_actions" | "deterministic_synthesis";
+export type AssistToolActionSource =
+  | "none"
+  | "native_tool_calls"
+  | "structured_json"
+  | "single_file_rewrite_fallback"
+  | "deterministic_synthesis";
+export type AssistToolFailureCategory =
+  | "command_only_for_edit"
+  | "schema_invalid"
+  | "target_path_missing"
+  | "no_content_delta"
+  | "validation_failed"
+  | "local_apply_failed";
+export type AssistToolAttempt = {
+  route: AssistToolRoute;
+  actionSource: AssistToolActionSource;
+  recoveryStage: AssistRecoveryStage;
+  success: boolean;
+  hasFileActions: boolean;
+  hasCommandActions: boolean;
+  modelAlias?: string;
+  provider?: PlaygroundModelProvider;
+  failureCategory?: AssistToolFailureCategory | null;
+};
+export type AssistToolState = {
+  strategy: "standard" | "max_agentic";
+  route: AssistToolRoute;
+  adapter: AssistModelMetadata["adapter"];
+  actionSource: AssistToolActionSource;
+  recoveryStage: AssistRecoveryStage;
+  commandPolicyResolved: "run_until_done" | "safe_default";
+  attempts: AssistToolAttempt[];
+  lastFailureCategory: AssistToolFailureCategory | null;
+};
+
 export type AssistResult = {
   decision: { mode: AssistDecisionMode; reason: string; confidence: number };
   intent: { type: "conversation" | "code_edit" | "debug" | "plan" | "execute"; confidence: number; delta: number; clarified: boolean };
@@ -145,8 +182,9 @@ export type AssistResult = {
   confidence: number;
   risk: { blastRadius: "low" | "medium" | "high"; rollbackComplexity: number };
   influence: { files: string[]; snippets: number };
+  toolState: AssistToolState;
   nextBestActions: string[];
-  repromptStage: "none" | "repair" | "tool_enforcement" | "single_file_rewrite" | "fallback";
+  repromptStage: AssistRecoveryStage;
   actionability: {
     summary: "valid_actions" | "clarification_needed" | "blocked_by_safety";
     reason: string;
@@ -303,6 +341,16 @@ function isLikelyProviderLimitError(message: string): boolean {
 
 function isLikelyModelFallbackEligibleError(message: string): boolean {
   return isLikelyInvalidModelError(message) || isLikelyProviderLimitError(message);
+}
+
+function isLikelyNativeToolRouteFailureError(message: string): boolean {
+  const lower = String(message || "").toLowerCase();
+  return (
+    lower.includes("tool_use_failed") ||
+    lower.includes("failed to parse tool call arguments as json") ||
+    (lower.includes("tool call") && lower.includes("arguments") && lower.includes("json")) ||
+    (lower.includes("invalid_request_error") && lower.includes("tool"))
+  );
 }
 
 function isLikelyAttachmentUnsupportedError(message: string): boolean {
@@ -1051,8 +1099,46 @@ function extractToolCalls(payload: unknown): ProviderToolCall[] {
   return out;
 }
 
-function baseProviderSystemPrompt(): string {
-  return `You are Playground AI. Be practical, concise, and execution-oriented. Return plain text suitable for a coding assistant. Be factual and avoid fabrications. If you are unsure, say so and suggest how to verify. If the user corrects you, acknowledge the correction and update your answer. If asked whether you are Qwen or nscale (or what nscale is in your identity/provider context), deny both and state you are ${PUBLIC_PLAYGROUND_MODEL_NAME}.`;
+function baseProviderSystemPrompt(input?: {
+  conversational?: boolean;
+  workspaceContextAvailable?: boolean;
+  actionContract?: string;
+}): string {
+  const conversational = input?.conversational === true;
+  const workspaceContextAvailable = input?.workspaceContextAvailable === true;
+  const actionContract = String(input?.actionContract || "").trim();
+
+  if (conversational) {
+    return [
+      "You are Playground AI.",
+      "Be helpful, natural, and concise in conversation.",
+      "Answer the user's actual question directly and do not roleplay as an autonomous coding agent unless the task explicitly turns into code work.",
+      workspaceContextAvailable
+        ? "Only mention workspace or file context if it is genuinely relevant to the user's request."
+        : "Do not claim to be inspecting, analyzing, scanning, or reading project files, the repository, or the workspace unless the user explicitly asks for codebase help.",
+      "Be factual and avoid fabrications. If you are unsure, say so and suggest how to verify.",
+      "If the user corrects you, acknowledge the correction and update your answer.",
+      `If asked whether you are Qwen or nscale (or what nscale is in your identity/provider context), deny both and state you are ${PUBLIC_PLAYGROUND_MODEL_NAME}.`,
+    ].join(" ");
+  }
+
+  return [
+    `You are Playground AI. Be practical, concise, and execution-oriented. Return plain text suitable for a coding assistant. Be factual and avoid fabrications. If you are unsure, say so and suggest how to verify. If the user corrects you, acknowledge the correction and update your answer. If asked whether you are Qwen or nscale (or what nscale is in your identity/provider context), deny both and state you are ${PUBLIC_PLAYGROUND_MODEL_NAME}.`,
+    actionContract,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+export function shouldUseNvidiaChatTemplateThinking(model: string): boolean {
+  const normalized = String(model || "").trim().toLowerCase();
+  if (!normalized) return true;
+  return !/(^|[/:_-])(mistral|mixtral|magistral|devstral)([/:_-]|$)/i.test(normalized);
+}
+
+function isUnsupportedNvidiaChatTemplateError(message: string): boolean {
+  const normalized = String(message || "").trim().toLowerCase();
+  return normalized.includes("chat_template is not supported");
 }
 
 async function readStreamingProviderResponse(
@@ -1157,6 +1243,7 @@ async function readStreamingProviderResponse(
 async function callHfChat(params: {
   model: string;
   prompt: string;
+  systemPrompt: string;
   maxTokens: number;
   attachments?: AssistAttachment[];
   onToken?: (token: string) => void | Promise<void>;
@@ -1188,7 +1275,7 @@ async function callHfChat(params: {
         messages: [
           {
             role: "system",
-            content: baseProviderSystemPrompt(),
+            content: params.systemPrompt,
           },
           { role: "user", content: buildUserMessageContent(params.prompt, params.attachments) },
         ],
@@ -1236,6 +1323,7 @@ async function callHfChat(params: {
 async function callNvidiaChat(params: {
   model: string;
   prompt: string;
+  systemPrompt: string;
   maxTokens: number;
   attachments?: AssistAttachment[];
   onToken?: (token: string) => void | Promise<void>;
@@ -1255,36 +1343,48 @@ async function callNvidiaChat(params: {
   const timeout = setTimeout(() => controller.abort(), HF_REQUEST_TIMEOUT_MS);
   let r: Response;
   try {
-    r = await fetch(`${NVIDIA_INTEGRATE_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-        Accept: "text/event-stream",
-      },
-      body: JSON.stringify({
-        model: params.model,
-        stream: params.stream !== false,
-        max_tokens: params.maxTokens,
-        temperature: 0.6,
-        top_p: 0.95,
-        chat_template_kwargs: { enable_thinking: true },
-        messages: [
-          {
-            role: "system",
-            content: baseProviderSystemPrompt(),
-          },
-          { role: "user", content: buildUserMessageContent(params.prompt, params.attachments) },
-        ],
-        ...(params.tools?.length
-          ? {
-              tools: params.tools,
-              tool_choice: "auto",
-            }
-          : {}),
-      }),
-      signal: controller.signal,
-    });
+    const sendRequest = async (includeChatTemplateThinking: boolean) =>
+      fetch(`${NVIDIA_INTEGRATE_BASE_URL}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify({
+          model: params.model,
+          stream: params.stream !== false,
+          max_tokens: params.maxTokens,
+          temperature: 0.6,
+          top_p: 0.95,
+          ...(includeChatTemplateThinking ? { chat_template_kwargs: { enable_thinking: true } } : {}),
+          messages: [
+            {
+              role: "system",
+              content: params.systemPrompt,
+            },
+            { role: "user", content: buildUserMessageContent(params.prompt, params.attachments) },
+          ],
+          ...(params.tools?.length
+            ? {
+                tools: params.tools,
+                tool_choice: "auto",
+              }
+            : {}),
+        }),
+        signal: controller.signal,
+      });
+
+    const initialIncludeThinking = shouldUseNvidiaChatTemplateThinking(params.model);
+    r = await sendRequest(initialIncludeThinking);
+    if (!r.ok) {
+      const responseText = (await r.text().catch(() => "")) || `NVIDIA error ${r.status}`;
+      if (initialIncludeThinking && isUnsupportedNvidiaChatTemplateError(responseText)) {
+        r = await sendRequest(false);
+      } else {
+        throw new Error(responseText);
+      }
+    }
   } catch (error) {
     if (controller.signal.aborted) {
       throw new Error(`NVIDIA request timed out after ${HF_REQUEST_TIMEOUT_MS}ms.`);
@@ -2395,6 +2495,88 @@ export type ToolAction =
   | { type: "mkdir"; path: string }
   | { type: "write_file"; path: string; content: string; overwrite?: boolean };
 
+function summarizeExplicitToolActions(input: {
+  edits: Array<{ path: string; patch: string; rationale?: string }>;
+  commands: string[];
+  structuredActions?: ToolAction[];
+}): {
+  actions: ToolAction[];
+  hasFileActions: boolean;
+  hasCommandActions: boolean;
+  editCount: number;
+  writeFileCount: number;
+  mkdirCount: number;
+} {
+  const actions = uniqToolActions(
+    [
+      ...(input.structuredActions ?? []),
+      ...input.edits
+        .filter((edit) => looksLikeConcreteFilePath(edit.path) && String(edit.patch || "").trim())
+        .map((edit) => ({ type: "edit", path: edit.path, patch: edit.patch } as const)),
+      ...input.commands
+        .filter((command) => String(command || "").trim())
+        .map((command) => ({ type: "command", command: String(command).trim(), category: "validation" as const })),
+    ] as ToolAction[]
+  );
+  const editCount = actions.filter((action) => action.type === "edit").length;
+  const writeFileCount = actions.filter((action) => action.type === "write_file").length;
+  const mkdirCount = actions.filter((action) => action.type === "mkdir").length;
+  const hasFileActions = editCount + writeFileCount + mkdirCount > 0;
+  const hasCommandActions = actions.some((action) => action.type === "command");
+  return {
+    actions,
+    hasFileActions,
+    hasCommandActions,
+    editCount,
+    writeFileCount,
+    mkdirCount,
+  };
+}
+
+function classifyToolFailureCategory(input: {
+  codeEditIntent: boolean;
+  hasFileActions: boolean;
+  hasCommandActions: boolean;
+  actionSource: AssistToolActionSource;
+  targetPathHintAvailable: boolean;
+}): AssistToolFailureCategory | null {
+  if (input.codeEditIntent && input.hasCommandActions && !input.hasFileActions) {
+    return "command_only_for_edit";
+  }
+  if (input.codeEditIntent && input.actionSource === "none") {
+    return input.targetPathHintAvailable ? "schema_invalid" : "target_path_missing";
+  }
+  if (input.codeEditIntent && !input.hasFileActions) {
+    return input.targetPathHintAvailable ? "schema_invalid" : "target_path_missing";
+  }
+  return null;
+}
+
+function scoreToolAttempt(input: {
+  hasFileActions: boolean;
+  hasCommandActions: boolean;
+  editCount: number;
+  writeFileCount: number;
+  mkdirCount: number;
+  actionSource: AssistToolActionSource;
+  route: AssistToolRoute;
+  failureCategory: AssistToolFailureCategory | null;
+}): number {
+  let score = 0;
+  if (input.hasFileActions) score += 200;
+  score += input.editCount * 32;
+  score += input.writeFileCount * 28;
+  score += input.mkdirCount * 12;
+  if (input.hasCommandActions) score += input.hasFileActions ? 10 : -80;
+  if (input.actionSource === "native_tool_calls") score += 30;
+  else if (input.actionSource === "structured_json") score += 24;
+  else if (input.actionSource === "single_file_rewrite_fallback") score += 18;
+  else if (input.actionSource === "deterministic_synthesis") score += 14;
+  if (input.route === "native_tools" && input.hasFileActions) score += 6;
+  if (input.failureCategory) score -= 45;
+  return score;
+}
+
 function uniqToolActions(actions: ToolAction[]): ToolAction[] {
   const seen = new Set<string>();
   const out: ToolAction[] = [];
@@ -2861,11 +3043,28 @@ export async function runAssist(
   let edits: Array<{ path: string; patch: string; rationale?: string }> = [];
   let modelCommands: string[] = [];
   let structuredActions: ToolAction[] = [];
-  let repromptStage: "none" | "repair" | "tool_enforcement" | "single_file_rewrite" | "fallback" = "none";
+  let repromptStage: AssistRecoveryStage = "none";
   let actionability: AssistResult["actionability"] = {
     summary: "valid_actions",
     reason: "Action set is acceptable for this request.",
   };
+  let activeToolRoute: AssistToolRoute = "text_actions";
+  let toolRouteUsed: AssistToolRoute = activeToolRoute;
+  let toolActionSource: AssistToolActionSource = "none";
+  let lastToolFailureCategory: AssistToolFailureCategory | null = null;
+  const toolAttempts: AssistToolAttempt[] = [];
+  let bestAttemptScore = Number.NEGATIVE_INFINITY;
+  let bestStructuredAttempt:
+    | {
+        route: AssistToolRoute;
+        actionSource: AssistToolActionSource;
+        recoveryStage: AssistRecoveryStage;
+        final: string;
+        edits: Array<{ path: string; patch: string; rationale?: string }>;
+        commands: string[];
+        structuredActions: ToolAction[];
+      }
+    | null = null;
   const explicitCommandRunIntent = hasExplicitCommandRunIntent(req.task);
   const pureConversationalTask = isPureConversationalTask(req.task);
   const deterministicConversationReply =
@@ -2895,6 +3094,10 @@ export async function runAssist(
   if (primaryTargetPath) {
     reasonCodes.push("context_target_path_inferred");
   }
+  const commandPolicyResolved = req.autonomy?.commandPolicy === "run_until_done" ? "run_until_done" : "safe_default";
+  const maxAgenticTooling =
+    commandPolicyResolved === "run_until_done" &&
+    (codeEditIntent || decision.mode === "debug" || decision.mode === "yolo");
   const reasoningPreference = extractReasoningPreference(req.workflowIntentId);
   const preferredReasoning = req.clientPreferences?.reasoning || req.userProfile?.reasoningPreference || null;
   const effectiveReasoning = reasoningPreference || preferredReasoning;
@@ -2932,8 +3135,28 @@ export async function runAssist(
         requestedRegistryEntry?.certification !== "experimental",
     },
   });
-  const modelFallbackChain = modelSelection.fallbackChain;
+  const nativePreviewEntry =
+    maxAgenticTooling && !(req.attachments?.length ?? 0)
+      ? getPlaygroundModelEntry("playground-native-preview")
+      : null;
+  const explicitNativeModelRequested = !!requestedRegistryEntry?.capabilities.supportsNativeTools;
+  const nativePreviewAllowed =
+    !!nativePreviewEntry &&
+    (!preferredProviders.length || preferredProviders.includes(nativePreviewEntry.provider));
+  const preferredRouteChain =
+    !maxAgenticTooling && !explicitNativeModelRequested
+      ? modelSelection.fallbackChain.filter((entry) => !entry.capabilities.supportsNativeTools)
+      : modelSelection.fallbackChain;
+  const baseRouteChain = preferredRouteChain.length > 0 ? preferredRouteChain : modelSelection.fallbackChain;
+  const modelFallbackChain = nativePreviewAllowed
+    ? [
+        nativePreviewEntry!,
+        ...baseRouteChain.filter((entry) => entry.alias !== nativePreviewEntry!.alias),
+      ]
+    : baseRouteChain;
   const primaryModelEntry = modelFallbackChain[0] ?? modelSelection.resolvedEntry;
+  activeToolRoute = primaryModelEntry.capabilities.supportsNativeTools || nativePreviewAllowed ? "native_tools" : "text_actions";
+  toolRouteUsed = activeToolRoute;
   modelUsed = primaryModelEntry.model;
   const adapter: AssistModelMetadata["adapter"] = primaryModelEntry.capabilities.supportsNativeTools
     ? "native_tools_v1"
@@ -2955,6 +3178,56 @@ export async function runAssist(
   logs.push(`provider_resolved=${modelMetadata.providerResolved}`);
   logs.push(`contract_version=${modelMetadata.contractVersion}`);
   logs.push(`adapter=${adapter}`);
+  logs.push(`tool_strategy=${maxAgenticTooling ? "max_agentic" : "standard"}`);
+  logs.push(`tool_route_initial=${activeToolRoute}`);
+  if (maxAgenticTooling) reasonCodes.push("tool_strategy_max_agentic");
+  if (nativePreviewAllowed) reasonCodes.push("native_tools_route_enabled");
+  let executionPromptBase = "";
+  let exampleFileActionPath = "hello.py";
+  let validWriteFileActionExample =
+    '{"final":"Prepared update.","actions":[{"type":"write_file","path":"hello.py","content":"<full updated file content>","overwrite":true}],"commands":[]}';
+  let invalidCommandOnlyActionExample =
+    '{"final":"done","actions":[{"type":"command","command":"npm run lint","category":"validation"}],"commands":["npm run lint"]}';
+  let raw = "";
+  let providerResult: ProviderChatResult = { text: "", reasoning: "", toolCalls: [] };
+  let structuredFromProviderResult:
+    | ((result: ProviderChatResult) => StructuredAssistOutput | null)
+    | null = null;
+  let detectStructuredCandidate:
+    | ((input: {
+        result?: ProviderChatResult | null;
+        rawText: string;
+        route: AssistToolRoute;
+        recoveryStage: AssistRecoveryStage;
+      }) => {
+        structured: StructuredAssistOutput | null;
+        actionSource: AssistToolActionSource;
+        route: AssistToolRoute;
+        recoveryStage: AssistRecoveryStage;
+        failureCategory: AssistToolFailureCategory | null;
+        finalText: string;
+        score: number;
+        actions: ToolAction[];
+        hasFileActions: boolean;
+        hasCommandActions: boolean;
+        editCount: number;
+        writeFileCount: number;
+        mkdirCount: number;
+      })
+    | null = null;
+  let rememberDetectedCandidate:
+    | ((candidate: NonNullable<typeof detectStructuredCandidate> extends (input: infer _A) => infer R ? R : never) => void)
+    | null = null;
+  let applyDetectedCandidate:
+    | ((candidate: NonNullable<typeof detectStructuredCandidate> extends (input: infer _A) => infer R ? R : never) => void)
+    | null = null;
+  let callWithAttachmentFallback:
+    | ((
+        promptText: string,
+        attachmentsForCall?: AssistAttachment[],
+        preferredRoute?: AssistToolRoute
+      ) => Promise<ProviderChatResult>)
+    | null = null;
   if (longContextRequested && !longContextEnabled) {
     logs.push("long-context model unavailable; using summarized/truncated context fallback");
   }
@@ -2989,65 +3262,109 @@ export async function runAssist(
       logs.push(`attachments_included=${safeAttachments.length}`);
     }
     const useStructuredOutput = codeEditIntent || decision.mode === "debug" || decision.mode === "yolo";
-    const adapterUsesNativeTools = adapter === "native_tools_v1";
-    const prompt = [
-      `Mode: ${decision.mode}`,
-      `Resolved intent: ${intentResolution.intent}`,
-      `Task: ${req.task}`,
-      codeEditIntent && primaryTargetPath ? `Primary target file hint: ${primaryTargetPath}` : "",
-      req.workflowIntentId ? `Workflow intent id: ${req.workflowIntentId}` : "",
-      reasoningInstruction,
-      `Safety profile: ${effectiveSafety}`,
-      `Contract version: ${modelMetadata.contractVersion}`,
-      `Model alias: ${modelMetadata.modelResolvedAlias}`,
-      `Concrete model: ${modelMetadata.modelResolved}`,
-      `Provider: ${modelMetadata.providerResolved}`,
-      `Adapter: ${adapter}`,
-      "",
-      profileToPrompt(req.userProfile, req.clientPreferences, req.autonomy),
-      "",
-      conversationToPrompt(req.conversationHistory),
-      "",
-      contextToPrompt(budgetedContext, safeAttachments),
-      "",
-      decision.mode === "debug"
-        ? "Focus on root cause, minimal safe fix, and verification."
-        : decision.mode === "yolo"
-          ? "Focus on direct implementation with actionable edits and commands."
-          : "Focus on production-ready implementation guidance with concise rationale.",
-      "",
-      adapterUsesNativeTools
-        ? "Use the available tools for edits, write_file, mkdir, and commands when actions are required. Prefer tool calls over describing actions in prose."
-        : useStructuredOutput
-          ? 'Return STRICT JSON only with this shape: {"final":"string","actions":[{"type":"edit","path":"relative/path","patch":"unified diff patch"},{"type":"write_file","path":"relative/path","content":"full file text","overwrite":true},{"type":"mkdir","path":"relative/path"},{"type":"command","command":"safe shell command","category":"validation"}],"edits":[{"path":"relative/path","patch":"unified diff patch","rationale":"optional"}],"commands":["safe command"]}.'
-          : "Return plain text only. Do not return JSON.",
-      useStructuredOutput
-        ? codeEditIntent
-          ? contextAnchorsAvailable
-            ? "Rules: include concrete file actions when the user asks to create/modify code; if file path is omitted, infer target from the provided IDE context and proceed without follow-up questions."
-            : "Rules: include concrete file actions when the user asks to create/modify code; do not return placeholder text."
-          : "Rules: keep actions empty unless explicitly requested; answer in plain natural language and avoid standalone code snippets."
-        : "Rules: answer directly in natural language and avoid markdown fences.",
-      useStructuredOutput
-        ? explicitCommandRunIntent
-          ? "Rules: command actions may be included only if they are necessary, safe, and directly requested."
-          : "Rules: leave command actions empty unless auto-validation is explicitly required by confidence policy."
-        : "Rules: do not include shell commands unless the user explicitly asks for runnable commands.",
-      "Rules: never include markdown fences.",
-    ]
-      .filter(Boolean)
-      .join("\n");
+    exampleFileActionPath = normalizeRelativePath(primaryTargetPath || budgetedContext?.activeFile?.path || "") || "hello.py";
+    validWriteFileActionExample = `{"final":"Prepared update.","actions":[{"type":"write_file","path":"${exampleFileActionPath}","content":"<full updated file content>","overwrite":true}],"commands":[]}`;
+    const routeUsesNativeTools = (route: AssistToolRoute) => route === "native_tools";
+    const buildActionContractPrompt = (route: AssistToolRoute): string => {
+      if (routeUsesNativeTools(route)) {
+        return [
+          "Available backend tools:",
+          "- apply_edit(path, patch): apply a unified diff patch to an existing workspace file. Use this instead of describing diffs in prose.",
+          "- write_file(path, content, overwrite?): write the full updated contents for a file or create a new file. Use this when you can provide the complete updated file text.",
+          "- mkdir(path): create a workspace-relative directory.",
+          explicitCommandRunIntent || decision.mode === "yolo"
+            ? '- run_command(command, category): run a necessary shell command after edits or for validation. category must be "implementation" or "validation".'
+            : "- run_command(command, category): leave unused unless the task explicitly requires runnable commands or validation.",
+          codeEditIntent
+            ? "For edit-intent tasks, you must produce at least one file tool call. Prose-only output and command-only output are invalid."
+            : "If no repository change is required, answer directly and do not fabricate tool calls.",
+          "Prefer apply_edit for targeted changes to existing files. Prefer write_file for full-file rewrites or new files.",
+          codeEditIntent
+            ? `Valid edit-task outcome example: call write_file with path="${exampleFileActionPath}", content="<full updated file content>", overwrite=true.`
+            : "",
+          codeEditIntent ? "Invalid edit-task outcome example: only calling run_command with no file tool call." : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }
+      return [
+        'Return STRICT JSON only with this shape: {"final":"string","actions":[{"type":"edit","path":"relative/path","patch":"unified diff patch"},{"type":"write_file","path":"relative/path","content":"full file text","overwrite":true},{"type":"mkdir","path":"relative/path"},{"type":"command","command":"safe shell command","category":"validation"}],"edits":[{"path":"relative/path","patch":"unified diff patch","rationale":"optional"}],"commands":["safe command"]}.',
+        "Available JSON action types:",
+        "- edit(path, patch): targeted unified diff for an existing file.",
+        "- write_file(path, content, overwrite): full updated file contents or a new file.",
+        "- mkdir(path): create a directory.",
+        '- command(command, category): only for necessary implementation or validation commands; category must be "implementation" or "validation".',
+        codeEditIntent
+          ? "For edit-intent tasks, at least one file action is required. Prose-only output and command-only output are invalid."
+          : "If no repository change is required, keep actions empty and answer briefly in final.",
+        "Prefer edit for targeted modifications. Prefer write_file for full rewrites or new files.",
+        codeEditIntent ? `Valid edit-task JSON example: ${validWriteFileActionExample}` : "",
+        codeEditIntent ? `Invalid edit-task JSON example: ${invalidCommandOnlyActionExample}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    };
+    const buildExecutionPromptBase = (route: AssistToolRoute): string => {
+      const actionContractPrompt = buildActionContractPrompt(route);
+      const routeAdapter = routeUsesNativeTools(route) ? "native_tools_v1" : "text_actions_v1";
+      return [
+        `Mode: ${decision.mode}`,
+        `Resolved intent: ${intentResolution.intent}`,
+        `Task: ${req.task}`,
+        codeEditIntent && primaryTargetPath ? `Primary target file hint: ${primaryTargetPath}` : "",
+        req.workflowIntentId ? `Workflow intent id: ${req.workflowIntentId}` : "",
+        reasoningInstruction,
+        `Safety profile: ${effectiveSafety}`,
+        `Contract version: ${modelMetadata.contractVersion}`,
+        `Requested model alias: ${modelSelection.requestedAlias}`,
+        `Route preference: ${route}`,
+        `Adapter: ${routeAdapter}`,
+        "",
+        profileToPrompt(req.userProfile, req.clientPreferences, req.autonomy),
+        "",
+        conversationToPrompt(req.conversationHistory),
+        "",
+        contextToPrompt(budgetedContext, safeAttachments),
+        "",
+        decision.mode === "debug"
+          ? "Focus on root cause, minimal safe fix, and verification."
+          : decision.mode === "yolo"
+            ? "Focus on direct implementation with actionable edits and commands."
+            : "Focus on production-ready implementation guidance with concise rationale.",
+        "",
+        useStructuredOutput ? actionContractPrompt : "Return plain text only. Do not return JSON.",
+        useStructuredOutput
+          ? codeEditIntent
+            ? contextAnchorsAvailable
+              ? "Rules: include concrete file actions when the user asks to create/modify code; if file path is omitted, infer target from the provided IDE context and proceed without follow-up questions."
+              : "Rules: include concrete file actions when the user asks to create/modify code; do not return placeholder text."
+            : "Rules: keep actions empty unless explicitly requested; answer in plain natural language and avoid standalone code snippets."
+          : "Rules: answer directly in natural language and avoid markdown fences.",
+        useStructuredOutput
+          ? explicitCommandRunIntent
+            ? "Rules: command actions may be included only if they are necessary, safe, and directly requested."
+            : "Rules: leave command actions empty unless auto-validation is explicitly required by confidence policy."
+          : "Rules: do not include shell commands unless the user explicitly asks for runnable commands.",
+        "Rules: never include markdown fences.",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    };
+    const applyRoutePromptBase = (route: AssistToolRoute) => {
+      activeToolRoute = route;
+      toolRouteUsed = route;
+      executionPromptBase = buildExecutionPromptBase(route);
+    };
+    applyRoutePromptBase(activeToolRoute);
 
-    let raw = "";
-    let providerResult: ProviderChatResult = { text: "", reasoning: "", toolCalls: [] };
     const useTwoPass =
-      !adapterUsesNativeTools &&
+      !routeUsesNativeTools(activeToolRoute) &&
       useStructuredOutput &&
       shouldUseTwoPassCodeGeneration(req.task, codeEditIntent, budgetedContext, effectiveReasoning);
     const allowRawTokenStream =
       !useTwoPass && !hasExecutionIntent(req.task) && (STREAM_RAW_MODEL_TOKENS || !useStructuredOutput);
-    const allowReasoningTokenStream = !useTwoPass && !adapterUsesNativeTools;
-    const structuredFromProviderResult = (result: ProviderChatResult): StructuredAssistOutput | null => {
+    const allowReasoningTokenStream = !useTwoPass;
+    structuredFromProviderResult = (result: ProviderChatResult): StructuredAssistOutput | null => {
       return (
         structuredFromNativeToolCalls(result) ??
         parseStructuredAssistResponse(result.text) ??
@@ -3055,11 +3372,135 @@ export async function runAssist(
         inferStructuredFallback(result.text, req.task, primaryTargetPath)
       );
     };
-    const callPrimaryWithModelFallback = async (promptText: string, attachmentsForCall?: AssistAttachment[]) => {
+    detectStructuredCandidate = (input: {
+      result?: ProviderChatResult | null;
+      rawText: string;
+      route: AssistToolRoute;
+      recoveryStage: AssistRecoveryStage;
+    }) => {
+      const nativeStructured = input.result ? structuredFromNativeToolCalls(input.result) : null;
+      const parsedStructured = nativeStructured ? null : parseStructuredAssistResponse(input.rawText);
+      const singleFileStructured =
+        nativeStructured || parsedStructured ? null : inferSingleFileRewriteFallback(input.rawText, budgetedContext, primaryTargetPath);
+      const deterministicStructured =
+        nativeStructured || parsedStructured || singleFileStructured
+          ? null
+          : inferStructuredFallback(input.rawText, req.task, primaryTargetPath);
+      const structured = nativeStructured ?? parsedStructured ?? singleFileStructured ?? deterministicStructured;
+      const actionSource: AssistToolActionSource = nativeStructured
+        ? "native_tool_calls"
+        : parsedStructured
+          ? "structured_json"
+          : singleFileStructured
+            ? "single_file_rewrite_fallback"
+            : deterministicStructured
+              ? "deterministic_synthesis"
+              : "none";
+      const effectiveRoute =
+        singleFileStructured || deterministicStructured ? ("deterministic_synthesis" as const) : input.route;
+      const summary = structured
+        ? summarizeExplicitToolActions({
+            edits: structured.edits,
+            commands: structured.commands,
+            structuredActions: (structured.actions ?? []) as ToolAction[],
+          })
+        : summarizeExplicitToolActions({ edits: [], commands: [], structuredActions: [] });
+      const failureCategory = classifyToolFailureCategory({
+        codeEditIntent,
+        hasFileActions: summary.hasFileActions,
+        hasCommandActions: summary.hasCommandActions,
+        actionSource,
+        targetPathHintAvailable: contextAnchorsAvailable || !!primaryTargetPath,
+      });
+      return {
+        structured,
+        actionSource,
+        route: effectiveRoute,
+        recoveryStage: input.recoveryStage,
+        failureCategory,
+        finalText: structured ? normalizeModelText(structured.final) : normalizeModelText(extractFinalFromJsonLike(input.rawText) || input.rawText),
+        score: scoreToolAttempt({
+          hasFileActions: summary.hasFileActions,
+          hasCommandActions: summary.hasCommandActions,
+          editCount: summary.editCount,
+          writeFileCount: summary.writeFileCount,
+          mkdirCount: summary.mkdirCount,
+          actionSource,
+          route: effectiveRoute,
+          failureCategory,
+        }),
+        ...summary,
+      };
+    };
+    rememberDetectedCandidate = (candidate: ReturnType<NonNullable<typeof detectStructuredCandidate>>) => {
+      const success = codeEditIntent ? candidate.hasFileActions : candidate.hasFileActions || candidate.hasCommandActions;
+      toolAttempts.push({
+        route: candidate.route,
+        actionSource: candidate.actionSource,
+        recoveryStage: candidate.recoveryStage,
+        success,
+        hasFileActions: candidate.hasFileActions,
+        hasCommandActions: candidate.hasCommandActions,
+        modelAlias: modelMetadata.modelResolvedAlias,
+        provider: modelMetadata.providerResolved,
+        failureCategory: candidate.failureCategory,
+      });
+      if (toolAttempts.length > 16) toolAttempts.splice(0, toolAttempts.length - 16);
+      if (candidate.failureCategory) lastToolFailureCategory = candidate.failureCategory;
+      if (candidate.structured && success && candidate.score >= bestAttemptScore) {
+        bestAttemptScore = candidate.score;
+        bestStructuredAttempt = {
+          route: candidate.route,
+          actionSource: candidate.actionSource,
+          recoveryStage: candidate.recoveryStage,
+          final: candidate.finalText,
+          edits: candidate.structured.edits,
+          commands: candidate.structured.commands,
+          structuredActions: (candidate.structured.actions ?? []) as ToolAction[],
+        };
+      }
+    };
+    applyDetectedCandidate = (candidate: ReturnType<NonNullable<typeof detectStructuredCandidate>>) => {
+      if (!candidate.structured) {
+        final = candidate.finalText;
+        edits = [];
+        modelCommands = [];
+        structuredActions = [];
+        toolActionSource = candidate.actionSource;
+        toolRouteUsed = candidate.route;
+        return;
+      }
+      final = candidate.finalText;
+      edits = candidate.structured.edits;
+      modelCommands = candidate.structured.commands;
+      structuredActions = (candidate.structured.actions ?? []) as ToolAction[];
+      toolActionSource = candidate.actionSource;
+      toolRouteUsed = candidate.route;
+    };
+    const shouldFallbackFromNativeTools = (candidate: ReturnType<NonNullable<typeof detectStructuredCandidate>>) => {
+      if (!maxAgenticTooling || activeToolRoute !== "native_tools") return false;
+      if (candidate.actionSource !== "native_tool_calls") return true;
+      if (codeEditIntent && (!candidate.hasFileActions || candidate.failureCategory === "command_only_for_edit")) return true;
+      return false;
+    };
+    const callPrimaryWithModelFallback = async (
+      promptText: string,
+      attachmentsForCall?: AssistAttachment[],
+      preferredRoute: AssistToolRoute = activeToolRoute
+    ) => {
+      const routeChain = modelFallbackChain.filter((entry) =>
+        preferredRoute === "native_tools" ? entry.capabilities.supportsNativeTools : !entry.capabilities.supportsNativeTools
+      );
+      const candidateChain = routeChain.length > 0 ? routeChain : modelFallbackChain;
+      const routeSystemPrompt = baseProviderSystemPrompt({
+        conversational: decision.mode === "generate" && !useStructuredOutput,
+        workspaceContextAvailable: contextAnchorsAvailable,
+        actionContract: useStructuredOutput ? buildActionContractPrompt(preferredRoute) : "",
+      });
       let lastError: unknown = null;
-      for (let idx = 0; idx < modelFallbackChain.length; idx += 1) {
-        const candidateEntry = modelFallbackChain[idx];
-        const nextEntry = idx + 1 < modelFallbackChain.length ? modelFallbackChain[idx + 1] : null;
+      for (let idx = 0; idx < candidateChain.length; idx += 1) {
+        const candidateEntry = candidateChain[idx];
+        const nextEntry = idx + 1 < candidateChain.length ? candidateChain[idx + 1] : null;
         try {
           modelUsed = candidateEntry.model;
           modelMetadata = {
@@ -3073,8 +3514,9 @@ export async function runAssist(
           };
           const provider = candidateEntry.provider;
           const providerModel = resolveProviderModel(provider, candidateEntry.model);
-          logs.push(`provider=${provider} model=${providerModel}`);
-          const nativeToolsRequested = candidateEntry.capabilities.supportsNativeTools && useStructuredOutput;
+          logs.push(`provider=${provider} model=${providerModel} route=${preferredRoute}`);
+          const nativeToolsRequested =
+            preferredRoute === "native_tools" && candidateEntry.capabilities.supportsNativeTools && useStructuredOutput;
           const nativeToolSpecs =
             nativeToolsRequested && candidateEntry.capabilities.supportsWriteFile
               ? buildNativeToolSpecs({
@@ -3086,10 +3528,12 @@ export async function runAssist(
               return callNvidiaChat({
                 model: providerModel,
                 prompt: promptText,
+                systemPrompt: routeSystemPrompt,
                 maxTokens: Math.max(128, Math.min(req.max_tokens ?? 512, LONG_CONTEXT_LIMIT)),
                 attachments: attachmentsForCall,
                 onToken: allowRawTokenStream && !nativeToolsRequested ? hooks?.onToken : undefined,
-                onReasoningToken: allowReasoningTokenStream ? hooks?.onReasoningToken : undefined,
+                onReasoningToken:
+                  allowReasoningTokenStream && preferredRoute !== "native_tools" ? hooks?.onReasoningToken : undefined,
                 runtimeApiKey: runtimeOptions?.nvidiaApiKey,
                 stream: !nativeToolsRequested && candidateEntry.capabilities.supportsStreaming,
                 ...(nativeToolSpecs?.length ? { tools: nativeToolSpecs } : {}),
@@ -3098,10 +3542,12 @@ export async function runAssist(
             return callHfChat({
               model: providerModel,
               prompt: promptText,
+              systemPrompt: routeSystemPrompt,
               maxTokens: Math.max(128, Math.min(req.max_tokens ?? 512, LONG_CONTEXT_LIMIT)),
               attachments: attachmentsForCall,
               onToken: allowRawTokenStream && !nativeToolsRequested ? hooks?.onToken : undefined,
-              onReasoningToken: allowReasoningTokenStream ? hooks?.onReasoningToken : undefined,
+              onReasoningToken:
+                allowReasoningTokenStream && preferredRoute !== "native_tools" ? hooks?.onReasoningToken : undefined,
               stream: !nativeToolsRequested && candidateEntry.capabilities.supportsStreaming,
               ...(nativeToolSpecs?.length ? { tools: nativeToolSpecs } : {}),
             });
@@ -3125,9 +3571,13 @@ export async function runAssist(
       throw (lastError instanceof Error ? lastError : new Error(String(lastError || "Model request failed")));
     };
 
-    const callWithAttachmentFallback = async (promptText: string, attachmentsForCall?: AssistAttachment[]) => {
+    callWithAttachmentFallback = async (
+      promptText: string,
+      attachmentsForCall?: AssistAttachment[],
+      preferredRoute: AssistToolRoute = activeToolRoute
+    ) => {
       try {
-        return await callPrimaryWithModelFallback(promptText, attachmentsForCall);
+        return await callPrimaryWithModelFallback(promptText, attachmentsForCall, preferredRoute);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if ((attachmentsForCall?.length ?? 0) > 0 && isLikelyAttachmentUnsupportedError(message)) {
@@ -3135,7 +3585,7 @@ export async function runAssist(
           if (hooks?.onStatus) {
             await hooks.onStatus("Image input is unavailable for this model/provider. Continuing without images.");
           }
-          return callPrimaryWithModelFallback(promptText, undefined);
+          return callPrimaryWithModelFallback(promptText, undefined, preferredRoute);
         }
         throw error;
       }
@@ -3144,14 +3594,14 @@ export async function runAssist(
     if (useTwoPass) {
       logs.push("two_pass_generation=enabled");
       const draftPrompt = [
-        prompt,
+        executionPromptBase,
         "",
         "Pass 1 (draft): produce your best strict JSON output directly.",
       ].join("\n");
       const draftResult = await callWithAttachmentFallback(draftPrompt, safeAttachments);
       const draftRaw = draftResult.text;
       const verifyPrompt = [
-        prompt,
+        executionPromptBase,
         "",
         "Pass 2 (verifier): validate and correct the candidate output below.",
         "If valid, return a semantically equivalent STRICT JSON object.",
@@ -3162,14 +3612,27 @@ export async function runAssist(
       ].join("\n");
       const verifyResult = await callWithAttachmentFallback(verifyPrompt, undefined);
       const verifyRaw = verifyResult.text;
-      const verifiedStructured = structuredFromProviderResult(verifyResult) ?? parseStructuredAssistResponse(verifyRaw);
-      const draftStructured = structuredFromProviderResult(draftResult) ?? parseStructuredAssistResponse(draftRaw);
-      const verifiedLooksInvalid = !verifiedStructured || (codeEditIntent && (verifiedStructured.edits?.length ?? 0) === 0);
+      const draftCandidate = detectStructuredCandidate({
+        result: draftResult,
+        rawText: draftRaw,
+        route: activeToolRoute,
+        recoveryStage: repromptStage,
+      });
+      const verifyCandidate = detectStructuredCandidate({
+        result: verifyResult,
+        rawText: verifyRaw,
+        route: activeToolRoute,
+        recoveryStage: repromptStage,
+      });
+      rememberDetectedCandidate(draftCandidate);
+      rememberDetectedCandidate(verifyCandidate);
+      const verifiedLooksInvalid =
+        !verifyCandidate.structured || (codeEditIntent && !verifyCandidate.hasFileActions);
 
       if (verifiedLooksInvalid) {
         logs.push("two_pass_verifier=needs_repair");
         const repairPrompt = [
-          prompt,
+          executionPromptBase,
           "",
           "Repair pass: return STRICT JSON only.",
           "Fix schema issues, escaped formatting noise, and missing edits if the user requested code.",
@@ -3187,44 +3650,100 @@ export async function runAssist(
         raw = verifyRaw;
       }
 
-      const structured =
-        structuredFromProviderResult(providerResult) ||
-        parseStructuredAssistResponse(raw) ||
-        inferSingleFileRewriteFallback(raw, budgetedContext, primaryTargetPath) ||
-        verifiedStructured ||
-        draftStructured ||
-        inferSingleFileRewriteFallback(verifyRaw, budgetedContext, primaryTargetPath) ||
-        inferSingleFileRewriteFallback(draftRaw, budgetedContext, primaryTargetPath) ||
-        inferStructuredFallback(raw, req.task, primaryTargetPath) ||
-        inferStructuredFallback(verifyRaw, req.task, primaryTargetPath) ||
-        inferStructuredFallback(draftRaw, req.task, primaryTargetPath);
-      if (structured) {
-        final = normalizeModelText(structured.final);
-        edits = structured.edits;
-        modelCommands = structured.commands;
-        structuredActions = (structured.actions ?? []) as ToolAction[];
+      const resolvedCandidate = detectStructuredCandidate({
+        result: providerResult,
+        rawText: raw,
+        route: activeToolRoute,
+        recoveryStage: repromptStage,
+      });
+      rememberDetectedCandidate(resolvedCandidate);
+      if (resolvedCandidate.structured) {
+        applyDetectedCandidate(resolvedCandidate);
       } else {
-        final = normalizeModelText(extractFinalFromJsonLike(raw) || raw);
+        final = resolvedCandidate.finalText;
         logs.push("structured_output=parse_failed_after_two_pass");
       }
     } else {
-      providerResult = await callWithAttachmentFallback(prompt, safeAttachments);
+      try {
+        providerResult = await callWithAttachmentFallback(executionPromptBase, safeAttachments, activeToolRoute);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (activeToolRoute === "native_tools" && isLikelyNativeToolRouteFailureError(message)) {
+          reasonCodes.push("native_tools_provider_error_fallback");
+          reasonCodes.push("native_tools_route_fallback_to_text_actions");
+          logs.push(`tool_route_fallback=native_tools->text_actions provider_error=${message.slice(0, 180).replace(/\s+/g, " ")}`);
+          toolAttempts.push({
+            route: "native_tools",
+            actionSource: "none",
+            recoveryStage: repromptStage,
+            success: false,
+            hasFileActions: false,
+            hasCommandActions: false,
+            modelAlias: modelMetadata.modelResolvedAlias,
+            provider: modelMetadata.providerResolved,
+            failureCategory: "schema_invalid",
+          });
+          if (toolAttempts.length > 16) toolAttempts.splice(0, toolAttempts.length - 16);
+          lastToolFailureCategory = "schema_invalid";
+          if (hooks?.onStatus) {
+            await hooks.onStatus("Native tool call failed to parse. Falling back to the production text-actions route...");
+          }
+          applyRoutePromptBase("text_actions");
+          const textRoutePrompt = [
+            executionPromptBase,
+            "",
+            "Route fallback: the previous native-tools request failed because the provider rejected malformed tool-call arguments.",
+            "Return concrete file actions using the structured JSON contract.",
+            "Do not emit native tool calls for this retry.",
+          ].join("\n");
+          providerResult = await callWithAttachmentFallback(textRoutePrompt, safeAttachments, "text_actions");
+        } else {
+          throw error;
+        }
+      }
       raw = providerResult.text;
       if (!useStructuredOutput) {
         final = normalizeModelText(raw);
       } else {
-        const structured =
-          structuredFromProviderResult(providerResult) ??
-          parseStructuredAssistResponse(raw) ??
-          inferSingleFileRewriteFallback(raw, budgetedContext, primaryTargetPath) ??
-          inferStructuredFallback(raw, req.task, primaryTargetPath);
-        if (structured) {
-          final = normalizeModelText(structured.final);
-          edits = structured.edits;
-          modelCommands = structured.commands;
-          structuredActions = (structured.actions ?? []) as ToolAction[];
+        let initialCandidate = detectStructuredCandidate({
+          result: providerResult,
+          rawText: raw,
+          route: activeToolRoute,
+          recoveryStage: repromptStage,
+        });
+        rememberDetectedCandidate(initialCandidate);
+        if (shouldFallbackFromNativeTools(initialCandidate)) {
+          reasonCodes.push("native_tools_route_fallback_to_text_actions");
+          logs.push(
+            `tool_route_fallback=native_tools->text_actions reason=${initialCandidate.failureCategory || initialCandidate.actionSource}`
+          );
+          if (hooks?.onStatus) {
+            await hooks.onStatus("Native tool output was incomplete. Falling back to the production text-actions route...");
+          }
+          applyRoutePromptBase("text_actions");
+          const textRoutePrompt = [
+            executionPromptBase,
+            "",
+            "Route fallback: the previous native-tools output was incomplete or low-confidence for this task.",
+            "Return concrete file actions using the structured JSON contract.",
+            "",
+            "Previous output:",
+            initialCandidate.finalText || raw,
+          ].join("\n");
+          providerResult = await callWithAttachmentFallback(textRoutePrompt, safeAttachments, "text_actions");
+          raw = providerResult.text;
+          initialCandidate = detectStructuredCandidate({
+            result: providerResult,
+            rawText: raw,
+            route: "text_actions",
+            recoveryStage: repromptStage,
+          });
+          rememberDetectedCandidate(initialCandidate);
+        }
+        if (initialCandidate.structured) {
+          applyDetectedCandidate(initialCandidate);
         } else {
-          final = normalizeModelText(extractFinalFromJsonLike(raw) || raw);
+          final = initialCandidate.finalText;
           logs.push("structured_output=parse_failed; using raw model text");
         }
       }
@@ -3235,9 +3754,41 @@ export async function runAssist(
         inferStructuredFallback(final || raw, req.task, primaryTargetPath) ||
         recoverEditsFromConversationHistory(req.conversationHistory, req.task, primaryTargetPath);
       if (recovered && (recovered.edits.length > 0 || (recovered.actions?.length ?? 0) > 0)) {
-        edits = recovered.edits;
-        structuredActions = (recovered.actions ?? []) as ToolAction[];
-        if (!final.trim() && recovered.final.trim()) final = recovered.final;
+        const recoveredSummary = summarizeExplicitToolActions({
+          edits: recovered.edits,
+          commands: recovered.commands,
+          structuredActions: (recovered.actions ?? []) as ToolAction[],
+        });
+        const recoveredFailureCategory = classifyToolFailureCategory({
+          codeEditIntent,
+          hasFileActions: recoveredSummary.hasFileActions,
+          hasCommandActions: recoveredSummary.hasCommandActions,
+          actionSource: "deterministic_synthesis",
+          targetPathHintAvailable: contextAnchorsAvailable || !!primaryTargetPath,
+        });
+        const normalizedRecovered = {
+          structured: recovered,
+          actionSource: "deterministic_synthesis" as const,
+          route: "deterministic_synthesis" as const,
+          recoveryStage: repromptStage,
+          failureCategory: recoveredFailureCategory,
+          finalText: recovered.final.trim()
+            ? normalizeModelText(recovered.final)
+            : normalizeModelText(extractFinalFromJsonLike(final || raw) || final || raw),
+          score: scoreToolAttempt({
+            hasFileActions: recoveredSummary.hasFileActions,
+            hasCommandActions: recoveredSummary.hasCommandActions,
+            editCount: recoveredSummary.editCount,
+            writeFileCount: recoveredSummary.writeFileCount,
+            mkdirCount: recoveredSummary.mkdirCount,
+            actionSource: "deterministic_synthesis",
+            route: "deterministic_synthesis",
+            failureCategory: recoveredFailureCategory,
+          }),
+          ...recoveredSummary,
+        };
+        rememberDetectedCandidate(normalizedRecovered);
+        applyDetectedCandidate(normalizedRecovered);
         logs.push("structured_output=recovered_from_fallback_code_inference");
       }
     }
@@ -3251,9 +3802,10 @@ export async function runAssist(
           commands: candidateCommands,
           structuredActions: candidateStructured,
         });
-        return candidateActions.some(
-          (action) => action.type === "edit" || action.type === "mkdir" || action.type === "write_file" || action.type === "command"
+        const hasCandidateFileActions = candidateActions.some(
+          (action) => action.type === "edit" || action.type === "mkdir" || action.type === "write_file"
         );
+        return hasCandidateFileActions;
       };
 
       let usable = hasUsableActions(edits, modelCommands, structuredActions);
@@ -3284,10 +3836,13 @@ export async function runAssist(
         logs.push("reprompt_repair_pass_2");
         if (hooks?.onStatus) await hooks.onStatus("Repairing tool output...");
         const repairPrompt = [
-          prompt,
+          executionPromptBase,
           "",
           "Repair pass: the prior output was not actionable.",
-          "Return STRICT JSON only and ensure actionable edits/commands when code changes are requested.",
+          "Return STRICT JSON only and ensure at least one concrete file edit action when code changes are requested.",
+          "Command-only output is invalid for this task.",
+          `Valid example: ${validWriteFileActionExample}`,
+          `Invalid example: ${invalidCommandOnlyActionExample}`,
           "",
           "Previous output:",
           raw || final,
@@ -3295,18 +3850,17 @@ export async function runAssist(
         providerResult = await callWithAttachmentFallback(repairPrompt, undefined);
         const repairRaw = providerResult.text;
         raw = repairRaw;
-        const repairStructured =
-          structuredFromProviderResult(providerResult) ??
-          parseStructuredAssistResponse(repairRaw) ??
-          inferSingleFileRewriteFallback(repairRaw, budgetedContext, primaryTargetPath) ??
-          inferStructuredFallback(repairRaw, req.task, primaryTargetPath);
-        if (repairStructured) {
-          final = normalizeModelText(repairStructured.final);
-          edits = repairStructured.edits;
-          modelCommands = repairStructured.commands;
-          structuredActions = (repairStructured.actions ?? []) as ToolAction[];
+        const repairCandidate = detectStructuredCandidate({
+          result: providerResult,
+          rawText: repairRaw,
+          route: activeToolRoute,
+          recoveryStage: repromptStage,
+        });
+        rememberDetectedCandidate(repairCandidate);
+        if (repairCandidate.structured) {
+          applyDetectedCandidate(repairCandidate);
         } else {
-          final = normalizeModelText(extractFinalFromJsonLike(repairRaw) || repairRaw);
+          final = repairCandidate.finalText;
         }
         usable = hasUsableActions(edits, modelCommands, structuredActions);
         clarification = isClarificationResponseText(final);
@@ -3320,13 +3874,16 @@ export async function runAssist(
         logs.push("reprompt_tool_enforcement_pass_3");
         if (hooks?.onStatus) await hooks.onStatus("Enforcing actionable tool output...");
         const enforcePrompt = [
-          prompt,
+          executionPromptBase,
           "",
           "Tool-enforcement pass:",
           contextAnchorsAvailable
-            ? "You MUST return actionable edits/commands. IDE context is already provided, so do not ask follow-up questions."
-            : "You MUST return actionable edits/commands OR an explicit clarification question if required context is missing.",
+            ? "You MUST return at least one actionable file edit. IDE context is already provided, so do not ask follow-up questions."
+            : "You MUST return at least one actionable file edit OR an explicit clarification question if required context is missing.",
+          "Command-only output cannot satisfy this edit request.",
           "Do not return non-actionable summaries.",
+          `Valid example: ${validWriteFileActionExample}`,
+          `Invalid example: ${invalidCommandOnlyActionExample}`,
           "",
           "Previous output:",
           raw || final,
@@ -3334,18 +3891,17 @@ export async function runAssist(
         providerResult = await callWithAttachmentFallback(enforcePrompt, undefined);
         const enforceRaw = providerResult.text;
         raw = enforceRaw;
-        const enforceStructured =
-          structuredFromProviderResult(providerResult) ??
-          parseStructuredAssistResponse(enforceRaw) ??
-          inferSingleFileRewriteFallback(enforceRaw, budgetedContext, primaryTargetPath) ??
-          inferStructuredFallback(enforceRaw, req.task, primaryTargetPath);
-        if (enforceStructured) {
-          final = normalizeModelText(enforceStructured.final);
-          edits = enforceStructured.edits;
-          modelCommands = enforceStructured.commands;
-          structuredActions = (enforceStructured.actions ?? []) as ToolAction[];
+        const enforceCandidate = detectStructuredCandidate({
+          result: providerResult,
+          rawText: enforceRaw,
+          route: activeToolRoute,
+          recoveryStage: repromptStage,
+        });
+        rememberDetectedCandidate(enforceCandidate);
+        if (enforceCandidate.structured) {
+          applyDetectedCandidate(enforceCandidate);
         } else {
-          final = normalizeModelText(extractFinalFromJsonLike(enforceRaw) || enforceRaw);
+          final = enforceCandidate.finalText;
         }
         usable = hasUsableActions(edits, modelCommands, structuredActions);
         clarification = isClarificationResponseText(final);
@@ -3358,7 +3914,7 @@ export async function runAssist(
         logs.push("reprompt_context_assumption_pass_4");
         if (hooks?.onStatus) await hooks.onStatus("Generating best-effort edits from IDE context...");
         const assumptionPrompt = [
-          prompt,
+          executionPromptBase,
           "",
           "Context-assumption pass:",
           "Do NOT ask follow-up questions.",
@@ -3373,18 +3929,17 @@ export async function runAssist(
         providerResult = await callWithAttachmentFallback(assumptionPrompt, undefined);
         const assumptionRaw = providerResult.text;
         raw = assumptionRaw;
-        const assumptionStructured =
-          structuredFromProviderResult(providerResult) ??
-          parseStructuredAssistResponse(assumptionRaw) ??
-          inferSingleFileRewriteFallback(assumptionRaw, budgetedContext, primaryTargetPath) ??
-          inferStructuredFallback(assumptionRaw, req.task, primaryTargetPath);
-        if (assumptionStructured) {
-          final = normalizeModelText(assumptionStructured.final);
-          edits = assumptionStructured.edits;
-          modelCommands = assumptionStructured.commands;
-          structuredActions = (assumptionStructured.actions ?? []) as ToolAction[];
+        const assumptionCandidate = detectStructuredCandidate({
+          result: providerResult,
+          rawText: assumptionRaw,
+          route: activeToolRoute,
+          recoveryStage: repromptStage,
+        });
+        rememberDetectedCandidate(assumptionCandidate);
+        if (assumptionCandidate.structured) {
+          applyDetectedCandidate(assumptionCandidate);
         } else {
-          final = normalizeModelText(extractFinalFromJsonLike(assumptionRaw) || assumptionRaw);
+          final = assumptionCandidate.finalText;
         }
         usable = hasUsableActions(edits, modelCommands, structuredActions);
         clarification = isClarificationResponseText(final);
@@ -3404,13 +3959,14 @@ export async function runAssist(
         if (hooks?.onStatus) await hooks.onStatus("Rewriting the active file directly...");
         const rewritePath = normalizeRelativePath(budgetedContext?.activeFile?.path || "") || primaryTargetPath || "active file";
         const rewritePrompt = [
-          prompt,
+          executionPromptBase,
           "",
           "Single-file rewrite pass:",
           `Rewrite exactly this file: ${rewritePath}`,
           'Return STRICT JSON only with this shape: {"final":"string","actions":[{"type":"write_file","path":"relative/path","content":"FULL UPDATED FILE CONTENT","overwrite":true}],"commands":["safe validation command"]}.',
           "Do not return a plan, prose-only summary, or command-only output.",
           "Preserve unchanged code and make only the requested implementation edits.",
+          `Valid example: {"final":"Prepared update.","actions":[{"type":"write_file","path":"${rewritePath}","content":"<full updated file content>","overwrite":true}],"commands":[]}`,
           "",
           "Existing file content:",
           normalizeComparableText(budgetedContext?.activeFile?.content || ""),
@@ -3421,18 +3977,17 @@ export async function runAssist(
         providerResult = await callWithAttachmentFallback(rewritePrompt, undefined);
         const rewriteRaw = providerResult.text;
         raw = rewriteRaw;
-        const rewriteStructured =
-          structuredFromProviderResult(providerResult) ??
-          parseStructuredAssistResponse(rewriteRaw) ??
-          inferSingleFileRewriteFallback(rewriteRaw, budgetedContext, primaryTargetPath) ??
-          inferStructuredFallback(rewriteRaw, req.task, primaryTargetPath);
-        if (rewriteStructured) {
-          final = normalizeModelText(rewriteStructured.final);
-          edits = rewriteStructured.edits;
-          modelCommands = rewriteStructured.commands;
-          structuredActions = (rewriteStructured.actions ?? []) as ToolAction[];
+        const rewriteCandidate = detectStructuredCandidate({
+          result: providerResult,
+          rawText: rewriteRaw,
+          route: activeToolRoute,
+          recoveryStage: repromptStage,
+        });
+        rememberDetectedCandidate(rewriteCandidate);
+        if (rewriteCandidate.structured) {
+          applyDetectedCandidate(rewriteCandidate);
         } else {
-          final = normalizeModelText(extractFinalFromJsonLike(rewriteRaw) || rewriteRaw);
+          final = rewriteCandidate.finalText;
         }
         usable = hasUsableActions(edits, modelCommands, structuredActions);
         clarification = isClarificationResponseText(final);
@@ -3443,10 +3998,39 @@ export async function runAssist(
       if (!usable && !clarification) {
         const trailingPatch = synthesizeTrailingStopPatch(raw || final, req.task, budgetedContext, primaryTargetPath);
         if (trailingPatch) {
-          final = trailingPatch.final;
-          edits = trailingPatch.edits;
-          modelCommands = trailingPatch.commands;
-          structuredActions = (trailingPatch.actions ?? []) as ToolAction[];
+          const trailingSummary = summarizeExplicitToolActions({
+            edits: trailingPatch.edits,
+            commands: trailingPatch.commands,
+            structuredActions: (trailingPatch.actions ?? []) as ToolAction[],
+          });
+          const trailingFailureCategory = classifyToolFailureCategory({
+            codeEditIntent,
+            hasFileActions: trailingSummary.hasFileActions,
+            hasCommandActions: trailingSummary.hasCommandActions,
+            actionSource: "deterministic_synthesis",
+            targetPathHintAvailable: contextAnchorsAvailable || !!primaryTargetPath,
+          });
+          const trailingCandidate = {
+            structured: trailingPatch,
+            actionSource: "deterministic_synthesis" as const,
+            route: "deterministic_synthesis" as const,
+            recoveryStage: repromptStage,
+            failureCategory: trailingFailureCategory,
+            finalText: normalizeModelText(trailingPatch.final),
+            score: scoreToolAttempt({
+              hasFileActions: trailingSummary.hasFileActions,
+              hasCommandActions: trailingSummary.hasCommandActions,
+              editCount: trailingSummary.editCount,
+              writeFileCount: trailingSummary.writeFileCount,
+              mkdirCount: trailingSummary.mkdirCount,
+              actionSource: "deterministic_synthesis",
+              route: "deterministic_synthesis",
+              failureCategory: trailingFailureCategory,
+            }),
+            ...trailingSummary,
+          };
+          rememberDetectedCandidate(trailingCandidate);
+          applyDetectedCandidate(trailingCandidate);
           reasonCodes.push("fallback_trailing_stop_patch");
           logs.push("fallback_trailing_stop_patch");
           usable = hasUsableActions(edits, modelCommands, structuredActions);
@@ -3454,6 +4038,52 @@ export async function runAssist(
           recordNarrativeClaimIfNeeded(raw || final);
           applyClarificationOverride();
         }
+      }
+
+      const currentExplicitSummary = summarizeExplicitToolActions({
+        edits,
+        commands: modelCommands,
+        structuredActions,
+      });
+      const currentFailureCategory = classifyToolFailureCategory({
+        codeEditIntent,
+        hasFileActions: currentExplicitSummary.hasFileActions,
+        hasCommandActions: currentExplicitSummary.hasCommandActions,
+        actionSource: toolActionSource,
+        targetPathHintAvailable: contextAnchorsAvailable || !!primaryTargetPath,
+      });
+      const currentAttemptScore = scoreToolAttempt({
+        hasFileActions: currentExplicitSummary.hasFileActions,
+        hasCommandActions: currentExplicitSummary.hasCommandActions,
+        editCount: currentExplicitSummary.editCount,
+        writeFileCount: currentExplicitSummary.writeFileCount,
+        mkdirCount: currentExplicitSummary.mkdirCount,
+        actionSource: toolActionSource,
+        route: toolRouteUsed,
+        failureCategory: currentFailureCategory,
+      });
+      const bestAttempt = bestStructuredAttempt as
+        | {
+            route: AssistToolRoute;
+            actionSource: AssistToolActionSource;
+            recoveryStage: AssistRecoveryStage;
+            final: string;
+            edits: Array<{ path: string; patch: string; rationale?: string }>;
+            commands: string[];
+            structuredActions: ToolAction[];
+          }
+        | null;
+      if (bestAttempt && (!usable || currentAttemptScore < bestAttemptScore)) {
+        final = bestAttempt.final;
+        edits = bestAttempt.edits;
+        modelCommands = bestAttempt.commands;
+        structuredActions = bestAttempt.structuredActions;
+        toolRouteUsed = bestAttempt.route;
+        toolActionSource = bestAttempt.actionSource;
+        repromptStage = bestAttempt.recoveryStage;
+        usable = hasUsableActions(edits, modelCommands, structuredActions);
+        clarification = isClarificationResponseText(final);
+        logs.push("restored_best_scored_tool_attempt");
       }
 
       if (!usable && !clarification) {
@@ -3564,29 +4194,100 @@ function structuredFromNativeToolCalls(result: ProviderChatResult): StructuredAs
   const commandCandidatesCount =
     modelCommands.length +
     structuredActions.filter((action) => action.type === "command").length;
-  const actions = synthesizeDeterministicActions({
-    task: req.task,
-    edits,
-    commands: modelCommands,
-    structuredActions,
-  });
-  edits = actions
-    .filter((action): action is Extract<ToolAction, { type: "edit" }> => action.type === "edit")
-    .map((action) => ({ path: action.path, patch: action.patch }));
-  modelCommands = actions
-    .filter((action): action is Extract<ToolAction, { type: "command" }> => action.type === "command")
-    .map((action) => action.command);
-  const hasFileActions = actions.some(
-    (action) => action.type === "edit" || action.type === "mkdir" || action.type === "write_file"
-  );
-  const hasCommandActions = actions.some((action) => action.type === "command");
-  const commandOnlyForEditIntent = codeEditIntent && hasCommandActions && !hasFileActions;
-  if (commandOnlyForEditIntent) {
+  const syncCanonicalActions = () => {
+    const nextActions = synthesizeDeterministicActions({
+      task: req.task,
+      edits,
+      commands: modelCommands,
+      structuredActions,
+    });
+    const nextEdits = nextActions
+      .filter((action): action is Extract<ToolAction, { type: "edit" }> => action.type === "edit")
+      .map((action) => ({ path: action.path, patch: action.patch }));
+    const nextCommands = nextActions
+      .filter((action): action is Extract<ToolAction, { type: "command" }> => action.type === "command")
+      .map((action) => action.command);
+    const nextHasFileActions = nextActions.some(
+      (action) => action.type === "edit" || action.type === "mkdir" || action.type === "write_file"
+    );
+    const nextHasCommandActions = nextActions.some((action) => action.type === "command");
+    return {
+      actions: nextActions,
+      edits: nextEdits,
+      modelCommands: nextCommands,
+      hasFileActions: nextHasFileActions,
+      hasCommandActions: nextHasCommandActions,
+      commandOnlyForEditIntent: codeEditIntent && nextHasCommandActions && !nextHasFileActions,
+      runnableCommandsCount: nextActions.filter((action) => action.type === "command").length,
+    };
+  };
+  let {
+    actions,
+    edits: canonicalEdits,
+    modelCommands: canonicalModelCommands,
+    hasFileActions,
+    hasCommandActions,
+    commandOnlyForEditIntent,
+    runnableCommandsCount,
+  } = syncCanonicalActions();
+  edits = canonicalEdits;
+  modelCommands = canonicalModelCommands;
+  if (commandOnlyForEditIntent && callWithAttachmentFallback && detectStructuredCandidate && rememberDetectedCandidate && applyDetectedCandidate) {
     reasonCodes.push("edit_intent_command_only_forced_reprompt");
     logs.push("edit_intent_command_only_forced_reprompt");
-    if (repromptStage === "none") repromptStage = "tool_enforcement";
+    repromptStage = "tool_enforcement";
+    if (hooks?.onStatus) await hooks.onStatus("Converting command-only output into concrete file edits...");
+    const forcedFileActionPrompt = [
+      executionPromptBase,
+      "",
+      "Final file-action enforcement pass:",
+      "The previous output contained commands but no file edit actions for an edit-intent task.",
+      "Return STRICT JSON only.",
+      "You MUST include at least one file action of type edit, write_file, or mkdir.",
+      "Do not return command-only output.",
+      primaryTargetPath ? `Primary target file hint: ${primaryTargetPath}` : "",
+      looksLikeConcreteFilePath(budgetedContext?.activeFile?.path || "")
+        ? `Active file hint: ${normalizeRelativePath(budgetedContext?.activeFile?.path || "") || budgetedContext?.activeFile?.path || ""}`
+        : "",
+      "Prefer edit for targeted modifications. Prefer write_file for full rewrites or new files.",
+      `Valid example: ${validWriteFileActionExample}`,
+      `Invalid example: ${invalidCommandOnlyActionExample}`,
+      "",
+      "Previous output:",
+      final,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    providerResult = await callWithAttachmentFallback(forcedFileActionPrompt, undefined);
+    const forcedRaw = providerResult.text;
+    raw = forcedRaw;
+    const forcedCandidate = detectStructuredCandidate({
+      result: providerResult,
+      rawText: forcedRaw,
+      route: activeToolRoute,
+      recoveryStage: repromptStage,
+    });
+    rememberDetectedCandidate(forcedCandidate);
+    if (forcedCandidate.structured) {
+      applyDetectedCandidate(forcedCandidate);
+    } else {
+      final = forcedCandidate.finalText;
+      edits = [];
+      modelCommands = [];
+      structuredActions = [];
+    }
+    ({
+      actions,
+      edits: canonicalEdits,
+      modelCommands: canonicalModelCommands,
+      hasFileActions,
+      hasCommandActions,
+      commandOnlyForEditIntent,
+      runnableCommandsCount,
+    } = syncCanonicalActions());
+    edits = canonicalEdits;
+    modelCommands = canonicalModelCommands;
   }
-  const runnableCommandsCount = actions.filter((action) => action.type === "command").length;
   if (commandCandidatesCount > runnableCommandsCount) {
     logs.push(`dropped_non_shell_commands=${commandCandidatesCount - runnableCommandsCount}`);
   }
@@ -3785,6 +4486,29 @@ function structuredFromNativeToolCalls(result: ProviderChatResult): StructuredAs
     completionStatus = "complete";
     missingRequirements.length = 0;
   }
+  if (completionStatus === "complete" && !commandOnlyForEditIntent) {
+    lastToolFailureCategory = null;
+  } else if (!lastToolFailureCategory) {
+    lastToolFailureCategory =
+      classifyToolFailureCategory({
+        codeEditIntent,
+        hasFileActions,
+        hasCommandActions,
+        actionSource: toolActionSource,
+        targetPathHintAvailable: contextAnchorsAvailable || !!primaryTargetPath,
+      }) ??
+      null;
+  }
+  const toolState: AssistToolState = {
+    strategy: maxAgenticTooling ? "max_agentic" : "standard",
+    route: toolRouteUsed,
+    adapter: modelMetadata.adapter,
+    actionSource: toolActionSource,
+    recoveryStage: repromptStage,
+    commandPolicyResolved,
+    attempts: toolAttempts.slice(-16),
+    lastFailureCategory: lastToolFailureCategory,
+  };
 
   return {
     decision,
@@ -3808,6 +4532,7 @@ function structuredFromNativeToolCalls(result: ProviderChatResult): StructuredAs
     confidence,
     risk,
     influence,
+    toolState,
     nextBestActions,
     repromptStage,
     actionability,

@@ -98,6 +98,7 @@ export function buildAssistResponsePayload(input: {
     confidence: result.confidence,
     risk: result.risk,
     influence: result.influence,
+    toolState: result.toolState,
     nextBestActions: result.nextBestActions,
     repromptStage: result.repromptStage,
     actionability: result.actionability,

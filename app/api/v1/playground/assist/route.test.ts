@@ -96,6 +96,16 @@ describe("assist route helpers", () => {
         confidence: 0.8,
         risk: { blastRadius: "low", rollbackComplexity: 1 },
         influence: { files: ["hello.py"], snippets: 1 },
+        toolState: {
+          strategy: "standard",
+          route: "text_actions",
+          adapter: "text_actions_v1",
+          actionSource: "structured_json",
+          recoveryStage: "none",
+          commandPolicyResolved: "safe_default",
+          attempts: [],
+          lastFailureCategory: null,
+        },
         nextBestActions: ["Apply edits"],
         repromptStage: "none",
         actionability: {

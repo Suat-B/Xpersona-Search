@@ -695,6 +695,7 @@ export async function POST(request: NextRequest): Promise<Response> {
                   adapter: result.modelMetadata.adapter,
                   decision: result.decision.mode,
                   actions: result.actions,
+                  toolState: result.toolState,
                   nextBestActions: result.nextBestActions,
                   repromptStage: result.repromptStage,
                   actionability: result.actionability,

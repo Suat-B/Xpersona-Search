@@ -14,6 +14,22 @@ export type LocalRecoveryStage =
   | "single_file_rewrite"
   | "pine_specialization";
 
+export const NO_CONTENT_DELTA_REASON_PREFIX = "no_content_delta:";
+
+type ActionLike = {
+  type: string;
+  path?: string;
+};
+
+function normalizeActionPath(path: string | undefined): string {
+  return String(path || "")
+    .replace(/\\/g, "/")
+    .replace(/^\.\/+/, "")
+    .replace(/^\/+/, "")
+    .trim()
+    .toLowerCase();
+}
+
 type ApplyClassificationInput = {
   actionKind: "edit" | "write_file" | "mkdir";
   status: string;
@@ -58,16 +74,63 @@ export function classifyLocalApplyFailure(input: ApplyClassificationInput): {
   return { category: "unknown_apply_failure", summary: `${input.path}: local apply failed${normalized ? ` (${reason})` : ""}.`, retryable: true };
 }
 
+export function isNoContentDeltaReason(reason: string | undefined): boolean {
+  const normalized = String(reason || "").trim().toLowerCase();
+  return normalized.startsWith(NO_CONTENT_DELTA_REASON_PREFIX) || /no file content changed/i.test(normalized);
+}
+
+export function collapseConflictingFileActions<T extends ActionLike>(actions: T[]): {
+  actions: T[];
+  collapsedPaths: string[];
+} {
+  const latestFileActionIndexByPath = new Map<string, number>();
+  for (let index = 0; index < actions.length; index += 1) {
+    const action = actions[index];
+    if (!action || (action.type !== "edit" && action.type !== "write_file")) continue;
+    const normalizedPath = normalizeActionPath(action.path);
+    if (!normalizedPath) continue;
+    latestFileActionIndexByPath.set(normalizedPath, index);
+  }
+
+  const collapsedCounts = new Map<string, number>();
+  const filtered = actions.filter((action, index) => {
+    if (!action || (action.type !== "edit" && action.type !== "write_file")) return true;
+    const normalizedPath = normalizeActionPath(action.path);
+    if (!normalizedPath) return true;
+    const keep = latestFileActionIndexByPath.get(normalizedPath) === index;
+    if (!keep) {
+      const label = String(action.path || normalizedPath);
+      collapsedCounts.set(label, (collapsedCounts.get(label) || 0) + 1);
+    }
+    return keep;
+  });
+
+  return {
+    actions: filtered,
+    collapsedPaths: Array.from(collapsedCounts.entries()).map(([filePath, count]) =>
+      count > 1 ? `${filePath} (${count} earlier actions)` : filePath
+    ),
+  };
+}
+
 export function nextLocalRecoveryStage(
   attemptedStages: LocalRecoveryStage[],
-  filePath: string
+  filePath: string,
+  category?: LocalApplyFailureCategory
 ): LocalRecoveryStage | null {
-  const ordered: LocalRecoveryStage[] = [
-    "patch_repair",
-    "target_path_repair",
-    "single_file_rewrite",
-    ...(filePath.toLowerCase().endsWith(".pine") ? (["pine_specialization"] as LocalRecoveryStage[]) : []),
-  ];
+  const isPine = filePath.toLowerCase().endsWith(".pine");
+  const ordered: LocalRecoveryStage[] =
+    category === "no_content_delta"
+      ? [
+          ...(isPine ? (["pine_specialization"] as LocalRecoveryStage[]) : []),
+          "single_file_rewrite",
+        ]
+      : [
+          "patch_repair",
+          "target_path_repair",
+          "single_file_rewrite",
+          ...(isPine ? (["pine_specialization"] as LocalRecoveryStage[]) : []),
+        ];
   for (const stage of ordered) {
     if (!attemptedStages.includes(stage)) return stage;
   }
@@ -113,6 +176,8 @@ export function buildLocalApplyRetryTask(input: {
       ...shared,
       "Recovery stage: single_file_rewrite.",
       'Return a single write_file action for exactly this file with the full updated file contents.',
+      "The returned file content must differ from the current workspace file and implement a real semantic change.",
+      "Do not echo the existing file contents back unchanged.",
       "Preserve unchanged code and only implement the requested change.",
     ].join("\n");
   }
@@ -120,6 +185,8 @@ export function buildLocalApplyRetryTask(input: {
     ...shared,
     "Recovery stage: pine_specialization.",
     'Return a single write_file action for exactly this .pine strategy file.',
+    "The returned Pine file content must differ from the current workspace file and implement a real strategy change.",
+    "Do not echo the existing .pine file back unchanged.",
     "Use Pine strategy structure from the active file and implement the requested strategy change without commentary.",
   ].join("\n");
 }

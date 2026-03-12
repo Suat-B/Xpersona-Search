@@ -67,19 +67,44 @@ const AUTONOMY_FAILSAFE_CONFIG_KEY = "autonomy.failsafe";
 const VALIDATION_ADAPTERS_CONFIG_KEY = "validationAdapters";
 const DEFAULT_PLAYGROUND_MODEL = "playground-default";
 const BACKUP_PLAYGROUND_MODEL = "playground-backup";
-const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
+const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground";
 function modelLabelForUi(model, catalog) {
     const selected = String(model || "").trim().toLowerCase();
     const match = (catalog || []).find((entry) => String(entry.alias || "").trim().toLowerCase() === selected);
     if (match?.displayName)
         return match.displayName;
     if (selected === DEFAULT_PLAYGROUND_MODEL)
-        return "Playground Default";
+        return PUBLIC_PLAYGROUND_MODEL_NAME;
     if (selected === BACKUP_PLAYGROUND_MODEL)
         return "Playground Backup";
     if (selected)
         return model || PUBLIC_PLAYGROUND_MODEL_NAME;
     return PUBLIC_PLAYGROUND_MODEL_NAME;
+}
+function mapLocalApplyCategoryToToolFailureCategory(category) {
+    return category === "no_content_delta" ? "no_content_delta" : "local_apply_failed";
+}
+function summarizeToolState(toolState) {
+    const state = toolState || {};
+    const bits = [
+        state.strategy ? `strategy=${state.strategy}` : "",
+        state.route ? `route=${state.route}` : "",
+        state.adapter ? `adapter=${state.adapter}` : "",
+        state.actionSource ? `source=${state.actionSource}` : "",
+        state.recoveryStage ? `recovery=${state.recoveryStage}` : "",
+        state.commandPolicyResolved ? `policy=${state.commandPolicyResolved}` : "",
+        state.lastFailureCategory ? `failure=${state.lastFailureCategory}` : "",
+    ].filter(Boolean);
+    return bits.join(" | ");
+}
+function describeToolFailureScope(category) {
+    if (category === "validation_failed")
+        return "validation";
+    if (category === "no_content_delta" || category === "local_apply_failed")
+        return "local_apply";
+    if (category)
+        return "backend_generation";
+    return "unknown";
 }
 const IDE_CONTEXT_FLAG = "xpersona.playground.ideContextV2";
 const MAX_TOTAL_CONTEXT_CHARS = 350000;
@@ -475,6 +500,7 @@ class Provider {
         this.commandAvailabilityCache = new Map();
         this.workspaceLintScriptCache = null;
         this.modelCatalog = [];
+        this.defaultModelAlias = DEFAULT_PLAYGROUND_MODEL;
         this.selectedModelAlias = DEFAULT_PLAYGROUND_MODEL;
         this.lastAssistRequest = null;
         this.mode = ctx.workspaceState.get(MODE_KEY) ?? "auto";
@@ -681,11 +707,14 @@ class Provider {
         });
     }
     async postModelCatalog() {
+        const visibleModels = this.modelCatalog.find((entry) => entry.alias === this.defaultModelAlias)
+            ? this.modelCatalog.filter((entry) => entry.alias === this.defaultModelAlias)
+            : this.modelCatalog.slice(0, 1);
         this.post({
             type: "modelsCatalog",
-            defaultModel: DEFAULT_PLAYGROUND_MODEL,
-            selectedModel: this.selectedModelAlias,
-            models: this.modelCatalog,
+            defaultModel: this.defaultModelAlias,
+            selectedModel: this.defaultModelAlias,
+            models: visibleModels,
         });
     }
     async refreshModelCatalog(auth) {
@@ -716,10 +745,10 @@ class Provider {
         const defaultModel = typeof response?.data?.defaultModel === "string" && response.data.defaultModel.trim()
             ? String(response.data.defaultModel).trim()
             : DEFAULT_PLAYGROUND_MODEL;
-        const selectedExists = this.modelCatalog.some((entry) => entry.alias === this.selectedModelAlias);
-        this.selectedModelAlias = selectedExists
-            ? this.selectedModelAlias
+        this.defaultModelAlias = this.modelCatalog.some((entry) => entry.alias === defaultModel)
+            ? defaultModel
             : (this.modelCatalog[0]?.alias || defaultModel || DEFAULT_PLAYGROUND_MODEL);
+        this.selectedModelAlias = this.defaultModelAlias;
         await this.postModelCatalog();
     }
     async signInWithBrowser() {
@@ -1959,7 +1988,7 @@ class Provider {
                 this.post({ type: "sendAck" });
                 const attachments = sanitizeAssistAttachments(m.attachments);
                 const threadId = typeof m.threadId === "string" ? String(m.threadId).trim() : "";
-                const requestedModel = String(m.model || this.selectedModelAlias || DEFAULT_PLAYGROUND_MODEL).trim() || DEFAULT_PLAYGROUND_MODEL;
+                const requestedModel = String(this.defaultModelAlias || this.selectedModelAlias || DEFAULT_PLAYGROUND_MODEL).trim() || DEFAULT_PLAYGROUND_MODEL;
                 this.selectedModelAlias = requestedModel;
                 if (Array.isArray(m.attachments) && m.attachments.length > attachments.length) {
                     this.post({ type: "status", text: "Some image attachments were skipped because they were invalid or unsupported." });
@@ -2074,7 +2103,7 @@ class Provider {
             if (changed || now - this.lastPlanModeNoticeAt > 4000) {
                 this.lastPlanModeNoticeAt = now;
                 this.post({ type: "status", text: "Plan mode enabled." });
-                vscode.window.setStatusBarMessage("Playground 1: Plan mode enabled", 2500);
+                vscode.window.setStatusBarMessage("Playground: Plan mode enabled", 2500);
             }
         }
     }
@@ -2088,6 +2117,7 @@ class Provider {
     }
     evaluateAutonomyCompletion(task) {
         const meta = this.lastRunMeta || {};
+        const toolState = meta.toolState || {};
         const actionabilityReason = String(meta.actionability?.reason || "").trim();
         const missingFromMeta = Array.isArray(meta.missingRequirements)
             ? meta.missingRequirements.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
@@ -2123,7 +2153,10 @@ class Provider {
         }
         const completionStatus = meta.completionStatus === "incomplete" || missing.length > 0 ? "incomplete" : "complete";
         const done = completionStatus === "complete" && (!editIntent || filesChanged > 0);
+        const toolSummary = summarizeToolState(toolState);
+        const toolScope = describeToolFailureScope(toolState.lastFailureCategory);
         const blocker = (localApplyFailure?.reason ? `${localApplyFailure.category || "local_apply_failure"}: ${localApplyFailure.reason}` : "") ||
+            (toolSummary && toolState.lastFailureCategory ? `${toolScope}: ${toolSummary}` : "") ||
             (missing.length > 0 ? missing.join(", ") : "") ||
             actionabilityReason ||
             String(localOutcome?.summary || "").trim() ||
@@ -2156,6 +2189,8 @@ class Provider {
             ? input.missingRequirements.join(", ")
             : "unspecified";
         const localApplyFailure = this.lastRunMeta?.localApplyFailure;
+        const toolState = this.lastRunMeta?.toolState;
+        const toolSummary = summarizeToolState(toolState);
         const parts = [
             input.objective.trim(),
             "",
@@ -2163,15 +2198,36 @@ class Provider {
             `Missing requirements: ${missing}.`,
             `Blocker: ${input.blocker}.`,
             `Observed local outcomes: filesChanged=${input.filesChanged}, checksRun=${input.checksRun}.`,
+            toolSummary ? `Tool path summary: ${toolSummary}.` : "",
+            toolState?.lastFailureCategory
+                ? `Failure scope: ${describeToolFailureScope(toolState.lastFailureCategory)}.`
+                : "",
             localApplyFailure?.path
                 ? `Last local apply failure: ${localApplyFailure.category || "unknown"} on ${localApplyFailure.path}. ${localApplyFailure.reason || ""}`.trim()
                 : "",
             localApplyFailure?.retryStage ? `Required recovery stage: ${localApplyFailure.retryStage}.` : "",
             "Rules: do not ask the user for clarification. Infer targets from available IDE context and return concrete file actions.",
             "Rules: for edit-intent tasks, command-only output is invalid. Return at least one edit/write_file/mkdir action.",
-            "Rules: each changed file only counts as complete after a real quick validation runner passes for that file.",
+            "Rules: each changed file only counts as complete after quick validation passes for that file.",
             input.hintedTargetPath ? `Primary target file hint: ${input.hintedTargetPath}` : "",
             "Then include any batch validation commands needed after the file edits.",
+        ];
+        return parts.filter(Boolean).join("\n");
+    }
+    buildNoEditApplyRetryTask(input) {
+        const parts = [
+            input.objective.trim(),
+            "",
+            "The previous response did not produce any local file edits in the workspace.",
+            `Blocker: ${input.blocker}.`,
+            `Observed execution: approvedActions=${input.approvedActions}, rejectedActions=${input.rejectedActions}, commandActions=${input.commandActions}.`,
+            input.targetPath ? `Target file: ${input.targetPath}` : "",
+            "Return concrete file actions only.",
+            "Do not narrate completed work.",
+            "Do not return command-only output.",
+            input.targetPath
+                ? `Prefer a single clean edit or write_file action for ${input.targetPath}.`
+                : "Return at least one edit, write_file, or mkdir action that will mutate the local workspace.",
         ];
         return parts.filter(Boolean).join("\n");
     }
@@ -2259,7 +2315,7 @@ class Provider {
         }
         if (snapshot.existed ? currentContent === snapshot.content : currentContent.length === 0) {
             input.addExecutionEvent?.("quick_validation_mutation_assert_failed", `${rel}: file content did not differ from the pre-edit snapshot.`, "error");
-            return { status: "failed", reason: `validation_failed:${rel}`, commandsRun: 0, commands: [] };
+            return { status: "failed", reason: `${apply_recovery_utils_1.NO_CONTENT_DELTA_REASON_PREFIX}${rel}`, commandsRun: 0, commands: [] };
         }
         const [hasWorkspaceLintScript, pythonAvailable] = await Promise.all([
             this.workspaceHasLintScript(),
@@ -2276,6 +2332,9 @@ class Provider {
         });
         if (plan.status === "skipped") {
             return { status: "skipped", reason: plan.reason, commandsRun: 0, commands: [] };
+        }
+        if (plan.coverage === "sanity_only") {
+            input.addExecutionEvent?.("quick_validation_sanity_only", `${rel}: no specialized validation runner configured; using git diff sanity only.`, "info");
         }
         const executedCommands = [];
         let commandsRun = 0;
@@ -2327,8 +2386,13 @@ class Provider {
         };
     }
     publishLocalApplyFailureMeta(input) {
+        const nextToolState = {
+            ...(this.lastRunMeta?.toolState || {}),
+            lastFailureCategory: mapLocalApplyCategoryToToolFailureCategory(input.category),
+        };
         this.lastRunMeta = {
             ...(this.lastRunMeta || {}),
+            toolState: nextToolState,
             localApplyFailure: {
                 path: input.path,
                 actionKind: input.actionKind,
@@ -2340,11 +2404,21 @@ class Provider {
         };
         this.postRun(this.activeThreadId, { type: "meta", data: this.lastRunMeta });
     }
+    mergeToolStatePatch(patch, threadId) {
+        this.lastRunMeta = {
+            ...(this.lastRunMeta || {}),
+            toolState: {
+                ...(this.lastRunMeta?.toolState || {}),
+                ...patch,
+            },
+        };
+        this.postRun(threadId ?? this.activeThreadId, { type: "meta", data: this.lastRunMeta });
+    }
     async attemptLocalApplyRecovery(input) {
         const request = this.lastAssistRequest;
         if (!request)
             return false;
-        const nextStage = (0, apply_recovery_utils_1.nextLocalRecoveryStage)(input.failure.attemptedStages, input.failure.path);
+        const nextStage = (0, apply_recovery_utils_1.nextLocalRecoveryStage)(input.failure.attemptedStages, input.failure.path, input.failure.category);
         if (!nextStage) {
             this.publishLocalApplyFailureMeta({
                 ...input.failure,
@@ -2373,24 +2447,6 @@ class Provider {
             contextRetryAttempted: true,
             localApplyRecoveryAttempted: [...input.failure.attemptedStages, nextStage],
             autonomousLoop: false,
-        });
-        this.postDiagnosticsBundle(input.runThreadId, {
-            traceId: input.traceId,
-            stage: "execute",
-            summary: `Retried after local apply failure using ${nextStage}.`,
-            model: modelLabelForUi(request.model, this.modelCatalog),
-            reasoning: request.reasoning,
-            mode: this.mode,
-            startedAt: Date.now(),
-            endedAt: Date.now(),
-            events: [
-                {
-                    code: "local_apply_retry",
-                    message: `Retried ${input.failure.path} after ${input.failure.category} using ${nextStage}.`,
-                    severity: "warn",
-                    ts: Date.now(),
-                },
-            ],
         });
         return true;
     }
@@ -2652,6 +2708,7 @@ class Provider {
                 mode: extras?.mode || requestMode,
                 startedAt: runStartedAt,
                 endedAt: Date.now(),
+                toolState: this.lastRunMeta?.toolState,
                 events: diagnosticEvents.slice(-40),
             });
         };
@@ -3256,10 +3313,13 @@ class Provider {
             const policy = this.getExecutionPolicy();
             const hasEditActions = this.pendingActions.some((a) => a.type === "edit" || a.type === "mkdir" || a.type === "write_file");
             const hasCommandActions = this.pendingActions.some((a) => a.type === "command");
+            const implementationCommandActions = this.pendingActions.filter((a) => a.type === "command" && a.category === "implementation");
+            const validationCommandActions = this.pendingActions.filter((a) => a.type === "command" && a.category !== "implementation");
             const meta = (this.lastRunMeta || {});
             const autonomy = meta.autonomyDecision;
             const validation = meta.validationPlan;
             const explicitCommandIntent = this.hasExplicitCommandRunIntent(text);
+            const commandPolicyResolved = meta.toolState?.commandPolicyResolved || this.getAutonomyProfile().commandPolicy;
             const decisionConfidence = typeof autonomy?.confidence === "number"
                 ? autonomy.confidence
                 : typeof meta.intent?.confidence === "number"
@@ -3279,6 +3339,9 @@ class Provider {
                     ? false
                     : (this.mode === "yolo" || this.mode === "auto") &&
                         (autonomy?.autoRunValidation === true || explicitCommandIntent || hasCommandActions);
+            const autoRunImplementation = commandPolicyResolved === "run_until_done" &&
+                implementationCommandActions.length > 0 &&
+                (explicitCommandIntent || hasEditActions);
             const lowConfidenceCommandOnly = hasCommandActions &&
                 !hasEditActions &&
                 this.mode !== "yolo" &&
@@ -3369,8 +3432,21 @@ class Provider {
                 actionsToExecute.push(...this.pendingActions.filter((a) => a.type === "mkdir"));
                 actionsToExecute.push(...this.pendingActions.filter((a) => a.type === "write_file"));
             }
-            if (hasCommandActions && autoRunValidation) {
-                actionsToExecute.push(...this.pendingActions.filter((a) => a.type === "command"));
+            if (autoRunImplementation) {
+                actionsToExecute.push(...implementationCommandActions);
+            }
+            else if (implementationCommandActions.length > 0) {
+                const reason = commandPolicyResolved !== "run_until_done"
+                    ? "implementation commands are only auto-run in run_until_done mode"
+                    : "implementation commands need either an explicit command task or file actions";
+                addDiagnosticEvent("implementation_commands_withheld", `Withheld ${implementationCommandActions.length} implementation command(s): ${reason}.`, "warn");
+                this.postRun(runThreadId, {
+                    type: "status",
+                    text: `Withheld ${implementationCommandActions.length} implementation command(s) because ${reason}.`,
+                });
+            }
+            if (validationCommandActions.length > 0 && autoRunValidation) {
+                actionsToExecute.push(...validationCommandActions);
             }
             if (actionsToExecute.length > 0) {
                 if (cycleContext) {
@@ -3390,7 +3466,9 @@ class Provider {
                 }
                 if (!conversational) {
                     const editActionCount = actionsToExecute.filter((a) => a.type === "edit" || a.type === "mkdir" || a.type === "write_file").length;
-                    const commandActionCount = actionsToExecute.filter((a) => a.type === "command").length;
+                    const implementationCount = actionsToExecute.filter((a) => a.type === "command" && a.category === "implementation").length;
+                    const validationCount = actionsToExecute.filter((a) => a.type === "command" && a.category !== "implementation").length;
+                    const commandActionCount = implementationCount + validationCount;
                     const actionSummary = editActionCount > 0 && commandActionCount > 0
                         ? `${editActionCount} file action(s) and ${commandActionCount} command(s)`
                         : commandActionCount > 0
@@ -3582,6 +3660,7 @@ class Provider {
                 mode: this.mode,
                 startedAt: runStartedAt,
                 endedAt: Date.now(),
+                toolState: this.lastRunMeta?.toolState,
                 events: executionEvents.slice(-40),
             });
         };
@@ -3589,16 +3668,29 @@ class Provider {
         this.guardrailIssues = [];
         const rawActionList = (actions && actions.length ? actions : this.pendingActions).slice();
         const seenActionKeys = new Set();
-        const actionList = rawActionList.filter((action) => {
+        const dedupedActionList = rawActionList.filter((action) => {
             const actionKey = JSON.stringify(action);
             if (seenActionKeys.has(actionKey))
                 return false;
             seenActionKeys.add(actionKey);
             return true;
         });
+        const collapsedActions = (0, apply_recovery_utils_1.collapseConflictingFileActions)(dedupedActionList);
+        const actionList = collapsedActions.actions;
+        if (collapsedActions.collapsedPaths.length > 0) {
+            const detail = collapsedActions.collapsedPaths.join(", ");
+            addExecutionEvent("collapsed_conflicting_file_actions", `Kept only the latest file mutation for: ${detail}.`, "warn");
+            this.postRun(runThreadId, {
+                type: "status",
+                text: `Collapsed conflicting file actions to the latest version for: ${detail}.`,
+            });
+        }
         if (!actionList.length)
             return this.postRun(runThreadId, { type: "status", text: "No pending actions to execute." });
         const expectedFileChanges = actionList.some((action) => action.type === "edit" || action.type === "mkdir" || action.type === "write_file");
+        const taskText = String(this.lastAssistRequest?.task || "");
+        const explicitCommandTask = this.hasExplicitCommandRunIntent(taskText) || (!expectedFileChanges && this.hasExecutionIntent(taskText));
+        const commandPolicyResolved = this.lastRunMeta?.toolState?.commandPolicyResolved || this.getAutonomyProfile().commandPolicy;
         const editActionCount = actionList.filter((action) => action.type === "edit" || action.type === "mkdir" || action.type === "write_file").length;
         const commandActionCount = actionList.filter((action) => action.type === "command").length;
         const executionSummary = editActionCount > 0 && commandActionCount > 0
@@ -3649,7 +3741,8 @@ class Provider {
         const perFileStatuses = [];
         const undoFileSnapshots = new Map();
         const undoCreatedDirs = new Set();
-        const approvedCommands = [];
+        const approvedImplementationCommands = [];
+        const approvedValidationCommands = [];
         let haltedValidation = null;
         let haltedAtResultIndex = null;
         let primaryLocalApplyFailure = null;
@@ -3700,7 +3793,40 @@ class Provider {
                         perFileEntry.validationStatus = validation.status;
                         perFileEntry.validationReason = validation.reason;
                         perFileEntry.validationCommands = validation.commands;
-                        if (validation.status === "failed") {
+                        if (validation.status === "failed" && (0, apply_recovery_utils_1.isNoContentDeltaReason)(validation.reason)) {
+                            appliedEdits = Math.max(0, appliedEdits - 1);
+                            changedPaths.delete(relPath);
+                            perFileEntry.changed = false;
+                            perFileEntry.validationStatus = "skipped";
+                            perFileEntry.validationReason = "No file content changed.";
+                            const classified = (0, apply_recovery_utils_1.classifyLocalApplyFailure)({
+                                actionKind: "edit",
+                                status: applied.status,
+                                reason: "No file content changed after local apply.",
+                                changed: false,
+                                path: relPath,
+                                targetExistedBefore: applied.targetExistedBefore,
+                            });
+                            perFileEntry.applyCategory = classified.category;
+                            perFileEntry.editReason = classified.summary;
+                            if (!primaryLocalApplyFailure) {
+                                primaryLocalApplyFailure = {
+                                    path: relPath,
+                                    actionKind: "edit",
+                                    category: classified.category,
+                                    reason: classified.summary,
+                                    retryable: classified.retryable,
+                                    attemptedStages: Array.isArray(this.lastAssistRequest?.options.localApplyRecoveryAttempted)
+                                        ? this.lastAssistRequest?.options.localApplyRecoveryAttempted || []
+                                        : [],
+                                };
+                            }
+                            this.postRun(runThreadId, {
+                                type: "status",
+                                text: `Local apply produced no persistent change for ${relPath}. Retrying with a repair prompt may be required.`,
+                            });
+                        }
+                        else if (validation.status === "failed") {
                             validationFailures += 1;
                             commandFailures += 1;
                             haltedValidation = { path: relPath, status: validation.status, reason: validation.reason };
@@ -3715,7 +3841,7 @@ class Provider {
                         path: relPath,
                         status: applied.status,
                         reason: applied.reason ||
-                            (applied.changed
+                            (perFileEntry.changed
                                 ? haltedValidation?.path === relPath && haltedValidation.reason
                                     ? haltedValidation.reason
                                     : perFileEntry.validationStatus === "passed"
@@ -3723,12 +3849,12 @@ class Provider {
                                         : "Patch applied."
                                 : "Patch produced no file changes."),
                     });
-                    if (!applied.changed) {
+                    if (!perFileEntry.changed && !perFileEntry.applyCategory) {
                         const classified = (0, apply_recovery_utils_1.classifyLocalApplyFailure)({
                             actionKind: "edit",
                             status: applied.status,
-                            reason: applied.reason,
-                            changed: applied.changed,
+                            reason: perFileEntry.editReason || applied.reason || "No file content changed after local apply.",
+                            changed: false,
                             path: relPath,
                             targetExistedBefore: applied.targetExistedBefore,
                         });
@@ -3846,7 +3972,40 @@ class Provider {
                         perFileEntry.validationStatus = validation.status;
                         perFileEntry.validationReason = validation.reason;
                         perFileEntry.validationCommands = validation.commands;
-                        if (validation.status === "failed") {
+                        if (validation.status === "failed" && (0, apply_recovery_utils_1.isNoContentDeltaReason)(validation.reason)) {
+                            appliedEdits = Math.max(0, appliedEdits - 1);
+                            changedPaths.delete(relPath);
+                            perFileEntry.changed = false;
+                            perFileEntry.validationStatus = "skipped";
+                            perFileEntry.validationReason = "No file content changed.";
+                            const classified = (0, apply_recovery_utils_1.classifyLocalApplyFailure)({
+                                actionKind: "write_file",
+                                status: applied.status,
+                                reason: "No file content changed after local apply.",
+                                changed: false,
+                                path: relPath,
+                                targetExistedBefore: applied.targetExistedBefore,
+                            });
+                            perFileEntry.applyCategory = classified.category;
+                            perFileEntry.editReason = classified.summary;
+                            if (!primaryLocalApplyFailure) {
+                                primaryLocalApplyFailure = {
+                                    path: relPath,
+                                    actionKind: "write_file",
+                                    category: classified.category,
+                                    reason: classified.summary,
+                                    retryable: classified.retryable,
+                                    attemptedStages: Array.isArray(this.lastAssistRequest?.options.localApplyRecoveryAttempted)
+                                        ? this.lastAssistRequest?.options.localApplyRecoveryAttempted || []
+                                        : [],
+                                };
+                            }
+                            this.postRun(runThreadId, {
+                                type: "status",
+                                text: `Local write_file produced no persistent change for ${relPath}. Retrying with a repair prompt may be required.`,
+                            });
+                        }
+                        else if (validation.status === "failed") {
                             validationFailures += 1;
                             commandFailures += 1;
                             haltedValidation = { path: relPath, status: validation.status, reason: validation.reason };
@@ -3861,7 +4020,7 @@ class Provider {
                         path: relPath,
                         status: "applied",
                         reason: applied.reason ||
-                            (applied.changed
+                            (perFileEntry.changed
                                 ? haltedValidation?.path === relPath && haltedValidation.reason
                                     ? haltedValidation.reason
                                     : perFileEntry.validationStatus === "passed"
@@ -3869,12 +4028,12 @@ class Provider {
                                         : "File created/updated."
                                 : "File already matched requested content."),
                     });
-                    if (!applied.changed) {
+                    if (!perFileEntry.changed && !perFileEntry.applyCategory) {
                         const classified = (0, apply_recovery_utils_1.classifyLocalApplyFailure)({
                             actionKind: "write_file",
                             status: applied.status,
-                            reason: applied.reason,
-                            changed: applied.changed,
+                            reason: perFileEntry.editReason || applied.reason || "No file content changed after local apply.",
+                            changed: false,
                             path: relPath,
                             targetExistedBefore: applied.targetExistedBefore,
                         });
@@ -3929,17 +4088,59 @@ class Provider {
                 }
             }
             else if (row.action.type === "command" && row.action.command) {
-                approvedCommands.push(row.action.command);
+                if (row.action.category === "implementation") {
+                    approvedImplementationCommands.push(row.action.command);
+                }
+                else {
+                    approvedValidationCommands.push(row.action.command);
+                }
             }
         }
         const skippedApprovedActionsAfterHalt = haltedAtResultIndex !== null
             ? results.slice(haltedAtResultIndex + 1).filter((result) => result.status === "approved").length
             : 0;
-        const shouldRunApprovedCommands = (!expectedFileChanges || changedPaths.size > 0) && !haltedValidation;
-        if (!shouldRunApprovedCommands && approvedCommands.length > 0) {
+        const shouldRunImplementationCommands = approvedImplementationCommands.length > 0 &&
+            commandPolicyResolved === "run_until_done" &&
+            !haltedValidation &&
+            (explicitCommandTask || !expectedFileChanges || changedPaths.size > 0);
+        if (approvedImplementationCommands.length > 0 && !shouldRunImplementationCommands) {
+            const skippedMessage = commandPolicyResolved !== "run_until_done"
+                ? `Skipped ${approvedImplementationCommands.length} implementation command(s) because command policy is ${commandPolicyResolved}.`
+                : haltedValidation
+                    ? `Skipped ${approvedImplementationCommands.length} implementation command(s) because quick validation halted execution for ${haltedValidation.path}.`
+                    : `Skipped ${approvedImplementationCommands.length} implementation command(s) because no file edits were actually applied.`;
+            addExecutionEvent(commandPolicyResolved !== "run_until_done"
+                ? "implementation_skipped_policy"
+                : haltedValidation
+                    ? "implementation_skipped_after_quick_validation_halt"
+                    : "implementation_skipped_no_file_change", skippedMessage, "warn");
+            this.postRun(runThreadId, {
+                type: "status",
+                text: commandPolicyResolved !== "run_until_done"
+                    ? "Skipped implementation commands because auto-run is limited to run_until_done mode."
+                    : haltedValidation
+                        ? `Skipped implementation commands because quick validation stopped the run for ${haltedValidation.path}.`
+                        : "Skipped implementation commands because no file edits were actually applied.",
+            });
+        }
+        else if (approvedImplementationCommands.length > 0) {
+            this.postRun(runThreadId, {
+                type: "status",
+                text: `Running ${approvedImplementationCommands.length} implementation command(s)...`,
+            });
+            for (const command of approvedImplementationCommands) {
+                this.postRun(runThreadId, { type: "terminalCommand", command });
+                const result = await this.runApprovedCommand(command, runThreadId, addExecutionEvent);
+                launchedCommands += 1;
+                if (!result.ok)
+                    commandFailures += 1;
+            }
+        }
+        const shouldRunValidationCommands = (!expectedFileChanges || changedPaths.size > 0) && !haltedValidation;
+        if (!shouldRunValidationCommands && approvedValidationCommands.length > 0) {
             const skippedMessage = haltedValidation
-                ? `Skipped ${approvedCommands.length} command(s) because quick validation halted execution for ${haltedValidation.path}.`
-                : `Skipped ${approvedCommands.length} command(s) because no file edits were actually applied.`;
+                ? `Skipped ${approvedValidationCommands.length} validation command(s) because quick validation halted execution for ${haltedValidation.path}.`
+                : `Skipped ${approvedValidationCommands.length} validation command(s) because no file edits were actually applied.`;
             addExecutionEvent(haltedValidation ? "validation_skipped_after_quick_validation_halt" : "validation_skipped_no_file_change", skippedMessage, "warn");
             this.postRun(runThreadId, {
                 type: "status",
@@ -3948,8 +4149,12 @@ class Provider {
                     : "Skipped validation commands because no file edits were actually applied.",
             });
         }
-        else {
-            for (const command of approvedCommands) {
+        else if (approvedValidationCommands.length > 0) {
+            this.postRun(runThreadId, {
+                type: "status",
+                text: `Running ${approvedValidationCommands.length} validation command(s)...`,
+            });
+            for (const command of approvedValidationCommands) {
                 this.postRun(runThreadId, { type: "terminalCommand", command });
                 const result = await this.runApprovedCommand(command, runThreadId, addExecutionEvent);
                 launchedCommands += 1;
@@ -3995,6 +4200,8 @@ class Provider {
         localValidationSummaries.forEach((message) => addExecutionEvent("local_validation_issue", message, "warn"));
         applyErrors.forEach((message) => addExecutionEvent("apply_error", message, "error"));
         guardrailIssues.forEach((message) => addExecutionEvent("guardrail_blocked", message, "warn"));
+        let noEditFailureSummary = "";
+        let noEditRetryTargetPath = null;
         if (expectedFileChanges && changedPaths.size === 0) {
             const debugReasons = [];
             if (primaryLocalApplyFailure)
@@ -4016,6 +4223,11 @@ class Provider {
                 "";
             const failureSummary = firstDetail ||
                 "The model described a change, but no concrete patch or write action successfully applied to the workspace.";
+            noEditFailureSummary = failureSummary;
+            noEditRetryTargetPath =
+                primaryLocalApplyFailure?.path ||
+                    (actionList.find((action) => action.type === "edit" || action.type === "write_file")?.path || null) ||
+                    (await this.resolveExistingWorkspaceFilePath(String(this.lastRunMeta?.validationPlan?.touchedFiles?.[0] || "")));
             this.postRun(runThreadId, {
                 type: "status",
                 text: `Execution debug: No file edits were applied. ${debugReasons[0]}. Detail: ${failureSummary}`.trim(),
@@ -4034,7 +4246,6 @@ class Provider {
             primaryLocalApplyFailure.actionKind !== "mkdir") {
             const recovered = await this.attemptLocalApplyRecovery({
                 runThreadId,
-                traceId: diagnosticsTraceId,
                 failure: primaryLocalApplyFailure,
             });
             if (recovered) {
@@ -4047,6 +4258,70 @@ class Provider {
                 ...primaryLocalApplyFailure,
                 retryStage: "final_failure",
             });
+        }
+        if (expectedFileChanges && changedPaths.size === 0) {
+            const existingMissing = Array.isArray(this.lastRunMeta?.missingRequirements)
+                ? this.lastRunMeta?.missingRequirements.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
+                : [];
+            const localApplyFailureMeta = primaryLocalApplyFailure && primaryLocalApplyFailure.path
+                ? {
+                    path: primaryLocalApplyFailure.path,
+                    actionKind: primaryLocalApplyFailure.actionKind,
+                    category: primaryLocalApplyFailure.category,
+                    reason: primaryLocalApplyFailure.reason,
+                    retryStage: "final_failure",
+                    attemptedStages: primaryLocalApplyFailure.attemptedStages,
+                }
+                : this.lastRunMeta?.localApplyFailure ||
+                    (noEditRetryTargetPath
+                        ? {
+                            path: noEditRetryTargetPath,
+                            actionKind: "edit",
+                            category: "unknown_apply_failure",
+                            reason: noEditFailureSummary ||
+                                "No file edits were applied to the workspace.",
+                            retryStage: "final_failure",
+                            attemptedStages: [],
+                        }
+                        : undefined);
+            this.lastRunMeta = {
+                ...(this.lastRunMeta || {}),
+                completionStatus: "incomplete",
+                missingRequirements: Array.from(new Set([...existingMissing, "local_file_mutation_required"])),
+                toolState: {
+                    ...(this.lastRunMeta?.toolState || {}),
+                    lastFailureCategory: localApplyFailureMeta
+                        ? mapLocalApplyCategoryToToolFailureCategory(localApplyFailureMeta.category)
+                        : "local_apply_failed",
+                },
+                ...(localApplyFailureMeta ? { localApplyFailure: localApplyFailureMeta } : {}),
+            };
+            this.postRun(runThreadId, { type: "meta", data: this.lastRunMeta });
+            const request = this.lastAssistRequest;
+            if (request && !request.options.noEditApplyRetryAttempted) {
+                addExecutionEvent("no_edit_apply_retry", "No local file edits were applied; retrying once with local failure telemetry.", "warn");
+                this.postRun(runThreadId, {
+                    type: "status",
+                    text: noEditRetryTargetPath
+                        ? `No local edits landed. Retrying once with explicit target: ${noEditRetryTargetPath}`
+                        : "No local edits landed. Retrying once with local apply failure telemetry.",
+                });
+                const retryTask = this.buildNoEditApplyRetryTask({
+                    objective: request.task,
+                    blocker: noEditFailureSummary || "No file edits were applied to the workspace.",
+                    targetPath: noEditRetryTargetPath,
+                    approvedActions: approved,
+                    rejectedActions: rejected.length + guardrailIssues.length,
+                    commandActions: approvedImplementationCommands.length + approvedValidationCommands.length,
+                });
+                await this.askSingleCycle(retryTask, request.parallel, request.model, request.reasoning, {
+                    ...request.options,
+                    ...(runThreadId ? { threadId: runThreadId } : {}),
+                    noEditApplyRetryAttempted: true,
+                    autonomousLoop: false,
+                });
+                return;
+            }
         }
         const localExecLogs = [
             {
@@ -4100,6 +4375,8 @@ class Provider {
                 approvedActions: approved,
                 rejectedActions: rejected.length + guardrailIssues.length,
                 localRejectedEdits: localRejected.length,
+                approvedImplementationCommands: approvedImplementationCommands.length,
+                approvedValidationCommands: approvedValidationCommands.length,
                 commandFailures,
                 validationFailures,
                 missingValidationRunners,
@@ -4110,6 +4387,20 @@ class Provider {
                 applyErrors: applyErrors.slice(0, 8),
             },
         };
+        this.lastRunMeta = {
+            ...(this.lastRunMeta || {}),
+            toolState: {
+                ...(this.lastRunMeta?.toolState || {}),
+                lastFailureCategory: expectedFileChanges && changedPaths.size === 0
+                    ? primaryLocalApplyFailure
+                        ? mapLocalApplyCategoryToToolFailureCategory(primaryLocalApplyFailure.category)
+                        : "local_apply_failed"
+                    : localValidationIssues.length > 0 || validationFailures > 0 || missingValidationRunners > 0
+                        ? "validation_failed"
+                        : null,
+            },
+        };
+        this.postRun(runThreadId, { type: "meta", data: this.lastRunMeta });
         this.lastActionOutcome = outcome;
         this.postRun(runThreadId, {
             type: "actionOutcome",
@@ -4121,7 +4412,8 @@ class Provider {
             localValidationIssues.length ||
             guardrailIssues.length ||
             (expectedFileChanges && changedPaths.size === 0) ||
-            (approvedCommands.length > 0 && !shouldRunApprovedCommands)
+            (approvedImplementationCommands.length > 0 && !shouldRunImplementationCommands) ||
+            (approvedValidationCommands.length > 0 && !shouldRunValidationCommands)
             ? "Execution completed with warnings/errors."
             : "Execution completed successfully.");
         if (appliedEdits > 0) {
@@ -4547,7 +4839,16 @@ function stream(u, auth, body, options, onEvent) {
         }
         let b = "";
         let done = false;
+        let sawFinalEvent = false;
         let idleTimer = null;
+        const isBenignTerminalReset = (error) => {
+            const message = error instanceof Error
+                ? error.message
+                : typeof error === "string"
+                    ? error
+                    : "";
+            return sawFinalEvent && /econnreset|socket hang up/i.test(message);
+        };
         const clearIdleTimer = () => {
             if (idleTimer) {
                 clearTimeout(idleTimer);
@@ -4624,10 +4925,14 @@ function stream(u, auth, body, options, onEvent) {
                             : Object.prototype.hasOwnProperty.call(parsed, "text") && (parsedEvent === "token" || eventName === "token")
                                 ? parsed.text
                                 : parsed;
+                if (parsedEvent === "final" || eventName === "final")
+                    sawFinalEvent = true;
                 onEvent(parsedEvent || eventName, payload);
             }
             catch {
                 // Some providers stream plain text chunks with event labels.
+                if (eventName === "final")
+                    sawFinalEvent = true;
                 onEvent(eventName || "message", raw);
             }
             return false;
@@ -4651,6 +4956,13 @@ function stream(u, auth, body, options, onEvent) {
                 res.on("end", () => finish(() => reject(new Error(parseErr(t, res.statusCode)))));
                 return;
             }
+            res.on("error", (e) => {
+                if (isBenignTerminalReset(e)) {
+                    finish(resolve);
+                    return;
+                }
+                finish(() => reject(e));
+            });
             res.on("data", (d) => {
                 if (done)
                     return;
@@ -4698,7 +5010,13 @@ function stream(u, auth, body, options, onEvent) {
                 // ignore destroy failures
             }
         });
-        r.on("error", (e) => finish(() => reject(e)));
+        r.on("error", (e) => {
+            if (isBenignTerminalReset(e)) {
+                finish(resolve);
+                return;
+            }
+            finish(() => reject(e));
+        });
         r.write(p);
         r.end();
     });
@@ -7734,7 +8052,7 @@ function html(webview, extensionUri) {
         align-items: flex-start;
       }
       .messages:empty::before {
-        content: "Ask Playground 1 - @ files - / commands";
+        content: "Ask Playground - @ files - / commands";
         display: block;
         padding: 28px 8px 0;
         text-align: center;
@@ -8867,6 +9185,55 @@ function html(webview, extensionUri) {
         color: var(--rep-muted) !important;
         font-size: 10px !important;
       }
+      #chatDock .composer-right {
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+      }
+      #chatDock .chat-context-meter {
+        --context-progress: 0;
+        --context-meter-accent: #63b3ff;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        position: relative !important;
+        width: 30px !important;
+        height: 30px !important;
+        min-width: 30px !important;
+        border-radius: 999px !important;
+        flex: 0 0 auto !important;
+        background: conic-gradient(
+          from -90deg,
+          var(--context-meter-accent) calc(var(--context-progress) * 1turn),
+          rgba(255, 255, 255, 0.12) 0
+        ) !important;
+        box-shadow:
+          inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+          0 8px 20px rgba(0, 0, 0, 0.22) !important;
+        color: var(--context-meter-accent) !important;
+      }
+      #chatDock .chat-context-meter::before {
+        content: "" !important;
+        position: absolute !important;
+        inset: 3px !important;
+        border-radius: inherit !important;
+        background: rgba(9, 12, 18, 0.96) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      }
+      #chatDock .chat-context-meter-value {
+        position: relative !important;
+        z-index: 1 !important;
+        font-size: 9px !important;
+        font-weight: 700 !important;
+        line-height: 1 !important;
+        letter-spacing: -0.03em !important;
+      }
+      #chatDock .chat-context-meter.warn {
+        --context-meter-accent: #f2c46f;
+      }
+      #chatDock .chat-context-meter.danger {
+        --context-meter-accent: #ff8d7b;
+      }
       #contextTelemetry,
       .composer-meta,
       .footer-row {
@@ -9115,7 +9482,7 @@ function html(webview, extensionUri) {
         background: transparent !important;
         box-shadow: none !important;
         padding: 0 !important;
-        color: var(--rep-muted) !important;
+        color: var(--vscode-focusBorder, var(--vscode-textLink-foreground, var(--accent))) !important;
         font-size: 11px !important;
       }
       #chatDock .context-toggle-pill .context-pill::before {
@@ -9363,13 +9730,19 @@ function html(webview, extensionUri) {
           display: none !important;
         }
         #chatDock .attach-btn,
+        #chatDock .chat-context-meter,
         #chatDock .send-round,
         .chat-panel.active #chatDock .attach-btn,
+        .chat-panel.active #chatDock .chat-context-meter,
         .chat-panel.active #chatDock .send-round {
           width: 26px !important;
           height: 26px !important;
           min-width: 26px !important;
           font-size: 12px !important;
+        }
+        #chatDock .chat-context-meter-value,
+        .chat-panel.active #chatDock .chat-context-meter-value {
+          font-size: 8px !important;
         }
 
         .chat-empty {
@@ -9388,6 +9761,114 @@ function html(webview, extensionUri) {
         }
         .chat-empty-history-row-age {
           font-size: 10px !important;
+        }
+      }
+
+      #modeBanner.mode-banner {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 10px 10px 10px;
+        padding: 12px 14px;
+        border-radius: 16px;
+        border: 1px solid rgba(133, 214, 255, 0.34);
+        background:
+          radial-gradient(circle at top left, rgba(96, 165, 250, 0.22), transparent 54%),
+          linear-gradient(135deg, rgba(9, 18, 34, 0.96), rgba(10, 46, 73, 0.92));
+        color: #e7f6ff;
+        box-shadow:
+          0 16px 40px rgba(2, 12, 27, 0.34),
+          inset 0 1px 0 rgba(255, 255, 255, 0.08),
+          inset 0 0 0 1px rgba(125, 211, 252, 0.06);
+      }
+      #modeBanner .mode-banner-mark {
+        flex: 0 0 auto;
+        min-width: 54px;
+        padding: 7px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(147, 197, 253, 0.3);
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.26), rgba(34, 211, 238, 0.12));
+        color: #bfe8ff;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        text-align: center;
+      }
+      #modeBanner .mode-banner-copy {
+        min-width: 0;
+        display: grid;
+        gap: 3px;
+      }
+      #modeBanner .mode-banner-title {
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        color: #f3fbff;
+      }
+      #modeBanner .mode-banner-sub {
+        font-size: 11px;
+        line-height: 1.45;
+        color: rgba(219, 241, 255, 0.8);
+      }
+      #chatDock .composer-status-pills {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        flex: 0 1 auto;
+      }
+      #chatDock .mode-plan-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0;
+        padding: 0 2px 0 0;
+        min-width: 0;
+        height: auto;
+        border: none;
+        border-radius: 0;
+        background: transparent;
+        color: #8fd8ff;
+        box-shadow: none;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      #chatDock .mode-plan-chip:hover {
+        transform: none;
+        border: none;
+        background: transparent;
+        color: #c5ebff;
+        text-shadow: 0 0 14px rgba(56, 189, 248, 0.24);
+      }
+      #chatDock .mode-plan-chip:active {
+        transform: translateY(0);
+      }
+
+      @media (max-width: 430px) {
+        #modeBanner.mode-banner {
+          gap: 10px;
+          margin: 8px 8px 8px;
+          padding: 10px 12px;
+          border-radius: 14px;
+        }
+        #modeBanner .mode-banner-mark {
+          min-width: 48px;
+          padding: 6px 8px;
+        }
+        #modeBanner .mode-banner-title {
+          font-size: 12px;
+        }
+        #modeBanner .mode-banner-sub {
+          font-size: 10px;
+        }
+        #chatDock .composer-status-pills {
+          gap: 6px;
+        }
+        #chatDock .mode-plan-chip {
+          font-size: 10px;
+          letter-spacing: 0.06em;
         }
       }
 
@@ -9411,13 +9892,13 @@ function html(webview, extensionUri) {
   <body>
     <div id="jsGate" class="js-gate" role="status" aria-live="polite">
       <div class="js-gate-card">
-        <div class="js-gate-title">Loading Playground 1 UI...</div>
+        <div class="js-gate-title">Loading Playground UI...</div>
         <div class="js-gate-sub">If this does not disappear, run <span class="kbd">Developer: Reload Window</span>.</div>
       </div>
     </div>
     <div id="setup" class="setup">
       <div class="setup-card">
-        <h3>Connect Playground 1</h3>
+        <h3>Connect Playground</h3>
         <p>Use browser sign-in or paste an API key.</p>
         <button id="signInSetup" class="primary" type="button">Sign in with browser</button>
         <div style="height:8px"></div>
@@ -9433,7 +9914,7 @@ function html(webview, extensionUri) {
       <div class="global-top">
         <button id="backToChatQuick" type="button" class="menu-icon panel-icon hidden header-left" aria-label="Back to chat" title="Back to chat">&#8592;</button>
         <div class="brand-block">
-          <span class="brand-name" title="Playground 1">Playground 1</span>
+          <span class="brand-name" title="Playground">Playground</span>
           <span class="brand-kicker">CHAT</span>
         </div>
         <div class="global-actions">
@@ -9452,9 +9933,15 @@ function html(webview, extensionUri) {
         <button class="tab" data-p="agents">Agents</button>
         <button class="tab" data-p="exec">Execution</button>
       </div>
-      <div id="modeBanner" class="mode-banner hidden">Plan mode enabled. I will propose steps before making changes.</div>
+      <div id="modeBanner" class="mode-banner hidden" role="status" aria-live="polite">
+        <div class="mode-banner-mark">PLAN</div>
+        <div class="mode-banner-copy">
+          <div class="mode-banner-title">Plan mode is active</div>
+          <div class="mode-banner-sub">I will map the work first and wait before making workspace changes.</div>
+        </div>
+      </div>
 
-      <div class="chat-shell" role="region" aria-label="Playground 1 chat">
+      <div class="chat-shell" role="region" aria-label="Playground chat">
         <div class="stage-shell" role="region" aria-label="Stage">
           <div id="chat" class="panel chat-panel active" aria-label="Chat">
             <div id="chips" class="chips"></div>
@@ -9466,7 +9953,7 @@ function html(webview, extensionUri) {
                 </div>
               </div>
               <div class="chat-home-hero" aria-hidden="true">
-                <p class="chat-empty-title">Work with <strong>Playground 1</strong></p>
+                <p class="chat-empty-title">Work with <strong>Playground</strong></p>
               </div>
               <div class="chat-empty-actions">
                 <button id="newThreadBtn" type="button" class="chat-empty-action">New chat</button>
@@ -9501,7 +9988,7 @@ function html(webview, extensionUri) {
           <div class="input">
             <form id="composerForm" class="composer-form" novalidate>
               <div class="composer-shell">
-                <textarea id="t" placeholder="Ask Playground 1 anything, @ to add files, / for commands" enterkeyhint="send"></textarea>
+                <textarea id="t" placeholder="Ask Playground anything, @ to add files, / for commands" enterkeyhint="send"></textarea>
                 <div id="mentionMenu" class="mention-menu hidden" role="listbox" aria-label="Mention suggestions"></div>
                 <div class="input-actions minimal">
                   <button id="uploadBtn" class="icon-btn attach-btn" type="button" aria-label="Attach image" title="Attach">+</button>
@@ -9514,12 +10001,31 @@ function html(webview, extensionUri) {
                     <option value="high">High</option>
                     <option value="max">Max</option>
                   </select>
-                  <label class="context-toggle-pill" for="ctxToggle" title="Toggle IDE context">
-                    <input id="ctxToggle" type="checkbox" checked />
-                    <span id="contextPill" class="context-pill">IDE Context: LIVE</span>
-                  </label>
+                  <div class="composer-status-pills">
+                    <label class="context-toggle-pill" for="ctxToggle" title="Toggle IDE context">
+                      <input id="ctxToggle" type="checkbox" checked />
+                      <span id="contextPill" class="context-pill">IDE Context: LIVE</span>
+                    </label>
+                    <button
+                      id="planModeChip"
+                      class="mode-plan-chip hidden"
+                      type="button"
+                      aria-live="polite"
+                      aria-label="Plan mode is on. Click to switch back to Auto."
+                      title="Click to exit plan mode"
+                    >Plan</button>
+                  </div>
                   <div class="composer-right">
                     <span id="queuePill" class="queue-pill" title="Queued messages">Queued: 0</span>
+                    <div
+                      id="chatContextMeter"
+                      class="chat-context-meter"
+                      role="status"
+                      aria-label="Current chat context length"
+                      title="Approximate current chat context length"
+                    >
+                      <span id="chatContextMeterValue" class="chat-context-meter-value">0</span>
+                    </div>
                     <button id="s" type="button" class="primary send-round" aria-label="Send">&#8593;</button>
                   </div>
                 </div>
@@ -9529,14 +10035,6 @@ function html(webview, extensionUri) {
                   <span id="contextTelemetryMeta" class="context-telemetry-meta">idle</span>
                 </div>
                 <div class="composer-meta">
-                  <button
-                    id="planModeChip"
-                    class="mode-plan-chip hidden"
-                    type="button"
-                    aria-live="polite"
-                    aria-label="Plan mode is on. Click to switch back to Auto."
-                    title="Click to exit plan mode"
-                  >PLAN MODE <span class="plan-chip-x">x</span></button>
                   <span id="composerState" class="composer-state">Mode: Auto - Reasoning: Medium</span>
                 </div>
                 <details id="queuePanel" class="queue-panel hidden">
