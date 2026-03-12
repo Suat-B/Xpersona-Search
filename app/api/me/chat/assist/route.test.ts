@@ -83,7 +83,7 @@ describe("POST /api/me/chat/assist", () => {
     expect(res.status).toBe(400);
   });
 
-  it("forces chat defaults and proxies via Playground endpoint", async () => {
+  it("forces minimal chat defaults and proxies via Playground assist", async () => {
     const req = new NextRequest("http://localhost/api/me/chat/assist", {
       method: "POST",
       body: JSON.stringify({
@@ -92,7 +92,6 @@ describe("POST /api/me/chat/assist", () => {
         mode: "yolo",
         model: "Something Else",
         stream: false,
-        safetyProfile: "aggressive",
       }),
       headers: { "Content-Type": "application/json" },
     });
@@ -109,11 +108,9 @@ describe("POST /api/me/chat/assist", () => {
         body: expect.objectContaining({
           task: expect.stringContaining('User request: "Build me a function".'),
           historySessionId: "sess-1",
-          mode: "generate",
-          workflowIntentId: "reasoning:medium",
-          model: "playground-default",
+          mode: "auto",
           stream: true,
-          safetyProfile: "standard",
+          model: "playground-default",
         }),
       })
     );
@@ -139,18 +136,18 @@ describe("POST /api/me/chat/assist", () => {
           context: expect.objectContaining({
             activeFile: expect.objectContaining({ path: "components/chat/ChatApp.tsx" }),
           }),
+          retrievalHints: {
+            preferredTargetPath: "components/chat/ChatApp.tsx",
+          },
           mode: "yolo",
-          workflowIntentId: "reasoning:medium",
-          contextBudget: { maxTokens: 16_384, strategy: "hybrid" },
-          model: "playground-default",
           stream: true,
-          safetyProfile: "standard",
+          model: "playground-default",
         }),
       })
     );
   });
 
-  it("keeps non-code tasks in generate mode", async () => {
+  it("keeps non-code tasks in auto mode", async () => {
     const req = new NextRequest("http://localhost/api/me/chat/assist", {
       method: "POST",
       body: JSON.stringify({
@@ -165,10 +162,9 @@ describe("POST /api/me/chat/assist", () => {
       expect.objectContaining({
         body: expect.objectContaining({
           task: expect.stringContaining('User message: "How does this platform work?".'),
-          mode: "generate",
+          mode: "auto",
           model: "playground-default",
           stream: true,
-          safetyProfile: "standard",
         }),
       })
     );

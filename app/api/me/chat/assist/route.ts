@@ -9,8 +9,6 @@ import { buildWorkspaceAssistContext } from "@/lib/chat/workspace-context";
 import { DEFAULT_PLAYGROUND_MODEL_ALIAS } from "@/lib/playground/model-registry";
 
 const CHAT_ASSIST_FAST_MODEL = DEFAULT_PLAYGROUND_MODEL_ALIAS;
-const CHAT_ASSIST_CODE_REASONING = "medium";
-const CHAT_ASSIST_CODE_CONTEXT_BUDGET = 16_384;
 
 function unauthorized(): NextResponse {
   return NextResponse.json(
@@ -135,20 +133,14 @@ export async function POST(request: NextRequest): Promise<Response> {
     ...body,
     task,
     ...(inferredContext ? { context: inferredContext } : {}),
-    mode: repoScopedCodeTask ? "yolo" : "generate",
-    ...(codeMode
-      ? {
-          workflowIntentId: `reasoning:${CHAT_ASSIST_CODE_REASONING}` as const,
-        }
-      : {}),
-    ...(repoScopedCodeTask
-      ? {
-          contextBudget: { maxTokens: CHAT_ASSIST_CODE_CONTEXT_BUDGET, strategy: "hybrid" as const },
-        }
-      : {}),
-    model: CHAT_ASSIST_FAST_MODEL,
+    mode: repoScopedCodeTask ? "yolo" : "auto",
     stream: true,
-    safetyProfile: "standard",
+    retrievalHints: repoScopedCodeTask
+      ? {
+          preferredTargetPath: inferredContext?.activeFile?.path,
+        }
+      : undefined,
+    model: CHAT_ASSIST_FAST_MODEL,
   };
 
   return proxyPlaygroundRequest({

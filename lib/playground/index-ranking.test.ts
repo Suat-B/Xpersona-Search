@@ -35,11 +35,11 @@ describe("playground index ranking", () => {
         updatedAt: new Date("2026-03-10T12:00:00.000Z"),
       },
       {
-        pathDisplay: "app/api/v1/playground/models/route.ts",
-        content: "playground models route with model registry serialization",
+        pathDisplay: "app/api/v1/playground/assist/route.ts",
+        content: "playground assist route with streamlined orchestration serialization",
         metadata: buildIndexChunkMetadata({
-          pathDisplay: "app/api/v1/playground/models/route.ts",
-          content: "playground models route with model registry serialization",
+          pathDisplay: "app/api/v1/playground/assist/route.ts",
+          content: "playground assist route with streamlined orchestration serialization",
         }),
         updatedAt: new Date("2026-03-12T12:00:00.000Z"),
       },
@@ -47,15 +47,15 @@ describe("playground index ranking", () => {
 
     const ranked = rankPlaygroundIndexRows({
       rows,
-      query: "improve models route serialization",
+      query: "improve assist route serialization",
       limit: 2,
       hints: {
-        mentionedPaths: ["app/api/v1/playground/models/route.ts"],
-        preferredTargetPath: "app/api/v1/playground/models/route.ts",
+        mentionedPaths: ["app/api/v1/playground/assist/route.ts"],
+        preferredTargetPath: "app/api/v1/playground/assist/route.ts",
       },
     });
 
-    expect(ranked[0]?.pathDisplay).toBe("app/api/v1/playground/models/route.ts");
+    expect(ranked[0]?.pathDisplay).toBe("app/api/v1/playground/assist/route.ts");
     expect(ranked[0]?.explanations.join(" ")).toContain("mentioned path boost");
     expect(ranked[0]?.explanations.join(" ")).toContain("preferred target boost");
   });

@@ -2,34 +2,26 @@ import { describe, expect, it } from "vitest";
 import { attachAssistArtifactIdentifiers, buildAssistAgentArtifacts } from "@/lib/playground/agent-os";
 
 describe("playground agent os artifacts", () => {
-  it("builds a deep/background-oriented artifact set for heavier runs", () => {
+  it("builds receipt, checkpoint, and review artifacts for an assist run", () => {
     const artifacts = buildAssistAgentArtifacts({
       mode: "auto",
-      task: "Refactor the workspace and validate everything.",
-      runProfile: "deep_focus",
-      context: {
-        activeFile: { path: "src/app.ts" },
-        diagnostics: [{ file: "src/app.ts", message: "Type error" }],
-        indexedSnippets: [{ path: "src/app.ts", source: "cloud", reason: "Indexed snippet" }],
-      },
-      intent: { type: "code_edit", confidence: 0.92 },
+      task: "Update hello.py",
+      runProfile: "standard",
+      intent: { type: "code_edit", confidence: 0.9 },
       decision: { mode: "generate" },
-      autonomyDecision: { mode: "auto_apply_and_validate", rationale: "confident" },
+      autonomyDecision: { mode: "auto_apply_only", rationale: "Single-file change." },
       validationPlan: {
-        checks: ["npm run lint -- src/app.ts", "npm test -- src/app.ts"],
-        touchedFiles: ["src/app.ts", "src/runtime.ts", "src/review.ts", "src/memory.ts"],
-        reason: "High-confidence targeted validation.",
+        checks: ["git diff --check -- hello.py"],
+        touchedFiles: ["hello.py"],
+        reason: "Targeted quick validation.",
       },
-      actions: [
-        { type: "edit", path: "src/app.ts" },
-        { type: "write_file", path: "src/runtime.ts" },
-      ],
-      commands: ["npm run lint -- src/app.ts"],
-      risk: { blastRadius: "high", rollbackComplexity: 5 },
-      targetInference: { path: "src/app.ts", source: "active_file", confidence: 0.95 },
+      actions: [{ type: "edit", path: "hello.py" }],
+      commands: [],
+      risk: { blastRadius: "low", rollbackComplexity: 1 },
+      targetInference: { path: "hello.py", source: "mention", confidence: 0.95 },
       contextSelection: {
-        files: [{ path: "src/app.ts", reason: "Active file", score: 0.9 }],
-        snippets: 12,
+        files: [{ path: "hello.py", reason: "Explicit mention", score: 4.2 }],
+        snippets: 1,
         usedCloudIndex: true,
       },
       toolState: { route: "text_actions" },
@@ -37,39 +29,37 @@ describe("playground agent os artifacts", () => {
       completionStatus: "complete",
       missingRequirements: [],
       nextBestActions: ["Apply edits"],
-      workspaceMemory: { workspaceFingerprint: "workspace-1", enabled: true, summary: "Recent TypeScript runtime work" },
       now: new Date("2026-03-12T00:00:00.000Z"),
     });
 
-    expect(artifacts.lane).toBe("background-heavy");
-    expect(artifacts.taskGraph[0].id).toBe("scout");
+    expect(artifacts.lane).toBe("interactive-fast");
     expect(artifacts.checkpoint.status).toBe("planned");
-    expect(artifacts.reviewState.status).toBe("needs_attention");
     expect(artifacts.receipt.model).toBe("playground-default");
+    expect(artifacts.reviewState.status).toBe("ready");
   });
 
-  it("hydrates artifact ids with the run id", () => {
+  it("hydrates pending artifact identifiers with run and trace ids", () => {
     const hydrated = attachAssistArtifactIdentifiers(
       {
         lane: "interactive-fast",
-        taskGraph: [{ id: "scout", title: "Scout", status: "completed", summary: "Resolved target.", evidence: [] }],
+        taskGraph: [],
         checkpoint: {
           id: "pending-checkpoint",
           status: "planned",
           summary: "Create checkpoint",
           touchedFiles: ["hello.py"],
-          undoHint: "Undo",
+          undoHint: "Use undo.",
           createdAt: "2026-03-12T00:00:00.000Z",
         },
         receipt: {
           id: "pending-receipt",
-          title: "Receipt",
+          title: "Run receipt",
           status: "ready",
           intent: "code_edit",
           lane: "interactive-fast",
           route: "text_actions",
           model: "playground-default",
-          provider: "hf",
+          provider: "playground",
           touchedFiles: ["hello.py"],
           commands: [],
           validationEvidence: [],
@@ -77,7 +67,7 @@ describe("playground agent os artifacts", () => {
           checkpointId: "pending-checkpoint",
           reviewState: "ready",
           delegateRunIds: ["pending-scout"],
-          memoryWriteIds: ["pending-memory-1"],
+          memoryWriteIds: ["pending-memory"],
           generatedAt: "2026-03-12T00:00:00.000Z",
         },
         contextTrace: {
@@ -85,14 +75,14 @@ describe("playground agent os artifacts", () => {
           target: { path: "hello.py", source: "mention", confidence: 0.9 },
           budget: { files: 1, snippets: 1, usedCloudIndex: true },
         },
-        delegateRuns: [{ id: "pending-scout", role: "scout", status: "completed", summary: "Resolved target." }],
-        memoryWrites: [{ id: "pending-memory-1", scope: "session", key: "sessionMemory", summary: "Remember hello.py", reason: "Continuity", status: "planned" }],
+        delegateRuns: [{ id: "pending-scout", role: "scout", status: "completed", summary: "done" }],
+        memoryWrites: [{ id: "pending-memory", scope: "session", key: "target", summary: "hello.py", reason: "recent target", status: "planned" }],
         reviewState: {
           status: "ready",
-          reason: "Ready",
-          recommendedAction: "Continue",
+          reason: "Looks good.",
+          recommendedAction: "Continue.",
           surface: "native_chat",
-          controlActions: ["pause", "cancel", "repair"],
+          controlActions: ["pause", "cancel"],
         },
       },
       { runId: "run-1", traceId: "trace-1" }
@@ -100,7 +90,8 @@ describe("playground agent os artifacts", () => {
 
     expect(hydrated.checkpoint.id).toBe("run-1:checkpoint");
     expect(hydrated.receipt.id).toBe("run-1:receipt");
-    expect(hydrated.delegateRuns[0].id).toBe("run-1:scout");
-    expect(hydrated.memoryWrites[0].id).toBe("run-1:memory:1");
+    expect(hydrated.receipt.provider).toBe("playground:trace-1");
+    expect(hydrated.delegateRuns[0]?.id).toBe("run-1:scout");
+    expect(hydrated.memoryWrites[0]?.id).toBe("run-1:memory:1");
   });
 });

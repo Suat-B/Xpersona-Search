@@ -33,9 +33,6 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.normalizeValidationAdapters = normalizeValidationAdapters;
-exports.matchesWorkspacePattern = matchesWorkspacePattern;
-exports.matchValidationAdapter = matchValidationAdapter;
 exports.substituteValidationCommand = substituteValidationCommand;
 exports.selectBuiltInValidationRunner = selectBuiltInValidationRunner;
 exports.planQuickValidationForFile = planQuickValidationForFile;
@@ -45,95 +42,6 @@ const JS_LIKE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
 function normalizeForMatch(input) {
     const slashified = String(input || "").replace(/\\/g, "/").trim();
     return slashified.replace(/^\.\/+/, "").replace(/^\/+/, "");
-}
-function escapeRegExpChar(char) {
-    return /[\\^$.*+?()[\]{}|]/.test(char) ? `\\${char}` : char;
-}
-function globToRegExp(pattern) {
-    const normalized = normalizeForMatch(pattern);
-    let source = "^";
-    for (let index = 0; index < normalized.length; index += 1) {
-        const char = normalized[index];
-        if (char === "*") {
-            const next = normalized[index + 1];
-            const afterNext = normalized[index + 2];
-            if (next === "*") {
-                if (afterNext === "/") {
-                    source += "(?:.*/)?";
-                    index += 2;
-                }
-                else {
-                    source += ".*";
-                    index += 1;
-                }
-            }
-            else {
-                source += "[^/]*";
-            }
-            continue;
-        }
-        if (char === "?") {
-            source += "[^/]";
-            continue;
-        }
-        source += escapeRegExpChar(char);
-    }
-    source += "$";
-    return new RegExp(source);
-}
-function toPositiveTimeoutMs(value) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : DEFAULT_TIMEOUT_MS;
-}
-function toBoolean(value, fallback) {
-    return typeof value === "boolean" ? value : fallback;
-}
-function toStringArray(value) {
-    if (!Array.isArray(value))
-        return [];
-    return value
-        .map((item) => String(item || "").trim())
-        .filter(Boolean);
-}
-function normalizeValidationAdapters(input) {
-    if (!Array.isArray(input))
-        return [];
-    const adapters = [];
-    for (const raw of input) {
-        if (!raw || typeof raw !== "object")
-            continue;
-        const item = raw;
-        const name = String(item.name || "").trim();
-        const patterns = toStringArray(item.patterns);
-        const commands = toStringArray(item.commands);
-        if (!name || patterns.length === 0 || commands.length === 0)
-            continue;
-        adapters.push({
-            name,
-            patterns,
-            commands,
-            timeoutMs: toPositiveTimeoutMs(item.timeoutMs),
-            continueOnFailure: toBoolean(item.continueOnFailure, false),
-        });
-    }
-    return adapters;
-}
-function matchesWorkspacePattern(filePath, pattern) {
-    const relPath = normalizeForMatch(filePath);
-    if (!relPath)
-        return false;
-    return globToRegExp(pattern).test(relPath);
-}
-function matchValidationAdapter(filePath, adapters) {
-    const relPath = normalizeForMatch(filePath);
-    if (!relPath)
-        return null;
-    for (const adapter of adapters) {
-        if (adapter.patterns.some((pattern) => matchesWorkspacePattern(relPath, pattern))) {
-            return adapter;
-        }
-    }
-    return null;
 }
 function substituteValidationCommand(template, vars) {
     return String(template || "")
@@ -193,24 +101,6 @@ function planQuickValidationForFile(input) {
         timeoutMs: DEFAULT_TIMEOUT_MS,
         continueOnFailure: false,
     };
-    const adapter = matchValidationAdapter(relPath, input.adapters);
-    if (adapter) {
-        const runnerSteps = adapter.commands.map((command) => ({
-            kind: "adapter",
-            label: adapter.name,
-            command: substituteValidationCommand(command, vars),
-            timeoutMs: adapter.timeoutMs,
-            continueOnFailure: adapter.continueOnFailure,
-        }));
-        const steps = [sanityStep, ...runnerSteps];
-        return {
-            status: "ready",
-            commands: steps.map((step) => step.command),
-            steps,
-            runnerLabel: adapter.name,
-            coverage: "full",
-        };
-    }
     const builtIn = selectBuiltInValidationRunner({
         filePath: relPath,
         hasWorkspaceLintScript: input.hasWorkspaceLintScript,

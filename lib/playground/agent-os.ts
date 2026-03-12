@@ -178,143 +178,50 @@ function inferLane(input: AgentArtifactInput, touchedFiles: string[]): AssistExe
 }
 
 function buildTaskGraph(input: AgentArtifactInput, touchedFiles: string[], lane: AssistExecutionLane): AssistTaskGraphStage[] {
-  const scoutEvidence = uniqueStrings(
-    [
-      input.targetInference.path ? `Target ${input.targetInference.path}` : "",
-      ...input.contextSelection.files.slice(0, 4).map((file) => `${file.path}: ${file.reason}`),
-    ],
-    5,
-    300
-  );
-  const builderEvidence = uniqueStrings(
-    [
-      ...touchedFiles.map((path) => `Touched ${path}`),
-      ...input.actions
-        .filter((action) => action.type === "command" && action.command)
-        .slice(0, 3)
-        .map((action) => `Command ${String(action.command).slice(0, 120)}`),
-    ],
-    6,
-    300
-  );
-  const verifierEvidence = uniqueStrings(
-    [
-      ...input.validationPlan.checks.map((check) => `Check ${check}`),
-      input.validationPlan.reason,
-      ...input.missingRequirements.map((item) => `Missing ${item}`),
-    ],
-    6,
-    300
-  );
-  const summarizerEvidence = uniqueStrings(
-    [
-      `Lane ${lane}`,
-      `Route ${input.toolState.route}`,
-      `Autonomy ${input.autonomyDecision.mode}`,
-      input.autonomyDecision.rationale,
-    ],
-    4,
-    300
-  );
   const blocked = input.completionStatus === "incomplete";
-
   return [
     {
       id: "scout",
       title: "Scout",
       status: "completed",
-      summary: input.targetInference.path
-        ? `Resolved likely target ${input.targetInference.path}.`
-        : "Gathered workspace and retrieval context.",
-      evidence: scoutEvidence,
+      summary: input.targetInference.path ? `Resolved likely target ${input.targetInference.path}.` : "Prepared workspace context.",
+      evidence: uniqueStrings(
+        [input.targetInference.path ? `Target ${input.targetInference.path}` : "", ...input.contextSelection.files.map((file) => `${file.path}: ${file.reason}`)],
+        4
+      ),
     },
     {
       id: "builder",
       title: "Builder",
-      status: blocked && touchedFiles.length === 0 ? "blocked" : "completed",
-      summary:
-        touchedFiles.length > 0
-          ? `Prepared ${touchedFiles.length} candidate workspace change(s).`
-          : "No concrete file mutations were prepared.",
-      evidence: builderEvidence,
+      status: touchedFiles.length > 0 ? "completed" : blocked ? "blocked" : "pending",
+      summary: touchedFiles.length > 0 ? `Prepared ${touchedFiles.length} touched workspace file(s).` : "No mutable workspace actions were prepared yet.",
+      evidence: uniqueStrings(touchedFiles.map((file) => `Touched ${file}`), 5),
     },
     {
       id: "verifier",
       title: "Verifier",
       status: blocked ? "blocked" : "completed",
-      summary:
-        input.validationPlan.checks.length > 0
-          ? `Planned ${input.validationPlan.checks.length} targeted validation check(s).`
-          : "No targeted validation checks were required.",
-      evidence: verifierEvidence,
+      summary: blocked ? "Validation or actionability requires follow-up." : "Prepared targeted validation and review state.",
+      evidence: uniqueStrings([...input.validationPlan.checks, ...input.missingRequirements], 5),
     },
     {
       id: "summarizer",
       title: "Summarizer",
-      status: blocked ? "blocked" : "completed",
-      summary:
-        blocked
-          ? "Review is required before this run should be considered complete."
-          : "Prepared a receipt and review state for execution handoff.",
-      evidence: summarizerEvidence,
+      status: "completed",
+      summary: `Prepared execution receipt for ${lane}.`,
+      evidence: uniqueStrings([`Lane ${lane}`, `Route ${input.toolState.route}`, ...input.nextBestActions], 4),
     },
   ];
 }
 
-function buildContextTrace(input: AgentArtifactInput): AssistContextTrace {
-  const sources: AssistContextTraceSource[] = [];
-  if (input.context?.activeFile?.path) {
-    sources.push({ kind: "active_file", label: input.context.activeFile.path, confidence: 0.88 });
-  }
-  for (const file of input.contextSelection.files.slice(0, 5)) {
-    sources.push({ kind: "retrieval", label: file.path, detail: file.reason, confidence: file.score });
-  }
-  for (const snippet of input.context?.indexedSnippets?.slice(0, 3) || []) {
-    sources.push({
-      kind: snippet.source === "local_fallback" ? "retrieval" : "retrieval",
-      label: String(snippet.path || "indexed-snippet"),
-      detail: String(snippet.reason || "Indexed snippet"),
-    });
-  }
-  for (const diagnostic of input.context?.diagnostics?.slice(0, 3) || []) {
-    sources.push({
-      kind: "diagnostic",
-      label: diagnostic.file || "diagnostic",
-      detail: diagnostic.message,
-    });
-  }
-  if (input.workspaceMemory?.summary) {
-    sources.push({
-      kind: "workspace_memory",
-      label: "workspace memory",
-      detail: String(input.workspaceMemory.summary).slice(0, 160),
-      confidence: input.workspaceMemory.enabled === false ? 0.2 : 0.64,
-    });
-  }
-  return {
-    sources: sources.slice(0, 12),
-    target: {
-      ...(input.targetInference.path ? { path: input.targetInference.path } : {}),
-      source: input.targetInference.source,
-      confidence: input.targetInference.confidence,
-    },
-    budget: {
-      files: input.contextSelection.files.length,
-      snippets: input.contextSelection.snippets,
-      usedCloudIndex: input.contextSelection.usedCloudIndex,
-    },
-  };
-}
-
 function buildCheckpoint(input: AgentArtifactInput, touchedFiles: string[], nowIso: string): AssistRunCheckpoint {
-  const mutableActions = input.actions.filter((action) => action.type === "edit" || action.type === "write_file" || action.type === "mkdir");
-  if (mutableActions.length === 0) {
+  if (touchedFiles.length === 0) {
     return {
       id: "pending-checkpoint",
       status: "not_required",
       summary: "No mutable workspace actions were prepared, so a checkpoint is not required.",
       touchedFiles: [],
-      undoHint: "Nothing to undo.",
+      undoHint: "No workspace mutation is pending.",
       createdAt: nowIso,
     };
   }
@@ -328,52 +235,104 @@ function buildCheckpoint(input: AgentArtifactInput, touchedFiles: string[], nowI
   };
 }
 
-function buildMemoryWrites(input: AgentArtifactInput, touchedFiles: string[], nowIso: string): AssistMemoryWrite[] {
+function buildContextTrace(input: AgentArtifactInput): AssistContextTrace {
+  const sources: AssistContextTraceSource[] = [];
+  if (input.context?.activeFile?.path) {
+    sources.push({ kind: "active_file", label: input.context.activeFile.path, detail: "Active editor context" });
+  }
+  for (const file of input.contextSelection.files.slice(0, 5)) {
+    const kind = file.reason.toLowerCase().includes("mention")
+      ? "mention"
+      : file.reason.toLowerCase().includes("diagnostic")
+        ? "diagnostic"
+        : file.reason.toLowerCase().includes("open")
+          ? "open_file"
+          : "retrieval";
+    sources.push({ kind, label: file.path, detail: file.reason, confidence: file.score });
+  }
+  if (input.workspaceMemory?.summary) {
+    sources.push({ kind: "workspace_memory", label: "workspace memory", detail: input.workspaceMemory.summary.slice(0, 220) });
+  }
+  return {
+    sources: sources.slice(0, 8),
+    target: {
+      path: input.targetInference.path,
+      source: input.targetInference.source,
+      confidence: input.targetInference.confidence,
+    },
+    budget: {
+      files: input.contextSelection.files.length,
+      snippets: input.contextSelection.snippets,
+      usedCloudIndex: input.contextSelection.usedCloudIndex,
+    },
+  };
+}
+
+function buildDelegateRuns(input: AgentArtifactInput, blocked: boolean): AssistDelegateRun[] {
+  return [
+    {
+      id: "pending-scout",
+      role: "scout",
+      status: "completed",
+      summary: input.targetInference.path ? `Resolved likely target ${input.targetInference.path}.` : "Prepared likely workspace scope.",
+    },
+    {
+      id: "pending-builder",
+      role: "builder",
+      status: input.actions.length > 0 ? "completed" : "not_run",
+      summary: input.actions.length > 0 ? `Prepared ${input.actions.length} action(s).` : "No executable workspace actions were prepared.",
+    },
+    {
+      id: "pending-verifier",
+      role: "verifier",
+      status: blocked ? "blocked" : "completed",
+      summary: blocked ? "Validation or missing requirements need repair." : "Targeted validation is ready.",
+    },
+  ];
+}
+
+function buildMemoryWrites(input: AgentArtifactInput, nowIso: string): AssistMemoryWrite[] {
   const writes: AssistMemoryWrite[] = [];
-  if (input.targetInference.path || touchedFiles.length > 0) {
+  if (input.targetInference.path) {
     writes.push({
-      id: "pending-memory-session",
+      id: "pending-memory",
       scope: "session",
-      key: "sessionMemory",
-      summary: touchedFiles.length > 0 ? `Remember ${touchedFiles[0]} as the most recent working target.` : "Refresh last working target.",
+      key: "session.recentTarget",
+      summary: `Remember ${input.targetInference.path} as the recent target. (${nowIso.slice(0, 10)})`,
       reason: "Successful edit-oriented runs should preserve recent target continuity.",
-      status: "planned",
+      status: input.completionStatus === "complete" ? "planned" : "skipped",
     });
   }
-  if (input.completionStatus === "complete" && touchedFiles.length > 0) {
+  if (input.workspaceMemory?.enabled && input.workspaceMemory?.summary) {
     writes.push({
-      id: "pending-memory-workspace",
+      id: "pending-workspace-memory",
       scope: "workspace",
-      key: input.workspaceMemory?.workspaceFingerprint || "workspace",
-      summary: `Promote ${Math.min(touchedFiles.length, 4)} touched path(s) into inspectable workspace memory.`,
-      reason: "Workspace memory powers future Scout decisions and review hydration.",
-      status: input.workspaceMemory?.enabled === false ? "skipped" : "planned",
+      key: "workspace.summary",
+      summary: input.workspaceMemory.summary.slice(0, 220),
+      reason: "Workspace memory is enabled for future grounded runs.",
+      status: "applied",
     });
   }
-  return writes.map((write, index) => ({
-    ...write,
-    id: `${write.id}-${index + 1}`,
-    summary: `${write.summary} (${nowIso.slice(0, 10)})`,
-  }));
+  return writes;
 }
 
 function buildReviewState(input: AgentArtifactInput, lane: AssistExecutionLane): AssistReviewState {
   if (input.completionStatus === "incomplete") {
     return {
       status: "blocked",
-      reason: input.missingRequirements[0] || "The run is incomplete and needs repair before execution.",
+      reason: input.missingRequirements[0] || "The run still has unmet completion requirements.",
       recommendedAction: "Repair the run and review the receipt before applying anything else.",
       surface: "playground_panel",
-      controlActions: ["repair", "cancel"],
+      controlActions: ["resume", "cancel", "repair"],
     };
   }
-  if (input.risk.blastRadius === "high" || lane === "background-heavy" || input.decision.mode === "plan") {
+  if (lane === "interactive-deep" || lane === "background-heavy" || input.risk.blastRadius === "high") {
     return {
       status: "needs_attention",
-      reason: "This run is high-context or review-heavy, so the Playground panel should remain the control plane.",
+      reason: "This run is broad enough that the richer Playground review surface is recommended.",
       recommendedAction: "Open the Playground panel to inspect receipt, checkpoints, and validation before execution.",
       surface: "playground_panel",
-      controlActions: ["pause", "resume", "cancel", "repair"],
+      controlActions: ["pause", "cancel", "repair"],
     };
   }
   return {
@@ -385,49 +344,36 @@ function buildReviewState(input: AgentArtifactInput, lane: AssistExecutionLane):
   };
 }
 
-function buildDelegateRuns(stages: AssistTaskGraphStage[]): AssistDelegateRun[] {
-  return stages.map((stage) => ({
-    id: `pending-${stage.id}`,
-    role: stage.id,
-    status: stage.status === "pending" ? "not_run" : stage.status,
-    summary: stage.summary,
-  }));
-}
-
-function buildReceipt(input: AgentArtifactInput, lane: AssistExecutionLane, touchedFiles: string[], checkpoint: AssistRunCheckpoint, reviewState: AssistReviewState, memoryWrites: AssistMemoryWrite[], delegateRuns: AssistDelegateRun[], nowIso: string): AssistExecutionReceipt {
-  const validationEvidence = uniqueStrings(
-    [
-      ...input.validationPlan.checks,
-      input.validationPlan.reason,
-      input.autonomyDecision.rationale,
-    ],
-    8,
-    400
-  );
-  const unresolvedRisk = uniqueStrings(
-    [
-      input.risk.blastRadius !== "low" ? `Blast radius ${input.risk.blastRadius}` : "",
-      input.risk.rollbackComplexity > 3 ? `Rollback complexity ${input.risk.rollbackComplexity}` : "",
-      ...input.missingRequirements,
-    ],
-    8,
-    300
-  );
+function buildReceipt(
+  input: AgentArtifactInput,
+  lane: AssistExecutionLane,
+  touchedFiles: string[],
+  checkpoint: AssistRunCheckpoint,
+  reviewState: AssistReviewState,
+  memoryWrites: AssistMemoryWrite[],
+  delegateRuns: AssistDelegateRun[],
+  nowIso: string
+): AssistExecutionReceipt {
+  const unresolvedRisk = input.completionStatus === "incomplete"
+    ? uniqueStrings(input.missingRequirements, 5)
+    : input.risk.blastRadius === "high"
+      ? ["High blast radius workspace change"]
+      : [];
   return {
     id: "pending-receipt",
-    title: `${input.decision.mode.toUpperCase()} run for ${input.intent.type.replace(/_/g, " ")}`,
+    title: `${String(input.decision.mode || input.mode).toUpperCase()} run for ${input.intent.type.replace(/_/g, " ")}`,
     status: reviewState.status === "blocked" ? "blocked" : reviewState.status === "needs_attention" ? "needs_review" : "ready",
     intent: input.intent.type,
     lane,
     route: input.toolState.route,
-    model: String(input.modelMetadata?.modelResolvedAlias || "playground"),
-    provider: String(input.modelMetadata?.providerResolved || "playground"),
+    model: input.modelMetadata?.modelResolvedAlias || "playground-default",
+    provider: input.modelMetadata?.providerResolved || "playground",
     touchedFiles,
-    commands: uniqueStrings([...input.commands, ...input.actions.map((action) => action.command)], 12, 2000),
-    validationEvidence,
+    commands: uniqueStrings(input.commands, 8, 512),
+    validationEvidence: uniqueStrings([...input.validationPlan.checks, input.validationPlan.reason], 6, 280),
     unresolvedRisk,
     checkpointId: checkpoint.status === "not_required" ? null : checkpoint.id,
-    reviewState: reviewState.status === "ready" ? "ready" : reviewState.status === "needs_attention" ? "needs_attention" : "blocked",
+    reviewState: reviewState.status === "blocked" ? "blocked" : reviewState.status === "needs_attention" ? "needs_attention" : "ready",
     delegateRunIds: delegateRuns.map((run) => run.id),
     memoryWriteIds: memoryWrites.map((write) => write.id),
     generatedAt: nowIso,
@@ -438,40 +384,45 @@ export function buildAssistAgentArtifacts(input: AgentArtifactInput): AssistAgen
   const nowIso = (input.now || new Date()).toISOString();
   const touchedFiles = collectTouchedFiles(input);
   const lane = inferLane(input, touchedFiles);
-  const taskGraph = buildTaskGraph(input, touchedFiles, lane);
   const checkpoint = buildCheckpoint(input, touchedFiles, nowIso);
-  const contextTrace = buildContextTrace(input);
-  const memoryWrites = buildMemoryWrites(input, touchedFiles, nowIso);
+  const memoryWrites = buildMemoryWrites(input, nowIso);
+  const delegateRuns = buildDelegateRuns(input, input.completionStatus === "incomplete");
   const reviewState = buildReviewState(input, lane);
-  const delegateRuns = buildDelegateRuns(taskGraph);
   const receipt = buildReceipt(input, lane, touchedFiles, checkpoint, reviewState, memoryWrites, delegateRuns, nowIso);
-
   return {
     lane,
-    taskGraph,
+    taskGraph: buildTaskGraph(input, touchedFiles, lane),
     checkpoint,
     receipt,
-    contextTrace,
+    contextTrace: buildContextTrace(input),
     delegateRuns,
     memoryWrites,
     reviewState,
   };
 }
 
-export function attachAssistArtifactIdentifiers<T extends AssistAgentArtifacts>(artifacts: T, ids: ArtifactIdentifiers): T {
-  const runId = ids.runId ? String(ids.runId) : "pending";
-  const traceId = ids.traceId ? String(ids.traceId) : "pending";
+export function attachAssistArtifactIdentifiers(
+  artifacts: AssistAgentArtifacts,
+  identifiers: ArtifactIdentifiers
+): AssistAgentArtifacts {
+  const runId = String(identifiers.runId || "").trim();
+  const traceId = String(identifiers.traceId || "").trim();
+  if (!runId) return artifacts;
   const checkpoint = {
     ...artifacts.checkpoint,
     id: artifacts.checkpoint.id === "pending-checkpoint" ? `${runId}:checkpoint` : artifacts.checkpoint.id,
   };
+  const delegateRuns = artifacts.delegateRuns.map((run, index) => ({
+    ...run,
+    id: run.id.startsWith("pending-")
+      ? `${runId}:${index === 0 ? "scout" : index === 1 ? "builder" : "verifier"}`
+      : run.id,
+  }));
   const memoryWrites = artifacts.memoryWrites.map((write, index) => ({
     ...write,
-    id: write.id.startsWith("pending-") ? `${runId}:memory:${index + 1}` : write.id,
-  }));
-  const delegateRuns = artifacts.delegateRuns.map((run) => ({
-    ...run,
-    id: run.id.startsWith("pending-") ? `${runId}:${run.role}` : run.id,
+    id: write.id.startsWith("pending-")
+      ? `${runId}:${write.scope === "workspace" ? "workspace-memory" : `memory:${index + 1}`}`
+      : write.id,
   }));
   const receipt = {
     ...artifacts.receipt,
@@ -479,13 +430,13 @@ export function attachAssistArtifactIdentifiers<T extends AssistAgentArtifacts>(
     checkpointId: checkpoint.status === "not_required" ? null : checkpoint.id,
     delegateRunIds: delegateRuns.map((run) => run.id),
     memoryWriteIds: memoryWrites.map((write) => write.id),
-    provider: artifacts.receipt.provider === "playground" ? `playground:${traceId}` : artifacts.receipt.provider,
+    provider: artifacts.receipt.provider === "playground" && traceId ? `playground:${traceId}` : artifacts.receipt.provider,
   };
   return {
     ...artifacts,
     checkpoint,
+    receipt,
     delegateRuns,
     memoryWrites,
-    receipt,
   };
 }

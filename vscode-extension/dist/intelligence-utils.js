@@ -1,8 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.normalizeContextPath = normalizeContextPath;
-exports.resolveRunProfileFromLegacyParallel = resolveRunProfileFromLegacyParallel;
-exports.modelSupportsImages = modelSupportsImages;
 exports.buildRetrievalHints = buildRetrievalHints;
 exports.buildIndexChunkMetadata = buildIndexChunkMetadata;
 function dedupeStrings(values, limit, maxLen = 512) {
@@ -29,19 +27,6 @@ function normalizeContextPath(input) {
         .replace(/^\/+/, "")
         .replace(/[),.;:!?]+$/g, "");
 }
-function resolveRunProfileFromLegacyParallel(input) {
-    if (input?.runProfile === "deep_focus" || input?.runProfile === "standard") {
-        return input.runProfile;
-    }
-    return input?.parallel ? "deep_focus" : "standard";
-}
-function modelSupportsImages(selectedModelAlias, catalog) {
-    const selected = String(selectedModelAlias || "").trim().toLowerCase();
-    if (!selected)
-        return false;
-    const match = (catalog || []).find((entry) => String(entry.alias || "").trim().toLowerCase() === selected);
-    return match?.capabilities?.supportsImages === true;
-}
 function buildRetrievalHints(input) {
     const mentionedPaths = dedupeStrings((input.mentionPaths || []).map((path) => normalizeContextPath(path)).filter(Boolean), 12, 260);
     const candidateSymbols = dedupeStrings(input.candidateSymbols || [], 8, 120);
@@ -67,7 +52,8 @@ function buildIndexChunkMetadata(input) {
         .replace(/\r\n/g, "\n")
         .split("\n");
     const symbolNames = dedupeStrings(lines.flatMap((line) => {
-        const matches = line.match(/\b(?:export\s+)?(?:async\s+)?(?:function|class|const|let|var|interface|type)\s+([A-Za-z_][A-Za-z0-9_]*)/g) || [];
+        const matches = line.match(/\b(?:export\s+)?(?:async\s+)?(?:function|class|const|let|var|interface|type)\s+([A-Za-z_][A-Za-z0-9_]*)/g) ||
+            [];
         return matches.map((match) => {
             const symbol = /([A-Za-z_][A-Za-z0-9_]*)\s*$/.exec(match);
             return symbol?.[1] || "";

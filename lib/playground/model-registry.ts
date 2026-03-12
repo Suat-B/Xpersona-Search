@@ -1,11 +1,8 @@
-export type PlaygroundModelProvider = "hf" | "nvidia";
+export type PlaygroundModelProvider = "hf";
 
 export type PlaygroundModelCapabilitySet = {
   maxContextTokens: number;
   supportsStreaming: boolean;
-  supportsReasoningStream: boolean;
-  supportsImages: boolean;
-  supportsNativeTools: boolean;
   supportsTextActions: boolean;
   supportsUnifiedDiff: boolean;
   supportsWriteFile: boolean;
@@ -13,7 +10,7 @@ export type PlaygroundModelCapabilitySet = {
   supportsShellCommands: boolean;
 };
 
-export type PlaygroundModelCertification = "tool_ready" | "chat_only" | "experimental";
+export type PlaygroundModelCertification = "tool_ready";
 
 export type PlaygroundModelRegistryEntry = {
   alias: string;
@@ -21,19 +18,10 @@ export type PlaygroundModelRegistryEntry = {
   description: string;
   provider: PlaygroundModelProvider;
   model: string;
-  fallbackAliases: string[];
   capabilities: PlaygroundModelCapabilitySet;
   certification: PlaygroundModelCertification;
   enabled: boolean;
 };
-
-export type PlaygroundModelRequirementSet = Partial<{
-  images: boolean;
-  nativeTools: boolean;
-  textActions: boolean;
-  shellCommands: boolean;
-  toolReady: boolean;
-}>;
 
 export type PlaygroundResolvedModelSelection = {
   requested: string;
@@ -43,193 +31,62 @@ export type PlaygroundResolvedModelSelection = {
   fallbackChain: PlaygroundModelRegistryEntry[];
 };
 
-export const PLAYGROUND_CONTRACT_VERSION = "2026-03-actions-v1";
+export const PLAYGROUND_CONTRACT_VERSION = "2026-03-minimal-coding-v1";
 export const DEFAULT_PLAYGROUND_MODEL_ALIAS = "playground-default";
-export const BACKUP_PLAYGROUND_MODEL_ALIAS = "playground-backup";
-export const HF_BACKUP_PLAYGROUND_MODEL_ALIAS = "playground-hf-backup";
-const PUBLIC_PLAYGROUND_MODEL_ALIASES = new Set([DEFAULT_PLAYGROUND_MODEL_ALIAS]);
 
-const LONG_CONTEXT_CAP = 262_144;
+const DEFAULT_MODEL_ENTRY: PlaygroundModelRegistryEntry = {
+  alias: DEFAULT_PLAYGROUND_MODEL_ALIAS,
+  displayName: "Playground",
+  description: "Server-owned default coding model for the minimal Playground agent loop.",
+  provider: "hf",
+  model: String(process.env.PLAYGROUND_DEFAULT_MODEL || "Qwen/Qwen2.5-Coder-7B-Instruct:fastest").trim(),
+  capabilities: {
+    maxContextTokens: 128_000,
+    supportsStreaming: true,
+    supportsTextActions: true,
+    supportsUnifiedDiff: true,
+    supportsWriteFile: true,
+    supportsMkdir: true,
+    supportsShellCommands: true,
+  },
+  certification: "tool_ready",
+  enabled: true,
+};
 
-const MODEL_REGISTRY: PlaygroundModelRegistryEntry[] = [
-  {
-    alias: DEFAULT_PLAYGROUND_MODEL_ALIAS,
-    displayName: "Playground 1",
-    description: "Default IDE and /playground model backed by Hugging Face Router.",
-    provider: "hf",
-    model: "Qwen/Qwen2.5-Coder-7B-Instruct:fastest",
-    fallbackAliases: [BACKUP_PLAYGROUND_MODEL_ALIAS, HF_BACKUP_PLAYGROUND_MODEL_ALIAS],
-    capabilities: {
-      maxContextTokens: 128_000,
-      supportsStreaming: true,
-      supportsReasoningStream: false,
-      supportsImages: false,
-      supportsNativeTools: false,
-      supportsTextActions: true,
-      supportsUnifiedDiff: true,
-      supportsWriteFile: true,
-      supportsMkdir: true,
-      supportsShellCommands: true,
-    },
-    certification: "tool_ready",
-    enabled: true,
-  },
-  {
-    alias: BACKUP_PLAYGROUND_MODEL_ALIAS,
-    displayName: "Playground Backup",
-    description: "Fallback production model for coding and repair passes.",
-    provider: "nvidia",
-    model: "mistralai/mistral-nemotron",
-    fallbackAliases: [HF_BACKUP_PLAYGROUND_MODEL_ALIAS, DEFAULT_PLAYGROUND_MODEL_ALIAS],
-    capabilities: {
-      maxContextTokens: 128_000,
-      supportsStreaming: true,
-      supportsReasoningStream: true,
-      supportsImages: false,
-      supportsNativeTools: false,
-      supportsTextActions: true,
-      supportsUnifiedDiff: true,
-      supportsWriteFile: true,
-      supportsMkdir: true,
-      supportsShellCommands: true,
-    },
-    certification: "tool_ready",
-    enabled: true,
-  },
-  {
-    alias: HF_BACKUP_PLAYGROUND_MODEL_ALIAS,
-    displayName: "Playground HF Backup",
-    description: "HF router fallback for coding when NVIDIA is unavailable.",
-    provider: "hf",
-    model: "stepfun-ai/Step-3.5-Flash",
-    fallbackAliases: [DEFAULT_PLAYGROUND_MODEL_ALIAS, BACKUP_PLAYGROUND_MODEL_ALIAS],
-    capabilities: {
-      maxContextTokens: LONG_CONTEXT_CAP,
-      supportsStreaming: true,
-      supportsReasoningStream: false,
-      supportsImages: false,
-      supportsNativeTools: false,
-      supportsTextActions: true,
-      supportsUnifiedDiff: true,
-      supportsWriteFile: true,
-      supportsMkdir: true,
-      supportsShellCommands: true,
-    },
-    certification: "tool_ready",
-    enabled: true,
-  },
-  {
-    alias: "playground-native-preview",
-    displayName: "Playground Native Tools Preview",
-    description: "Experimental native-tools adapter target for compatibility testing.",
-    provider: "hf",
-    model: "openai/gpt-oss-120b:fastest",
-    fallbackAliases: [DEFAULT_PLAYGROUND_MODEL_ALIAS, BACKUP_PLAYGROUND_MODEL_ALIAS, HF_BACKUP_PLAYGROUND_MODEL_ALIAS],
-    capabilities: {
-      maxContextTokens: LONG_CONTEXT_CAP,
-      supportsStreaming: false,
-      supportsReasoningStream: false,
-      supportsImages: false,
-      supportsNativeTools: true,
-      supportsTextActions: true,
-      supportsUnifiedDiff: true,
-      supportsWriteFile: true,
-      supportsMkdir: true,
-      supportsShellCommands: true,
-    },
-    certification: "experimental",
-    enabled: true,
-  },
-];
-
-function normalizeKey(input: string | undefined): string {
-  return String(input || "").trim().toLowerCase();
+function cloneEntry(entry: PlaygroundModelRegistryEntry): PlaygroundModelRegistryEntry {
+  return {
+    ...entry,
+    capabilities: { ...entry.capabilities },
+  };
 }
 
-function entryMatchesRequested(entry: PlaygroundModelRegistryEntry, requested: string): boolean {
-  const needle = normalizeKey(requested);
-  if (!needle) return false;
-  return normalizeKey(entry.alias) === needle || normalizeKey(entry.model) === needle || normalizeKey(entry.displayName) === needle;
-}
-
-function meetsRequirements(
-  entry: PlaygroundModelRegistryEntry,
-  requirements: PlaygroundModelRequirementSet | undefined
-): boolean {
-  if (!entry.enabled) return false;
-  if (!requirements) return true;
-  if (requirements.images && !entry.capabilities.supportsImages) return false;
-  if (requirements.nativeTools && !entry.capabilities.supportsNativeTools) return false;
-  if (requirements.textActions && !entry.capabilities.supportsTextActions) return false;
-  if (requirements.shellCommands && !entry.capabilities.supportsShellCommands) return false;
-  if (requirements.toolReady && entry.certification !== "tool_ready") return false;
-  return true;
-}
-
-function collectFallbackChain(seed: PlaygroundModelRegistryEntry): PlaygroundModelRegistryEntry[] {
-  const byAlias = new Map(MODEL_REGISTRY.map((entry) => [normalizeKey(entry.alias), entry] as const));
-  const out: PlaygroundModelRegistryEntry[] = [];
-  const queue = [
-    seed.alias,
-    ...seed.fallbackAliases,
-    DEFAULT_PLAYGROUND_MODEL_ALIAS,
-    BACKUP_PLAYGROUND_MODEL_ALIAS,
-    HF_BACKUP_PLAYGROUND_MODEL_ALIAS,
-  ];
-  const seen = new Set<string>();
-  while (queue.length > 0) {
-    const alias = normalizeKey(queue.shift());
-    if (!alias || seen.has(alias)) continue;
-    seen.add(alias);
-    const entry = byAlias.get(alias);
-    if (!entry) continue;
-    out.push(entry);
-    for (const next of entry.fallbackAliases) {
-      const normalizedNext = normalizeKey(next);
-      if (normalizedNext && !seen.has(normalizedNext)) queue.push(normalizedNext);
-    }
-  }
-  return out;
+export function getDefaultPlaygroundModelEntry(): PlaygroundModelRegistryEntry {
+  return cloneEntry(DEFAULT_MODEL_ENTRY);
 }
 
 export function listPlaygroundModels(): PlaygroundModelRegistryEntry[] {
-  return MODEL_REGISTRY.map((entry) => ({
-    ...entry,
-    fallbackAliases: [...entry.fallbackAliases],
-    capabilities: { ...entry.capabilities },
-  }));
+  return [getDefaultPlaygroundModelEntry()];
 }
 
 export function listPublicPlaygroundModels(): PlaygroundModelRegistryEntry[] {
-  return listPlaygroundModels().filter((entry) => PUBLIC_PLAYGROUND_MODEL_ALIASES.has(entry.alias));
+  return listPlaygroundModels();
 }
 
-export function getPlaygroundModelEntry(requested: string | undefined): PlaygroundModelRegistryEntry | null {
-  const key = normalizeKey(requested);
-  if (!key) return null;
-  return MODEL_REGISTRY.find((entry) => entryMatchesRequested(entry, key)) ?? null;
+export function getPlaygroundModelEntry(_requested?: string): PlaygroundModelRegistryEntry {
+  return getDefaultPlaygroundModelEntry();
 }
 
-export function resolvePlaygroundModelSelection(input: {
+export function resolvePlaygroundModelSelection(input?: {
   requested?: string;
-  requirements?: PlaygroundModelRequirementSet;
-  allowedProviders?: PlaygroundModelProvider[];
 }): PlaygroundResolvedModelSelection {
-  const requested = String(input.requested || "").trim() || DEFAULT_PLAYGROUND_MODEL_ALIAS;
-  const requestedEntry = getPlaygroundModelEntry(requested) ?? getPlaygroundModelEntry(DEFAULT_PLAYGROUND_MODEL_ALIAS) ?? MODEL_REGISTRY[0];
-  const allowedProviders = new Set((input.allowedProviders ?? []).map((provider) => provider));
-  const providerFiltered = collectFallbackChain(requestedEntry).filter((entry) => {
-    if (!allowedProviders.size) return true;
-    return allowedProviders.has(entry.provider);
-  });
-  const capabilityFiltered = providerFiltered.filter((entry) => meetsRequirements(entry, input.requirements));
-  const resolvedEntry = capabilityFiltered[0] ?? providerFiltered[0] ?? requestedEntry;
+  const requested = String(input?.requested || DEFAULT_PLAYGROUND_MODEL_ALIAS).trim() || DEFAULT_PLAYGROUND_MODEL_ALIAS;
+  const resolvedEntry = getDefaultPlaygroundModelEntry();
   return {
     requested,
-    requestedAlias: requestedEntry.alias,
-    resolvedAlias: resolvedEntry.alias,
+    requestedAlias: DEFAULT_PLAYGROUND_MODEL_ALIAS,
+    resolvedAlias: DEFAULT_PLAYGROUND_MODEL_ALIAS,
     resolvedEntry,
-    fallbackChain: capabilityFiltered.length > 0 ? capabilityFiltered : providerFiltered.length > 0 ? providerFiltered : [requestedEntry],
+    fallbackChain: [resolvedEntry],
   };
 }
 
@@ -240,7 +97,6 @@ export function serializePlaygroundModelEntry(entry: PlaygroundModelRegistryEntr
     description: entry.description,
     provider: entry.provider,
     model: entry.model,
-    fallbackAliases: [...entry.fallbackAliases],
     capabilities: { ...entry.capabilities },
     certification: entry.certification,
     enabled: entry.enabled,

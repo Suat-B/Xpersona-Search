@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
 import { jsonError } from "@/lib/api/errors";
 import { authenticatePlaygroundRequest } from "@/lib/playground/auth";
-import { zWorkspaceMemoryPutRequest, zWorkspaceMemoryQuery } from "@/lib/playground/contracts";
 import { ok, parseBody, unauthorized } from "@/lib/playground/http";
+import { zWorkspaceMemoryPutRequest, zWorkspaceMemoryQuery } from "@/lib/playground/contracts";
 import { getUserPlaygroundProfile, upsertUserPlaygroundProfile } from "@/lib/playground/store";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -13,33 +13,23 @@ export async function GET(request: NextRequest): Promise<Response> {
   const auth = await authenticatePlaygroundRequest(request);
   if (!auth) return unauthorized(request);
 
-  const parsed = zWorkspaceMemoryQuery.safeParse({
-    workspaceFingerprint: request.nextUrl.searchParams.get("workspaceFingerprint") ?? undefined,
-  });
+  const params = Object.fromEntries(request.nextUrl.searchParams.entries());
+  const parsed = zWorkspaceMemoryQuery.safeParse(params);
   if (!parsed.success) {
     return jsonError(request, {
-      code: "INVALID_WORKSPACE_FINGERPRINT",
-      message: "workspaceFingerprint is required",
+      code: "INVALID_WORKSPACE_MEMORY_QUERY",
+      message: parsed.error.issues[0]?.message || "Invalid workspace memory query.",
       status: 400,
     });
   }
 
-  const profile = await getUserPlaygroundProfile({ userId: auth.userId }).catch(() => null);
+  const profile = await getUserPlaygroundProfile({ userId: auth.userId });
   const stablePreferences = asRecord(profile?.stablePreferences);
-  const workspaceMemoryRoot = asRecord(stablePreferences.workspaceMemory);
-  const workspaceFingerprint = parsed.data.workspaceFingerprint;
-  const value = asRecord(workspaceMemoryRoot[workspaceFingerprint]);
+  const workspaceMemory = asRecord(stablePreferences.workspaceMemory);
 
   return ok(request, {
-    workspaceFingerprint,
-    value: {
-      summary: typeof value.summary === "string" ? value.summary : "",
-      promotedMemories: Array.isArray(value.promotedMemories) ? value.promotedMemories : [],
-      touchedPaths: Array.isArray(value.touchedPaths) ? value.touchedPaths : [],
-      enabled: value.enabled !== false,
-      updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : null,
-      note: typeof value.note === "string" ? value.note : null,
-    },
+    workspaceFingerprint: parsed.data.workspaceFingerprint,
+    memory: workspaceMemory[parsed.data.workspaceFingerprint] ?? null,
   });
 }
 
@@ -50,34 +40,31 @@ export async function PUT(request: NextRequest): Promise<Response> {
   const parsed = await parseBody(request, zWorkspaceMemoryPutRequest);
   if (!parsed.success) return parsed.response;
 
-  const profile = await getUserPlaygroundProfile({ userId: auth.userId }).catch(() => null);
+  const profile = await getUserPlaygroundProfile({ userId: auth.userId });
   const stablePreferences = asRecord(profile?.stablePreferences);
-  const workspaceMemoryRoot = asRecord(stablePreferences.workspaceMemory);
-  const body = parsed.data;
-  const existing = asRecord(workspaceMemoryRoot[body.workspaceFingerprint]);
-  const nextStablePreferences = {
-    ...stablePreferences,
-    workspaceMemory: {
-      ...workspaceMemoryRoot,
-      [body.workspaceFingerprint]: {
-        ...existing,
-        ...(body.summary !== undefined ? { summary: body.summary } : {}),
-        ...(body.promotedMemories !== undefined ? { promotedMemories: body.promotedMemories } : {}),
-        ...(body.touchedPaths !== undefined ? { touchedPaths: body.touchedPaths } : {}),
-        ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
-        ...(body.note !== undefined ? { note: body.note } : {}),
-        updatedAt: new Date().toISOString(),
-      },
+  const workspaceMemory = asRecord(stablePreferences.workspaceMemory);
+  const nextMemory = {
+    ...workspaceMemory,
+    [parsed.data.workspaceFingerprint]: {
+      summary: parsed.data.summary ?? null,
+      promotedMemories: parsed.data.promotedMemories ?? [],
+      touchedPaths: parsed.data.touchedPaths ?? [],
+      enabled: parsed.data.enabled ?? true,
+      note: parsed.data.note ?? null,
+      updatedAt: new Date().toISOString(),
     },
   };
 
-  await upsertUserPlaygroundProfile({
+  const saved = await upsertUserPlaygroundProfile({
     userId: auth.userId,
-    stablePreferences: nextStablePreferences,
+    stablePreferences: {
+      ...stablePreferences,
+      workspaceMemory: nextMemory,
+    },
   });
 
   return ok(request, {
-    workspaceFingerprint: body.workspaceFingerprint,
-    value: nextStablePreferences.workspaceMemory[body.workspaceFingerprint],
+    workspaceFingerprint: parsed.data.workspaceFingerprint,
+    memory: asRecord(asRecord(saved.stablePreferences).workspaceMemory)[parsed.data.workspaceFingerprint] ?? null,
   });
 }

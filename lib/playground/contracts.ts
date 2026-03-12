@@ -1,10 +1,6 @@
 import { z } from "zod";
 
-export const zAssistMode = z.enum(["auto", "plan", "yolo", "generate", "debug"]);
-export const zSafetyProfile = z.enum(["standard", "aggressive"]);
-export const zBudgetStrategy = z.enum(["relevance", "recency", "hybrid"]);
-export const zAgentRole = z.enum(["planner", "implementer", "reviewer"]);
-export const zRunProfile = z.enum(["standard", "deep_focus"]);
+export const zAssistMode = z.enum(["auto", "plan", "yolo"]);
 
 const zContextFile = z.object({
   path: z.string().min(1).max(4096).optional(),
@@ -34,19 +30,6 @@ const zOpenFile = z.object({
   excerpt: z.string().max(120_000).optional(),
 });
 
-const zConversationTurn = z.object({
-  role: z.enum(["user", "assistant"]),
-  content: z.string().min(1).max(12_000),
-});
-
-const zClientPreferences = z.object({
-  tone: z.enum(["warm_teammate", "neutral"]).optional(),
-  autonomy: z.enum(["full_auto", "preview_first"]).optional(),
-  responseStyle: z.enum(["concise", "balanced", "detailed"]).optional(),
-  reasoning: z.enum(["low", "medium", "high", "max"]).optional(),
-  runProfile: zRunProfile.optional(),
-});
-
 const zRetrievalHints = z.object({
   mentionedPaths: z.array(z.string().min(1).max(4096)).max(24).optional(),
   candidateSymbols: z.array(z.string().min(1).max(256)).max(24).optional(),
@@ -55,15 +38,9 @@ const zRetrievalHints = z.object({
   recentTouchedPaths: z.array(z.string().min(1).max(4096)).max(24).optional(),
 });
 
-const zExecutionPolicy = z.enum(["full_auto", "yolo_only", "preview_first"]);
-
-const zAutonomyBlock = z.object({
-  mode: z.enum(["unbounded", "bounded"]).optional(),
-  maxCycles: z.number().int().min(0).max(1_000_000).optional(),
-  noClarifyToUser: z.boolean().optional(),
-  commandPolicy: z.enum(["run_until_done", "safe_default"]).optional(),
-  safetyFloor: z.enum(["allow_everything", "standard"]).optional(),
-  failsafe: z.enum(["disabled", "enabled"]).optional(),
+const zConversationTurn = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().min(1).max(12_000),
 });
 
 export const zAssistRequest = z.object({
@@ -71,7 +48,8 @@ export const zAssistRequest = z.object({
   task: z.string().min(1).max(120_000),
   stream: z.boolean().optional(),
   model: z.string().min(1).max(256).optional(),
-  max_tokens: z.number().int().min(64).max(262_144).optional(),
+  historySessionId: z.string().uuid().optional(),
+  conversationHistory: z.array(zConversationTurn).max(24).optional(),
   context: z
     .object({
       activeFile: zContextFile.optional(),
@@ -86,42 +64,31 @@ export const zAssistRequest = z.object({
       indexedSnippets: z.array(zContextSnippet).max(120).optional(),
     })
     .optional(),
-  attachments: z
-    .array(
-      z.object({
-        mimeType: z.enum(["image/png", "image/jpeg", "image/webp"]),
-        name: z.string().max(255).optional(),
-        dataUrl: z.string().max(8_000_000).optional(),
-      })
-    )
-    .max(6)
-    .optional(),
-  historySessionId: z.string().uuid().optional(),
-  conversationHistory: z.array(zConversationTurn).max(24).optional(),
-  clientPreferences: zClientPreferences.optional(),
   retrievalHints: zRetrievalHints.optional(),
-  autonomy: zAutonomyBlock.optional(),
-  executionPolicy: zExecutionPolicy.optional(),
-  agentConfig: z
-    .object({
-      strategy: z.enum(["single", "parallel"]).optional(),
-      roles: z.array(zAgentRole).max(3).optional(),
-    })
-    .optional(),
-  workflowIntentId: z.string().min(1).max(120).optional(),
-  contextBudget: z
-    .object({
-      maxTokens: z.number().int().min(512).max(262_144).default(16_384),
-      strategy: zBudgetStrategy.default("hybrid"),
-    })
-    .optional(),
-  safetyProfile: zSafetyProfile.default("standard").optional(),
   clientTrace: z
     .object({
       extensionVersion: z.string().max(64),
       workspaceHash: z.string().max(128),
     })
     .optional(),
+});
+
+export const zRunControlRequest = z.object({
+  action: z.enum(["pause", "resume", "cancel", "repair"]),
+  note: z.string().max(4000).optional(),
+});
+
+export const zWorkspaceMemoryQuery = z.object({
+  workspaceFingerprint: z.string().min(1).max(256),
+});
+
+export const zWorkspaceMemoryPutRequest = z.object({
+  workspaceFingerprint: z.string().min(1).max(256),
+  summary: z.string().max(20_000).optional(),
+  promotedMemories: z.array(z.string().min(1).max(1000)).max(50).optional(),
+  touchedPaths: z.array(z.string().min(1).max(4096)).max(100).optional(),
+  enabled: z.boolean().optional(),
+  note: z.string().max(4000).optional(),
 });
 
 const zExecuteEdit = z.object({
@@ -185,7 +152,7 @@ export const zMessagesGetQuery = z.object({
 });
 
 export const zAppendMessageRequest = z.object({
-  role: z.enum(["system", "user", "assistant", "agent"]),
+  role: z.enum(["user", "assistant"]),
   kind: z.string().max(40).optional(),
   content: z.string().min(1).max(120_000),
   payload: z.record(z.string(), z.unknown()).optional(),
@@ -214,36 +181,4 @@ export const zIndexQueryRequest = z.object({
   query: z.string().min(1).max(2000),
   limit: z.number().int().min(1).max(50).optional(),
   retrievalHints: zRetrievalHints.optional(),
-});
-
-export const zAgentsRunRequest = z.object({
-  sessionId: z.string().uuid().optional(),
-  task: z.string().min(1).max(120_000),
-  model: z.string().max(256).optional(),
-  context: z.record(z.string(), z.unknown()).optional(),
-  roles: z.array(zAgentRole).max(3).optional(),
-});
-
-export const zReplayRequest = z.object({
-  sessionId: z.string().uuid(),
-  workspaceFingerprint: z.string().min(4).max(256),
-  mode: zAssistMode.default("plan"),
-});
-
-export const zRunControlRequest = z.object({
-  action: z.enum(["pause", "resume", "cancel", "repair"]),
-  note: z.string().max(2000).optional(),
-});
-
-export const zWorkspaceMemoryQuery = z.object({
-  workspaceFingerprint: z.string().min(1).max(256),
-});
-
-export const zWorkspaceMemoryPutRequest = z.object({
-  workspaceFingerprint: z.string().min(1).max(256),
-  summary: z.string().max(4000).optional(),
-  promotedMemories: z.array(z.string().min(1).max(512)).max(20).optional(),
-  touchedPaths: z.array(z.string().min(1).max(4096)).max(32).optional(),
-  enabled: z.boolean().optional(),
-  note: z.string().max(2000).optional(),
 });

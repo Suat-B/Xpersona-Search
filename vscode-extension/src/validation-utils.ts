@@ -1,17 +1,7 @@
 import * as path from "path";
 
-export type ValidationStatus = "passed" | "failed" | "missing_runner" | "skipped";
-
-export type ValidationAdapter = {
-  name: string;
-  patterns: string[];
-  commands: string[];
-  timeoutMs: number;
-  continueOnFailure: boolean;
-};
-
 export type ValidationCommand = {
-  kind: "sanity" | "adapter" | "builtin";
+  kind: "sanity" | "builtin";
   command: string;
   timeoutMs: number;
   continueOnFailure: boolean;
@@ -19,7 +9,7 @@ export type ValidationCommand = {
 };
 
 export type QuickValidationPlan = {
-  status: "ready" | "missing_runner" | "skipped";
+  status: "ready" | "skipped";
   reason?: string;
   commands: string[];
   steps: ValidationCommand[];
@@ -40,95 +30,6 @@ const JS_LIKE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
 function normalizeForMatch(input: string): string {
   const slashified = String(input || "").replace(/\\/g, "/").trim();
   return slashified.replace(/^\.\/+/, "").replace(/^\/+/, "");
-}
-
-function escapeRegExpChar(char: string): string {
-  return /[\\^$.*+?()[\]{}|]/.test(char) ? `\\${char}` : char;
-}
-
-function globToRegExp(pattern: string): RegExp {
-  const normalized = normalizeForMatch(pattern);
-  let source = "^";
-  for (let index = 0; index < normalized.length; index += 1) {
-    const char = normalized[index];
-    if (char === "*") {
-      const next = normalized[index + 1];
-      const afterNext = normalized[index + 2];
-      if (next === "*") {
-        if (afterNext === "/") {
-          source += "(?:.*/)?";
-          index += 2;
-        } else {
-          source += ".*";
-          index += 1;
-        }
-      } else {
-        source += "[^/]*";
-      }
-      continue;
-    }
-    if (char === "?") {
-      source += "[^/]";
-      continue;
-    }
-    source += escapeRegExpChar(char);
-  }
-  source += "$";
-  return new RegExp(source);
-}
-
-function toPositiveTimeoutMs(value: unknown): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : DEFAULT_TIMEOUT_MS;
-}
-
-function toBoolean(value: unknown, fallback: boolean): boolean {
-  return typeof value === "boolean" ? value : fallback;
-}
-
-function toStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => String(item || "").trim())
-    .filter(Boolean);
-}
-
-export function normalizeValidationAdapters(input: unknown): ValidationAdapter[] {
-  if (!Array.isArray(input)) return [];
-  const adapters: ValidationAdapter[] = [];
-  for (const raw of input) {
-    if (!raw || typeof raw !== "object") continue;
-    const item = raw as Record<string, unknown>;
-    const name = String(item.name || "").trim();
-    const patterns = toStringArray(item.patterns);
-    const commands = toStringArray(item.commands);
-    if (!name || patterns.length === 0 || commands.length === 0) continue;
-    adapters.push({
-      name,
-      patterns,
-      commands,
-      timeoutMs: toPositiveTimeoutMs(item.timeoutMs),
-      continueOnFailure: toBoolean(item.continueOnFailure, false),
-    });
-  }
-  return adapters;
-}
-
-export function matchesWorkspacePattern(filePath: string, pattern: string): boolean {
-  const relPath = normalizeForMatch(filePath);
-  if (!relPath) return false;
-  return globToRegExp(pattern).test(relPath);
-}
-
-export function matchValidationAdapter(filePath: string, adapters: ValidationAdapter[]): ValidationAdapter | null {
-  const relPath = normalizeForMatch(filePath);
-  if (!relPath) return null;
-  for (const adapter of adapters) {
-    if (adapter.patterns.some((pattern) => matchesWorkspacePattern(relPath, pattern))) {
-      return adapter;
-    }
-  }
-  return null;
 }
 
 export function substituteValidationCommand(
@@ -179,7 +80,6 @@ export function planQuickValidationForFile(input: {
   absFile: string;
   workspaceFolder: string;
   changed: boolean;
-  adapters: ValidationAdapter[];
   hasWorkspaceLintScript: boolean;
   pythonAvailable: boolean;
 }): QuickValidationPlan {
@@ -206,24 +106,6 @@ export function planQuickValidationForFile(input: {
     timeoutMs: DEFAULT_TIMEOUT_MS,
     continueOnFailure: false,
   };
-  const adapter = matchValidationAdapter(relPath, input.adapters);
-  if (adapter) {
-    const runnerSteps = adapter.commands.map((command) => ({
-      kind: "adapter" as const,
-      label: adapter.name,
-      command: substituteValidationCommand(command, vars),
-      timeoutMs: adapter.timeoutMs,
-      continueOnFailure: adapter.continueOnFailure,
-    }));
-    const steps = [sanityStep, ...runnerSteps];
-    return {
-      status: "ready",
-      commands: steps.map((step) => step.command),
-      steps,
-      runnerLabel: adapter.name,
-      coverage: "full",
-    };
-  }
 
   const builtIn = selectBuiltInValidationRunner({
     filePath: relPath,

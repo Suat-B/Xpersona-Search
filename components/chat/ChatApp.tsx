@@ -633,12 +633,12 @@ export function ChatApp() {
     <div className="chat-editorial h-dvh min-h-dvh">
       <div className="flex h-full w-full">
         <aside
-          className={`chat-editorial-sidebar fixed inset-y-0 left-0 z-40 w-[300px] p-3 transition-transform md:static md:w-[260px] md:translate-x-0 ${
+          className={`chat-editorial-sidebar fixed inset-y-0 left-0 z-40 w-[300px] p-3 transition-transform md:static md:w-[292px] md:translate-x-0 ${
             sidebarOpen ? "translate-x-0 pointer-events-auto" : "-translate-x-full pointer-events-none md:pointer-events-auto"
           }`}
           aria-label="Chat sessions"
         >
-          <div className="chat-editorial-card chat-editorial-sidebar-card h-full rounded-3xl p-4">
+          <div className="chat-editorial-sidebar-card h-full rounded-[2rem] p-4">
             <div className="chat-editorial-sidebar-inner">
               <div className="mb-1 flex items-center justify-end md:hidden">
                 <button
@@ -651,35 +651,13 @@ export function ChatApp() {
                 </button>
               </div>
               <div className="chat-editorial-brand">
-                <span className="chat-editorial-brand-icon" aria-hidden="true">P</span>
-                <div>
-                  <p className="text-sm font-semibold text-[var(--chat-text-primary)]">Playground 1</p>
-                  <p className="text-xs text-[var(--chat-text-muted)]">
-                    {viewer && !viewer.isAnonymous ? viewer.email : "Personal"}
-                  </p>
+                <span className="chat-editorial-brand-icon" aria-hidden="true">
+                  PL
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-[var(--chat-text-primary)]">Playground 1</p>
+                  <p className="truncate text-xs text-[var(--chat-text-muted)]">{viewerLabel}</p>
                 </div>
-                <svg className="chat-editorial-brand-chevron" viewBox="0 0 20 20" aria-hidden="true">
-                  <path d="m5 7 5 5 5-5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </div>
-              <div className="chat-editorial-brand-links">
-                <Link href="/" className="chat-editorial-brand-link">
-                  Home
-                </Link>
-                {viewer && !viewer.isAnonymous ? (
-                  <Link href="/dashboard" className="chat-editorial-brand-link is-primary">
-                    Dashboard
-                  </Link>
-                ) : (
-                  <>
-                    <Link href="/auth/signin" className="chat-editorial-brand-link">
-                      Sign In
-                    </Link>
-                    <Link href="/auth/signup" className="chat-editorial-brand-link is-primary">
-                      Sign Up
-                    </Link>
-                  </>
-                )}
               </div>
 
               <button onClick={onNewChat} className="chat-editorial-side-action" type="button">
@@ -690,12 +668,12 @@ export function ChatApp() {
               </button>
 
               <div className="chat-editorial-recents">
-                <p className="text-xs uppercase tracking-[0.14em] text-[var(--chat-text-muted)]">Recents</p>
+                <p className="text-xs uppercase tracking-[0.16em] text-[var(--chat-text-muted)]">Recent chats</p>
               </div>
 
               <div className="chat-editorial-side-scroll">
                 {sessions.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-[var(--chat-border-strong)] px-4 py-5 text-sm text-[var(--chat-text-secondary)]">
+                  <div className="chat-editorial-empty-rail rounded-[1.35rem] px-4 py-5 text-sm text-[var(--chat-text-secondary)]">
                     No chats yet. Start a new one to begin.
                   </div>
                 ) : (
@@ -703,7 +681,7 @@ export function ChatApp() {
                     <button
                       key={session.id}
                       onClick={() => onSelectSession(session.id)}
-                      className={`chat-editorial-session w-full rounded-2xl px-3 py-3 text-left transition-colors ${
+                      className={`chat-editorial-session w-full rounded-[1.35rem] px-3 py-3 text-left transition-colors ${
                         session.id === activeSessionId ? "is-active" : ""
                       }`}
                       type="button"
@@ -714,6 +692,32 @@ export function ChatApp() {
                   ))
                 )}
               </div>
+
+              <div className="chat-editorial-sidebar-footer">
+                <div className="chat-editorial-sidebar-status">
+                  <span className="chat-editorial-sidebar-status-dot" aria-hidden="true" />
+                  <span>{sidebarAccountLabel}</span>
+                </div>
+                <div className="chat-editorial-brand-links">
+                  <Link href="/" className="chat-editorial-brand-link">
+                    Home
+                  </Link>
+                  {viewer && !viewer.isAnonymous ? (
+                    <Link href="/dashboard" className="chat-editorial-brand-link is-primary">
+                      Dashboard
+                    </Link>
+                  ) : (
+                    <>
+                      <Link href="/auth/signin" className="chat-editorial-brand-link">
+                        Sign in
+                      </Link>
+                      <Link href="/auth/signup" className="chat-editorial-brand-link is-primary">
+                        Sign up
+                      </Link>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </aside>
@@ -721,59 +725,112 @@ export function ChatApp() {
         {sidebarOpen ? (
           <button
             type="button"
-            className="fixed inset-0 z-30 bg-slate-900/35 backdrop-blur-[1px] md:hidden"
+            className="fixed inset-0 z-30 bg-black/55 backdrop-blur-[2px] md:hidden"
             onClick={() => setSidebarOpen(false)}
             aria-label="Close sidebar"
           />
         ) : null}
 
         <main className="relative z-10 flex min-w-0 flex-1 flex-col chat-editorial-main">
-          <header className="chat-editorial-mobile-header flex h-14 items-center justify-between px-4 md:hidden">
-            <button
-              type="button"
-              className="chat-editorial-mobile-button rounded-xl px-3 py-1.5 text-sm"
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Open chats"
-            >
-              Chats
-            </button>
-            <p className="truncate text-sm text-[var(--chat-text-secondary)]">{activeSession?.title || "New chat"}</p>
-          </header>
+          <div className="chat-editorial-shell flex min-h-0 flex-1 flex-col">
+            <header className="chat-editorial-topbar px-4 py-4 sm:px-6">
+              <div className="chat-editorial-topbar-main">
+                <button
+                  type="button"
+                  className="chat-editorial-mobile-button chat-editorial-menu-button rounded-full md:hidden"
+                  onClick={() => setSidebarOpen(true)}
+                  aria-label="Open chats"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M4.5 7.5h15M4.5 12h15M4.5 16.5h15"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.7"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </button>
 
-          <div className={`chat-editorial-shell flex min-h-0 flex-1 flex-col ${isEmpty ? "is-empty" : ""}`}>
+                <div className="min-w-0">
+                  <p className="chat-editorial-topbar-kicker">Playground 1 chat</p>
+                  <h1 className="truncate text-lg font-semibold text-[var(--chat-text-primary)] sm:text-[1.35rem]">
+                    {shellTitle}
+                  </h1>
+                  <p className="chat-editorial-topbar-meta">
+                    {loadingMessages
+                      ? "Loading conversation"
+                      : sessionTimestamp
+                        ? `Updated ${sessionTimestamp}`
+                        : isEmpty
+                          ? "Ready when you are"
+                          : "Live text session"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="chat-editorial-topbar-actions">
+                <span className="chat-editorial-model-pill hidden sm:inline-flex">Playground 1</span>
+                <Link href="/" className="chat-editorial-topbar-link">
+                  Home
+                </Link>
+                {viewer && !viewer.isAnonymous ? (
+                  <Link href="/dashboard" className="chat-editorial-topbar-link is-primary">
+                    Dashboard
+                  </Link>
+                ) : (
+                  <Link href="/auth/signin" className="chat-editorial-topbar-link is-primary">
+                    Sign in
+                  </Link>
+                )}
+              </div>
+            </header>
+
             <div
               ref={messageViewportRef}
-              className="chat-editorial-scroll flex-1 overflow-y-auto overscroll-y-contain px-4 pb-6 pt-4 sm:px-8"
+              className="chat-editorial-scroll flex-1 overflow-y-auto overscroll-y-contain px-4 pb-6 pt-2 sm:px-6"
             >
               {loadingMessages ? (
-                <div className="mx-auto w-full max-w-[860px]">
+                <div className="chat-editorial-loading mx-auto w-full max-w-[920px]">
+                  <div className="chat-editorial-spinner" aria-hidden="true" />
                   <p className="text-sm text-[var(--chat-text-secondary)]">Loading messages...</p>
                 </div>
               ) : isEmpty ? (
-                <div className="chat-editorial-empty chat-editorial-center mx-auto w-full max-w-[720px] animate-fade-in-up">
-                  <h1 className="chat-editorial-hero text-balance text-3xl font-semibold text-[var(--chat-text-primary)] sm:text-4xl">
-                    How can I help?
-                  </h1>
+                <div className="chat-editorial-empty chat-editorial-center mx-auto w-full max-w-[920px] animate-fade-in-up">
+                  <div className="chat-editorial-empty-copy">
+                    <p className="chat-editorial-kicker">Playground 1</p>
+                    <h2 className="chat-editorial-hero text-balance text-3xl font-semibold text-[var(--chat-text-primary)] sm:text-[3.4rem]">
+                      How can Playground 1 help today?
+                    </h2>
+                    <p className="chat-editorial-empty-text">
+                      Plan features, debug code, and think through your next move in one clean workspace.
+                    </p>
+                  </div>
                   <div className="mt-8 w-full">{composer}</div>
                 </div>
               ) : (
-                <div className="chat-editorial-message-list mx-auto w-full max-w-[860px] space-y-6">
+                <div className="chat-editorial-message-list mx-auto w-full max-w-[920px] space-y-8">
                   {messages.map((message) => (
                     <article
                       key={message.id}
                       className={`chat-editorial-message ${message.role === "user" ? "is-user" : "is-assistant"}`}
                     >
                       <div className="chat-editorial-avatar" aria-hidden="true">
-                        {message.role === "user" ? "U" : "AI"}
+                        {message.role === "user" ? "You" : "P1"}
                       </div>
-                      <div className="chat-editorial-bubble">
+                      <div className="chat-editorial-message-body">
                         {message.role === "assistant" ? (
-                          <AssistantMessage message={message} />
-                        ) : (
-                          <p className="whitespace-pre-wrap break-words text-sm leading-6 text-[var(--chat-text-primary)]">
-                            {message.content}
-                          </p>
-                        )}
+                          <p className="chat-editorial-message-label">Playground 1</p>
+                        ) : null}
+                        <div className="chat-editorial-bubble">
+                          {message.role === "assistant" ? (
+                            <AssistantMessage message={message} />
+                          ) : (
+                            <p className="whitespace-pre-wrap break-words text-sm leading-6 text-[var(--chat-text-primary)]">
+                              {message.content}
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </article>
                   ))}
@@ -782,7 +839,7 @@ export function ChatApp() {
             </div>
 
             {isEmpty ? null : (
-              <div className="chat-editorial-composer-wrap px-4 pb-4 pt-3 sm:px-8">{composer}</div>
+              <div className="chat-editorial-composer-wrap px-4 pb-4 pt-3 sm:px-6">{composer}</div>
             )}
           </div>
         </main>

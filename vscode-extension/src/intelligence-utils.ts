@@ -1,5 +1,3 @@
-export type RunProfile = "standard" | "deep_focus";
-
 export type RetrievalHints = {
   mentionedPaths: string[];
   candidateSymbols: string[];
@@ -16,13 +14,6 @@ export type IndexChunkMetadata = {
   summary: string;
   source?: "cloud" | "local_fallback";
   reason?: string;
-};
-
-export type ImageCapableModelEntry = {
-  alias: string;
-  capabilities?: {
-    supportsImages?: boolean;
-  };
 };
 
 function dedupeStrings(values: Iterable<string>, limit: number, maxLen = 512): string[] {
@@ -47,26 +38,6 @@ export function normalizeContextPath(input: string | null | undefined): string {
     .replace(/^\.\/+/, "")
     .replace(/^\/+/, "")
     .replace(/[),.;:!?]+$/g, "");
-}
-
-export function resolveRunProfileFromLegacyParallel(input?: {
-  runProfile?: string | null | undefined;
-  parallel?: boolean | null | undefined;
-}): RunProfile {
-  if (input?.runProfile === "deep_focus" || input?.runProfile === "standard") {
-    return input.runProfile;
-  }
-  return input?.parallel ? "deep_focus" : "standard";
-}
-
-export function modelSupportsImages(
-  selectedModelAlias: string | null | undefined,
-  catalog: ImageCapableModelEntry[] | undefined
-): boolean {
-  const selected = String(selectedModelAlias || "").trim().toLowerCase();
-  if (!selected) return false;
-  const match = (catalog || []).find((entry) => String(entry.alias || "").trim().toLowerCase() === selected);
-  return match?.capabilities?.supportsImages === true;
 }
 
 export function buildRetrievalHints(input: {
@@ -124,7 +95,9 @@ export function buildIndexChunkMetadata(input: {
     .split("\n");
   const symbolNames = dedupeStrings(
     lines.flatMap((line) => {
-      const matches = line.match(/\b(?:export\s+)?(?:async\s+)?(?:function|class|const|let|var|interface|type)\s+([A-Za-z_][A-Za-z0-9_]*)/g) || [];
+      const matches =
+        line.match(/\b(?:export\s+)?(?:async\s+)?(?:function|class|const|let|var|interface|type)\s+([A-Za-z_][A-Za-z0-9_]*)/g) ||
+        [];
       return matches.map((match) => {
         const symbol = /([A-Za-z_][A-Za-z0-9_]*)\s*$/.exec(match);
         return symbol?.[1] || "";

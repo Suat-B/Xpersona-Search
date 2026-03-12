@@ -1,30 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  matchValidationAdapter,
-  normalizeValidationAdapters,
   planQuickValidationForFile,
   selectBuiltInValidationRunner,
   substituteValidationCommand,
 } from "../src/validation-utils";
 
 describe("validation utils", () => {
-  it("uses the first matching adapter", () => {
-    const adapters = normalizeValidationAdapters([
-      {
-        name: "pine-fast",
-        patterns: ["**/*.pine"],
-        commands: ["echo pine"],
-      },
-      {
-        name: "all-files",
-        patterns: ["**/*"],
-        commands: ["echo all"],
-      },
-    ]);
-
-    expect(matchValidationAdapter("One/strategies/pending/test.pine", adapters)?.name).toBe("pine-fast");
-  });
-
   it("substitutes validation command template variables", () => {
     expect(
       substituteValidationCommand("python ${absFile} --cwd ${workspaceFolder} --rel ${file}", {
@@ -77,7 +58,6 @@ describe("validation utils", () => {
       absFile: "C:/repo/src/app.ts",
       workspaceFolder: "C:/repo",
       changed: true,
-      adapters: [],
       hasWorkspaceLintScript: true,
       pythonAvailable: false,
     });
@@ -86,50 +66,21 @@ describe("validation utils", () => {
     expect(plan.commands).toEqual(["git diff --check -- src/app.ts", "npm run lint -- src/app.ts"]);
   });
 
-  it("plans quick validation for a pine file with an adapter", () => {
-    const adapters = normalizeValidationAdapters([
-      {
-        name: "pine-check",
-        patterns: ["One/strategies/**/*.pine"],
-        commands: ["python scripts/check-pine.py ${absFile}"],
-        timeoutMs: 90000,
-      },
-    ]);
-
+  it("falls back to sanity-only validation when there is no built-in runner", () => {
     const plan = planQuickValidationForFile({
-      filePath: "One/strategies/pending/Emergent_Swarm_Intelligence.pine",
-      absFile: "C:/repo/One/strategies/pending/Emergent_Swarm_Intelligence.pine",
+      filePath: "docs/notes.md",
+      absFile: "C:/repo/docs/notes.md",
       workspaceFolder: "C:/repo",
       changed: true,
-      adapters,
       hasWorkspaceLintScript: false,
       pythonAvailable: false,
     });
 
     expect(plan.status).toBe("ready");
-    expect(plan.runnerLabel).toBe("pine-check");
-    expect(plan.commands).toEqual([
-      "git diff --check -- One/strategies/pending/Emergent_Swarm_Intelligence.pine",
-      "python scripts/check-pine.py C:/repo/One/strategies/pending/Emergent_Swarm_Intelligence.pine",
-    ]);
-  });
-
-  it("falls back to sanity-only validation for pine files without an adapter", () => {
-    const plan = planQuickValidationForFile({
-      filePath: "One/strategies/pending/Emergent_Swarm_Intelligence.pine",
-      absFile: "C:/repo/One/strategies/pending/Emergent_Swarm_Intelligence.pine",
-      workspaceFolder: "C:/repo",
-      changed: true,
-      adapters: [],
-      hasWorkspaceLintScript: false,
-      pythonAvailable: false,
-    });
-
-    expect(plan.status).toBe("ready");
-    expect(plan.reason).toBe("sanity_only_validation:.pine");
+    expect(plan.reason).toBe("sanity_only_validation:.md");
     expect(plan.runnerLabel).toBe("git diff sanity");
     expect(plan.coverage).toBe("sanity_only");
-    expect(plan.commands).toEqual(["git diff --check -- One/strategies/pending/Emergent_Swarm_Intelligence.pine"]);
+    expect(plan.commands).toEqual(["git diff --check -- docs/notes.md"]);
   });
 
   it("skips quick validation for no-op edits", () => {
@@ -138,7 +89,6 @@ describe("validation utils", () => {
       absFile: "C:/repo/src/app.ts",
       workspaceFolder: "C:/repo",
       changed: false,
-      adapters: [],
       hasWorkspaceLintScript: true,
       pythonAvailable: false,
     });
