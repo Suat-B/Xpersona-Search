@@ -1646,8 +1646,8 @@ export function composeWarmAssistantResponse(input: {
           ? "Next action: auto-apply was requested. Confirm applied files and validation results in Execution and terminal."
           : "Next action: auto-apply was requested. Confirm what was actually applied in the Execution panel.";
     const headline = touched
-      ? `I drafted a proposed update for ${touched}.`
-      : "I drafted a proposed implementation, but no concrete file target was identified yet.";
+      ? `Prepared file edits for ${touched}.`
+      : "Prepared file edits, but no concrete file target was identified yet.";
     return [
       headline,
       resultLine ? resultLine : "",
@@ -1844,6 +1844,27 @@ function soundsLikeCompletedWorkClaim(text: string): boolean {
   if (/\b(i can|i could|i would|please share|need more|can't|cannot|unable|not able)\b/.test(normalized)) return false;
   if (/\?$/.test(normalized)) return false;
   return /\b(updated|implemented|changed|fixed|added|created|set|increased|decreased|done|completed|applied)\b/.test(normalized);
+}
+
+function soundsLikeNarrativeEditClaim(text: string): boolean {
+  const normalized = String(text || "").trim().toLowerCase();
+  if (!normalized) return false;
+  if (isClarificationResponseText(normalized)) return false;
+  if (
+    /\b(no repository changes were applied|no file edits were applied|no concrete file edits are staged yet|validation commands are withheld)\b/.test(
+      normalized
+    )
+  ) {
+    return false;
+  }
+  if (
+    /\b(i drafted|drafted a proposed update|drafted a proposed implementation|proposed update|prepared an update|prepared edits)\b/.test(
+      normalized
+    )
+  ) {
+    return true;
+  }
+  return soundsLikeCompletedWorkClaim(normalized);
 }
 
 function extractUnifiedDiffEdits(raw: string): Array<{ path: string; patch: string; rationale?: string }> {
@@ -2435,7 +2456,7 @@ function buildValidationPlan(input: {
   const kinds = new Set(touchedFiles.map(detectLanguageFromPath));
   const primaryFile = touchedFiles[0];
 
-  // Always run at least one lightweight validation step for real file edits.
+  // These are batch/final checks; the extension still runs per-file quick validation after apply.
   checks.push(`git diff --check -- ${primaryFile}`);
 
   if (kinds.has("ts") || kinds.has("js")) {
@@ -2459,8 +2480,8 @@ function buildValidationPlan(input: {
       checks.length === 0
         ? "No reliable auto-validation command was inferred for touched files."
         : input.decisionMode === "debug"
-          ? "Targeted validation selected to verify the specific fix path."
-          : "Targeted validation selected from touched files and language signals.",
+          ? "Batch validation selected to verify the specific fix path after local per-file checks."
+          : "Batch validation selected from touched files and language signals; local per-file validation still runs after apply.",
   };
 }
 
@@ -3083,6 +3104,14 @@ export async function runAssist(
           logs.push("clarification_overridden_by_context");
         }
       };
+      const recordNarrativeClaimIfNeeded = (candidate: string) => {
+        if (usable || !soundsLikeNarrativeEditClaim(candidate)) return;
+        if (!reasonCodes.includes("narrative_edit_claim_without_actions")) {
+          reasonCodes.push("narrative_edit_claim_without_actions");
+        }
+        logs.push("narrative_edit_claim_without_actions");
+      };
+      recordNarrativeClaimIfNeeded(raw || final);
       applyClarificationOverride();
 
       if (!usable && !clarification) {
@@ -3115,6 +3144,7 @@ export async function runAssist(
         }
         usable = hasUsableActions(edits, modelCommands, structuredActions);
         clarification = isClarificationResponseText(final);
+        recordNarrativeClaimIfNeeded(repairRaw || final);
         applyClarificationOverride();
       }
 
@@ -3151,6 +3181,7 @@ export async function runAssist(
         }
         usable = hasUsableActions(edits, modelCommands, structuredActions);
         clarification = isClarificationResponseText(final);
+        recordNarrativeClaimIfNeeded(enforceRaw || final);
         applyClarificationOverride();
       }
 
@@ -3187,6 +3218,7 @@ export async function runAssist(
         }
         usable = hasUsableActions(edits, modelCommands, structuredActions);
         clarification = isClarificationResponseText(final);
+        recordNarrativeClaimIfNeeded(assumptionRaw || final);
         applyClarificationOverride();
       }
 
@@ -3232,6 +3264,7 @@ export async function runAssist(
         }
         usable = hasUsableActions(edits, modelCommands, structuredActions);
         clarification = isClarificationResponseText(final);
+        recordNarrativeClaimIfNeeded(rewriteRaw || final);
         applyClarificationOverride();
       }
 
@@ -3246,6 +3279,7 @@ export async function runAssist(
           logs.push("fallback_trailing_stop_patch");
           usable = hasUsableActions(edits, modelCommands, structuredActions);
           clarification = isClarificationResponseText(final);
+          recordNarrativeClaimIfNeeded(raw || final);
           applyClarificationOverride();
         }
       }
@@ -3428,7 +3462,7 @@ export async function runAssist(
     codeEditIntent &&
     !hasFileActions &&
     !isClarificationResponseText(final) &&
-    soundsLikeCompletedWorkClaim(final)
+    soundsLikeNarrativeEditClaim(final)
   ) {
     final = `${actionability.reason}\n\nNo repository changes were applied yet. The previous reply described intended work, but no file-edit action was actually produced.`;
     logs.push("no_action_guardrail=rewrote_false_completion_claim");

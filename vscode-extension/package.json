@@ -283,6 +283,51 @@
                     "type": "boolean",
                     "default": true,
                     "description": "Enable @ mention autocomplete for workspace files and folders in Playground 1 chat."
+                },
+                "xpersona.playground.validationAdapters": {
+                    "type": "array",
+                    "default": [],
+                    "description": "Per-file quick validation adapters. First matching adapter wins and runs after each changed file is applied.",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "name",
+                            "patterns",
+                            "commands"
+                        ],
+                        "additionalProperties": false,
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "description": "Human-readable adapter label shown in validation diagnostics."
+                            },
+                            "patterns": {
+                                "type": "array",
+                                "description": "Workspace-relative glob patterns. The first matching adapter wins.",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "commands": {
+                                "type": "array",
+                                "description": "Shell command templates run sequentially after a matching file edit. Supports ${file}, ${absFile}, and ${workspaceFolder}.",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "timeoutMs": {
+                                "type": "number",
+                                "default": 60000,
+                                "minimum": 1,
+                                "description": "Timeout in milliseconds for each adapter command."
+                            },
+                            "continueOnFailure": {
+                                "type": "boolean",
+                                "default": false,
+                                "description": "Continue running later adapter commands after a failure."
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -44,6 +44,8 @@ const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const child_process_1 = require("child_process");
 const patch_utils_1 = require("./patch-utils");
+const validation_utils_1 = require("./validation-utils");
+const apply_recovery_utils_1 = require("./apply-recovery-utils");
 const API_KEY_SECRET = "xpersona.apiKey";
 const API_KEY_LEGACY_SECRET = "xpersona.playground.apiKey";
 const API_KEY_FALLBACK_STATE_KEY = "xpersona.playground.apiKeyFallback";
@@ -62,6 +64,7 @@ const AUTONOMY_NO_CLARIFY_CONFIG_KEY = "autonomy.noClarifyToUser";
 const AUTONOMY_COMMAND_POLICY_CONFIG_KEY = "autonomy.commandPolicy";
 const AUTONOMY_SAFETY_FLOOR_CONFIG_KEY = "autonomy.safetyFloor";
 const AUTONOMY_FAILSAFE_CONFIG_KEY = "autonomy.failsafe";
+const VALIDATION_ADAPTERS_CONFIG_KEY = "validationAdapters";
 const DEFAULT_PLAYGROUND_MODEL = "openai/gpt-oss-120b:fastest";
 const BACKUP_PLAYGROUND_MODEL = "mistralai/mistral-nemotron";
 const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
@@ -459,6 +462,9 @@ class Provider {
         this.vscodeSignedInEmail = null;
         this.pendingPkce = null;
         this.undoBatches = [];
+        this.commandAvailabilityCache = new Map();
+        this.workspaceLintScriptCache = null;
+        this.lastAssistRequest = null;
         this.mode = ctx.workspaceState.get(MODE_KEY) ?? "auto";
         this.safety = ctx.workspaceState.get(SAFETY_KEY) ?? "standard";
         this.modeStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 80);
@@ -2026,28 +2032,38 @@ class Provider {
             ? meta.missingRequirements.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
             : [];
         const localOutcome = this.lastActionOutcome;
+        const localApplyFailure = meta.localApplyFailure;
         const filesChanged = Number(localOutcome?.filesChanged || 0);
         const checksRun = Number(localOutcome?.checksRun || 0);
+        const perFileRows = Array.isArray(localOutcome?.perFile) ? localOutcome.perFile : [];
         const localAppliedFiles = Array.isArray(localOutcome?.appliedFiles)
             ? localOutcome.appliedFiles.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
             : [];
         const isConversation = this.isConversationalPrompt(task) || this.isSmallTalkPrompt(task);
         const reportedTargetFiles = Array.isArray(meta.validationPlan?.touchedFiles) && meta.validationPlan?.touchedFiles.filter(Boolean).length > 0;
-        const localFileActions = Array.isArray(localOutcome?.perFile) && localOutcome.perFile.some((row) => typeof row.path === "string");
-        const plannedChecks = Array.isArray(meta.validationPlan?.checks)
-            ? meta.validationPlan.checks.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
-            : [];
+        const localFileActions = perFileRows.some((row) => typeof row.path === "string");
         const editIntent = !isConversation &&
             ((this.wantsCodeEdits(task) && !this.isConversationalPrompt(task)) || reportedTargetFiles || localFileActions);
         const missing = Array.from(new Set(missingFromMeta));
-        if (editIntent && filesChanged === 0)
+        const changedFileRows = perFileRows.filter((row) => row.changed && row.resourceKind !== "directory");
+        const changedButNotValidated = changedFileRows.filter((row) => row.validationStatus !== "passed");
+        if (editIntent && changedFileRows.length === 0)
             missing.push("local_file_mutation_required");
-        if (editIntent && filesChanged > 0 && plannedChecks.length > 0 && checksRun === 0) {
-            missing.push("validation_run_required");
+        for (const row of changedButNotValidated) {
+            if (row.validationStatus === "missing_runner") {
+                missing.push(row.validationReason || `missing_validation_runner:${row.path}`);
+            }
+            else if (row.validationStatus === "failed") {
+                missing.push(row.validationReason || `validation_failed:${row.path}`);
+            }
+            else {
+                missing.push(row.validationReason || "validation_run_required");
+            }
         }
         const completionStatus = meta.completionStatus === "incomplete" || missing.length > 0 ? "incomplete" : "complete";
         const done = completionStatus === "complete" && (!editIntent || filesChanged > 0);
-        const blocker = (missing.length > 0 ? missing.join(", ") : "") ||
+        const blocker = (localApplyFailure?.reason ? `${localApplyFailure.category || "local_apply_failure"}: ${localApplyFailure.reason}` : "") ||
+            (missing.length > 0 ? missing.join(", ") : "") ||
             actionabilityReason ||
             String(localOutcome?.summary || "").trim() ||
             "Completion contract not satisfied yet.";
@@ -2056,8 +2072,10 @@ class Provider {
             completionScore += 50;
         if (filesChanged > 0)
             completionScore += 35;
-        if (checksRun > 0)
+        if (changedFileRows.length > 0 && changedButNotValidated.length === 0)
             completionScore += 15;
+        else if (checksRun > 0)
+            completionScore += 5;
         if (done)
             completionScore = 100;
         completionScore = Math.max(0, Math.min(100, completionScore));
@@ -2076,6 +2094,7 @@ class Provider {
         const missing = input.missingRequirements.length
             ? input.missingRequirements.join(", ")
             : "unspecified";
+        const localApplyFailure = this.lastRunMeta?.localApplyFailure;
         const parts = [
             input.objective.trim(),
             "",
@@ -2083,10 +2102,15 @@ class Provider {
             `Missing requirements: ${missing}.`,
             `Blocker: ${input.blocker}.`,
             `Observed local outcomes: filesChanged=${input.filesChanged}, checksRun=${input.checksRun}.`,
+            localApplyFailure?.path
+                ? `Last local apply failure: ${localApplyFailure.category || "unknown"} on ${localApplyFailure.path}. ${localApplyFailure.reason || ""}`.trim()
+                : "",
+            localApplyFailure?.retryStage ? `Required recovery stage: ${localApplyFailure.retryStage}.` : "",
             "Rules: do not ask the user for clarification. Infer targets from available IDE context and return concrete file actions.",
             "Rules: for edit-intent tasks, command-only output is invalid. Return at least one edit/write_file/mkdir action.",
+            "Rules: each changed file only counts as complete after a real quick validation runner passes for that file.",
             input.hintedTargetPath ? `Primary target file hint: ${input.hintedTargetPath}` : "",
-            "Then include any validation commands needed to confirm the change.",
+            "Then include any batch validation commands needed after the file edits.",
         ];
         return parts.filter(Boolean).join("\n");
     }
@@ -2107,6 +2131,207 @@ class Provider {
         catch {
             return null;
         }
+    }
+    getValidationAdapters() {
+        const config = vscode.workspace.getConfiguration("xpersona.playground");
+        return (0, validation_utils_1.normalizeValidationAdapters)(config.get(VALIDATION_ADAPTERS_CONFIG_KEY) || []);
+    }
+    async workspaceHasLintScript() {
+        if (this.workspaceLintScriptCache)
+            return this.workspaceLintScriptCache;
+        this.workspaceLintScriptCache = (async () => {
+            const root = this.getWorkspaceRoot();
+            if (!root)
+                return false;
+            try {
+                const packageJsonUri = vscode.Uri.joinPath(root.uri, "package.json");
+                const buf = await vscode.workspace.fs.readFile(packageJsonUri);
+                const parsed = JSON.parse(Buffer.from(buf).toString("utf8"));
+                return typeof parsed?.scripts?.lint === "string" && parsed.scripts.lint.trim().length > 0;
+            }
+            catch {
+                return false;
+            }
+        })();
+        return this.workspaceLintScriptCache;
+    }
+    async commandExists(command) {
+        const normalized = String(command || "").trim().toLowerCase();
+        if (!normalized)
+            return false;
+        const cached = this.commandAvailabilityCache.get(normalized);
+        if (cached)
+            return cached;
+        const probe = new Promise((resolve) => {
+            if (process.platform === "win32") {
+                (0, child_process_1.execFile)("where.exe", [normalized], { windowsHide: true, timeout: 8000 }, (error) => resolve(!error));
+                return;
+            }
+            (0, child_process_1.execFile)("bash", ["-lc", `command -v ${normalized}`], { windowsHide: true, timeout: 8000 }, (error) => resolve(!error));
+        });
+        this.commandAvailabilityCache.set(normalized, probe);
+        return probe;
+    }
+    async runQuickValidationForFile(input) {
+        const rel = normalizeWorkspaceRelativePath(input.path || "");
+        if (!rel || !looksLikeWorkspaceFilePath(rel) || !input.changed) {
+            return { status: "skipped", reason: "No file content changed.", commandsRun: 0, commands: [] };
+        }
+        const root = this.getWorkspaceRoot();
+        if (!root) {
+            return { status: "failed", reason: `validation_failed:${rel}`, commandsRun: 0, commands: [] };
+        }
+        const snapshot = input.undoSnapshot;
+        if (!snapshot) {
+            input.addExecutionEvent?.("quick_validation_missing_snapshot", `${rel}: missing pre-edit snapshot.`, "error");
+            return { status: "failed", reason: `validation_failed:${rel}`, commandsRun: 0, commands: [] };
+        }
+        const target = vscode.Uri.joinPath(root.uri, ...rel.split("/").filter(Boolean));
+        let currentContent = "";
+        try {
+            const buf = await vscode.workspace.fs.readFile(target);
+            currentContent = Buffer.from(buf).toString("utf8");
+        }
+        catch {
+            input.addExecutionEvent?.("quick_validation_missing_file", `${rel}: edited file could not be read back.`, "error");
+            return { status: "failed", reason: `validation_failed:${rel}`, commandsRun: 0, commands: [] };
+        }
+        if (snapshot.existed ? currentContent === snapshot.content : currentContent.length === 0) {
+            input.addExecutionEvent?.("quick_validation_mutation_assert_failed", `${rel}: file content did not differ from the pre-edit snapshot.`, "error");
+            return { status: "failed", reason: `validation_failed:${rel}`, commandsRun: 0, commands: [] };
+        }
+        const [hasWorkspaceLintScript, pythonAvailable] = await Promise.all([
+            this.workspaceHasLintScript(),
+            this.commandExists("python"),
+        ]);
+        const plan = (0, validation_utils_1.planQuickValidationForFile)({
+            filePath: rel,
+            absFile: target.fsPath,
+            workspaceFolder: root.uri.fsPath,
+            changed: true,
+            adapters: this.getValidationAdapters(),
+            hasWorkspaceLintScript,
+            pythonAvailable,
+        });
+        if (plan.status === "skipped") {
+            return { status: "skipped", reason: plan.reason, commandsRun: 0, commands: [] };
+        }
+        const executedCommands = [];
+        let commandsRun = 0;
+        let hadRunnerFailure = false;
+        for (const step of plan.steps) {
+            this.postRun(input.threadId, { type: "terminalCommand", command: step.command });
+            const result = await this.runApprovedCommand(step.command, input.threadId, input.addExecutionEvent, {
+                timeoutMs: step.timeoutMs,
+            });
+            executedCommands.push(step.command);
+            commandsRun += 1;
+            if (!result.ok) {
+                hadRunnerFailure = true;
+                const code = step.kind === "sanity" ? "quick_validation_sanity_failed" : "quick_validation_failed";
+                input.addExecutionEvent?.(code, `${rel}: ${step.label} failed.`, "error");
+                if (!step.continueOnFailure) {
+                    return {
+                        status: "failed",
+                        reason: `validation_failed:${rel}`,
+                        commandsRun,
+                        commands: executedCommands,
+                    };
+                }
+            }
+        }
+        if (plan.status === "missing_runner") {
+            const reason = String(plan.reason || `missing_validation_runner:${rel}`);
+            input.addExecutionEvent?.("quick_validation_missing_runner", `${rel}: ${reason}`, "warn");
+            return {
+                status: "missing_runner",
+                reason,
+                commandsRun,
+                commands: executedCommands.length > 0 ? executedCommands : plan.commands,
+            };
+        }
+        if (hadRunnerFailure) {
+            return {
+                status: "failed",
+                reason: `validation_failed:${rel}`,
+                commandsRun,
+                commands: executedCommands,
+            };
+        }
+        input.addExecutionEvent?.("quick_validation_passed", `${rel}: quick validation passed.`, "info");
+        return {
+            status: "passed",
+            commandsRun,
+            commands: executedCommands,
+        };
+    }
+    publishLocalApplyFailureMeta(input) {
+        this.lastRunMeta = {
+            ...(this.lastRunMeta || {}),
+            localApplyFailure: {
+                path: input.path,
+                actionKind: input.actionKind,
+                category: input.category,
+                reason: input.reason,
+                retryStage: input.retryStage,
+                attemptedStages: input.attemptedStages,
+            },
+        };
+        this.postRun(this.activeThreadId, { type: "meta", data: this.lastRunMeta });
+    }
+    async attemptLocalApplyRecovery(input) {
+        const request = this.lastAssistRequest;
+        if (!request)
+            return false;
+        const nextStage = (0, apply_recovery_utils_1.nextLocalRecoveryStage)(input.failure.attemptedStages, input.failure.path);
+        if (!nextStage) {
+            this.publishLocalApplyFailureMeta({
+                ...input.failure,
+                retryStage: "final_failure",
+            });
+            return false;
+        }
+        this.publishLocalApplyFailureMeta({
+            ...input.failure,
+            retryStage: nextStage,
+        });
+        const retryTask = (0, apply_recovery_utils_1.buildLocalApplyRetryTask)({
+            objective: request.task,
+            filePath: input.failure.path,
+            category: input.failure.category,
+            reason: input.failure.reason,
+            stage: nextStage,
+        });
+        this.postRun(input.runThreadId, {
+            type: "status",
+            text: `Local apply failed for ${input.failure.path} (${input.failure.category}). Retrying with ${nextStage.replace(/_/g, " ")}...`,
+        });
+        await this.askSingleCycle(retryTask, request.parallel, request.model, request.reasoning, {
+            ...request.options,
+            threadId: input.runThreadId || request.options.threadId,
+            contextRetryAttempted: true,
+            localApplyRecoveryAttempted: [...input.failure.attemptedStages, nextStage],
+            autonomousLoop: false,
+        });
+        this.postDiagnosticsBundle(input.runThreadId, {
+            traceId: input.traceId,
+            stage: "execute",
+            summary: `Retried after local apply failure using ${nextStage}.`,
+            model: modelLabelForUi(request.model),
+            reasoning: request.reasoning,
+            mode: this.mode,
+            startedAt: Date.now(),
+            endedAt: Date.now(),
+            events: [
+                {
+                    code: "local_apply_retry",
+                    message: `Retried ${input.failure.path} after ${input.failure.category} using ${nextStage}.`,
+                    severity: "warn",
+                    ts: Date.now(),
+                },
+            ],
+        });
+        return true;
     }
     async ask(text, parallel, model = DEFAULT_PLAYGROUND_MODEL, reasoning = "medium", options = {}) {
         const autonomy = this.getAutonomyProfile();
@@ -2266,6 +2491,13 @@ class Provider {
         }
     }
     async askSingleCycle(text, parallel, model = DEFAULT_PLAYGROUND_MODEL, reasoning = "medium", options = {}) {
+        this.lastAssistRequest = {
+            task: text,
+            parallel,
+            model,
+            reasoning,
+            options: { ...options },
+        };
         this.lastActionOutcome = null;
         const cycleContext = options.autonomyCycle;
         const objectiveText = cycleContext?.objective || String(text || "").trim();
@@ -3349,13 +3581,23 @@ class Provider {
         let appliedEdits = 0;
         let launchedCommands = 0;
         let commandFailures = 0;
+        let validationFailures = 0;
+        let missingValidationRunners = 0;
         const applyErrors = [];
         const changedPaths = new Set();
         const perFileStatuses = [];
         const undoFileSnapshots = new Map();
         const undoCreatedDirs = new Set();
         const approvedCommands = [];
-        for (const row of results) {
+        let haltedValidation = null;
+        let haltedAtResultIndex = null;
+        let primaryLocalApplyFailure = null;
+        for (let index = 0; index < results.length; index += 1) {
+            const row = results[index];
+            if (haltedValidation) {
+                haltedAtResultIndex = index - 1;
+                break;
+            }
             if (row.status !== "approved" || !row.action)
                 continue;
             if (row.action.type === "edit") {
@@ -3363,43 +3605,139 @@ class Provider {
                 if (previewPatch.trim()) {
                     this.postRun(runThreadId, { type: "editPreview", path: row.action.path || "unknown", patch: previewPatch });
                 }
+                const relPath = normalizeWorkspaceRelativePath(row.action.path || "") || row.action.path || "unknown";
                 const applied = await this.applyEditAction({
                     path: row.action.path,
                     patch: row.action.patch,
                     diff: row.action.diff,
                 }, undoFileSnapshots);
-                perFileStatuses.push({
-                    path: row.action.path || "unknown",
-                    status: applied.status,
-                    ...(applied.reason ? { reason: applied.reason } : {}),
-                });
+                const perFileEntry = {
+                    path: relPath,
+                    actionKind: "edit",
+                    editStatus: applied.status,
+                    applyCategory: applied.changed ? "applied" : undefined,
+                    ...(applied.reason ? { editReason: applied.reason } : {}),
+                    validationStatus: "skipped",
+                    validationReason: applied.changed ? "validation_run_required" : "No file content changed.",
+                    validationCommands: [],
+                    changed: applied.changed,
+                    resourceKind: "file",
+                };
+                perFileStatuses.push(perFileEntry);
                 if (applied.status === "applied" || applied.status === "partial") {
                     if (applied.changed) {
                         appliedEdits += 1;
-                        changedPaths.add(row.action.path || "unknown");
+                        changedPaths.add(relPath);
+                        const validation = await this.runQuickValidationForFile({
+                            path: relPath,
+                            changed: true,
+                            undoSnapshot: undoFileSnapshots.get(relPath),
+                            threadId: runThreadId,
+                            addExecutionEvent,
+                        });
+                        launchedCommands += validation.commandsRun;
+                        perFileEntry.validationStatus = validation.status;
+                        perFileEntry.validationReason = validation.reason;
+                        perFileEntry.validationCommands = validation.commands;
+                        if (validation.status === "failed") {
+                            validationFailures += 1;
+                            commandFailures += 1;
+                            haltedValidation = { path: relPath, status: validation.status, reason: validation.reason };
+                        }
+                        else if (validation.status === "missing_runner") {
+                            missingValidationRunners += 1;
+                            haltedValidation = { path: relPath, status: validation.status, reason: validation.reason };
+                        }
                     }
                     this.postRun(runThreadId, {
                         type: "fileAction",
-                        path: row.action.path || "unknown",
+                        path: relPath,
                         status: applied.status,
-                        reason: applied.reason || (applied.changed ? "" : "Patch produced no file changes."),
+                        reason: applied.reason ||
+                            (applied.changed
+                                ? haltedValidation?.path === relPath && haltedValidation.reason
+                                    ? haltedValidation.reason
+                                    : perFileEntry.validationStatus === "passed"
+                                        ? "Patch applied and quick validation passed."
+                                        : "Patch applied."
+                                : "Patch produced no file changes."),
                     });
+                    if (!applied.changed) {
+                        const classified = (0, apply_recovery_utils_1.classifyLocalApplyFailure)({
+                            actionKind: "edit",
+                            status: applied.status,
+                            reason: applied.reason,
+                            changed: applied.changed,
+                            path: relPath,
+                            targetExistedBefore: applied.targetExistedBefore,
+                        });
+                        perFileEntry.applyCategory = classified.category;
+                        perFileEntry.editReason = classified.summary;
+                        if (!primaryLocalApplyFailure) {
+                            primaryLocalApplyFailure = {
+                                path: relPath,
+                                actionKind: "edit",
+                                category: classified.category,
+                                reason: classified.summary,
+                                retryable: classified.retryable,
+                                attemptedStages: Array.isArray(this.lastAssistRequest?.options.localApplyRecoveryAttempted)
+                                    ? this.lastAssistRequest?.options.localApplyRecoveryAttempted || []
+                                    : [],
+                            };
+                        }
+                        this.postRun(runThreadId, {
+                            type: "status",
+                            text: `Local apply rejected edit for ${relPath}: ${classified.category}. ${classified.summary}`,
+                        });
+                    }
                 }
                 else if (applied.reason) {
-                    applyErrors.push(`${row.action.path || "unknown"}: ${applied.reason}`);
+                    const classified = (0, apply_recovery_utils_1.classifyLocalApplyFailure)({
+                        actionKind: "edit",
+                        status: applied.status,
+                        reason: applied.reason,
+                        changed: applied.changed,
+                        path: relPath,
+                        targetExistedBefore: applied.targetExistedBefore,
+                    });
+                    perFileEntry.applyCategory = classified.category;
+                    perFileEntry.editReason = classified.summary;
+                    applyErrors.push(`${relPath}: ${classified.summary}`);
+                    if (!primaryLocalApplyFailure) {
+                        primaryLocalApplyFailure = {
+                            path: relPath,
+                            actionKind: "edit",
+                            category: classified.category,
+                            reason: classified.summary,
+                            retryable: classified.retryable,
+                            attemptedStages: Array.isArray(this.lastAssistRequest?.options.localApplyRecoveryAttempted)
+                                ? this.lastAssistRequest?.options.localApplyRecoveryAttempted || []
+                                : [],
+                        };
+                    }
+                    this.postRun(runThreadId, {
+                        type: "status",
+                        text: `Local apply rejected edit for ${relPath}: ${classified.category}. ${classified.summary}`,
+                    });
                 }
             }
             else if (row.action.type === "mkdir" && row.action.path) {
                 const applied = await this.applyMkdirAction({ path: row.action.path }, undoCreatedDirs);
                 perFileStatuses.push({
                     path: row.action.path,
-                    status: applied.status,
-                    ...(applied.reason ? { reason: applied.reason } : {}),
+                    actionKind: "mkdir",
+                    editStatus: applied.status,
+                    applyCategory: applied.changed ? "applied" : undefined,
+                    ...(applied.reason ? { editReason: applied.reason } : {}),
+                    validationStatus: "skipped",
+                    validationReason: "Quick validation only runs for file edits.",
+                    validationCommands: [],
+                    changed: applied.changed,
+                    resourceKind: "directory",
                 });
                 if (applied.status === "applied") {
                     if (applied.changed) {
                         appliedEdits += 1;
-                        changedPaths.add(row.action.path);
                     }
                     this.postRun(runThreadId, {
                         type: "fileAction",
@@ -3413,43 +3751,140 @@ class Provider {
                 }
             }
             else if (row.action.type === "write_file" && row.action.path) {
+                const relPath = normalizeWorkspaceRelativePath(row.action.path || "") || row.action.path;
                 const applied = await this.applyWriteFileAction({
                     path: row.action.path,
                     content: typeof row.action.content === "string" ? row.action.content : "",
                     overwrite: typeof row.action.overwrite === "boolean" ? row.action.overwrite : true,
                 }, undoFileSnapshots);
-                perFileStatuses.push({
-                    path: row.action.path,
-                    status: applied.status,
-                    ...(applied.reason ? { reason: applied.reason } : {}),
-                });
+                const perFileEntry = {
+                    path: relPath,
+                    actionKind: "write_file",
+                    editStatus: applied.status,
+                    applyCategory: applied.changed ? "applied" : undefined,
+                    ...(applied.reason ? { editReason: applied.reason } : {}),
+                    validationStatus: "skipped",
+                    validationReason: applied.changed ? "validation_run_required" : "No file content changed.",
+                    validationCommands: [],
+                    changed: applied.changed,
+                    resourceKind: "file",
+                };
+                perFileStatuses.push(perFileEntry);
                 if (applied.status === "applied") {
                     if (applied.changed) {
                         appliedEdits += 1;
-                        changedPaths.add(row.action.path);
+                        changedPaths.add(relPath);
+                        const validation = await this.runQuickValidationForFile({
+                            path: relPath,
+                            changed: true,
+                            undoSnapshot: undoFileSnapshots.get(relPath),
+                            threadId: runThreadId,
+                            addExecutionEvent,
+                        });
+                        launchedCommands += validation.commandsRun;
+                        perFileEntry.validationStatus = validation.status;
+                        perFileEntry.validationReason = validation.reason;
+                        perFileEntry.validationCommands = validation.commands;
+                        if (validation.status === "failed") {
+                            validationFailures += 1;
+                            commandFailures += 1;
+                            haltedValidation = { path: relPath, status: validation.status, reason: validation.reason };
+                        }
+                        else if (validation.status === "missing_runner") {
+                            missingValidationRunners += 1;
+                            haltedValidation = { path: relPath, status: validation.status, reason: validation.reason };
+                        }
                     }
                     this.postRun(runThreadId, {
                         type: "fileAction",
-                        path: row.action.path,
+                        path: relPath,
                         status: "applied",
-                        reason: applied.reason || (applied.changed ? "File created/updated" : "File already matched requested content."),
+                        reason: applied.reason ||
+                            (applied.changed
+                                ? haltedValidation?.path === relPath && haltedValidation.reason
+                                    ? haltedValidation.reason
+                                    : perFileEntry.validationStatus === "passed"
+                                        ? "File created/updated and quick validation passed."
+                                        : "File created/updated."
+                                : "File already matched requested content."),
                     });
+                    if (!applied.changed) {
+                        const classified = (0, apply_recovery_utils_1.classifyLocalApplyFailure)({
+                            actionKind: "write_file",
+                            status: applied.status,
+                            reason: applied.reason,
+                            changed: applied.changed,
+                            path: relPath,
+                            targetExistedBefore: applied.targetExistedBefore,
+                        });
+                        perFileEntry.applyCategory = classified.category;
+                        perFileEntry.editReason = classified.summary;
+                        if (!primaryLocalApplyFailure) {
+                            primaryLocalApplyFailure = {
+                                path: relPath,
+                                actionKind: "write_file",
+                                category: classified.category,
+                                reason: classified.summary,
+                                retryable: classified.retryable,
+                                attemptedStages: Array.isArray(this.lastAssistRequest?.options.localApplyRecoveryAttempted)
+                                    ? this.lastAssistRequest?.options.localApplyRecoveryAttempted || []
+                                    : [],
+                            };
+                        }
+                        this.postRun(runThreadId, {
+                            type: "status",
+                            text: `Local apply rejected write_file for ${relPath}: ${classified.category}. ${classified.summary}`,
+                        });
+                    }
                 }
                 else if (applied.reason) {
-                    applyErrors.push(`${row.action.path}: ${applied.reason}`);
+                    const classified = (0, apply_recovery_utils_1.classifyLocalApplyFailure)({
+                        actionKind: "write_file",
+                        status: applied.status,
+                        reason: applied.reason,
+                        changed: applied.changed,
+                        path: relPath,
+                        targetExistedBefore: applied.targetExistedBefore,
+                    });
+                    perFileEntry.applyCategory = classified.category;
+                    perFileEntry.editReason = classified.summary;
+                    applyErrors.push(`${relPath}: ${classified.summary}`);
+                    if (!primaryLocalApplyFailure) {
+                        primaryLocalApplyFailure = {
+                            path: relPath,
+                            actionKind: "write_file",
+                            category: classified.category,
+                            reason: classified.summary,
+                            retryable: classified.retryable,
+                            attemptedStages: Array.isArray(this.lastAssistRequest?.options.localApplyRecoveryAttempted)
+                                ? this.lastAssistRequest?.options.localApplyRecoveryAttempted || []
+                                : [],
+                        };
+                    }
+                    this.postRun(runThreadId, {
+                        type: "status",
+                        text: `Local apply rejected write_file for ${relPath}: ${classified.category}. ${classified.summary}`,
+                    });
                 }
             }
             else if (row.action.type === "command" && row.action.command) {
                 approvedCommands.push(row.action.command);
             }
         }
-        const shouldRunApprovedCommands = !expectedFileChanges || changedPaths.size > 0;
+        const skippedApprovedActionsAfterHalt = haltedAtResultIndex !== null
+            ? results.slice(haltedAtResultIndex + 1).filter((result) => result.status === "approved").length
+            : 0;
+        const shouldRunApprovedCommands = (!expectedFileChanges || changedPaths.size > 0) && !haltedValidation;
         if (!shouldRunApprovedCommands && approvedCommands.length > 0) {
-            const skippedMessage = `Skipped ${approvedCommands.length} command(s) because no file edits were actually applied.`;
-            addExecutionEvent("validation_skipped_no_file_change", skippedMessage, "warn");
+            const skippedMessage = haltedValidation
+                ? `Skipped ${approvedCommands.length} command(s) because quick validation halted execution for ${haltedValidation.path}.`
+                : `Skipped ${approvedCommands.length} command(s) because no file edits were actually applied.`;
+            addExecutionEvent(haltedValidation ? "validation_skipped_after_quick_validation_halt" : "validation_skipped_no_file_change", skippedMessage, "warn");
             this.postRun(runThreadId, {
                 type: "status",
-                text: "Skipped validation commands because no file edits were actually applied.",
+                text: haltedValidation
+                    ? `Skipped batch validation commands because quick validation stopped the run for ${haltedValidation.path}.`
+                    : "Skipped validation commands because no file edits were actually applied.",
             });
         }
         else {
@@ -3461,9 +3896,23 @@ class Provider {
                     commandFailures += 1;
             }
         }
+        if (haltedValidation) {
+            const haltMessage = haltedValidation.status === "missing_runner"
+                ? `Quick validation stopped after ${haltedValidation.path}: ${haltedValidation.reason || "missing validation runner"}.`
+                : `Quick validation failed for ${haltedValidation.path}.`;
+            addExecutionEvent("quick_validation_halted_execution", haltMessage, "warn");
+            this.postRun(runThreadId, { type: "status", text: haltMessage });
+            if (skippedApprovedActionsAfterHalt > 0) {
+                this.postRun(runThreadId, {
+                    type: "status",
+                    text: `Skipped ${skippedApprovedActionsAfterHalt} remaining approved action(s) after the validation halt.`,
+                });
+            }
+        }
         const approved = results.filter((x) => x.status === "approved").length;
         const rejected = results.filter((x) => x.status !== "approved");
-        const localRejected = perFileStatuses.filter((row) => row.status !== "applied" && row.status !== "partial");
+        const localRejected = perFileStatuses.filter((row) => row.editStatus !== "applied" && row.editStatus !== "partial");
+        const localValidationIssues = perFileStatuses.filter((row) => row.changed && row.resourceKind !== "directory" && row.validationStatus !== "passed");
         const rejectedSummaries = rejected
             .map((row) => {
             const type = String(row.action?.type || "action");
@@ -3475,14 +3924,20 @@ class Provider {
         })
             .slice(0, 8);
         const localRejectedSummaries = localRejected
-            .map((row) => `${row.path}: ${row.reason || row.status}`)
+            .map((row) => `${row.path}: ${row.editReason || row.editStatus}`)
+            .slice(0, 8);
+        const localValidationSummaries = localValidationIssues
+            .map((row) => `${row.path}: ${row.validationReason || row.validationStatus}`)
             .slice(0, 8);
         rejectedSummaries.forEach((message) => addExecutionEvent("server_rejected", message, "warn"));
         localRejectedSummaries.forEach((message) => addExecutionEvent("local_rejected", message, "warn"));
+        localValidationSummaries.forEach((message) => addExecutionEvent("local_validation_issue", message, "warn"));
         applyErrors.forEach((message) => addExecutionEvent("apply_error", message, "error"));
         guardrailIssues.forEach((message) => addExecutionEvent("guardrail_blocked", message, "warn"));
         if (expectedFileChanges && changedPaths.size === 0) {
             const debugReasons = [];
+            if (primaryLocalApplyFailure)
+                debugReasons.push(`local apply ${primaryLocalApplyFailure.category}: ${primaryLocalApplyFailure.reason}`);
             if (rejected.length > 0)
                 debugReasons.push(`server rejected ${rejected.length} action(s)`);
             if (localRejected.length > 0)
@@ -3511,16 +3966,39 @@ class Provider {
                 });
             }
         }
+        if (expectedFileChanges &&
+            changedPaths.size === 0 &&
+            primaryLocalApplyFailure &&
+            primaryLocalApplyFailure.retryable &&
+            primaryLocalApplyFailure.actionKind !== "mkdir") {
+            const recovered = await this.attemptLocalApplyRecovery({
+                runThreadId,
+                traceId: diagnosticsTraceId,
+                failure: primaryLocalApplyFailure,
+            });
+            if (recovered) {
+                const toRemove = new Set(actionList.map((action) => JSON.stringify(action)));
+                this.pendingActions = this.pendingActions.filter((action) => !toRemove.has(JSON.stringify(action)));
+                this.post({ type: "pendingActions", count: this.pendingActions.length });
+                return;
+            }
+            this.publishLocalApplyFailureMeta({
+                ...primaryLocalApplyFailure,
+                retryStage: "final_failure",
+            });
+        }
         const localExecLogs = [
             {
                 ts: Date.now(),
-                level: changedPaths.size > 0 ? "info" : "error",
+                level: changedPaths.size > 0 && localValidationIssues.length === 0 ? "info" : "error",
                 message: `LOCAL_SUMMARY requested=${actionList.length} approved=${approved} rejected=${rejected.length} ` +
-                    `applied_edits=${appliedEdits} files_changed=${changedPaths.size} commands_launched=${launchedCommands} guardrail_blocked=${guardrailIssues.length}`,
+                    `applied_edits=${appliedEdits} files_changed=${changedPaths.size} commands_launched=${launchedCommands} ` +
+                    `validation_failures=${validationFailures} missing_runners=${missingValidationRunners} guardrail_blocked=${guardrailIssues.length}`,
             },
             ...guardrailIssues.slice(0, 8).map((message) => ({ ts: Date.now(), level: "error", message: `GUARDRAIL_BLOCKED ${message}` })),
             ...rejectedSummaries.map((message) => ({ ts: Date.now(), level: "error", message: `SERVER_REJECTED ${message}` })),
             ...localRejectedSummaries.map((message) => ({ ts: Date.now(), level: "error", message: `LOCAL_REJECTED ${message}` })),
+            ...localValidationSummaries.map((message) => ({ ts: Date.now(), level: "error", message: `LOCAL_VALIDATION ${message}` })),
         ];
         this.postRun(runThreadId, { type: "execLogs", data: localExecLogs });
         this.postRun(runThreadId, {
@@ -3530,17 +4008,30 @@ class Provider {
         if (applyErrors.length) {
             this.postRun(runThreadId, { type: "err", text: `Some approved edits were not auto-applied:\n- ${applyErrors.join("\n- ")}` });
         }
+        const outcomeSummary = applyErrors.length
+            ? "Applied edits with warnings. Review rejected patches."
+            : expectedFileChanges && changedPaths.size === 0
+                ? primaryLocalApplyFailure
+                    ? `No file edits were applied. ${primaryLocalApplyFailure.category}: ${primaryLocalApplyFailure.reason}`
+                    : "No file edits were applied."
+                : missingValidationRunners > 0
+                    ? "A changed file needs a configured validation runner before the run can complete."
+                    : validationFailures > 0
+                        ? "Quick validation failed for a changed file. Review execution logs."
+                        : commandFailures > 0
+                            ? "Some commands failed. Review execution logs."
+                            : "Actions completed successfully.";
         const outcome = {
             filesChanged: changedPaths.size,
             checksRun: launchedCommands,
-            quality: applyErrors.length || (expectedFileChanges && changedPaths.size === 0) || commandFailures > 0 ? "needs_attention" : "good",
-            summary: applyErrors.length
-                ? "Applied edits with warnings. Review rejected patches."
-                : expectedFileChanges && changedPaths.size === 0
-                    ? "No file edits were applied."
-                    : commandFailures > 0
-                        ? "Some commands failed. Review execution logs."
-                        : "Actions completed successfully.",
+            quality: applyErrors.length ||
+                (expectedFileChanges && changedPaths.size === 0) ||
+                commandFailures > 0 ||
+                validationFailures > 0 ||
+                missingValidationRunners > 0
+                ? "needs_attention"
+                : "good",
+            summary: outcomeSummary,
             perFile: perFileStatuses,
             appliedFiles: Array.from(changedPaths),
             debug: {
@@ -3549,8 +4040,12 @@ class Provider {
                 rejectedActions: rejected.length + guardrailIssues.length,
                 localRejectedEdits: localRejected.length,
                 commandFailures,
+                validationFailures,
+                missingValidationRunners,
+                localApplyFailure: primaryLocalApplyFailure,
                 rejectedSamples: [...guardrailIssues.map((x) => `guardrail ${x}`), ...rejectedSummaries].slice(0, 8),
                 localRejectedSamples: localRejectedSummaries,
+                localValidationSamples: localValidationSummaries,
                 applyErrors: applyErrors.slice(0, 8),
             },
         };
@@ -3562,6 +4057,7 @@ class Provider {
         emitExecutionDiagnostics(applyErrors.length ||
             rejected.length ||
             localRejected.length ||
+            localValidationIssues.length ||
             guardrailIssues.length ||
             (expectedFileChanges && changedPaths.size === 0) ||
             (approvedCommands.length > 0 && !shouldRunApprovedCommands)
@@ -3638,22 +4134,25 @@ class Provider {
             await vscode.workspace.fs.createDirectory(parentUri);
         }
         let original = "";
+        let targetExistedBefore = true;
         try {
             const buf = await vscode.workspace.fs.readFile(target);
             original = Buffer.from(buf).toString("utf8");
         }
         catch {
             original = "";
+            targetExistedBefore = false;
         }
         const applied = (0, patch_utils_1.applyUnifiedDiff)(original, patchText);
         if (applied.status === "rejected_invalid_patch" || !applied.content) {
-            return { status: applied.status, reason: applied.reason || "Unsupported patch format.", changed: false };
+            return { status: applied.status, reason: applied.reason || "Unsupported patch format.", changed: false, targetExistedBefore };
         }
         if (applied.content === original) {
             return {
                 status: applied.status,
                 reason: applied.reason || "Patch matched file context but did not change content.",
                 changed: false,
+                targetExistedBefore,
             };
         }
         await vscode.workspace.fs.writeFile(target, Buffer.from(applied.content, "utf8"));
@@ -3661,6 +4160,7 @@ class Provider {
             status: applied.status,
             ...(applied.reason ? { reason: applied.reason } : {}),
             changed: true,
+            targetExistedBefore,
         };
     }
     async applyMkdirAction(action, undoCreatedDirs) {
@@ -3720,6 +4220,7 @@ class Provider {
                     status: "rejected_path_policy",
                     reason: "write_file blocked: file already exists and overwrite=false.",
                     changed: false,
+                    targetExistedBefore: existedBefore,
                 };
             }
         }
@@ -3729,6 +4230,7 @@ class Provider {
                 status: "rejected_path_policy",
                 reason: "write_file blocked: detected structured tool payload instead of raw file content.",
                 changed: false,
+                targetExistedBefore: existedBefore,
             };
         }
         if ((0, patch_utils_1.textContainsLeakedPatchArtifacts)(content)) {
@@ -3736,6 +4238,7 @@ class Provider {
                 status: "rejected_path_policy",
                 reason: "write_file blocked: detected leaked diff/apply_patch markers in file content.",
                 changed: false,
+                targetExistedBefore: existedBefore,
             };
         }
         if (existedBefore && existingContent === content) {
@@ -3743,13 +4246,14 @@ class Provider {
                 status: "applied",
                 reason: "File already matched requested content.",
                 changed: false,
+                targetExistedBefore: existedBefore,
             };
         }
         await vscode.workspace.fs.writeFile(target, Buffer.from(content, "utf8"));
         await vscode.workspace.fs.stat(target);
-        return { status: "applied", changed: true };
+        return { status: "applied", changed: true, targetExistedBefore: existedBefore };
     }
-    async runApprovedCommand(command, threadId, addExecutionEvent) {
+    async runApprovedCommand(command, threadId, addExecutionEvent, options) {
         const root = this.getWorkspaceRoot();
         const cwd = root?.uri.fsPath || process.cwd();
         const isWindows = process.platform === "win32";
@@ -3757,7 +4261,9 @@ class Provider {
         const args = isWindows
             ? ["-NoProfile", "-NonInteractive", "-Command", command]
             : ["-lc", command];
-        const timeoutMs = 15 * 60 * 1000;
+        const timeoutMs = typeof options?.timeoutMs === "number" && Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+            ? options.timeoutMs
+            : 15 * 60 * 1000;
         const maxBuffer = 8 * 1024 * 1024;
         const result = await new Promise((resolve) => {
             (0, child_process_1.execFile)(shell, args, { cwd, timeout: timeoutMs, windowsHide: true, maxBuffer }, (error, stdout, stderr) => {

@@ -91,6 +91,21 @@ describe("playground response composer", () => {
     expect(out).not.toContain("Thinking...");
   });
 
+  it("uses concrete prepared-edit wording instead of draft narration for file actions", () => {
+    const out = composeWarmAssistantResponse({
+      final: "Added trailing stop support.",
+      task: "add trailing stop support",
+      decisionMode: "generate",
+      intent: "code_edit",
+      edits: [{ path: "One/strategies/pending/Emergent_Swarm_Intelligence.pine", patch: "diff --git a/x b/x" }],
+      commands: [],
+      actions: [{ type: "edit", path: "One/strategies/pending/Emergent_Swarm_Intelligence.pine", patch: "diff --git a/x b/x" }],
+      autonomyDecision: { mode: "auto_apply_and_validate" },
+    });
+    expect(out).toContain("Prepared file edits for One/strategies/pending/Emergent_Swarm_Intelligence.pine.");
+    expect(out).not.toContain("I drafted a proposed update");
+  });
+
   it("includes active file content and open file excerpts in context prompt", () => {
     const out = contextToPrompt({
       activeFile: {

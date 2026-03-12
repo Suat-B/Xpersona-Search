@@ -22,6 +22,13 @@ import {
   type ValidationAdapter,
   type ValidationStatus,
 } from "./validation-utils";
+import {
+  buildLocalApplyRetryTask,
+  classifyLocalApplyFailure,
+  nextLocalRecoveryStage,
+  type LocalApplyFailureCategory,
+  type LocalRecoveryStage,
+} from "./apply-recovery-utils";
 
 const API_KEY_SECRET = "xpersona.apiKey";
 const API_KEY_LEGACY_SECRET = "xpersona.playground.apiKey";
@@ -76,6 +83,14 @@ type RunMeta = {
   actionability?: { summary?: "valid_actions" | "clarification_needed" | "blocked_by_safety"; reason?: string };
   completionStatus?: "complete" | "incomplete";
   missingRequirements?: string[];
+  localApplyFailure?: {
+    path?: string;
+    actionKind?: "edit" | "write_file" | "mkdir";
+    category?: LocalApplyFailureCategory;
+    reason?: string;
+    retryStage?: LocalRecoveryStage | "final_failure";
+    attemptedStages?: LocalRecoveryStage[];
+  };
 };
 type AssistAttachmentPayload = {
   mimeType: "image/png" | "image/jpeg" | "image/webp";
@@ -89,6 +104,7 @@ type AskOptions = {
   threadId?: string | null;
   contextRetryAttempted?: boolean;
   modelFallbackAttempted?: boolean;
+  localApplyRecoveryAttempted?: LocalRecoveryStage[];
   autonomousLoop?: boolean;
   autonomyCycle?: { objective: string; cycle: number; maxCycles: number };
 };
@@ -102,7 +118,9 @@ type AutonomyProfile = {
 };
 type LocalPerFileOutcome = {
   path: string;
+  actionKind?: "edit" | "write_file" | "mkdir";
   editStatus: PatchApplyStatus | "applied" | "partial" | "rejected_invalid_patch" | "rejected_path_policy";
+  applyCategory?: LocalApplyFailureCategory | "applied";
   editReason?: string;
   validationStatus: ValidationStatus;
   validationReason?: string;
@@ -497,6 +515,15 @@ class Provider implements vscode.WebviewViewProvider {
   private undoBatches: UndoBatch[] = [];
   private commandAvailabilityCache = new Map<string, Promise<boolean>>();
   private workspaceLintScriptCache: Promise<boolean> | null = null;
+  private lastAssistRequest:
+    | {
+        task: string;
+        parallel: boolean;
+        model: string;
+        reasoning: ReasoningLevel;
+        options: AskOptions;
+      }
+    | null = null;
   private hasExecutionIntent(task: string): boolean {
     return /\b(create|make|add|build|implement|refactor|fix|debug|run|test|lint|typecheck|command|patch|edit|ship|git|commit|push|pull|checkout|merge|rebase|branch)\b/i.test(task);
   }
@@ -2194,6 +2221,7 @@ class Provider implements vscode.WebviewViewProvider {
       ? meta.missingRequirements.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
       : [];
     const localOutcome = this.lastActionOutcome;
+    const localApplyFailure = meta.localApplyFailure;
     const filesChanged = Number(localOutcome?.filesChanged || 0);
     const checksRun = Number(localOutcome?.checksRun || 0);
     const perFileRows = Array.isArray(localOutcome?.perFile) ? localOutcome.perFile : [];
@@ -2205,10 +2233,6 @@ class Provider implements vscode.WebviewViewProvider {
       Array.isArray(meta.validationPlan?.touchedFiles) && meta.validationPlan?.touchedFiles.filter(Boolean).length > 0;
     const localFileActions =
       perFileRows.some((row) => typeof row.path === "string");
-    const plannedChecks =
-      Array.isArray(meta.validationPlan?.checks)
-        ? meta.validationPlan.checks.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
-        : [];
     const editIntent =
       !isConversation &&
       ((this.wantsCodeEdits(task) && !this.isConversationalPrompt(task)) || reportedTargetFiles || localFileActions);
@@ -2225,13 +2249,11 @@ class Provider implements vscode.WebviewViewProvider {
         missing.push(row.validationReason || "validation_run_required");
       }
     }
-    if (editIntent && changedFileRows.length > 0 && changedButNotValidated.length === 0 && plannedChecks.length > 0 && checksRun === 0) {
-      missing.push("validation_run_required");
-    }
     const completionStatus: "complete" | "incomplete" =
       meta.completionStatus === "incomplete" || missing.length > 0 ? "incomplete" : "complete";
     const done = completionStatus === "complete" && (!editIntent || filesChanged > 0);
     const blocker =
+      (localApplyFailure?.reason ? `${localApplyFailure.category || "local_apply_failure"}: ${localApplyFailure.reason}` : "") ||
       (missing.length > 0 ? missing.join(", ") : "") ||
       actionabilityReason ||
       String(localOutcome?.summary || "").trim() ||
@@ -2267,6 +2289,7 @@ class Provider implements vscode.WebviewViewProvider {
     const missing = input.missingRequirements.length
       ? input.missingRequirements.join(", ")
       : "unspecified";
+    const localApplyFailure = this.lastRunMeta?.localApplyFailure;
     const parts = [
       input.objective.trim(),
       "",
@@ -2274,6 +2297,10 @@ class Provider implements vscode.WebviewViewProvider {
       `Missing requirements: ${missing}.`,
       `Blocker: ${input.blocker}.`,
       `Observed local outcomes: filesChanged=${input.filesChanged}, checksRun=${input.checksRun}.`,
+      localApplyFailure?.path
+        ? `Last local apply failure: ${localApplyFailure.category || "unknown"} on ${localApplyFailure.path}. ${localApplyFailure.reason || ""}`.trim()
+        : "",
+      localApplyFailure?.retryStage ? `Required recovery stage: ${localApplyFailure.retryStage}.` : "",
       "Rules: do not ask the user for clarification. Infer targets from available IDE context and return concrete file actions.",
       "Rules: for edit-intent tasks, command-only output is invalid. Return at least one edit/write_file/mkdir action.",
       "Rules: each changed file only counts as complete after a real quick validation runner passes for that file.",
@@ -2300,7 +2327,7 @@ class Provider implements vscode.WebviewViewProvider {
 
   private getValidationAdapters(): ValidationAdapter[] {
     const config = vscode.workspace.getConfiguration("xpersona.playground");
-    return normalizeValidationAdapters(config.get<unknown[]>(VALIDATION_ADAPTERS_CONFIG_KEY, []));
+    return normalizeValidationAdapters(config.get<unknown[]>(VALIDATION_ADAPTERS_CONFIG_KEY) || []);
   }
 
   private async workspaceHasLintScript(): Promise<boolean> {
@@ -2437,6 +2464,92 @@ class Provider implements vscode.WebviewViewProvider {
       commandsRun,
       commands: executedCommands,
     };
+  }
+
+  private publishLocalApplyFailureMeta(input: {
+    path: string;
+    actionKind: "edit" | "write_file" | "mkdir";
+    category: LocalApplyFailureCategory;
+    reason: string;
+    retryStage: LocalRecoveryStage | "final_failure";
+    attemptedStages: LocalRecoveryStage[];
+  }) {
+    this.lastRunMeta = {
+      ...(this.lastRunMeta || {}),
+      localApplyFailure: {
+        path: input.path,
+        actionKind: input.actionKind,
+        category: input.category,
+        reason: input.reason,
+        retryStage: input.retryStage,
+        attemptedStages: input.attemptedStages,
+      },
+    };
+    this.postRun(this.activeThreadId, { type: "meta", data: this.lastRunMeta });
+  }
+
+  private async attemptLocalApplyRecovery(input: {
+    runThreadId: string | null;
+    traceId: string;
+    failure: {
+      path: string;
+      actionKind: "edit" | "write_file" | "mkdir";
+      category: LocalApplyFailureCategory;
+      reason: string;
+      attemptedStages: LocalRecoveryStage[];
+    };
+  }): Promise<boolean> {
+    const request = this.lastAssistRequest;
+    if (!request) return false;
+    const nextStage = nextLocalRecoveryStage(input.failure.attemptedStages, input.failure.path);
+    if (!nextStage) {
+      this.publishLocalApplyFailureMeta({
+        ...input.failure,
+        retryStage: "final_failure",
+      });
+      return false;
+    }
+    this.publishLocalApplyFailureMeta({
+      ...input.failure,
+      retryStage: nextStage,
+    });
+    const retryTask = buildLocalApplyRetryTask({
+      objective: request.task,
+      filePath: input.failure.path,
+      category: input.failure.category,
+      reason: input.failure.reason,
+      stage: nextStage,
+    });
+    this.postRun(input.runThreadId, {
+      type: "status",
+      text: `Local apply failed for ${input.failure.path} (${input.failure.category}). Retrying with ${nextStage.replace(/_/g, " ")}...`,
+    });
+    await this.askSingleCycle(retryTask, request.parallel, request.model, request.reasoning, {
+      ...request.options,
+      threadId: input.runThreadId || request.options.threadId,
+      contextRetryAttempted: true,
+      localApplyRecoveryAttempted: [...input.failure.attemptedStages, nextStage],
+      autonomousLoop: false,
+    });
+    this.postDiagnosticsBundle(input.runThreadId, {
+      traceId: input.traceId,
+      stage: "execute",
+      summary: `Retried after local apply failure using ${nextStage}.`,
+      model: modelLabelForUi(request.model),
+      reasoning: request.reasoning,
+      mode: this.mode,
+      startedAt: Date.now(),
+      endedAt: Date.now(),
+      events: [
+        {
+          code: "local_apply_retry",
+          message: `Retried ${input.failure.path} after ${input.failure.category} using ${nextStage}.`,
+          severity: "warn",
+          ts: Date.now(),
+        },
+      ],
+    });
+    return true;
   }
 
   async ask(
@@ -2617,6 +2730,13 @@ class Provider implements vscode.WebviewViewProvider {
     reasoning: ReasoningLevel = "medium",
     options: AskOptions = {}
   ) {
+    this.lastAssistRequest = {
+      task: text,
+      parallel,
+      model,
+      reasoning,
+      options: { ...options },
+    };
     this.lastActionOutcome = null;
     const cycleContext = options.autonomyCycle;
     const objectiveText = cycleContext?.objective || String(text || "").trim();
@@ -3735,6 +3855,16 @@ class Provider implements vscode.WebviewViewProvider {
     const approvedCommands: string[] = [];
     let haltedValidation: { path: string; status: ValidationStatus; reason?: string } | null = null;
     let haltedAtResultIndex: number | null = null;
+    let primaryLocalApplyFailure:
+      | {
+          path: string;
+          actionKind: "edit" | "write_file" | "mkdir";
+          category: LocalApplyFailureCategory;
+          reason: string;
+          retryable: boolean;
+          attemptedStages: LocalRecoveryStage[];
+        }
+      | null = null;
 
     for (let index = 0; index < results.length; index += 1) {
       const row = results[index];
@@ -3756,7 +3886,9 @@ class Provider implements vscode.WebviewViewProvider {
         }, undoFileSnapshots);
         const perFileEntry: LocalPerFileOutcome = {
           path: relPath,
+          actionKind: "edit",
           editStatus: applied.status,
+          applyCategory: applied.changed ? "applied" : undefined,
           ...(applied.reason ? { editReason: applied.reason } : {}),
           validationStatus: "skipped",
           validationReason: applied.changed ? "validation_run_required" : "No file content changed.",
@@ -3803,14 +3935,70 @@ class Provider implements vscode.WebviewViewProvider {
                     : "Patch applied."
                 : "Patch produced no file changes."),
           });
+          if (!applied.changed) {
+            const classified = classifyLocalApplyFailure({
+              actionKind: "edit",
+              status: applied.status,
+              reason: applied.reason,
+              changed: applied.changed,
+              path: relPath,
+              targetExistedBefore: applied.targetExistedBefore,
+            });
+            perFileEntry.applyCategory = classified.category;
+            perFileEntry.editReason = classified.summary;
+            if (!primaryLocalApplyFailure) {
+              primaryLocalApplyFailure = {
+                path: relPath,
+                actionKind: "edit",
+                category: classified.category,
+                reason: classified.summary,
+                retryable: classified.retryable,
+                attemptedStages: Array.isArray(this.lastAssistRequest?.options.localApplyRecoveryAttempted)
+                  ? this.lastAssistRequest?.options.localApplyRecoveryAttempted || []
+                  : [],
+              };
+            }
+            this.postRun(runThreadId, {
+              type: "status",
+              text: `Local apply rejected edit for ${relPath}: ${classified.category}. ${classified.summary}`,
+            });
+          }
         } else if (applied.reason) {
-          applyErrors.push(`${relPath}: ${applied.reason}`);
+          const classified = classifyLocalApplyFailure({
+            actionKind: "edit",
+            status: applied.status,
+            reason: applied.reason,
+            changed: applied.changed,
+            path: relPath,
+            targetExistedBefore: applied.targetExistedBefore,
+          });
+          perFileEntry.applyCategory = classified.category;
+          perFileEntry.editReason = classified.summary;
+          applyErrors.push(`${relPath}: ${classified.summary}`);
+          if (!primaryLocalApplyFailure) {
+            primaryLocalApplyFailure = {
+              path: relPath,
+              actionKind: "edit",
+              category: classified.category,
+              reason: classified.summary,
+              retryable: classified.retryable,
+              attemptedStages: Array.isArray(this.lastAssistRequest?.options.localApplyRecoveryAttempted)
+                ? this.lastAssistRequest?.options.localApplyRecoveryAttempted || []
+                : [],
+            };
+          }
+          this.postRun(runThreadId, {
+            type: "status",
+            text: `Local apply rejected edit for ${relPath}: ${classified.category}. ${classified.summary}`,
+          });
         }
       } else if (row.action.type === "mkdir" && row.action.path) {
         const applied = await this.applyMkdirAction({ path: row.action.path }, undoCreatedDirs);
         perFileStatuses.push({
           path: row.action.path,
+          actionKind: "mkdir",
           editStatus: applied.status,
+          applyCategory: applied.changed ? "applied" : undefined,
           ...(applied.reason ? { editReason: applied.reason } : {}),
           validationStatus: "skipped",
           validationReason: "Quick validation only runs for file edits.",
@@ -3840,7 +4028,9 @@ class Provider implements vscode.WebviewViewProvider {
         }, undoFileSnapshots);
         const perFileEntry: LocalPerFileOutcome = {
           path: relPath,
+          actionKind: "write_file",
           editStatus: applied.status,
+          applyCategory: applied.changed ? "applied" : undefined,
           ...(applied.reason ? { editReason: applied.reason } : {}),
           validationStatus: "skipped",
           validationReason: applied.changed ? "validation_run_required" : "No file content changed.",
@@ -3887,8 +4077,62 @@ class Provider implements vscode.WebviewViewProvider {
                     : "File created/updated."
                 : "File already matched requested content."),
           });
+          if (!applied.changed) {
+            const classified = classifyLocalApplyFailure({
+              actionKind: "write_file",
+              status: applied.status,
+              reason: applied.reason,
+              changed: applied.changed,
+              path: relPath,
+              targetExistedBefore: applied.targetExistedBefore,
+            });
+            perFileEntry.applyCategory = classified.category;
+            perFileEntry.editReason = classified.summary;
+            if (!primaryLocalApplyFailure) {
+              primaryLocalApplyFailure = {
+                path: relPath,
+                actionKind: "write_file",
+                category: classified.category,
+                reason: classified.summary,
+                retryable: classified.retryable,
+                attemptedStages: Array.isArray(this.lastAssistRequest?.options.localApplyRecoveryAttempted)
+                  ? this.lastAssistRequest?.options.localApplyRecoveryAttempted || []
+                  : [],
+              };
+            }
+            this.postRun(runThreadId, {
+              type: "status",
+              text: `Local apply rejected write_file for ${relPath}: ${classified.category}. ${classified.summary}`,
+            });
+          }
         } else if (applied.reason) {
-          applyErrors.push(`${relPath}: ${applied.reason}`);
+          const classified = classifyLocalApplyFailure({
+            actionKind: "write_file",
+            status: applied.status,
+            reason: applied.reason,
+            changed: applied.changed,
+            path: relPath,
+            targetExistedBefore: applied.targetExistedBefore,
+          });
+          perFileEntry.applyCategory = classified.category;
+          perFileEntry.editReason = classified.summary;
+          applyErrors.push(`${relPath}: ${classified.summary}`);
+          if (!primaryLocalApplyFailure) {
+            primaryLocalApplyFailure = {
+              path: relPath,
+              actionKind: "write_file",
+              category: classified.category,
+              reason: classified.summary,
+              retryable: classified.retryable,
+              attemptedStages: Array.isArray(this.lastAssistRequest?.options.localApplyRecoveryAttempted)
+                ? this.lastAssistRequest?.options.localApplyRecoveryAttempted || []
+                : [],
+            };
+          }
+          this.postRun(runThreadId, {
+            type: "status",
+            text: `Local apply rejected write_file for ${relPath}: ${classified.category}. ${classified.summary}`,
+          });
         }
       } else if (row.action.type === "command" && row.action.command) {
         approvedCommands.push(row.action.command);
@@ -3969,6 +4213,7 @@ class Provider implements vscode.WebviewViewProvider {
 
     if (expectedFileChanges && changedPaths.size === 0) {
       const debugReasons: string[] = [];
+      if (primaryLocalApplyFailure) debugReasons.push(`local apply ${primaryLocalApplyFailure.category}: ${primaryLocalApplyFailure.reason}`);
       if (rejected.length > 0) debugReasons.push(`server rejected ${rejected.length} action(s)`);
       if (localRejected.length > 0) debugReasons.push(`local patch apply rejected ${localRejected.length} file action(s)`);
       if (applyErrors.length > 0) debugReasons.push(`apply errors: ${applyErrors.slice(0, 2).join(" | ")}`);
@@ -3995,6 +4240,30 @@ class Provider implements vscode.WebviewViewProvider {
       }
     }
 
+    if (
+      expectedFileChanges &&
+      changedPaths.size === 0 &&
+      primaryLocalApplyFailure &&
+      primaryLocalApplyFailure.retryable &&
+      primaryLocalApplyFailure.actionKind !== "mkdir"
+    ) {
+      const recovered = await this.attemptLocalApplyRecovery({
+        runThreadId,
+        traceId: diagnosticsTraceId,
+        failure: primaryLocalApplyFailure,
+      });
+      if (recovered) {
+        const toRemove = new Set(actionList.map((action) => JSON.stringify(action)));
+        this.pendingActions = this.pendingActions.filter((action) => !toRemove.has(JSON.stringify(action)));
+        this.post({ type: "pendingActions", count: this.pendingActions.length });
+        return;
+      }
+      this.publishLocalApplyFailureMeta({
+        ...primaryLocalApplyFailure,
+        retryStage: "final_failure",
+      });
+    }
+
     const localExecLogs = [
       {
         ts: Date.now(),
@@ -4018,6 +4287,19 @@ class Provider implements vscode.WebviewViewProvider {
     if (applyErrors.length) {
       this.postRun(runThreadId, { type: "err", text: `Some approved edits were not auto-applied:\n- ${applyErrors.join("\n- ")}` });
     }
+    const outcomeSummary = applyErrors.length
+      ? "Applied edits with warnings. Review rejected patches."
+      : expectedFileChanges && changedPaths.size === 0
+        ? primaryLocalApplyFailure
+          ? `No file edits were applied. ${primaryLocalApplyFailure.category}: ${primaryLocalApplyFailure.reason}`
+          : "No file edits were applied."
+        : missingValidationRunners > 0
+          ? "A changed file needs a configured validation runner before the run can complete."
+          : validationFailures > 0
+            ? "Quick validation failed for a changed file. Review execution logs."
+            : commandFailures > 0
+              ? "Some commands failed. Review execution logs."
+              : "Actions completed successfully.";
     const outcome: LocalActionOutcome = {
       filesChanged: changedPaths.size,
       checksRun: launchedCommands,
@@ -4029,17 +4311,7 @@ class Provider implements vscode.WebviewViewProvider {
         missingValidationRunners > 0
           ? "needs_attention"
           : "good",
-      summary: applyErrors.length
-        ? "Applied edits with warnings. Review rejected patches."
-        : expectedFileChanges && changedPaths.size === 0
-          ? "No file edits were applied."
-          : missingValidationRunners > 0
-            ? "A changed file needs a configured validation runner before the run can complete."
-            : validationFailures > 0
-              ? "Quick validation failed for a changed file. Review execution logs."
-          : commandFailures > 0
-            ? "Some commands failed. Review execution logs."
-            : "Actions completed successfully.",
+      summary: outcomeSummary,
       perFile: perFileStatuses,
       appliedFiles: Array.from(changedPaths),
       debug: {
@@ -4050,6 +4322,7 @@ class Provider implements vscode.WebviewViewProvider {
         commandFailures,
         validationFailures,
         missingValidationRunners,
+        localApplyFailure: primaryLocalApplyFailure,
         rejectedSamples: [...guardrailIssues.map((x) => `guardrail ${x}`), ...rejectedSummaries].slice(0, 8),
         localRejectedSamples: localRejectedSummaries,
         localValidationSamples: localValidationSummaries,
@@ -4112,7 +4385,7 @@ class Provider implements vscode.WebviewViewProvider {
   private async applyEditAction(
     action: { path?: string; patch?: string; diff?: string },
     undoCollector?: Map<string, { kind: "file"; path: string; existed: boolean; content: string }>
-  ): Promise<{ status: PatchApplyStatus; reason?: string; changed: boolean }> {
+  ): Promise<{ status: PatchApplyStatus; reason?: string; changed: boolean; targetExistedBefore?: boolean }> {
     const incomingPatch = action.patch || action.diff || "";
     const normalizedPatch = normalizeIncomingPatchText(incomingPatch);
     const patchText = normalizedPatch.patch;
@@ -4154,16 +4427,18 @@ class Provider implements vscode.WebviewViewProvider {
     }
 
     let original = "";
+    let targetExistedBefore = true;
     try {
       const buf = await vscode.workspace.fs.readFile(target);
       original = Buffer.from(buf).toString("utf8");
     } catch {
       original = "";
+      targetExistedBefore = false;
     }
 
     const applied = applyUnifiedDiff(original, patchText);
     if (applied.status === "rejected_invalid_patch" || !applied.content) {
-      return { status: applied.status, reason: applied.reason || "Unsupported patch format.", changed: false };
+      return { status: applied.status, reason: applied.reason || "Unsupported patch format.", changed: false, targetExistedBefore };
     }
 
     if (applied.content === original) {
@@ -4171,6 +4446,7 @@ class Provider implements vscode.WebviewViewProvider {
         status: applied.status,
         reason: applied.reason || "Patch matched file context but did not change content.",
         changed: false,
+        targetExistedBefore,
       };
     }
 
@@ -4179,6 +4455,7 @@ class Provider implements vscode.WebviewViewProvider {
       status: applied.status,
       ...(applied.reason ? { reason: applied.reason } : {}),
       changed: true,
+      targetExistedBefore,
     };
   }
 
@@ -4210,7 +4487,7 @@ class Provider implements vscode.WebviewViewProvider {
   private async applyWriteFileAction(
     action: { path?: string; content?: string; overwrite?: boolean },
     undoCollector?: Map<string, { kind: "file"; path: string; existed: boolean; content: string }>
-  ): Promise<{ status: "applied" | "rejected_path_policy"; reason?: string; changed: boolean }> {
+  ): Promise<{ status: "applied" | "rejected_path_policy"; reason?: string; changed: boolean; targetExistedBefore?: boolean }> {
     const rel = normalizeWorkspaceRelativePath(action.path || "");
     if (!rel || !looksLikeWorkspaceFilePath(rel)) {
       return { status: "rejected_path_policy", reason: "Invalid relative path for write_file action.", changed: false };
@@ -4238,11 +4515,12 @@ class Provider implements vscode.WebviewViewProvider {
     }
     if (!overwrite) {
       if (existedBefore) {
-        return {
-          status: "rejected_path_policy",
-          reason: "write_file blocked: file already exists and overwrite=false.",
-          changed: false,
-        };
+      return {
+        status: "rejected_path_policy",
+        reason: "write_file blocked: file already exists and overwrite=false.",
+        changed: false,
+        targetExistedBefore: existedBefore,
+      };
       }
     }
 
@@ -4252,6 +4530,7 @@ class Provider implements vscode.WebviewViewProvider {
         status: "rejected_path_policy",
         reason: "write_file blocked: detected structured tool payload instead of raw file content.",
         changed: false,
+        targetExistedBefore: existedBefore,
       };
     }
     if (textContainsLeakedPatchArtifacts(content)) {
@@ -4259,6 +4538,7 @@ class Provider implements vscode.WebviewViewProvider {
         status: "rejected_path_policy",
         reason: "write_file blocked: detected leaked diff/apply_patch markers in file content.",
         changed: false,
+        targetExistedBefore: existedBefore,
       };
     }
 
@@ -4267,18 +4547,20 @@ class Provider implements vscode.WebviewViewProvider {
         status: "applied",
         reason: "File already matched requested content.",
         changed: false,
+        targetExistedBefore: existedBefore,
       };
     }
 
     await vscode.workspace.fs.writeFile(target, Buffer.from(content, "utf8"));
     await vscode.workspace.fs.stat(target);
-    return { status: "applied", changed: true };
+    return { status: "applied", changed: true, targetExistedBefore: existedBefore };
   }
 
   private async runApprovedCommand(
     command: string,
     threadId?: string | null,
-    addExecutionEvent?: (code: string, message: string, severity?: DiagnosticsSeverity) => void
+    addExecutionEvent?: (code: string, message: string, severity?: DiagnosticsSeverity) => void,
+    options?: { timeoutMs?: number }
   ): Promise<{ ok: boolean; exitCode: number | null; stdout: string; stderr: string }> {
     const root = this.getWorkspaceRoot();
     const cwd = root?.uri.fsPath || process.cwd();
@@ -4287,7 +4569,10 @@ class Provider implements vscode.WebviewViewProvider {
     const args = isWindows
       ? ["-NoProfile", "-NonInteractive", "-Command", command]
       : ["-lc", command];
-    const timeoutMs = 15 * 60 * 1000;
+    const timeoutMs =
+      typeof options?.timeoutMs === "number" && Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+        ? options.timeoutMs
+        : 15 * 60 * 1000;
     const maxBuffer = 8 * 1024 * 1024;
     const result = await new Promise<{ ok: boolean; exitCode: number | null; stdout: string; stderr: string }>((resolve) => {
       execFile(shell, args, { cwd, timeout: timeoutMs, windowsHide: true, maxBuffer }, (error, stdout, stderr) => {
