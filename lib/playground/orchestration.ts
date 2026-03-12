@@ -1,5 +1,13 @@
 import { checkRateLimits, getUserPlan } from "@/lib/hf-router/rate-limit";
 import { hasUnlimitedPlaygroundAccess } from "@/lib/playground/auth";
+import {
+  DEFAULT_PLAYGROUND_MODEL_ALIAS,
+  PLAYGROUND_CONTRACT_VERSION,
+  getPlaygroundModelEntry,
+  type PlaygroundModelCapabilitySet,
+  type PlaygroundModelProvider,
+  resolvePlaygroundModelSelection,
+} from "@/lib/playground/model-registry";
 import { looksLikeShellCommand } from "@/lib/playground/policy";
 
 export type AssistMode = "auto" | "plan" | "yolo" | "generate" | "debug";
@@ -83,6 +91,18 @@ type AssistRunRuntimeOptions = {
   nvidiaApiKey?: string;
 };
 
+export type AssistModelMetadata = {
+  contractVersion: string;
+  adapter: "native_tools_v1" | "text_actions_v1";
+  modelRequested: string;
+  modelRequestedAlias: string;
+  modelResolved: string;
+  modelResolvedAlias: string;
+  providerResolved: PlaygroundModelProvider;
+  capabilities: PlaygroundModelCapabilitySet;
+  certification: "tool_ready" | "chat_only" | "experimental";
+};
+
 export type AssistPlan = {
   objective: string;
   constraints: string[];
@@ -121,6 +141,7 @@ export type AssistResult = {
   final: string;
   logs: string[];
   modelUsed: string;
+  modelMetadata: AssistModelMetadata;
   confidence: number;
   risk: { blastRadius: "low" | "medium" | "high"; rollbackComplexity: number };
   influence: { files: string[]; snippets: number };
@@ -150,7 +171,7 @@ const HF_ROUTER_BASE_URL = "https://router.huggingface.co/v1";
 const NVIDIA_INTEGRATE_BASE_URL = "https://integrate.api.nvidia.com/v1";
 const STANDARD_CONTEXT_LIMIT = 32_000;
 const LONG_CONTEXT_LIMIT = 262_144;
-const DEFAULT_PLAYGROUND_MODEL = "openai/gpt-oss-120b:fastest";
+const DEFAULT_PLAYGROUND_MODEL = DEFAULT_PLAYGROUND_MODEL_ALIAS;
 const DEFAULT_NVIDIA_MODEL = "mistralai/mistral-nemotron";
 const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
 const IDENTITY_DENIAL_RESPONSE =
@@ -163,6 +184,25 @@ const PLAYGROUND_INTELLIGENCE_V2 = process.env.PLAYGROUND_INTELLIGENCE_V2 !== "0
 const AUTO_APPLY_THRESHOLD = 0.72;
 const AUTO_VALIDATE_THRESHOLD = 0.8;
 type AssistProvider = "hf" | "nvidia";
+type ProviderToolSpec = {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+};
+
+type ProviderToolCall = {
+  name: string;
+  arguments: string;
+};
+
+type ProviderChatResult = {
+  text: string;
+  reasoning: string;
+  toolCalls: ProviderToolCall[];
+};
 
 function resolveModelAlias(model: string | undefined, fallbackModel: string): string {
   const trimmed = (model || "").trim();
@@ -294,22 +334,11 @@ function getNvidiaToken(runtimeOverride?: string): string | undefined {
   );
 }
 
-function resolveAssistProvider(params: {
-  model: string;
-  providerPreference?: string;
-  runtimeNvidiaApiKey?: string;
-}): AssistProvider {
-  const preference = String(params.providerPreference || "").trim().toLowerCase();
-  if (preference === "hf") return "hf";
-  if (preference === "nvidia") return "nvidia";
-  const nvidiaReady = Boolean(getNvidiaToken(params.runtimeNvidiaApiKey));
-  const hfReady = Boolean(getHfRouterToken());
-
-  // Default to HF when both providers are configured (the canonical model lives on HuggingFace).
-  // Explicit preferences can still force NVIDIA.
-  if (hfReady) return "hf";
-  if (nvidiaReady) return "nvidia";
-  return "hf";
+function getAvailableProviders(runtimeNvidiaApiKey?: string): AssistProvider[] {
+  const out: AssistProvider[] = [];
+  if (getHfRouterToken()) out.push("hf");
+  if (getNvidiaToken(runtimeNvidiaApiKey)) out.push("nvidia");
+  return out;
 }
 
 function resolveProviderModel(provider: AssistProvider, candidateModel: string): string {
@@ -318,6 +347,83 @@ function resolveProviderModel(provider: AssistProvider, candidateModel: string):
   if (raw) return raw;
   const configured = resolveModelAlias(process.env.PLAYGROUND_NVIDIA_MODEL, DEFAULT_NVIDIA_MODEL);
   return configured || DEFAULT_NVIDIA_MODEL;
+}
+
+function buildNativeToolSpecs(input: { allowCommands: boolean }): ProviderToolSpec[] {
+  const tools: ProviderToolSpec[] = [
+    {
+      type: "function",
+      function: {
+        name: "apply_edit",
+        description: "Apply a unified diff patch to a workspace-relative file.",
+        parameters: {
+          type: "object",
+          additionalProperties: false,
+          required: ["path", "patch"],
+          properties: {
+            path: { type: "string", description: "Workspace-relative file path." },
+            patch: { type: "string", description: "Unified diff patch for the file." },
+            rationale: { type: "string", description: "Optional one-line rationale." },
+          },
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "write_file",
+        description: "Write full file content to a workspace-relative file.",
+        parameters: {
+          type: "object",
+          additionalProperties: false,
+          required: ["path", "content"],
+          properties: {
+            path: { type: "string", description: "Workspace-relative file path." },
+            content: { type: "string", description: "Complete updated file content." },
+            overwrite: { type: "boolean", description: "Overwrite existing file contents when true." },
+          },
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "mkdir",
+        description: "Create a workspace-relative directory.",
+        parameters: {
+          type: "object",
+          additionalProperties: false,
+          required: ["path"],
+          properties: {
+            path: { type: "string", description: "Workspace-relative directory path." },
+          },
+        },
+      },
+    },
+  ];
+  if (input.allowCommands) {
+    tools.push({
+      type: "function",
+      function: {
+        name: "run_command",
+        description: "Run a safe shell command after edits or for validation.",
+        parameters: {
+          type: "object",
+          additionalProperties: false,
+          required: ["command"],
+          properties: {
+            command: { type: "string", description: "Runnable shell command." },
+            category: {
+              type: "string",
+              enum: ["implementation", "validation"],
+              description: "Whether this command changes implementation or validates it.",
+            },
+          },
+        },
+      },
+    });
+  }
+  return tools;
 }
 
 function estimateTokens(text: string): number {
@@ -920,6 +1026,134 @@ function extractStreamPieces(payload: unknown): { content: string; reasoning: st
   return { content, reasoning };
 }
 
+function extractToolCalls(payload: unknown): ProviderToolCall[] {
+  if (!payload || typeof payload !== "object") return [];
+  const parsed = payload as {
+    choices?: Array<{
+      message?: {
+        tool_calls?: Array<{
+          function?: { name?: unknown; arguments?: unknown };
+        }>;
+      };
+    }>;
+    tool_calls?: Array<{
+      function?: { name?: unknown; arguments?: unknown };
+    }>;
+  };
+  const toolCalls = parsed.choices?.[0]?.message?.tool_calls ?? parsed.tool_calls ?? [];
+  const out: ProviderToolCall[] = [];
+  for (const item of toolCalls) {
+    const name = typeof item?.function?.name === "string" ? item.function.name.trim() : "";
+    const args = typeof item?.function?.arguments === "string" ? item.function.arguments.trim() : "";
+    if (!name) continue;
+    out.push({ name, arguments: args || "{}" });
+  }
+  return out;
+}
+
+function baseProviderSystemPrompt(): string {
+  return `You are Playground AI. Be practical, concise, and execution-oriented. Return plain text suitable for a coding assistant. Be factual and avoid fabrications. If you are unsure, say so and suggest how to verify. If the user corrects you, acknowledge the correction and update your answer. If asked whether you are Qwen or nscale (or what nscale is in your identity/provider context), deny both and state you are ${PUBLIC_PLAYGROUND_MODEL_NAME}.`;
+}
+
+async function readStreamingProviderResponse(
+  response: Response,
+  label: "HF router" | "NVIDIA",
+  params: {
+    onToken?: (token: string) => void | Promise<void>;
+    onReasoningToken?: (token: string) => void | Promise<void>;
+  }
+): Promise<ProviderChatResult> {
+  const reader = response.body?.getReader();
+  if (!reader) return { text: "", reasoning: "", toolCalls: [] };
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let out = "";
+  let reasoningOut = "";
+  const readWithIdleTimeout = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        reader.read(),
+        new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`${label} stream idle timeout after ${HF_STREAM_IDLE_TIMEOUT_MS}ms.`)),
+            HF_STREAM_IDLE_TIMEOUT_MS
+          );
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+  const findSeparator = (value: string): { index: number; len: number } => {
+    const idxLf = value.indexOf("\n\n");
+    const idxCrlf = value.indexOf("\r\n\r\n");
+    if (idxLf < 0 && idxCrlf < 0) return { index: -1, len: 0 };
+    if (idxLf < 0) return { index: idxCrlf, len: 4 };
+    if (idxCrlf < 0) return { index: idxLf, len: 2 };
+    return idxLf < idxCrlf ? { index: idxLf, len: 2 } : { index: idxCrlf, len: 4 };
+  };
+
+  const handleEventChunk = async (eventChunk: string) => {
+    const lines = eventChunk
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const dataLines = lines
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trim());
+    if (!dataLines.length) return false;
+    const data = dataLines.join("\n");
+    if (!data || data === "[DONE]") return data === "[DONE]";
+
+    try {
+      const parsed = JSON.parse(data) as unknown;
+      const { content, reasoning } = extractStreamPieces(parsed);
+      if (content) {
+        out += content;
+        if (params.onToken) await params.onToken(content);
+      }
+      if (reasoning) {
+        reasoningOut += reasoning;
+        if (params.onReasoningToken) await params.onReasoningToken(reasoning);
+      }
+    } catch {
+      // Ignore malformed or non-JSON chunks.
+    }
+    return false;
+  };
+
+  let streamDone = false;
+  while (!streamDone) {
+    const { done, value } = await readWithIdleTimeout();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let sep = findSeparator(buffer);
+    while (sep.index >= 0) {
+      const eventChunk = buffer.slice(0, sep.index);
+      buffer = buffer.slice(sep.index + sep.len);
+      const sawDone = await handleEventChunk(eventChunk);
+      if (sawDone) {
+        streamDone = true;
+        break;
+      }
+      sep = findSeparator(buffer);
+    }
+  }
+
+  if (!streamDone && buffer.trim()) {
+    await handleEventChunk(buffer);
+  }
+
+  return {
+    text: out.trim(),
+    reasoning: reasoningOut.trim(),
+    toolCalls: [],
+  };
+}
+
 async function callHfChat(params: {
   model: string;
   prompt: string;
@@ -927,7 +1161,9 @@ async function callHfChat(params: {
   attachments?: AssistAttachment[];
   onToken?: (token: string) => void | Promise<void>;
   onReasoningToken?: (token: string) => void | Promise<void>;
-}): Promise<string> {
+  stream?: boolean;
+  tools?: ProviderToolSpec[];
+}): Promise<ProviderChatResult> {
   const token = getHfRouterToken();
   if (!token) {
     throw new Error(
@@ -947,16 +1183,21 @@ async function callHfChat(params: {
       },
       body: JSON.stringify({
         model: params.model,
-        stream: true,
+        stream: params.stream !== false,
         max_tokens: params.maxTokens,
         messages: [
           {
             role: "system",
-            content:
-              `You are Playground AI. Be practical, concise, and execution-oriented. Return plain text suitable for a coding assistant. Be factual and avoid fabrications. If you are unsure, say so and suggest how to verify. If the user corrects you, acknowledge the correction and update your answer. If asked whether you are Qwen or nscale (or what nscale is in your identity/provider context), deny both and state you are ${PUBLIC_PLAYGROUND_MODEL_NAME}.`,
+            content: baseProviderSystemPrompt(),
           },
           { role: "user", content: buildUserMessageContent(params.prompt, params.attachments) },
         ],
+        ...(params.tools?.length
+          ? {
+              tools: params.tools,
+              tool_choice: "auto",
+            }
+          : {}),
       }),
       signal: controller.signal,
     });
@@ -976,89 +1217,7 @@ async function callHfChat(params: {
 
   const contentType = r.headers.get("content-type") || "";
   if (contentType.includes("text/event-stream")) {
-    const reader = r.body?.getReader();
-    if (!reader) return "";
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let out = "";
-    const readWithIdleTimeout = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
-      let timer: NodeJS.Timeout | undefined;
-      try {
-        return await Promise.race([
-          reader.read(),
-          new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) => {
-            timer = setTimeout(
-              () => reject(new Error(`HF router stream idle timeout after ${HF_STREAM_IDLE_TIMEOUT_MS}ms.`)),
-              HF_STREAM_IDLE_TIMEOUT_MS
-            );
-          }),
-        ]);
-      } finally {
-        if (timer) clearTimeout(timer);
-      }
-    };
-    const findSeparator = (value: string): { index: number; len: number } => {
-      const idxLf = value.indexOf("\n\n");
-      const idxCrlf = value.indexOf("\r\n\r\n");
-      if (idxLf < 0 && idxCrlf < 0) return { index: -1, len: 0 };
-      if (idxLf < 0) return { index: idxCrlf, len: 4 };
-      if (idxCrlf < 0) return { index: idxLf, len: 2 };
-      return idxLf < idxCrlf ? { index: idxLf, len: 2 } : { index: idxCrlf, len: 4 };
-    };
-
-    const handleEventChunk = async (eventChunk: string) => {
-      const lines = eventChunk
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean);
-      const dataLines = lines
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trim());
-      if (!dataLines.length) return false;
-      const data = dataLines.join("\n");
-      if (!data || data === "[DONE]") return data === "[DONE]";
-
-      try {
-        const parsed = JSON.parse(data) as unknown;
-        const { content, reasoning } = extractStreamPieces(parsed);
-        if (content) {
-          out += content;
-          if (params.onToken) await params.onToken(content);
-        }
-        if (reasoning && params.onReasoningToken) {
-          await params.onReasoningToken(reasoning);
-        }
-      } catch {
-        // Ignore malformed or non-JSON chunks.
-      }
-      return false;
-    };
-
-    let streamDone = false;
-    while (!streamDone) {
-      const { done, value } = await readWithIdleTimeout();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      let sep = findSeparator(buffer);
-      while (sep.index >= 0) {
-        const eventChunk = buffer.slice(0, sep.index);
-        buffer = buffer.slice(sep.index + sep.len);
-        const sawDone = await handleEventChunk(eventChunk);
-        if (sawDone) {
-          streamDone = true;
-          break;
-        }
-        sep = findSeparator(buffer);
-      }
-    }
-
-    if (!streamDone && buffer.trim()) {
-      await handleEventChunk(buffer);
-    }
-
-    return out.trim();
+    return readStreamingProviderResponse(r, "HF router", params);
   }
 
   const body = (await r.json()) as unknown;
@@ -1067,7 +1226,11 @@ async function callHfChat(params: {
   const reasoningText = reasoning.trim();
   if (reasoningText && params.onReasoningToken) await params.onReasoningToken(reasoningText);
   if (text && params.onToken) await params.onToken(text);
-  return text;
+  return {
+    text,
+    reasoning: reasoningText,
+    toolCalls: extractToolCalls(body),
+  };
 }
 
 async function callNvidiaChat(params: {
@@ -1078,7 +1241,9 @@ async function callNvidiaChat(params: {
   onToken?: (token: string) => void | Promise<void>;
   onReasoningToken?: (token: string) => void | Promise<void>;
   runtimeApiKey?: string;
-}): Promise<string> {
+  stream?: boolean;
+  tools?: ProviderToolSpec[];
+}): Promise<ProviderChatResult> {
   const token = getNvidiaToken(params.runtimeApiKey);
   if (!token) {
     throw new Error(
@@ -1099,7 +1264,7 @@ async function callNvidiaChat(params: {
       },
       body: JSON.stringify({
         model: params.model,
-        stream: true,
+        stream: params.stream !== false,
         max_tokens: params.maxTokens,
         temperature: 0.6,
         top_p: 0.95,
@@ -1107,11 +1272,16 @@ async function callNvidiaChat(params: {
         messages: [
           {
             role: "system",
-            content:
-              `You are Playground AI. Be practical, concise, and execution-oriented. Return plain text suitable for a coding assistant. Be factual and avoid fabrications. If you are unsure, say so and suggest how to verify. If the user corrects you, acknowledge the correction and update your answer. If asked whether you are Qwen or nscale (or what nscale is in your identity/provider context), deny both and state you are ${PUBLIC_PLAYGROUND_MODEL_NAME}.`,
+            content: baseProviderSystemPrompt(),
           },
           { role: "user", content: buildUserMessageContent(params.prompt, params.attachments) },
         ],
+        ...(params.tools?.length
+          ? {
+              tools: params.tools,
+              tool_choice: "auto",
+            }
+          : {}),
       }),
       signal: controller.signal,
     });
@@ -1131,89 +1301,7 @@ async function callNvidiaChat(params: {
 
   const contentType = r.headers.get("content-type") || "";
   if (contentType.includes("text/event-stream")) {
-    const reader = r.body?.getReader();
-    if (!reader) return "";
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let out = "";
-    const readWithIdleTimeout = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
-      let timer: NodeJS.Timeout | undefined;
-      try {
-        return await Promise.race([
-          reader.read(),
-          new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) => {
-            timer = setTimeout(
-              () => reject(new Error(`NVIDIA stream idle timeout after ${HF_STREAM_IDLE_TIMEOUT_MS}ms.`)),
-              HF_STREAM_IDLE_TIMEOUT_MS
-            );
-          }),
-        ]);
-      } finally {
-        if (timer) clearTimeout(timer);
-      }
-    };
-    const findSeparator = (value: string): { index: number; len: number } => {
-      const idxLf = value.indexOf("\n\n");
-      const idxCrlf = value.indexOf("\r\n\r\n");
-      if (idxLf < 0 && idxCrlf < 0) return { index: -1, len: 0 };
-      if (idxLf < 0) return { index: idxCrlf, len: 4 };
-      if (idxCrlf < 0) return { index: idxLf, len: 2 };
-      return idxLf < idxCrlf ? { index: idxLf, len: 2 } : { index: idxCrlf, len: 4 };
-    };
-
-    const handleEventChunk = async (eventChunk: string) => {
-      const lines = eventChunk
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean);
-      const dataLines = lines
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trim());
-      if (!dataLines.length) return false;
-      const data = dataLines.join("\n");
-      if (!data || data === "[DONE]") return data === "[DONE]";
-
-      try {
-        const parsed = JSON.parse(data) as unknown;
-        const { content, reasoning } = extractStreamPieces(parsed);
-        if (content) {
-          out += content;
-          if (params.onToken) await params.onToken(content);
-        }
-        if (reasoning && params.onReasoningToken) {
-          await params.onReasoningToken(reasoning);
-        }
-      } catch {
-        // Ignore malformed or non-JSON chunks.
-      }
-      return false;
-    };
-
-    let streamDone = false;
-    while (!streamDone) {
-      const { done, value } = await readWithIdleTimeout();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      let sep = findSeparator(buffer);
-      while (sep.index >= 0) {
-        const eventChunk = buffer.slice(0, sep.index);
-        buffer = buffer.slice(sep.index + sep.len);
-        const sawDone = await handleEventChunk(eventChunk);
-        if (sawDone) {
-          streamDone = true;
-          break;
-        }
-        sep = findSeparator(buffer);
-      }
-    }
-
-    if (!streamDone && buffer.trim()) {
-      await handleEventChunk(buffer);
-    }
-
-    return out.trim();
+    return readStreamingProviderResponse(r, "NVIDIA", params);
   }
 
   const body = (await r.json()) as unknown;
@@ -1222,7 +1310,11 @@ async function callNvidiaChat(params: {
   const reasoningText = reasoning.trim();
   if (reasoningText && params.onReasoningToken) await params.onReasoningToken(reasoningText);
   if (text && params.onToken) await params.onToken(text);
-  return text;
+  return {
+    text,
+    reasoning: reasoningText,
+    toolCalls: extractToolCalls(body),
+  };
 }
 
 function extractBalancedJsonObject(text: string): string | null {
@@ -2757,32 +2849,13 @@ export async function runAssist(
 
   const longContextRequested = budget.maxTokens > STANDARD_CONTEXT_LIMIT;
   const longContextEnabled = process.env.PLAYGROUND_ENABLE_LONG_CONTEXT === "1";
-  const providerPreference =
-    String(runtimeOptions?.provider || process.env.PLAYGROUND_PROVIDER || "auto")
-      .trim()
-      .toLowerCase() || "auto";
-  const fallbackModel = (process.env.PLAYGROUND_MODEL || DEFAULT_PLAYGROUND_MODEL).trim() || DEFAULT_PLAYGROUND_MODEL;
-  const requestedModel = resolveModelAlias(req.model, fallbackModel);
-  const requestedLongContextModel = resolveModelAlias(process.env.PLAYGROUND_LONG_CONTEXT_MODEL, fallbackModel);
-  const model = longContextRequested && longContextEnabled ? requestedLongContextModel : requestedModel;
-  const configuredBackupModel = resolveModelAlias(process.env.PLAYGROUND_BACKUP_MODEL, DEFAULT_PLAYGROUND_MODEL);
-  const modelFallbackChain = Array.from(
-    new Set(
-      [model, fallbackModel, configuredBackupModel, DEFAULT_PLAYGROUND_MODEL]
-        .map((entry) => String(entry || "").trim())
-        .filter(Boolean)
-    )
-  );
-  let modelUsed = model;
+  let modelUsed = "";
 
   const logs: string[] = [];
   logs.push(`intent=${intentResolution.intent} delta=${intentResolution.delta.toFixed(2)} clarified=${intentResolution.clarified ? 1 : 0}`);
   logs.push(`decision=${decision.mode} confidence=${decision.confidence.toFixed(2)}`);
   logs.push(`contextBudget=${budget.maxTokens}/${budget.strategy}`);
   logs.push(`reasonCodes=${reasonCodes.join(",")}`);
-  if (longContextRequested && !longContextEnabled) {
-    logs.push("long-context model unavailable; using summarized/truncated context fallback");
-  }
 
   let final = "";
   let edits: Array<{ path: string; patch: string; rationale?: string }> = [];
@@ -2835,6 +2908,56 @@ export async function runAssist(
           : effectiveReasoning === "medium"
             ? "Reasoning preference: medium. Use balanced reasoning with concise steps."
             : null;
+  const providerPreference =
+    String(runtimeOptions?.provider || process.env.PLAYGROUND_PROVIDER || "auto")
+      .trim()
+      .toLowerCase() || "auto";
+  const availableProviders = getAvailableProviders(runtimeOptions?.nvidiaApiKey);
+  const preferredProviders =
+    providerPreference === "hf" || providerPreference === "nvidia" ? ([providerPreference] as AssistProvider[]) : availableProviders;
+  const requestedModelAlias = resolveModelAlias(
+    req.model || req.userProfile?.preferredModelAlias || process.env.PLAYGROUND_MODEL,
+    DEFAULT_PLAYGROUND_MODEL
+  );
+  const requestedRegistryEntry = getPlaygroundModelEntry(requestedModelAlias);
+  const modelSelection = resolvePlaygroundModelSelection({
+    requested: requestedModelAlias,
+    allowedProviders: preferredProviders,
+    requirements: {
+      images: (req.attachments?.length ?? 0) > 0,
+      textActions: codeEditIntent || decision.mode === "debug" || decision.mode === "yolo",
+      shellCommands: explicitCommandRunIntent || decision.mode === "yolo",
+      toolReady:
+        (codeEditIntent || decision.mode === "debug" || decision.mode === "yolo") &&
+        requestedRegistryEntry?.certification !== "experimental",
+    },
+  });
+  const modelFallbackChain = modelSelection.fallbackChain;
+  const primaryModelEntry = modelFallbackChain[0] ?? modelSelection.resolvedEntry;
+  modelUsed = primaryModelEntry.model;
+  const adapter: AssistModelMetadata["adapter"] = primaryModelEntry.capabilities.supportsNativeTools
+    ? "native_tools_v1"
+    : "text_actions_v1";
+  let modelMetadata: AssistModelMetadata = {
+    contractVersion: PLAYGROUND_CONTRACT_VERSION,
+    adapter,
+    modelRequested: requestedModelAlias,
+    modelRequestedAlias: modelSelection.requestedAlias,
+    modelResolved: primaryModelEntry.model,
+    modelResolvedAlias: primaryModelEntry.alias,
+    providerResolved: primaryModelEntry.provider,
+    capabilities: { ...primaryModelEntry.capabilities },
+    certification: primaryModelEntry.certification,
+  };
+  logs.push(`model_requested=${requestedModelAlias}`);
+  logs.push(`model_resolved_alias=${modelMetadata.modelResolvedAlias}`);
+  logs.push(`model_resolved=${modelMetadata.modelResolved}`);
+  logs.push(`provider_resolved=${modelMetadata.providerResolved}`);
+  logs.push(`contract_version=${modelMetadata.contractVersion}`);
+  logs.push(`adapter=${adapter}`);
+  if (longContextRequested && !longContextEnabled) {
+    logs.push("long-context model unavailable; using summarized/truncated context fallback");
+  }
   if (isCountryOriginProbeTask) {
     final = COUNTRY_OF_ORIGIN_RESPONSE;
     logs.push("identity_guardrail=country_origin_override");
@@ -2866,6 +2989,7 @@ export async function runAssist(
       logs.push(`attachments_included=${safeAttachments.length}`);
     }
     const useStructuredOutput = codeEditIntent || decision.mode === "debug" || decision.mode === "yolo";
+    const adapterUsesNativeTools = adapter === "native_tools_v1";
     const prompt = [
       `Mode: ${decision.mode}`,
       `Resolved intent: ${intentResolution.intent}`,
@@ -2874,7 +2998,11 @@ export async function runAssist(
       req.workflowIntentId ? `Workflow intent id: ${req.workflowIntentId}` : "",
       reasoningInstruction,
       `Safety profile: ${effectiveSafety}`,
-      `Model: ${model}`,
+      `Contract version: ${modelMetadata.contractVersion}`,
+      `Model alias: ${modelMetadata.modelResolvedAlias}`,
+      `Concrete model: ${modelMetadata.modelResolved}`,
+      `Provider: ${modelMetadata.providerResolved}`,
+      `Adapter: ${adapter}`,
       "",
       profileToPrompt(req.userProfile, req.clientPreferences, req.autonomy),
       "",
@@ -2888,20 +3016,22 @@ export async function runAssist(
           ? "Focus on direct implementation with actionable edits and commands."
           : "Focus on production-ready implementation guidance with concise rationale.",
       "",
-      useStructuredOutput
-        ? 'Return STRICT JSON only with this shape: {"final":"string","edits":[{"path":"relative/path","patch":"unified diff patch","rationale":"optional"}],"commands":["safe command"]}.'
-        : "Return plain text only. Do not return JSON.",
+      adapterUsesNativeTools
+        ? "Use the available tools for edits, write_file, mkdir, and commands when actions are required. Prefer tool calls over describing actions in prose."
+        : useStructuredOutput
+          ? 'Return STRICT JSON only with this shape: {"final":"string","actions":[{"type":"edit","path":"relative/path","patch":"unified diff patch"},{"type":"write_file","path":"relative/path","content":"full file text","overwrite":true},{"type":"mkdir","path":"relative/path"},{"type":"command","command":"safe shell command","category":"validation"}],"edits":[{"path":"relative/path","patch":"unified diff patch","rationale":"optional"}],"commands":["safe command"]}.'
+          : "Return plain text only. Do not return JSON.",
       useStructuredOutput
         ? codeEditIntent
           ? contextAnchorsAvailable
-            ? "Rules: include concrete code edits (non-empty edits array) when the user asks to create/modify code; if file path is omitted, infer target from the provided IDE context and proceed without follow-up questions."
-            : "Rules: include concrete code edits (non-empty edits array) when the user asks to create/modify code; do not return placeholder text."
-          : "Rules: keep edits empty unless explicitly requested; answer in plain natural language and avoid standalone code snippets."
+            ? "Rules: include concrete file actions when the user asks to create/modify code; if file path is omitted, infer target from the provided IDE context and proceed without follow-up questions."
+            : "Rules: include concrete file actions when the user asks to create/modify code; do not return placeholder text."
+          : "Rules: keep actions empty unless explicitly requested; answer in plain natural language and avoid standalone code snippets."
         : "Rules: answer directly in natural language and avoid markdown fences.",
       useStructuredOutput
         ? explicitCommandRunIntent
-          ? "Rules: commands may be included only if they are necessary, safe, and directly requested."
-          : "Rules: leave commands empty unless auto-validation is explicitly required by confidence policy."
+          ? "Rules: command actions may be included only if they are necessary, safe, and directly requested."
+          : "Rules: leave command actions empty unless auto-validation is explicitly required by confidence policy."
         : "Rules: do not include shell commands unless the user explicitly asks for runnable commands.",
       "Rules: never include markdown fences.",
     ]
@@ -2909,25 +3039,48 @@ export async function runAssist(
       .join("\n");
 
     let raw = "";
+    let providerResult: ProviderChatResult = { text: "", reasoning: "", toolCalls: [] };
     const useTwoPass =
-      useStructuredOutput && shouldUseTwoPassCodeGeneration(req.task, codeEditIntent, budgetedContext, effectiveReasoning);
+      !adapterUsesNativeTools &&
+      useStructuredOutput &&
+      shouldUseTwoPassCodeGeneration(req.task, codeEditIntent, budgetedContext, effectiveReasoning);
     const allowRawTokenStream =
       !useTwoPass && !hasExecutionIntent(req.task) && (STREAM_RAW_MODEL_TOKENS || !useStructuredOutput);
-    const allowReasoningTokenStream = !useTwoPass;
+    const allowReasoningTokenStream = !useTwoPass && !adapterUsesNativeTools;
+    const structuredFromProviderResult = (result: ProviderChatResult): StructuredAssistOutput | null => {
+      return (
+        structuredFromNativeToolCalls(result) ??
+        parseStructuredAssistResponse(result.text) ??
+        inferSingleFileRewriteFallback(result.text, budgetedContext, primaryTargetPath) ??
+        inferStructuredFallback(result.text, req.task, primaryTargetPath)
+      );
+    };
     const callPrimaryWithModelFallback = async (promptText: string, attachmentsForCall?: AssistAttachment[]) => {
       let lastError: unknown = null;
       for (let idx = 0; idx < modelFallbackChain.length; idx += 1) {
-        const candidateModel = modelFallbackChain[idx];
-        const nextModel = idx + 1 < modelFallbackChain.length ? modelFallbackChain[idx + 1] : null;
+        const candidateEntry = modelFallbackChain[idx];
+        const nextEntry = idx + 1 < modelFallbackChain.length ? modelFallbackChain[idx + 1] : null;
         try {
-          modelUsed = candidateModel;
-          const provider = resolveAssistProvider({
-            model: candidateModel,
-            providerPreference,
-            runtimeNvidiaApiKey: runtimeOptions?.nvidiaApiKey,
-          });
-          const providerModel = resolveProviderModel(provider, candidateModel);
+          modelUsed = candidateEntry.model;
+          modelMetadata = {
+            ...modelMetadata,
+            adapter: candidateEntry.capabilities.supportsNativeTools ? "native_tools_v1" : "text_actions_v1",
+            modelResolved: candidateEntry.model,
+            modelResolvedAlias: candidateEntry.alias,
+            providerResolved: candidateEntry.provider,
+            capabilities: { ...candidateEntry.capabilities },
+            certification: candidateEntry.certification,
+          };
+          const provider = candidateEntry.provider;
+          const providerModel = resolveProviderModel(provider, candidateEntry.model);
           logs.push(`provider=${provider} model=${providerModel}`);
+          const nativeToolsRequested = candidateEntry.capabilities.supportsNativeTools && useStructuredOutput;
+          const nativeToolSpecs =
+            nativeToolsRequested && candidateEntry.capabilities.supportsWriteFile
+              ? buildNativeToolSpecs({
+                  allowCommands: candidateEntry.capabilities.supportsShellCommands && (explicitCommandRunIntent || decision.mode === "yolo"),
+                })
+              : undefined;
           const callModel = async () => {
             if (provider === "nvidia") {
               return callNvidiaChat({
@@ -2935,9 +3088,11 @@ export async function runAssist(
                 prompt: promptText,
                 maxTokens: Math.max(128, Math.min(req.max_tokens ?? 512, LONG_CONTEXT_LIMIT)),
                 attachments: attachmentsForCall,
-                onToken: allowRawTokenStream ? hooks?.onToken : undefined,
+                onToken: allowRawTokenStream && !nativeToolsRequested ? hooks?.onToken : undefined,
                 onReasoningToken: allowReasoningTokenStream ? hooks?.onReasoningToken : undefined,
                 runtimeApiKey: runtimeOptions?.nvidiaApiKey,
+                stream: !nativeToolsRequested && candidateEntry.capabilities.supportsStreaming,
+                ...(nativeToolSpecs?.length ? { tools: nativeToolSpecs } : {}),
               });
             }
             return callHfChat({
@@ -2945,17 +3100,19 @@ export async function runAssist(
               prompt: promptText,
               maxTokens: Math.max(128, Math.min(req.max_tokens ?? 512, LONG_CONTEXT_LIMIT)),
               attachments: attachmentsForCall,
-              onToken: allowRawTokenStream ? hooks?.onToken : undefined,
+              onToken: allowRawTokenStream && !nativeToolsRequested ? hooks?.onToken : undefined,
               onReasoningToken: allowReasoningTokenStream ? hooks?.onReasoningToken : undefined,
+              stream: !nativeToolsRequested && candidateEntry.capabilities.supportsStreaming,
+              ...(nativeToolSpecs?.length ? { tools: nativeToolSpecs } : {}),
             });
           };
           return await callModel();
         } catch (error) {
           lastError = error;
           const message = error instanceof Error ? error.message : String(error);
-          if (nextModel && isLikelyModelFallbackEligibleError(message)) {
+          if (nextEntry && isLikelyModelFallbackEligibleError(message)) {
             logs.push(
-              `model_fallback from "${candidateModel}" to "${nextModel}" reason="${message.slice(0, 140).replace(/\s+/g, " ")}"`
+              `model_fallback from "${candidateEntry.alias}" to "${nextEntry.alias}" reason="${message.slice(0, 140).replace(/\s+/g, " ")}"`
             );
             if (hooks?.onStatus) {
               await hooks.onStatus("Primary model unavailable. Retrying with backup model.");
@@ -2991,7 +3148,8 @@ export async function runAssist(
         "",
         "Pass 1 (draft): produce your best strict JSON output directly.",
       ].join("\n");
-      const draftRaw = await callWithAttachmentFallback(draftPrompt, safeAttachments);
+      const draftResult = await callWithAttachmentFallback(draftPrompt, safeAttachments);
+      const draftRaw = draftResult.text;
       const verifyPrompt = [
         prompt,
         "",
@@ -3002,9 +3160,10 @@ export async function runAssist(
         "Candidate output:",
         draftRaw,
       ].join("\n");
-      const verifyRaw = await callWithAttachmentFallback(verifyPrompt, undefined);
-      const verifiedStructured = parseStructuredAssistResponse(verifyRaw);
-      const draftStructured = parseStructuredAssistResponse(draftRaw);
+      const verifyResult = await callWithAttachmentFallback(verifyPrompt, undefined);
+      const verifyRaw = verifyResult.text;
+      const verifiedStructured = structuredFromProviderResult(verifyResult) ?? parseStructuredAssistResponse(verifyRaw);
+      const draftStructured = structuredFromProviderResult(draftResult) ?? parseStructuredAssistResponse(draftRaw);
       const verifiedLooksInvalid = !verifiedStructured || (codeEditIntent && (verifiedStructured.edits?.length ?? 0) === 0);
 
       if (verifiedLooksInvalid) {
@@ -3021,12 +3180,15 @@ export async function runAssist(
           "Verifier candidate:",
           verifyRaw,
         ].join("\n");
-        raw = await callWithAttachmentFallback(repairPrompt, undefined);
+        providerResult = await callWithAttachmentFallback(repairPrompt, undefined);
+        raw = providerResult.text;
       } else {
+        providerResult = verifyResult;
         raw = verifyRaw;
       }
 
       const structured =
+        structuredFromProviderResult(providerResult) ||
         parseStructuredAssistResponse(raw) ||
         inferSingleFileRewriteFallback(raw, budgetedContext, primaryTargetPath) ||
         verifiedStructured ||
@@ -3046,11 +3208,13 @@ export async function runAssist(
         logs.push("structured_output=parse_failed_after_two_pass");
       }
     } else {
-      raw = await callWithAttachmentFallback(prompt, safeAttachments);
+      providerResult = await callWithAttachmentFallback(prompt, safeAttachments);
+      raw = providerResult.text;
       if (!useStructuredOutput) {
         final = normalizeModelText(raw);
       } else {
         const structured =
+          structuredFromProviderResult(providerResult) ??
           parseStructuredAssistResponse(raw) ??
           inferSingleFileRewriteFallback(raw, budgetedContext, primaryTargetPath) ??
           inferStructuredFallback(raw, req.task, primaryTargetPath);
@@ -3128,9 +3292,11 @@ export async function runAssist(
           "Previous output:",
           raw || final,
         ].join("\n");
-        const repairRaw = await callWithAttachmentFallback(repairPrompt, undefined);
+        providerResult = await callWithAttachmentFallback(repairPrompt, undefined);
+        const repairRaw = providerResult.text;
         raw = repairRaw;
         const repairStructured =
+          structuredFromProviderResult(providerResult) ??
           parseStructuredAssistResponse(repairRaw) ??
           inferSingleFileRewriteFallback(repairRaw, budgetedContext, primaryTargetPath) ??
           inferStructuredFallback(repairRaw, req.task, primaryTargetPath);
@@ -3165,9 +3331,11 @@ export async function runAssist(
           "Previous output:",
           raw || final,
         ].join("\n");
-        const enforceRaw = await callWithAttachmentFallback(enforcePrompt, undefined);
+        providerResult = await callWithAttachmentFallback(enforcePrompt, undefined);
+        const enforceRaw = providerResult.text;
         raw = enforceRaw;
         const enforceStructured =
+          structuredFromProviderResult(providerResult) ??
           parseStructuredAssistResponse(enforceRaw) ??
           inferSingleFileRewriteFallback(enforceRaw, budgetedContext, primaryTargetPath) ??
           inferStructuredFallback(enforceRaw, req.task, primaryTargetPath);
@@ -3202,9 +3370,11 @@ export async function runAssist(
           "Previous output:",
           raw || final,
         ].join("\n");
-        const assumptionRaw = await callWithAttachmentFallback(assumptionPrompt, undefined);
+        providerResult = await callWithAttachmentFallback(assumptionPrompt, undefined);
+        const assumptionRaw = providerResult.text;
         raw = assumptionRaw;
         const assumptionStructured =
+          structuredFromProviderResult(providerResult) ??
           parseStructuredAssistResponse(assumptionRaw) ??
           inferSingleFileRewriteFallback(assumptionRaw, budgetedContext, primaryTargetPath) ??
           inferStructuredFallback(assumptionRaw, req.task, primaryTargetPath);
@@ -3248,9 +3418,11 @@ export async function runAssist(
           "Previous output:",
           raw || final,
         ].join("\n");
-        const rewriteRaw = await callWithAttachmentFallback(rewritePrompt, undefined);
+        providerResult = await callWithAttachmentFallback(rewritePrompt, undefined);
+        const rewriteRaw = providerResult.text;
         raw = rewriteRaw;
         const rewriteStructured =
+          structuredFromProviderResult(providerResult) ??
           parseStructuredAssistResponse(rewriteRaw) ??
           inferSingleFileRewriteFallback(rewriteRaw, budgetedContext, primaryTargetPath) ??
           inferStructuredFallback(rewriteRaw, req.task, primaryTargetPath);
@@ -3304,10 +3476,75 @@ export async function runAssist(
               : contextAnchorsAvailable
                 ? "No repository changes were applied yet. I still could not produce a valid patch after recovery passes. I'll use the active IDE context as the target on your next run if you resend the request."
                 : "No repository changes were applied yet. I need one more detail to generate actionable edits. Please share the exact file path and the target change, or paste the relevant code block.";
-        }
       }
     }
   }
+}
+
+function structuredFromNativeToolCalls(result: ProviderChatResult): StructuredAssistOutput | null {
+  if (!result.toolCalls.length) return null;
+  const actions: ToolAction[] = [];
+  const edits: Array<{ path: string; patch: string; rationale?: string }> = [];
+  const commands: string[] = [];
+
+  for (const toolCall of result.toolCalls) {
+    let parsedArgs: Record<string, unknown>;
+    try {
+      parsedArgs = JSON.parse(toolCall.arguments || "{}") as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (toolCall.name === "apply_edit") {
+      const path = typeof parsedArgs.path === "string" ? parsedArgs.path.trim() : "";
+      const patch = typeof parsedArgs.patch === "string" ? parsedArgs.patch.trim() : "";
+      const rationale = typeof parsedArgs.rationale === "string" ? parsedArgs.rationale.trim() : "";
+      if (!looksLikeConcreteFilePath(path) || !patch || patchContainsStructuredPayloadArtifacts(patch)) continue;
+      edits.push({ path, patch, ...(rationale ? { rationale } : {}) });
+      actions.push({ type: "edit", path, patch });
+      continue;
+    }
+    if (toolCall.name === "write_file") {
+      const path = typeof parsedArgs.path === "string" ? parsedArgs.path.trim() : "";
+      const content = typeof parsedArgs.content === "string" ? parsedArgs.content : "";
+      const overwrite = typeof parsedArgs.overwrite === "boolean" ? parsedArgs.overwrite : undefined;
+      const normalizedContent = normalizeModelText(content).trim();
+      if (
+        !looksLikeConcreteFilePath(path) ||
+        !normalizedContent ||
+        (/^\s*\{/.test(normalizedContent) && /"final"\s*:/i.test(normalizedContent)) ||
+        /\*\*\*\s+Begin Patch|\bdiff --git\b/i.test(normalizedContent)
+      ) {
+        continue;
+      }
+      actions.push({ type: "write_file", path, content, ...(overwrite !== undefined ? { overwrite } : {}) });
+      continue;
+    }
+    if (toolCall.name === "mkdir") {
+      const path = typeof parsedArgs.path === "string" ? parsedArgs.path.trim() : "";
+      if (!looksLikeConcreteFilePath(path)) continue;
+      actions.push({ type: "mkdir", path });
+      continue;
+    }
+    if (toolCall.name === "run_command") {
+      const command = typeof parsedArgs.command === "string" ? parsedArgs.command.trim() : "";
+      const category =
+        parsedArgs.category === "implementation" || parsedArgs.category === "validation"
+          ? parsedArgs.category
+          : undefined;
+      if (!command) continue;
+      commands.push(command);
+      actions.push({ type: "command", command, ...(category ? { category } : {}) });
+    }
+  }
+
+  if (!actions.length && !edits.length && !commands.length) return null;
+  return {
+    final: result.text || "Prepared native tool actions.",
+    edits,
+    commands,
+    ...(actions.length ? { actions } : {}),
+  };
+}
 
   const readOnlyConversationRequest =
     pureConversationalTask ||
@@ -3333,6 +3570,12 @@ export async function runAssist(
     commands: modelCommands,
     structuredActions,
   });
+  edits = actions
+    .filter((action): action is Extract<ToolAction, { type: "edit" }> => action.type === "edit")
+    .map((action) => ({ path: action.path, patch: action.patch }));
+  modelCommands = actions
+    .filter((action): action is Extract<ToolAction, { type: "command" }> => action.type === "command")
+    .map((action) => action.command);
   const hasFileActions = actions.some(
     (action) => action.type === "edit" || action.type === "mkdir" || action.type === "write_file"
   );
@@ -3561,6 +3804,7 @@ export async function runAssist(
     final,
     logs,
     modelUsed,
+    modelMetadata,
     confidence,
     risk,
     influence,

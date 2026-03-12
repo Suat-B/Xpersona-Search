@@ -49,11 +49,34 @@ const AUTONOMY_COMMAND_POLICY_CONFIG_KEY = "autonomy.commandPolicy";
 const AUTONOMY_SAFETY_FLOOR_CONFIG_KEY = "autonomy.safetyFloor";
 const AUTONOMY_FAILSAFE_CONFIG_KEY = "autonomy.failsafe";
 const VALIDATION_ADAPTERS_CONFIG_KEY = "validationAdapters";
-const DEFAULT_PLAYGROUND_MODEL = "openai/gpt-oss-120b:fastest";
-const BACKUP_PLAYGROUND_MODEL = "mistralai/mistral-nemotron";
+const DEFAULT_PLAYGROUND_MODEL = "playground-default";
+const BACKUP_PLAYGROUND_MODEL = "playground-backup";
 const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
 
-function modelLabelForUi(model: string | null | undefined): string {
+type ModelCatalogEntry = {
+  alias: string;
+  displayName: string;
+  description?: string;
+  provider: "hf" | "nvidia";
+  model: string;
+  certification?: "tool_ready" | "chat_only" | "experimental";
+  contractVersion?: string;
+  capabilities?: {
+    supportsNativeTools?: boolean;
+    supportsTextActions?: boolean;
+    supportsStreaming?: boolean;
+    supportsImages?: boolean;
+    supportsShellCommands?: boolean;
+  };
+};
+
+function modelLabelForUi(model: string | null | undefined, catalog?: ModelCatalogEntry[]): string {
+  const selected = String(model || "").trim().toLowerCase();
+  const match = (catalog || []).find((entry) => String(entry.alias || "").trim().toLowerCase() === selected);
+  if (match?.displayName) return match.displayName;
+  if (selected === DEFAULT_PLAYGROUND_MODEL) return "Playground Default";
+  if (selected === BACKUP_PLAYGROUND_MODEL) return "Playground Backup";
+  if (selected) return model || PUBLIC_PLAYGROUND_MODEL_NAME;
   return PUBLIC_PLAYGROUND_MODEL_NAME;
 }
 
@@ -71,6 +94,15 @@ type ContextLevel = "max";
 type RunMeta = {
   intent?: { type?: string; confidence?: number; delta?: number; clarified?: boolean };
   reasonCodes?: string[];
+  modelRequested?: string;
+  modelRequestedAlias?: string;
+  modelResolved?: string;
+  modelResolvedAlias?: string;
+  providerResolved?: string;
+  contractVersion?: string;
+  modelCapabilities?: Record<string, unknown>;
+  modelCertification?: string;
+  adapter?: string;
   autonomyDecision?: {
     mode?: "no_actions" | "preview_only" | "auto_apply_only" | "auto_apply_and_validate";
     autoApplyEdits?: boolean;
@@ -515,6 +547,8 @@ class Provider implements vscode.WebviewViewProvider {
   private undoBatches: UndoBatch[] = [];
   private commandAvailabilityCache = new Map<string, Promise<boolean>>();
   private workspaceLintScriptCache: Promise<boolean> | null = null;
+  private modelCatalog: ModelCatalogEntry[] = [];
+  private selectedModelAlias = DEFAULT_PLAYGROUND_MODEL;
   private lastAssistRequest:
     | {
         task: string;
@@ -810,6 +844,51 @@ class Provider implements vscode.WebviewViewProvider {
     });
   }
 
+  private async postModelCatalog(): Promise<void> {
+    this.post({
+      type: "modelsCatalog",
+      defaultModel: DEFAULT_PLAYGROUND_MODEL,
+      selectedModel: this.selectedModelAlias,
+      models: this.modelCatalog,
+    });
+  }
+
+  private async refreshModelCatalog(auth?: HttpAuth | null): Promise<void> {
+    const requestAuth = auth ?? (await this.resolveRequestAuth());
+    if (!requestAuth) {
+      this.modelCatalog = [];
+      await this.postModelCatalog();
+      return;
+    }
+    const response = await req<any>("GET", `${base()}/api/v1/playground/models`, requestAuth).catch(() => null);
+    const models = Array.isArray(response?.data?.models)
+      ? response.data.models
+          .map((item: any) => ({
+            alias: String(item?.alias || "").trim(),
+            displayName: String(item?.displayName || "").trim(),
+            description: typeof item?.description === "string" ? item.description : undefined,
+            provider: String(item?.provider || "hf") === "nvidia" ? "nvidia" : "hf",
+            model: String(item?.model || "").trim(),
+            certification:
+              item?.certification === "tool_ready" || item?.certification === "chat_only" || item?.certification === "experimental"
+                ? item.certification
+                : undefined,
+            contractVersion: typeof item?.contractVersion === "string" ? item.contractVersion : undefined,
+            capabilities: item?.capabilities && typeof item.capabilities === "object" ? item.capabilities : undefined,
+          }))
+          .filter((item: ModelCatalogEntry) => item.alias && item.displayName && item.model)
+      : [];
+    this.modelCatalog = models;
+    const defaultModel = typeof response?.data?.defaultModel === "string" && response.data.defaultModel.trim()
+      ? String(response.data.defaultModel).trim()
+      : DEFAULT_PLAYGROUND_MODEL;
+    const selectedExists = this.modelCatalog.some((entry) => entry.alias === this.selectedModelAlias);
+    this.selectedModelAlias = selectedExists
+      ? this.selectedModelAlias
+      : (this.modelCatalog[0]?.alias || defaultModel || DEFAULT_PLAYGROUND_MODEL);
+    await this.postModelCatalog();
+  }
+
   async signInWithBrowser(): Promise<void> {
     const state = randomBytes(16).toString("hex");
     const verifier = randomBytes(32).toString("base64url");
@@ -872,6 +951,7 @@ class Provider implements vscode.WebviewViewProvider {
     await this.refreshSignedInEmail().catch(() => { });
     this.post({ type: "api", ok: true });
     await this.postAuthState();
+    await this.refreshModelCatalog({ bearer: accessToken });
     await this.loadHistory();
     if (this.isIdeContextV2Enabled()) {
       void this.runBackgroundIndexing("auth-check");
@@ -898,6 +978,7 @@ class Provider implements vscode.WebviewViewProvider {
     const ok = await this.hasAnyAuth();
     this.post({ type: "api", ok });
     await this.postAuthState();
+    await this.refreshModelCatalog(null);
   }
 
   private modeStatusPresentation(mode: Mode): {
@@ -2010,6 +2091,7 @@ class Provider implements vscode.WebviewViewProvider {
         const ok = hasApiKey || hasRefresh;
         this.post({ type: "api", ok });
         await this.postAuthState();
+        await this.refreshModelCatalog();
         this.post({ type: "mode", value: this.mode });
         this.updateModeStatusItem();
         this.post({ type: "safety", value: this.safety });
@@ -2052,6 +2134,7 @@ class Provider implements vscode.WebviewViewProvider {
             });
           }
           await this.postAuthState();
+          await this.refreshModelCatalog();
           await this.loadHistory();
           if (this.isIdeContextV2Enabled()) {
             void this.runBackgroundIndexing("auth-check");
@@ -2069,13 +2152,15 @@ class Provider implements vscode.WebviewViewProvider {
         this.post({ type: "sendAck" });
         const attachments = sanitizeAssistAttachments(m.attachments);
         const threadId = typeof m.threadId === "string" ? String(m.threadId).trim() : "";
+        const requestedModel = String(m.model || this.selectedModelAlias || DEFAULT_PLAYGROUND_MODEL).trim() || DEFAULT_PLAYGROUND_MODEL;
+        this.selectedModelAlias = requestedModel;
         if (Array.isArray(m.attachments) && m.attachments.length > attachments.length) {
           this.post({ type: "status", text: "Some image attachments were skipped because they were invalid or unsupported." });
         }
         await this.ask(
           String(m.text || ""),
           Boolean(m.parallel),
-          String(m.model || DEFAULT_PLAYGROUND_MODEL),
+          requestedModel,
           String(m.reasoning || "medium") as ReasoningLevel,
           {
             includeIdeContext: m.includeIdeContext !== undefined ? Boolean(m.includeIdeContext) : true,
@@ -2156,6 +2241,7 @@ class Provider implements vscode.WebviewViewProvider {
     this.post({ type: "api", ok: true });
     this.post({ type: "apiKeySaved", ok: true, storage: savedIn });
     await this.postAuthState();
+    await this.refreshModelCatalog();
   }
 
   async cycleMode() {
@@ -2535,7 +2621,7 @@ class Provider implements vscode.WebviewViewProvider {
       traceId: input.traceId,
       stage: "execute",
       summary: `Retried after local apply failure using ${nextStage}.`,
-      model: modelLabelForUi(request.model),
+      model: modelLabelForUi(request.model, this.modelCatalog),
       reasoning: request.reasoning,
       mode: this.mode,
       startedAt: Date.now(),
@@ -2824,7 +2910,7 @@ class Provider implements vscode.WebviewViewProvider {
         traceId: runTraceId,
         stage,
         summary: String(summary || "Run diagnostics"),
-        model: extras?.model || modelLabelForUi(model),
+        model: extras?.model || modelLabelForUi(model, this.modelCatalog),
         reasoning: extras?.reasoning || reasoning,
         mode: extras?.mode || requestMode,
         startedAt: runStartedAt,
@@ -2834,7 +2920,7 @@ class Provider implements vscode.WebviewViewProvider {
     };
     this.postRun(runThreadId, { type: "start" });
     if (!conversational) {
-      this.postRun(runThreadId, { type: "status", text: `Model: ${modelLabelForUi(model)} | Reasoning: ${reasoning}` });
+      this.postRun(runThreadId, { type: "status", text: `Model: ${modelLabelForUi(model, this.modelCatalog)} | Reasoning: ${reasoning}` });
     }
 
     const wantsEdits = !conversational && this.wantsCodeEdits(text);
@@ -3287,10 +3373,10 @@ class Provider implements vscode.WebviewViewProvider {
           addDiagnosticEvent("model_fallback", `Model "${model}" unavailable. Retrying with "${backupModelCandidate}".`, "warn");
           this.postRun(runThreadId, {
             type: "status",
-            text: `Model unavailable. Retrying with backup model: ${modelLabelForUi(backupModelCandidate)}.`,
+            text: `Model unavailable. Retrying with backup model: ${modelLabelForUi(backupModelCandidate, this.modelCatalog)}.`,
           });
           emitDiagnosticsBundle("stream", "Auto-retrying with backup model after model-unavailable error.", {
-            model: modelLabelForUi(backupModelCandidate),
+            model: modelLabelForUi(backupModelCandidate, this.modelCatalog),
             reasoning,
             mode: requestMode,
           });
@@ -3771,7 +3857,7 @@ class Provider implements vscode.WebviewViewProvider {
         traceId: diagnosticsTraceId,
         stage: "execute",
         summary: String(summary || "Execution diagnostics"),
-        model: modelLabelForUi(vscode.workspace.getConfiguration("xpersona.playground").get<string>("model") || DEFAULT_PLAYGROUND_MODEL),
+        model: modelLabelForUi(this.selectedModelAlias || DEFAULT_PLAYGROUND_MODEL, this.modelCatalog),
         reasoning: "medium",
         mode: this.mode,
         startedAt: runStartedAt,

@@ -65,10 +65,20 @@ const AUTONOMY_COMMAND_POLICY_CONFIG_KEY = "autonomy.commandPolicy";
 const AUTONOMY_SAFETY_FLOOR_CONFIG_KEY = "autonomy.safetyFloor";
 const AUTONOMY_FAILSAFE_CONFIG_KEY = "autonomy.failsafe";
 const VALIDATION_ADAPTERS_CONFIG_KEY = "validationAdapters";
-const DEFAULT_PLAYGROUND_MODEL = "openai/gpt-oss-120b:fastest";
-const BACKUP_PLAYGROUND_MODEL = "mistralai/mistral-nemotron";
+const DEFAULT_PLAYGROUND_MODEL = "playground-default";
+const BACKUP_PLAYGROUND_MODEL = "playground-backup";
 const PUBLIC_PLAYGROUND_MODEL_NAME = "Playground 1";
-function modelLabelForUi(model) {
+function modelLabelForUi(model, catalog) {
+    const selected = String(model || "").trim().toLowerCase();
+    const match = (catalog || []).find((entry) => String(entry.alias || "").trim().toLowerCase() === selected);
+    if (match?.displayName)
+        return match.displayName;
+    if (selected === DEFAULT_PLAYGROUND_MODEL)
+        return "Playground Default";
+    if (selected === BACKUP_PLAYGROUND_MODEL)
+        return "Playground Backup";
+    if (selected)
+        return model || PUBLIC_PLAYGROUND_MODEL_NAME;
     return PUBLIC_PLAYGROUND_MODEL_NAME;
 }
 const IDE_CONTEXT_FLAG = "xpersona.playground.ideContextV2";
@@ -464,6 +474,8 @@ class Provider {
         this.undoBatches = [];
         this.commandAvailabilityCache = new Map();
         this.workspaceLintScriptCache = null;
+        this.modelCatalog = [];
+        this.selectedModelAlias = DEFAULT_PLAYGROUND_MODEL;
         this.lastAssistRequest = null;
         this.mode = ctx.workspaceState.get(MODE_KEY) ?? "auto";
         this.safety = ctx.workspaceState.get(SAFETY_KEY) ?? "standard";
@@ -668,6 +680,48 @@ class Provider {
             email: this.vscodeSignedInEmail,
         });
     }
+    async postModelCatalog() {
+        this.post({
+            type: "modelsCatalog",
+            defaultModel: DEFAULT_PLAYGROUND_MODEL,
+            selectedModel: this.selectedModelAlias,
+            models: this.modelCatalog,
+        });
+    }
+    async refreshModelCatalog(auth) {
+        const requestAuth = auth ?? (await this.resolveRequestAuth());
+        if (!requestAuth) {
+            this.modelCatalog = [];
+            await this.postModelCatalog();
+            return;
+        }
+        const response = await req("GET", `${base()}/api/v1/playground/models`, requestAuth).catch(() => null);
+        const models = Array.isArray(response?.data?.models)
+            ? response.data.models
+                .map((item) => ({
+                alias: String(item?.alias || "").trim(),
+                displayName: String(item?.displayName || "").trim(),
+                description: typeof item?.description === "string" ? item.description : undefined,
+                provider: String(item?.provider || "hf") === "nvidia" ? "nvidia" : "hf",
+                model: String(item?.model || "").trim(),
+                certification: item?.certification === "tool_ready" || item?.certification === "chat_only" || item?.certification === "experimental"
+                    ? item.certification
+                    : undefined,
+                contractVersion: typeof item?.contractVersion === "string" ? item.contractVersion : undefined,
+                capabilities: item?.capabilities && typeof item.capabilities === "object" ? item.capabilities : undefined,
+            }))
+                .filter((item) => item.alias && item.displayName && item.model)
+            : [];
+        this.modelCatalog = models;
+        const defaultModel = typeof response?.data?.defaultModel === "string" && response.data.defaultModel.trim()
+            ? String(response.data.defaultModel).trim()
+            : DEFAULT_PLAYGROUND_MODEL;
+        const selectedExists = this.modelCatalog.some((entry) => entry.alias === this.selectedModelAlias);
+        this.selectedModelAlias = selectedExists
+            ? this.selectedModelAlias
+            : (this.modelCatalog[0]?.alias || defaultModel || DEFAULT_PLAYGROUND_MODEL);
+        await this.postModelCatalog();
+    }
     async signInWithBrowser() {
         const state = (0, crypto_1.randomBytes)(16).toString("hex");
         const verifier = (0, crypto_1.randomBytes)(32).toString("base64url");
@@ -724,6 +778,7 @@ class Provider {
         await this.refreshSignedInEmail().catch(() => { });
         this.post({ type: "api", ok: true });
         await this.postAuthState();
+        await this.refreshModelCatalog({ bearer: accessToken });
         await this.loadHistory();
         if (this.isIdeContextV2Enabled()) {
             void this.runBackgroundIndexing("auth-check");
@@ -749,6 +804,7 @@ class Provider {
         const ok = await this.hasAnyAuth();
         this.post({ type: "api", ok });
         await this.postAuthState();
+        await this.refreshModelCatalog(null);
     }
     modeStatusPresentation(mode) {
         if (mode === "plan") {
@@ -1834,6 +1890,7 @@ class Provider {
                 const ok = hasApiKey || hasRefresh;
                 this.post({ type: "api", ok });
                 await this.postAuthState();
+                await this.refreshModelCatalog();
                 this.post({ type: "mode", value: this.mode });
                 this.updateModeStatusItem();
                 this.post({ type: "safety", value: this.safety });
@@ -1880,6 +1937,7 @@ class Provider {
                         });
                     }
                     await this.postAuthState();
+                    await this.refreshModelCatalog();
                     await this.loadHistory();
                     if (this.isIdeContextV2Enabled()) {
                         void this.runBackgroundIndexing("auth-check");
@@ -1901,10 +1959,12 @@ class Provider {
                 this.post({ type: "sendAck" });
                 const attachments = sanitizeAssistAttachments(m.attachments);
                 const threadId = typeof m.threadId === "string" ? String(m.threadId).trim() : "";
+                const requestedModel = String(m.model || this.selectedModelAlias || DEFAULT_PLAYGROUND_MODEL).trim() || DEFAULT_PLAYGROUND_MODEL;
+                this.selectedModelAlias = requestedModel;
                 if (Array.isArray(m.attachments) && m.attachments.length > attachments.length) {
                     this.post({ type: "status", text: "Some image attachments were skipped because they were invalid or unsupported." });
                 }
-                await this.ask(String(m.text || ""), Boolean(m.parallel), String(m.model || DEFAULT_PLAYGROUND_MODEL), String(m.reasoning || "medium"), {
+                await this.ask(String(m.text || ""), Boolean(m.parallel), requestedModel, String(m.reasoning || "medium"), {
                     includeIdeContext: m.includeIdeContext !== undefined ? Boolean(m.includeIdeContext) : true,
                     workspaceContextLevel: (m.workspaceContextLevel === "max" ? "max" : "max"),
                     attachments,
@@ -1996,6 +2056,7 @@ class Provider {
         this.post({ type: "api", ok: true });
         this.post({ type: "apiKeySaved", ok: true, storage: savedIn });
         await this.postAuthState();
+        await this.refreshModelCatalog();
     }
     async cycleMode() {
         const nextMode = this.mode === "auto" ? "plan" : this.mode === "plan" ? "yolo" : "auto";
@@ -2317,7 +2378,7 @@ class Provider {
             traceId: input.traceId,
             stage: "execute",
             summary: `Retried after local apply failure using ${nextStage}.`,
-            model: modelLabelForUi(request.model),
+            model: modelLabelForUi(request.model, this.modelCatalog),
             reasoning: request.reasoning,
             mode: this.mode,
             startedAt: Date.now(),
@@ -2586,7 +2647,7 @@ class Provider {
                 traceId: runTraceId,
                 stage,
                 summary: String(summary || "Run diagnostics"),
-                model: extras?.model || modelLabelForUi(model),
+                model: extras?.model || modelLabelForUi(model, this.modelCatalog),
                 reasoning: extras?.reasoning || reasoning,
                 mode: extras?.mode || requestMode,
                 startedAt: runStartedAt,
@@ -2596,7 +2657,7 @@ class Provider {
         };
         this.postRun(runThreadId, { type: "start" });
         if (!conversational) {
-            this.postRun(runThreadId, { type: "status", text: `Model: ${modelLabelForUi(model)} | Reasoning: ${reasoning}` });
+            this.postRun(runThreadId, { type: "status", text: `Model: ${modelLabelForUi(model, this.modelCatalog)} | Reasoning: ${reasoning}` });
         }
         const wantsEdits = !conversational && this.wantsCodeEdits(text);
         const taskWithReasoning = smallTalk
@@ -3048,10 +3109,10 @@ class Provider {
                     addDiagnosticEvent("model_fallback", `Model "${model}" unavailable. Retrying with "${backupModelCandidate}".`, "warn");
                     this.postRun(runThreadId, {
                         type: "status",
-                        text: `Model unavailable. Retrying with backup model: ${modelLabelForUi(backupModelCandidate)}.`,
+                        text: `Model unavailable. Retrying with backup model: ${modelLabelForUi(backupModelCandidate, this.modelCatalog)}.`,
                     });
                     emitDiagnosticsBundle("stream", "Auto-retrying with backup model after model-unavailable error.", {
-                        model: modelLabelForUi(backupModelCandidate),
+                        model: modelLabelForUi(backupModelCandidate, this.modelCatalog),
                         reasoning,
                         mode: requestMode,
                     });
@@ -3516,7 +3577,7 @@ class Provider {
                 traceId: diagnosticsTraceId,
                 stage: "execute",
                 summary: String(summary || "Execution diagnostics"),
-                model: modelLabelForUi(vscode.workspace.getConfiguration("xpersona.playground").get("model") || DEFAULT_PLAYGROUND_MODEL),
+                model: modelLabelForUi(this.selectedModelAlias || DEFAULT_PLAYGROUND_MODEL, this.modelCatalog),
                 reasoning: "medium",
                 mode: this.mode,
                 startedAt: runStartedAt,

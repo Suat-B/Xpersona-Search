@@ -71,6 +71,28 @@ describe("assist route helpers", () => {
         final: "done",
         logs: [],
         modelUsed: "Playground 1",
+        modelMetadata: {
+          contractVersion: "2026-03-actions-v1",
+          adapter: "text_actions_v1",
+          modelRequested: "playground-default",
+          modelRequestedAlias: "playground-default",
+          modelResolved: "openai/gpt-oss-120b:fastest",
+          modelResolvedAlias: "playground-default",
+          providerResolved: "hf",
+          capabilities: {
+            maxContextTokens: 262144,
+            supportsStreaming: true,
+            supportsReasoningStream: true,
+            supportsImages: true,
+            supportsNativeTools: false,
+            supportsTextActions: true,
+            supportsUnifiedDiff: true,
+            supportsWriteFile: true,
+            supportsMkdir: true,
+            supportsShellCommands: true,
+          },
+          certification: "tool_ready",
+        },
         confidence: 0.8,
         risk: { blastRadius: "low", rollbackComplexity: 1 },
         influence: { files: ["hello.py"], snippets: 1 },
@@ -91,6 +113,7 @@ describe("assist route helpers", () => {
     expect(payload.actionability.summary).toBe("valid_actions");
     expect(payload.completionStatus).toBe("complete");
     expect(payload.missingRequirements).toEqual([]);
-    expect(payload.model).toBe("Playground 1");
+    expect(payload.model).toBe("playground-default");
+    expect(payload.providerResolved).toBe("hf");
   });
 });

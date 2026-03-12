@@ -181,7 +181,8 @@
       let responseStartedAtMs = 0;
       let lastAssistantBubble = null;
       let latestActionOutcome = null;
-      const DEFAULT_MODEL = "openai/gpt-oss-120b:fastest";
+      let availableModels = [];
+      const DEFAULT_MODEL = "playground-default";
       const PUBLIC_MODEL_LABEL = "Playground 1";
       const MAX_DIFF_ROWS = 400;
       const MAX_REASONING_CHARS = 24000;
@@ -551,15 +552,66 @@
       }
 
       function modelLabelForUi(value) {
+        const selected = String(value || "").trim().toLowerCase();
+        const match = availableModels.find((entry) => String(entry.alias || "").trim().toLowerCase() === selected);
+        if (match && match.displayName) return String(match.displayName);
+        if (selected === "playground-default") return "Playground Default";
+        if (selected === "playground-backup") return "Playground Backup";
+        if (value) return String(value);
         return PUBLIC_MODEL_LABEL;
+      }
+
+      function modelMetaLabel(value) {
+        const selected = String(value || "").trim().toLowerCase();
+        const match = availableModels.find((entry) => String(entry.alias || "").trim().toLowerCase() === selected);
+        if (!match) return "";
+        const provider = String(match.provider || "").toUpperCase();
+        const cert = String(match.certification || "");
+        const suffix = cert ? " | " + cert.replace(/_/g, " ") : "";
+        return provider ? provider + suffix : suffix.replace(/^\s+\|\s+/, "");
+      }
+
+      function renderModelOptions(payload) {
+        if (!modelSel) return;
+        const models = payload && Array.isArray(payload.models) ? payload.models : [];
+        const defaultModel = payload && payload.defaultModel ? String(payload.defaultModel) : DEFAULT_MODEL;
+        const selectedModel = payload && payload.selectedModel ? String(payload.selectedModel) : (modelSel.value || defaultModel);
+        availableModels = models
+          .map((item) => ({
+            alias: String(item && item.alias || ""),
+            displayName: String(item && item.displayName || ""),
+            provider: String(item && item.provider || ""),
+            certification: String(item && item.certification || ""),
+          }))
+          .filter((item) => item.alias && item.displayName);
+        modelSel.innerHTML = "";
+        const fallbackModels = availableModels.length
+          ? availableModels
+          : [{ alias: defaultModel || DEFAULT_MODEL, displayName: PUBLIC_MODEL_LABEL, provider: "", certification: "" }];
+        fallbackModels.forEach((entry) => {
+          const option = document.createElement("option");
+          option.value = entry.alias;
+          const meta = modelMetaLabel(entry.alias);
+          option.textContent = meta ? modelLabelForUi(entry.alias) + " (" + meta + ")" : modelLabelForUi(entry.alias);
+          modelSel.appendChild(option);
+        });
+        const selectedExists = fallbackModels.some((entry) => entry.alias === selectedModel);
+        modelSel.value = selectedExists ? selectedModel : fallbackModels[0].alias;
       }
 
       function updateComposerState() {
         if (!composerState) return;
         const modeLabel = labelForMode(modeQuick ? modeQuick.value : currentMode);
         const reasoningLabel = labelForReasoning(reasonSel ? reasonSel.value : "medium");
+        const modelLabel = modelLabelForUi(modelSel ? modelSel.value : DEFAULT_MODEL);
+        const modelMeta = modelMetaLabel(modelSel ? modelSel.value : DEFAULT_MODEL);
+        const modelSuffix = modelMeta ? " - Model: " + modelLabel + " [" + modelMeta + "]" : " - Model: " + modelLabel;
+        const resolvedModel =
+          latestRunMeta && typeof latestRunMeta === "object" && latestRunMeta.modelResolvedAlias
+            ? " - Resolved: " + String(latestRunMeta.modelResolvedAlias)
+            : "";
         const tail = contextSummary ? " - " + contextSummary : "";
-        composerState.textContent = "Mode: " + modeLabel + " - Reasoning: " + reasoningLabel + tail;
+        composerState.textContent = "Mode: " + modeLabel + " - Reasoning: " + reasoningLabel + modelSuffix + resolvedModel + tail;
       }
 
       function updateUndoButtonState() {
@@ -3169,6 +3221,7 @@
         applyIdeContextVisualState(true);
       }
       updateAttachmentUI();
+      renderModelOptions({ defaultModel: DEFAULT_MODEL, selectedModel: DEFAULT_MODEL, models: [] });
       setContextTelemetryState({
         enabled: true,
         phase: "idle",
@@ -3441,6 +3494,11 @@
           v.postMessage({ type: "setMode", value: e.target.value });
         });
       }
+      if (modelSel) {
+        modelSel.addEventListener("change", () => {
+          updateComposerState();
+        });
+      }
       if (reasonSel) {
         reasonSel.addEventListener("change", () => {
           updateComposerState();
@@ -3530,6 +3588,13 @@
             if (setup) setup.style.display = "flex";
             if (app) app.style.display = "none";
           }
+        } else if (m.type === "modelsCatalog") {
+          renderModelOptions({
+            defaultModel: m.defaultModel || DEFAULT_MODEL,
+            selectedModel: m.selectedModel || (modelSel ? modelSel.value : DEFAULT_MODEL),
+            models: Array.isArray(m.models) ? m.models : [],
+          });
+          updateComposerState();
         } else if (m.type === "authState") {
           const signedIn = m.signedIn === true;
           const browserSignedIn = m.browserSignedIn === true;
@@ -3778,11 +3843,19 @@
             renderRuntimeStrip();
           }
           chips.innerHTML = "";
-          if (modelSel?.value) {
+          if (m.data?.modelResolvedAlias || modelSel?.value) {
             const mm = document.createElement("span");
             mm.className = "chip";
-            mm.textContent = "Model " + modelLabelForUi(modelSel.value);
+            const selectedLabel = modelLabelForUi(m.data?.modelResolvedAlias || modelSel.value);
+            const selectedProvider = m.data?.providerResolved ? " (" + String(m.data.providerResolved).toUpperCase() + ")" : "";
+            mm.textContent = "Model " + selectedLabel + selectedProvider;
             chips.appendChild(mm);
+          }
+          if (m.data?.contractVersion) {
+            const cv = document.createElement("span");
+            cv.className = "chip";
+            cv.textContent = "Contract " + String(m.data.contractVersion);
+            chips.appendChild(cv);
           }
           if (reasonSel?.value) {
             const rr = document.createElement("span");
@@ -3802,6 +3875,7 @@
             c.textContent = "Confidence " + Math.round(m.data.confidence * 100) + "%";
             chips.appendChild(c);
           }
+          updateComposerState();
           if (m.data?.risk) {
             const r = document.createElement("span");
             r.className = "chip";

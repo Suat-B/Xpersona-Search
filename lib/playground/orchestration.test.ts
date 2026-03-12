@@ -397,6 +397,80 @@ describe("playground agentic behavior", () => {
     expect(result.autonomyDecision.mode).toBe("auto_apply_and_validate");
   });
 
+  it("accepts canonical actions JSON and derives legacy edit fields", async () => {
+    process.env.HF_TOKEN = "test-token";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content:
+                  "{\"final\":\"Created update\",\"actions\":[{\"type\":\"edit\",\"path\":\"hello.py\",\"patch\":\"diff --git a/hello.py b/hello.py\\nnew file mode 100644\\n--- /dev/null\\n+++ b/hello.py\\n@@ -0,0 +1 @@\\n+print('hi')\"}],\"edits\":[],\"commands\":[]}",
+              },
+            },
+          ],
+        }),
+      }))
+    );
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "create hello.py with a simple print",
+      model: "playground-default",
+    });
+
+    expect(result.actions.some((action) => action.type === "edit" && action.path === "hello.py")).toBe(true);
+    expect(result.edits.some((edit) => edit.path === "hello.py")).toBe(true);
+    expect(result.modelMetadata.contractVersion).toBe("2026-03-actions-v1");
+    expect(result.modelMetadata.modelResolvedAlias).toBe("playground-default");
+  });
+
+  it("normalizes native tool calls into canonical actions", async () => {
+    process.env.HF_TOKEN = "test-token";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: "Implemented the file update.",
+                tool_calls: [
+                  {
+                    function: {
+                      name: "write_file",
+                      arguments: JSON.stringify({
+                        path: "hello.py",
+                        content: "print('hello')\n",
+                        overwrite: true,
+                      }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      }))
+    );
+
+    const result = await runAssist({
+      mode: "auto",
+      task: "rewrite hello.py to print hello",
+      model: "playground-native-preview",
+    });
+
+    expect(result.modelMetadata.adapter).toBe("native_tools_v1");
+    expect(result.actions.some((action) => action.type === "write_file" && action.path === "hello.py")).toBe(true);
+    expect(result.actionability.summary).toBe("valid_actions");
+  });
+
   it("infers apply_patch output into edit actions", async () => {
     process.env.HF_TOKEN = "test-token";
     vi.stubGlobal(
