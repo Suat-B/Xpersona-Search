@@ -65,6 +65,7 @@ function rankWorkspacePathMatches(query, candidates, options) {
     const queryBase = basename(normalizedQuery);
     const activePath = (0, intelligence_utils_1.normalizeContextPath)(options?.activePath || "").toLowerCase();
     const openSet = new Set((options?.openFiles || []).map((item) => (0, intelligence_utils_1.normalizeContextPath)(item).toLowerCase()));
+    const memorySet = new Set((options?.memoryFiles || []).map((item) => (0, intelligence_utils_1.normalizeContextPath)(item).toLowerCase()));
     const seen = new Set();
     return candidates
         .map((candidate) => (0, intelligence_utils_1.normalizeContextPath)(candidate))
@@ -98,6 +99,13 @@ function rankWorkspacePathMatches(query, candidates, options) {
             score += 14;
         if (openSet.size && candidateBase && Array.from(openSet).some((item) => basename(item) === candidateBase)) {
             score += 8;
+        }
+        if (memorySet.has(lower))
+            score += 12;
+        if (memorySet.size &&
+            candidateBase &&
+            Array.from(memorySet).some((item) => basename(item) === candidateBase)) {
+            score += 6;
         }
         const depthPenalty = Math.max(0, toPathSegments(lower).length - Math.max(1, toPathSegments(normalizedQuery).length));
         score -= Math.min(depthPenalty * 2, 10);

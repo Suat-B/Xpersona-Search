@@ -1,13 +1,32 @@
 import * as vscode from "vscode";
+import {
+  assessContextConfidence,
+  classifyIntent,
+} from "./assistant-ux";
 import { extractTaskPathReferences, rankWorkspacePathMatches } from "./context-utils";
 import { buildRetrievalHints, normalizeContextPath } from "./intelligence-utils";
-import { toAbsoluteWorkspacePath, toWorkspaceRelativePath } from "./config";
+import { getWorkspaceRootPath, toAbsoluteWorkspacePath, toWorkspaceRelativePath } from "./config";
 import { CloudIndexManager } from "./indexer";
-import type { AssistContext, ContextPreview, RetrievalHints } from "./shared";
+import type { AssistContext, ContextPreview, IntentKind, RetrievalHints } from "./shared";
+
+export type ContextAttachmentSelection = {
+  path: string;
+  content: string;
+  summary: string;
+};
+
+export type ContextCollectionOptions = {
+  recentTouchedPaths: string[];
+  attachedFiles?: string[];
+  attachedSelection?: ContextAttachmentSelection | null;
+  memoryTargets?: string[];
+  searchDepth?: "fast" | "deep";
+  intent?: IntentKind;
+};
 
 type OpenWorkspaceFile = {
   path: string;
-  language: string;
+  language?: string;
   excerpt?: string;
 };
 
@@ -18,6 +37,21 @@ type ResolvedTaskFile = {
 };
 
 type IndexedSnippet = NonNullable<AssistContext["indexedSnippets"]>[number];
+
+type ContextAnalysis = {
+  intent: IntentKind;
+  activeEditor: vscode.TextEditor | undefined;
+  activePath: string | null;
+  openFiles: OpenWorkspaceFile[];
+  diagnostics: Array<{ file?: string; severity?: string | number; message: string; line?: number }>;
+  attachedFiles: string[];
+  attachedSelection: ContextAttachmentSelection | null;
+  memoryFiles: string[];
+  explicitReferenceCount: number;
+  resolvedTaskFiles: ResolvedTaskFile[];
+  resolvedFiles: string[];
+  candidateFiles: string[];
+};
 
 function truncate(text: string | undefined, limit: number): string | undefined {
   const value = String(text || "").replace(/\r\n/g, "\n").trim();
@@ -52,45 +86,60 @@ function uniquePaths(values: Iterable<string>, limit: number): string[] {
   return out;
 }
 
-async function readWorkspaceSnippet(target: ResolvedTaskFile): Promise<IndexedSnippet | null> {
-  const absolutePath = toAbsoluteWorkspacePath(target.path);
+async function readWorkspaceText(filePath: string): Promise<string | null> {
+  const absolutePath = toAbsoluteWorkspacePath(filePath);
   if (!absolutePath) return null;
 
   try {
     const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(absolutePath));
-    const raw = Buffer.from(bytes).toString("utf8").replace(/\r\n/g, "\n");
-    const lines = raw.split("\n");
-    let content = raw;
+    return Buffer.from(bytes).toString("utf8").replace(/\r\n/g, "\n");
+  } catch {
+    return null;
+  }
+}
 
-    if (target.line) {
-      const start = Math.max(1, target.line - 25);
-      const end = Math.min(lines.length, target.line + 25);
-      content = lines.slice(start - 1, end).join("\n");
-      return {
-        path: target.path,
-        content: truncate(content, 6_000) || "",
-        source: "local_fallback",
-        reason: `${target.reason} near line ${target.line}`,
-      };
-    }
+async function readWorkspaceSnippet(target: ResolvedTaskFile): Promise<IndexedSnippet | null> {
+  const raw = await readWorkspaceText(target.path);
+  if (!raw) return null;
 
-    content = lines.slice(0, 180).join("\n");
+  const lines = raw.split("\n");
+  let content = raw;
+
+  if (target.line) {
+    const start = Math.max(1, target.line - 25);
+    const end = Math.min(lines.length, target.line + 25);
+    content = lines.slice(start - 1, end).join("\n");
     return {
       path: target.path,
       content: truncate(content, 6_000) || "",
       source: "local_fallback",
-      reason: target.reason,
+      reason: `${target.reason} near line ${target.line}`,
     };
-  } catch {
-    return null;
   }
+
+  content = lines.slice(0, 180).join("\n");
+  return {
+    path: target.path,
+    content: truncate(content, 6_000) || "",
+    source: "local_fallback",
+    reason: target.reason,
+  };
+}
+
+async function readAttachedOpenFile(pathValue: string): Promise<OpenWorkspaceFile | null> {
+  const text = await readWorkspaceText(pathValue);
+  if (!text) return null;
+  return {
+    path: pathValue,
+    excerpt: truncate(text, 4_000),
+  };
 }
 
 export class ContextCollector {
   constructor(private readonly indexManager: CloudIndexManager) {}
 
   private collectOpenFiles(): OpenWorkspaceFile[] {
-    const items = vscode.window.visibleTextEditors
+    return vscode.window.visibleTextEditors
       .map<OpenWorkspaceFile | null>((editor) => {
         const relativePath = toWorkspaceRelativePath(editor.document.uri);
         if (!relativePath) return null;
@@ -100,44 +149,45 @@ export class ContextCollector {
           excerpt: truncate(editor.document.getText(), 5_000),
         };
       })
-      .filter((item): item is OpenWorkspaceFile => item !== null);
-    return items.slice(0, 6);
+      .filter((item): item is OpenWorkspaceFile => item !== null)
+      .slice(0, 6);
   }
 
-  private async resolveTaskFiles(task: string, activePath: string | null, openFiles: OpenWorkspaceFile[]): Promise<ResolvedTaskFile[]> {
-    const references = extractTaskPathReferences(task);
-    if (!references.length) return [];
-
-    const openPaths = openFiles.map((file) => file.path);
+  private async resolveTaskFiles(input: {
+    task: string;
+    activePath: string | null;
+    openFiles: OpenWorkspaceFile[];
+    attachedFiles: string[];
+    memoryFiles: string[];
+  }): Promise<{
+    explicitReferenceCount: number;
+    resolvedTaskFiles: ResolvedTaskFile[];
+    candidateFiles: string[];
+  }> {
+    const references = extractTaskPathReferences(input.task);
+    const openPaths = input.openFiles.map((file) => file.path);
+    const baseCandidates = uniquePaths(
+      [...input.attachedFiles, input.activePath || "", ...openPaths, ...input.memoryFiles],
+      40
+    );
     const resolved: ResolvedTaskFile[] = [];
-    const seen = new Set<string>();
+    const candidateFiles: string[] = [];
+    const seenResolved = new Set<string>();
 
     for (const reference of references) {
-      const localCandidates = uniquePaths(
-        [activePath || "", ...openPaths].filter((candidate) => {
-          const normalizedCandidate = normalizeContextPath(candidate).toLowerCase();
-          const normalizedQuery = normalizeContextPath(reference.query).toLowerCase();
-          const candidateBase = normalizedCandidate.split("/").pop() || normalizedCandidate;
-          const queryBase = normalizedQuery.split("/").pop() || normalizedQuery;
-          return (
-            normalizedCandidate === normalizedQuery ||
-            normalizedCandidate.endsWith(`/${normalizedQuery}`) ||
-            candidateBase === queryBase
-          );
-        }),
-        12
-      );
       const suggestionCandidates = await this.indexManager.getMentionSuggestions(reference.query);
-      const ranked = rankWorkspacePathMatches(reference.query, [...localCandidates, ...suggestionCandidates], {
-        activePath: activePath || undefined,
+      const ranked = rankWorkspacePathMatches(reference.query, [...baseCandidates, ...suggestionCandidates], {
+        activePath: input.activePath || undefined,
         openFiles: openPaths,
+        memoryFiles: input.memoryFiles,
       });
+
+      candidateFiles.push(...ranked.slice(0, 3));
       const bestMatch = ranked[0];
       if (!bestMatch) continue;
-
       const key = bestMatch.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
+      if (seenResolved.has(key)) continue;
+      seenResolved.add(key);
 
       resolved.push({
         path: bestMatch,
@@ -147,20 +197,21 @@ export class ContextCollector {
       if (resolved.length >= 6) break;
     }
 
-    return resolved;
+    return {
+      explicitReferenceCount: references.length,
+      resolvedTaskFiles: resolved,
+      candidateFiles: uniquePaths(candidateFiles, 8),
+    };
   }
 
-  async collect(task: string, recentTouchedPaths: string[]): Promise<{
-    context: AssistContext;
-    retrievalHints: RetrievalHints;
-    preview: ContextPreview;
-  }> {
+  private async analyze(task: string, options: ContextCollectionOptions): Promise<ContextAnalysis> {
     const activeEditor = vscode.window.activeTextEditor;
     const activePath = activeEditor ? toWorkspaceRelativePath(activeEditor.document.uri) : null;
     const openFiles = this.collectOpenFiles();
-    const mentionPaths = extractMentionPaths(task);
-    const resolvedTaskFiles = await this.resolveTaskFiles(task, activePath, openFiles);
-    const resolvedPaths = resolvedTaskFiles.map((item) => item.path);
+    const attachedFiles = uniquePaths(options.attachedFiles || [], 4);
+    const memoryFiles = uniquePaths(options.memoryTargets || [], 8);
+    const attachedSelection = options.attachedSelection || null;
+    const intent = options.intent || classifyIntent(task);
     const diagnostics = vscode.languages
       .getDiagnostics()
       .flatMap(([uri, entries]) =>
@@ -172,64 +223,235 @@ export class ContextCollector {
         }))
       )
       .slice(0, 40);
-    const retrievalHints = buildRetrievalHints({
-      mentionPaths: [...mentionPaths, ...resolvedPaths],
-      candidateSymbols: extractCandidateSymbols(task),
-      diagnostics,
-      preferredTargetPath: mentionPaths[0] || resolvedPaths[0] || activePath || undefined,
-      recentTouchedPaths,
+
+    const resolvedTaskState = await this.resolveTaskFiles({
+      task,
+      activePath,
+      openFiles,
+      attachedFiles,
+      memoryFiles,
     });
 
-    const indexedSnippets = await this.indexManager.query(task, retrievalHints);
+    let resolvedFiles = uniquePaths(
+      [
+        ...attachedFiles,
+        attachedSelection?.path || "",
+        ...resolvedTaskState.resolvedTaskFiles.map((item) => item.path),
+      ],
+      8
+    );
+
+    let candidateFiles = uniquePaths(
+      [
+        ...resolvedTaskState.candidateFiles,
+        activePath || "",
+        ...attachedFiles,
+        attachedSelection?.path || "",
+        ...openFiles.map((item) => item.path),
+        ...memoryFiles,
+      ],
+      8
+    );
+
+    if (!resolvedFiles.length && intent === "change" && attachedSelection?.path) {
+      resolvedFiles = [attachedSelection.path];
+    }
+
+    if (!resolvedFiles.length && intent === "change" && attachedFiles.length === 1) {
+      resolvedFiles = attachedFiles.slice(0, 1);
+    }
+
+    if (!resolvedFiles.length && intent === "change" && candidateFiles.length === 1) {
+      resolvedFiles = candidateFiles.slice(0, 1);
+    }
+
+    if (!resolvedFiles.length && intent === "change" && activePath && candidateFiles.length === 0) {
+      resolvedFiles = [activePath];
+      candidateFiles = [activePath];
+    }
+
+    if (!candidateFiles.length) {
+      candidateFiles = uniquePaths([activePath || "", ...openFiles.map((item) => item.path), ...memoryFiles], 8);
+    }
+
+    return {
+      intent,
+      activeEditor,
+      activePath,
+      openFiles,
+      diagnostics,
+      attachedFiles,
+      attachedSelection,
+      memoryFiles,
+      explicitReferenceCount: resolvedTaskState.explicitReferenceCount,
+      resolvedTaskFiles: resolvedTaskState.resolvedTaskFiles,
+      resolvedFiles,
+      candidateFiles,
+    };
+  }
+
+  async preview(task: string, options: ContextCollectionOptions): Promise<ContextPreview> {
+    const analysis = await this.analyze(task, options);
+    const confidence = assessContextConfidence({
+      intent: analysis.intent,
+      resolvedFiles: analysis.resolvedFiles,
+      candidateFiles: analysis.candidateFiles,
+      attachedFiles: analysis.attachedFiles,
+      memoryFiles: analysis.memoryFiles,
+      hasAttachedSelection: Boolean(analysis.attachedSelection?.content),
+      explicitReferenceCount: analysis.explicitReferenceCount,
+      selectedFilesCount: 0,
+      diagnosticsCount: analysis.diagnostics.length,
+    });
+
+    return {
+      ...(analysis.activePath ? { activeFile: analysis.activePath } : {}),
+      openFiles: analysis.openFiles.map((item) => item.path),
+      candidateFiles: analysis.candidateFiles.slice(0, 4),
+      attachedFiles: analysis.attachedFiles,
+      memoryFiles: analysis.memoryFiles.slice(0, 4),
+      resolvedFiles: analysis.resolvedFiles.slice(0, 8),
+      selectedFiles: [],
+      diagnostics: analysis.diagnostics
+        .map((item) => `${item.file || "workspace"}:${item.line || 1} ${item.message}`)
+        .slice(0, 8),
+      intent: analysis.intent,
+      confidence: confidence.confidence,
+      confidenceScore: confidence.score,
+      rationale: confidence.rationale,
+      ...(getWorkspaceRootPath() ? { workspaceRoot: getWorkspaceRootPath() || undefined } : {}),
+      ...(analysis.attachedSelection
+        ? {
+            attachedSelection: {
+              path: analysis.attachedSelection.path,
+              summary: analysis.attachedSelection.summary,
+            },
+          }
+        : {}),
+      snippets: [],
+    };
+  }
+
+  async collect(task: string, options: ContextCollectionOptions): Promise<{
+    context: AssistContext;
+    retrievalHints: RetrievalHints;
+    preview: ContextPreview;
+  }> {
+    const analysis = await this.analyze(task, options);
+    const preview = await this.preview(task, options);
+    const mentionPaths = extractMentionPaths(task);
+
+    const retrievalHints = buildRetrievalHints({
+      mentionPaths: [
+        ...mentionPaths,
+        ...analysis.attachedFiles,
+        ...(analysis.attachedSelection ? [analysis.attachedSelection.path] : []),
+        ...analysis.resolvedFiles,
+        ...analysis.memoryFiles,
+      ],
+      candidateSymbols: extractCandidateSymbols(task),
+      diagnostics: analysis.diagnostics,
+      preferredTargetPath:
+        analysis.attachedSelection?.path ||
+        analysis.attachedFiles[0] ||
+        analysis.resolvedFiles[0] ||
+        analysis.activePath ||
+        undefined,
+      recentTouchedPaths: options.recentTouchedPaths,
+    });
+
+    const queryVariants = [
+      task,
+      options.searchDepth === "deep"
+        ? `${task}\nFocus files: ${analysis.candidateFiles.slice(0, 4).join(", ")}\nMemory hints: ${analysis.memoryFiles
+            .slice(0, 4)
+            .join(", ")}`
+        : "",
+    ].filter(Boolean);
+
+    const indexedBuckets = await Promise.all(
+      queryVariants.map((queryText) => this.indexManager.query(queryText, retrievalHints))
+    );
+    const indexedSnippetRows = indexedBuckets
+      .flat()
+      .filter((item, index, array) => array.findIndex((row) => row.path === item.path && row.content === item.content) === index);
+
     const explicitTargetSnippets: IndexedSnippet[] = (
       await Promise.all(
-        resolvedTaskFiles
-          .filter((item) => !indexedSnippets.some((snippet) => snippet.path === item.path))
+        analysis.resolvedTaskFiles
+          .filter((item) => !indexedSnippetRows.some((snippet) => snippet.path === item.path))
           .map((item) => readWorkspaceSnippet(item))
       )
     ).filter((item): item is IndexedSnippet => Boolean(item && item.content));
 
-    const combinedSnippets: IndexedSnippet[] = [...explicitTargetSnippets, ...indexedSnippets].slice(0, 10);
+    const attachedOpenFiles: OpenWorkspaceFile[] = (
+      await Promise.all(
+        analysis.attachedFiles
+          .filter((pathValue) => !analysis.openFiles.some((item) => item.path === pathValue))
+          .map((pathValue) => readAttachedOpenFile(pathValue))
+      )
+    ).filter((item): item is OpenWorkspaceFile => Boolean(item));
+
+    const combinedSnippets: IndexedSnippet[] = [...explicitTargetSnippets, ...indexedSnippetRows].slice(0, 12);
+    const openFiles = [...analysis.openFiles, ...attachedOpenFiles].slice(0, 8);
+    const activeFileContext =
+      analysis.attachedSelection && analysis.attachedSelection.content
+        ? {
+            path: analysis.attachedSelection.path,
+            selection: truncate(analysis.attachedSelection.content, 12_000),
+          }
+        : analysis.activeEditor && analysis.activePath
+          ? {
+              path: analysis.activePath,
+              language: analysis.activeEditor.document.languageId,
+              ...(analysis.activeEditor.selection.isEmpty
+                ? { content: truncate(analysis.activeEditor.document.getText(), 16_000) }
+                : { selection: truncate(analysis.activeEditor.document.getText(analysis.activeEditor.selection), 12_000) }),
+            }
+          : undefined;
 
     const context: AssistContext = {
-      ...(activeEditor && activePath
-        ? {
-            activeFile: {
-              path: activePath,
-              language: activeEditor.document.languageId,
-              ...(activeEditor.selection.isEmpty
-                ? { content: truncate(activeEditor.document.getText(), 16_000) }
-                : { selection: truncate(activeEditor.document.getText(activeEditor.selection), 12_000) }),
-            },
-          }
-        : {}),
+      ...(activeFileContext ? { activeFile: activeFileContext } : {}),
       ...(openFiles.length ? { openFiles } : {}),
-      ...(diagnostics.length ? { diagnostics } : {}),
+      ...(analysis.diagnostics.length ? { diagnostics: analysis.diagnostics } : {}),
       ...(combinedSnippets.length ? { indexedSnippets: combinedSnippets } : {}),
     };
+
+    const fullPreview = {
+      ...preview,
+      selectedFiles: uniquePaths(
+        [...analysis.resolvedFiles, ...combinedSnippets.map((item) => item.path || "")],
+        8
+      ),
+      snippets: combinedSnippets
+        .map((item) => ({
+          path: item.path || "workspace",
+          source: item.source || "local_fallback",
+          reason: item.reason || "Workspace snippet",
+        }))
+        .slice(0, 6),
+    } satisfies ContextPreview;
+
+    const refreshedConfidence = assessContextConfidence({
+      intent: fullPreview.intent,
+      resolvedFiles: fullPreview.resolvedFiles,
+      candidateFiles: fullPreview.candidateFiles,
+      attachedFiles: fullPreview.attachedFiles,
+      memoryFiles: fullPreview.memoryFiles,
+      hasAttachedSelection: Boolean(fullPreview.attachedSelection?.summary),
+      explicitReferenceCount: analysis.explicitReferenceCount,
+      selectedFilesCount: fullPreview.selectedFiles.length,
+      diagnosticsCount: fullPreview.diagnostics.length,
+    });
+
+    fullPreview.confidence = refreshedConfidence.confidence;
+    fullPreview.confidenceScore = refreshedConfidence.score;
+    fullPreview.rationale = refreshedConfidence.rationale;
 
     return {
       context,
       retrievalHints,
-      preview: {
-        ...(activePath ? { activeFile: activePath } : {}),
-        openFiles: openFiles.map((item) => item.path),
-        resolvedFiles: resolvedPaths.slice(0, 8),
-        selectedFiles: combinedSnippets
-          .map((item) => item.path)
-          .filter((value): value is string => Boolean(value))
-          .slice(0, 8),
-        diagnostics: diagnostics
-          .map((item) => `${item.file || "workspace"}:${item.line || 1} ${item.message}`)
-          .slice(0, 8),
-        snippets: combinedSnippets
-          .map((item) => ({
-            path: item.path || "workspace",
-            source: item.source || "local_fallback",
-            reason: item.reason || "Workspace snippet",
-          }))
-          .slice(0, 6),
-      },
+      preview: fullPreview,
     };
   }
 

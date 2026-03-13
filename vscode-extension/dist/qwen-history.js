@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.QwenHistoryService = void 0;
+exports.createPendingQwenSessionId = createPendingQwenSessionId;
+exports.isPendingQwenSessionId = isPendingQwenSessionId;
 const crypto_1 = require("crypto");
 const config_1 = require("./config");
 const QWEN_HISTORY_KEY_PREFIX = "xpersona.playground.qwen.sessions";
@@ -25,9 +27,44 @@ function cloneMessages(messages) {
 function toStoredMode(mode) {
     return mode === "plan" ? "plan" : "auto";
 }
+function createPendingQwenSessionId() {
+    return `pending:${(0, crypto_1.randomUUID)()}`;
+}
+function isPendingQwenSessionId(sessionId) {
+    return String(sessionId || "").trim().toLowerCase().startsWith("pending:");
+}
 class QwenHistoryService {
     constructor(context) {
         this.context = context;
+    }
+    async getWorkspaceHints() {
+        const sessions = this.readSessions()
+            .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
+            .slice(0, 8);
+        const targetSet = new Set();
+        const recentTargets = [];
+        const recentIntents = [];
+        for (const session of sessions) {
+            if (session.lastIntent) {
+                recentIntents.push(session.lastIntent);
+            }
+            for (const target of session.lastTargets || []) {
+                const normalized = String(target || "").trim();
+                const key = normalized.toLowerCase();
+                if (!normalized || targetSet.has(key))
+                    continue;
+                targetSet.add(key);
+                recentTargets.push(normalized);
+                if (recentTargets.length >= 8)
+                    break;
+            }
+            if (recentTargets.length >= 8)
+                break;
+        }
+        return {
+            recentTargets,
+            recentIntents,
+        };
     }
     async list() {
         const sessions = this.readSessions();
@@ -47,6 +84,24 @@ class QwenHistoryService {
     async hasSession(sessionId) {
         return this.readSessions().some((item) => item.id === sessionId);
     }
+    async replaceSessionId(previousSessionId, nextSessionId) {
+        const previousId = String(previousSessionId || "").trim();
+        const nextId = String(nextSessionId || "").trim();
+        if (!previousId || !nextId || previousId === nextId)
+            return;
+        const sessions = this.readSessions();
+        const previous = sessions.find((item) => item.id === previousId);
+        if (!previous)
+            return;
+        const merged = {
+            ...previous,
+            id: nextId,
+            updatedAt: new Date().toISOString(),
+        };
+        const updated = sessions.filter((item) => item.id !== previousId && item.id !== nextId);
+        updated.unshift(merged);
+        await this.context.globalState.update(this.getStorageKey(), updated.slice(0, MAX_SESSIONS));
+    }
     async saveConversation(input) {
         const sessions = this.readSessions();
         const nextSession = {
@@ -58,6 +113,8 @@ class QwenHistoryService {
             mode: toStoredMode(input.mode),
             updatedAt: new Date().toISOString(),
             messages: cloneMessages(input.messages),
+            ...(input.targets?.length ? { lastTargets: input.targets.slice(0, 6) } : {}),
+            ...(input.intent ? { lastIntent: input.intent } : {}),
         };
         const updated = sessions.filter((item) => item.id !== input.sessionId);
         updated.unshift(nextSession);
@@ -87,15 +144,28 @@ class QwenHistoryService {
                 })
                     .filter((message) => Boolean(message))
                 : [];
-            return {
+            const session = {
                 id: record.id,
                 title: deriveTitle(typeof record.title === "string" ? record.title : ""),
                 mode: record.mode === "plan" ? "plan" : "auto",
                 updatedAt: normalizeTimestamp(typeof record.updatedAt === "string" ? record.updatedAt : undefined),
                 messages,
+                lastTargets: Array.isArray(record.lastTargets)
+                    ? record.lastTargets
+                        .map((target) => String(target || "").trim())
+                        .filter(Boolean)
+                        .slice(0, 8)
+                    : undefined,
+                lastIntent: record.lastIntent === "ask" ||
+                    record.lastIntent === "explain" ||
+                    record.lastIntent === "find" ||
+                    record.lastIntent === "change"
+                    ? record.lastIntent
+                    : undefined,
             };
+            return session;
         })
-            .filter((session) => Boolean(session));
+            .filter((session) => session !== null);
     }
     getStorageKey() {
         return `${QWEN_HISTORY_KEY_PREFIX}:${(0, config_1.getWorkspaceHash)()}`;

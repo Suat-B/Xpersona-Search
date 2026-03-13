@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { randomUUID } from "crypto";
 import { getWorkspaceHash } from "./config";
-import type { ChatMessage, HistoryItem, Mode } from "./shared";
+import type { ChatMessage, HistoryItem, IntentKind, Mode } from "./shared";
 
 const QWEN_HISTORY_KEY_PREFIX = "xpersona.playground.qwen.sessions";
 const MAX_SESSIONS = 30;
@@ -14,6 +14,8 @@ type QwenSessionRecord = {
   mode: StoredQwenMode;
   updatedAt: string;
   messages: ChatMessage[];
+  lastTargets?: string[];
+  lastIntent?: IntentKind;
 };
 
 function normalizeTimestamp(value: string | undefined): string {
@@ -42,8 +44,48 @@ function toStoredMode(mode: Mode): StoredQwenMode {
   return mode === "plan" ? "plan" : "auto";
 }
 
+export function createPendingQwenSessionId(): string {
+  return `pending:${randomUUID()}`;
+}
+
+export function isPendingQwenSessionId(sessionId: string | null | undefined): boolean {
+  return String(sessionId || "").trim().toLowerCase().startsWith("pending:");
+}
+
 export class QwenHistoryService {
   constructor(private readonly context: vscode.ExtensionContext) {}
+
+  async getWorkspaceHints(): Promise<{
+    recentTargets: string[];
+    recentIntents: IntentKind[];
+  }> {
+    const sessions = this.readSessions()
+      .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
+      .slice(0, 8);
+    const targetSet = new Set<string>();
+    const recentTargets: string[] = [];
+    const recentIntents: IntentKind[] = [];
+
+    for (const session of sessions) {
+      if (session.lastIntent) {
+        recentIntents.push(session.lastIntent);
+      }
+      for (const target of session.lastTargets || []) {
+        const normalized = String(target || "").trim();
+        const key = normalized.toLowerCase();
+        if (!normalized || targetSet.has(key)) continue;
+        targetSet.add(key);
+        recentTargets.push(normalized);
+        if (recentTargets.length >= 8) break;
+      }
+      if (recentTargets.length >= 8) break;
+    }
+
+    return {
+      recentTargets,
+      recentIntents,
+    };
+  }
 
   async list(): Promise<HistoryItem[]> {
     const sessions = this.readSessions();
@@ -66,11 +108,32 @@ export class QwenHistoryService {
     return this.readSessions().some((item) => item.id === sessionId);
   }
 
+  async replaceSessionId(previousSessionId: string, nextSessionId: string): Promise<void> {
+    const previousId = String(previousSessionId || "").trim();
+    const nextId = String(nextSessionId || "").trim();
+    if (!previousId || !nextId || previousId === nextId) return;
+
+    const sessions = this.readSessions();
+    const previous = sessions.find((item) => item.id === previousId);
+    if (!previous) return;
+
+    const merged: QwenSessionRecord = {
+      ...previous,
+      id: nextId,
+      updatedAt: new Date().toISOString(),
+    };
+    const updated = sessions.filter((item) => item.id !== previousId && item.id !== nextId);
+    updated.unshift(merged);
+    await this.context.globalState.update(this.getStorageKey(), updated.slice(0, MAX_SESSIONS));
+  }
+
   async saveConversation(input: {
     sessionId: string;
     mode: Mode;
     title?: string;
     messages: ChatMessage[];
+    targets?: string[];
+    intent?: IntentKind;
   }): Promise<void> {
     const sessions = this.readSessions();
     const nextSession: QwenSessionRecord = {
@@ -84,6 +147,8 @@ export class QwenHistoryService {
       mode: toStoredMode(input.mode),
       updatedAt: new Date().toISOString(),
       messages: cloneMessages(input.messages),
+      ...(input.targets?.length ? { lastTargets: input.targets.slice(0, 6) } : {}),
+      ...(input.intent ? { lastIntent: input.intent } : {}),
     };
 
     const updated = sessions.filter((item) => item.id !== input.sessionId);
@@ -116,15 +181,30 @@ export class QwenHistoryService {
               .filter((message): message is ChatMessage => Boolean(message))
           : [];
 
-        return {
+        const session: QwenSessionRecord = {
           id: record.id,
           title: deriveTitle(typeof record.title === "string" ? record.title : ""),
           mode: record.mode === "plan" ? "plan" : "auto",
           updatedAt: normalizeTimestamp(typeof record.updatedAt === "string" ? record.updatedAt : undefined),
           messages,
-        } satisfies QwenSessionRecord;
+          lastTargets: Array.isArray(record.lastTargets)
+            ? record.lastTargets
+                .map((target) => String(target || "").trim())
+                .filter(Boolean)
+                .slice(0, 8)
+            : undefined,
+          lastIntent:
+            record.lastIntent === "ask" ||
+            record.lastIntent === "explain" ||
+            record.lastIntent === "find" ||
+            record.lastIntent === "change"
+              ? record.lastIntent
+              : undefined,
+        };
+
+        return session;
       })
-      .filter((session): session is QwenSessionRecord => Boolean(session));
+      .filter((session): session is QwenSessionRecord => session !== null);
   }
 
   private getStorageKey(): string {

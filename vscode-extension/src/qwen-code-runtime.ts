@@ -15,7 +15,12 @@ import {
   getQwenOpenAiBaseUrl,
   getWorkspaceRootPath,
 } from "./config";
-import { getAutoApprovedQwenTools, isSafeInspectionToolRequest } from "./qwen-runtime-utils";
+import {
+  describeToolActivity,
+  getAutoApprovedQwenTools,
+  isMutationToolName,
+  isSafeInspectionToolRequest,
+} from "./qwen-runtime-utils";
 import type { Mode } from "./shared";
 
 function trimToSentence(value: string, limit = 220): string {
@@ -32,14 +37,16 @@ function extractText(blocks: ContentBlock[]): string {
     .trim();
 }
 
-function extractToolSummary(blocks: ContentBlock[]): string[] {
+function extractToolUses(blocks: ContentBlock[]): Array<{
+  name: string;
+  input: ToolInput;
+}> {
   return blocks
     .filter((block): block is Extract<ContentBlock, { type: "tool_use" }> => block.type === "tool_use")
-    .map((block) => {
-      const inputPreview =
-        block.input && typeof block.input === "object" ? trimToSentence(JSON.stringify(block.input)) : "";
-      return inputPreview ? `Qwen tool: ${block.name} ${inputPreview}` : `Qwen tool: ${block.name}`;
-    });
+    .map((block) => ({
+      name: block.name,
+      input: (block.input || {}) as ToolInput,
+    }));
 }
 
 function summarizeToolRequest(toolName: string, input: ToolInput): string {
@@ -52,6 +59,23 @@ function summarizeToolRequest(toolName: string, input: ToolInput): string {
   return detail ? `${toolName}: ${detail}` : toolName;
 }
 
+function buildApprovalKey(toolName: string, input: ToolInput): string {
+  return JSON.stringify({
+    toolName: String(toolName || "").trim().toLowerCase(),
+    command:
+      (typeof input.command === "string" && input.command.trim()) ||
+      (typeof input.cmd === "string" && input.cmd.trim()) ||
+      (typeof input.path === "string" && input.path.trim()) ||
+      "",
+    args:
+      input && typeof input === "object"
+        ? Object.keys(input)
+            .sort()
+            .map((key) => [key, (input as Record<string, unknown>)[key]])
+        : [],
+  });
+}
+
 function toPermissionMode(mode: Mode): "plan" | "auto-edit" {
   return mode === "plan" ? "plan" : "auto-edit";
 }
@@ -60,6 +84,8 @@ export type QwenPromptResult = {
   sessionId: string;
   assistantText: string;
   permissionDenials: string[];
+  usedTools: string[];
+  didMutate: boolean;
 };
 
 export class QwenCodeRuntime {
@@ -76,21 +102,26 @@ export class QwenCodeRuntime {
       throw new Error("Open a workspace folder before using Qwen Code.");
     }
 
+    const model = getQwenModel();
+    const shouldStreamPartials = !/thinking/i.test(model);
     const requestedSessionId = input.sessionId || undefined;
     let assistantText = "";
     let partialText = "";
     const permissionDenials: string[] = [];
+    const usedToolNames = new Set<string>();
+    const approvedToolRequests = new Set<string>();
+    let didMutate = false;
 
     const result = query({
       prompt: input.prompt,
       options: {
         cwd,
-        model: getQwenModel(),
+        model,
         ...(getQwenExecutablePath() ? { pathToQwenExecutable: getQwenExecutablePath() } : {}),
         authType: "openai",
         permissionMode: toPermissionMode(input.mode),
         allowedTools: getAutoApprovedQwenTools(),
-        includePartialMessages: true,
+        includePartialMessages: shouldStreamPartials,
         env: {
           OPENAI_API_KEY: input.apiKey,
           OPENAI_BASE_URL: getQwenOpenAiBaseUrl(),
@@ -103,9 +134,17 @@ export class QwenCodeRuntime {
           }
 
           if (isSafeInspectionToolRequest(toolName, toolInput)) {
-            input.onActivity?.(`Qwen tool auto-approved: ${summarizeToolRequest(toolName, toolInput)}`);
+            input.onActivity?.(describeToolActivity(toolName, toolInput));
             return { behavior: "allow", updatedInput: toolInput } as const;
           }
+
+          const approvalKey = buildApprovalKey(toolName, toolInput);
+          if (approvedToolRequests.has(approvalKey)) {
+            input.onActivity?.(`Reusing prior approval: ${summarizeToolRequest(toolName, toolInput)}`);
+            return { behavior: "allow", updatedInput: toolInput } as const;
+          }
+
+          input.onActivity?.("Awaiting tool approval");
 
           const approved = await vscode.window.showWarningMessage(
             `Qwen Code wants to use a tool.\n\n${summarizeToolRequest(toolName, toolInput)}`,
@@ -115,9 +154,12 @@ export class QwenCodeRuntime {
           );
 
           if (approved === "Allow Once") {
+            approvedToolRequests.add(approvalKey);
+            input.onActivity?.(`Approved tool: ${summarizeToolRequest(toolName, toolInput)}`);
             return { behavior: "allow", updatedInput: toolInput } as const;
           }
 
+          input.onActivity?.(`Denied tool: ${summarizeToolRequest(toolName, toolInput)}`);
           return { behavior: "deny", message: "Tool use denied in Playground." } as const;
         },
       },
@@ -131,7 +173,9 @@ export class QwenCodeRuntime {
             message.event.delta.type === "text_delta"
           ) {
             partialText += message.event.delta.text;
-            input.onPartial?.(partialText.trim());
+            if (shouldStreamPartials) {
+              input.onPartial?.(partialText.trim());
+            }
           }
           continue;
         }
@@ -153,8 +197,12 @@ export class QwenCodeRuntime {
             assistantText = nextText;
             input.onPartial?.(assistantText);
           }
-          for (const summary of extractToolSummary(message.message.content)) {
-            input.onActivity?.(summary);
+          for (const toolUse of extractToolUses(message.message.content)) {
+            usedToolNames.add(toolUse.name);
+            if (isMutationToolName(toolUse.name)) {
+              didMutate = true;
+            }
+            input.onActivity?.(describeToolActivity(toolUse.name, toolUse.input));
           }
           continue;
         }
@@ -176,6 +224,8 @@ export class QwenCodeRuntime {
       sessionId: result.getSessionId(),
       assistantText: assistantText || partialText.trim() || "Qwen Code finished without returning a final message.",
       permissionDenials,
+      usedTools: Array.from(usedToolNames),
+      didMutate,
     };
   }
 }

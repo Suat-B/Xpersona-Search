@@ -75,12 +75,14 @@ export function rankWorkspacePathMatches(
   options?: {
     activePath?: string;
     openFiles?: string[];
+    memoryFiles?: string[];
   }
 ): string[] {
   const normalizedQuery = normalizeContextPath(query).toLowerCase();
   const queryBase = basename(normalizedQuery);
   const activePath = normalizeContextPath(options?.activePath || "").toLowerCase();
   const openSet = new Set((options?.openFiles || []).map((item) => normalizeContextPath(item).toLowerCase()));
+  const memorySet = new Set((options?.memoryFiles || []).map((item) => normalizeContextPath(item).toLowerCase()));
   const seen = new Set<string>();
 
   return candidates
@@ -107,6 +109,14 @@ export function rankWorkspacePathMatches(
       if (openSet.has(lower)) score += 14;
       if (openSet.size && candidateBase && Array.from(openSet).some((item) => basename(item) === candidateBase)) {
         score += 8;
+      }
+      if (memorySet.has(lower)) score += 12;
+      if (
+        memorySet.size &&
+        candidateBase &&
+        Array.from(memorySet).some((item) => basename(item) === candidateBase)
+      ) {
+        score += 6;
       }
 
       const depthPenalty = Math.max(0, toPathSegments(lower).length - Math.max(1, toPathSegments(normalizedQuery).length));

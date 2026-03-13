@@ -1,35 +1,64 @@
 import * as vscode from "vscode";
 import { randomUUID } from "crypto";
+import {
+  buildClarificationActions,
+  buildContextPreviewMessage,
+  buildContextSummary,
+  buildFollowUpActions,
+  buildPatchConfidence,
+  classifyIntent,
+  isEditLikeIntent,
+} from "./assistant-ux";
 import { AuthManager } from "./auth";
 import { ActionRunner } from "./actions";
 import { requestJson } from "./api-client";
-import { ContextCollector } from "./context";
+import { ContextAttachmentSelection, ContextCollector } from "./context";
 import {
+  EXTENSION_NAMESPACE,
   getBaseApiUrl,
+  getQwenExecutablePath,
+  getQwenOpenAiBaseUrl,
   getRuntimeBackend,
   getWorkspaceHash,
   getWorkspaceRootPath,
   MODE_KEY,
+  toWorkspaceRelativePath,
   WEBVIEW_VIEW_ID,
 } from "./config";
 import { SessionHistoryService } from "./history";
 import { CloudIndexManager } from "./indexer";
-import { QwenHistoryService } from "./qwen-history";
+import { DraftStore } from "./draft-store";
+import {
+  explainQwenFailure,
+  sanitizeQwenAssistantOutput,
+  validateQwenPreflight,
+} from "./qwen-ux";
+import { createPendingQwenSessionId, isPendingQwenSessionId, QwenHistoryService } from "./qwen-history";
 import { QwenCodeRuntime } from "./qwen-code-runtime";
 import { ToolExecutor } from "./tool-executor";
 import { buildPlaygroundWebviewHtml } from "./webview-html";
 import { buildQwenPrompt } from "./qwen-prompt";
+import {
+  buildSlashCommandHelpMessage,
+  buildSlashStatusMessage,
+  parseSlashCommand,
+} from "./slash-commands";
 import type {
   AssistAction,
   AssistPlan,
   AssistRunEnvelope,
   AuthState,
   ChatMessage,
+  ContextConfidence,
+  ContextSummary,
+  FollowUpAction,
   HistoryItem,
+  IntentKind,
   Mode,
   PendingToolCall,
   RequestAuth,
   RuntimeBackend,
+  RuntimePhase,
   ToolResult,
 } from "./shared";
 
@@ -43,6 +72,23 @@ type WebviewState = {
   canUndo: boolean;
   activity: string[];
   selectedSessionId: string | null;
+  contextSummary: ContextSummary;
+  contextConfidence: ContextConfidence;
+  intent: IntentKind;
+  runtimePhase: RuntimePhase;
+  followUpActions: FollowUpAction[];
+  draftText: string;
+};
+
+type ManualContextState = {
+  attachedFiles: string[];
+  attachedSelection: ContextAttachmentSelection | null;
+};
+
+type LastPromptState = {
+  text: string;
+  intent: IntentKind;
+  searchDepth: "fast" | "deep";
 };
 
 function normalizeMode(value?: Mode): Mode {
@@ -67,10 +113,27 @@ function createNonce(): string {
   return randomUUID().replace(/-/g, "");
 }
 
+function createEmptyContextSummary(): ContextSummary {
+  return {
+    likelyTargets: [],
+    candidateTargets: [],
+    attachedFiles: [],
+    memoryTargets: [],
+  };
+}
+
 export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
   private sessionId: string | null = null;
   private didPrimeFreshChat = false;
+  private draftText = "";
+  private manualContext: ManualContextState = {
+    attachedFiles: [],
+    attachedSelection: null,
+  };
+  private lastPrompt: LastPromptState | null = null;
+  private pendingClarification: LastPromptState | null = null;
+  private readonly draftStore: DraftStore;
   private state: WebviewState;
 
   constructor(
@@ -84,6 +147,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     private readonly toolExecutor: ToolExecutor,
     private readonly indexManager: CloudIndexManager
   ) {
+    this.draftStore = new DraftStore(this.context.workspaceState);
     this.state = {
       mode: normalizeMode(this.context.workspaceState.get<Mode>(MODE_KEY)),
       runtime: getRuntimeBackend(),
@@ -94,6 +158,12 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       canUndo: getRuntimeBackend() === "playgroundApi" && this.actionRunner.canUndo(),
       activity: [],
       selectedSessionId: null,
+      contextSummary: createEmptyContextSummary(),
+      contextConfidence: "low",
+      intent: "ask",
+      runtimePhase: "idle",
+      followUpActions: [],
+      draftText: "",
     };
 
     this.auth.onDidChange(() => void this.handleAuthChange());
@@ -124,6 +194,161 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private getDraftSessionId(): string | null {
+    return this.state.selectedSessionId || this.sessionId || null;
+  }
+
+  private async loadDraftText(): Promise<void> {
+    this.draftText = await this.draftStore.get(this.state.runtime, this.getDraftSessionId());
+    this.state.draftText = this.draftText;
+  }
+
+  private async setDraftText(text: string): Promise<void> {
+    this.draftText = String(text || "");
+    this.state.draftText = this.draftText;
+    await this.draftStore.set(this.state.runtime, this.getDraftSessionId(), this.draftText);
+  }
+
+  private async clearCurrentDraft(): Promise<void> {
+    await this.setDraftText("");
+  }
+
+  private async setRuntime(runtime: RuntimeBackend): Promise<void> {
+    if (runtime === this.state.runtime) return;
+    const target = vscode.workspace.workspaceFolders?.length
+      ? vscode.ConfigurationTarget.Workspace
+      : vscode.ConfigurationTarget.Global;
+    await vscode.workspace
+      .getConfiguration(EXTENSION_NAMESPACE)
+      .update("runtime", runtime, target);
+    await this.refreshConfiguration();
+  }
+
+  private getRuntimePhaseForDraft(): RuntimePhase {
+    return this.draftText.trim() ? "radar" : "idle";
+  }
+
+  private shouldPreserveTerminalPhase(): boolean {
+    return this.state.runtimePhase === "done" || this.state.runtimePhase === "failed";
+  }
+
+  private async performSetApiKey(): Promise<string> {
+    await this.auth.setApiKeyInteractive();
+    await this.refreshAuth();
+    await this.refreshHistory();
+    return this.state.auth.kind === "none"
+      ? "Playground API key cleared."
+      : "Playground API key updated.";
+  }
+
+  private async performSignIn(): Promise<string> {
+    if (this.state.runtime === "qwenCode") {
+      return "Qwen Code uses your Playground API key. Use /key or the Key button instead of browser sign-in.";
+    }
+    await this.auth.signInWithBrowser();
+    return "Browser sign-in opened.";
+  }
+
+  private async performSignOut(): Promise<string> {
+    await this.auth.signOut();
+    await this.newChat();
+    await this.refreshAuth();
+    await this.refreshHistory();
+    return "Playground auth cleared.";
+  }
+
+  private async performUndo(): Promise<string> {
+    if (this.state.runtime === "qwenCode") {
+      return "Undo is only available for Playground API runs. For Qwen Code sessions, use source control or Qwen checkpoints.";
+    }
+    return this.actionRunner.undoLastBatch();
+  }
+
+  private async handleSlashCommand(text: string): Promise<boolean> {
+    const command = parseSlashCommand(text);
+    if (!command) return false;
+
+    await this.clearCurrentDraft();
+
+    switch (command.kind) {
+      case "help":
+        this.appendMessage("system", buildSlashCommandHelpMessage());
+        this.state.runtimePhase = this.getRuntimePhaseForDraft();
+        this.postState();
+        return true;
+      case "new":
+        await this.newChat();
+        this.appendMessage("system", "Started a new chat.");
+        this.postState();
+        return true;
+      case "plan":
+        await this.setMode("plan");
+        this.appendMessage("system", "Mode set to Plan.");
+        this.state.runtimePhase = this.getRuntimePhaseForDraft();
+        this.postState();
+        return true;
+      case "auto":
+        await this.setMode("auto");
+        this.appendMessage("system", "Mode set to Auto.");
+        this.state.runtimePhase = this.getRuntimePhaseForDraft();
+        this.postState();
+        return true;
+      case "runtime":
+        await this.setRuntime(command.runtime);
+        this.appendMessage(
+          "system",
+          `Runtime set to ${command.runtime === "qwenCode" ? "Qwen Code" : "Playground API"}.`
+        );
+        this.state.runtimePhase = this.getRuntimePhaseForDraft();
+        this.postState();
+        return true;
+      case "key":
+        this.appendMessage("system", await this.performSetApiKey());
+        this.state.runtimePhase = this.getRuntimePhaseForDraft();
+        this.postState();
+        return true;
+      case "signin":
+        this.appendMessage("system", await this.performSignIn());
+        this.state.runtimePhase = this.getRuntimePhaseForDraft();
+        this.postState();
+        return true;
+      case "signout":
+        this.appendMessage("system", await this.performSignOut());
+        this.state.runtimePhase = this.getRuntimePhaseForDraft();
+        this.postState();
+        return true;
+      case "undo":
+        this.appendMessage("system", await this.performUndo());
+        this.state.runtimePhase = this.getRuntimePhaseForDraft();
+        this.postState();
+        return true;
+      case "status":
+        this.appendMessage(
+          "system",
+          buildSlashStatusMessage({
+            runtime: this.state.runtime,
+            mode: this.state.mode,
+            authLabel: this.state.auth.label,
+            runtimePhase: this.state.runtimePhase,
+            sessionId: this.getDraftSessionId(),
+            attachedFiles: this.manualContext.attachedFiles,
+            attachedSelectionPath: this.manualContext.attachedSelection?.path || null,
+          })
+        );
+        this.state.runtimePhase = this.getRuntimePhaseForDraft();
+        this.postState();
+        return true;
+      case "unknown":
+        this.appendMessage(
+          "system",
+          buildSlashCommandHelpMessage(`Unknown slash command: ${command.raw}`)
+        );
+        this.state.runtimePhase = this.getRuntimePhaseForDraft();
+        this.postState();
+        return true;
+    }
+  }
+
   async refreshConfiguration(): Promise<void> {
     const runtime = getRuntimeBackend();
     const runtimeChanged = runtime !== this.state.runtime;
@@ -134,9 +359,15 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       this.state.selectedSessionId = null;
       this.state.messages = [];
       this.state.activity = [];
+      this.state.followUpActions = [];
+      this.state.runtimePhase = "idle";
+      this.lastPrompt = null;
+      this.pendingClarification = null;
     }
+    await this.loadDraftText();
     await this.refreshAuth();
     await this.refreshHistory();
+    await this.refreshDraftContext(this.draftText);
     this.postState();
   }
 
@@ -170,6 +401,12 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     this.state.activity = [];
     this.state.selectedSessionId = null;
     this.state.canUndo = this.state.runtime === "playgroundApi" && this.actionRunner.canUndo();
+    this.state.followUpActions = [];
+    this.lastPrompt = null;
+    this.pendingClarification = null;
+    await this.loadDraftText();
+    this.state.runtimePhase = this.getRuntimePhaseForDraft();
+    await this.refreshDraftContext(this.draftText);
     this.postState();
   }
 
@@ -182,7 +419,12 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       this.state.selectedSessionId = null;
       this.state.busy = false;
       this.state.canUndo = this.state.runtime === "playgroundApi" && this.actionRunner.canUndo();
+      this.state.followUpActions = [];
+      this.state.runtimePhase = "idle";
+      this.lastPrompt = null;
+      this.pendingClarification = null;
     }
+    await this.loadDraftText();
     await this.refreshConfiguration();
   }
 
@@ -217,8 +459,12 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       this.state.selectedSessionId = sessionId;
       this.state.messages = await this.qwenHistoryService.loadMessages(sessionId).catch(() => []);
       this.state.activity = [];
+      this.state.followUpActions = [];
       const historyItem = this.state.history.find((item) => item.id === sessionId);
       if (historyItem) this.state.mode = normalizeMode(historyItem.mode);
+      await this.loadDraftText();
+      this.state.runtimePhase = this.getRuntimePhaseForDraft();
+      await this.refreshDraftContext(this.draftText);
       this.postState();
       return;
     }
@@ -229,6 +475,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     this.state.selectedSessionId = sessionId;
     this.state.messages = await this.historyService.loadMessages(auth, sessionId).catch(() => []);
     this.state.activity = [];
+    await this.loadDraftText();
     this.postState();
   }
 
@@ -245,28 +492,21 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       case "newChat":
         await this.newChat();
         return;
+      case "previewContext":
+        await this.setDraftText(String(message.text || ""));
+        await this.refreshDraftContext(this.draftText);
+        return;
       case "setMode":
         await this.setMode(String(message.value || "auto") as Mode);
         return;
       case "setApiKey":
-        await this.auth.setApiKeyInteractive();
-        await this.refreshAuth();
-        await this.refreshHistory();
+        await this.performSetApiKey();
         return;
       case "signIn":
-        if (this.state.runtime === "qwenCode") {
-          vscode.window.showInformationMessage(
-            "Qwen Code uses your Playground API key. Use the API Key button instead of browser sign-in."
-          );
-          return;
-        }
-        await this.auth.signInWithBrowser();
+        vscode.window.showInformationMessage(await this.performSignIn());
         return;
       case "signOut":
-        await this.auth.signOut();
-        await this.newChat();
-        await this.refreshAuth();
-        await this.refreshHistory();
+        vscode.window.showInformationMessage(await this.performSignOut());
         return;
       case "loadHistory":
         await this.refreshHistory();
@@ -274,17 +514,20 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       case "openSession":
         await this.openSession(String(message.id || ""));
         return;
+      case "attachActiveFile":
+        await this.attachActiveFile();
+        return;
+      case "attachSelection":
+        await this.attachSelection();
+        return;
+      case "clearAttachedContext":
+        await this.clearAttachedContext();
+        return;
+      case "followUpAction":
+        await this.handleFollowUpAction(String(message.id || ""));
+        return;
       case "undoLastChanges": {
-        if (this.state.runtime === "qwenCode") {
-          this.appendMessage(
-            "system",
-            "Undo is only available for Playground API runs. For Qwen Code sessions, use source control or Qwen checkpoints."
-          );
-          this.postState();
-          return;
-        }
-        const summary = await this.actionRunner.undoLastBatch();
-        this.appendMessage("system", summary);
+        this.appendMessage("system", await this.performUndo());
         this.postState();
         return;
       }
@@ -299,90 +542,440 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private async getQwenContextOptions(input?: {
+    searchDepth?: "fast" | "deep";
+    intent?: IntentKind;
+  }) {
+    const hints = await this.qwenHistoryService.getWorkspaceHints().catch(() => ({
+      recentTargets: [] as string[],
+      recentIntents: [] as IntentKind[],
+    }));
+
+    return {
+      recentTouchedPaths: this.actionRunner.getRecentTouchedPaths(),
+      attachedFiles: this.manualContext.attachedFiles,
+      attachedSelection: this.manualContext.attachedSelection,
+      memoryTargets: hints.recentTargets,
+      searchDepth: input?.searchDepth || "fast",
+      ...(input?.intent ? { intent: input.intent } : {}),
+    };
+  }
+
+  private applyPreviewState(preview: Awaited<ReturnType<ContextCollector["preview"]>>): void {
+    this.state.intent = preview.intent;
+    this.state.contextConfidence = preview.confidence;
+    this.state.contextSummary = buildContextSummary(preview);
+  }
+
+  private resetQwenInteractionState(): void {
+    this.state.followUpActions = [];
+    this.state.activity = [];
+    this.state.runtimePhase = this.getRuntimePhaseForDraft();
+    this.pendingClarification = null;
+  }
+
+  private async refreshDraftContext(text: string): Promise<void> {
+    if (this.state.runtime !== "qwenCode") return;
+
+    const draft = String(text || "");
+    const preview = await this.contextCollector.preview(
+      draft,
+      await this.getQwenContextOptions({
+        searchDepth: "fast",
+        intent: draft.trim() ? classifyIntent(draft) : undefined,
+      })
+    );
+    this.applyPreviewState(preview);
+    if (!this.state.busy && (!this.shouldPreserveTerminalPhase() || draft.trim())) {
+      this.state.runtimePhase = draft.trim() ? "radar" : "idle";
+    }
+    this.postState();
+  }
+
+  private getActiveEditorPath(): string | null {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return null;
+    return toWorkspaceRelativePath(editor.document.uri);
+  }
+
+  private async attachActiveFile(): Promise<void> {
+    const activePath = this.getActiveEditorPath();
+    if (!activePath) {
+      vscode.window.showInformationMessage("Open a workspace file before attaching context.");
+      return;
+    }
+
+    this.manualContext.attachedFiles = Array.from(
+      new Set([activePath, ...this.manualContext.attachedFiles].map((value) => String(value || "").trim()))
+    ).slice(0, 4);
+    await this.refreshDraftContext(this.draftText);
+  }
+
+  private async attachSelection(): Promise<void> {
+    const editor = vscode.window.activeTextEditor;
+    const activePath = this.getActiveEditorPath();
+    if (!editor || !activePath) {
+      vscode.window.showInformationMessage("Open a workspace file before attaching a selection.");
+      return;
+    }
+
+    const rawSelection = editor.selection.isEmpty
+      ? editor.document.lineAt(editor.selection.active.line).text
+      : editor.document.getText(editor.selection);
+    const trimmed = rawSelection.trim();
+    if (!trimmed) {
+      vscode.window.showInformationMessage("Select code or place the cursor on a useful line first.");
+      return;
+    }
+
+    this.manualContext.attachedSelection = {
+      path: activePath,
+      content: trimmed,
+      summary: trimmed.replace(/\s+/g, " ").slice(0, 90),
+    };
+    this.manualContext.attachedFiles = Array.from(
+      new Set([activePath, ...this.manualContext.attachedFiles].map((value) => String(value || "").trim()))
+    ).slice(0, 4);
+    await this.refreshDraftContext(this.draftText);
+  }
+
+  private async clearAttachedContext(): Promise<void> {
+    this.manualContext = {
+      attachedFiles: [],
+      attachedSelection: null,
+    };
+    await this.refreshDraftContext(this.draftText);
+  }
+
+  private async handleFollowUpAction(id: string): Promise<void> {
+    const action = this.state.followUpActions.find((item) => item.id === id);
+    if (!action || action.disabled) return;
+
+    if (action.kind === "info") return;
+
+    if (action.kind === "prompt" && action.prompt) {
+      await this.sendPrompt(action.prompt);
+      return;
+    }
+
+    if (action.kind === "target" && action.targetPath && this.pendingClarification) {
+      this.manualContext.attachedFiles = Array.from(
+        new Set([action.targetPath, ...this.manualContext.attachedFiles].map((value) => String(value || "").trim()))
+      ).slice(0, 4);
+      await this.runQwenPrompt({
+        text: this.pendingClarification.text,
+        appendUser: false,
+        searchDepth: this.pendingClarification.searchDepth,
+      });
+      return;
+    }
+
+    if (action.kind === "rerun") {
+      const base = this.pendingClarification || this.lastPrompt;
+      if (!base) return;
+
+      if (id === "retry-more-context") {
+        if (!this.manualContext.attachedFiles.length) {
+          const activePath = this.getActiveEditorPath();
+          if (activePath) {
+            this.manualContext.attachedFiles = [activePath];
+          }
+        }
+        if (!this.manualContext.attachedSelection) {
+          const editor = vscode.window.activeTextEditor;
+          const activePath = this.getActiveEditorPath();
+          if (editor && activePath) {
+            const rawSelection = editor.selection.isEmpty
+              ? editor.document.lineAt(editor.selection.active.line).text
+              : editor.document.getText(editor.selection);
+            const trimmed = rawSelection.trim();
+            if (trimmed) {
+              this.manualContext.attachedSelection = {
+                path: activePath,
+                content: trimmed,
+                summary: trimmed.replace(/\s+/g, " ").slice(0, 90),
+              };
+            }
+          }
+        }
+      }
+
+      await this.runQwenPrompt({
+        text: base.text,
+        appendUser: false,
+        searchDepth: id === "search-deeper" ? "deep" : "fast",
+      });
+    }
+  }
+
   private async sendPrompt(rawText: string): Promise<void> {
     const text = rawText.trim();
     if (!text || this.state.busy) return;
 
+    if (await this.handleSlashCommand(text)) {
+      return;
+    }
+
+    await this.clearCurrentDraft();
+
     if (this.state.runtime === "qwenCode") {
-      await this.sendPromptWithQwen(text);
+      await this.runQwenPrompt({
+        text,
+        appendUser: true,
+        searchDepth: "fast",
+      });
       return;
     }
     await this.sendPromptWithPlaygroundApi(text);
   }
 
-  private async sendPromptWithQwen(text: string): Promise<void> {
-    const apiKey = await this.auth.getApiKey();
-    if (!apiKey) {
-      this.appendMessage("system", "Set a Playground API key before using the Qwen Code runtime.");
-      this.postState();
-      return;
+  private buildClarificationMessage(preview: Awaited<ReturnType<ContextCollector["preview"]>>): string {
+    if (preview.candidateFiles.length) {
+      return [
+        `Context preview: ${preview.intent.toUpperCase()} | LOW confidence`,
+        "I found a few possible target files and I do not want to guess before editing.",
+        `Pick one of these files: ${preview.candidateFiles.slice(0, 4).join(", ")}`,
+      ].join("\n");
     }
 
-    if (this.sessionId && !(await this.qwenHistoryService.hasSession(this.sessionId))) {
+    return [
+      `Context preview: ${preview.intent.toUpperCase()} | LOW confidence`,
+      "I need a clearer target before editing.",
+      "Attach the active file, attach a selection, or ask me to search deeper.",
+    ].join("\n");
+  }
+
+  private shouldShowContextPreview(preview: Awaited<ReturnType<ContextCollector["preview"]>>): boolean {
+    return Boolean(
+      preview.resolvedFiles.length ||
+        preview.attachedFiles.length ||
+        preview.attachedSelection ||
+        preview.intent === "change" ||
+        preview.intent === "find" ||
+        preview.intent === "explain"
+    );
+  }
+
+  private async runQwenPrompt(input: {
+    text: string;
+    appendUser: boolean;
+    searchDepth: "fast" | "deep";
+  }): Promise<void> {
+    const text = input.text.trim();
+    const apiKey = await this.auth.getApiKey();
+    const workspaceRoot = getWorkspaceRootPath();
+    const preflightMessage = await validateQwenPreflight({
+      workspaceRoot,
+      apiKey,
+      qwenBaseUrl: getQwenOpenAiBaseUrl(),
+      playgroundBaseUrl: getBaseApiUrl(),
+      executablePath: getQwenExecutablePath(),
+    });
+
+    if (
+      this.sessionId &&
+      !isPendingQwenSessionId(this.sessionId) &&
+      !(await this.qwenHistoryService.hasSession(this.sessionId))
+    ) {
       this.sessionId = null;
       this.state.selectedSessionId = null;
       this.state.activity = [];
     }
 
+    const localSessionId = this.sessionId || createPendingQwenSessionId();
+    this.sessionId = localSessionId;
+    this.state.selectedSessionId = localSessionId;
+
+    const intent = classifyIntent(text);
+    const preview = await this.contextCollector.preview(
+      text,
+      await this.getQwenContextOptions({
+        searchDepth: input.searchDepth,
+        intent,
+      })
+    );
+    this.applyPreviewState(preview);
+    this.lastPrompt = {
+      text,
+      intent: preview.intent,
+      searchDepth: input.searchDepth,
+    };
+
+    if (input.appendUser) {
+      this.appendMessage("user", text);
+    }
+
+    this.state.followUpActions = [];
+    this.state.activity = [];
+    this.pushActivity("Collecting context");
+    this.state.runtimePhase = "collecting_context";
     this.state.busy = true;
-    this.appendMessage("user", text);
     this.postState();
 
+    if (preflightMessage) {
+      this.appendMessage("system", preflightMessage);
+      this.pushActivity("Failed");
+      this.state.runtimePhase = "failed";
+      this.state.busy = false;
+      await this.qwenHistoryService.saveConversation({
+        sessionId: localSessionId,
+        mode: this.state.mode,
+        title: text,
+        messages: this.state.messages,
+        targets: preview.resolvedFiles,
+        intent: preview.intent,
+      });
+      await this.refreshHistory();
+      this.postState();
+      return;
+    }
+
+    if (isEditLikeIntent(preview.intent) && preview.confidence === "low") {
+      this.pendingClarification = {
+        text,
+        intent: preview.intent,
+        searchDepth: input.searchDepth,
+      };
+      this.appendMessage("system", this.buildClarificationMessage(preview));
+      this.state.followUpActions = buildClarificationActions({
+        candidateFiles: preview.candidateFiles,
+      });
+      this.state.runtimePhase = "clarify";
+      this.state.busy = false;
+      await this.qwenHistoryService.saveConversation({
+        sessionId: localSessionId,
+        mode: this.state.mode,
+        title: text,
+        messages: this.state.messages,
+        targets: preview.resolvedFiles.length ? preview.resolvedFiles : preview.candidateFiles,
+        intent: preview.intent,
+      });
+      await this.refreshHistory();
+      this.postState();
+      return;
+    }
+
+    this.pendingClarification = null;
     const assistantMessageId = randomUUID();
 
     try {
-      const { context, preview } = await this.contextCollector.collect(
+      const { context, preview: fullPreview } = await this.contextCollector.collect(
         text,
-        this.actionRunner.getRecentTouchedPaths()
+        await this.getQwenContextOptions({
+          searchDepth: input.searchDepth,
+          intent: preview.intent,
+        })
       );
+      this.applyPreviewState(fullPreview);
+      if (this.shouldShowContextPreview(fullPreview)) {
+        this.appendMessage("system", buildContextPreviewMessage(fullPreview));
+      }
+      const attachedTargets = (
+        fullPreview.selectedFiles.length ? fullPreview.selectedFiles : fullPreview.resolvedFiles
+      ).slice(0, 3);
+      if (attachedTargets.length) {
+        this.pushActivity(`Context attached: ${attachedTargets.join(", ")}`);
+      }
+      this.pushActivity("Waiting for Qwen");
+      this.state.runtimePhase = "waiting_for_qwen";
+      this.postState();
 
       const result = await this.qwenCodeRuntime.runPrompt({
-        apiKey,
+        apiKey: String(apiKey || ""),
         mode: this.state.mode,
         prompt: buildQwenPrompt({
           task: text,
           mode: this.state.mode,
-          preview,
+          preview: fullPreview,
           context,
-          workspaceRoot: getWorkspaceRootPath(),
+          workspaceRoot,
+          searchDepth: input.searchDepth,
+          history: this.state.messages,
+          qwenExecutablePath: getQwenExecutablePath() || null,
         }),
-        sessionId: this.sessionId,
         onPartial: (partial) => {
-          const next = partial.trim();
+          const next = sanitizeQwenAssistantOutput({
+            text: partial,
+            task: text,
+            workspaceRoot,
+            executablePath: getQwenExecutablePath() || null,
+          }).trim();
           if (!next) return;
           this.upsertMessage(assistantMessageId, "assistant", next);
           this.postState();
         },
         onActivity: (activity) => {
           this.pushActivity(activity);
+          if (/awaiting tool approval/i.test(activity)) {
+            this.state.runtimePhase = "awaiting_approval";
+          } else if (/applying result/i.test(activity)) {
+            this.state.runtimePhase = "applying_result";
+          }
           this.postState();
         },
       });
 
-      this.sessionId = result.sessionId;
-      this.state.selectedSessionId = result.sessionId;
+      const resolvedSessionId = localSessionId;
+      this.sessionId = resolvedSessionId;
+      this.state.selectedSessionId = resolvedSessionId;
       this.upsertMessage(
         assistantMessageId,
         "assistant",
-        result.assistantText || "Qwen Code finished without a final message."
+        sanitizeQwenAssistantOutput({
+          text: result.assistantText || "Qwen Code finished without a final message.",
+          task: text,
+          workspaceRoot,
+          executablePath: getQwenExecutablePath() || null,
+        })
       );
+      this.state.followUpActions = buildFollowUpActions({
+        intent: fullPreview.intent,
+        lastTask: text,
+        preview: fullPreview,
+        patchConfidence: buildPatchConfidence({
+          intent: fullPreview.intent,
+          preview: fullPreview,
+          didMutate: result.didMutate,
+        }),
+      });
 
       for (const denial of result.permissionDenials) {
         this.pushActivity(denial);
       }
 
+      this.pushActivity("Saving session");
+      this.state.runtimePhase = "saving_session";
+      this.postState();
       await this.qwenHistoryService.saveConversation({
-        sessionId: result.sessionId,
+        sessionId: resolvedSessionId,
         mode: this.state.mode,
         title: text,
         messages: this.state.messages,
+        targets: fullPreview.resolvedFiles,
+        intent: fullPreview.intent,
       });
       await this.refreshHistory();
+      this.pushActivity("Done");
+      this.state.runtimePhase = "done";
     } catch (error) {
       this.appendMessage(
         "system",
-        `Qwen Code request failed: ${error instanceof Error ? error.message : String(error)}`
+        explainQwenFailure(error, {
+          qwenBaseUrl: getQwenOpenAiBaseUrl(),
+          executablePath: getQwenExecutablePath(),
+        })
       );
+      this.pushActivity("Failed");
+      this.state.runtimePhase = "failed";
+      await this.qwenHistoryService.saveConversation({
+        sessionId: localSessionId,
+        mode: this.state.mode,
+        title: text,
+        messages: this.state.messages,
+        targets: preview.resolvedFiles,
+        intent: preview.intent,
+      });
+      await this.refreshHistory();
     } finally {
       this.state.busy = false;
       this.state.canUndo = false;
@@ -405,7 +998,13 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     try {
       const { context, retrievalHints } = await this.contextCollector.collect(
         text,
-        this.actionRunner.getRecentTouchedPaths()
+        {
+          recentTouchedPaths: this.actionRunner.getRecentTouchedPaths(),
+          attachedFiles: this.manualContext.attachedFiles,
+          attachedSelection: this.manualContext.attachedSelection,
+          searchDepth: "fast",
+          intent: classifyIntent(text),
+        }
       );
 
       const workspaceHash = getWorkspaceHash();

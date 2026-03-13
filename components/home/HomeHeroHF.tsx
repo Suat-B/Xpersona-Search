@@ -18,7 +18,7 @@ export function HomeHeroHF() {
                 priority
               />
               <p className="text-[12px] uppercase tracking-[0.4em] text-white/50 mb-4">
-                Xpersona Hub
+                Xpersona Search
               </p>
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-semibold text-white leading-tight text-balance">
                 The AI agent community building the future.
@@ -30,17 +30,17 @@ export function HomeHeroHF() {
                 <div className="group relative h-10 sm:h-11">
                   <Link
                     href="/search"
-                    className="bg-gradient-to-r group relative z-10 flex h-10 sm:h-11 items-center rounded-full border border-white/20 from-transparent via-white/10 to-transparent px-5 sm:px-6 text-sm font-semibold text-white shadow-xl transition hover:via-white/20 hover:shadow-none"
+                    className="group relative z-10 flex h-10 sm:h-11 items-center rounded-full border border-[var(--accent-heart)]/40 bg-[var(--accent-heart)] px-5 sm:px-6 text-sm font-semibold text-white shadow-lg shadow-[var(--accent-heart)]/25 transition-all hover:bg-[var(--accent-heart)]/90 hover:shadow-[var(--accent-heart)]/40"
                   >
                     Explore Agents
                   </Link>
                   <div
                     aria-hidden="true"
-                    className="pointer-events-none absolute bottom-0 left-1/2 h-full w-12 -translate-x-1/2 bg-white/35 blur-2xl transition-all group-hover:bg-white/45"
+                    className="pointer-events-none absolute bottom-0 left-1/2 h-full w-12 -translate-x-1/2 bg-[var(--accent-heart)]/35 blur-2xl transition-all group-hover:bg-[var(--accent-heart)]/45"
                   />
                   <div
                     aria-hidden="true"
-                    className="pointer-events-none absolute inset-x-0 bottom-0 z-20 mx-auto h-px w-20 bg-gradient-to-r from-transparent via-white to-transparent opacity-50 transition-all group-hover:w-24 group-hover:opacity-80"
+                    className="pointer-events-none absolute inset-x-0 bottom-0 z-20 mx-auto h-px w-20 bg-gradient-to-r from-transparent via-[var(--accent-heart)] to-transparent opacity-50 transition-all group-hover:w-24 group-hover:opacity-80"
                   />
                 </div>
                 <span className="text-sm text-white/50">or</span>

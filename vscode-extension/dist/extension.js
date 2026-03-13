@@ -44,6 +44,7 @@ const history_1 = require("./history");
 const indexer_1 = require("./indexer");
 const qwen_history_1 = require("./qwen-history");
 const qwen_code_runtime_1 = require("./qwen-code-runtime");
+const selection_prefill_1 = require("./selection-prefill");
 const tool_executor_1 = require("./tool-executor");
 const webview_provider_1 = require("./webview-provider");
 function activate(context) {
@@ -65,7 +66,11 @@ function activate(context) {
         const selected = editor.selection.isEmpty
             ? editor.document.lineAt(editor.selection.active.line).text
             : editor.document.getText(editor.selection);
-        await provider.show(selected.trim());
+        await provider.show((0, selection_prefill_1.buildSelectionPrefill)({
+            path: (0, config_1.toWorkspaceRelativePath)(editor.document.uri),
+            line: editor.selection.start.line + 1,
+            selectedText: selected.trim(),
+        }));
     }), vscode.commands.registerCommand("xpersona.playground.setApiKey", async () => {
         await auth.setApiKeyInteractive();
         await provider.refreshHistory();

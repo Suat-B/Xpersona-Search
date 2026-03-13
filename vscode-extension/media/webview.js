@@ -11,13 +11,22 @@
     canUndo: false,
     activity: [],
     selectedSessionId: null,
+    contextSummary: {
+      likelyTargets: [],
+      candidateTargets: [],
+      attachedFiles: [],
+      memoryTargets: [],
+    },
+    contextConfidence: "low",
+    intent: "ask",
+    runtimePhase: "idle",
+    followUpActions: [],
+    draftText: "",
     activePanel: "chat",
   };
 
   const elements = {
     workspaceShell: document.getElementById("workspaceShell"),
-    taskPanel: document.getElementById("taskPanel"),
-    chatStage: document.getElementById("chatStage"),
     history: document.getElementById("history"),
     historyCount: document.getElementById("historyCount"),
     historyFooter: document.getElementById("historyFooter"),
@@ -26,21 +35,24 @@
     composer: document.getElementById("composer"),
     send: document.getElementById("send"),
     mentions: document.getElementById("mentions"),
-    activityWrap: document.getElementById("activityWrap"),
+    timelineWrap: document.getElementById("timelineWrap"),
     activity: document.getElementById("activity"),
     jumpToLatest: document.getElementById("jumpToLatest"),
     busyLabel: document.getElementById("busyLabel"),
-    runtimeLabel: document.getElementById("runtimeLabel"),
     statusLabel: document.getElementById("statusLabel"),
     runtimeChip: document.getElementById("runtimeChip"),
     modeChip: document.getElementById("modeChip"),
     authChip: document.getElementById("authChip"),
     signIn: document.getElementById("signIn"),
     signOut: document.getElementById("signOut"),
-    signOutButtons: Array.from(document.querySelectorAll('[data-action="signOut"]')),
     undoChanges: document.getElementById("undoChanges"),
-    modeButtons: Array.from(document.querySelectorAll("[data-mode]")),
-    actionButtons: Array.from(document.querySelectorAll("[data-action]")),
+    contextNote: document.getElementById("contextNote"),
+    contextRoot: document.getElementById("contextRoot"),
+    contextTargets: document.getElementById("contextTargets"),
+    contextConfidenceChip: document.getElementById("contextConfidenceChip"),
+    intentBadge: document.getElementById("intentBadge"),
+    intentChip: document.getElementById("intentChip"),
+    clearAttachedContext: document.getElementById("clearAttachedContext"),
     viewButtons: Array.from(document.querySelectorAll("[data-view-target]")),
   };
 
@@ -50,6 +62,10 @@
   let selectedMentionIndex = 0;
   let hasAutoFocused = false;
   let shouldStickToBottom = true;
+  let previewTimer = 0;
+  let lastPreviewText = null;
+  let lastDraftKey = "";
+  let lastDraftText = "";
 
   function escapeHtml(value) {
     return String(value || "")
@@ -66,29 +82,84 @@
   function formatRelativeTime(value) {
     const timestamp = Date.parse(String(value || ""));
     if (!Number.isFinite(timestamp)) return "";
-
     const diffMs = Date.now() - timestamp;
     const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
     if (diffMinutes < 1) return "now";
     if (diffMinutes < 60) return `${diffMinutes}m`;
-
     const diffHours = Math.round(diffMinutes / 60);
     if (diffHours < 24) return `${diffHours}h`;
-
     const diffDays = Math.round(diffHours / 24);
     if (diffDays < 7) return `${diffDays}d`;
-
-    const date = new Date(timestamp);
-    return date.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    });
+    return new Date(timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
   function roleLabel(role) {
     if (role === "user") return "You";
     if (role === "system") return "System";
     return "Playground";
+  }
+
+  function intentLabel(intent) {
+    if (intent === "change") return "Change";
+    if (intent === "find") return "Find";
+    if (intent === "explain") return "Explain";
+    return "Ask";
+  }
+
+  function confidenceLabel(confidence) {
+    if (confidence === "high") return "High confidence";
+    if (confidence === "medium") return "Medium confidence";
+    return "Low confidence";
+  }
+
+  function phaseLabel(phase) {
+    switch (phase) {
+      case "radar":
+        return "Draft ready";
+      case "collecting_context":
+        return "Collecting context";
+      case "waiting_for_qwen":
+        return "Waiting for Qwen";
+      case "awaiting_approval":
+        return "Awaiting tool approval";
+      case "applying_result":
+        return "Applying result";
+      case "saving_session":
+        return "Saving session";
+      case "clarify":
+        return "Needs clarification";
+      case "done":
+        return "Done";
+      case "failed":
+        return "Failed";
+      default:
+        return "Ready";
+    }
+  }
+
+  function phaseChipLabel(phase) {
+    switch (phase) {
+      case "radar":
+        return "Draft";
+      case "collecting_context":
+        return "Collect";
+      case "waiting_for_qwen":
+        return "Waiting";
+      case "awaiting_approval":
+        return "Approve";
+      case "applying_result":
+        return "Applying";
+      case "saving_session":
+        return "Saving";
+      case "clarify":
+        return "Clarify";
+      case "done":
+        return "Done";
+      case "failed":
+        return "Failed";
+      default:
+        return "Ready";
+    }
   }
 
   function runtimeName() {
@@ -139,9 +210,17 @@
     return state.auth && state.auth.kind !== "none" ? "Signed in" : "Needs auth";
   }
 
+  function shortPath(value) {
+    const normalized = String(value || "").replace(/\\/g, "/");
+    if (!normalized) return "";
+    const parts = normalized.split("/").filter(Boolean);
+    if (parts.length <= 2) return normalized;
+    return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+  }
+
   function setHidden(element, hidden) {
     if (!element) return;
-    element.classList.toggle("is-hidden", hidden);
+    element.classList.toggle("is-hidden", Boolean(hidden));
   }
 
   function normalizePanel(value) {
@@ -151,6 +230,7 @@
   function setActivePanel(panel) {
     state.activePanel = normalizePanel(panel);
     syncActivePanel();
+    persistDraft();
   }
 
   function syncActivePanel() {
@@ -158,10 +238,8 @@
     if (elements.workspaceShell) {
       elements.workspaceShell.setAttribute("data-compact-view", panel);
     }
-
     elements.viewButtons.forEach((button) => {
-      const target = normalizePanel(button.getAttribute("data-view-target") || "");
-      const active = target === panel;
+      const active = normalizePanel(button.getAttribute("data-view-target")) === panel;
       button.classList.toggle("active", active);
       button.setAttribute("aria-pressed", String(active));
     });
@@ -170,21 +248,43 @@
   function persistDraft() {
     vscode.setState({
       draft: elements.composer ? elements.composer.value : "",
+      activePanel: state.activePanel,
     });
   }
 
   function restoreDraft() {
     const saved = vscode.getState();
-    if (!saved || typeof saved !== "object" || !elements.composer) return;
-    if (typeof saved.draft === "string") {
+    if (saved && typeof saved === "object" && typeof saved.activePanel === "string") {
+      state.activePanel = normalizePanel(saved.activePanel);
+    }
+    if (saved && typeof saved === "object" && typeof saved.draft === "string" && elements.composer) {
       elements.composer.value = saved.draft;
     }
+  }
+
+  function currentDraftKey() {
+    return `${state.runtime}:${state.selectedSessionId || "__new__"}`;
+  }
+
+  function syncComposerFromState() {
+    if (!elements.composer) return;
+    const nextDraftKey = currentDraftKey();
+    const nextDraftText = typeof state.draftText === "string" ? state.draftText : "";
+    const shouldSync = nextDraftKey !== lastDraftKey || nextDraftText !== lastDraftText;
+
+    if (shouldSync && elements.composer.value !== nextDraftText) {
+      elements.composer.value = nextDraftText;
+      syncComposerHeight();
+      persistDraft();
+    }
+
+    lastDraftKey = nextDraftKey;
+    lastDraftText = nextDraftText;
   }
 
   function focusComposer(force) {
     if (!elements.composer) return;
     if (!force && document.activeElement === elements.composer) return;
-
     window.requestAnimationFrame(() => {
       if (!elements.composer) return;
       elements.composer.focus();
@@ -197,8 +297,8 @@
   function syncComposerHeight() {
     if (!elements.composer) return;
     const computed = window.getComputedStyle(elements.composer);
-    const minHeight = Number.parseFloat(computed.minHeight) || 116;
-    const maxHeight = Number.parseFloat(computed.maxHeight) || 280;
+    const minHeight = Number.parseFloat(computed.minHeight) || 96;
+    const maxHeight = Number.parseFloat(computed.maxHeight) || 236;
     elements.composer.style.height = "0px";
     const nextHeight = Math.min(Math.max(elements.composer.scrollHeight, minHeight), maxHeight);
     elements.composer.style.height = `${nextHeight}px`;
@@ -213,10 +313,7 @@
 
   function scrollToLatest(behavior) {
     if (!elements.messages) return;
-    elements.messages.scrollTo({
-      top: elements.messages.scrollHeight,
-      behavior: behavior || "auto",
-    });
+    elements.messages.scrollTo({ top: elements.messages.scrollHeight, behavior: behavior || "auto" });
     shouldStickToBottom = true;
     updateJumpButton();
   }
@@ -236,37 +333,22 @@
 
     while (match) {
       if (match.index > lastIndex) {
-        segments.push({
-          type: "text",
-          value: text.slice(lastIndex, match.index),
-        });
+        segments.push({ type: "text", value: text.slice(lastIndex, match.index) });
       }
-
       segments.push({
         type: "code",
         language: String(match[1] || "").trim(),
         value: String(match[2] || "").replace(/\n$/, ""),
       });
-
       lastIndex = match.index + match[0].length;
       match = fencePattern.exec(text);
     }
 
     if (lastIndex < text.length) {
-      segments.push({
-        type: "text",
-        value: text.slice(lastIndex),
-      });
+      segments.push({ type: "text", value: text.slice(lastIndex) });
     }
 
-    return segments.length
-      ? segments
-      : [
-          {
-            type: "text",
-            value: text,
-          },
-        ];
+    return segments.length ? segments : [{ type: "text", value: text }];
   }
 
   function renderTextSegment(value) {
@@ -297,7 +379,6 @@
         closeList();
         return;
       }
-
       if (bulletMatch) {
         flushParagraph();
         if (listType !== "ul") {
@@ -308,7 +389,6 @@
         html.push(`<li>${formatInline(bulletMatch[1])}</li>`);
         return;
       }
-
       if (orderedMatch) {
         flushParagraph();
         if (listType !== "ol") {
@@ -319,67 +399,80 @@
         html.push(`<li>${formatInline(orderedMatch[1])}</li>`);
         return;
       }
-
       closeList();
       paragraph.push(line);
     });
 
     flushParagraph();
     closeList();
-
     return html.join("");
   }
 
   function renderCodeSegment(segment) {
     const language = segment.language ? escapeHtml(segment.language) : "code";
-    return [
-      "<pre>",
-      `<div class="code-header"><span>${language}</span><span>workspace</span></div>`,
-      `<code class="code-block">${escapeHtml(segment.value)}</code>`,
-      "</pre>",
-    ].join("");
+    return `<pre><div class="code-header"><span>${language}</span><span>workspace</span></div><code class="code-block">${escapeHtml(segment.value)}</code></pre>`;
   }
 
   function formatMessageBody(value) {
     return splitSegments(value)
-      .map((segment) => {
-        if (segment.type === "code") {
-          return renderCodeSegment(segment);
-        }
-        return renderTextSegment(segment.value);
-      })
+      .map((segment) => (segment.type === "code" ? renderCodeSegment(segment) : renderTextSegment(segment.value)))
       .join("");
+  }
+
+  function buildTargetChip(kind, label, value) {
+    return `<span class="context-target" data-kind="${escapeHtml(kind)}" title="${escapeHtml(value)}"><strong>${escapeHtml(label)}</strong> ${escapeHtml(shortPath(value) || value)}</span>`;
+  }
+
+  function renderContextTargetList() {
+    const summary = state.contextSummary || {};
+    const chips = [];
+
+    (summary.likelyTargets || []).slice(0, 3).forEach((value) => {
+      chips.push(buildTargetChip("likely", "Using", value));
+    });
+    (summary.candidateTargets || []).slice(0, 2).forEach((value) => {
+      chips.push(buildTargetChip("candidate", "Maybe", value));
+    });
+    (summary.attachedFiles || []).slice(0, 2).forEach((value) => {
+      chips.push(buildTargetChip("attached", "Attached", value));
+    });
+    if (summary.attachedSelection && summary.attachedSelection.path) {
+      chips.push(buildTargetChip("selection", "Selection", summary.attachedSelection.path));
+    }
+    (summary.memoryTargets || []).slice(0, 2).forEach((value) => {
+      chips.push(buildTargetChip("memory", "Recent", value));
+    });
+
+    if (!chips.length) {
+      chips.push('<span class="context-target" data-kind="idle"><strong>Radar</strong> type a file name or symbol</span>');
+    }
+
+    return chips.join("");
   }
 
   function renderHistory() {
     if (!elements.history) return;
-
     const items = Array.isArray(state.history) ? state.history : [];
-    const visibleItems = items;
-
     if (elements.historyCount) {
       elements.historyCount.textContent = String(items.length);
     }
-
     if (elements.historyFooter && elements.historyFooterButton) {
       elements.historyFooter.classList.add("is-hidden");
       elements.historyFooterButton.textContent = `View all (${items.length})`;
     }
-
-    if (!visibleItems.length) {
+    if (!items.length) {
       elements.history.innerHTML =
-        '<div class="task-empty">No saved chats yet. The panel now opens directly into chat, so your first message becomes the first task.</div>';
+        '<div class="task-empty">No saved chats yet. Your first message becomes the first task.</div>';
       return;
     }
 
-    elements.history.innerHTML = visibleItems
+    elements.history.innerHTML = items
       .map((item) => {
-        const isActive = item.id === state.selectedSessionId ? " active" : "";
+        const active = item.id === state.selectedSessionId ? " active" : "";
         const updated = formatRelativeTime(item.updatedAt || item.updated_at);
         const mode = item.mode === "plan" ? "Plan" : "Chat";
-
         return [
-          `<div class="task-item${isActive}">`,
+          `<div class="task-item${active}">`,
           `<button type="button" data-history-id="${escapeHtml(item.id)}">`,
           '<div class="task-line">',
           '<div class="task-copy">',
@@ -397,56 +490,76 @@
         ].join("");
       })
       .join("");
+  }
 
-    elements.history.querySelectorAll("[data-history-id]").forEach((button) => {
-      button.addEventListener("click", () => {
-        shouldStickToBottom = true;
-        setActivePanel("chat");
-        vscode.postMessage({
-          type: "openSession",
-          id: button.getAttribute("data-history-id") || "",
-        });
-      });
-    });
+  function renderFollowUpActions() {
+    const actions = Array.isArray(state.followUpActions) ? state.followUpActions : [];
+    if (!actions.length) return "";
+    return [
+      '<div class="message-followups" id="followUpActions">',
+      actions
+        .map((action) => {
+          const emphasized = action.emphasized ? " emphasized" : "";
+          const disabled = action.disabled ? " disabled" : "";
+          const detail = action.detail
+            ? `<span class="followup-detail">${escapeHtml(action.detail)}</span>`
+            : "";
+          return `<button type="button" class="followup-button${emphasized}" data-followup-id="${escapeHtml(
+            action.id
+          )}"${disabled}><span>${escapeHtml(action.label)}</span>${detail}</button>`;
+        })
+        .join(""),
+      "</div>",
+    ].join("");
   }
 
   function renderEmptyStage() {
     const logoUri = document.body.getAttribute("data-logo-uri") || "";
     const workspaceName = document.body.getAttribute("data-workspace-name") || "Workspace";
-
     return [
       '<div class="message-stack">',
-      '<div class="empty-stage">',
-      '<div class="empty-stage-inner">',
+      '<div class="empty-stage"><div class="empty-stage-inner">',
       '<div class="empty-stage-logo">',
       logoUri ? `<img src="${escapeHtml(logoUri)}" alt="Playground" />` : "",
       "</div>",
       '<h2 class="empty-stage-title">Chat is ready.</h2>',
-      `<p class="empty-stage-copy">Start typing below and Playground opens straight into the conversation for ${escapeHtml(workspaceName)}. Use <code>@</code> to pull files in without leaving the composer.</p>`,
-      "</div>",
-      "</div>",
+      `<p class="empty-stage-copy">Start typing below and Playground opens directly into the conversation for ${escapeHtml(
+        workspaceName
+      )}. Context is resolved before send so Qwen can move faster with less guessing.</p>`,
+      "</div></div>",
       "</div>",
     ].join("");
   }
 
   function renderMessages() {
     if (!elements.messages) return;
-
-    if (!Array.isArray(state.messages) || !state.messages.length) {
+    const messages = Array.isArray(state.messages) ? state.messages : [];
+    if (!messages.length) {
       elements.messages.innerHTML = renderEmptyStage();
       window.requestAnimationFrame(updateJumpButton);
       return;
     }
 
+    let followUpIndex = -1;
+    if (Array.isArray(state.followUpActions) && state.followUpActions.length) {
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        if (messages[index].role !== "user") {
+          followUpIndex = index;
+          break;
+        }
+      }
+    }
+
     elements.messages.innerHTML = [
       '<div class="message-stack">',
-      state.messages
-        .map((item) => {
+      messages
+        .map((item, index) => {
           const role = item.role || "assistant";
           return [
             `<article class="message ${escapeHtml(role)}">`,
             `<div class="message-meta">${escapeHtml(roleLabel(role))}</div>`,
             `<div class="message-body">${formatMessageBody(item.content)}</div>`,
+            index === followUpIndex ? renderFollowUpActions() : "",
             "</article>",
           ].join("");
         })
@@ -464,73 +577,77 @@
   }
 
   function renderActivity() {
-    if (!elements.activityWrap || !elements.activity) return;
-
-    if (!Array.isArray(state.activity) || !state.activity.length) {
-      elements.activityWrap.classList.remove("show");
+    if (!elements.timelineWrap || !elements.activity) return;
+    const phase = state.runtimePhase || "idle";
+    const show = phase !== "idle" || (Array.isArray(state.activity) && state.activity.length);
+    if (!show) {
+      elements.timelineWrap.classList.remove("show");
       elements.activity.innerHTML = "";
       return;
     }
+    const chips = [`<span class="timeline-chip phase">${escapeHtml(phaseLabel(phase))}</span>`];
+    (Array.isArray(state.activity) ? state.activity : [])
+      .slice(-4)
+      .forEach((item) => chips.push(`<span class="timeline-chip">${escapeHtml(item)}</span>`));
+    elements.timelineWrap.classList.add("show");
+    elements.activity.innerHTML = chips.join("");
+  }
 
-    elements.activityWrap.classList.add("show");
-    elements.activity.innerHTML = state.activity
-      .slice(-6)
-      .map((item) => `<span class="activity-chip">${escapeHtml(item)}</span>`)
-      .join("");
+  function renderContextStrip() {
+    const summary = state.contextSummary || {};
+    if (elements.intentBadge) {
+      elements.intentBadge.textContent = intentLabel(state.intent);
+    }
+    if (elements.intentChip) {
+      elements.intentChip.textContent = intentLabel(state.intent);
+      elements.intentChip.title = `Intent: ${intentLabel(state.intent)}`;
+    }
+    if (elements.contextConfidenceChip) {
+      elements.contextConfidenceChip.textContent = confidenceLabel(state.contextConfidence);
+      elements.contextConfidenceChip.className = `context-chip confidence-${state.contextConfidence}`;
+      elements.contextConfidenceChip.title = `Context confidence: ${confidenceLabel(state.contextConfidence)}`;
+    }
+    if (elements.contextNote) {
+      elements.contextNote.textContent =
+        summary.note ||
+        "Type a file name or symbol and Playground will resolve likely targets before you send.";
+    }
+    if (elements.contextRoot) {
+      elements.contextRoot.textContent = summary.workspaceRoot
+        ? `Workspace: ${summary.workspaceRoot}`
+        : "Workspace context will appear here.";
+      elements.contextRoot.title = summary.workspaceRoot || "";
+    }
+    if (elements.contextTargets) {
+      elements.contextTargets.innerHTML = renderContextTargetList();
+    }
+    if (elements.clearAttachedContext) {
+      const hasManualContext = Boolean(
+        (summary.attachedFiles && summary.attachedFiles.length) || summary.attachedSelection
+      );
+      elements.clearAttachedContext.disabled = !hasManualContext;
+    }
   }
 
   function renderMentions() {
     if (!elements.mentions) return;
-
     if (!mentionItems.length) {
       elements.mentions.classList.remove("show");
       elements.mentions.innerHTML = "";
       return;
     }
-
     elements.mentions.classList.add("show");
     elements.mentions.innerHTML = mentionItems
       .map((item, index) => {
         const active = index === selectedMentionIndex ? " active" : "";
-        return [
-          '<div class="mention-item">',
-          `<button type="button" class="${active.trim()}" data-mention-index="${index}" data-mention-value="${escapeHtml(item)}">`,
-          escapeHtml(item),
-          "</button>",
-          "</div>",
-        ].join("");
+        return `<div class="mention-item"><button type="button" class="${active.trim()}" data-mention-index="${index}" data-mention-value="${escapeHtml(item)}">${escapeHtml(item)}</button></div>`;
       })
       .join("");
-
-    elements.mentions.querySelectorAll("[data-mention-index]").forEach((button) => {
-      button.addEventListener("mouseenter", () => {
-        selectedMentionIndex = Number(button.getAttribute("data-mention-index") || 0);
-        renderMentions();
-      });
-      button.addEventListener("click", () => {
-        applyMention(button.getAttribute("data-mention-value") || "");
-      });
-    });
-
-    const activeItem = elements.mentions.querySelector(".active");
-    if (activeItem && typeof activeItem.scrollIntoView === "function") {
-      activeItem.scrollIntoView({ block: "nearest" });
-    }
   }
 
   function render() {
     syncActivePanel();
-
-    if (elements.busyLabel) {
-      elements.busyLabel.textContent = state.busy ? "Busy" : "Ready";
-    }
-    if (elements.runtimeLabel) {
-      elements.runtimeLabel.textContent = runtimeName();
-    }
-    if (elements.statusLabel) {
-      elements.statusLabel.textContent = statusChipLabel();
-      elements.statusLabel.title = statusSummary();
-    }
+    syncComposerFromState();
     if (elements.runtimeChip) {
       elements.runtimeChip.textContent = runtimeChipLabel();
       elements.runtimeChip.title = runtimeName();
@@ -539,110 +656,39 @@
       elements.modeChip.textContent = modeChipLabel();
       elements.modeChip.title = modeName();
     }
+    if (elements.statusLabel) {
+      elements.statusLabel.textContent = statusChipLabel();
+      elements.statusLabel.title = statusSummary();
+    }
+    if (elements.busyLabel) {
+      elements.busyLabel.textContent = phaseChipLabel(state.runtimePhase || "idle");
+      elements.busyLabel.title = phaseLabel(state.runtimePhase || "idle");
+    }
     if (elements.authChip) {
       elements.authChip.textContent = authButtonShortLabel();
       elements.authChip.title = authButtonLabel();
     }
-    if (elements.busyLabel) {
-      elements.busyLabel.title = state.busy ? "Working..." : "Ready";
-    }
     if (elements.send) {
-      elements.send.disabled = state.busy;
+      elements.send.disabled = Boolean(state.busy);
     }
     if (elements.undoChanges) {
       elements.undoChanges.disabled = !state.canUndo || state.runtime === "qwenCode";
     }
-
     setHidden(elements.signIn, state.runtime === "qwenCode");
     setHidden(elements.signOut, state.auth && state.auth.kind === "none");
-    elements.signOutButtons.forEach((button) => {
-      setHidden(button, state.auth && state.auth.kind === "none");
-    });
-
     if (elements.composer) {
       elements.composer.placeholder =
         state.runtime === "qwenCode"
           ? "Ask Playground anything. @ to add files, / for commands"
           : "Ask Playground to inspect code, patch files, or explain a bug";
-      elements.composer.title = "Chat composer";
     }
-
-    elements.modeButtons.forEach((button) => {
-      const mode = button.getAttribute("data-mode");
-      button.classList.toggle("active", mode === state.mode);
-      button.disabled = state.busy;
-    });
-
     renderHistory();
     renderActivity();
     renderMessages();
     renderMentions();
     syncComposerHeight();
-
     if (!hasAutoFocused && !state.busy) {
       focusComposer(true);
-    }
-  }
-
-  function sendPrompt() {
-    const value = String(elements.composer ? elements.composer.value : "").trim();
-    if (!value || state.busy) return;
-
-    shouldStickToBottom = true;
-    setActivePanel("chat");
-    vscode.postMessage({ type: "sendPrompt", text: value });
-
-    if (elements.composer) {
-      elements.composer.value = "";
-      syncComposerHeight();
-      persistDraft();
-    }
-
-    hideMentions();
-  }
-
-  function dispatchAction(action) {
-    if (!action) return;
-
-    switch (action) {
-      case "showChat":
-        setActivePanel("chat");
-        focusComposer(true);
-        return;
-      case "showTasks":
-        setActivePanel("tasks");
-        if (elements.history) {
-          elements.history.scrollTo({ top: 0, behavior: "smooth" });
-        }
-        vscode.postMessage({ type: "loadHistory" });
-        return;
-      case "newChat":
-        shouldStickToBottom = true;
-        setActivePanel("chat");
-        vscode.postMessage({ type: "newChat" });
-        window.setTimeout(() => focusComposer(true), 0);
-        return;
-      case "setApiKey":
-        vscode.postMessage({ type: "setApiKey" });
-        return;
-      case "signIn":
-        vscode.postMessage({ type: "signIn" });
-        return;
-      case "signOut":
-        vscode.postMessage({ type: "signOut" });
-        return;
-      case "loadHistory":
-        vscode.postMessage({ type: "loadHistory" });
-        return;
-      case "undoLastChanges":
-        vscode.postMessage({ type: "undoLastChanges" });
-        return;
-      case "focusComposer":
-        setActivePanel("chat");
-        focusComposer(true);
-        return;
-      default:
-        return;
     }
   }
 
@@ -653,71 +699,151 @@
     renderMentions();
   }
 
+  function sendPreviewContextNow(force) {
+    if (!elements.composer) return;
+    const text = elements.composer.value || "";
+    if (!force && text === lastPreviewText) return;
+    lastPreviewText = text;
+    vscode.postMessage({ type: "previewContext", text });
+  }
+
+  function schedulePreviewContext(delay) {
+    window.clearTimeout(previewTimer);
+    previewTimer = window.setTimeout(() => {
+      sendPreviewContextNow(false);
+    }, delay || 120);
+  }
+
+  function sendPrompt() {
+    const value = String(elements.composer ? elements.composer.value : "").trim();
+    if (!value || state.busy) return;
+    shouldStickToBottom = true;
+    setActivePanel("chat");
+    vscode.postMessage({ type: "sendPrompt", text: value });
+    if (elements.composer) {
+      elements.composer.value = "";
+      syncComposerHeight();
+      persistDraft();
+      lastPreviewText = null;
+      sendPreviewContextNow(true);
+    }
+    hideMentions();
+  }
+
+  function dispatchAction(action) {
+    if (!action) return;
+    switch (action) {
+      case "showChat":
+        setActivePanel("chat");
+        focusComposer(true);
+        return;
+      case "showTasks":
+        setActivePanel("tasks");
+        vscode.postMessage({ type: "loadHistory" });
+        return;
+      case "newChat":
+        shouldStickToBottom = true;
+        setActivePanel("chat");
+        vscode.postMessage({ type: "newChat" });
+        window.setTimeout(() => {
+          focusComposer(true);
+          sendPreviewContextNow(true);
+        }, 0);
+        return;
+      case "setApiKey":
+      case "signIn":
+      case "signOut":
+      case "loadHistory":
+      case "undoLastChanges":
+      case "attachActiveFile":
+      case "attachSelection":
+      case "clearAttachedContext":
+        vscode.postMessage({ type: action });
+        return;
+      default:
+        return;
+    }
+  }
+
   function updateMentionQuery() {
     if (!elements.composer) return;
-
     const value = elements.composer.value || "";
     const cursor = elements.composer.selectionStart || 0;
     const prefix = value.slice(0, cursor);
     const match = /(^|\s)@([A-Za-z0-9_./-]*)$/.exec(prefix);
-
     if (!match) {
       hideMentions();
       return;
     }
-
-    activeMentionRange = {
-      start: cursor - match[2].length - 1,
-      end: cursor,
-    };
+    activeMentionRange = { start: cursor - match[2].length - 1, end: cursor };
     mentionRequestId += 1;
-    vscode.postMessage({
-      type: "mentionsQuery",
-      query: match[2] || "",
-      requestId: mentionRequestId,
-    });
+    vscode.postMessage({ type: "mentionsQuery", query: match[2] || "", requestId: mentionRequestId });
   }
 
   function applyMention(pathValue) {
     if (!elements.composer || !activeMentionRange) return;
-
     const value = elements.composer.value || "";
     elements.composer.value =
-      value.slice(0, activeMentionRange.start) +
-      "@" +
-      pathValue +
-      " " +
-      value.slice(activeMentionRange.end);
-
+      value.slice(0, activeMentionRange.start) + "@" + pathValue + " " + value.slice(activeMentionRange.end);
     const nextCursor = activeMentionRange.start + pathValue.length + 2;
     elements.composer.setSelectionRange(nextCursor, nextCursor);
     syncComposerHeight();
     persistDraft();
     focusComposer(true);
     hideMentions();
+    schedulePreviewContext(0);
   }
 
   function moveMentionSelection(delta) {
     if (!mentionItems.length) return false;
-
-    selectedMentionIndex =
-      (selectedMentionIndex + delta + mentionItems.length) % mentionItems.length;
+    selectedMentionIndex = (selectedMentionIndex + delta + mentionItems.length) % mentionItems.length;
     renderMentions();
+    const activeItem = elements.mentions && elements.mentions.querySelector(".active");
+    if (activeItem && typeof activeItem.scrollIntoView === "function") {
+      activeItem.scrollIntoView({ block: "nearest" });
+    }
     return true;
   }
 
-  elements.actionButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      dispatchAction(button.getAttribute("data-action") || "");
-    });
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const followUpButton = target.closest("[data-followup-id]");
+    if (followUpButton) {
+      const id = followUpButton.getAttribute("data-followup-id") || "";
+      if (id) {
+        vscode.postMessage({ type: "followUpAction", id });
+      }
+      return;
+    }
+
+    const mentionButton = target.closest("[data-mention-value]");
+    if (mentionButton) {
+      applyMention(mentionButton.getAttribute("data-mention-value") || "");
+      return;
+    }
+
+    const historyButton = target.closest("[data-history-id]");
+    if (historyButton) {
+      shouldStickToBottom = true;
+      setActivePanel("chat");
+      vscode.postMessage({ type: "openSession", id: historyButton.getAttribute("data-history-id") || "" });
+      return;
+    }
+
+    const actionButton = target.closest("[data-action]");
+    if (actionButton) {
+      dispatchAction(actionButton.getAttribute("data-action") || "");
+    }
   });
 
-  elements.send.addEventListener("click", sendPrompt);
+  if (elements.send) {
+    elements.send.addEventListener("click", sendPrompt);
+  }
 
   if (elements.jumpToLatest) {
-    elements.jumpToLatest.addEventListener("click", () => {
-      scrollToLatest("smooth");
-    });
+    elements.jumpToLatest.addEventListener("click", () => scrollToLatest("smooth"));
   }
 
   if (elements.messages) {
@@ -758,6 +884,7 @@
       syncComposerHeight();
       persistDraft();
       updateMentionQuery();
+      schedulePreviewContext(120);
     });
 
     elements.composer.addEventListener("blur", () => {
@@ -771,13 +898,21 @@
 
   window.addEventListener("message", (event) => {
     const message = event.data || {};
-
     if (message.type === "state") {
-      Object.assign(state, message.state || {});
+      const nextState = message.state || {};
+      if (
+        elements.composer &&
+        typeof nextState.draftText === "string" &&
+        elements.composer.value !== nextState.draftText
+      ) {
+        elements.composer.value = nextState.draftText;
+        syncComposerHeight();
+        persistDraft();
+      }
+      Object.assign(state, nextState);
       render();
       return;
     }
-
     if (message.type === "prefill" && elements.composer) {
       setActivePanel("chat");
       elements.composer.value = message.text || "";
@@ -785,9 +920,9 @@
       persistDraft();
       focusComposer(true);
       updateMentionQuery();
+      schedulePreviewContext(0);
       return;
     }
-
     if (message.type === "mentions") {
       if (Number(message.requestId || 0) !== mentionRequestId) return;
       mentionItems = Array.isArray(message.items) ? message.items : [];
@@ -799,6 +934,9 @@
   restoreDraft();
   syncComposerHeight();
   render();
-  window.setTimeout(() => focusComposer(true), 30);
+  window.setTimeout(() => {
+    focusComposer(true);
+    sendPreviewContextNow(true);
+  }, 30);
   vscode.postMessage({ type: "ready" });
 })();

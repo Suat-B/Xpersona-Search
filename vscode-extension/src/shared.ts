@@ -1,5 +1,18 @@
 export type Mode = "auto" | "plan" | "yolo";
 export type RuntimeBackend = "playgroundApi" | "qwenCode";
+export type IntentKind = "ask" | "explain" | "find" | "change";
+export type ContextConfidence = "high" | "medium" | "low";
+export type RuntimePhase =
+  | "idle"
+  | "radar"
+  | "collecting_context"
+  | "waiting_for_qwen"
+  | "awaiting_approval"
+  | "applying_result"
+  | "saving_session"
+  | "clarify"
+  | "done"
+  | "failed";
 export type OrchestrationProtocol = "batch_v1" | "tool_loop_v1";
 export type PlaygroundToolName =
   | "list_files"
@@ -159,6 +172,17 @@ export type ChatMessage = {
   content: string;
 };
 
+export type FollowUpAction = {
+  id: string;
+  label: string;
+  kind: "prompt" | "rerun" | "target" | "info";
+  prompt?: string;
+  targetPath?: string;
+  detail?: string;
+  disabled?: boolean;
+  emphasized?: boolean;
+};
+
 export type HistoryItem = {
   id: string;
   title: string;
@@ -169,14 +193,39 @@ export type HistoryItem = {
 export type ContextPreview = {
   activeFile?: string;
   openFiles: string[];
+  candidateFiles: string[];
+  attachedFiles: string[];
+  memoryFiles: string[];
   resolvedFiles: string[];
   selectedFiles: string[];
   diagnostics: string[];
+  intent: IntentKind;
+  confidence: ContextConfidence;
+  confidenceScore: number;
+  rationale: string;
+  workspaceRoot?: string;
+  attachedSelection?: {
+    path: string;
+    summary: string;
+  };
   snippets: Array<{
     path: string;
     source: "cloud" | "local_fallback";
     reason: string;
   }>;
+};
+
+export type ContextSummary = {
+  workspaceRoot?: string;
+  likelyTargets: string[];
+  candidateTargets: string[];
+  attachedFiles: string[];
+  memoryTargets: string[];
+  attachedSelection?: {
+    path: string;
+    summary: string;
+  };
+  note?: string;
 };
 
 export type IndexState = {

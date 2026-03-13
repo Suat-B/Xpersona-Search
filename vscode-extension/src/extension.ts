@@ -2,11 +2,12 @@ import * as vscode from "vscode";
 import { AuthManager } from "./auth";
 import { ActionRunner } from "./actions";
 import { ContextCollector } from "./context";
-import { WEBVIEW_VIEW_ID } from "./config";
+import { WEBVIEW_VIEW_ID, toWorkspaceRelativePath } from "./config";
 import { SessionHistoryService } from "./history";
 import { CloudIndexManager } from "./indexer";
 import { QwenHistoryService } from "./qwen-history";
 import { QwenCodeRuntime } from "./qwen-code-runtime";
+import { buildSelectionPrefill } from "./selection-prefill";
 import { ToolExecutor } from "./tool-executor";
 import { PlaygroundViewProvider } from "./webview-provider";
 
@@ -43,7 +44,13 @@ export function activate(context: vscode.ExtensionContext): void {
       const selected = editor.selection.isEmpty
         ? editor.document.lineAt(editor.selection.active.line).text
         : editor.document.getText(editor.selection);
-      await provider.show(selected.trim());
+      await provider.show(
+        buildSelectionPrefill({
+          path: toWorkspaceRelativePath(editor.document.uri),
+          line: editor.selection.start.line + 1,
+          selectedText: selected.trim(),
+        })
+      );
     }),
     vscode.commands.registerCommand("xpersona.playground.setApiKey", async () => {
       await auth.setApiKeyInteractive();

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useIsPermanent } from "@/lib/hooks/use-is-permanent";
-import { useAutoHideHeader } from "@/lib/hooks/use-auto-hide-header";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import type { Service } from "@/lib/subdomain";
@@ -37,10 +36,6 @@ export function MobileDashboardNav({ displayName, isPermanent: serverIsPermanent
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const isPermanent = useIsPermanent(serverIsPermanent);
-  const headerHidden = useAutoHideHeader({
-    scrollContainerSelector: '[data-header-scroll-root="dashboard"]',
-    disabled: open,
-  });
 
   useEffect(() => {
     setOpen(false);
@@ -57,10 +52,7 @@ export function MobileDashboardNav({ displayName, isPermanent: serverIsPermanent
   return (
     <header
       className={cn(
-        "scroll-stable-layer md:hidden sticky top-0 z-[60] shrink-0 w-full border-b border-[var(--dash-divider)] bg-[var(--dash-bg)] shadow-sm overflow-hidden transition-[max-height,transform,opacity,border-color] duration-300",
-        headerHidden
-          ? "max-h-0 -translate-y-2 opacity-0 pointer-events-none border-transparent"
-          : "max-h-24 translate-y-0 opacity-100"
+        "scroll-stable-layer md:hidden sticky top-0 z-[60] shrink-0 w-full border-b border-[var(--dash-divider)] bg-[var(--dash-bg)] shadow-sm overflow-hidden"
       )}
       role="banner"
     >

@@ -12,6 +12,7 @@ const SAFE_SHELL_PREFIXES = [
   "git branch --show-current",
   "git rev-parse --show-toplevel",
   "git ls-files",
+  "git grep",
   "get-location",
   "get-childitem",
   "get-content",
@@ -31,6 +32,11 @@ function normalizeCommand(command: string): string {
     .toLowerCase();
 }
 
+function basename(value: string): string {
+  const normalized = String(value || "").replace(/\\/g, "/");
+  return normalized.split("/").pop() || normalized;
+}
+
 export function extractToolCommand(input: ToolInput): string {
   if (typeof input.command === "string") return input.command;
   if (typeof input.cmd === "string") return input.cmd;
@@ -43,6 +49,10 @@ export function extractToolCommand(input: ToolInput): string {
 
 function isSafeShellSegment(segment: string): boolean {
   return SAFE_SHELL_PREFIXES.some((prefix) => segment === prefix || segment.startsWith(`${prefix} `));
+}
+
+export function isMutationToolName(toolName: string): boolean {
+  return /\b(edit|write|mkdir|delete|remove|rename|run_terminal_cmd|shelltool)\b/i.test(toolName);
 }
 
 export function isSafeInspectionToolRequest(toolName: string, input: ToolInput): boolean {
@@ -84,6 +94,7 @@ export function getAutoApprovedQwenTools(): string[] {
     "ShellTool(git branch --show-current)",
     "ShellTool(git rev-parse --show-toplevel)",
     "ShellTool(git ls-files)",
+    "ShellTool(git grep )",
     "ShellTool(Get-Location)",
     "ShellTool(Get-ChildItem)",
     "ShellTool(Get-Content)",
@@ -92,4 +103,47 @@ export function getAutoApprovedQwenTools(): string[] {
     "ShellTool(cat )",
     "ShellTool(findstr )",
   ];
+}
+
+export function describeToolActivity(toolName: string, input: ToolInput): string {
+  const normalizedToolName = String(toolName || "").trim().toLowerCase();
+  const command = extractToolCommand(input);
+
+  if (normalizedToolName.includes("read")) {
+    return `Reading ${basename(typeof input.path === "string" ? input.path : command)}`;
+  }
+  if (normalizedToolName.includes("search") || normalizedToolName.includes("grep")) {
+    return "Searching symbol";
+  }
+  if (normalizedToolName.includes("list") || normalizedToolName.includes("glob")) {
+    return "Scanning files";
+  }
+  if (normalizedToolName.includes("edit") || normalizedToolName.includes("write")) {
+    return "Applying result";
+  }
+  if (normalizedToolName.includes("plan")) {
+    return "Planning edit";
+  }
+
+  const normalizedCommand = normalizeCommand(command);
+  if (normalizedCommand.startsWith("rg")) return "Searching symbol";
+  if (
+    normalizedCommand.startsWith("ls") ||
+    normalizedCommand.startsWith("dir") ||
+    normalizedCommand.startsWith("tree") ||
+    normalizedCommand.startsWith("get-childitem")
+  ) {
+    return "Scanning files";
+  }
+  if (
+    normalizedCommand.startsWith("cat") ||
+    normalizedCommand.startsWith("type ") ||
+    normalizedCommand.startsWith("get-content")
+  ) {
+    return `Reading ${basename(command)}`;
+  }
+  if (normalizedCommand.startsWith("git diff")) return "Reviewing diff";
+  if (normalizedCommand.startsWith("git status")) return "Checking git status";
+
+  return command ? `Qwen tool: ${toolName} ${command}` : `Qwen tool: ${toolName}`;
 }

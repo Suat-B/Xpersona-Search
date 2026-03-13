@@ -9,9 +9,9 @@ import {
   firePlaygroundAnalyticsEvent,
   useOptionalPlaygroundMarketing,
 } from "@/components/playground/PlaygroundMarketingProvider";
-import { useAutoHideHeader } from "@/lib/hooks/use-auto-hide-header";
 
 const NAV_LINKS = [
+  { href: "/search", label: "Search" },
   { href: "/playground", label: "Playground" },
   { href: "/chat", label: "Chat" },
 ] as const;
@@ -26,7 +26,6 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
   const [planBadge, setPlanBadge] = useState<string | null>(null);
   const playgroundMarketing = useOptionalPlaygroundMarketing();
   const isPlaygroundPage = pathname === "/playground" || pathname.startsWith("/playground/");
-  const headerHidden = useAutoHideHeader({ disabled: menuOpen || isPlaygroundPage });
   const isSearchPage = pathname === "/search" || pathname.startsWith("/search/");
   const isLightHeaderPage = isSearchPage;
   const headerSurfaceClass = isPlaygroundPage
@@ -124,11 +123,7 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
   if (isPlaygroundPage) {
     return (
       <header
-        className={`playground-nav-shell sticky top-0 z-50 w-full overflow-hidden transition-[max-height,transform,opacity,border-color,background-color] duration-300 ${
-          headerHidden
-            ? "max-h-0 -translate-y-2 opacity-0 pointer-events-none border-transparent"
-            : "max-h-[40rem] translate-y-0 opacity-100"
-        }`}
+        className="playground-nav-shell sticky top-0 z-50 w-full overflow-hidden"
       >
         <div className="mx-auto flex h-20 w-full max-w-[1260px] items-center gap-3 px-4 sm:px-6">
           <Link href="/playground" className="playground-nav-brand">
@@ -226,11 +221,7 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
 
   return (
     <header
-      className={`scroll-stable-layer sticky top-0 z-50 w-full overflow-hidden transition-[max-height,transform,opacity,border-color,background-color] duration-300 ${headerSurfaceClass} ${
-        headerHidden
-          ? "max-h-0 -translate-y-2 opacity-0 pointer-events-none border-transparent"
-          : "max-h-[40rem] translate-y-0 opacity-100"
-      }`}
+      className={`scroll-stable-layer sticky top-0 z-50 w-full overflow-hidden ${headerSurfaceClass}`}
     >
       <div className="mx-auto flex h-16 w-full max-w-[1260px] items-center gap-4 px-4 sm:px-6">
         <Link href="/" className="flex flex-none items-center gap-2">

@@ -7,5 +7,5 @@ When you include a workspace path in your chat message like `@vitest.config.ts` 
 
 Notes:
 
-- This only applies when IDE context is enabled in the composer, and `xpersona.playground.mentions.enabled` is `true`.
-- Large files are truncated (or skipped if very large) to avoid blowing the context budget.
+- Mentions work directly in the existing composer. Type `@` and pick from the suggestion list.
+- Large files are truncated when needed to stay within the context budget.

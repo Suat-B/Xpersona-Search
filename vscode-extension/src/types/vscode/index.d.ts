@@ -59,6 +59,11 @@ declare module "vscode" {
     }): Thenable<TextDocument>;
     function getConfiguration(section?: string): {
       get<T>(name: string): T | undefined;
+      update(
+        name: string,
+        value: unknown,
+        target?: boolean | unknown
+      ): Thenable<void>;
     };
   }
 
