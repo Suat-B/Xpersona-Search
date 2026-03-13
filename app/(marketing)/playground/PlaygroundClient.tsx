@@ -255,7 +255,7 @@ function HeroSection({
               disabled={isBusy}
               className="playground-editorial-cta-primary"
             >
-              {isBusy ? "Starting checkout..." : "Start 2-day trial"}
+	              {isBusy ? "Starting checkout..." : "Start 2-day free trial"}
               <ArrowRightIcon className="h-4 w-4" />
             </button>
 
@@ -495,7 +495,7 @@ function PricingSection({
                   disabled={isBusy}
                   className={tier.highlight ? "playground-editorial-cta-primary mt-8 w-full justify-center" : "playground-editorial-cta-secondary mt-8 w-full justify-center"}
                 >
-                  {isBusy ? "Starting checkout..." : "Start 2-day trial"}
+                  {isBusy ? "Starting checkout..." : "Start 2-day free trial"}
                   <ArrowRightIcon className="h-4 w-4" />
                 </button>
               </article>
@@ -780,7 +780,7 @@ function FinalCta({
               disabled={isBusy}
               className="playground-editorial-cta-primary"
             >
-              {isBusy ? "Starting checkout..." : "Start 2-day trial"}
+              {isBusy ? "Starting checkout..." : "Start 2-day free trial"}
               <ArrowRightIcon className="h-4 w-4" />
             </button>
 
@@ -841,7 +841,7 @@ export function PlaygroundClient() {
           disabled={isCheckoutStarting}
           className="playground-editorial-cta-primary w-full justify-center"
         >
-          {isCheckoutStarting ? "Starting checkout..." : "Start 2-day trial"}
+          {isCheckoutStarting ? "Starting checkout..." : "Start 2-day free trial"}
         </button>
       </div>
     </div>

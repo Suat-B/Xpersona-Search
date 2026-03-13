@@ -1,6 +1,22 @@
 import { z } from "zod";
 
 export const zAssistMode = z.enum(["auto", "plan", "yolo"]);
+export const zOrchestrationProtocol = z.enum(["batch_v1", "tool_loop_v1"]);
+export const zPlaygroundToolName = z.enum([
+  "list_files",
+  "read_file",
+  "search_workspace",
+  "get_diagnostics",
+  "git_status",
+  "git_diff",
+  "create_checkpoint",
+  "edit",
+  "write_file",
+  "mkdir",
+  "run_command",
+  "get_workspace_memory",
+]);
+export const zPlaygroundAdapter = z.enum(["native_tools", "text_actions", "deterministic_batch"]);
 
 const zContextFile = z.object({
   path: z.string().min(1).max(4096).optional(),
@@ -43,11 +59,20 @@ const zConversationTurn = z.object({
   content: z.string().min(1).max(12_000),
 });
 
+const zClientCapabilities = z.object({
+  toolLoop: z.boolean().optional(),
+  supportedTools: z.array(zPlaygroundToolName).max(32).optional(),
+  autoExecute: z.boolean().optional(),
+  supportsNativeToolResults: z.boolean().optional(),
+});
+
 export const zAssistRequest = z.object({
   mode: zAssistMode.default("auto"),
   task: z.string().min(1).max(120_000),
   stream: z.boolean().optional(),
   model: z.string().min(1).max(256).optional(),
+  orchestrationProtocol: zOrchestrationProtocol.default("batch_v1").optional(),
+  clientCapabilities: zClientCapabilities.optional(),
   historySessionId: z.string().uuid().optional(),
   conversationHistory: z.array(zConversationTurn).max(24).optional(),
   context: z
@@ -71,6 +96,60 @@ export const zAssistRequest = z.object({
       workspaceHash: z.string().max(128),
     })
     .optional(),
+});
+
+export const zToolCall = z.object({
+  id: z.string().min(1).max(120),
+  name: zPlaygroundToolName,
+  arguments: z.record(z.string(), z.unknown()).default({}),
+  kind: z.enum(["observe", "mutate", "command"]).optional(),
+  summary: z.string().max(4000).optional(),
+});
+
+export const zToolResult = z.object({
+  toolCallId: z.string().min(1).max(120),
+  name: zPlaygroundToolName,
+  ok: z.boolean(),
+  blocked: z.boolean().optional(),
+  summary: z.string().min(1).max(20_000),
+  data: z.record(z.string(), z.unknown()).optional(),
+  error: z.string().max(4000).optional(),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const zToolTraceEntry = z.object({
+  step: z.number().int().min(0).max(1000),
+  status: z.enum(["pending", "completed", "failed", "blocked"]),
+  adapter: zPlaygroundAdapter,
+  summary: z.string().min(1).max(20_000),
+  toolCall: zToolCall.optional(),
+  toolResult: zToolResult.optional(),
+  createdAt: z.string().datetime(),
+});
+
+export const zLoopState = z.object({
+  protocol: zOrchestrationProtocol,
+  status: z.enum(["idle", "pending_tool", "running", "completed", "failed"]),
+  stepCount: z.number().int().min(0).max(1000),
+  mutationCount: z.number().int().min(0).max(1000),
+  repeatedCallCount: z.number().int().min(0).max(1000),
+  repairCount: z.number().int().min(0).max(1000),
+  maxSteps: z.number().int().min(1).max(1000),
+  maxMutations: z.number().int().min(0).max(1000),
+  lastToolCallKey: z.string().max(1000).optional(),
+});
+
+export const zPendingToolCall = z.object({
+  step: z.number().int().min(1).max(1000),
+  adapter: zPlaygroundAdapter,
+  requiresClientExecution: z.boolean().default(true),
+  toolCall: zToolCall,
+  availableTools: z.array(zPlaygroundToolName).max(32).optional(),
+  createdAt: z.string().datetime(),
+});
+
+export const zRunContinueRequest = z.object({
+  toolResult: zToolResult,
 });
 
 export const zRunControlRequest = z.object({
@@ -182,3 +261,13 @@ export const zIndexQueryRequest = z.object({
   limit: z.number().int().min(1).max(50).optional(),
   retrievalHints: zRetrievalHints.optional(),
 });
+
+export type AssistRequestContract = z.infer<typeof zAssistRequest>;
+export type OrchestrationProtocol = z.infer<typeof zOrchestrationProtocol>;
+export type PlaygroundToolName = z.infer<typeof zPlaygroundToolName>;
+export type PlaygroundAdapter = z.infer<typeof zPlaygroundAdapter>;
+export type ToolCallContract = z.infer<typeof zToolCall>;
+export type ToolResultContract = z.infer<typeof zToolResult>;
+export type ToolTraceEntryContract = z.infer<typeof zToolTraceEntry>;
+export type LoopStateContract = z.infer<typeof zLoopState>;
+export type PendingToolCallContract = z.infer<typeof zPendingToolCall>;

@@ -1,5 +1,8 @@
 *.vsix
 *.zip
+*.tgz
+*.bak
+*.bak2
 package-lock.json
 src/**
 tests/**
@@ -8,3 +11,4 @@ tsconfig.json
 _vsix_extract*/
 _vsix_extract_probe*/
 _vsix_check*/
+_vsix_tmp/**

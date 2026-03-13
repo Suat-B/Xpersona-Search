@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { createHash } from "crypto";
+import type { RuntimeBackend } from "./shared";
 
 export const EXTENSION_NAMESPACE = "xpersona.playground";
 export const WEBVIEW_VIEW_ID = "xpersona.playgroundView";
@@ -16,6 +17,28 @@ export function getBaseApiUrl(): string {
   const configured = vscode.workspace.getConfiguration(EXTENSION_NAMESPACE).get<string>("baseApiUrl");
   const value = String(configured || "http://localhost:3000").trim();
   return value.replace(/\/+$/, "");
+}
+
+export function getRuntimeBackend(): RuntimeBackend {
+  const configured = vscode.workspace.getConfiguration(EXTENSION_NAMESPACE).get<string>("runtime");
+  return configured === "playgroundApi" ? "playgroundApi" : "qwenCode";
+}
+
+export function getQwenModel(): string {
+  const configured = vscode.workspace.getConfiguration(EXTENSION_NAMESPACE).get<string>("qwen.model");
+  return String(configured || "Qwen/Qwen3-4B-Thinking-2507:nscale").trim();
+}
+
+export function getQwenOpenAiBaseUrl(): string {
+  const configured = vscode.workspace.getConfiguration(EXTENSION_NAMESPACE).get<string>("qwen.baseUrl");
+  const value = String(configured || `${getBaseApiUrl()}/api/v1/hf`).trim();
+  return value.replace(/\/+$/, "");
+}
+
+export function getQwenExecutablePath(): string | undefined {
+  const configured = vscode.workspace.getConfiguration(EXTENSION_NAMESPACE).get<string>("qwen.executable");
+  const value = String(configured || "").trim();
+  return value || undefined;
 }
 
 export function getWorkspaceFolder(): vscode.WorkspaceFolder | null {

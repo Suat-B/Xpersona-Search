@@ -165,7 +165,7 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
               disabled={playgroundMarketing?.isCheckoutStarting}
               className="playground-nav-cta"
             >
-              {playgroundMarketing?.isCheckoutStarting ? "Starting checkout..." : "Start 2-day trial"}
+              {playgroundMarketing?.isCheckoutStarting ? "Starting checkout..." : "Start 2-day free trial"}
             </button>
           </div>
 
@@ -214,7 +214,7 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
                   disabled={playgroundMarketing?.isCheckoutStarting}
                   className="playground-nav-cta w-full justify-center"
                 >
-                  {playgroundMarketing?.isCheckoutStarting ? "Starting checkout..." : "Start 2-day trial"}
+                  {playgroundMarketing?.isCheckoutStarting ? "Starting checkout..." : "Start 2-day free trial"}
                 </button>
               </div>
             </div>

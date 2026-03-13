@@ -35,6 +35,10 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PENDING_PKCE_KEY = exports.INDEX_STATE_KEY = exports.MODE_KEY = exports.REFRESH_TOKEN_SECRET = exports.API_KEY_LEGACY_SECRET = exports.API_KEY_SECRET = exports.WEBVIEW_VIEW_ID = exports.EXTENSION_NAMESPACE = void 0;
 exports.getBaseApiUrl = getBaseApiUrl;
+exports.getRuntimeBackend = getRuntimeBackend;
+exports.getQwenModel = getQwenModel;
+exports.getQwenOpenAiBaseUrl = getQwenOpenAiBaseUrl;
+exports.getQwenExecutablePath = getQwenExecutablePath;
 exports.getWorkspaceFolder = getWorkspaceFolder;
 exports.getWorkspaceRootPath = getWorkspaceRootPath;
 exports.getWorkspaceHash = getWorkspaceHash;
@@ -57,6 +61,24 @@ function getBaseApiUrl() {
     const configured = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE).get("baseApiUrl");
     const value = String(configured || "http://localhost:3000").trim();
     return value.replace(/\/+$/, "");
+}
+function getRuntimeBackend() {
+    const configured = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE).get("runtime");
+    return configured === "playgroundApi" ? "playgroundApi" : "qwenCode";
+}
+function getQwenModel() {
+    const configured = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE).get("qwen.model");
+    return String(configured || "Qwen/Qwen3-4B-Thinking-2507:nscale").trim();
+}
+function getQwenOpenAiBaseUrl() {
+    const configured = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE).get("qwen.baseUrl");
+    const value = String(configured || `${getBaseApiUrl()}/api/v1/hf`).trim();
+    return value.replace(/\/+$/, "");
+}
+function getQwenExecutablePath() {
+    const configured = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE).get("qwen.executable");
+    const value = String(configured || "").trim();
+    return value || undefined;
 }
 function getWorkspaceFolder() {
     return vscode.workspace.workspaceFolders?.[0] ?? null;

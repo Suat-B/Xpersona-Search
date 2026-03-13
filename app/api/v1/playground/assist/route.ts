@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { estimateMessagesTokens, incrementUsage } from "@/lib/hf-router/rate-limit";
 import { authenticatePlaygroundRequest } from "@/lib/playground/auth";
 import { guardPlaygroundAccess, runAssist } from "@/lib/playground/orchestration";
+import { startAssistToolLoop } from "@/lib/playground/tool-loop";
 import {
   appendSessionMessage,
   createSession,
@@ -124,28 +125,47 @@ export async function POST(request: NextRequest): Promise<Response> {
   });
 
   const runTask = async () => {
-    const result = await runAssist({
-      ...body,
-      mode,
-      conversationHistory: persistedHistory,
-      maxTokens: Math.min(access.limits?.maxOutputTokens ?? 2048, 2048),
-    });
+    const toolLoopRequested =
+      body.orchestrationProtocol === "tool_loop_v1" &&
+      mode !== "plan" &&
+      body.clientCapabilities?.toolLoop !== false;
+    const result = toolLoopRequested
+      ? await startAssistToolLoop({
+          userId: auth.userId,
+          sessionId: session.id,
+          traceId,
+          request: {
+            ...body,
+            mode,
+            orchestrationProtocol: "tool_loop_v1",
+            conversationHistory: persistedHistory,
+            maxTokens: Math.min(access.limits?.maxOutputTokens ?? 2048, 2048),
+          },
+        })
+      : await runAssist({
+          ...body,
+          mode,
+          conversationHistory: persistedHistory,
+          maxTokens: Math.min(access.limits?.maxOutputTokens ?? 2048, 2048),
+        });
 
-    const outputTokens = estimateOutputTokens(result.final);
-    await appendSessionMessage({
-      userId: auth.userId,
-      sessionId: session.id,
-      role: "assistant",
-      content: result.final,
-      payload: result,
-      tokenCount: outputTokens,
-    });
+    if (!toolLoopRequested) {
+      const outputTokens = estimateOutputTokens(result.final);
+      await appendSessionMessage({
+        userId: auth.userId,
+        sessionId: session.id,
+        role: "assistant",
+        content: result.final,
+        payload: result,
+        tokenCount: outputTokens,
+      }).catch(() => null);
+    }
 
     await incrementUsage(
       auth.userId,
       estimatedInputTokens,
-      outputTokens,
-      estimateCostUsd(estimatedInputTokens, outputTokens)
+      estimateOutputTokens(result.final),
+      estimateCostUsd(estimatedInputTokens, estimateOutputTokens(result.final))
     ).catch(() => {});
 
     return result;
@@ -177,6 +197,8 @@ export async function POST(request: NextRequest): Promise<Response> {
       const result = await runTask();
       if (result.plan) await emit("plan", result.plan);
       await emit("actions", result.actions);
+      if (result.runId) await emit("run", { runId: result.runId, adapter: result.adapter, loopState: result.loopState });
+      if (result.pendingToolCall) await emit("tool_request", result.pendingToolCall);
       await emit("meta", {
         decision: result.decision,
         validationPlan: result.validationPlan,
@@ -186,6 +208,12 @@ export async function POST(request: NextRequest): Promise<Response> {
         missingRequirements: result.missingRequirements,
         sessionId: session.id,
         traceId,
+        runId: result.runId,
+        orchestrationProtocol: result.orchestrationProtocol,
+        adapter: result.adapter,
+        loopState: result.loopState,
+        pendingToolCall: result.pendingToolCall,
+        toolTrace: result.toolTrace ?? [],
       });
       await emit("final", result.final);
       await writer.write(encoder.encode("data: [DONE]\n\n"));

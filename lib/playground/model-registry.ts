@@ -1,4 +1,18 @@
 export type PlaygroundModelProvider = "hf";
+export type PlaygroundModelAdapter = "native_tools" | "text_actions" | "deterministic_batch";
+export type PlaygroundToolName =
+  | "list_files"
+  | "read_file"
+  | "search_workspace"
+  | "get_diagnostics"
+  | "git_status"
+  | "git_diff"
+  | "create_checkpoint"
+  | "edit"
+  | "write_file"
+  | "mkdir"
+  | "run_command"
+  | "get_workspace_memory";
 
 export type PlaygroundModelCapabilitySet = {
   maxContextTokens: number;
@@ -8,6 +22,10 @@ export type PlaygroundModelCapabilitySet = {
   supportsWriteFile: boolean;
   supportsMkdir: boolean;
   supportsShellCommands: boolean;
+  supportsToolLoop: boolean;
+  supportsNativeToolCalls: boolean;
+  preferredAdapter: PlaygroundModelAdapter;
+  supportedTools: PlaygroundToolName[];
 };
 
 export type PlaygroundModelCertification = "tool_ready";
@@ -33,6 +51,20 @@ export type PlaygroundResolvedModelSelection = {
 
 export const PLAYGROUND_CONTRACT_VERSION = "2026-03-minimal-coding-v1";
 export const DEFAULT_PLAYGROUND_MODEL_ALIAS = "playground-default";
+export const PLAYGROUND_TOOL_LOOP_TOOLS: PlaygroundToolName[] = [
+  "list_files",
+  "read_file",
+  "search_workspace",
+  "get_diagnostics",
+  "git_status",
+  "git_diff",
+  "create_checkpoint",
+  "edit",
+  "write_file",
+  "mkdir",
+  "run_command",
+  "get_workspace_memory",
+];
 
 const DEFAULT_MODEL_ENTRY: PlaygroundModelRegistryEntry = {
   alias: DEFAULT_PLAYGROUND_MODEL_ALIAS,
@@ -48,6 +80,10 @@ const DEFAULT_MODEL_ENTRY: PlaygroundModelRegistryEntry = {
     supportsWriteFile: true,
     supportsMkdir: true,
     supportsShellCommands: true,
+    supportsToolLoop: true,
+    supportsNativeToolCalls: false,
+    preferredAdapter: "text_actions",
+    supportedTools: [...PLAYGROUND_TOOL_LOOP_TOOLS],
   },
   certification: "tool_ready",
   enabled: true,

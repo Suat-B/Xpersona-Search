@@ -109,12 +109,6 @@
         }
       ]
     },
-    "viewsWelcome": [
-      {
-        "view": "xpersona.playgroundView",
-        "contents": "Minimal coding chat in VS Code.\n[New Chat](command:xpersona.playground.prompt)\n[Chat with Selection](command:xpersona.playground.openWithSelection)\n[Sign In](command:xpersona.playground.signIn)\n[Set API Key](command:xpersona.playground.setApiKey)"
-      }
-    ],
     "configuration": {
       "title": "Playground",
       "properties": {
@@ -122,6 +116,30 @@
           "type": "string",
           "default": "http://localhost:3000",
           "description": "Base URL for the Playground API. Use http://localhost:3000 for local development."
+        },
+        "xpersona.playground.runtime": {
+          "type": "string",
+          "enum": [
+            "playgroundApi",
+            "qwenCode"
+          ],
+          "default": "qwenCode",
+          "description": "Choose whether Playground uses the local Qwen Code runtime or the hosted Playground API."
+        },
+        "xpersona.playground.qwen.model": {
+          "type": "string",
+          "default": "Qwen/Qwen3-4B-Thinking-2507:nscale",
+          "description": "Model name passed to Qwen Code when the runtime is set to qwenCode."
+        },
+        "xpersona.playground.qwen.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:3000/api/v1/hf",
+          "description": "OpenAI-compatible base URL for Qwen Code. This should be the path prefix before /chat/completions."
+        },
+        "xpersona.playground.qwen.executable": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path or command for a custom Qwen Code executable. Leave empty to use the SDK-bundled CLI."
         }
       }
     }
@@ -136,5 +154,8 @@
     "@types/node": "^25.3.3",
     "@types/vscode": "^1.90.0",
     "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@qwen-code/sdk": "^0.1.5"
   }
 }

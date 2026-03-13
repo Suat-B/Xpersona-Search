@@ -42,14 +42,20 @@ const context_1 = require("./context");
 const config_1 = require("./config");
 const history_1 = require("./history");
 const indexer_1 = require("./indexer");
+const qwen_history_1 = require("./qwen-history");
+const qwen_code_runtime_1 = require("./qwen-code-runtime");
+const tool_executor_1 = require("./tool-executor");
 const webview_provider_1 = require("./webview-provider");
 function activate(context) {
     const auth = new auth_1.AuthManager(context);
     const indexManager = new indexer_1.CloudIndexManager(context, () => auth.getRequestAuth());
     const actionRunner = new actions_1.ActionRunner();
+    const toolExecutor = new tool_executor_1.ToolExecutor(actionRunner, indexManager);
     const contextCollector = new context_1.ContextCollector(indexManager);
     const historyService = new history_1.SessionHistoryService();
-    const provider = new webview_provider_1.PlaygroundViewProvider(context, auth, historyService, contextCollector, actionRunner, indexManager);
+    const qwenHistoryService = new qwen_history_1.QwenHistoryService(context);
+    const qwenCodeRuntime = new qwen_code_runtime_1.QwenCodeRuntime();
+    const provider = new webview_provider_1.PlaygroundViewProvider(context, auth, historyService, qwenHistoryService, qwenCodeRuntime, contextCollector, actionRunner, toolExecutor, indexManager);
     context.subscriptions.push(vscode.window.registerWebviewViewProvider(config_1.WEBVIEW_VIEW_ID, provider), vscode.window.registerUriHandler(auth), vscode.commands.registerCommand("xpersona.playground.prompt", async () => {
         await provider.show();
     }), vscode.commands.registerCommand("xpersona.playground.openWithSelection", async () => {
@@ -68,21 +74,17 @@ function activate(context) {
     }), vscode.commands.registerCommand("xpersona.playground.signOut", async () => {
         await auth.signOut();
         await provider.newChat();
-    }), vscode.commands.registerCommand("xpersona.playground.mode.auto", async () => {
-        await provider.setMode("auto");
-    }), vscode.commands.registerCommand("xpersona.playground.mode.plan", async () => {
-        await provider.setMode("plan");
-    }), vscode.commands.registerCommand("xpersona.playground.mode.yolo", async () => {
-        await provider.setMode("yolo");
-    }), vscode.commands.registerCommand("xpersona.playground.history.open", async () => {
-        await provider.show();
-        await provider.refreshHistory();
-    }), vscode.commands.registerCommand("xpersona.playground.index.rebuild", async () => {
-        await provider.show();
-        await indexManager.rebuild("manual");
     }), vscode.commands.registerCommand("xpersona.playground.undoLastChanges", async () => {
         const summary = await actionRunner.undoLastBatch();
         vscode.window.showInformationMessage(summary);
+    }), vscode.workspace.onDidChangeConfiguration((event) => {
+        if (event.affectsConfiguration("xpersona.playground.runtime") ||
+            event.affectsConfiguration("xpersona.playground.baseApiUrl") ||
+            event.affectsConfiguration("xpersona.playground.qwen.model") ||
+            event.affectsConfiguration("xpersona.playground.qwen.baseUrl") ||
+            event.affectsConfiguration("xpersona.playground.qwen.executable")) {
+            void provider.refreshConfiguration();
+        }
     }), vscode.workspace.onDidSaveTextDocument(() => indexManager.scheduleRebuild()), vscode.workspace.onDidCreateFiles(() => indexManager.scheduleRebuild()), vscode.workspace.onDidDeleteFiles(() => indexManager.scheduleRebuild()), vscode.workspace.onDidRenameFiles(() => indexManager.scheduleRebuild()));
     indexManager.start();
 }

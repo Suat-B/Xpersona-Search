@@ -85,6 +85,9 @@ class AuthManager {
             return { apiKey };
         return null;
     }
+    async getApiKey() {
+        return this.getStoredApiKey();
+    }
     async setApiKeyInteractive() {
         const key = await vscode.window.showInputBox({
             title: "Set Playground API Key",

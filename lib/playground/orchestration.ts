@@ -1,5 +1,12 @@
 import { checkRateLimits, getUserPlan } from "@/lib/hf-router/rate-limit";
 import { hasUnlimitedPlaygroundAccess } from "@/lib/playground/auth";
+import type {
+  LoopStateContract,
+  OrchestrationProtocol,
+  PendingToolCallContract,
+  PlaygroundToolName,
+  ToolTraceEntryContract,
+} from "@/lib/playground/contracts";
 import {
   DEFAULT_PLAYGROUND_MODEL_ALIAS,
   PLAYGROUND_CONTRACT_VERSION,
@@ -52,6 +59,13 @@ export type AssistRequest = {
   mode: AssistMode;
   task: string;
   stream?: boolean;
+  orchestrationProtocol?: OrchestrationProtocol;
+  clientCapabilities?: {
+    toolLoop?: boolean;
+    supportedTools?: PlaygroundToolName[];
+    autoExecute?: boolean;
+    supportsNativeToolResults?: boolean;
+  };
   historySessionId?: string;
   context?: AssistContext;
   retrievalHints?: AssistRetrievalHints;
@@ -170,6 +184,12 @@ export type AssistResult = {
   delegateRuns: AssistDelegateRun[];
   memoryWrites: AssistMemoryWrite[];
   reviewState: AssistReviewState;
+  orchestrationProtocol?: OrchestrationProtocol;
+  runId?: string;
+  loopState?: LoopStateContract | null;
+  pendingToolCall?: PendingToolCallContract | null;
+  toolTrace?: ToolTraceEntryContract[];
+  adapter?: "native_tools" | "text_actions" | "deterministic_batch";
 };
 
 type ProviderChatResponse = {
@@ -188,6 +208,19 @@ type ParsedModelOutput = {
 
 const HF_ROUTER_BASE_URL = "https://router.huggingface.co/v1";
 const DEFAULT_MAX_TOKENS = 1_800;
+
+function normalizeHfRouterModelId(model: string): string {
+  const raw = String(model || "").trim();
+  if (!raw) return "";
+  // HF Router uses OpenAI-compatible APIs; strip local routing suffixes like ":fastest".
+  return raw.includes(":") ? raw.split(":")[0].trim() : raw;
+}
+
+function coerceHfRouterMaxTokens(input: unknown, fallback: number): number {
+  const value = typeof input === "number" ? input : Number(input);
+  const base = Number.isFinite(value) ? Math.floor(value) : fallback;
+  return Math.max(256, Math.min(base, 4_096));
+}
 
 function compactWhitespace(value: string): string {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -227,7 +260,7 @@ function extractMentionedPaths(task: string): string[] {
   return out;
 }
 
-function buildDecision(mode: AssistMode, task: string): AssistResult["decision"] {
+export function buildDecision(mode: AssistMode, task: string): AssistResult["decision"] {
   const trimmed = compactWhitespace(task);
   if (mode === "plan") {
     return {
@@ -250,7 +283,7 @@ function buildDecision(mode: AssistMode, task: string): AssistResult["decision"]
   };
 }
 
-function inferIntent(input: { mode: AssistMode; task: string; targetInference: AssistTargetInference }): AssistIntent {
+export function inferIntent(input: { mode: AssistMode; task: string; targetInference: AssistTargetInference }): AssistIntent {
   if (input.mode === "plan") {
     return { type: "plan", confidence: 0.95, delta: 0.1, clarified: true };
   }
@@ -263,7 +296,7 @@ function inferIntent(input: { mode: AssistMode; task: string; targetInference: A
   return { type: "unknown", confidence: 0.42, delta: 0.08, clarified: false };
 }
 
-function buildReasonCodes(input: {
+export function buildReasonCodes(input: {
   intent: AssistIntent;
   targetInference: AssistTargetInference;
   contextSelection: AssistContextSelection;
@@ -276,7 +309,7 @@ function buildReasonCodes(input: {
   return Array.from(new Set(codes));
 }
 
-function inferAutonomyDecision(input: {
+export function inferAutonomyDecision(input: {
   mode: AssistMode;
   actions: ExecuteAction[];
   validationPlan: AssistValidationPlan;
@@ -306,7 +339,7 @@ function inferAutonomyDecision(input: {
   };
 }
 
-function inferRisk(mode: AssistMode, task: string, actions: ExecuteAction[]): { blastRadius: "low" | "medium" | "high"; rollbackComplexity: number } {
+export function inferRisk(mode: AssistMode, task: string, actions: ExecuteAction[]): { blastRadius: "low" | "medium" | "high"; rollbackComplexity: number } {
   const touchedFiles = actions.filter((action) => "path" in action).length;
   if (mode === "yolo" || touchedFiles >= 4 || /\b(refactor|rewrite|migrate|large|workspace)\b/i.test(task)) {
     return { blastRadius: touchedFiles >= 6 ? "high" : "medium", rollbackComplexity: touchedFiles >= 6 ? 4 : 2 };
@@ -314,14 +347,14 @@ function inferRisk(mode: AssistMode, task: string, actions: ExecuteAction[]): { 
   return { blastRadius: "low", rollbackComplexity: touchedFiles > 1 ? 2 : 1 };
 }
 
-function collectInfluence(contextSelection: AssistContextSelection): AssistInfluence {
+export function collectInfluence(contextSelection: AssistContextSelection): AssistInfluence {
   return {
     files: contextSelection.files.map((file) => file.path).slice(0, 8),
     snippets: contextSelection.snippets,
   };
 }
 
-function buildToolState(): AssistToolState {
+export function buildToolState(): AssistToolState {
   return {
     strategy: "standard",
     route: "text_actions",
@@ -334,7 +367,7 @@ function buildToolState(): AssistToolState {
   };
 }
 
-function buildNextBestActions(mode: AssistMode, completionStatus: "complete" | "incomplete"): string[] {
+export function buildNextBestActions(mode: AssistMode, completionStatus: "complete" | "incomplete"): string[] {
   if (completionStatus === "incomplete") {
     return ["Repair run", "Open Playground review", "Refine target file"];
   }
@@ -585,6 +618,8 @@ async function callDefaultModel(input: {
   if (!token) return null;
 
   const modelSelection = resolvePlaygroundModelSelection();
+  const model = normalizeHfRouterModelId(modelSelection.resolvedEntry.model);
+  if (!model) throw new Error("HF router model is not configured.");
   const response = await fetch(`${HF_ROUTER_BASE_URL}/chat/completions`, {
     method: "POST",
     headers: {
@@ -592,9 +627,9 @@ async function callDefaultModel(input: {
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
-      model: modelSelection.resolvedEntry.model,
+      model,
       temperature: input.mode === "plan" ? 0.2 : 0.1,
-      max_tokens: Math.max(256, Math.min(input.maxTokens, 4_096)),
+      max_tokens: coerceHfRouterMaxTokens(input.maxTokens, DEFAULT_MAX_TOKENS),
       messages: [
         { role: "system", content: buildModelSystemPrompt(input.mode) },
         { role: "user", content: input.prompt },
@@ -936,7 +971,7 @@ function buildFallbackNoModelResult(input: {
   });
 }
 
-function buildDecoratedAssistResult(input: {
+export function buildDecoratedAssistResult(input: {
   request: AssistRuntimeInput;
   decision: AssistResult["decision"];
   plan: AssistPlan | null;
@@ -1060,6 +1095,10 @@ function buildDecoratedAssistResult(input: {
     delegateRuns: agentArtifacts.delegateRuns,
     memoryWrites: agentArtifacts.memoryWrites,
     reviewState: agentArtifacts.reviewState,
+    orchestrationProtocol: input.request.orchestrationProtocol || "batch_v1",
+    loopState: null,
+    pendingToolCall: null,
+    toolTrace: [],
   };
 }
 

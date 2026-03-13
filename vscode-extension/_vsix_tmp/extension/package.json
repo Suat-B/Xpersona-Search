@@ -1,0 +1,346 @@
+{
+    "name": "xpersona-playground",
+    "displayName": "Playground",
+    "description": "Minimal AI coding chat in VS Code.",
+    "version": "0.0.55",
+    "publisher": "playgroundai",
+    "license": "UNLICENSED",
+    "icon": "media/icon.png",
+    "engines": {
+        "vscode": "^1.90.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "onUri",
+        "onCommand:xpersona.playground.prompt",
+        "onCommand:xpersona.playground.openWithSelection",
+        "onCommand:xpersona.playground.setApiKey",
+        "onCommand:xpersona.playground.mode.auto",
+        "onCommand:xpersona.playground.mode.plan",
+        "onCommand:xpersona.playground.mode.yolo",
+        "onCommand:xpersona.playground.generate",
+        "onCommand:xpersona.playground.debug",
+        "onCommand:xpersona.playground.history.open",
+        "onCommand:xpersona.playground.image.attach",
+        "onCommand:xpersona.playground.agents.parallelRun",
+        "onCommand:xpersona.playground.index.rebuild",
+        "onCommand:xpersona.playground.replay.session",
+        "onCommand:xpersona.playground.undoLastChanges",
+        "onView:xpersona.playgroundView",
+        "onCommand:xpersona.playground.signIn",
+        "onCommand:xpersona.playground.signOut"
+    ],
+    "main": "./dist/extension.js",
+    "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "xpersona",
+                    "title": "Playground",
+                    "icon": "media/xpersona.png"
+                }
+            ]
+        },
+        "views": {
+            "xpersona": [
+                {
+                    "id": "xpersona.playgroundView",
+                    "name": "Playground",
+                    "type": "webview",
+                    "when": "true"
+                }
+            ]
+        },
+        "commands": [
+            {
+                "command": "xpersona.playground.prompt",
+                "title": "New Chat",
+                "category": "Playground"
+            },
+            {
+                "command": "xpersona.playground.openWithSelection",
+                "title": "Chat with Selection",
+                "category": "Playground"
+            },
+            {
+                "command": "xpersona.playground.setApiKey",
+                "title": "Set API Key",
+                "category": "Playground"
+            },
+            {
+                "command": "xpersona.playground.mode.auto",
+                "title": "Mode: Auto",
+                "category": "Playground"
+            },
+            {
+                "command": "xpersona.playground.mode.plan",
+                "title": "Mode: Plan",
+                "category": "Playground"
+            },
+            {
+                "command": "xpersona.playground.mode.yolo",
+                "title": "Mode: Full Access",
+                "category": "Playground"
+            },
+            {
+                "command": "xpersona.playground.generate",
+                "title": "Generate",
+                "category": "Playground"
+            },
+            {
+                "command": "xpersona.playground.debug",
+                "title": "Debug",
+                "category": "Playground"
+            },
+            {
+                "command": "xpersona.playground.history.open",
+                "title": "Open History",
+                "category": "Playground"
+            },
+            {
+                "command": "xpersona.playground.image.attach",
+                "title": "Attach Image",
+                "category": "Playground"
+            },
+            {
+                "command": "xpersona.playground.agents.parallelRun",
+                "title": "Deep Focus Run",
+                "category": "Playground"
+            },
+            {
+                "command": "xpersona.playground.index.rebuild",
+                "title": "Rebuild Index",
+                "category": "Playground"
+            },
+            {
+                "command": "xpersona.playground.replay.session",
+                "title": "Replay Session",
+                "category": "Playground"
+            },
+            {
+                "title": "Undo Playground Changes",
+                "command": "xpersona.playground.undoLastChanges",
+                "category": "Playground"
+            },
+            {
+                "title": "Sign In (Browser)",
+                "command": "xpersona.playground.signIn",
+                "category": "Playground"
+            },
+            {
+                "title": "Sign Out",
+                "command": "xpersona.playground.signOut",
+                "category": "Playground"
+            }
+        ],
+        "menus": {
+            "commandPalette": [
+                {
+                    "command": "xpersona.playground.prompt"
+                },
+                {
+                    "command": "xpersona.playground.openWithSelection"
+                },
+                {
+                    "command": "xpersona.playground.setApiKey"
+                },
+                {
+                    "command": "xpersona.playground.mode.auto"
+                },
+                {
+                    "command": "xpersona.playground.mode.plan"
+                },
+                {
+                    "command": "xpersona.playground.mode.yolo"
+                },
+                {
+                    "command": "xpersona.playground.generate"
+                },
+                {
+                    "command": "xpersona.playground.debug"
+                },
+                {
+                    "command": "xpersona.playground.history.open"
+                },
+                {
+                    "command": "xpersona.playground.image.attach"
+                },
+                {
+                    "command": "xpersona.playground.agents.parallelRun"
+                },
+                {
+                    "command": "xpersona.playground.index.rebuild"
+                },
+                {
+                    "command": "xpersona.playground.replay.session"
+                },
+                {
+                    "command": "xpersona.playground.undoLastChanges"
+                },
+                {
+                    "command": "xpersona.playground.signIn"
+                },
+                {
+                    "command": "xpersona.playground.signOut"
+                }
+            ],
+            "editor/context": [
+                {
+                    "command": "xpersona.playground.openWithSelection",
+                    "group": "2_xpersona@1",
+                    "when": "editorHasSelection"
+                },
+                {
+                    "command": "xpersona.playground.undoLastChanges",
+                    "group": "2_xpersona@2"
+                }
+            ]
+        },
+        "viewsWelcome": [
+            {
+                "view": "xpersona.playgroundView",
+                "contents": "Minimal coding chat in VS Code.\n[New Chat](command:xpersona.playground.prompt)\n[Chat with Selection](command:xpersona.playground.openWithSelection)\n[Sign In](command:xpersona.playground.signIn)\n[Set API Key](command:xpersona.playground.setApiKey)"
+            }
+        ],
+        "configuration": {
+            "title": "Playground",
+            "properties": {
+                "xpersona.playground.baseApiUrl": {
+                    "type": "string",
+                    "default": "http://localhost:3000",
+                    "description": "Base URL for the Playground API. Use http://localhost:3000 for local development."
+                },
+                "xpersona.playground.systemPrompt": {
+                    "type": "string",
+                    "default": "You are an autonomous coding agent. Take ownership of implementation tasks end-to-end: inspect context, propose a concrete plan, apply code changes directly when safe, run validations, and report exact outcomes. Prioritize correctness, minimal diffs, and actionable results over explanations. If blocked by missing access or external constraints, state the blocker clearly and provide the shortest recovery path.",
+                    "description": "System prompt sent to the AI agent."
+                },
+                "xpersona.playground.executionPolicy": {
+                    "type": "string",
+                    "default": "full_auto",
+                    "enum": [
+                        "full_auto",
+                        "yolo_only",
+                        "preview_first"
+                    ],
+                    "description": "Execution policy for approved actions. full_auto executes safe actions immediately."
+                },
+                "xpersona.playground.autonomy.mode": {
+                    "type": "string",
+                    "default": "unbounded",
+                    "enum": [
+                        "unbounded",
+                        "bounded"
+                    ],
+                    "description": "Autonomy mode. unbounded keeps cycling until completion contract is met."
+                },
+                "xpersona.playground.autonomy.maxCycles": {
+                    "type": "number",
+                    "default": 0,
+                    "minimum": 0,
+                    "description": "Maximum autonomy cycles per run. 0 means unlimited."
+                },
+                "xpersona.playground.autonomy.noClarifyToUser": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Do not ask the user for clarification mid-run; reprompt internally instead."
+                },
+                "xpersona.playground.autonomy.commandPolicy": {
+                    "type": "string",
+                    "default": "run_until_done",
+                    "enum": [
+                        "run_until_done",
+                        "safe_default"
+                    ],
+                    "description": "Command execution policy inside autonomy loop."
+                },
+                "xpersona.playground.autonomy.safetyFloor": {
+                    "type": "string",
+                    "default": "allow_everything",
+                    "enum": [
+                        "allow_everything",
+                        "standard"
+                    ],
+                    "description": "Safety floor for autonomous runs."
+                },
+                "xpersona.playground.autonomy.failsafe": {
+                    "type": "string",
+                    "default": "disabled",
+                    "enum": [
+                        "disabled",
+                        "enabled"
+                    ],
+                    "description": "Emergency failsafe toggle for autonomy loop."
+                },
+                "xpersona.playground.ideContextV2": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Include IDE context by default so Playground can read active files, open files, diagnostics, and indexed workspace snippets."
+                },
+                "xpersona.playground.mentions.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable @ mention autocomplete for workspace files and folders in Playground chat."
+                },
+                "xpersona.playground.validationAdapters": {
+                    "type": "array",
+                    "default": [],
+                    "description": "Per-file quick validation adapters. First matching adapter wins and runs after each changed file is applied.",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "name",
+                            "patterns",
+                            "commands"
+                        ],
+                        "additionalProperties": false,
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "description": "Human-readable adapter label shown in validation diagnostics."
+                            },
+                            "patterns": {
+                                "type": "array",
+                                "description": "Workspace-relative glob patterns. The first matching adapter wins.",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "commands": {
+                                "type": "array",
+                                "description": "Shell command templates run sequentially after a matching file edit. Supports ${file}, ${absFile}, and ${workspaceFolder}.",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "timeoutMs": {
+                                "type": "number",
+                                "default": 60000,
+                                "minimum": 1,
+                                "description": "Timeout in milliseconds for each adapter command."
+                            },
+                            "continueOnFailure": {
+                                "type": "boolean",
+                                "default": false,
+                                "description": "Continue running later adapter commands after a failure."
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "scripts": {
+        "compile": "tsc -p .",
+        "watch": "tsc -p . -w",
+        "build": "tsc -p .",
+        "package": "vsce package --allow-missing-repository"
+    },
+    "devDependencies": {
+        "@types/node": "^25.3.3",
+        "@types/vscode": "^1.90.0",
+        "typescript": "^5.0.0"
+    }
+}

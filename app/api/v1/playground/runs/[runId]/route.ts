@@ -27,6 +27,10 @@ export async function GET(request: NextRequest, ctx: Ctx): Promise<Response> {
   const output = asRecord(row.output);
   return ok(request, {
     ...row,
+    adapter: output.adapter ?? null,
+    loopState: output.loopState ?? null,
+    pendingToolCall: output.pendingToolCall ?? null,
+    toolTrace: output.toolTrace ?? [],
     receipt: output.receipt ?? null,
     checkpoint: output.checkpoint ?? null,
     reviewState: output.reviewState ?? null,

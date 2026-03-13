@@ -5,20 +5,29 @@ import { ContextCollector } from "./context";
 import { WEBVIEW_VIEW_ID } from "./config";
 import { SessionHistoryService } from "./history";
 import { CloudIndexManager } from "./indexer";
+import { QwenHistoryService } from "./qwen-history";
+import { QwenCodeRuntime } from "./qwen-code-runtime";
+import { ToolExecutor } from "./tool-executor";
 import { PlaygroundViewProvider } from "./webview-provider";
 
 export function activate(context: vscode.ExtensionContext): void {
   const auth = new AuthManager(context);
   const indexManager = new CloudIndexManager(context, () => auth.getRequestAuth());
   const actionRunner = new ActionRunner();
+  const toolExecutor = new ToolExecutor(actionRunner, indexManager);
   const contextCollector = new ContextCollector(indexManager);
   const historyService = new SessionHistoryService();
+  const qwenHistoryService = new QwenHistoryService(context);
+  const qwenCodeRuntime = new QwenCodeRuntime();
   const provider = new PlaygroundViewProvider(
     context,
     auth,
     historyService,
+    qwenHistoryService,
+    qwenCodeRuntime,
     contextCollector,
     actionRunner,
+    toolExecutor,
     indexManager
   );
 
@@ -50,6 +59,17 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("xpersona.playground.undoLastChanges", async () => {
       const summary = await actionRunner.undoLastBatch();
       vscode.window.showInformationMessage(summary);
+    }),
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (
+        event.affectsConfiguration("xpersona.playground.runtime") ||
+        event.affectsConfiguration("xpersona.playground.baseApiUrl") ||
+        event.affectsConfiguration("xpersona.playground.qwen.model") ||
+        event.affectsConfiguration("xpersona.playground.qwen.baseUrl") ||
+        event.affectsConfiguration("xpersona.playground.qwen.executable")
+      ) {
+        void provider.refreshConfiguration();
+      }
     }),
     vscode.workspace.onDidSaveTextDocument(() => indexManager.scheduleRebuild()),
     vscode.workspace.onDidCreateFiles(() => indexManager.scheduleRebuild()),

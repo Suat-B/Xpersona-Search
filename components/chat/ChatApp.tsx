@@ -564,7 +564,7 @@ export function ChatApp() {
           }}
           rows={1}
           placeholder="Message Playground 1 about your code, workflow, or next step"
-          className="chat-editorial-textarea chat-editorial-textarea-inline"
+          className={`chat-editorial-textarea ${isEmpty ? "chat-editorial-textarea-hero" : "chat-editorial-textarea-inline"}`}
           aria-label="Message input"
         />
 
@@ -573,6 +573,7 @@ export function ChatApp() {
             <Link href="/playground" className="chat-editorial-composer-link">
               Explore Playground plans
             </Link>
+            {" "}
             <span className="chat-editorial-composer-helper">Shift+Enter for a new line</span>
           </div>
           <div className="chat-editorial-input-actions">
@@ -798,9 +799,12 @@ export function ChatApp() {
               ) : isEmpty ? (
                 <div className="chat-editorial-empty chat-editorial-center mx-auto w-full max-w-[920px] animate-fade-in-up">
                   <div className="chat-editorial-empty-copy">
-                    <p className="chat-editorial-kicker">Playground 1</p>
+                    <div className="chat-editorial-empty-hero-head">
+                      <p className="chat-editorial-kicker">Playground 1</p>
+                      <span className="chat-editorial-model-pill">Text chat</span>
+                    </div>
                     <h2 className="chat-editorial-hero text-balance text-3xl font-semibold text-[var(--chat-text-primary)] sm:text-[3.4rem]">
-                      How can Playground 1 help today?
+                      How can <span className="whitespace-nowrap">Playground 1</span> help today?
                     </h2>
                     <p className="chat-editorial-empty-text">
                       Plan features, debug code, and think through your next move in one clean workspace.

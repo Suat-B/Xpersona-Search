@@ -11,6 +11,9 @@
     0%, 100% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }
   }
+  .text-balance {
+    text-wrap: balance;
+  }
 }
 @tailwind utilities;
 
@@ -3401,6 +3404,41 @@ LIGHT MODE OVERRIDES - Applied when .light-mode class is present
   box-shadow: none;
 }
 
+.chat-editorial-composer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.chat-editorial-composer-kicker {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--chat-text-muted);
+}
+
+.chat-editorial-composer-subtitle {
+  margin-top: 0.2rem;
+  font-size: 0.82rem;
+  color: var(--chat-text-muted);
+}
+
+.chat-editorial-model-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--chat-text-secondary);
+  padding: 0.4rem 0.75rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
 .chat-editorial-textarea {
   background: transparent;
   color: var(--chat-text-primary);
@@ -3408,6 +3446,7 @@ LIGHT MODE OVERRIDES - Applied when .light-mode class is present
   outline: none;
   font-size: 0.95rem;
   line-height: 1.55;
+  width: 100%;
 }
 
 .chat-editorial-textarea::placeholder {
@@ -3475,6 +3514,47 @@ LIGHT MODE OVERRIDES - Applied when .light-mode class is present
   resize: none;
   background: transparent;
   padding: 0;
+}
+
+.chat-editorial-textarea-hero {
+  min-height: 7rem;
+  max-height: 16rem;
+  resize: none;
+  padding: 0.15rem 0;
+}
+
+.chat-editorial-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.85rem;
+}
+
+.chat-editorial-composer-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.chat-editorial-composer-link {
+  color: #dbe8ff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(138, 180, 248, 0.34);
+}
+
+.chat-editorial-composer-link:hover {
+  color: #ffffff;
+  border-color: rgba(138, 180, 248, 0.6);
+}
+
+.chat-editorial-composer-helper {
+  font-size: 0.78rem;
+  color: var(--chat-text-muted);
 }
 
 .chat-editorial-input-actions {
@@ -4005,6 +4085,14 @@ LIGHT MODE OVERRIDES - Applied when .light-mode class is present
   padding: clamp(3rem, 7vw, 6rem) 0;
 }
 
+.chat-editorial-empty-hero-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.35rem;
+}
+
 .chat-editorial-center {
   min-height: calc(100dvh - 9rem);
 }
@@ -4314,6 +4402,12 @@ LIGHT MODE OVERRIDES - Applied when .light-mode class is present
 
   .chat-editorial-empty {
     padding-top: 2rem;
+  }
+
+  .chat-editorial-empty-hero-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
   }
 
   .chat-editorial-center {

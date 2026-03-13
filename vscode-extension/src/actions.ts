@@ -91,6 +91,54 @@ export class ActionRunner {
     return this.undoBatch !== null;
   }
 
+  createCheckpoint(reason?: string): string {
+    this.undoBatch = this.undoBatch || {
+      files: [],
+      createdDirectories: [],
+    };
+    this.onDidChangeUndoEmitter.fire(this.canUndo());
+    return reason?.trim()
+      ? `Checkpoint created: ${reason.trim().slice(0, 200)}`
+      : "Checkpoint created for the current Playground run.";
+  }
+
+  private ensureUndoBatch(): UndoBatch {
+    if (!this.undoBatch) {
+      this.undoBatch = {
+        files: [],
+        createdDirectories: [],
+      };
+    }
+    return this.undoBatch;
+  }
+
+  private async captureUndoSnapshot(filePath: string): Promise<void> {
+    const batch = this.ensureUndoBatch();
+    if (batch.files.some((entry) => entry.path === filePath)) return;
+    const absolutePath = toAbsoluteWorkspacePath(filePath);
+    if (!absolutePath) return;
+    try {
+      batch.files.push({
+        path: filePath,
+        existed: true,
+        content: await fs.readFile(absolutePath, "utf8"),
+      });
+    } catch {
+      batch.files.push({
+        path: filePath,
+        existed: false,
+        content: "",
+      });
+    }
+  }
+
+  private rememberCreatedDirectory(directoryPath: string): void {
+    const batch = this.ensureUndoBatch();
+    if (!batch.createdDirectories.includes(directoryPath)) {
+      batch.createdDirectories.push(directoryPath);
+    }
+  }
+
   async apply(input: {
     mode: Mode;
     actions: AssistAction[];
@@ -145,24 +193,9 @@ export class ActionRunner {
         .filter((action): action is Extract<AssistAction, { type: "edit" | "write_file" }> => action.type === "edit" || action.type === "write_file")
         .map((action) => action.path)
     );
-    const undoEntries: UndoEntry[] = [];
 
     for (const filePath of touchedFiles) {
-      const absolutePath = toAbsoluteWorkspacePath(filePath);
-      if (!absolutePath) continue;
-      try {
-        undoEntries.push({
-          path: filePath,
-          existed: true,
-          content: await fs.readFile(absolutePath, "utf8"),
-        });
-      } catch {
-        undoEntries.push({
-          path: filePath,
-          existed: false,
-          content: "",
-        });
-      }
+      await this.captureUndoSnapshot(filePath);
     }
 
     const details: string[] = [];
@@ -177,6 +210,7 @@ export class ActionRunner {
         }
         await fs.mkdir(absolutePath, { recursive: true });
         createdDirectories.push(action.path);
+        this.rememberCreatedDirectory(action.path);
         details.push(`Created directory ${action.path}.`);
         continue;
       }
@@ -275,12 +309,12 @@ export class ActionRunner {
     }
 
     if (changedFiles.length > 0) {
-      this.undoBatch = {
-        files: undoEntries,
-        createdDirectories,
-      };
+      const batch = this.ensureUndoBatch();
+      for (const directory of createdDirectories) {
+        if (!batch.createdDirectories.includes(directory)) batch.createdDirectories.push(directory);
+      }
       this.recentTouchedPaths = uniquePaths([...changedFiles, ...this.recentTouchedPaths]).slice(0, 16);
-    } else {
+    } else if (this.undoBatch && this.undoBatch.files.length === 0 && this.undoBatch.createdDirectories.length === 0) {
       this.undoBatch = null;
     }
     this.onDidChangeUndoEmitter.fire(this.canUndo());

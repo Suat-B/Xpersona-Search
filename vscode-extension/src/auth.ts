@@ -82,6 +82,10 @@ export class AuthManager implements vscode.UriHandler {
     return null;
   }
 
+  async getApiKey(): Promise<string | null> {
+    return this.getStoredApiKey();
+  }
+
   async setApiKeyInteractive(): Promise<void> {
     const key = await vscode.window.showInputBox({
       title: "Set Playground API Key",
