@@ -2,7 +2,7 @@
   "name": "xpersona-playground",
   "displayName": "Playground",
   "description": "Minimal AI coding chat in VS Code.",
-  "version": "0.0.55",
+  "version": "0.0.59",
   "publisher": "playgroundai",
   "license": "UNLICENSED",
   "icon": "media/icon.png",
@@ -159,3 +159,5 @@
     "@qwen-code/sdk": "^0.1.5"
   }
 }
+
+

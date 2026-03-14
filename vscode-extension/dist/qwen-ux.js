@@ -47,39 +47,129 @@ function normalizeRuntimeText(value) {
         .replace(/\\/g, "/")
         .toLowerCase();
 }
+function trimTrailingSlashes(value) {
+    return value.replace(/\/+$/g, "");
+}
+function isPathInsideWorkspace(pathValue, workspaceRoot) {
+    const normalizedPath = trimTrailingSlashes(normalizeRuntimeText(pathValue));
+    const normalizedWorkspaceRoot = trimTrailingSlashes(normalizeRuntimeText(workspaceRoot));
+    if (!normalizedPath || !normalizedWorkspaceRoot)
+        return false;
+    return (normalizedPath === normalizedWorkspaceRoot ||
+        normalizedPath.startsWith(`${normalizedWorkspaceRoot}/`));
+}
+function containsRuntimeNarrativeNoise(text) {
+    const normalized = normalizeRuntimeText(text);
+    if (!normalized)
+        return false;
+    const tokens = [
+        "qwen code sdk",
+        "qwen sdk",
+        "sdk cli executable",
+        "cli executable",
+        ".trae",
+        "trae/extensions",
+        "extension directory",
+        "extension runtime",
+        "local installation",
+        "windows file path",
+        "cli interface",
+        "confirm the installation",
+        "sdk's location",
+        "sdk location",
+        "check where this file is located",
+        "troubleshoot an issue related to the sdk",
+    ];
+    const tokenHits = tokens.reduce((count, token) => (normalized.includes(token) ? count + 1 : count), 0);
+    if (tokenHits >= 2)
+        return true;
+    if (normalized.includes(".trae") && normalized.includes("qwen"))
+        return true;
+    if (normalized.includes("extension directory") && normalized.includes("qwen"))
+        return true;
+    if (normalized.includes("windows file path") && normalized.includes("qwen"))
+        return true;
+    if (normalized.includes("this appears to be the location of") &&
+        /\b(qwen|sdk|cli)\b/.test(normalized)) {
+        return true;
+    }
+    if (/\bthe user (might|may|could|seems to|appears to)\b/.test(normalized) &&
+        /\b(path|sdk|cli|installation|environment)\b/.test(normalized)) {
+        return true;
+    }
+    if (normalized.includes("since they included this path"))
+        return true;
+    if (normalized.includes("check if the sdk is properly installed"))
+        return true;
+    if (normalized.includes("checking the sdk's location") || normalized.includes("checking the sdk location")) {
+        return true;
+    }
+    return false;
+}
 function containsRuntimeNoise(text, input) {
     const normalized = normalizeRuntimeText(text);
     if (!normalized)
         return false;
-    const workspaceRoot = normalizeRuntimeText(input?.workspaceRoot);
-    if (workspaceRoot && normalized.includes(workspaceRoot)) {
-        return false;
-    }
-    const executablePath = normalizeRuntimeText(input?.executablePath);
-    if (executablePath && normalized.includes(executablePath)) {
+    const executablePathRaw = String(input?.executablePath || "").trim();
+    const executablePath = normalizeRuntimeText(executablePathRaw);
+    if (executablePath &&
+        looksLikePath(executablePathRaw) &&
+        normalized.includes(executablePath) &&
+        !isPathInsideWorkspace(executablePathRaw, input?.workspaceRoot)) {
         return true;
     }
-    return (normalized.includes("@qwen-code/sdk/dist/cli/cli.js") ||
+    return (containsRuntimeNarrativeNoise(text) ||
+        normalized.includes("@qwen-code/sdk/dist/cli/cli.js") ||
         normalized.includes("/.trae/extensions/playgroundai.xpersona-playground") ||
         normalized.includes("playgroundai.xpersona-playground-") ||
         normalized.includes("/node_modules/@qwen-code/sdk/dist/cli/cli.js"));
 }
 function explicitlyAskedAboutRuntime(task) {
     const normalized = normalizeRuntimeText(task);
-    return (normalized.includes("@qwen-code") ||
+    const hasRuntimeToken = normalized.includes("@qwen-code") ||
         normalized.includes("cli.js") ||
         normalized.includes("qwen code sdk") ||
+        normalized.includes("qwen sdk") ||
+        normalized.includes("extension runtime") ||
         normalized.includes("extension folder") ||
+        normalized.includes("extension directory") ||
         normalized.includes("node_modules") ||
         normalized.includes("trae/extensions") ||
-        normalized.includes("sdk/dist/cli"));
+        normalized.includes(".trae") ||
+        normalized.includes("sdk/dist/cli");
+    if (!hasRuntimeToken)
+        return false;
+    if (normalized.includes("?"))
+        return true;
+    return /\b(why|what|where|how|explain|debug|investigate|used for|is this)\b/.test(normalized);
 }
 function stripMetaPreamble(text) {
     return String(text || "")
         .replace(/^\s*(okay|alright|got it|sure)[,.\s-]*/i, "")
         .replace(/^\s*let me[^.!?]*[.!?]\s*/i, "")
+        .replace(/^\s*this appears to be the location of[^.!?]*[.!?]\s*/i, "")
         .replace(/^\s*the user (?:is|has|wants|provided)[^.!?]*[.!?]\s*/i, "")
+        .replace(/^\s*the user (?:might|may|could|seems to|appears to)[^.!?]*[.!?]\s*/i, "")
+        .replace(/^\s*since (?:they|the user) included (?:this )?path[^.!?]*[.!?]\s*/i, "")
         .trim();
+}
+function formatWorkspaceTargets(targets) {
+    return Array.from(new Set((targets || [])
+        .map((target) => String(target || "").trim())
+        .filter(Boolean))).slice(0, 2);
+}
+function buildWorkspaceFocusMessage(input) {
+    const targets = formatWorkspaceTargets(input.workspaceTargets);
+    if (targets.length === 1) {
+        return `I'm focused on the user's workspace code, especially ${targets[0]}. Ask about that file, a symbol, or the current bug and I'll stay grounded in the codebase.`;
+    }
+    if (targets.length > 1) {
+        return `I'm focused on the user's workspace code, especially ${targets.join(" and ")}. Ask about those files, a symbol, or the current bug and I'll stay grounded in the codebase.`;
+    }
+    const workspaceHint = String(input.workspaceRoot || "").trim();
+    return workspaceHint
+        ? `I'm focused on the user's workspace code at ${workspaceHint}, not the extension runtime bundle. Ask about a file, symbol, or bug in the open project and I'll use that context.`
+        : "I'm focused on the user's workspace code, not the extension runtime bundle. Ask about a file, symbol, or bug in the open project and I'll use that context.";
 }
 async function validateQwenPreflight(input) {
     if (!String(input.workspaceRoot || "").trim()) {
@@ -159,7 +249,10 @@ function sanitizeQwenAssistantOutput(input) {
             workspaceRoot: input.workspaceRoot,
             executablePath: input.executablePath,
         })) {
-        return "I’m focused on your current workspace, not the extension runtime bundle. Ask about a file, symbol, or bug in the open project and I’ll use that context.";
+        return buildWorkspaceFocusMessage({
+            workspaceRoot: input.workspaceRoot,
+            workspaceTargets: input.workspaceTargets,
+        });
     }
     return cleaned;
 }

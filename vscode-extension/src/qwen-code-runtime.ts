@@ -21,6 +21,7 @@ import {
   isMutationToolName,
   isSafeInspectionToolRequest,
 } from "./qwen-runtime-utils";
+import { mergeAssistantResponseText } from "./qwen-response-assembly";
 import type { Mode } from "./shared";
 
 function trimToSentence(value: string, limit = 220): string {
@@ -103,14 +104,21 @@ export class QwenCodeRuntime {
     }
 
     const model = getQwenModel();
-    const shouldStreamPartials = !/thinking/i.test(model);
+    const includePartialMessages = true;
     const requestedSessionId = input.sessionId || undefined;
     let assistantText = "";
-    let partialText = "";
+    let streamingMessageText = "";
     const permissionDenials: string[] = [];
     const usedToolNames = new Set<string>();
     const approvedToolRequests = new Set<string>();
     let didMutate = false;
+
+    const publishAssistantText = (candidate: string) => {
+      const merged = mergeAssistantResponseText(assistantText, candidate);
+      if (!merged || merged === assistantText) return;
+      assistantText = merged;
+      input.onPartial?.(assistantText);
+    };
 
     const result = query({
       prompt: input.prompt,
@@ -121,7 +129,7 @@ export class QwenCodeRuntime {
         authType: "openai",
         permissionMode: toPermissionMode(input.mode),
         allowedTools: getAutoApprovedQwenTools(),
-        includePartialMessages: shouldStreamPartials,
+        includePartialMessages,
         env: {
           OPENAI_API_KEY: input.apiKey,
           OPENAI_BASE_URL: getQwenOpenAiBaseUrl(),
@@ -168,14 +176,23 @@ export class QwenCodeRuntime {
     try {
       for await (const message of result) {
         if (isSDKPartialAssistantMessage(message)) {
+          if (message.event.type === "message_start") {
+            streamingMessageText = "";
+            continue;
+          }
+
           if (
             message.event.type === "content_block_delta" &&
             message.event.delta.type === "text_delta"
           ) {
-            partialText += message.event.delta.text;
-            if (shouldStreamPartials) {
-              input.onPartial?.(partialText.trim());
-            }
+            streamingMessageText += message.event.delta.text;
+            publishAssistantText(streamingMessageText);
+            continue;
+          }
+
+          if (message.event.type === "message_stop") {
+            publishAssistantText(streamingMessageText);
+            streamingMessageText = "";
           }
           continue;
         }
@@ -194,8 +211,7 @@ export class QwenCodeRuntime {
         if (isSDKAssistantMessage(message)) {
           const nextText = extractText(message.message.content);
           if (nextText) {
-            assistantText = nextText;
-            input.onPartial?.(assistantText);
+            publishAssistantText(nextText);
           }
           for (const toolUse of extractToolUses(message.message.content)) {
             usedToolNames.add(toolUse.name);
@@ -209,7 +225,7 @@ export class QwenCodeRuntime {
 
         if (isSDKResultMessage(message)) {
           if (message.result && typeof message.result === "string" && message.result.trim()) {
-            assistantText = message.result.trim();
+            publishAssistantText(message.result);
           }
           for (const denial of message.permission_denials || []) {
             permissionDenials.push(trimToSentence(`${denial.tool_name} denied`));
@@ -222,7 +238,10 @@ export class QwenCodeRuntime {
 
     return {
       sessionId: result.getSessionId(),
-      assistantText: assistantText || partialText.trim() || "Qwen Code finished without returning a final message.",
+      assistantText:
+        assistantText ||
+        streamingMessageText.trim() ||
+        "Qwen Code finished without returning a final message.",
       permissionDenials,
       usedTools: Array.from(usedToolNames),
       didMutate,

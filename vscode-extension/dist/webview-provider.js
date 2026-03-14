@@ -751,6 +751,11 @@ class PlaygroundViewProvider {
                         task: text,
                         workspaceRoot,
                         executablePath: (0, config_1.getQwenExecutablePath)() || null,
+                        workspaceTargets: [
+                            fullPreview.activeFile || "",
+                            ...fullPreview.resolvedFiles,
+                            ...fullPreview.selectedFiles,
+                        ],
                     }).trim();
                     if (!next)
                         return;
@@ -776,6 +781,11 @@ class PlaygroundViewProvider {
                 task: text,
                 workspaceRoot,
                 executablePath: (0, config_1.getQwenExecutablePath)() || null,
+                workspaceTargets: [
+                    fullPreview.activeFile || "",
+                    ...fullPreview.resolvedFiles,
+                    ...fullPreview.selectedFiles,
+                ],
             }));
             this.state.followUpActions = (0, assistant_ux_1.buildFollowUpActions)({
                 intent: fullPreview.intent,
@@ -839,7 +849,7 @@ class PlaygroundViewProvider {
         this.appendMessage("user", text);
         this.postState();
         try {
-            const { context, retrievalHints } = await this.contextCollector.collect(text, {
+            const { context, retrievalHints, preview } = await this.contextCollector.collect(text, {
                 recentTouchedPaths: this.actionRunner.getRecentTouchedPaths(),
                 attachedFiles: this.manualContext.attachedFiles,
                 attachedSelection: this.manualContext.attachedSelection,
@@ -886,7 +896,17 @@ class PlaygroundViewProvider {
             const assistantBody = this.state.mode === "plan" && envelope.plan
                 ? [envelope.final || "Plan ready.", "", formatPlan(envelope.plan)].filter(Boolean).join("\n")
                 : envelope.final || "No final response text was returned.";
-            this.appendMessage("assistant", assistantBody);
+            this.appendMessage("assistant", (0, qwen_ux_1.sanitizeQwenAssistantOutput)({
+                text: assistantBody,
+                task: text,
+                workspaceRoot: (0, config_1.getWorkspaceRootPath)(),
+                executablePath: (0, config_1.getQwenExecutablePath)() || null,
+                workspaceTargets: [
+                    preview.activeFile || "",
+                    ...preview.resolvedFiles,
+                    ...preview.selectedFiles,
+                ],
+            }));
             if (envelope.completionStatus === "incomplete" && envelope.missingRequirements?.length) {
                 this.appendMessage("system", `Missing: ${envelope.missingRequirements.join(", ")}`);
             }

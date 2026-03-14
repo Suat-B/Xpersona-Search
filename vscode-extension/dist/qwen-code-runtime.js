@@ -38,6 +38,7 @@ const vscode = __importStar(require("vscode"));
 const sdk_1 = require("@qwen-code/sdk");
 const config_1 = require("./config");
 const qwen_runtime_utils_1 = require("./qwen-runtime-utils");
+const qwen_response_assembly_1 = require("./qwen-response-assembly");
 function trimToSentence(value, limit = 220) {
     const text = String(value || "").replace(/\s+/g, " ").trim();
     if (text.length <= limit)
@@ -91,14 +92,21 @@ class QwenCodeRuntime {
             throw new Error("Open a workspace folder before using Qwen Code.");
         }
         const model = (0, config_1.getQwenModel)();
-        const shouldStreamPartials = !/thinking/i.test(model);
+        const includePartialMessages = true;
         const requestedSessionId = input.sessionId || undefined;
         let assistantText = "";
-        let partialText = "";
+        let streamingMessageText = "";
         const permissionDenials = [];
         const usedToolNames = new Set();
         const approvedToolRequests = new Set();
         let didMutate = false;
+        const publishAssistantText = (candidate) => {
+            const merged = (0, qwen_response_assembly_1.mergeAssistantResponseText)(assistantText, candidate);
+            if (!merged || merged === assistantText)
+                return;
+            assistantText = merged;
+            input.onPartial?.(assistantText);
+        };
         const result = (0, sdk_1.query)({
             prompt: input.prompt,
             options: {
@@ -108,7 +116,7 @@ class QwenCodeRuntime {
                 authType: "openai",
                 permissionMode: toPermissionMode(input.mode),
                 allowedTools: (0, qwen_runtime_utils_1.getAutoApprovedQwenTools)(),
-                includePartialMessages: shouldStreamPartials,
+                includePartialMessages,
                 env: {
                     OPENAI_API_KEY: input.apiKey,
                     OPENAI_BASE_URL: (0, config_1.getQwenOpenAiBaseUrl)(),
@@ -143,12 +151,19 @@ class QwenCodeRuntime {
         try {
             for await (const message of result) {
                 if ((0, sdk_1.isSDKPartialAssistantMessage)(message)) {
+                    if (message.event.type === "message_start") {
+                        streamingMessageText = "";
+                        continue;
+                    }
                     if (message.event.type === "content_block_delta" &&
                         message.event.delta.type === "text_delta") {
-                        partialText += message.event.delta.text;
-                        if (shouldStreamPartials) {
-                            input.onPartial?.(partialText.trim());
-                        }
+                        streamingMessageText += message.event.delta.text;
+                        publishAssistantText(streamingMessageText);
+                        continue;
+                    }
+                    if (message.event.type === "message_stop") {
+                        publishAssistantText(streamingMessageText);
+                        streamingMessageText = "";
                     }
                     continue;
                 }
@@ -161,8 +176,7 @@ class QwenCodeRuntime {
                 if ((0, sdk_1.isSDKAssistantMessage)(message)) {
                     const nextText = extractText(message.message.content);
                     if (nextText) {
-                        assistantText = nextText;
-                        input.onPartial?.(assistantText);
+                        publishAssistantText(nextText);
                     }
                     for (const toolUse of extractToolUses(message.message.content)) {
                         usedToolNames.add(toolUse.name);
@@ -175,7 +189,7 @@ class QwenCodeRuntime {
                 }
                 if ((0, sdk_1.isSDKResultMessage)(message)) {
                     if (message.result && typeof message.result === "string" && message.result.trim()) {
-                        assistantText = message.result.trim();
+                        publishAssistantText(message.result);
                     }
                     for (const denial of message.permission_denials || []) {
                         permissionDenials.push(trimToSentence(`${denial.tool_name} denied`));
@@ -188,7 +202,9 @@ class QwenCodeRuntime {
         }
         return {
             sessionId: result.getSessionId(),
-            assistantText: assistantText || partialText.trim() || "Qwen Code finished without returning a final message.",
+            assistantText: assistantText ||
+                streamingMessageText.trim() ||
+                "Qwen Code finished without returning a final message.",
             permissionDenials,
             usedTools: Array.from(usedToolNames),
             didMutate,

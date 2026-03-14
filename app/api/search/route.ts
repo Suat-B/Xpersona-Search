@@ -11,6 +11,7 @@ import {
   agentEmbeddings,
   agentCapabilityHandshakes,
   agentReputationSnapshots,
+  searchDocuments,
 } from "@/lib/db/schema";
 import { and, eq, gte, lte, desc, sql, SQL } from "drizzle-orm";
 import {
@@ -144,7 +145,7 @@ const SearchSchema = z.object({
     .string()
     .optional()
     .transform((s) => s === "1" || s === "true"),
-  vertical: z.enum(["agents", "images", "artifacts"]).default("agents"),
+  vertical: z.enum(["agents", "images", "artifacts", "all", "docs"]).default("agents"),
   minMediaQuality: z.coerce.number().min(0).max(100).optional(),
   artifactType: z
     .string()
@@ -757,6 +758,143 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
   };
 }
 
+async function runDocumentVerticalQuery(
+  params: SearchParams,
+  mode: "all" | "docs"
+): Promise<{
+  results: Array<Record<string, unknown>>;
+  pagination: { hasMore: boolean; nextCursor: string | null; total: number };
+  facets: { protocols: never[] };
+  searchMeta: {
+    fallbackApplied: boolean;
+    matchMode: "strict_lexical";
+    queryOriginal: string;
+    queryInterpreted: string;
+    filtersHonored: boolean;
+    stagesTried: string[];
+  };
+}> {
+  const rawQuery = params.q?.trim() ?? "";
+  const hasQuery = rawQuery.length > 0;
+  const queryPattern = hasQuery ? `%${escapeLike(rawQuery)}%` : null;
+  const pageLimit = params.recall === "high" ? Math.min(200, params.limit * 3) : params.limit;
+
+  const sourceCondition =
+    params.includeSources.length > 0
+      ? sql`AND source = ANY(ARRAY[${sql.join(
+          params.includeSources.map((v) => sql`${v}`),
+          sql`, `
+        )}]::text[])`
+      : sql``;
+  const docTypeCondition =
+    mode === "docs"
+      ? sql`AND doc_type = ANY(ARRAY['web_page','web_chunk']::text[])`
+      : sql``;
+  const lexicalRankExpr = hasQuery
+    ? sql`ts_rank_cd(body_tsv, websearch_to_tsquery('english', ${rawQuery}))`
+    : sql`0::double precision`;
+  const finalScoreExpr = hasQuery
+    ? sql`(
+        ${lexicalRankExpr} * 45
+        + quality_score * 0.20
+        + freshness_score * 0.15
+        + safety_score * 0.10
+        + confidence_score * 0.10
+      )`
+    : sql`(
+        quality_score * 0.45
+        + freshness_score * 0.25
+        + safety_score * 0.15
+        + confidence_score * 0.15
+      )`;
+  const textCondition = hasQuery
+    ? sql`AND (
+        body_tsv @@ websearch_to_tsquery('english', ${rawQuery})
+        OR coalesce(title, '') ILIKE ${queryPattern!}
+        OR coalesce(snippet, '') ILIKE ${queryPattern!}
+        OR canonical_url ILIKE ${queryPattern!}
+      )`
+    : sql``;
+
+  const result = await db.execute(sql`
+    SELECT
+      id,
+      doc_type,
+      source,
+      source_id,
+      canonical_url,
+      domain,
+      title,
+      snippet,
+      quality_score,
+      safety_score,
+      freshness_score,
+      confidence_score,
+      indexed_at,
+      ${lexicalRankExpr} AS lexical_rank,
+      ${finalScoreExpr} AS final_score
+    FROM search_documents
+    WHERE is_public = true
+      ${docTypeCondition}
+      ${sourceCondition}
+      ${textCondition}
+    ORDER BY final_score DESC, indexed_at DESC, id DESC
+    LIMIT ${pageLimit + 1}
+  `);
+
+  const rows = (result as unknown as { rows?: Array<Record<string, unknown>> }).rows ?? [];
+  const hasMore = rows.length > pageLimit;
+  const pageRows = hasMore ? rows.slice(0, pageLimit) : rows;
+  const last = pageRows[pageRows.length - 1];
+  const nextCursor = hasMore && last ? String(last.id ?? "") : null;
+
+  const mapped = pageRows.map((row) => {
+    const docType = String(row.doc_type ?? "web_chunk");
+    const kind =
+      docType === "web_page"
+        ? "page"
+        : docType === "web_chunk"
+          ? "doc"
+        : docType === "artifact"
+          ? "artifact"
+          : "agent";
+    return {
+      id: String(row.id ?? ""),
+      kind,
+      docType,
+      source: String(row.source ?? ""),
+      sourceId: String(row.source_id ?? ""),
+      url: String(row.canonical_url ?? ""),
+      domain: String(row.domain ?? ""),
+      title: row.title as string | null,
+      snippet: row.snippet as string | null,
+      qualityScore: Number(row.quality_score ?? 0),
+      safetyScore: Number(row.safety_score ?? 0),
+      freshnessScore: Number(row.freshness_score ?? 0),
+      confidenceScore: Number(row.confidence_score ?? 0),
+      indexedAt:
+        row.indexed_at instanceof Date
+          ? row.indexed_at.toISOString()
+          : String(row.indexed_at ?? ""),
+      overallRank: Number(row.final_score ?? 0),
+    };
+  });
+
+  return {
+    results: mapped,
+    pagination: { hasMore, nextCursor, total: mapped.length },
+    facets: { protocols: [] },
+    searchMeta: {
+      fallbackApplied: false,
+      matchMode: "strict_lexical",
+      queryOriginal: rawQuery,
+      queryInterpreted: rawQuery,
+      filtersHonored: true,
+      stagesTried: [`${mode}_vertical_documents`],
+    },
+  };
+}
+
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
   // --- Rate limiting ---
@@ -801,6 +939,13 @@ export async function GET(req: NextRequest) {
       return response;
     }
     throw err;
+  }
+
+  if (
+    !req.nextUrl.searchParams.has("vertical") &&
+    process.env.SEARCH_DEFAULT_VERTICAL_ALL === "1"
+  ) {
+    params.vertical = "all";
   }
 
   if (params.includePending || params.includePrivate || params.includeUnsafeMedia) {
@@ -897,6 +1042,23 @@ export async function GET(req: NextRequest) {
       const mediaResponse = await runMediaVerticalQuery(params);
       searchResultsCache.set(cacheKey, mediaResponse);
       const response = NextResponse.json(mediaResponse);
+      response.headers.set(
+        "Cache-Control",
+        "public, s-maxage=30, stale-while-revalidate=60"
+      );
+      response.headers.set("X-Cache", "MISS");
+      applyRequestIdHeader(response, req);
+      recordApiResponse("/api/search", req, response, startedAt);
+      return response;
+    }
+
+    if (params.vertical === "all" || params.vertical === "docs") {
+      const docsResponse = await runDocumentVerticalQuery(
+        params,
+        params.vertical === "docs" ? "docs" : "all"
+      );
+      searchResultsCache.set(cacheKey, docsResponse);
+      const response = NextResponse.json(docsResponse);
       response.headers.set(
         "Cache-Control",
         "public, s-maxage=30, stale-while-revalidate=60"

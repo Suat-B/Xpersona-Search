@@ -32,19 +32,82 @@ function normalizePathLike(value) {
         .replace(/\\/g, "/")
         .toLowerCase();
 }
+function trimTrailingSlashes(value) {
+    return value.replace(/\/+$/g, "");
+}
+function looksLikePath(value) {
+    return /[\\/]/.test(String(value || "")) || /^[a-z]:/i.test(String(value || ""));
+}
+function isPathInsideWorkspace(pathValue, workspaceRoot) {
+    const normalizedPath = trimTrailingSlashes(normalizePathLike(pathValue));
+    const normalizedWorkspaceRoot = trimTrailingSlashes(normalizePathLike(workspaceRoot));
+    if (!normalizedPath || !normalizedWorkspaceRoot)
+        return false;
+    return (normalizedPath === normalizedWorkspaceRoot ||
+        normalizedPath.startsWith(`${normalizedWorkspaceRoot}/`));
+}
+function looksLikeRuntimeNarrativeNoise(content) {
+    const normalized = normalizePathLike(content);
+    if (!normalized)
+        return false;
+    const tokens = [
+        "qwen code sdk",
+        "qwen sdk",
+        "sdk cli executable",
+        "cli executable",
+        ".trae",
+        "trae/extensions",
+        "extension directory",
+        "extension runtime",
+        "local installation",
+        "windows file path",
+        "cli interface",
+        "confirm the installation",
+        "sdk's location",
+        "sdk location",
+        "check where this file is located",
+        "troubleshoot an issue related to the sdk",
+    ];
+    const tokenHits = tokens.reduce((count, token) => (normalized.includes(token) ? count + 1 : count), 0);
+    if (tokenHits >= 2)
+        return true;
+    if (normalized.includes(".trae") && normalized.includes("qwen"))
+        return true;
+    if (normalized.includes("extension directory") && normalized.includes("qwen"))
+        return true;
+    if (normalized.includes("windows file path") && normalized.includes("qwen"))
+        return true;
+    if (normalized.includes("this appears to be the location of") &&
+        /\b(qwen|sdk|cli)\b/.test(normalized)) {
+        return true;
+    }
+    if (/\bthe user (might|may|could|seems to|appears to)\b/.test(normalized) &&
+        /\b(path|sdk|cli|installation|environment)\b/.test(normalized)) {
+        return true;
+    }
+    if (normalized.includes("since they included this path"))
+        return true;
+    if (normalized.includes("check if the sdk is properly installed"))
+        return true;
+    if (normalized.includes("checking the sdk's location") || normalized.includes("checking the sdk location")) {
+        return true;
+    }
+    return false;
+}
 function looksLikeRuntimeNoise(input) {
     const normalized = normalizePathLike(input.content);
     if (!normalized)
         return false;
-    const normalizedWorkspaceRoot = normalizePathLike(input.workspaceRoot);
-    if (normalizedWorkspaceRoot && normalized.includes(normalizedWorkspaceRoot)) {
-        return false;
-    }
+    const executablePathRaw = String(input.qwenExecutablePath || "").trim();
     const executablePath = normalizePathLike(input.qwenExecutablePath);
-    if (executablePath && normalized.includes(executablePath)) {
+    if (executablePath &&
+        looksLikePath(executablePathRaw) &&
+        normalized.includes(executablePath) &&
+        !isPathInsideWorkspace(executablePathRaw, input.workspaceRoot)) {
         return true;
     }
-    return (normalized.includes("@qwen-code/sdk/dist/cli/cli.js") ||
+    return (looksLikeRuntimeNarrativeNoise(input.content) ||
+        normalized.includes("@qwen-code/sdk/dist/cli/cli.js") ||
         normalized.includes("playgroundai.xpersona-playground") ||
         normalized.includes("/.trae/extensions/"));
 }
@@ -152,6 +215,8 @@ function buildExecutionLane(input) {
         "- Prefer file paths, symbols, and concrete next actions over abstract prose.",
         "- Suppress long generic reasoning unless the user explicitly asked for explanation.",
         "- Ignore stale extension-bundle or SDK CLI paths unless the user explicitly asks about the extension internals.",
+        "- If the user quotes prior assistant chatter about SDK locations, installation checks, CLI executables, or runtime folders, treat that as a context-loss bug report and pivot back to the active workspace files.",
+        "- When in doubt, explain the likely target file or active editor content instead of speculating about SDK installation state.",
     ];
     if (input.preview.intent === "change") {
         lines.push("- For code changes, show a brief patch plan before making edits.");

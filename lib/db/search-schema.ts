@@ -19,6 +19,12 @@ const vector1536 = customType<{ data: string; driverData: string }>({
   },
 });
 
+const tsvector = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return "tsvector";
+  },
+});
+
 /** Search engine: crawled AI agents from GitHub, etc. */
 export const agents = pgTable(
   "agents",
@@ -638,5 +644,117 @@ export const taxonomyPageContent = pgTable(
     index("taxonomy_page_content_type_idx").on(table.type),
     index("taxonomy_page_content_quality_idx").on(table.qualityScore),
     index("taxonomy_page_content_status_idx").on(table.status),
+  ]
+);
+
+/** Multi-vertical searchable documents (agents, artifacts, web pages/chunks). */
+export const searchDocuments = pgTable(
+  "search_documents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    docType: varchar("doc_type", { length: 24 }).notNull(),
+    source: varchar("source", { length: 64 }).notNull(),
+    sourceId: varchar("source_id", { length: 512 }).notNull(),
+    canonicalUrl: text("canonical_url").notNull(),
+    domain: varchar("domain", { length: 255 }).notNull(),
+    title: text("title"),
+    snippet: text("snippet"),
+    bodyText: text("body_text").notNull(),
+    bodyTsv: tsvector("body_tsv").notNull(),
+    urlNormHash: varchar("url_norm_hash", { length: 64 }).notNull(),
+    contentHash: varchar("content_hash", { length: 64 }).notNull(),
+    simhash64: varchar("simhash64", { length: 16 }),
+    qualityScore: integer("quality_score").notNull().default(0),
+    safetyScore: integer("safety_score").notNull().default(0),
+    freshnessScore: integer("freshness_score").notNull().default(0),
+    confidenceScore: integer("confidence_score").notNull().default(0),
+    isPublic: boolean("is_public").notNull().default(true),
+    indexedAt: timestamp("indexed_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("search_documents_url_content_uniq_idx").on(table.urlNormHash, table.contentHash),
+    index("search_documents_doc_type_idx").on(table.docType),
+    index("search_documents_source_idx").on(table.source),
+    index("search_documents_domain_idx").on(table.domain),
+    index("search_documents_indexed_at_idx").on(table.indexedAt),
+    index("search_documents_quality_idx").on(table.qualityScore),
+    index("search_documents_confidence_idx").on(table.confidenceScore),
+    index("search_documents_public_idx").on(table.isPublic),
+  ]
+);
+
+/** Durable staged crawl queue for seed/fetch/extract/index jobs. */
+export const crawlTasks = pgTable(
+  "crawl_tasks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskType: varchar("task_type", { length: 24 }).notNull(),
+    taskKey: varchar("task_key", { length: 128 }).notNull(),
+    payloadJson: jsonb("payload_json").$type<Record<string, unknown>>().notNull().default({}),
+    status: varchar("status", { length: 20 }).notNull().default("PENDING"),
+    priority: integer("priority").notNull().default(0),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(6),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    leaseOwner: varchar("lease_owner", { length: 96 }),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("crawl_tasks_task_key_idx").on(table.taskKey),
+    index("crawl_tasks_status_idx").on(table.status),
+    index("crawl_tasks_type_idx").on(table.taskType),
+    index("crawl_tasks_next_attempt_idx").on(table.nextAttemptAt),
+    index("crawl_tasks_priority_idx").on(table.priority),
+    index("crawl_tasks_lease_owner_idx").on(table.leaseOwner),
+    index("crawl_tasks_lease_exp_idx").on(table.leaseExpiresAt),
+  ]
+);
+
+/** Per-domain crawl policy controls (allow/block + throttling/cooldown). */
+export const crawlDomainPolicies = pgTable(
+  "crawl_domain_policies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    domain: varchar("domain", { length: 255 }).notNull().unique(),
+    mode: varchar("mode", { length: 16 }).notNull().default("ALLOW"),
+    rpmLimit: integer("rpm_limit").notNull().default(30),
+    cooldownUntil: timestamp("cooldown_until", { withTimezone: true }),
+    reason: text("reason"),
+    updatedBy: varchar("updated_by", { length: 96 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("crawl_domain_policies_domain_idx").on(table.domain),
+    index("crawl_domain_policies_mode_idx").on(table.mode),
+    index("crawl_domain_policies_cooldown_idx").on(table.cooldownUntil),
+  ]
+);
+
+/** Aggregated per-domain fetch health and recent failure profile. */
+export const crawlDomainStats = pgTable(
+  "crawl_domain_stats",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    domain: varchar("domain", { length: 255 }).notNull().unique(),
+    successCount: integer("success_count").notNull().default(0),
+    failCount: integer("fail_count").notNull().default(0),
+    timeoutCount: integer("timeout_count").notNull().default(0),
+    lastStatus: varchar("last_status", { length: 20 }),
+    lastError: text("last_error"),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("crawl_domain_stats_domain_idx").on(table.domain),
+    index("crawl_domain_stats_fail_idx").on(table.failCount),
+    index("crawl_domain_stats_updated_idx").on(table.updatedAt),
+    index("crawl_domain_stats_last_seen_idx").on(table.lastSeenAt),
   ]
 );

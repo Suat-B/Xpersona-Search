@@ -899,6 +899,11 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
             task: text,
             workspaceRoot,
             executablePath: getQwenExecutablePath() || null,
+            workspaceTargets: [
+              fullPreview.activeFile || "",
+              ...fullPreview.resolvedFiles,
+              ...fullPreview.selectedFiles,
+            ],
           }).trim();
           if (!next) return;
           this.upsertMessage(assistantMessageId, "assistant", next);
@@ -926,6 +931,11 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
           task: text,
           workspaceRoot,
           executablePath: getQwenExecutablePath() || null,
+          workspaceTargets: [
+            fullPreview.activeFile || "",
+            ...fullPreview.resolvedFiles,
+            ...fullPreview.selectedFiles,
+          ],
         })
       );
       this.state.followUpActions = buildFollowUpActions({
@@ -996,7 +1006,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     this.postState();
 
     try {
-      const { context, retrievalHints } = await this.contextCollector.collect(
+      const { context, retrievalHints, preview } = await this.contextCollector.collect(
         text,
         {
           recentTouchedPaths: this.actionRunner.getRecentTouchedPaths(),
@@ -1056,7 +1066,20 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         this.state.mode === "plan" && envelope.plan
           ? [envelope.final || "Plan ready.", "", formatPlan(envelope.plan)].filter(Boolean).join("\n")
           : envelope.final || "No final response text was returned.";
-      this.appendMessage("assistant", assistantBody);
+      this.appendMessage(
+        "assistant",
+        sanitizeQwenAssistantOutput({
+          text: assistantBody,
+          task: text,
+          workspaceRoot: getWorkspaceRootPath(),
+          executablePath: getQwenExecutablePath() || null,
+          workspaceTargets: [
+            preview.activeFile || "",
+            ...preview.resolvedFiles,
+            ...preview.selectedFiles,
+          ],
+        })
+      );
 
       if (envelope.completionStatus === "incomplete" && envelope.missingRequirements?.length) {
         this.appendMessage("system", `Missing: ${envelope.missingRequirements.join(", ")}`);

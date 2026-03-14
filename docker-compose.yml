@@ -1,6 +1,8 @@
 # Local PostgreSQL and Redis for xpersona. Start: docker compose up -d
 # .env.local DATABASE_URL should be: postgresql://postgres:postgres@localhost:5432/xpersona
 # ANS rate limiting uses Upstash Redis (REST) in production; Redis here for local stack parity.
+# 12-worker crawl topology:
+# docker compose up -d --scale crawl-task-seed-frontier=2 --scale crawl-task-fetch-extract=8 --scale crawl-task-index=2
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -32,6 +34,49 @@ services:
       - .env.local
     environment:
       CRAWL_GITHUB_IN_CRON: "0"
+    volumes:
+      - ./:/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  crawl-task-seed-frontier:
+    image: node:22-alpine
+    restart: unless-stopped
+    working_dir: /workspace
+    command: sh -lc "npm ci && npm run crawl:tasks:seed"
+    env_file:
+      - .env.local
+    volumes:
+      - ./:/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  crawl-task-fetch-extract:
+    image: node:22-alpine
+    restart: unless-stopped
+    working_dir: /workspace
+    command: sh -lc "npm ci && npm run crawl:tasks:fetch-extract"
+    env_file:
+      - .env.local
+    environment:
+      CRAWL_TASK_FETCH_EXTRACT_CONCURRENCY: "16"
+    volumes:
+      - ./:/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  crawl-task-index:
+    image: node:22-alpine
+    restart: unless-stopped
+    working_dir: /workspace
+    command: sh -lc "npm ci && npm run crawl:tasks:index"
+    env_file:
+      - .env.local
+    environment:
+      CRAWL_TASK_INDEX_CONCURRENCY: "8"
     volumes:
       - ./:/workspace
     depends_on:
