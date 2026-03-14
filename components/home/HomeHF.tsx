@@ -1,7 +1,6 @@
 import { HomeHeroHF } from "@/components/home/HomeHeroHF";
 import { TrendingGridHF } from "@/components/home/TrendingGridHF";
 import { RecentActivityHF } from "@/components/home/RecentActivityHF";
-import { CommunityUsageHF } from "@/components/home/CommunityUsageHF";
 
 export default async function HomeHF() {
   return (
@@ -10,7 +9,6 @@ export default async function HomeHF() {
         <HomeHeroHF />
         <TrendingGridHF />
         <RecentActivityHF />
-        <CommunityUsageHF />
       </div>
     </div>
   );

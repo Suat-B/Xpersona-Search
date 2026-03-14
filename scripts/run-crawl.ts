@@ -83,6 +83,11 @@ const limits = scale250k
     huggingface: 50000,
     docker: 5000,
     agentscape: 1000,
+    googleCloud: 1000,
+    difyMarketplace: 2000,
+    n8nTemplates: 3000,
+    langflowStarterProjects: 1000,
+    nacosRegistry: 1000,
     replicate: 5000,
     awesomeLists: 10000,
     smithery: 5000,
@@ -105,6 +110,11 @@ const limits = scale250k
       huggingface: 20000,
       docker: 2000,
       agentscape: 500,
+      googleCloud: 500,
+      difyMarketplace: 1000,
+      n8nTemplates: 1500,
+      langflowStarterProjects: 500,
+      nacosRegistry: 500,
       replicate: 3000,
       awesomeLists: 5000,
       smithery: 2000,
@@ -126,6 +136,11 @@ const limits = scale250k
       huggingface: 2000,
       docker: 300,
       agentscape: 200,
+      googleCloud: 200,
+      difyMarketplace: 400,
+      n8nTemplates: 600,
+      langflowStarterProjects: 200,
+      nacosRegistry: 200,
       replicate: 500,
       awesomeLists: 2000,
       smithery: 500,
@@ -380,6 +395,56 @@ async function main() {
       fn: withStartLog("AGENTSCAPE", async () => {
         const { crawlAgentScape } = await import("@/lib/search/crawlers/agentscape");
         return crawlAgentScape(limits.agentscape);
+      }),
+    });
+  }
+  if (shouldRun("GOOGLE_CLOUD_MARKETPLACE")) {
+    tasks.push({
+      source: "GOOGLE_CLOUD_MARKETPLACE",
+      bucket: "registry",
+      fn: withStartLog("GOOGLE_CLOUD_MARKETPLACE", async () => {
+        const { crawlGoogleCloudMarketplace } = await import("@/lib/search/crawlers/google-cloud-marketplace");
+        return crawlGoogleCloudMarketplace(limits.googleCloud);
+      }),
+    });
+  }
+  if (shouldRun("DIFY_MARKETPLACE")) {
+    tasks.push({
+      source: "DIFY_MARKETPLACE",
+      bucket: "registry",
+      fn: withStartLog("DIFY_MARKETPLACE", async () => {
+        const { crawlDifyMarketplace } = await import("@/lib/search/crawlers/dify-marketplace");
+        return crawlDifyMarketplace(limits.difyMarketplace);
+      }),
+    });
+  }
+  if (shouldRun("N8N_TEMPLATES")) {
+    tasks.push({
+      source: "N8N_TEMPLATES",
+      bucket: "registry",
+      fn: withStartLog("N8N_TEMPLATES", async () => {
+        const { crawlN8nTemplates } = await import("@/lib/search/crawlers/n8n-templates");
+        return crawlN8nTemplates(limits.n8nTemplates);
+      }),
+    });
+  }
+  if (shouldRun("LANGFLOW_STARTER_PROJECTS")) {
+    tasks.push({
+      source: "LANGFLOW_STARTER_PROJECTS",
+      bucket: "registry",
+      fn: withStartLog("LANGFLOW_STARTER_PROJECTS", async () => {
+        const { crawlLangflowStarterProjects } = await import("@/lib/search/crawlers/langflow-starter-projects");
+        return crawlLangflowStarterProjects(limits.langflowStarterProjects);
+      }),
+    });
+  }
+  if (shouldRun("NACOS_AGENT_REGISTRY")) {
+    tasks.push({
+      source: "NACOS_AGENT_REGISTRY",
+      bucket: "registry",
+      fn: withStartLog("NACOS_AGENT_REGISTRY", async () => {
+        const { crawlNacosAgentRegistry } = await import("@/lib/search/crawlers/nacos-agent-registry");
+        return crawlNacosAgentRegistry(limits.nacosRegistry);
       }),
     });
   }

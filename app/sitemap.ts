@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agents } from "@/lib/db/schema";
 import { USE_CASES, sourceSlugFromValue } from "@/lib/agents/hub-data";
+import { normalizeCapabilityToken } from "@/lib/search/capability-tokens";
 
 const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
 const MAX_AGENT_URLS = 50000;
@@ -170,7 +171,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }));
 
   const capabilityEntries: MetadataRoute.Sitemap = CAPABILITY_QUERIES.map((capability) => ({
-    url: `${baseUrl}/search?capabilities=${encodeURIComponent(capability)}`,
+    url: `${baseUrl}/search?capabilities=${encodeURIComponent(normalizeCapabilityToken(capability))}`,
     changeFrequency: "daily",
     priority: 0.86,
     lastModified: new Date(),
@@ -185,7 +186,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const protocolCapabilityEntries: MetadataRoute.Sitemap = SEARCH_PROTOCOLS.flatMap((protocol) =>
     CAPABILITY_QUERIES.map((capability) => ({
-      url: `${baseUrl}/search?protocols=${encodeURIComponent(protocol)}&capabilities=${encodeURIComponent(capability)}`,
+      url: `${baseUrl}/search?protocols=${encodeURIComponent(protocol)}&capabilities=${encodeURIComponent(normalizeCapabilityToken(capability))}`,
       changeFrequency: "daily",
       priority: 0.88,
       lastModified: new Date(),

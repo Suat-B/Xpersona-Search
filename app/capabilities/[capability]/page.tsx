@@ -3,18 +3,12 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { AgentGridSection } from "@/components/agent/AgentGridSection";
 import { getAgentsByCapability } from "@/lib/agents/hub-data";
+import { capabilityTokenToLabel } from "@/lib/search/capability-tokens";
 
 const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
 
-function humanizeCapabilitySlug(slug: string): string {
-  const normalized = slug.replace(/-/g, " ").trim().toLowerCase();
-  if (!normalized) return slug;
-  if (normalized === "pdf") return "PDF";
-  return normalized.replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
 async function resolvePageData(capabilitySlug: string) {
-  const capabilityName = humanizeCapabilitySlug(capabilitySlug);
+  const capabilityName = capabilityTokenToLabel(capabilitySlug);
   const agents = await getAgentsByCapability(capabilityName, 36);
   return { capabilityName, agents };
 }

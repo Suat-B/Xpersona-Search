@@ -44,6 +44,7 @@ export const agents = pgTable(
 
     // Capabilities
     capabilities: jsonb("capabilities").$type<string[]>().default([]),
+    capabilityTokens: jsonb("capability_tokens").$type<string[]>().default([]),
     protocols: jsonb("protocols").$type<string[]>().default([]),
     languages: jsonb("languages").$type<string[]>().default([]),
 

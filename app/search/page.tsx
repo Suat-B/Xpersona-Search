@@ -2,6 +2,10 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { SearchLanding } from "@/components/home/SearchLanding";
 import { ANSMinimalFooter } from "@/components/home/ANSMinimalFooter";
+import {
+  capabilityTokenToLabel,
+  parseCapabilityParam,
+} from "@/lib/search/capability-tokens";
 
 const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
 
@@ -27,7 +31,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const resolvedParams = (await searchParams) ?? {};
   const protocols = normalizeList(resolvedParams.protocols);
-  const capabilities = normalizeList(resolvedParams.capabilities);
+  const capabilityTokens = parseCapabilityParam(resolvedParams.capabilities);
+  const capabilities = capabilityTokens.map(capabilityTokenToLabel);
   const query = (Array.isArray(resolvedParams.q) ? resolvedParams.q[0] : resolvedParams.q ?? "").trim();
 
   const protocolLabel = protocols
@@ -54,7 +59,7 @@ export async function generateMetadata({
 
   const canonicalParams = new URLSearchParams();
   if (protocols.length > 0) canonicalParams.set("protocols", protocols.join(","));
-  if (capabilities.length > 0) canonicalParams.set("capabilities", capabilities.join(","));
+  if (capabilityTokens.length > 0) canonicalParams.set("capabilities", capabilityTokens.join(","));
   if (query) canonicalParams.set("q", query);
   const canonical = canonicalParams.toString()
     ? `${baseUrl}/search?${canonicalParams.toString()}`

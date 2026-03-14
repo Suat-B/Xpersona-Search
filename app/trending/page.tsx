@@ -2,34 +2,39 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { AgentGridSection } from "@/components/agent/AgentGridSection";
 import { getTrendingAgents } from "@/lib/agents/hub-data";
+import {
+  capabilityTokenToLabel,
+  normalizeCapabilityToken,
+} from "@/lib/search/capability-tokens";
 
 const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
 
 type CapabilitySummary = { name: string; count: number };
 
 function toCapabilitySlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
+  return normalizeCapabilityToken(name);
 }
 
 function buildTopCapabilities(
   agents: Array<{ capabilities: string[] }>,
   limit: number
 ): CapabilitySummary[] {
-  const counts = new Map<string, number>();
+  const counts = new Map<string, { count: number; label: string }>();
   for (const agent of agents) {
     for (const cap of agent.capabilities) {
-      const key = cap.trim();
+      const key = normalizeCapabilityToken(cap);
       if (!key) continue;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      const current = counts.get(key);
+      counts.set(key, {
+        count: (current?.count ?? 0) + 1,
+        label: current?.label ?? capabilityTokenToLabel(key),
+      });
     }
   }
   return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
     .slice(0, limit)
-    .map(([name, count]) => ({ name, count }));
+    .map(([name, value]) => ({ name: value.label, count: value.count }));
 }
 
 export const metadata: Metadata = {

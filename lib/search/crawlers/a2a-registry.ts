@@ -48,7 +48,7 @@ export async function crawlA2ARegistry(
   const [job] = await db
     .insert(crawlJobs)
     .values({
-      source: "GITHUB_A2A",
+      source: "A2A_REGISTRY",
       status: "RUNNING",
       startedAt: new Date(),
     })
@@ -121,7 +121,7 @@ export async function crawlA2ARegistry(
 
         const agentData = {
           sourceId,
-          source: "GITHUB_A2A" as const,
+          source: "A2A_REGISTRY" as const,
           name,
           slug,
           description,
@@ -132,6 +132,13 @@ export async function crawlA2ARegistry(
           languages: [] as string[],
           agentCard: card as unknown as Record<string, unknown>,
           githubData: null,
+          openclawData: {
+            discoverySignals: {
+              hasManifest: true,
+              supportsA2a: true,
+              repoLinked: false,
+            },
+          } as Record<string, unknown>,
           readme: description,
           safetyScore: 80,
           popularityScore: 50,
@@ -150,6 +157,7 @@ export async function crawlA2ARegistry(
           url: agentData.url,
           homepage: agentData.homepage,
           agentCard: agentData.agentCard,
+          openclawData: agentData.openclawData,
           readme: agentData.readme,
           lastCrawledAt: agentData.lastCrawledAt,
           nextCrawlAt: agentData.nextCrawlAt,

@@ -1,5 +1,7 @@
 "use client";
 
+import React from "react";
+
 type Tier = "NONE" | "BRONZE" | "SILVER" | "GOLD";
 
 interface Props {

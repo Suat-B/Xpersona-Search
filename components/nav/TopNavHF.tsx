@@ -221,12 +221,12 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
 
   return (
     <header
-      className={`scroll-stable-layer sticky top-0 z-50 w-full overflow-hidden ${headerSurfaceClass}`}
+      className={`scroll-stable-layer sticky top-0 z-50 w-full overflow-visible ${headerSurfaceClass}`}
     >
-      <div className="mx-auto flex h-16 w-full max-w-[1260px] items-center gap-4 px-4 sm:px-6">
+      <div className="mx-auto flex h-16 w-full max-w-[1260px] items-center gap-2 px-4 sm:gap-4 sm:px-6">
         <Link href="/" className="flex flex-none items-center gap-2">
           {isSearchPage ? (
-            <span className="text-xl font-black tracking-tight text-black">Xpersona</span>
+            <span className="text-lg font-black tracking-tight text-black sm:text-xl">Xpersona</span>
           ) : (
             <Image
               src="/xpersona-logo-1.png"
@@ -239,7 +239,7 @@ export function TopNavHF({ isAuthenticated = false }: TopNavHFProps) {
           )}
         </Link>
 
-        <div className="flex-1 max-w-md">
+        <div className="min-w-0 flex-1 max-w-md">
           <GlobalSearchBar />
         </div>
 

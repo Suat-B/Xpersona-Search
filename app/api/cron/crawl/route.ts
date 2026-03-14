@@ -15,6 +15,11 @@ import { crawlA2ARegistry } from "@/lib/search/crawlers/a2a-registry";
 import { crawlNpmPackages } from "@/lib/search/crawlers/npm";
 import { crawlAwesomeLists } from "@/lib/search/crawlers/awesome-lists";
 import { crawlSmithery } from "@/lib/search/crawlers/smithery";
+import { crawlGoogleCloudMarketplace } from "@/lib/search/crawlers/google-cloud-marketplace";
+import { crawlDifyMarketplace } from "@/lib/search/crawlers/dify-marketplace";
+import { crawlN8nTemplates } from "@/lib/search/crawlers/n8n-templates";
+import { crawlLangflowStarterProjects } from "@/lib/search/crawlers/langflow-starter-projects";
+import { crawlNacosAgentRegistry } from "@/lib/search/crawlers/nacos-agent-registry";
 import type { CrawlMode, CrawlRuntimeOptions } from "@/lib/search/crawlers/crawler-mode";
 
 export const maxDuration = 300;
@@ -108,6 +113,41 @@ export async function GET(req: NextRequest) {
       source: "AGENTSCAPE",
       bucket: "registry",
       fn: () => crawlAgentScape(200),
+    });
+  }
+  if (runSource("GOOGLE_CLOUD_MARKETPLACE")) {
+    tasks.push({
+      source: "GOOGLE_CLOUD_MARKETPLACE",
+      bucket: "registry",
+      fn: () => crawlGoogleCloudMarketplace(200),
+    });
+  }
+  if (runSource("DIFY_MARKETPLACE")) {
+    tasks.push({
+      source: "DIFY_MARKETPLACE",
+      bucket: "registry",
+      fn: () => crawlDifyMarketplace(400),
+    });
+  }
+  if (runSource("N8N_TEMPLATES")) {
+    tasks.push({
+      source: "N8N_TEMPLATES",
+      bucket: "registry",
+      fn: () => crawlN8nTemplates(500),
+    });
+  }
+  if (runSource("LANGFLOW_STARTER_PROJECTS")) {
+    tasks.push({
+      source: "LANGFLOW_STARTER_PROJECTS",
+      bucket: "registry",
+      fn: () => crawlLangflowStarterProjects(200),
+    });
+  }
+  if (runSource("NACOS_AGENT_REGISTRY")) {
+    tasks.push({
+      source: "NACOS_AGENT_REGISTRY",
+      bucket: "registry",
+      fn: () => crawlNacosAgentRegistry(200),
     });
   }
   if (runSource("SMITHERY")) {

@@ -32,6 +32,11 @@ interface Overrides {
   capabilities?: string[];
   protocols?: string[];
   readme?: string;
+  docsUrl?: string | null;
+  demoUrl?: string | null;
+  supportUrl?: string | null;
+  pricingUrl?: string | null;
+  statusUrl?: string | null;
   customLinks?: CustomLink[];
 }
 
@@ -52,6 +57,78 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: "publish", label: "Publish" },
 ];
 
+const HTML_SNIPPETS = [
+  {
+    label: "Hero brief",
+    value: `<section class="dossier-hero">
+  <h2>Why this agent exists</h2>
+  <p>Give evaluators the fastest possible explanation of the workload, trust posture, and ideal deployment shape.</p>
+</section>`,
+  },
+  {
+    label: "Benchmark panel",
+    value: `<section class="metric-panel">
+  <h3>Benchmarks</h3>
+  <div id="benchmark-output">Loading dossier benchmarks...</div>
+</section>`,
+  },
+  {
+    label: "Demo gallery",
+    value: `<section class="demo-grid">
+  <article class="demo-card">Screenshot or workflow step 1</article>
+  <article class="demo-card">Screenshot or workflow step 2</article>
+</section>`,
+  },
+];
+
+const CSS_SNIPPETS = [
+  {
+    label: "Starter theme",
+    value: `.dossier-hero, .metric-panel, .demo-card {
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 20px;
+  padding: 20px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+  color: #f5f5f5;
+}
+
+.demo-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}`,
+  },
+];
+
+const JS_SNIPPETS = [
+  {
+    label: "Fetch dossier",
+    value: `async function loadDossier() {
+  const slug = XpersonaBridge.meta.slug;
+  const res = await XpersonaBridge.fetch(\`/api/v1/agents/\${slug}/dossier\`);
+  const payload = JSON.parse(res.body);
+  const target = document.getElementById("benchmark-output");
+  if (!target) return;
+  target.textContent = payload.benchmarks.suites.length
+    ? payload.benchmarks.suites.map((suite) => \`\${suite.suiteName}: \${suite.score}\`).join(" | ")
+    : payload.benchmarks.evidence.emptyReason ?? "No benchmark data";
+}
+
+loadDossier();`,
+  },
+  {
+    label: "Fetch trust",
+    value: `async function loadTrust() {
+  const slug = XpersonaBridge.meta.slug;
+  const res = await XpersonaBridge.fetch(\`/api/v1/agents/\${slug}/trust\`);
+  const payload = JSON.parse(res.body);
+  console.log("trust payload", payload);
+}
+
+loadTrust();`,
+  },
+];
+
 export default function ManagePage() {
   const { slug } = useParams<{ slug: string }>();
   const router = useRouter();
@@ -70,6 +147,11 @@ export default function ManagePage() {
   const [homepage, setHomepage] = useState("");
   const [capabilities, setCapabilities] = useState("");
   const [readme, setReadme] = useState("");
+  const [docsUrl, setDocsUrl] = useState("");
+  const [demoUrl, setDemoUrl] = useState("");
+  const [supportUrl, setSupportUrl] = useState("");
+  const [pricingUrl, setPricingUrl] = useState("");
+  const [statusUrl, setStatusUrl] = useState("");
   const [customLinks, setCustomLinks] = useState<CustomLink[]>([]);
   const [newLinkLabel, setNewLinkLabel] = useState("");
   const [newLinkUrl, setNewLinkUrl] = useState("");
@@ -141,6 +223,11 @@ export default function ManagePage() {
         setHomepage(o.homepage ?? manageData.agent.homepage ?? "");
         setCapabilities((o.capabilities ?? manageData.agent.capabilities ?? []).join(", "));
         setReadme(o.readme ?? manageData.agent.readme ?? "");
+        setDocsUrl(o.docsUrl ?? "");
+        setDemoUrl(o.demoUrl ?? "");
+        setSupportUrl(o.supportUrl ?? "");
+        setPricingUrl(o.pricingUrl ?? "");
+        setStatusUrl(o.statusUrl ?? "");
         setCustomLinks(o.customLinks ?? []);
 
         if (customRes.ok) {
@@ -175,6 +262,11 @@ export default function ManagePage() {
       homepage: homepage || null,
       capabilities: capsArray,
       readme: readme || undefined,
+      docsUrl: docsUrl || null,
+      demoUrl: demoUrl || null,
+      supportUrl: supportUrl || null,
+      pricingUrl: pricingUrl || null,
+      statusUrl: statusUrl || null,
       customLinks,
     };
 
@@ -199,7 +291,20 @@ export default function ManagePage() {
     } finally {
       setSavingStructured(false);
     }
-  }, [slug, description, homepage, capabilities, readme, customLinks, redirectToUpgradeIfNeeded]);
+  }, [
+    slug,
+    description,
+    homepage,
+    capabilities,
+    readme,
+    docsUrl,
+    demoUrl,
+    supportUrl,
+    pricingUrl,
+    statusUrl,
+    customLinks,
+    redirectToUpgradeIfNeeded,
+  ]);
 
   const saveCustomization = useCallback(
     async (status: "DRAFT" | "PUBLISHED" | "DISABLED") => {
@@ -292,6 +397,18 @@ export default function ManagePage() {
 
   const removeLink = (index: number) => {
     setCustomLinks(customLinks.filter((_, i) => i !== index));
+  };
+
+  const appendSnippet = (kind: "html" | "css" | "js", value: string) => {
+    if (kind === "html") {
+      setCustomHtml((current) => `${current}${current.trim() ? "\n\n" : ""}${value}`);
+      return;
+    }
+    if (kind === "css") {
+      setCustomCss((current) => `${current}${current.trim() ? "\n\n" : ""}${value}`);
+      return;
+    }
+    setCustomJs((current) => `${current}${current.trim() ? "\n\n" : ""}${value}`);
   };
 
   if (loading) {
@@ -427,6 +544,58 @@ export default function ManagePage() {
                     className={`${inputClass} resize-y min-h-[220px] font-mono text-xs`}
                   />
                 </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className={labelClass}>Docs URL</label>
+                    <input
+                      type="url"
+                      value={docsUrl}
+                      onChange={(e) => setDocsUrl(e.target.value)}
+                      className={inputClass}
+                      placeholder="https://docs.example.com"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Demo URL</label>
+                    <input
+                      type="url"
+                      value={demoUrl}
+                      onChange={(e) => setDemoUrl(e.target.value)}
+                      className={inputClass}
+                      placeholder="https://demo.example.com"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Support URL</label>
+                    <input
+                      type="url"
+                      value={supportUrl}
+                      onChange={(e) => setSupportUrl(e.target.value)}
+                      className={inputClass}
+                      placeholder="https://support.example.com"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Pricing URL</label>
+                    <input
+                      type="url"
+                      value={pricingUrl}
+                      onChange={(e) => setPricingUrl(e.target.value)}
+                      className={inputClass}
+                      placeholder="https://example.com/pricing"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Status URL</label>
+                    <input
+                      type="url"
+                      value={statusUrl}
+                      onChange={(e) => setStatusUrl(e.target.value)}
+                      className={inputClass}
+                      placeholder="https://status.example.com"
+                    />
+                  </div>
+                </div>
                 <div>
                   <label className={labelClass}>Custom Links</label>
                   {customLinks.length > 0 && (
@@ -444,9 +613,10 @@ export default function ManagePage() {
                           </span>
                           <button
                             onClick={() => removeLink(i)}
+                            aria-label={`Remove ${link.label}`}
                             className="text-[var(--text-quaternary)] hover:text-[#ff453a] transition-colors"
                           >
-                            Ã—
+                            x
                           </button>
                         </div>
                       ))}
@@ -483,11 +653,37 @@ export default function ManagePage() {
                 >
                   {savingStructured ? "Saving..." : "Save Structured Changes"}
                 </button>
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4 text-sm text-[var(--text-secondary)]">
+                  The public dossier now exposes `/api/v1/agents/{slug}/dossier`, `/trust`, `/contract`, and `/snapshot`.
+                  Add docs, demo, support, pricing, and status links here so evaluators can reach the official resources directly even before they open your custom page.
+                </div>
               </>
             )}
 
             {(activeTab === "html" || activeTab === "css" || activeTab === "js") && (
               <>
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+                    Starter snippets
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {(activeTab === "html"
+                      ? HTML_SNIPPETS
+                      : activeTab === "css"
+                        ? CSS_SNIPPETS
+                        : JS_SNIPPETS
+                    ).map((snippet) => (
+                      <button
+                        key={snippet.label}
+                        type="button"
+                        onClick={() => appendSnippet(activeTab, snippet.value)}
+                        className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 py-1.5 text-xs font-semibold text-[var(--text-secondary)] hover:border-[var(--accent-heart)]/40"
+                      >
+                        Insert {snippet.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div>
                   <label className={labelClass}>
                     {activeTab === "html"
@@ -516,6 +712,9 @@ export default function ManagePage() {
                           : "XpersonaBridge.track('view_loaded');"
                     }
                   />
+                </div>
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4 text-sm text-[var(--text-secondary)]">
+                  Use `XpersonaBridge.fetch("/api/v1/agents/${slug}/dossier")` for the full technical dossier, or swap in `/trust`, `/contract`, and `/snapshot` for smaller payloads. The system evidence rail always stays visible under your custom content, so use this area for the owner narrative, demo surface, or richer technical callouts.
                 </div>
                 <div className="flex flex-wrap gap-3">
                   <button

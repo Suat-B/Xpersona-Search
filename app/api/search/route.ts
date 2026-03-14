@@ -59,6 +59,12 @@ import {
   buildFallbackContentMetaFromSearchResult,
   getEditorialContentMetaMap,
 } from "@/lib/agents/editorial-content";
+import { parseCapabilityParam } from "@/lib/search/capability-tokens";
+import {
+  canonicalSourceSql,
+  expandSourceBuckets,
+  REGISTRY_SOURCES,
+} from "@/lib/search/source-taxonomy";
 
 let hasSearchClaimColumnsCache: boolean | null = null;
 let hasSearchClicksTableCache: boolean | null = null;
@@ -75,25 +81,6 @@ type SearchMatchMode =
   | "semantic"
   | "filter_only_fallback"
   | "global_fallback";
-
-const SOURCE_BUCKETS: Record<string, string[]> = {
-  GITHUB: [
-    "GITHUB_REPOS",
-    "GITHUB_MCP",
-    "GITHUB_OPENCLEW",
-    "CREWAI",
-    "CLAWHUB",
-    "CURATED_SEEDS",
-    "AWESOME_LISTS",
-    "HOMEPAGE",
-  ],
-  REGISTRY: ["MCP_REGISTRY", "A2A_REGISTRY", "SMITHERY", "AGENTSCAPE"],
-  WEB: ["WEB", "WEB_CRAWL", "HOMEPAGE"],
-};
-
-function expandSourceBuckets(values: string[]): string[] {
-  return values.flatMap((v) => SOURCE_BUCKETS[v] ?? [v]);
-}
 
 function escapeLike(s: string): string {
   return s.replace(/[%_\\]/g, (c) => `\\${c}`);
@@ -139,7 +126,7 @@ const SearchSchema = z.object({
   capabilities: z
     .string()
     .optional()
-    .transform((s) => (s ? s.split(",").filter(Boolean) : [])),
+    .transform((s) => parseCapabilityParam(s)),
   minSafety: z.coerce.number().min(0).max(100).optional(),
   minRank: z.coerce.number().min(0).max(100).optional(),
   sort: z.enum(["rank", "safety", "popularity", "freshness"]).default("rank"),
@@ -235,6 +222,40 @@ const SearchSchema = z.object({
 
 type SearchParams = z.infer<typeof SearchSchema>;
 
+function buildCapabilityTokenMatchCondition(tokens: string[]): SQL {
+  return sql`EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements_text(
+      CASE WHEN jsonb_typeof(coalesce(${agents.capabilities}, '[]'::jsonb)) = 'array'
+           THEN ${agents.capabilities} ELSE '[]'::jsonb END
+    ) AS cap
+    WHERE lower(trim(both '-' from regexp_replace(cap, '[^a-zA-Z0-9]+', '-', 'g'))) = ANY(ARRAY[${sql.join(
+      tokens.map((token) => sql`${token}`),
+      sql`, `
+    )}]::text[])
+  )`;
+}
+
+function buildCapabilityPresenceCondition(): SQL {
+  return sql`EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements_text(
+      CASE WHEN jsonb_typeof(coalesce(${agents.capabilities}, '[]'::jsonb)) = 'array'
+           THEN ${agents.capabilities} ELSE '[]'::jsonb END
+    ) AS cap
+    WHERE lower(trim(both '-' from regexp_replace(cap, '[^a-zA-Z0-9]+', '-', 'g'))) <> ''
+  )`;
+}
+
+function buildSourceFilterCondition(values: string[]): SQL {
+  const expanded = expandSourceBuckets(values);
+  const canonicalSource = canonicalSourceSql(agents.source, agents.sourceId);
+  return sql`${canonicalSource} = ANY(ARRAY[${sql.join(
+    expanded.map((value) => sql`${value}`),
+    sql`, `
+  )}]::text[])`;
+}
+
 function buildConditions(params: SearchParams, fieldFilters?: Record<string, string | undefined>): SQL[] {
   const conditions: SQL[] = [];
   if (!params.includePrivate) {
@@ -252,22 +273,13 @@ function buildConditions(params: SearchParams, fieldFilters?: Record<string, str
     conditions.push(gte(agents.overallRank, params.minRank) as unknown as SQL);
   }
   if (params.includeSources.length > 0) {
-    const expanded = expandSourceBuckets(params.includeSources);
-    conditions.push(
-      sql`${agents.source} = ANY(ARRAY[${sql.join(
-        expanded.map((v) => sql`${v}`),
-        sql`, `
-      )}]::text[])`
-    );
+    conditions.push(buildSourceFilterCondition(params.includeSources));
   }
   if (params.skillsOnly) {
-    const skillSources = ["GITHUB_OPENCLEW", "CLAWHUB"] as const;
     conditions.push(
       sql`(
-        ${agents.source} = ANY(ARRAY[${sql.join(
-          skillSources.map((v) => sql`${v}`),
-          sql`, `
-        )}]::text[])
+        ${buildSourceFilterCondition([...REGISTRY_SOURCES, "CLAWHUB", "GITHUB_OPENCLEW", "GITHUB_REPOS"])}
+        OR ${buildCapabilityPresenceCondition()}
         OR ${agents.openclawData} IS NOT NULL
         OR (
           ${agents.readme} IS NOT NULL
@@ -296,13 +308,7 @@ function buildConditions(params: SearchParams, fieldFilters?: Record<string, str
 
   const capList = [...params.capabilities];
   if (capList.length > 0) {
-    const caps = capList.map((c) => c.toLowerCase());
-    conditions.push(
-      sql`${agents.capabilities} ?| ARRAY[${sql.join(
-        caps.map((c) => sql`${c}`),
-        sql`, `
-      )}]::text[]`
-    );
+    conditions.push(buildCapabilityTokenMatchCondition(capList));
   }
 
   // Field operator: lang:python
@@ -335,7 +341,7 @@ function buildConditions(params: SearchParams, fieldFilters?: Record<string, str
   // Field operator: source:github
   if (fieldFilters?.source) {
     const srcPattern = `%${escapeLike(fieldFilters.source)}%`;
-    conditions.push(sql`${agents.source} ILIKE ${srcPattern}`);
+    conditions.push(sql`${canonicalSourceSql(agents.source, agents.sourceId)} ILIKE ${srcPattern}`);
   }
 
   return conditions;
@@ -618,13 +624,7 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
   }
 
   if (params.includeSources.length > 0) {
-    const expanded = expandSourceBuckets(params.includeSources);
-    conditions.push(
-      sql`${agentMediaAssets.source} = ANY(ARRAY[${sql.join(
-        expanded.map((v) => sql`${v}`),
-        sql`, `
-      )}]::text[])`
-    );
+    conditions.push(buildSourceFilterCondition(params.includeSources));
   }
 
   if (params.artifactType.length > 0) {
@@ -688,7 +688,7 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
       ${agentMediaAssets.artifactType} AS artifact_type,
       ${agentMediaAssets.url} AS url,
       ${agentMediaAssets.sourcePageUrl} AS source_page_url,
-      ${agentMediaAssets.source} AS source,
+      ${canonicalSourceSql(agents.source, agents.sourceId)} AS source,
       ${agentMediaAssets.title} AS title,
       ${agentMediaAssets.caption} AS caption,
       ${agentMediaAssets.width} AS width,
@@ -1075,8 +1075,17 @@ export async function GET(req: NextRequest) {
       ,
       includeEngagementJoin: boolean
     ): Promise<Array<Record<string, unknown>>> {
+      const claimStatusExpr = includeClaimColumns
+        ? sql`${agents.claimStatus}`
+        : sql`'UNCLAIMED'::varchar`;
+      const verificationTierExpr = includeClaimColumns
+        ? sql`${agents.verificationTier}`
+        : sql`'NONE'::varchar`;
+      const hasCustomPageExpr = includeClaimColumns
+        ? sql`${agents.hasCustomPage}`
+        : sql`false::boolean`;
       const claimCols = includeClaimColumns
-        ? sql`claim_status, verification_tier, has_custom_page,`
+        ? sql`${agents.claimStatus} AS claim_status, ${agents.verificationTier} AS verification_tier, ${agents.hasCustomPage} AS has_custom_page,`
         : sql`'UNCLAIMED'::varchar AS claim_status, 'NONE'::varchar AS verification_tier, false::boolean AS has_custom_page,`;
       const engagementScoreExpr = includeEngagementJoin
         ? sql`COALESCE(
@@ -1101,6 +1110,82 @@ export async function GET(req: NextRequest) {
         websearchInput.length > 0
           ? sql`websearch_to_tsquery('english', ${websearchInput})`
           : sql`plainto_tsquery('english', ${textQuery})`;
+      const canonicalSourceExpr = canonicalSourceSql(agents.source, agents.sourceId);
+      const marketplaceAuthorityExpr = sql`LEAST(
+        0.22,
+        GREATEST(
+          0.0,
+          CASE
+            WHEN ${canonicalSourceExpr} = ANY(ARRAY[${sql.join(
+              REGISTRY_SOURCES.map((source) => sql`${source}`),
+              sql`, `
+            )}]::text[])
+              OR ${canonicalSourceExpr} IN ('CLAWHUB', 'HUGGINGFACE')
+              THEN 0.05
+            WHEN ${canonicalSourceExpr} IN ('NPM', 'PYPI', 'DOCKER')
+              THEN -0.06
+            ELSE 0
+          END
+          + LEAST(
+            0.08,
+            LN(
+              GREATEST(
+                1.0,
+                COALESCE(
+                  NULLIF(${agents.openclawData}->'discoverySignals'->>'installCount', '')::double precision,
+                  NULLIF(${agents.openclawData}->'marketplace'->>'installCount', '')::double precision,
+                  NULLIF(${agents.openclawData}->'smithery'->>'useCount', '')::double precision,
+                  NULLIF(${agents.openclawData}->'dify'->>'usageCount', '')::double precision,
+                  NULLIF(${agents.openclawData}->'n8n'->>'totalViews', '')::double precision,
+                  0
+                ) + 1.0
+              )
+            ) / 12.0
+          )
+          + CASE
+              WHEN COALESCE(NULLIF(${agents.openclawData}->'discoverySignals'->>'verified', '')::boolean, false)
+                OR ${verificationTierExpr} IN ('BRONZE', 'SILVER', 'GOLD')
+                THEN 0.04
+              ELSE 0
+            END
+          + CASE
+              WHEN COALESCE(NULLIF(${agents.openclawData}->'discoverySignals'->>'featured', '')::boolean, false)
+                THEN 0.03
+              ELSE 0
+            END
+          + CASE
+              WHEN ${agents.agentCard} IS NOT NULL
+                OR COALESCE(NULLIF(${agents.openclawData}->'discoverySignals'->>'hasManifest', '')::boolean, false)
+                THEN 0.03
+              ELSE 0
+            END
+          + CASE
+              WHEN COALESCE(NULLIF(${agents.openclawData}->'discoverySignals'->>'supportsMcp', '')::boolean, false)
+                OR COALESCE(NULLIF(${agents.openclawData}->'discoverySignals'->>'supportsA2a', '')::boolean, false)
+                OR ${agents.protocols} ?| ARRAY['MCP', 'A2A']::text[]
+                THEN 0.02
+              ELSE 0
+            END
+          + CASE
+              WHEN ${agents.homepage} IS NOT NULL
+                AND ${agents.homepage} != ''
+                AND ${agents.url} ILIKE '%github.com%'
+                THEN 0.01
+              ELSE 0
+            END
+          + CASE
+              WHEN COALESCE(
+                NULLIF(${agents.openclawData}->'discoverySignals'->>'lastUpdatedAt', '')::timestamptz,
+                NULLIF(${agents.openclawData}->'marketplace'->>'lastUpdatedAt', '')::timestamptz,
+                NULLIF(${agents.openclawData}->'dify'->>'updatedAt', '')::timestamptz,
+                NULLIF(${agents.openclawData}->'n8n'->>'createdAt', '')::timestamptz,
+                ${agents.updatedAt}
+              ) >= now() - interval '30 days'
+                THEN 0.02
+              ELSE 0
+            END
+        )
+      )`;
 
       if (useRelevance) {
         const escapedText = escapeLike(textQuery);
@@ -1109,7 +1194,7 @@ export async function GET(req: NextRequest) {
         const rawResult = await db.execute(
           sql`WITH base AS (
                 SELECT
-                  id, name, slug, description, url, homepage, source, source_id,
+                  id, name, slug, description, url, homepage, ${canonicalSourceExpr} AS source, source_id,
                   capabilities, protocols, canonical_agent_id,
                   safety_score, popularity_score, freshness_score, overall_rank, github_data, npm_data, openclaw_data,
                   languages, created_at, ${claimCols}
@@ -1140,13 +1225,14 @@ export async function GET(req: NextRequest) {
                       0.0,
                       COALESCE(overall_rank / 100.0, 0)
                       + CASE
-                          WHEN verification_tier = 'GOLD' THEN 0.12
-                          WHEN verification_tier = 'SILVER' THEN 0.08
-                          WHEN verification_tier = 'BRONZE' THEN 0.04
+                          WHEN ${verificationTierExpr} = 'GOLD' THEN 0.12
+                          WHEN ${verificationTierExpr} = 'SILVER' THEN 0.08
+                          WHEN ${verificationTierExpr} = 'BRONZE' THEN 0.04
                           ELSE 0
                         END
-                      + CASE WHEN claim_status = 'CLAIMED' THEN 0.03 ELSE 0 END
-                      + CASE WHEN has_custom_page THEN 0.02 ELSE 0 END
+                      + CASE WHEN ${claimStatusExpr} = 'CLAIMED' THEN 0.03 ELSE 0 END
+                      + CASE WHEN ${hasCustomPageExpr} THEN 0.02 ELSE 0 END
+                      + ${marketplaceAuthorityExpr}
                     )
                   ) AS authority_score,
                   LEAST(1.0, GREATEST(0.0, COALESCE(freshness_score / 100.0, 0))) AS freshness_score_norm,
@@ -1205,7 +1291,7 @@ export async function GET(req: NextRequest) {
 
       const rawResult = await db.execute(
         sql`SELECT
-              id, name, slug, description, url, homepage, source, source_id,
+              id, name, slug, description, url, homepage, ${canonicalSourceExpr} AS source, source_id,
               capabilities, protocols, canonical_agent_id, safety_score, popularity_score,
               freshness_score, overall_rank, github_data, npm_data, openclaw_data,
               languages, created_at, ${claimCols}

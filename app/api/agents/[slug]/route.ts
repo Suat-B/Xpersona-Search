@@ -13,6 +13,7 @@ import { applyRequestIdHeader, jsonError } from "@/lib/api/errors";
 import { recordApiResponse } from "@/lib/metrics/record";
 import { getPublicAgentPageData } from "@/lib/agents/public-agent-page";
 import { calibrateSafetyScore } from "@/lib/search/scoring/safety";
+import { canonicalizeSource } from "@/lib/search/source-taxonomy";
 
 let hasAgentCustomizationColumnsCache: boolean | null = null;
 
@@ -150,6 +151,10 @@ export async function GET(
 
   const overrides = (agent.ownerOverrides ?? {}) as Record<string, unknown>;
   const merged = { ...agent } as Record<string, unknown>;
+  merged.source = canonicalizeSource(
+    typeof merged.source === "string" ? merged.source : null,
+    typeof merged.sourceId === "string" ? merged.sourceId : null
+  );
   merged.claimStatus = (agent.claimStatus as string | null) ?? "UNCLAIMED";
   if (agent.claimStatus === "CLAIMED" && Object.keys(overrides).length > 0) {
     for (const [key, value] of Object.entries(overrides)) {
@@ -346,6 +351,11 @@ const ManageSchema = z.object({
   capabilities: z.array(z.string().max(100)).max(30).optional(),
   protocols: z.array(z.enum(["A2A", "MCP", "ANP", "OPENCLEW", "CUSTOM"])).max(10).optional(),
   readme: z.string().max(100_000).optional(),
+  docsUrl: z.string().url().max(1024).optional().nullable(),
+  demoUrl: z.string().url().max(1024).optional().nullable(),
+  supportUrl: z.string().url().max(1024).optional().nullable(),
+  pricingUrl: z.string().url().max(1024).optional().nullable(),
+  statusUrl: z.string().url().max(1024).optional().nullable(),
   customLinks: z
     .array(
       z.object({
@@ -438,6 +448,11 @@ export async function PATCH(
     newOverrides.capabilities = data.capabilities;
   if (data.protocols !== undefined) newOverrides.protocols = data.protocols;
   if (data.readme !== undefined) newOverrides.readme = data.readme;
+  if (data.docsUrl !== undefined) newOverrides.docsUrl = data.docsUrl;
+  if (data.demoUrl !== undefined) newOverrides.demoUrl = data.demoUrl;
+  if (data.supportUrl !== undefined) newOverrides.supportUrl = data.supportUrl;
+  if (data.pricingUrl !== undefined) newOverrides.pricingUrl = data.pricingUrl;
+  if (data.statusUrl !== undefined) newOverrides.statusUrl = data.statusUrl;
   if (data.customLinks !== undefined)
     newOverrides.customLinks = data.customLinks;
 

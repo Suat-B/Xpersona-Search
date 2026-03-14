@@ -20,6 +20,11 @@ const ManageSchema = z.object({
     .max(10)
     .optional(),
   readme: z.string().max(100_000).optional(),
+  docsUrl: z.string().url().max(1024).optional().nullable(),
+  demoUrl: z.string().url().max(1024).optional().nullable(),
+  supportUrl: z.string().url().max(1024).optional().nullable(),
+  pricingUrl: z.string().url().max(1024).optional().nullable(),
+  statusUrl: z.string().url().max(1024).optional().nullable(),
   customLinks: z
     .array(
       z.object({
@@ -112,6 +117,11 @@ export async function PATCH(
     newOverrides.capabilities = data.capabilities;
   if (data.protocols !== undefined) newOverrides.protocols = data.protocols;
   if (data.readme !== undefined) newOverrides.readme = data.readme;
+  if (data.docsUrl !== undefined) newOverrides.docsUrl = data.docsUrl;
+  if (data.demoUrl !== undefined) newOverrides.demoUrl = data.demoUrl;
+  if (data.supportUrl !== undefined) newOverrides.supportUrl = data.supportUrl;
+  if (data.pricingUrl !== undefined) newOverrides.pricingUrl = data.pricingUrl;
+  if (data.statusUrl !== undefined) newOverrides.statusUrl = data.statusUrl;
   if (data.customLinks !== undefined)
     newOverrides.customLinks = data.customLinks;
 

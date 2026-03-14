@@ -1,4 +1,6 @@
-﻿interface Props {
+import React from "react";
+
+interface Props {
   protocol: string;
 }
 
@@ -11,7 +13,6 @@ const COLORS: Record<string, string> = {
   CUSTOM: "bg-[var(--text-quaternary)]/20 text-[var(--text-tertiary)] border-[var(--border)]",
 };
 
-/** Display label for protocol IDs (e.g. OPENCLEW -> OpenClaw). */
 export const PROTOCOL_LABELS: Record<string, string> = {
   OPENCLEW: "OpenClaw",
   OPENCLAW: "OpenClaw",

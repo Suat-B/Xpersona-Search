@@ -70,7 +70,7 @@ export default function HeroDemoPanel({ query = "mcp pdf" }: { query?: string })
     return chips.map((label) => (
       <span
         key={label}
-        className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-white/80"
+        className="rounded-full border border-[var(--accent-heart)]/24 bg-[var(--accent-heart)]/12 px-2.5 py-1 text-[11px] font-medium text-white/85"
       >
         {label}
       </span>
@@ -99,8 +99,8 @@ export default function HeroDemoPanel({ query = "mcp pdf" }: { query?: string })
   }, [activeTab, results]);
 
   return (
-    <div className="w-full rounded-[28px] border border-white/10 bg-gradient-to-br from-[#0f131a] via-[#0c1016] to-[#0a0d12] shadow-[0_20px_80px_rgba(0,0,0,0.55)] overflow-hidden ring-1 ring-white/5">
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 bg-[#0b1016]/80">
+    <div className="w-full overflow-hidden rounded-[24px] border border-[var(--accent-heart)]/28 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.22),transparent_58%),linear-gradient(145deg,#060b12_0%,#08111b_50%,#060a11_100%)] shadow-[0_24px_90px_rgba(4,20,38,0.62)] ring-1 ring-[var(--accent-heart)]/12 sm:rounded-[28px]">
+      <div className="flex items-center justify-between gap-2 border-b border-[var(--accent-heart)]/20 bg-[#07111b]/78 px-4 py-3">
         <div className="flex items-center gap-2">
           {TABS.map((tab) => (
             <button
@@ -109,21 +109,21 @@ export default function HeroDemoPanel({ query = "mcp pdf" }: { query?: string })
               onClick={() => setActiveTab(tab)}
               className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
                 activeTab === tab
-                  ? "bg-white text-black"
-                  : "text-white/60 hover:text-white"
+                  ? "bg-[var(--accent-heart)] text-[#031523]"
+                  : "text-white/70 hover:text-white"
               }`}
             >
               {tab}
             </button>
           ))}
         </div>
-        <span className="text-[11px] text-white/50">Query: {query}</span>
+        <span className="hidden text-[11px] text-white/50 sm:inline">Query: {query}</span>
       </div>
 
-      <div className="px-4 py-3 flex flex-wrap gap-2 bg-[#0b1016]/40">{pills}</div>
+      <div className="flex flex-wrap gap-2 bg-[#07131f]/44 px-4 py-3">{pills}</div>
 
-      <div className="border-t border-white/10 px-4 py-3">
-        <div className="text-[11px] uppercase tracking-[0.2em] text-white/40 mb-2">
+      <div className="border-t border-[var(--accent-heart)]/18 px-4 py-3">
+        <div className="mb-2 text-[11px] uppercase tracking-[0.2em] text-white/45">
           {activeTab === "Trust"
             ? "Trust Signals"
             : activeTab === "Protocols"
@@ -137,18 +137,18 @@ export default function HeroDemoPanel({ query = "mcp pdf" }: { query?: string })
             ? Array.from({ length: 6 }).map((_, idx) => (
                 <div
                   key={`sk-${idx}`}
-                  className="rounded-xl border border-white/5 bg-white/5 px-3 py-2 animate-pulse"
+                  className="animate-pulse rounded-xl border border-[var(--accent-heart)]/20 bg-[var(--accent-heart)]/10 px-3 py-2"
                 >
                   <div className="h-3 w-32 bg-white/20 rounded mb-2" />
                   <div className="h-3 w-full bg-white/10 rounded mb-1" />
                   <div className="h-3 w-2/3 bg-white/10 rounded" />
                 </div>
               ))
-            : viewResults.map((item) => (
+              : viewResults.map((item) => (
                 <Link
                   key={item.id}
                   href={`/agent/${item.slug}`}
-                  className="block rounded-xl border border-white/5 bg-white/5 px-3 py-2 transition hover:bg-white/10"
+                  className="block rounded-xl border border-[var(--accent-heart)]/16 bg-[#0a1723]/76 px-3 py-2 transition hover:border-[var(--accent-heart)]/28 hover:bg-[#0d1c2a]/88"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-sm font-semibold text-white">{item.name}</div>
@@ -170,7 +170,7 @@ export default function HeroDemoPanel({ query = "mcp pdf" }: { query?: string })
                 </Link>
               ))}
           {!loading && results.length === 0 && (
-            <div className="rounded-xl border border-white/5 bg-white/5 px-3 py-4 text-sm text-white/60">
+            <div className="rounded-xl border border-[var(--accent-heart)]/16 bg-[#0a1723]/76 px-3 py-4 text-sm text-white/65">
               No results yet. Try a different query.
             </div>
           )}

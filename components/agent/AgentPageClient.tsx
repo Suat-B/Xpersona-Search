@@ -13,6 +13,7 @@ import { SkillMarkdown } from "./SkillMarkdown";
 import { ClaimBanner } from "./ClaimBanner";
 import { OwnerBadge } from "./OwnerBadge";
 import { VerificationTierBadge } from "./VerificationTierBadge";
+import { canonicalizeSource } from "@/lib/search/source-taxonomy";
 
 interface OpenClawData {
   parameters?: Record<
@@ -129,7 +130,7 @@ function getGithubUrl(agent: Agent): string | null {
 }
 
 function getPrimaryCta(agent: Agent): CtaConfig {
-  const source = (agent.source ?? "GITHUB_OPENCLEW").toUpperCase();
+  const source = canonicalizeSource(agent.source ?? "GITHUB_OPENCLEW");
   const url = ensureExternalUrl(agent.url);
 
   switch (source) {
@@ -147,6 +148,13 @@ function getPrimaryCta(agent: Agent): CtaConfig {
       return { label: "View on Hugging Face", href: url };
     case "MCP_REGISTRY":
     case "A2A_REGISTRY":
+    case "SMITHERY":
+    case "AGENTSCAPE":
+    case "DIFY_MARKETPLACE":
+    case "N8N_TEMPLATES":
+    case "GOOGLE_CLOUD_MARKETPLACE":
+    case "LANGFLOW_STARTER_PROJECTS":
+    case "NACOS_AGENT_REGISTRY":
       return { label: "View source", href: url };
     case "DOCKER":
       return { label: "View on Docker Hub", href: url };
@@ -161,7 +169,7 @@ function getPrimaryCta(agent: Agent): CtaConfig {
 }
 
 function getInstallCommand(agent: Agent): string | null {
-  const source = (agent.source ?? "GITHUB_OPENCLEW").toUpperCase();
+  const source = canonicalizeSource(agent.source ?? "GITHUB_OPENCLEW");
 
   switch (source) {
     case "NPM": {
@@ -216,13 +224,19 @@ function getPopularityLabel(agent: Agent): string {
 
 function getDocsSourceLabel(agent: Agent): string | null {
   if (agent.readmeSource) return agent.readmeSource;
-  const source = (agent.source ?? "").toUpperCase();
+  const source = canonicalizeSource(agent.source ?? "");
   if (source.includes("GITHUB")) return "GitHub";
   if (source === "NPM") return "npm";
   if (source === "PYPI") return "PyPI";
   if (source === "HUGGINGFACE") return "Hugging Face";
   if (source === "REPLICATE") return "Replicate";
   if (source === "DOCKER") return "Docker Hub";
+  if (source === "SMITHERY") return "Smithery";
+  if (source === "DIFY_MARKETPLACE") return "Dify Marketplace";
+  if (source === "N8N_TEMPLATES") return "n8n Templates";
+  if (source === "GOOGLE_CLOUD_MARKETPLACE") return "Google Cloud Marketplace";
+  if (source === "LANGFLOW_STARTER_PROJECTS") return "Langflow";
+  if (source === "NACOS_AGENT_REGISTRY") return "Nacos";
   return null;
 }
 

@@ -53,7 +53,7 @@ export async function crawlSmithery(
   const [job] = await db
     .insert(crawlJobs)
     .values({
-      source: "MCP_REGISTRY",
+      source: "SMITHERY",
       status: "RUNNING",
       startedAt: new Date(),
     })
@@ -100,7 +100,7 @@ export async function crawlSmithery(
 
         const agentData = {
           sourceId,
-          source: "MCP_REGISTRY" as const,
+          source: "SMITHERY" as const,
           name,
           slug,
           description: server.description ?? null,
@@ -110,6 +110,13 @@ export async function crawlSmithery(
           protocols: ["MCP"] as string[],
           languages: [] as string[],
           openclawData: {
+            discoverySignals: {
+              installCount: server.useCount ?? 0,
+              supportsMcp: true,
+              hasManifest: (server.tools?.length ?? 0) > 0,
+              lastUpdatedAt: server.createdAt ?? null,
+              repoLinked: Boolean(server.homepage),
+            },
             smithery: true,
             qualifiedName,
             useCount: server.useCount,
@@ -146,7 +153,7 @@ export async function crawlSmithery(
           agentSourceId: sourceId,
           agentUrl: url,
           homepageUrl: server.homepage ?? null,
-          source: "MCP_REGISTRY",
+          source: "SMITHERY",
           readmeOrHtml: server.description ?? "",
           isHtml: false,
           allowHomepageFetch: true,

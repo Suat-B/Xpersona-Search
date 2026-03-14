@@ -1,5 +1,7 @@
 "use client";
 
+import React from "react";
+
 interface OwnerBadgeProps {
   claimedByName?: string | null;
   size?: "sm" | "md";

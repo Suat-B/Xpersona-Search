@@ -6,6 +6,11 @@
 import { db } from "@/lib/db";
 import { agentMediaAssets, agents } from "@/lib/db/schema";
 import { and, desc, eq, sql } from "drizzle-orm";
+import {
+  normalizeCapabilityTokens,
+  sanitizeCapabilityLabels,
+} from "@/lib/search/capability-tokens";
+import { canonicalizeSource } from "@/lib/search/source-taxonomy";
 
 type AgentInsert = typeof agents.$inferInsert;
 type ConflictSet = Partial<AgentInsert>;
@@ -31,6 +36,29 @@ function nextSlug(baseSlug: string, attempt: number): string {
   return `${base}-${suffix}`.slice(0, 255);
 }
 
+function normalizeAgentRecord<T extends Partial<AgentInsert>>(
+  values: T,
+  fallbackSourceId?: string
+): T {
+  const sourceId = values.sourceId ?? fallbackSourceId;
+  const rawCapabilities = Array.isArray(values.capabilities)
+    ? sanitizeCapabilityLabels(values.capabilities)
+    : undefined;
+  return {
+    ...values,
+    ...(sourceId ? { sourceId } : {}),
+    ...(values.source || sourceId
+      ? { source: canonicalizeSource(values.source as string | undefined, sourceId) }
+      : {}),
+    ...(rawCapabilities ? { capabilities: rawCapabilities } : {}),
+    ...(rawCapabilities
+      ? { capabilityTokens: normalizeCapabilityTokens(rawCapabilities) }
+      : values.capabilityTokens !== undefined
+        ? { capabilityTokens: normalizeCapabilityTokens(values.capabilityTokens as string[]) }
+        : {}),
+  };
+}
+
 /**
  * Insert or update agent. On slug unique violation, retries with suffixed slug.
  */
@@ -38,15 +66,17 @@ export async function upsertAgent(
   values: AgentInsert,
   conflictSet: ConflictSet
 ): Promise<void> {
+  const normalizedValues = normalizeAgentRecord(values);
+  const normalizedConflictSet = normalizeAgentRecord(conflictSet, normalizedValues.sourceId);
   let slug = values.slug;
   for (let attempt = 0; attempt < MAX_SLUG_RETRIES; attempt++) {
     try {
       await db
         .insert(agents)
-        .values({ ...values, slug })
+        .values({ ...normalizedValues, slug })
         .onConflictDoUpdate({
           target: agents.sourceId,
-          set: { ...conflictSet, slug, updatedAt: new Date() },
+          set: { ...normalizedConflictSet, slug, updatedAt: new Date() },
         });
       return;
     } catch (err) {

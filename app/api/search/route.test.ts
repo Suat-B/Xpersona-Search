@@ -201,6 +201,26 @@ describe("GET /api/search", () => {
     }
   });
 
+  it("accepts normalized capability tokens in the query string", async () => {
+    mockDb.execute.mockResolvedValue({ rows: [] });
+    const res = await GET(
+      new NextRequest("http://localhost/api/search?capabilities=web-browsing,pdf&sort=rank")
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("accepts registry source bucket filters including canonical registry sources", async () => {
+    mockDb.execute.mockResolvedValue({
+      rows: [mockAgent({ source: "SMITHERY", source_id: "smithery:test/server" })],
+    });
+    const res = await GET(
+      new NextRequest("http://localhost/api/search?includeSources=REGISTRY&sort=rank")
+    );
+    const data = await res.json();
+    expect(res.status).toBe(200);
+    expect(data.results[0].source).toBe("SMITHERY");
+  });
+
   it("accepts execute-mode query params", async () => {
     mockDb.execute.mockResolvedValue({ rows: [] });
     const res = await GET(

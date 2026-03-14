@@ -1,6 +1,8 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agents } from "@/lib/db/schema";
+import { normalizeCapabilityToken } from "@/lib/search/capability-tokens";
+import { canonicalSourceSql, canonicalizeSource } from "@/lib/search/source-taxonomy";
 
 export type HubAgent = {
   id: string;
@@ -101,7 +103,10 @@ function rowToHubAgent(row: Record<string, unknown>): HubAgent {
     slug: String(row.slug),
     name: String(row.name),
     description: typeof row.description === "string" ? row.description : null,
-    source: String(row.source),
+    source: canonicalizeSource(
+      typeof row.source === "string" ? row.source : null,
+      typeof row.sourceId === "string" ? row.sourceId : null
+    ),
     protocols,
     capabilities,
     safetyScore: Number(row.safetyScore ?? 0),
@@ -120,6 +125,7 @@ async function getBaseAgents(limit = 180): Promise<HubAgent[]> {
       name: agents.name,
       description: agents.description,
       source: agents.source,
+      sourceId: agents.sourceId,
       protocols: agents.protocols,
       capabilities: agents.capabilities,
       safetyScore: agents.safetyScore,
@@ -144,6 +150,7 @@ export async function getTrendingAgents(limit = 20): Promise<HubAgent[]> {
       name: agents.name,
       description: agents.description,
       source: agents.source,
+      sourceId: agents.sourceId,
       protocols: agents.protocols,
       capabilities: agents.capabilities,
       safetyScore: agents.safetyScore,
@@ -168,6 +175,7 @@ export async function getNewestAgents(limit = 20): Promise<HubAgent[]> {
       name: agents.name,
       description: agents.description,
       source: agents.source,
+      sourceId: agents.sourceId,
       protocols: agents.protocols,
       capabilities: agents.capabilities,
       safetyScore: agents.safetyScore,
@@ -217,7 +225,15 @@ export async function getSourceCounts(limit = 8): Promise<Array<{ source: string
     LIMIT ${limit}
   `);
   const out = (rows as unknown as { rows?: Array<{ source: string; count: number }> }).rows ?? [];
-  return out.map((item) => ({ source: item.source, count: Number(item.count) }));
+  const counts = new Map<string, number>();
+  for (const item of out) {
+    const source = canonicalizeSource(item.source);
+    counts.set(source, (counts.get(source) ?? 0) + Number(item.count));
+  }
+  return [...counts.entries()]
+    .map(([source, count]) => ({ source, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
 }
 
 export async function getAgentsByProtocol(protocol: string, limit = 24): Promise<HubAgent[]> {
@@ -229,6 +245,7 @@ export async function getAgentsByProtocol(protocol: string, limit = 24): Promise
       name: agents.name,
       description: agents.description,
       source: agents.source,
+      sourceId: agents.sourceId,
       protocols: agents.protocols,
       capabilities: agents.capabilities,
       safetyScore: agents.safetyScore,
@@ -252,7 +269,7 @@ export async function getAgentsByProtocol(protocol: string, limit = 24): Promise
 }
 
 export async function getAgentsByCapability(capability: string, limit = 36): Promise<HubAgent[]> {
-  const normalized = capability.trim().toLowerCase();
+  const normalized = normalizeCapabilityToken(capability);
   if (!normalized) return [];
   const rows = await db
     .select({
@@ -261,6 +278,7 @@ export async function getAgentsByCapability(capability: string, limit = 36): Pro
       name: agents.name,
       description: agents.description,
       source: agents.source,
+      sourceId: agents.sourceId,
       protocols: agents.protocols,
       capabilities: agents.capabilities,
       safetyScore: agents.safetyScore,
@@ -275,7 +293,14 @@ export async function getAgentsByCapability(capability: string, limit = 36): Pro
       and(
         eq(agents.status, "ACTIVE"),
         eq(agents.publicSearchable, true),
-        sql`EXISTS (SELECT 1 FROM jsonb_array_elements_text(${agents.capabilities}) AS cap WHERE lower(cap) = ${normalized})`
+        sql`EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements_text(
+            CASE WHEN jsonb_typeof(coalesce(${agents.capabilities}, '[]'::jsonb)) = 'array'
+                 THEN ${agents.capabilities} ELSE '[]'::jsonb END
+          ) AS cap
+          WHERE lower(trim(both '-' from regexp_replace(cap, '[^a-zA-Z0-9]+', '-', 'g'))) = ${normalized}
+        )`
       )
     )
     .orderBy(desc(agents.overallRank), desc(agents.updatedAt))
@@ -292,6 +317,7 @@ export async function getAgentsBySource(sourceSlug: string, limit = 24): Promise
       name: agents.name,
       description: agents.description,
       source: agents.source,
+      sourceId: agents.sourceId,
       protocols: agents.protocols,
       capabilities: agents.capabilities,
       safetyScore: agents.safetyScore,
@@ -306,7 +332,7 @@ export async function getAgentsBySource(sourceSlug: string, limit = 24): Promise
       and(
         eq(agents.status, "ACTIVE"),
         eq(agents.publicSearchable, true),
-        eq(agents.source, sourceNormalized)
+        sql`${canonicalizeSource(sourceNormalized)} = ${canonicalSourceSql(agents.source, agents.sourceId)}`
       )
     )
     .orderBy(desc(agents.overallRank), desc(agents.updatedAt))
@@ -377,6 +403,7 @@ export async function getAgentsBySlugs(slugs: string[]): Promise<HubAgent[]> {
       name: agents.name,
       description: agents.description,
       source: agents.source,
+      sourceId: agents.sourceId,
       protocols: agents.protocols,
       capabilities: agents.capabilities,
       safetyScore: agents.safetyScore,
@@ -409,5 +436,5 @@ export async function getAlternativeAgents(seed: HubAgent, limit = 6): Promise<H
 }
 
 export function sourceSlugFromValue(value: string): string {
-  return normalizeSourceSlug(value);
+  return normalizeSourceSlug(canonicalizeSource(value));
 }

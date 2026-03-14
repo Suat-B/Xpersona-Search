@@ -1,5 +1,8 @@
 const DEFAULT_STORAGE_QUOTA = 16_384; // 16KB per agent page namespace
 
+const INTERNAL_AGENT_API_PATH =
+  /^\/api\/v1\/agents\/[^/]+\/(dossier|trust|contract|snapshot)$/i;
+
 export function getBridgeAllowedDomains(): string[] {
   const env = process.env.NEXT_PUBLIC_CUSTOM_PAGE_FETCH_ALLOWLIST ?? "";
   return env
@@ -12,8 +15,11 @@ export function isAllowedBridgeFetchUrl(
   url: string,
   allowedDomains = getBridgeAllowedDomains()
 ): boolean {
+  const trimmed = url.trim();
+  if (INTERNAL_AGENT_API_PATH.test(trimmed)) return true;
+
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(trimmed);
     if (parsed.protocol !== "https:") return false;
     const host = parsed.hostname.toLowerCase();
     return allowedDomains.some(
@@ -36,10 +42,7 @@ export function withinBridgeStorageQuota(
 }
 
 export function buildCustomPageCsp(allowedDomains = getBridgeAllowedDomains()): string {
-  const connectSrc =
-    allowedDomains.length > 0
-      ? ["'self'", ...allowedDomains.map((d) => `https://${d}`)].join(" ")
-      : "'none'";
+  const connectSrc = ["'self'", ...allowedDomains.map((d) => `https://${d}`)].join(" ");
 
   return [
     "default-src 'none'",

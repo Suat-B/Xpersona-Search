@@ -14,6 +14,10 @@ import {
   unwrapClientResponse,
 } from "@/lib/api/client-response";
 import { safeFetchJson } from "@/lib/safeFetch";
+import {
+  capabilityTokenToLabel,
+  parseCapabilityParam,
+} from "@/lib/search/capability-tokens";
 
 const BROWSE_PROTOCOLS = [
   { id: "MCP", label: "MCP" },
@@ -120,6 +124,7 @@ interface SearchResponsePayload {
 interface SearchOverrides {
   query?: string;
   selectedProtocols?: string[];
+  selectedCapabilities?: string[];
   minSafety?: number;
   sort?: string;
   vertical?: "agents" | "skills" | "artifacts";
@@ -195,6 +200,10 @@ function parseProtocolsFromUrl(p: string | null): string[] {
     .filter(Boolean);
 }
 
+function parseCapabilitiesFromUrl(value: string | null): string[] {
+  return parseCapabilityParam(value);
+}
+
 function parseBoolFromUrl(value: string | null): boolean {
   return value === "1" || value === "true";
 }
@@ -219,6 +228,9 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
   const [total, setTotal] = useState<number>(0);
   const [selectedProtocols, setSelectedProtocols] = useState<string[]>(() =>
     parseProtocolsFromUrl(searchParams.get("protocols"))
+  );
+  const [selectedCapabilities, setSelectedCapabilities] = useState<string[]>(() =>
+    parseCapabilitiesFromUrl(searchParams.get("capabilities"))
   );
   const [minSafety, setMinSafety] = useState(0);
   const [sort, setSort] = useState("rank");
@@ -276,6 +288,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
       setLoading(true);
       const nextQuery = overrides?.query ?? query;
       const nextSelectedProtocols = overrides?.selectedProtocols ?? selectedProtocols;
+      const nextSelectedCapabilities = overrides?.selectedCapabilities ?? selectedCapabilities;
       const nextMinSafety = overrides?.minSafety ?? minSafety;
       const nextSort = overrides?.sort ?? sort;
       const nextVertical = overrides?.vertical ?? vertical;
@@ -293,10 +306,8 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
 
       const requestVertical = nextVertical === "skills" ? "agents" : nextVertical;
       const requestSkillsOnly = nextVertical === "skills";
-      const urlIncludeSources = nextVertical === "skills" ? [] : nextIncludeSources;
-      const requestIncludeSources = nextVertical === "skills"
-        ? ["GITHUB_OPENCLEW", "CLAWHUB", "GITHUB_REPOS"]
-        : nextIncludeSources;
+      const urlIncludeSources = nextIncludeSources;
+      const requestIncludeSources = nextIncludeSources;
       const paginationKey: PageKey = requestVertical === "artifacts" ? "artifacts" : "agents";
       const cached = overrides?.resetCaches ? undefined : pageCache[paginationKey][pageIndex];
       const cursorMap = pageCursors[paginationKey];
@@ -314,6 +325,9 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
       const urlParams = new URLSearchParams();
       if (nextQuery.trim()) urlParams.set("q", nextQuery.trim());
       if (nextSelectedProtocols.length) urlParams.set("protocols", nextSelectedProtocols.join(","));
+      if (nextSelectedCapabilities.length) {
+        urlParams.set("capabilities", nextSelectedCapabilities.join(","));
+      }
       if (nextMinSafety > 0) urlParams.set("minSafety", String(nextMinSafety));
       urlParams.set("sort", nextSort);
       urlParams.set("limit", String(PAGE_SIZE));
@@ -443,6 +457,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
     [
       query,
       selectedProtocols,
+      selectedCapabilities,
       minSafety,
       sort,
       vertical,
@@ -487,6 +502,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     selectedProtocols,
+    selectedCapabilities,
     minSafety,
     sort,
     vertical,
@@ -506,9 +522,11 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
   useEffect(() => {
     const urlQ = searchParams.get("q") ?? "";
     const urlProtocols = parseProtocolsFromUrl(searchParams.get("protocols"));
+    const urlCapabilities = parseCapabilitiesFromUrl(searchParams.get("capabilities"));
     const urlPage = Number(searchParams.get("page") ?? "1");
     setQuery(urlQ);
     setSelectedProtocols(urlProtocols);
+    setSelectedCapabilities(urlCapabilities);
     setIntent(searchParams.get("intent") === "execute" ? "execute" : "discover");
     const urlVertical = searchParams.get("vertical");
     setVertical(urlVertical === "artifacts" || urlVertical === "skills" ? urlVertical : "agents");
@@ -558,6 +576,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
   const handleExploreAllAgents = useCallback(async () => {
     setQuery("");
     setSelectedProtocols([]);
+    setSelectedCapabilities([]);
     setMinSafety(0);
     setSort("rank");
     setVertical("agents");
@@ -576,6 +595,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
     await loadPage(1, {
       query: "",
       selectedProtocols: [],
+      selectedCapabilities: [],
       minSafety: 0,
       sort: "rank",
       vertical: "agents",
@@ -644,7 +664,23 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
             setQuery={setQuery}
             onSearch={(overrideQuery) => {
               const resolvedQuery = (overrideQuery ?? query).trim();
-              if (!resolvedQuery) {
+              const hasFilterState =
+                selectedProtocols.length > 0 ||
+                selectedCapabilities.length > 0 ||
+                minSafety > 0 ||
+                vertical !== "agents" ||
+                intent !== "discover" ||
+                taskType.trim().length > 0 ||
+                maxLatencyMs.trim().length > 0 ||
+                maxCostUsd.trim().length > 0 ||
+                dataRegion !== "global" ||
+                requires.trim().length > 0 ||
+                forbidden.trim().length > 0 ||
+                bundle ||
+                explain ||
+                recall !== "normal" ||
+                includeSources.length > 0;
+              if (!resolvedQuery && !hasFilterState) {
                 void handleExploreAllAgents();
                 return;
               }
@@ -717,6 +753,27 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
                       </button>
                     );
                   })}
+                </div>
+              )}
+
+              {selectedCapabilities.length > 0 && (
+                <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-[var(--text-tertiary)]">Capabilities:</span>
+                  {selectedCapabilities.map((capability) => (
+                    <button
+                      key={capability}
+                      type="button"
+                      onClick={() =>
+                        setSelectedCapabilities((prev) =>
+                          prev.filter((value) => value !== capability)
+                        )
+                      }
+                      className="inline-flex items-center gap-2 rounded-full border border-[var(--accent-heart)]/30 bg-[var(--accent-heart)]/10 px-3 py-1 text-[var(--accent-heart)]"
+                    >
+                      {capabilityTokenToLabel(capability)}
+                      <span aria-hidden>×</span>
+                    </button>
+                  ))}
                 </div>
               )}
 

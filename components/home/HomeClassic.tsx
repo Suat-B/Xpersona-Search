@@ -20,6 +20,7 @@ export default async function HomeClassic({
   const searchStateKeys = new Set([
     "q",
     "protocols",
+    "capabilities",
     "browse",
     "minSafety",
     "sort",
@@ -34,7 +35,11 @@ export default async function HomeClassic({
     "forbidden",
     "bundle",
     "explain",
+    "recall",
+    "includeSources",
+    "page",
     "cursor",
+    "mediaCursor",
   ]);
   const hasSearchState = Object.entries(params ?? {}).some(
     ([key, value]) => searchStateKeys.has(key) && typeof value === "string" && value.trim().length > 0

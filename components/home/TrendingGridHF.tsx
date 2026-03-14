@@ -1,5 +1,9 @@
 import Link from "next/link";
 import { headers } from "next/headers";
+import {
+  capabilityTokenToLabel,
+  normalizeCapabilityToken,
+} from "@/lib/search/capability-tokens";
 
 type SearchAgent = {
   id: string;
@@ -58,18 +62,22 @@ function hasMcpProtocol(agent: SearchAgent): boolean {
 }
 
 function topCapabilities(results: SearchAgent[], limit: number): CapabilitySummary[] {
-  const counts = new Map<string, number>();
+  const counts = new Map<string, { count: number; label: string }>();
   for (const result of results) {
     for (const cap of result.capabilities) {
-      const key = cap.trim();
+      const key = normalizeCapabilityToken(cap);
       if (!key) continue;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      const current = counts.get(key);
+      counts.set(key, {
+        count: (current?.count ?? 0) + 1,
+        label: current?.label ?? capabilityTokenToLabel(key),
+      });
     }
   }
   return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
     .slice(0, limit)
-    .map(([name, count]) => ({ name, count }));
+    .map(([name, value]) => ({ name: value.label, count: value.count }));
 }
 
 function formatFreshness(item: SearchAgent) {
@@ -217,7 +225,7 @@ export async function TrendingGridHF() {
                   return (
                     <Link
                       key={capKey}
-                      href={`/search?capabilities=${encodeURIComponent(cap.name)}`}
+                      href={`/search?capabilities=${encodeURIComponent(normalizeCapabilityToken(cap.name))}`}
                       className={cardBase}
                     >
                       <div className="flex w-full items-center justify-between gap-3">

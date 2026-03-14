@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import { normalizeCapabilityToken } from "@/lib/search/capability-tokens";
 
 const CAPABILITIES = [
   {
@@ -55,7 +56,7 @@ export function ExploreCapabilitiesHF() {
           {CAPABILITIES.map((capability) => (
             <Link
               key={capability.name}
-              href={`/search?capabilities=${encodeURIComponent(capability.query)}`}
+              href={`/search?capabilities=${encodeURIComponent(normalizeCapabilityToken(capability.query))}`}
               className="group"
             >
               <div className="flex h-full flex-col justify-between gap-4 rounded-xl border border-white/10 bg-white/5 p-4 transition hover:border-white/20 hover:bg-white/10">
