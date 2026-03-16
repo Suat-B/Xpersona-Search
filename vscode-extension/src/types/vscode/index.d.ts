@@ -9,6 +9,12 @@ declare module "vscode" {
     subscriptions: { push: (...items: Disposable[]) => unknown };
   }
 
+  export enum ConfigurationTarget {
+    Global = 1,
+    Workspace = 2,
+    WorkspaceFolder = 3,
+  }
+
   export interface TextDocument {
     getText(range?: unknown): string;
     lineAt(line: number): { text: string };
@@ -53,12 +59,21 @@ declare module "vscode" {
   }
 
   export namespace workspace {
+    type ConfigurationInspect<T> = {
+      key: string;
+      defaultValue?: T;
+      globalValue?: T;
+      workspaceValue?: T;
+      workspaceFolderValue?: T;
+    };
+
     function openTextDocument(options: {
       language?: string;
       content?: string;
     }): Thenable<TextDocument>;
     function getConfiguration(section?: string): {
       get<T>(name: string): T | undefined;
+      inspect<T>(name: string): ConfigurationInspect<T> | undefined;
       update(
         name: string,
         value: unknown,

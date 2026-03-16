@@ -1,4 +1,8 @@
 import type { AssistContext, ChatMessage, ContextPreview, Mode } from "./shared";
+import {
+  containsRuntimeNoiseForContext,
+  isExplicitRuntimeTask,
+} from "./qwen-runtime-noise";
 
 function trimBlock(value: string | undefined, limit: number): string {
   return String(value || "")
@@ -43,97 +47,14 @@ function normalizePathLike(value: string | undefined | null): string {
     .toLowerCase();
 }
 
-function trimTrailingSlashes(value: string): string {
-  return value.replace(/\/+$/g, "");
-}
-
-function looksLikePath(value: string | undefined | null): boolean {
-  return /[\\/]/.test(String(value || "")) || /^[a-z]:/i.test(String(value || ""));
-}
-
-function isPathInsideWorkspace(pathValue: string, workspaceRoot?: string | null): boolean {
-  const normalizedPath = trimTrailingSlashes(normalizePathLike(pathValue));
-  const normalizedWorkspaceRoot = trimTrailingSlashes(normalizePathLike(workspaceRoot));
-  if (!normalizedPath || !normalizedWorkspaceRoot) return false;
-  return (
-    normalizedPath === normalizedWorkspaceRoot ||
-    normalizedPath.startsWith(`${normalizedWorkspaceRoot}/`)
-  );
-}
-
-function looksLikeRuntimeNarrativeNoise(content: string): boolean {
-  const normalized = normalizePathLike(content);
+function refersToCurrentWorkspaceContext(task: string): boolean {
+  const normalized = normalizePathLike(task);
   if (!normalized) return false;
 
-  const tokens = [
-    "qwen code sdk",
-    "qwen sdk",
-    "sdk cli executable",
-    "cli executable",
-    ".trae",
-    "trae/extensions",
-    "extension directory",
-    "extension runtime",
-    "local installation",
-    "windows file path",
-    "cli interface",
-    "confirm the installation",
-    "sdk's location",
-    "sdk location",
-    "check where this file is located",
-    "troubleshoot an issue related to the sdk",
-  ];
-  const tokenHits = tokens.reduce((count, token) => (normalized.includes(token) ? count + 1 : count), 0);
-  if (tokenHits >= 2) return true;
-
-  if (normalized.includes(".trae") && normalized.includes("qwen")) return true;
-  if (normalized.includes("extension directory") && normalized.includes("qwen")) return true;
-  if (normalized.includes("windows file path") && normalized.includes("qwen")) return true;
-  if (
-    normalized.includes("this appears to be the location of") &&
-    /\b(qwen|sdk|cli)\b/.test(normalized)
-  ) {
-    return true;
-  }
-  if (
-    /\bthe user (might|may|could|seems to|appears to)\b/.test(normalized) &&
-    /\b(path|sdk|cli|installation|environment)\b/.test(normalized)
-  ) {
-    return true;
-  }
-  if (normalized.includes("since they included this path")) return true;
-  if (normalized.includes("check if the sdk is properly installed")) return true;
-  if (normalized.includes("checking the sdk's location") || normalized.includes("checking the sdk location")) {
-    return true;
-  }
-
-  return false;
-}
-
-function looksLikeRuntimeNoise(input: {
-  content: string;
-  workspaceRoot?: string | null;
-  qwenExecutablePath?: string | null;
-}): boolean {
-  const normalized = normalizePathLike(input.content);
-  if (!normalized) return false;
-
-  const executablePathRaw = String(input.qwenExecutablePath || "").trim();
-  const executablePath = normalizePathLike(input.qwenExecutablePath);
-  if (
-    executablePath &&
-    looksLikePath(executablePathRaw) &&
-    normalized.includes(executablePath) &&
-    !isPathInsideWorkspace(executablePathRaw, input.workspaceRoot)
-  ) {
-    return true;
-  }
-
   return (
-    looksLikeRuntimeNarrativeNoise(input.content) ||
-    normalized.includes("@qwen-code/sdk/dist/cli/cli.js") ||
-    normalized.includes("playgroundai.xpersona-playground") ||
-    normalized.includes("/.trae/extensions/")
+    /\b(current|existing|open)\s+(file|files|plan|doc|document|tab|tabs|integration plan)\b/.test(normalized) ||
+    /\b(this|these)\s+(file|files|plan|doc|document|tab|tabs)\b/.test(normalized) ||
+    /\b(continue|keep working|expand on|elaborate on|build on)\b/.test(normalized)
   );
 }
 
@@ -142,15 +63,20 @@ function buildConversationLane(input: {
   history?: ChatMessage[];
   workspaceRoot?: string | null;
   qwenExecutablePath?: string | null;
+  workspaceTargets?: string[];
 }): string {
+  const explicitRuntimeTask = isExplicitRuntimeTask(input.task);
   const filtered = (input.history || [])
     .filter((message) => message.role === "user" || message.role === "assistant")
     .filter(
       (message) =>
-        !looksLikeRuntimeNoise({
-          content: message.content,
+        explicitRuntimeTask ||
+        !containsRuntimeNoiseForContext({
+          text: message.content,
+          task: input.task,
           workspaceRoot: input.workspaceRoot,
-          qwenExecutablePath: input.qwenExecutablePath,
+          executablePath: input.qwenExecutablePath,
+          workspaceTargets: input.workspaceTargets,
         })
     );
 
@@ -264,6 +190,7 @@ function buildExecutionLane(input: {
   mode: Mode;
   workspaceRoot?: string | null;
   searchDepth: "fast" | "deep";
+  task: string;
 }): string {
   const lines = [
     "Execution policy lane:",
@@ -276,9 +203,20 @@ function buildExecutionLane(input: {
     "- Prefer file paths, symbols, and concrete next actions over abstract prose.",
     "- Suppress long generic reasoning unless the user explicitly asked for explanation.",
     "- Ignore stale extension-bundle or SDK CLI paths unless the user explicitly asks about the extension internals.",
+    "- Never begin your answer by discussing the Qwen SDK, CLI executable, extension runtime, auth setup, or local install paths unless the user explicitly asked about those internals.",
+    "- Do not emit literal <tool_call>, <function=...>, or <parameter=...> markup in your answer. Either use the SDK's real tool mechanism or respond in normal prose.",
     "- If the user quotes prior assistant chatter about SDK locations, installation checks, CLI executables, or runtime folders, treat that as a context-loss bug report and pivot back to the active workspace files.",
     "- When in doubt, explain the likely target file or active editor content instead of speculating about SDK installation state.",
   ];
+
+  if (
+    refersToCurrentWorkspaceContext(input.task) &&
+    (input.preview.activeFile || input.preview.resolvedFiles.length || input.preview.selectedFiles.length)
+  ) {
+    lines.push(
+      "- The user is referring to the current workspace context. Default to the active file and attached workspace snippets instead of asking whether they meant a different path."
+    );
+  }
 
   if (input.preview.intent === "change") {
     lines.push("- For code changes, show a brief patch plan before making edits.");
@@ -303,6 +241,20 @@ export function buildQwenPrompt(input: {
   history?: ChatMessage[];
   qwenExecutablePath?: string | null;
 }): string {
+  const workspaceTargets = Array.from(
+    new Set(
+      [
+        input.preview.activeFile || "",
+        ...input.preview.resolvedFiles,
+        ...input.preview.selectedFiles,
+        ...input.preview.openFiles,
+        ...input.preview.attachedFiles,
+      ]
+        .map((target) => String(target || "").trim())
+        .filter(Boolean)
+    )
+  );
+
   return [
     `User request:\n${input.task}`,
     buildConversationLane({
@@ -310,6 +262,7 @@ export function buildQwenPrompt(input: {
       history: input.history,
       workspaceRoot: input.workspaceRoot,
       qwenExecutablePath: input.qwenExecutablePath,
+      workspaceTargets,
     }),
     buildIntentLane(input.preview),
     buildTargetLane(input.preview, input.workspaceRoot),
@@ -322,6 +275,7 @@ export function buildQwenPrompt(input: {
       mode: input.mode,
       workspaceRoot: input.workspaceRoot,
       searchDepth: input.searchDepth || "fast",
+      task: input.task,
     }),
   ]
     .filter(Boolean)

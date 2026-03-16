@@ -53,6 +53,17 @@ type ContextAnalysis = {
   candidateFiles: string[];
 };
 
+function refersToCurrentWorkspaceContext(task: string): boolean {
+  const normalized = String(task || "").trim().toLowerCase();
+  if (!normalized) return false;
+
+  return (
+    /\b(current|existing|open)\s+(file|files|plan|doc|document|tab|tabs|integration plan)\b/.test(normalized) ||
+    /\b(this|these)\s+(file|files|plan|doc|document|tab|tabs)\b/.test(normalized) ||
+    /\b(continue|keep working|expand on|elaborate on|build on)\b/.test(normalized)
+  );
+}
+
 function truncate(text: string | undefined, limit: number): string | undefined {
   const value = String(text || "").replace(/\r\n/g, "\n").trim();
   if (!value) return undefined;
@@ -208,7 +219,7 @@ export class ContextCollector {
     const activeEditor = vscode.window.activeTextEditor;
     const activePath = activeEditor ? toWorkspaceRelativePath(activeEditor.document.uri) : null;
     const openFiles = this.collectOpenFiles();
-    const attachedFiles = uniquePaths(options.attachedFiles || [], 4);
+    let attachedFiles = uniquePaths(options.attachedFiles || [], 4);
     const memoryFiles = uniquePaths(options.memoryTargets || [], 8);
     const attachedSelection = options.attachedSelection || null;
     const intent = options.intent || classifyIntent(task);
@@ -231,6 +242,29 @@ export class ContextCollector {
       attachedFiles,
       memoryFiles,
     });
+
+    const shouldInferActiveFileForEdit =
+      intent === "change" &&
+      Boolean(activePath) &&
+      !attachedFiles.length &&
+      !attachedSelection &&
+      resolvedTaskState.explicitReferenceCount === 0;
+
+    const shouldInferActiveFileForCurrentContext =
+      intent !== "find" &&
+      Boolean(activePath) &&
+      !attachedFiles.length &&
+      !attachedSelection &&
+      resolvedTaskState.explicitReferenceCount === 0 &&
+      refersToCurrentWorkspaceContext(task);
+
+    if (shouldInferActiveFileForEdit && activePath) {
+      attachedFiles = uniquePaths([activePath, ...attachedFiles], 4);
+    }
+
+    if (shouldInferActiveFileForCurrentContext && activePath) {
+      attachedFiles = uniquePaths([activePath, ...attachedFiles], 4);
+    }
 
     let resolvedFiles = uniquePaths(
       [

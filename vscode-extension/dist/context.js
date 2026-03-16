@@ -39,6 +39,14 @@ const assistant_ux_1 = require("./assistant-ux");
 const context_utils_1 = require("./context-utils");
 const intelligence_utils_1 = require("./intelligence-utils");
 const config_1 = require("./config");
+function refersToCurrentWorkspaceContext(task) {
+    const normalized = String(task || "").trim().toLowerCase();
+    if (!normalized)
+        return false;
+    return (/\b(current|existing|open)\s+(file|files|plan|doc|document|tab|tabs|integration plan)\b/.test(normalized) ||
+        /\b(this|these)\s+(file|files|plan|doc|document|tab|tabs)\b/.test(normalized) ||
+        /\b(continue|keep working|expand on|elaborate on|build on)\b/.test(normalized));
+}
 function truncate(text, limit) {
     const value = String(text || "").replace(/\r\n/g, "\n").trim();
     if (!value)
@@ -176,7 +184,7 @@ class ContextCollector {
         const activeEditor = vscode.window.activeTextEditor;
         const activePath = activeEditor ? (0, config_1.toWorkspaceRelativePath)(activeEditor.document.uri) : null;
         const openFiles = this.collectOpenFiles();
-        const attachedFiles = uniquePaths(options.attachedFiles || [], 4);
+        let attachedFiles = uniquePaths(options.attachedFiles || [], 4);
         const memoryFiles = uniquePaths(options.memoryTargets || [], 8);
         const attachedSelection = options.attachedSelection || null;
         const intent = options.intent || (0, assistant_ux_1.classifyIntent)(task);
@@ -196,6 +204,23 @@ class ContextCollector {
             attachedFiles,
             memoryFiles,
         });
+        const shouldInferActiveFileForEdit = intent === "change" &&
+            Boolean(activePath) &&
+            !attachedFiles.length &&
+            !attachedSelection &&
+            resolvedTaskState.explicitReferenceCount === 0;
+        const shouldInferActiveFileForCurrentContext = intent !== "find" &&
+            Boolean(activePath) &&
+            !attachedFiles.length &&
+            !attachedSelection &&
+            resolvedTaskState.explicitReferenceCount === 0 &&
+            refersToCurrentWorkspaceContext(task);
+        if (shouldInferActiveFileForEdit && activePath) {
+            attachedFiles = uniquePaths([activePath, ...attachedFiles], 4);
+        }
+        if (shouldInferActiveFileForCurrentContext && activePath) {
+            attachedFiles = uniquePaths([activePath, ...attachedFiles], 4);
+        }
         let resolvedFiles = uniquePaths([
             ...attachedFiles,
             attachedSelection?.path || "",

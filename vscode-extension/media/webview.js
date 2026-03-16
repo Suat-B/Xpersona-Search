@@ -22,11 +22,26 @@
     runtimePhase: "idle",
     followUpActions: [],
     draftText: "",
-    activePanel: "chat",
+    historyDrawerOpen: false,
+    binaryDetailsOpen: false,
+    binaryPanelOpen: false,
+    binary: {
+      targetEnvironment: {
+        runtime: "node18",
+        platform: "portable",
+        packageManager: "npm",
+      },
+      activeBuild: null,
+      busy: false,
+      lastAction: null,
+    },
   };
 
   const elements = {
     workspaceShell: document.getElementById("workspaceShell"),
+    historyToggle: document.getElementById("historyToggle"),
+    historyDrawer: document.getElementById("historyDrawer"),
+    historyScrim: document.getElementById("historyScrim"),
     history: document.getElementById("history"),
     historyCount: document.getElementById("historyCount"),
     historyFooter: document.getElementById("historyFooter"),
@@ -53,7 +68,27 @@
     intentBadge: document.getElementById("intentBadge"),
     intentChip: document.getElementById("intentChip"),
     clearAttachedContext: document.getElementById("clearAttachedContext"),
-    viewButtons: Array.from(document.querySelectorAll("[data-view-target]")),
+    binaryStatusBadge: document.getElementById("binaryStatusBadge"),
+    binaryPanelToggle: document.getElementById("binaryPanelToggle"),
+    binaryPanelBody: document.getElementById("binaryPanelBody"),
+    binaryPanelSummary: document.getElementById("binaryPanelSummary"),
+    binaryPanelMeta: document.getElementById("binaryPanelMeta"),
+    binaryPanelChevron: document.getElementById("binaryPanelChevron"),
+    binaryTargetRuntime: document.getElementById("binaryTargetRuntime"),
+    binaryReliabilityScore: document.getElementById("binaryReliabilityScore"),
+    binaryArtifactLabel: document.getElementById("binaryArtifactLabel"),
+    binaryPublishLabel: document.getElementById("binaryPublishLabel"),
+    binaryBuildVisual: document.getElementById("binaryBuildVisual"),
+    binaryBuildTitle: document.getElementById("binaryBuildTitle"),
+    binaryBuildCaption: document.getElementById("binaryBuildCaption"),
+    binaryManifestPreview: document.getElementById("binaryManifestPreview"),
+    binaryWarnings: document.getElementById("binaryWarnings"),
+    generateBinaryButton: document.getElementById("generateBinaryButton"),
+    validateBinaryButton: document.getElementById("validateBinaryButton"),
+    deployBinaryButton: document.getElementById("deployBinaryButton"),
+    binaryDownloadLink: document.getElementById("binaryDownloadLink"),
+    binaryDetailsButton: document.getElementById("binaryDetailsButton"),
+    binaryDetailsPanel: document.getElementById("binaryDetailsPanel"),
   };
 
   let mentionRequestId = 0;
@@ -66,6 +101,32 @@
   let lastPreviewText = null;
   let lastDraftKey = "";
   let lastDraftText = "";
+
+  function shouldSubmitEnter(event) {
+    if (!event) return false;
+    const key = String(event.key || "");
+    const code = String(event.code || "");
+    const isEnter = key === "Enter" || code === "Enter" || code === "NumpadEnter";
+    return (
+      isEnter &&
+      !event.shiftKey &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.isComposing
+    );
+  }
+
+  function draftKeyFor(nextState) {
+    const runtime = nextState && typeof nextState.runtime === "string" ? nextState.runtime : state.runtime;
+    const sessionId =
+      nextState && typeof nextState.selectedSessionId === "string"
+        ? nextState.selectedSessionId
+        : nextState && nextState.selectedSessionId === null
+          ? null
+          : state.selectedSessionId;
+    return `${runtime}:${sessionId || "__new__"}`;
+  }
 
   function escapeHtml(value) {
     return String(value || "")
@@ -96,7 +157,7 @@
   function roleLabel(role) {
     if (role === "user") return "You";
     if (role === "system") return "System";
-    return "Playground";
+    return "Binary IDE";
   }
 
   function intentLabel(intent) {
@@ -163,7 +224,7 @@
   }
 
   function runtimeName() {
-    return state.runtime === "qwenCode" ? "Qwen Code" : "Playground API";
+    return state.runtime === "qwenCode" ? "Qwen Code" : "Binary IDE API";
   }
 
   function runtimeChipLabel() {
@@ -196,7 +257,7 @@
     if (state.runtime === "qwenCode") {
       return state.auth && state.auth.kind !== "none"
         ? "Local runtime connected"
-        : "Add a Playground API key";
+        : "Add a Binary IDE API key";
     }
     return state.auth && state.auth.kind !== "none"
       ? state.auth.label || "Signed in"
@@ -218,44 +279,82 @@
     return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
   }
 
+  function mentionLabel(value) {
+    const normalized = String(value || "").replace(/\\/g, "/");
+    if (!normalized) return "";
+    const parts = normalized.split("/").filter(Boolean);
+    return parts[parts.length - 1] || normalized;
+  }
+
   function setHidden(element, hidden) {
     if (!element) return;
     element.classList.toggle("is-hidden", Boolean(hidden));
   }
 
-  function normalizePanel(value) {
-    return value === "tasks" ? "tasks" : "chat";
-  }
-
-  function setActivePanel(panel) {
-    state.activePanel = normalizePanel(panel);
-    syncActivePanel();
+  function setHistoryDrawerOpen(open) {
+    state.historyDrawerOpen = Boolean(open);
+    syncShellState();
     persistDraft();
   }
 
-  function syncActivePanel() {
-    const panel = normalizePanel(state.activePanel);
+  function setBinaryDetailsOpen(open) {
+    state.binaryDetailsOpen = Boolean(open);
+    syncShellState();
+    persistDraft();
+  }
+
+  function setBinaryPanelOpen(open) {
+    state.binaryPanelOpen = Boolean(open);
+    syncShellState();
+    persistDraft();
+  }
+
+  function syncShellState() {
+    const historyOpen = Boolean(state.historyDrawerOpen);
+    const detailsOpen = Boolean(state.binaryDetailsOpen);
+    const panelOpen = Boolean(state.binaryPanelOpen);
+
     if (elements.workspaceShell) {
-      elements.workspaceShell.setAttribute("data-compact-view", panel);
+      elements.workspaceShell.setAttribute("data-history-open", String(historyOpen));
+      elements.workspaceShell.setAttribute("data-binary-details", String(detailsOpen));
     }
-    elements.viewButtons.forEach((button) => {
-      const active = normalizePanel(button.getAttribute("data-view-target")) === panel;
-      button.classList.toggle("active", active);
-      button.setAttribute("aria-pressed", String(active));
-    });
+    if (elements.historyToggle) {
+      elements.historyToggle.classList.toggle("active", historyOpen);
+      elements.historyToggle.setAttribute("aria-expanded", String(historyOpen));
+    }
+    if (elements.historyDrawer) {
+      elements.historyDrawer.setAttribute("aria-hidden", String(!historyOpen));
+    }
+    setHidden(elements.historyScrim, !historyOpen);
+    if (elements.binaryDetailsButton) {
+      elements.binaryDetailsButton.textContent = detailsOpen ? "Hide details" : "Details";
+      elements.binaryDetailsButton.setAttribute("aria-expanded", String(detailsOpen));
+    }
+    setHidden(elements.binaryDetailsPanel, !detailsOpen);
+    if (elements.binaryPanelToggle) {
+      elements.binaryPanelToggle.setAttribute("aria-expanded", String(panelOpen));
+    }
+    if (elements.binaryPanelChevron) {
+      elements.binaryPanelChevron.textContent = panelOpen ? "−" : "+";
+    }
+    setHidden(elements.binaryPanelBody, !panelOpen);
   }
 
   function persistDraft() {
     vscode.setState({
       draft: elements.composer ? elements.composer.value : "",
-      activePanel: state.activePanel,
+      historyDrawerOpen: state.historyDrawerOpen,
+      binaryDetailsOpen: state.binaryDetailsOpen,
+      binaryPanelOpen: state.binaryPanelOpen,
     });
   }
 
   function restoreDraft() {
     const saved = vscode.getState();
-    if (saved && typeof saved === "object" && typeof saved.activePanel === "string") {
-      state.activePanel = normalizePanel(saved.activePanel);
+    if (saved && typeof saved === "object") {
+      state.historyDrawerOpen = Boolean(saved.historyDrawerOpen);
+      state.binaryDetailsOpen = Boolean(saved.binaryDetailsOpen);
+      state.binaryPanelOpen = Boolean(saved.binaryPanelOpen);
     }
     if (saved && typeof saved === "object" && typeof saved.draft === "string" && elements.composer) {
       elements.composer.value = saved.draft;
@@ -263,16 +362,30 @@
   }
 
   function currentDraftKey() {
-    return `${state.runtime}:${state.selectedSessionId || "__new__"}`;
+    return draftKeyFor(state);
   }
 
-  function syncComposerFromState() {
+  function shouldSyncComposerValue(nextDraftKey, nextDraftText) {
+    if (!elements.composer) return false;
+    const localValue = elements.composer.value || "";
+    const isFocused = document.activeElement === elements.composer;
+
+    if (nextDraftKey !== currentDraftKey()) return true;
+    if (!isFocused) return true;
+
+    // While the composer is focused, treat the local textarea value as the
+    // source of truth so delayed preview/state echoes cannot delete characters.
+    return localValue === nextDraftText;
+  }
+
+  function syncComposerFromState(nextState) {
     if (!elements.composer) return;
-    const nextDraftKey = currentDraftKey();
-    const nextDraftText = typeof state.draftText === "string" ? state.draftText : "";
+    const source = nextState || state;
+    const nextDraftKey = draftKeyFor(source);
+    const nextDraftText = typeof source.draftText === "string" ? source.draftText : "";
     const shouldSync = nextDraftKey !== lastDraftKey || nextDraftText !== lastDraftText;
 
-    if (shouldSync && elements.composer.value !== nextDraftText) {
+    if (shouldSync && elements.composer.value !== nextDraftText && shouldSyncComposerValue(nextDraftKey, nextDraftText)) {
       elements.composer.value = nextDraftText;
       syncComposerHeight();
       persistDraft();
@@ -520,12 +633,9 @@
       '<div class="message-stack">',
       '<div class="empty-stage"><div class="empty-stage-inner">',
       '<div class="empty-stage-logo">',
-      logoUri ? `<img src="${escapeHtml(logoUri)}" alt="Playground" />` : "",
+      logoUri ? `<img src="${escapeHtml(logoUri)}" alt="Binary IDE" />` : "",
       "</div>",
-      '<h2 class="empty-stage-title">Chat is ready.</h2>',
-      `<p class="empty-stage-copy">Start typing below and Playground opens directly into the conversation for ${escapeHtml(
-        workspaceName
-      )}. Context is resolved before send so Qwen can move faster with less guessing.</p>`,
+      `<span>Compose for ${escapeHtml(workspaceName)}. Chat stays primary, and bundle actions stay docked below.</span>`,
       "</div></div>",
       "</div>",
     ].join("");
@@ -579,7 +689,9 @@
   function renderActivity() {
     if (!elements.timelineWrap || !elements.activity) return;
     const phase = state.runtimePhase || "idle";
-    const show = phase !== "idle" || (Array.isArray(state.activity) && state.activity.length);
+    const show =
+      !mentionItems.length &&
+      (phase !== "idle" && phase !== "radar" || (Array.isArray(state.activity) && state.activity.length));
     if (!show) {
       elements.timelineWrap.classList.remove("show");
       elements.activity.innerHTML = "";
@@ -591,6 +703,149 @@
       .forEach((item) => chips.push(`<span class="timeline-chip">${escapeHtml(item)}</span>`));
     elements.timelineWrap.classList.add("show");
     elements.activity.innerHTML = chips.join("");
+  }
+
+  function formatBytes(value) {
+    const size = Number(value || 0);
+    if (!Number.isFinite(size) || size <= 0) return "0 B";
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function renderBinaryPanel() {
+    const binary = state.binary || {};
+    const build = binary.activeBuild || null;
+    const reliability = build && build.reliability ? build.reliability : null;
+    const manifest = build && build.manifest ? build.manifest : null;
+    const isBuilding = Boolean(binary.busy || (build && (build.status === "queued" || build.status === "running")));
+    const warnings = [];
+    const runtimeLabel =
+      binary.targetEnvironment && binary.targetEnvironment.runtime === "node20" ? "Node 20" : "Node 18";
+    const summaryStatus = build
+      ? build.status === "completed"
+        ? "Bundle ready"
+        : build.status === "failed"
+          ? "Build failed"
+          : build.status === "running"
+            ? "Building"
+            : "Queued"
+      : "No bundle yet";
+
+    if (reliability && Array.isArray(reliability.warnings)) {
+      warnings.push(...reliability.warnings);
+    }
+    if (manifest && Array.isArray(manifest.warnings)) {
+      warnings.push(...manifest.warnings);
+    }
+
+    if (elements.binaryStatusBadge) {
+      const status = build ? build.status : "idle";
+      const label =
+        status === "completed"
+          ? "Bundle ready"
+          : status === "failed"
+            ? "Build failed"
+            : status === "running"
+              ? "Building"
+              : status === "queued"
+                ? "Queued"
+                : binary.busy
+                  ? "Working"
+                  : "No bundle yet";
+      elements.binaryStatusBadge.textContent = label;
+      elements.binaryStatusBadge.className = `binary-status ${
+        reliability ? reliability.status : status === "failed" ? "fail" : ""
+      }`.trim();
+    }
+
+    if (elements.binaryTargetRuntime) {
+      elements.binaryTargetRuntime.value =
+        binary.targetEnvironment && binary.targetEnvironment.runtime === "node20" ? "node20" : "node18";
+      elements.binaryTargetRuntime.disabled = Boolean(binary.busy);
+    }
+
+    if (elements.binaryReliabilityScore) {
+      elements.binaryReliabilityScore.textContent = reliability ? `${reliability.score}/100` : "--";
+    }
+
+    if (elements.binaryArtifactLabel) {
+      elements.binaryArtifactLabel.textContent = build && build.artifact
+        ? `${build.artifact.fileName} (${formatBytes(build.artifact.sizeBytes)})`
+        : "No bundle yet";
+    }
+
+    if (elements.binaryPublishLabel) {
+      elements.binaryPublishLabel.textContent = build && build.publish ? "Published" : "Private";
+    }
+    if (elements.binaryPanelSummary) {
+      elements.binaryPanelSummary.textContent = `${runtimeLabel} • ${summaryStatus}`;
+    }
+    if (elements.binaryPanelMeta) {
+      elements.binaryPanelMeta.textContent = build && build.publish
+        ? "Published bundle controls and manifest details."
+        : "Runtime, reliability, publish, and download controls.";
+    }
+
+    if (elements.binaryBuildVisual) {
+      elements.binaryBuildVisual.classList.toggle("show", isBuilding);
+    }
+    if (elements.binaryBuildTitle) {
+      elements.binaryBuildTitle.textContent =
+        build && build.status === "running"
+          ? "Assembling Binary package bundle"
+          : "Encoding Binary starter bundle";
+    }
+    if (elements.binaryBuildCaption) {
+      elements.binaryBuildCaption.textContent =
+        build && build.status === "running"
+          ? "101010 in motion. Resolving files, compiling output, and sealing the bundle."
+          : "Queue locked. Preparing a portable package bundle from your current intent.";
+    }
+
+    if (elements.binaryManifestPreview) {
+      elements.binaryManifestPreview.textContent = manifest
+        ? [
+            `Name: ${manifest.displayName}`,
+            `Runtime: ${manifest.runtime}`,
+            `Entrypoint: ${manifest.entrypoint}`,
+            `Build: ${manifest.buildCommand}`,
+            `Start: ${manifest.startCommand}`,
+          ].join("\n")
+        : "Generate a portable starter bundle to inspect its manifest.";
+    }
+
+    if (elements.binaryWarnings) {
+      if (!warnings.length) {
+        elements.binaryWarnings.textContent = build && build.errorMessage
+          ? build.errorMessage
+          : "No Binary IDE warnings yet.";
+      } else {
+        elements.binaryWarnings.textContent = warnings.join("\n");
+      }
+    }
+
+    if (elements.generateBinaryButton) {
+      elements.generateBinaryButton.disabled = Boolean(binary.busy);
+    }
+    if (elements.validateBinaryButton) {
+      elements.validateBinaryButton.disabled = Boolean(binary.busy || !build || build.status !== "completed");
+    }
+    if (elements.deployBinaryButton) {
+      elements.deployBinaryButton.disabled = Boolean(binary.busy || !build || build.status !== "completed");
+    }
+
+    if (elements.binaryDetailsButton) {
+      elements.binaryDetailsButton.disabled = Boolean(binary.busy && !build);
+    }
+
+    if (elements.binaryDownloadLink) {
+      const href = build && build.publish && build.publish.downloadUrl ? build.publish.downloadUrl : "";
+      elements.binaryDownloadLink.href = href || "#";
+      elements.binaryDownloadLink.classList.toggle("is-hidden", !href);
+    }
+
+    syncShellState();
   }
 
   function renderContextStrip() {
@@ -610,7 +865,7 @@
     if (elements.contextNote) {
       elements.contextNote.textContent =
         summary.note ||
-        "Type a file name or symbol and Playground will resolve likely targets before you send.";
+        "Type a file name or symbol and Binary IDE will resolve likely targets before you send.";
     }
     if (elements.contextRoot) {
       elements.contextRoot.textContent = summary.workspaceRoot
@@ -640,14 +895,15 @@
     elements.mentions.innerHTML = mentionItems
       .map((item, index) => {
         const active = index === selectedMentionIndex ? " active" : "";
-        return `<div class="mention-item"><button type="button" class="${active.trim()}" data-mention-index="${index}" data-mention-value="${escapeHtml(item)}">${escapeHtml(item)}</button></div>`;
+        const label = mentionLabel(item);
+        return `<div class="mention-item"><button type="button" class="${active.trim()}" data-mention-index="${index}" data-mention-value="${escapeHtml(item)}" title="${escapeHtml(item)}">${escapeHtml(label)}</button></div>`;
       })
       .join("");
   }
 
   function render() {
-    syncActivePanel();
-    syncComposerFromState();
+    syncShellState();
+    syncComposerFromState(state);
     if (elements.runtimeChip) {
       elements.runtimeChip.textContent = runtimeChipLabel();
       elements.runtimeChip.title = runtimeName();
@@ -666,7 +922,9 @@
     }
     if (elements.authChip) {
       elements.authChip.textContent = authButtonShortLabel();
-      elements.authChip.title = authButtonLabel();
+      if (elements.authChip.parentElement) {
+        elements.authChip.parentElement.title = authButtonLabel();
+      }
     }
     if (elements.send) {
       elements.send.disabled = Boolean(state.busy);
@@ -679,11 +937,12 @@
     if (elements.composer) {
       elements.composer.placeholder =
         state.runtime === "qwenCode"
-          ? "Ask Playground anything. @ to add files, / for commands"
-          : "Ask Playground to inspect code, patch files, or explain a bug";
+          ? "Draft the portable starter bundle you want. @ to add files, / for commands"
+          : "Ask Binary IDE to inspect code, patch files, or prepare a portable starter bundle";
     }
     renderHistory();
     renderActivity();
+    renderBinaryPanel();
     renderMessages();
     renderMentions();
     syncComposerHeight();
@@ -718,14 +977,14 @@
     const value = String(elements.composer ? elements.composer.value : "").trim();
     if (!value || state.busy) return;
     shouldStickToBottom = true;
-    setActivePanel("chat");
+    setHistoryDrawerOpen(false);
+    window.clearTimeout(previewTimer);
     vscode.postMessage({ type: "sendPrompt", text: value });
     if (elements.composer) {
       elements.composer.value = "";
       syncComposerHeight();
       persistDraft();
-      lastPreviewText = null;
-      sendPreviewContextNow(true);
+      lastPreviewText = "";
     }
     hideMentions();
   }
@@ -734,22 +993,47 @@
     if (!action) return;
     switch (action) {
       case "showChat":
-        setActivePanel("chat");
+        setHistoryDrawerOpen(false);
         focusComposer(true);
         return;
-      case "showTasks":
-        setActivePanel("tasks");
-        vscode.postMessage({ type: "loadHistory" });
+      case "showTasks": {
+        const nextHistoryOpen = !state.historyDrawerOpen;
+        setHistoryDrawerOpen(nextHistoryOpen);
+        if (nextHistoryOpen) {
+          vscode.postMessage({ type: "loadHistory" });
+        }
+        return;
+      }
+      case "closeHistory":
+        setHistoryDrawerOpen(false);
+        focusComposer(false);
         return;
       case "newChat":
         shouldStickToBottom = true;
-        setActivePanel("chat");
+        setHistoryDrawerOpen(false);
+        hideMentions();
+        if (elements.composer) {
+          elements.composer.value = "";
+          syncComposerHeight();
+          persistDraft();
+        }
+        state.selectedSessionId = null;
+        state.draftText = "";
+        lastDraftKey = `${state.runtime}:__new__`;
+        lastDraftText = "";
+        lastPreviewText = "";
         vscode.postMessage({ type: "newChat" });
         window.setTimeout(() => {
           focusComposer(true);
-          sendPreviewContextNow(true);
         }, 0);
         return;
+      case "toggleBinaryDetails":
+        setBinaryDetailsOpen(!state.binaryDetailsOpen);
+        return;
+      case "toggleBinaryPanel":
+        setBinaryPanelOpen(!state.binaryPanelOpen);
+        return;
+      case "configureBinary":
       case "setApiKey":
       case "signIn":
       case "signOut":
@@ -758,6 +1042,18 @@
       case "attachActiveFile":
       case "attachSelection":
       case "clearAttachedContext":
+        vscode.postMessage({ type: action });
+        return;
+      case "generateBinary":
+        setHistoryDrawerOpen(false);
+        vscode.postMessage({
+          type: "generateBinary",
+          text: elements.composer ? elements.composer.value : "",
+        });
+        return;
+      case "validateBinary":
+      case "deployBinary":
+        setHistoryDrawerOpen(false);
         vscode.postMessage({ type: action });
         return;
       default:
@@ -783,9 +1079,10 @@
   function applyMention(pathValue) {
     if (!elements.composer || !activeMentionRange) return;
     const value = elements.composer.value || "";
+    const label = mentionLabel(pathValue);
     elements.composer.value =
-      value.slice(0, activeMentionRange.start) + "@" + pathValue + " " + value.slice(activeMentionRange.end);
-    const nextCursor = activeMentionRange.start + pathValue.length + 2;
+      value.slice(0, activeMentionRange.start) + "@" + label + " " + value.slice(activeMentionRange.end);
+    const nextCursor = activeMentionRange.start + label.length + 2;
     elements.composer.setSelectionRange(nextCursor, nextCursor);
     syncComposerHeight();
     persistDraft();
@@ -827,7 +1124,7 @@
     const historyButton = target.closest("[data-history-id]");
     if (historyButton) {
       shouldStickToBottom = true;
-      setActivePanel("chat");
+      setHistoryDrawerOpen(false);
       vscode.postMessage({ type: "openSession", id: historyButton.getAttribute("data-history-id") || "" });
       return;
     }
@@ -844,6 +1141,15 @@
 
   if (elements.jumpToLatest) {
     elements.jumpToLatest.addEventListener("click", () => scrollToLatest("smooth"));
+  }
+
+  if (elements.binaryTargetRuntime) {
+    elements.binaryTargetRuntime.addEventListener("change", () => {
+      vscode.postMessage({
+        type: "setBinaryTarget",
+        runtime: elements.binaryTargetRuntime ? elements.binaryTargetRuntime.value : "node18",
+      });
+    });
   }
 
   if (elements.messages) {
@@ -874,9 +1180,27 @@
         hideMentions();
         return;
       }
-      if (event.key === "Enter" && !event.shiftKey) {
+      if (shouldSubmitEnter(event)) {
         event.preventDefault();
+        event.stopPropagation();
         sendPrompt();
+      }
+    }, true);
+
+    elements.composer.addEventListener("beforeinput", (event) => {
+      if (event.inputType !== "insertLineBreak" || mentionItems.length) return;
+      if (!elements.composer || document.activeElement !== elements.composer) return;
+      if (state.busy) {
+        event.preventDefault();
+        return;
+      }
+      if ((elements.composer.value || "").trim()) {
+        event.preventDefault();
+        window.setTimeout(() => {
+          if (!state.busy) {
+            sendPrompt();
+          }
+        }, 0);
       }
     });
 
@@ -900,22 +1224,16 @@
     const message = event.data || {};
     if (message.type === "state") {
       const nextState = message.state || {};
-      if (
-        elements.composer &&
-        typeof nextState.draftText === "string" &&
-        elements.composer.value !== nextState.draftText
-      ) {
-        elements.composer.value = nextState.draftText;
-        syncComposerHeight();
-        persistDraft();
-      }
       Object.assign(state, nextState);
       render();
       return;
     }
     if (message.type === "prefill" && elements.composer) {
-      setActivePanel("chat");
+      setHistoryDrawerOpen(false);
       elements.composer.value = message.text || "";
+      state.draftText = message.text || "";
+      lastDraftText = state.draftText;
+      lastPreviewText = state.draftText;
       syncComposerHeight();
       persistDraft();
       focusComposer(true);
@@ -936,7 +1254,6 @@
   render();
   window.setTimeout(() => {
     focusComposer(true);
-    sendPreviewContextNow(true);
   }, 30);
   vscode.postMessage({ type: "ready" });
 })();

@@ -4,6 +4,7 @@ import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { hashApiKey } from "@/lib/auth-utils";
 import { isAdminEmail } from "@/lib/admin";
+import { getLocalDevBypassAuth } from "@/lib/playground/auth-dev-bypass";
 import { isVscodeAccessToken, verifyVscodeAccessToken } from "@/lib/playground/vscode-tokens";
 
 export const UNLIMITED_PLAYGROUND_EMAILS = new Set([
@@ -56,16 +57,31 @@ export async function authenticatePlaygroundApiKey(
   const apiKey = headerKey || bearerKey;
   if (!apiKey) return null;
 
+  const localDevBypass = getLocalDevBypassAuth(apiKey);
+  if (localDevBypass) return localDevBypass;
+
   const apiKeyHash = hashApiKey(apiKey);
-  const found = await db
-    .select({
-      id: users.id,
-      email: users.email,
-      apiKeyPrefix: users.apiKeyPrefix,
-    })
-    .from(users)
-    .where(eq(users.apiKeyHash, apiKeyHash))
-    .limit(1);
+  let found:
+    | Array<{
+        id: string;
+        email: string;
+        apiKeyPrefix: string | null;
+      }>
+    | null = null;
+
+  try {
+    found = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        apiKeyPrefix: users.apiKeyPrefix,
+      })
+      .from(users)
+      .where(eq(users.apiKeyHash, apiKeyHash))
+      .limit(1);
+  } catch {
+    return null;
+  }
 
   if (!found.length) return null;
   return {

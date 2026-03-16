@@ -39,6 +39,7 @@ const sdk_1 = require("@qwen-code/sdk");
 const config_1 = require("./config");
 const qwen_runtime_utils_1 = require("./qwen-runtime-utils");
 const qwen_response_assembly_1 = require("./qwen-response-assembly");
+const qwen_stream_format_1 = require("./qwen-stream-format");
 function trimToSentence(value, limit = 220) {
     const text = String(value || "").replace(/\s+/g, " ").trim();
     if (text.length <= limit)
@@ -49,6 +50,13 @@ function extractText(blocks) {
     return blocks
         .filter((block) => block.type === "text")
         .map((block) => block.text)
+        .join("")
+        .trim();
+}
+function extractThinking(blocks) {
+    return blocks
+        .filter((block) => block.type === "thinking")
+        .map((block) => block.thinking)
         .join("")
         .trim();
 }
@@ -95,17 +103,36 @@ class QwenCodeRuntime {
         const includePartialMessages = true;
         const requestedSessionId = input.sessionId || undefined;
         let assistantText = "";
-        let streamingMessageText = "";
+        let completedReasoningText = "";
+        let completedAnswerText = "";
+        let streamingReasoningText = "";
+        let streamingAnswerText = "";
         const permissionDenials = [];
         const usedToolNames = new Set();
         const approvedToolRequests = new Set();
         let didMutate = false;
-        const publishAssistantText = (candidate) => {
-            const merged = (0, qwen_response_assembly_1.mergeAssistantResponseText)(assistantText, candidate);
-            if (!merged || merged === assistantText)
+        const publishAssistantText = (reasoningCandidate, answerCandidate) => {
+            const nextText = (0, qwen_stream_format_1.formatAssistantStreamText)({
+                reasoningText: reasoningCandidate,
+                answerText: answerCandidate,
+            });
+            if (!nextText || nextText === assistantText)
                 return;
-            assistantText = merged;
-            input.onPartial?.(assistantText);
+            assistantText = nextText;
+            input.onPartial?.(nextText);
+        };
+        const publishStreamingState = () => {
+            publishAssistantText((0, qwen_response_assembly_1.mergeAssistantResponseText)(completedReasoningText, streamingReasoningText), (0, qwen_response_assembly_1.mergeAssistantResponseText)(completedAnswerText, streamingAnswerText));
+        };
+        const commitAssistantText = (reasoningCandidate, answerCandidate) => {
+            const nextReasoning = (0, qwen_response_assembly_1.mergeAssistantResponseText)(completedReasoningText, reasoningCandidate);
+            const nextAnswer = (0, qwen_response_assembly_1.mergeAssistantResponseText)(completedAnswerText, answerCandidate);
+            const didChange = nextReasoning !== completedReasoningText || nextAnswer !== completedAnswerText;
+            completedReasoningText = nextReasoning;
+            completedAnswerText = nextAnswer;
+            if (!didChange)
+                return;
+            publishAssistantText(completedReasoningText, completedAnswerText);
         };
         const result = (0, sdk_1.query)({
             prompt: input.prompt,
@@ -144,7 +171,7 @@ class QwenCodeRuntime {
                         return { behavior: "allow", updatedInput: toolInput };
                     }
                     input.onActivity?.(`Denied tool: ${summarizeToolRequest(toolName, toolInput)}`);
-                    return { behavior: "deny", message: "Tool use denied in Playground." };
+                    return { behavior: "deny", message: "Tool use denied in Binary IDE." };
                 },
             },
         });
@@ -152,18 +179,26 @@ class QwenCodeRuntime {
             for await (const message of result) {
                 if ((0, sdk_1.isSDKPartialAssistantMessage)(message)) {
                     if (message.event.type === "message_start") {
-                        streamingMessageText = "";
+                        streamingReasoningText = "";
+                        streamingAnswerText = "";
                         continue;
                     }
                     if (message.event.type === "content_block_delta" &&
                         message.event.delta.type === "text_delta") {
-                        streamingMessageText += message.event.delta.text;
-                        publishAssistantText(streamingMessageText);
+                        streamingAnswerText += message.event.delta.text;
+                        publishStreamingState();
+                        continue;
+                    }
+                    if (message.event.type === "content_block_delta" &&
+                        message.event.delta.type === "thinking_delta") {
+                        streamingReasoningText += message.event.delta.thinking;
+                        publishStreamingState();
                         continue;
                     }
                     if (message.event.type === "message_stop") {
-                        publishAssistantText(streamingMessageText);
-                        streamingMessageText = "";
+                        commitAssistantText(streamingReasoningText, streamingAnswerText);
+                        streamingReasoningText = "";
+                        streamingAnswerText = "";
                     }
                     continue;
                 }
@@ -175,8 +210,9 @@ class QwenCodeRuntime {
                 }
                 if ((0, sdk_1.isSDKAssistantMessage)(message)) {
                     const nextText = extractText(message.message.content);
-                    if (nextText) {
-                        publishAssistantText(nextText);
+                    const nextThinking = extractThinking(message.message.content);
+                    if (nextText || nextThinking) {
+                        commitAssistantText(nextThinking, nextText);
                     }
                     for (const toolUse of extractToolUses(message.message.content)) {
                         usedToolNames.add(toolUse.name);
@@ -189,7 +225,7 @@ class QwenCodeRuntime {
                 }
                 if ((0, sdk_1.isSDKResultMessage)(message)) {
                     if (message.result && typeof message.result === "string" && message.result.trim()) {
-                        publishAssistantText(message.result);
+                        commitAssistantText("", message.result);
                     }
                     for (const denial of message.permission_denials || []) {
                         permissionDenials.push(trimToSentence(`${denial.tool_name} denied`));
@@ -203,7 +239,10 @@ class QwenCodeRuntime {
         return {
             sessionId: result.getSessionId(),
             assistantText: assistantText ||
-                streamingMessageText.trim() ||
+                (0, qwen_stream_format_1.formatAssistantStreamText)({
+                    reasoningText: (0, qwen_response_assembly_1.mergeAssistantResponseText)(completedReasoningText, streamingReasoningText),
+                    answerText: (0, qwen_response_assembly_1.mergeAssistantResponseText)(completedAnswerText, streamingAnswerText),
+                }) ||
                 "Qwen Code finished without returning a final message.",
             permissionDenials,
             usedTools: Array.from(usedToolNames),

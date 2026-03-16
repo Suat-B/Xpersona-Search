@@ -1,0 +1,15 @@
+{
+  "name": "binary-hello-i-want-to-create-a-trailing-stop-l",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Hello I want to create a trailing stop loss <3",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -33,7 +33,8 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PENDING_PKCE_KEY = exports.INDEX_STATE_KEY = exports.MODE_KEY = exports.REFRESH_TOKEN_SECRET = exports.API_KEY_LEGACY_SECRET = exports.API_KEY_SECRET = exports.WEBVIEW_VIEW_ID = exports.EXTENSION_NAMESPACE = void 0;
+exports.PENDING_PKCE_KEY = exports.INDEX_STATE_KEY = exports.MODE_KEY = exports.REFRESH_TOKEN_SECRET = exports.API_KEY_LEGACY_SECRET = exports.API_KEY_SECRET = exports.WEBVIEW_VIEW_ID = exports.LEGACY_EXTENSION_NAMESPACE = exports.EXTENSION_NAMESPACE = void 0;
+exports.migrateLegacyConfiguration = migrateLegacyConfiguration;
 exports.getBaseApiUrl = getBaseApiUrl;
 exports.getRuntimeBackend = getRuntimeBackend;
 exports.getQwenModel = getQwenModel;
@@ -49,7 +50,8 @@ exports.toAbsoluteWorkspacePath = toAbsoluteWorkspacePath;
 const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
 const crypto_1 = require("crypto");
-exports.EXTENSION_NAMESPACE = "xpersona.playground";
+exports.EXTENSION_NAMESPACE = "xpersona.binary";
+exports.LEGACY_EXTENSION_NAMESPACE = "xpersona.playground";
 exports.WEBVIEW_VIEW_ID = "xpersona.playgroundView";
 exports.API_KEY_SECRET = "xpersona.apiKey";
 exports.API_KEY_LEGACY_SECRET = "xpersona.playground.apiKey";
@@ -57,26 +59,73 @@ exports.REFRESH_TOKEN_SECRET = "xpersona.playground.vscodeRefreshToken";
 exports.MODE_KEY = "xpersona.playground.mode";
 exports.INDEX_STATE_KEY = "xpersona.playground.indexState";
 exports.PENDING_PKCE_KEY = "xpersona.playground.pendingPkce";
+const MIGRATABLE_CONFIGURATION_KEYS = [
+    "baseApiUrl",
+    "runtime",
+    "qwen.model",
+    "qwen.baseUrl",
+    "qwen.executable",
+];
+function getExplicitConfigurationValue(namespace, key) {
+    const inspection = vscode.workspace.getConfiguration(namespace).inspect(key);
+    return (inspection?.workspaceFolderValue ??
+        inspection?.workspaceValue ??
+        inspection?.globalValue ??
+        undefined);
+}
+function getConfigurationValue(key, fallback) {
+    const currentExplicit = getExplicitConfigurationValue(exports.EXTENSION_NAMESPACE, key);
+    if (currentExplicit !== undefined)
+        return currentExplicit;
+    const legacyExplicit = getExplicitConfigurationValue(exports.LEGACY_EXTENSION_NAMESPACE, key);
+    if (legacyExplicit !== undefined)
+        return legacyExplicit;
+    const currentValue = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE).get(key);
+    if (currentValue !== undefined)
+        return currentValue;
+    const legacyValue = vscode.workspace.getConfiguration(exports.LEGACY_EXTENSION_NAMESPACE).get(key);
+    if (legacyValue !== undefined)
+        return legacyValue;
+    return fallback;
+}
+async function migrateLegacyConfiguration() {
+    const current = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE);
+    const legacy = vscode.workspace.getConfiguration(exports.LEGACY_EXTENSION_NAMESPACE);
+    for (const key of MIGRATABLE_CONFIGURATION_KEYS) {
+        const currentInspect = current.inspect(key);
+        const legacyInspect = legacy.inspect(key);
+        if (currentInspect?.globalValue === undefined && legacyInspect?.globalValue !== undefined) {
+            await current.update(key, legacyInspect.globalValue, vscode.ConfigurationTarget.Global);
+        }
+        if (currentInspect?.workspaceValue === undefined && legacyInspect?.workspaceValue !== undefined) {
+            await current.update(key, legacyInspect.workspaceValue, vscode.ConfigurationTarget.Workspace);
+        }
+        if (currentInspect?.workspaceFolderValue === undefined &&
+            legacyInspect?.workspaceFolderValue !== undefined) {
+            await current.update(key, legacyInspect.workspaceFolderValue, vscode.ConfigurationTarget.WorkspaceFolder);
+        }
+    }
+}
 function getBaseApiUrl() {
-    const configured = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE).get("baseApiUrl");
+    const configured = getConfigurationValue("baseApiUrl", "http://localhost:3000");
     const value = String(configured || "http://localhost:3000").trim();
     return value.replace(/\/+$/, "");
 }
 function getRuntimeBackend() {
-    const configured = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE).get("runtime");
+    const configured = getConfigurationValue("runtime", "qwenCode");
     return configured === "playgroundApi" ? "playgroundApi" : "qwenCode";
 }
 function getQwenModel() {
-    const configured = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE).get("qwen.model");
-    return String(configured || "Qwen/Qwen3-4B-Thinking-2507:nscale").trim();
+    const configured = getConfigurationValue("qwen.model", "Qwen/Qwen3-Coder-30B-A3B-Instruct:featherless-ai");
+    return String(configured || "Qwen/Qwen3-Coder-30B-A3B-Instruct:featherless-ai").trim();
 }
 function getQwenOpenAiBaseUrl() {
-    const configured = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE).get("qwen.baseUrl");
+    const configured = getConfigurationValue("qwen.baseUrl", `${getBaseApiUrl()}/api/v1/hf`);
     const value = String(configured || `${getBaseApiUrl()}/api/v1/hf`).trim();
     return value.replace(/\/+$/, "");
 }
 function getQwenExecutablePath() {
-    const configured = vscode.workspace.getConfiguration(exports.EXTENSION_NAMESPACE).get("qwen.executable");
+    const configured = getConfigurationValue("qwen.executable", "");
     const value = String(configured || "").trim();
     return value || undefined;
 }

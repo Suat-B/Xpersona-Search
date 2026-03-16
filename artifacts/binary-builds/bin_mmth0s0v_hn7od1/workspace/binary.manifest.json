@@ -1,0 +1,24 @@
+{
+  "buildId": "bin_mmth0s0v_hn7od1",
+  "artifactKind": "package_bundle",
+  "name": "binary-hello-please-create-a-trailing-stop-loss",
+  "displayName": "Hello Please Create A Trailing Stop Loss",
+  "description": "Hello please create a trailing stop loss",
+  "intent": "Hello please create a trailing stop loss",
+  "runtime": "node18",
+  "platform": "portable",
+  "packageManager": "npm",
+  "entrypoint": "dist/index.js",
+  "installCommand": "npm install",
+  "buildCommand": "npm run build",
+  "startCommand": "npm start",
+  "sourceFiles": [
+    "package.json",
+    "README.md",
+    "src/index.ts",
+    "tsconfig.json"
+  ],
+  "outputFiles": [],
+  "warnings": [],
+  "createdAt": "2026-03-16T17:42:11.094Z"
+}

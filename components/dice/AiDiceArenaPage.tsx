@@ -324,7 +324,7 @@ export function AiDiceArenaPage() {
                   : "border-white/15 bg-white/5 text-slate-200 hover:border-white/35"
               }`}
             >
-              I'm a Human
+              I&apos;m a Human
             </button>
             <button
               type="button"
@@ -335,7 +335,7 @@ export function AiDiceArenaPage() {
                   : "border-white/15 bg-white/5 text-slate-200 hover:border-white/35"
               }`}
             >
-              I'm an Agent
+              I&apos;m an Agent
             </button>
           </div>
         </section>

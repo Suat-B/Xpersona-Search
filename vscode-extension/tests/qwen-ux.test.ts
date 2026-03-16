@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeQwenAssistantOutput } from "../src/qwen-ux";
+import { sanitizeQwenAssistantOutput, shouldSuppressQwenPartialOutput } from "../src/qwen-ux";
 
 describe("qwen-ux", () => {
   it("filters stale extension runtime chatter from assistant output", () => {
@@ -107,5 +107,119 @@ describe("qwen-ux", () => {
 
     expect(result).toContain("@qwen-code");
     expect(result).toContain("bundled SDK CLI");
+  });
+
+  it("filters the shared-file-path sdk extension phrasing that was slipping through", () => {
+    const result = sanitizeQwenAssistantOutput({
+      task: "fix route.ts",
+      workspaceRoot: "c:/repo",
+      workspaceTargets: ["app/api/v1/playground/models/route.ts"],
+      executablePath:
+        "c:\\Users\\suatb\\.trae\\extensions\\playgroundai.xpersona-playground-0.0.59\\node_modules\\@qwen-code\\sdk\\dist\\cli\\cli.js",
+      text:
+        "I notice you've shared a file path related to a Qwen Code SDK extension. I'll inspect that runtime first.",
+    });
+
+    expect(result).not.toContain("Qwen Code SDK extension");
+    expect(result).not.toContain("runtime first");
+    expect(result).toContain("workspace code");
+    expect(result).toContain("app/api/v1/playground/models/route.ts");
+  });
+
+  it("strips pseudo tool-call markup instead of showing fake tool usage in chat", () => {
+    const result = sanitizeQwenAssistantOutput({
+      task: "fix route.ts",
+      workspaceRoot: "c:/repo",
+      workspaceTargets: ["app/api/v1/playground/models/route.ts"],
+      text: [
+        "Let me know how I can assist you further.",
+        "<tool_call>",
+        "<function=todo_write>",
+        "<parameter=content>",
+        "Investigate route.ts",
+        "</parameter>",
+        "</function>",
+        "</tool_call>",
+      ].join("\n"),
+    });
+
+    expect(result).toContain("Let me know how I can assist you further.");
+    expect(result).not.toContain("<tool_call>");
+    expect(result).not.toContain("todo_write");
+    expect(result).not.toContain("Investigate route.ts");
+  });
+
+  it("suppresses runtime-chatter partials before they reach the chat UI", () => {
+    const suppressed = shouldSuppressQwenPartialOutput({
+      task: "expand on Binary IDE Plan.md",
+      workspaceRoot: "c:/repo",
+      executablePath:
+        "c:\\Users\\suatb\\.trae\\extensions\\playgroundai.xpersona-playground-0.0.59\\node_modules\\@qwen-code\\sdk\\dist\\cli\\cli.js",
+      text: "I notice you've shared a file path related to a Qwen Code SDK extension.",
+    });
+
+    expect(suppressed).toBe(true);
+  });
+
+  it("does not suppress normal workspace-grounded partials", () => {
+    const suppressed = shouldSuppressQwenPartialOutput({
+      task: "expand on Binary IDE Plan.md",
+      workspaceRoot: "c:/repo",
+      text: "I can expand the current Binary IDE plan and focus on the active markdown file.",
+    });
+
+    expect(suppressed).toBe(false);
+  });
+
+  it("filters the shared-path-to-sdk-installation phrasing too", () => {
+    const result = sanitizeQwenAssistantOutput({
+      task: "expand on Binary IDE Plan.md",
+      workspaceRoot: "c:/repo",
+      workspaceTargets: ["Binary IDE Plan.md"],
+      text: "It looks like you shared a path to the Qwen Code SDK installation, so I should inspect that environment first.",
+    });
+
+    expect(result).not.toContain("Qwen Code SDK installation");
+    expect(result).not.toContain("inspect that environment first");
+    expect(result).toContain("workspace code");
+    expect(result).toContain("Binary IDE Plan.md");
+  });
+
+  it("filters plain Qwen Code runtime chatter too", () => {
+    const result = sanitizeQwenAssistantOutput({
+      task: "expand on Binary IDE Plan.md",
+      workspaceRoot: "c:/repo",
+      workspaceTargets: ["Binary IDE Plan.md"],
+      text: "I will inspect the Qwen Code runtime and model behavior before expanding your plan.",
+    });
+
+    expect(result).not.toContain("Qwen Code runtime");
+    expect(result).not.toContain("model behavior");
+    expect(result).toContain("workspace code");
+    expect(result).toContain("Binary IDE Plan.md");
+  });
+
+  it("preserves legitimate Qwen workspace topics when the active files are actually about Qwen", () => {
+    const result = sanitizeQwenAssistantOutput({
+      task: "expand the qwen adapter logic in qwen-client.ts",
+      workspaceRoot: "c:/repo",
+      workspaceTargets: ["src/qwen-client.ts"],
+      text: "I can expand src/qwen-client.ts by tightening the Qwen adapter and normalizing router errors.",
+    });
+
+    expect(result).toContain("src/qwen-client.ts");
+    expect(result).toContain("Qwen adapter");
+    expect(result).not.toContain("user's workspace code at c:/repo");
+  });
+
+  it("does not suppress Qwen-related partials when they are grounded in workspace files", () => {
+    const suppressed = shouldSuppressQwenPartialOutput({
+      task: "expand the qwen adapter logic in qwen-client.ts",
+      workspaceRoot: "c:/repo",
+      workspaceTargets: ["src/qwen-client.ts"],
+      text: "I can update src/qwen-client.ts to make the Qwen adapter more reliable.",
+    });
+
+    expect(suppressed).toBe(false);
   });
 });

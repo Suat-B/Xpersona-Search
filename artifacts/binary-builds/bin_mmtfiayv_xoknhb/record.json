@@ -1,0 +1,79 @@
+{
+  "id": "bin_mmtfiayv_xoknhb",
+  "userId": "6fe0cf39-61cd-4b14-a470-e43b88617171",
+  "historySessionId": "ccbafc30-913c-4a00-8d73-36bc9e1fcd2d",
+  "runId": "755ed418-8fa3-43ef-bd45-3e54001deced",
+  "workflow": "binary_generate",
+  "artifactKind": "package_bundle",
+  "status": "failed",
+  "intent": "Hello I want to create a trailing stop loss <3",
+  "workspaceFingerprint": "de3b3419c6e14ecbc5729f54fa181a400a517cfc",
+  "targetEnvironment": {
+    "runtime": "node18",
+    "platform": "portable",
+    "packageManager": "npm"
+  },
+  "logs": [
+    "Queued Binary IDE portable package bundle build.",
+    "Starting Binary IDE package bundle build.",
+    "Materializing package bundle workspace.",
+    "Running npm install.",
+    "npm install exit code 1.",
+    "npm install failed: unknown error"
+  ],
+  "manifest": {
+    "buildId": "bin_mmtfiayv_xoknhb",
+    "artifactKind": "package_bundle",
+    "name": "binary-hello-i-want-to-create-a-trailing-stop-l",
+    "displayName": "Hello I Want To Create A Trailing Stop L",
+    "description": "Hello I want to create a trailing stop loss <3",
+    "intent": "Hello I want to create a trailing stop loss <3",
+    "runtime": "node18",
+    "platform": "portable",
+    "packageManager": "npm",
+    "entrypoint": "dist/index.js",
+    "installCommand": "npm install",
+    "buildCommand": "npm run build",
+    "startCommand": "npm start",
+    "sourceFiles": [
+      "package.json",
+      "README.md",
+      "src/index.ts",
+      "tsconfig.json"
+    ],
+    "outputFiles": [],
+    "warnings": [],
+    "createdAt": "2026-03-16T16:59:49.534Z"
+  },
+  "reliability": {
+    "status": "fail",
+    "score": 55,
+    "summary": "Package bundle failed validation with 2 issues.",
+    "targetEnvironment": {
+      "runtime": "node18",
+      "platform": "portable",
+      "packageManager": "npm"
+    },
+    "issues": [
+      {
+        "code": "build_failed",
+        "severity": "error",
+        "message": "The package bundle did not produce the expected compiled entrypoint.",
+        "detail": "Expected entrypoint: dist/index.js"
+      },
+      {
+        "code": "missing_lockfile",
+        "severity": "warning",
+        "message": "The generated package bundle is missing package-lock.json.",
+        "detail": "Portable package bundles should include a deterministic npm lockfile."
+      }
+    ],
+    "warnings": [],
+    "generatedAt": "2026-03-16T16:59:49.931Z"
+  },
+  "artifact": null,
+  "publish": null,
+  "errorMessage": "npm install failed: unknown error",
+  "createdAt": "2026-03-16T16:59:48.875Z",
+  "updatedAt": "2026-03-16T16:59:49.964Z"
+}

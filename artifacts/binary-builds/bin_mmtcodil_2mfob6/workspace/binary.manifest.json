@@ -1,0 +1,24 @@
+{
+  "buildId": "bin_mmtcodil_2mfob6",
+  "artifactKind": "package_bundle",
+  "name": "binary-i-want-to-create-a-trailing-stop-loss",
+  "displayName": "I Want To Create A Trailing Stop Loss",
+  "description": "I want to create a trailing stop loss",
+  "intent": "I want to create a trailing stop loss",
+  "runtime": "node18",
+  "platform": "portable",
+  "packageManager": "npm",
+  "entrypoint": "dist/index.js",
+  "installCommand": "npm install",
+  "buildCommand": "npm run build",
+  "startCommand": "npm start",
+  "sourceFiles": [
+    "package.json",
+    "README.md",
+    "src/index.ts",
+    "tsconfig.json"
+  ],
+  "outputFiles": [],
+  "warnings": [],
+  "createdAt": "2026-03-16T15:40:33.712Z"
+}

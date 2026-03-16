@@ -12,6 +12,7 @@ describe("assistant-ux", () => {
   it("classifies common coding intents", () => {
     expect(classifyIntent("fix route.ts")).toBe("change");
     expect(classifyIntent("explain why route.ts is failing")).toBe("explain");
+    expect(classifyIntent("expand on my current files integration plan")).toBe("explain");
     expect(classifyIntent("find references to buildQwenPrompt")).toBe("find");
     expect(classifyIntent("what model am i using")).toBe("ask");
   });

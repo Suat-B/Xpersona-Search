@@ -47,7 +47,8 @@ const qwen_code_runtime_1 = require("./qwen-code-runtime");
 const selection_prefill_1 = require("./selection-prefill");
 const tool_executor_1 = require("./tool-executor");
 const webview_provider_1 = require("./webview-provider");
-function activate(context) {
+async function activate(context) {
+    await (0, config_1.migrateLegacyConfiguration)().catch(() => undefined);
     const auth = new auth_1.AuthManager(context);
     const indexManager = new indexer_1.CloudIndexManager(context, () => auth.getRequestAuth());
     const actionRunner = new actions_1.ActionRunner();
@@ -57,7 +58,27 @@ function activate(context) {
     const qwenHistoryService = new qwen_history_1.QwenHistoryService(context);
     const qwenCodeRuntime = new qwen_code_runtime_1.QwenCodeRuntime();
     const provider = new webview_provider_1.PlaygroundViewProvider(context, auth, historyService, qwenHistoryService, qwenCodeRuntime, contextCollector, actionRunner, toolExecutor, indexManager);
-    context.subscriptions.push(vscode.window.registerWebviewViewProvider(config_1.WEBVIEW_VIEW_ID, provider), vscode.window.registerUriHandler(auth), vscode.commands.registerCommand("xpersona.playground.prompt", async () => {
+    context.subscriptions.push(vscode.window.registerWebviewViewProvider(config_1.WEBVIEW_VIEW_ID, provider), vscode.window.registerUriHandler(auth), vscode.commands.registerCommand("binary.generate", async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            await provider.runBinaryGenerate();
+            return;
+        }
+        const selected = editor.selection.isEmpty
+            ? editor.document.lineAt(editor.selection.active.line).text
+            : editor.document.getText(editor.selection);
+        await provider.runBinaryGenerate((0, selection_prefill_1.buildSelectionPrefill)({
+            path: (0, config_1.toWorkspaceRelativePath)(editor.document.uri),
+            line: editor.selection.start.line + 1,
+            selectedText: selected.trim(),
+        }));
+    }), vscode.commands.registerCommand("binary.validate", async () => {
+        await provider.runBinaryValidate();
+    }), vscode.commands.registerCommand("binary.deploy", async () => {
+        await provider.runBinaryDeploy();
+    }), vscode.commands.registerCommand("binary.configure", async () => {
+        await provider.openBinaryConfiguration();
+    }), vscode.commands.registerCommand("xpersona.playground.prompt", async () => {
         await provider.show();
     }), vscode.commands.registerCommand("xpersona.playground.openWithSelection", async () => {
         const editor = vscode.window.activeTextEditor;
@@ -72,8 +93,7 @@ function activate(context) {
             selectedText: selected.trim(),
         }));
     }), vscode.commands.registerCommand("xpersona.playground.setApiKey", async () => {
-        await auth.setApiKeyInteractive();
-        await provider.refreshHistory();
+        await provider.openBinaryConfiguration();
     }), vscode.commands.registerCommand("xpersona.playground.signIn", async () => {
         await auth.signInWithBrowser();
     }), vscode.commands.registerCommand("xpersona.playground.signOut", async () => {
@@ -83,11 +103,16 @@ function activate(context) {
         const summary = await actionRunner.undoLastBatch();
         vscode.window.showInformationMessage(summary);
     }), vscode.workspace.onDidChangeConfiguration((event) => {
-        if (event.affectsConfiguration("xpersona.playground.runtime") ||
-            event.affectsConfiguration("xpersona.playground.baseApiUrl") ||
-            event.affectsConfiguration("xpersona.playground.qwen.model") ||
-            event.affectsConfiguration("xpersona.playground.qwen.baseUrl") ||
-            event.affectsConfiguration("xpersona.playground.qwen.executable")) {
+        if (event.affectsConfiguration(`${config_1.EXTENSION_NAMESPACE}.runtime`) ||
+            event.affectsConfiguration(`${config_1.EXTENSION_NAMESPACE}.baseApiUrl`) ||
+            event.affectsConfiguration(`${config_1.EXTENSION_NAMESPACE}.qwen.model`) ||
+            event.affectsConfiguration(`${config_1.EXTENSION_NAMESPACE}.qwen.baseUrl`) ||
+            event.affectsConfiguration(`${config_1.EXTENSION_NAMESPACE}.qwen.executable`) ||
+            event.affectsConfiguration(`${config_1.LEGACY_EXTENSION_NAMESPACE}.runtime`) ||
+            event.affectsConfiguration(`${config_1.LEGACY_EXTENSION_NAMESPACE}.baseApiUrl`) ||
+            event.affectsConfiguration(`${config_1.LEGACY_EXTENSION_NAMESPACE}.qwen.model`) ||
+            event.affectsConfiguration(`${config_1.LEGACY_EXTENSION_NAMESPACE}.qwen.baseUrl`) ||
+            event.affectsConfiguration(`${config_1.LEGACY_EXTENSION_NAMESPACE}.qwen.executable`)) {
             void provider.refreshConfiguration();
         }
     }), vscode.workspace.onDidSaveTextDocument(() => indexManager.scheduleRebuild()), vscode.workspace.onDidCreateFiles(() => indexManager.scheduleRebuild()), vscode.workspace.onDidDeleteFiles(() => indexManager.scheduleRebuild()), vscode.workspace.onDidRenameFiles(() => indexManager.scheduleRebuild()));

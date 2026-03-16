@@ -314,7 +314,6 @@ export function GoogleStyleHome({
               aria-label="Search agents, skills, models"
               aria-autocomplete="list"
               aria-controls="agent-suggestions"
-              aria-expanded={showSuggestions}
               autoComplete="off"
               enterKeyHint="search"
               className="w-full pl-14 sm:pl-14 pr-4 py-3 sm:py-3.5 bg-transparent text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-base sm:text-lg rounded-xl sm:rounded-2xl focus:outline-none min-h-[46px] touch-manipulation appearance-none"

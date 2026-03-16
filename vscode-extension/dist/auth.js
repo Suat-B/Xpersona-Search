@@ -90,8 +90,8 @@ class AuthManager {
     }
     async setApiKeyInteractive() {
         const key = await vscode.window.showInputBox({
-            title: "Set Playground API Key",
-            prompt: "Paste your Xpersona API key",
+            title: "Set Binary IDE API Key",
+            prompt: "Paste your Binary IDE API key",
             password: true,
             ignoreFocusOut: true,
         });
@@ -101,12 +101,12 @@ class AuthManager {
         if (!trimmed) {
             await this.context.secrets.delete(config_1.API_KEY_SECRET);
             await this.context.secrets.delete(config_1.API_KEY_LEGACY_SECRET);
-            vscode.window.showInformationMessage("Stored Playground API key cleared.");
+            vscode.window.showInformationMessage("Stored Binary IDE API key cleared.");
         }
         else {
             await this.context.secrets.store(config_1.API_KEY_SECRET, trimmed);
             await this.context.secrets.delete(config_1.API_KEY_LEGACY_SECRET);
-            vscode.window.showInformationMessage("Playground API key saved.");
+            vscode.window.showInformationMessage("Binary IDE API key saved.");
         }
         await this.emitCurrentState();
     }
@@ -140,7 +140,7 @@ class AuthManager {
         this.accessTokenExpiresAt = 0;
         this.signedInEmail = null;
         await this.emitCurrentState();
-        vscode.window.showInformationMessage("Playground auth cleared.");
+        vscode.window.showInformationMessage("Binary IDE auth cleared.");
     }
     async completeBrowserSignIn(uri) {
         if (uri.path !== "/auth-callback")

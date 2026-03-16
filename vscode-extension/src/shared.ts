@@ -265,3 +265,87 @@ export type AuthState = {
   label: string;
   email?: string;
 };
+
+export type BinaryTargetEnvironment = {
+  runtime: "node18" | "node20";
+  platform: "portable";
+  packageManager: "npm";
+};
+
+export type BinaryValidationIssue = {
+  code: string;
+  severity: "info" | "warning" | "error";
+  message: string;
+  detail?: string;
+};
+
+export type BinaryValidationReport = {
+  status: "pass" | "warn" | "fail";
+  score: number;
+  summary: string;
+  targetEnvironment: BinaryTargetEnvironment;
+  issues: BinaryValidationIssue[];
+  warnings: string[];
+  generatedAt: string;
+};
+
+export type BinaryManifest = {
+  buildId: string;
+  artifactKind: "package_bundle";
+  name: string;
+  displayName: string;
+  description: string;
+  intent: string;
+  runtime: "node18" | "node20";
+  platform: "portable";
+  packageManager: "npm";
+  entrypoint: string;
+  installCommand: string;
+  buildCommand: string;
+  startCommand: string;
+  sourceFiles: string[];
+  outputFiles: string[];
+  warnings: string[];
+  createdAt: string;
+};
+
+export type BinaryArtifactMetadata = {
+  fileName: string;
+  relativePath: string;
+  sizeBytes: number;
+  sha256: string;
+};
+
+export type BinaryPublishResult = {
+  publishedAt: string;
+  downloadUrl: string;
+  expiresAt: string;
+};
+
+export type BinaryBuildRecord = {
+  id: string;
+  userId: string;
+  historySessionId?: string | null;
+  runId?: string | null;
+  workflow: "binary_generate" | "binary_validate" | "binary_deploy";
+  artifactKind: "package_bundle";
+  status: "queued" | "running" | "completed" | "failed";
+  intent: string;
+  workspaceFingerprint: string;
+  targetEnvironment: BinaryTargetEnvironment;
+  logs: string[];
+  manifest?: BinaryManifest | null;
+  reliability?: BinaryValidationReport | null;
+  artifact?: BinaryArtifactMetadata | null;
+  publish?: BinaryPublishResult | null;
+  errorMessage?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BinaryPanelState = {
+  targetEnvironment: BinaryTargetEnvironment;
+  activeBuild: BinaryBuildRecord | null;
+  busy: boolean;
+  lastAction: "generate" | "validate" | "deploy" | null;
+};

@@ -1,5 +1,6 @@
 import React, { type ReactNode } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { AgentMiniCard } from "@/components/agent/AgentMiniCard";
 import { BackToSearchLink } from "@/components/agent/BackToSearchLink";
 import { CustomAgentPage } from "@/components/agent/CustomAgentPage";
@@ -575,9 +576,12 @@ export function AgentTechnicalDossier({ dossier, from }: AgentTechnicalDossierPr
           <SectionShell id="media" title="Media & Demo" evidence={dossier.media.evidence}>
             <div className="space-y-4">
               {dossier.media.primaryImageUrl ? (
-                <img
+                <Image
                   src={dossier.media.primaryImageUrl}
                   alt={`${dossier.name} preview`}
+                  width={1600}
+                  height={900}
+                  unoptimized
                   className="max-h-[26rem] w-full rounded-2xl border border-[var(--border)] object-cover"
                 />
               ) : null}

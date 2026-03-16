@@ -99,7 +99,7 @@ export class ActionRunner {
     this.onDidChangeUndoEmitter.fire(this.canUndo());
     return reason?.trim()
       ? `Checkpoint created: ${reason.trim().slice(0, 200)}`
-      : "Checkpoint created for the current Playground run.";
+      : "Checkpoint created for the current Binary IDE run.";
   }
 
   private ensureUndoBatch(): UndoBatch {
@@ -339,7 +339,7 @@ export class ActionRunner {
   }
 
   async undoLastBatch(): Promise<string> {
-    if (!this.undoBatch) return "There is no recent Playground change batch to undo.";
+    if (!this.undoBatch) return "There is no recent Binary IDE change batch to undo.";
 
     const rootPath = getWorkspaceRootPath();
     if (!rootPath) return "Open a workspace folder before undoing changes.";
@@ -363,7 +363,7 @@ export class ActionRunner {
 
     this.undoBatch = null;
     this.onDidChangeUndoEmitter.fire(false);
-    return "Reverted the last Playground change batch.";
+    return "Reverted the last Binary IDE change batch.";
   }
 
   private async buildValidationCommands(

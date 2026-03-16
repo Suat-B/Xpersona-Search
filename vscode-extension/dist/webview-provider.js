@@ -38,6 +38,7 @@ const vscode = __importStar(require("vscode"));
 const crypto_1 = require("crypto");
 const assistant_ux_1 = require("./assistant-ux");
 const api_client_1 = require("./api-client");
+const binary_client_1 = require("./binary-client");
 const config_1 = require("./config");
 const draft_store_1 = require("./draft-store");
 const qwen_ux_1 = require("./qwen-ux");
@@ -73,6 +74,69 @@ function createEmptyContextSummary() {
         memoryTargets: [],
     };
 }
+function createDefaultBinaryPanelState() {
+    return {
+        targetEnvironment: {
+            runtime: "node18",
+            platform: "portable",
+            packageManager: "npm",
+        },
+        activeBuild: null,
+        busy: false,
+        lastAction: null,
+    };
+}
+function formatBytes(value) {
+    if (!Number.isFinite(value) || value <= 0)
+        return "0 B";
+    if (value < 1024)
+        return `${value} B`;
+    if (value < 1024 * 1024)
+        return `${(value / 1024).toFixed(1)} KB`;
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+function isTransientBinaryPollError(error) {
+    const message = error instanceof Error ? error.message : String(error || "");
+    return /\bHTTP 5\d\d\b/i.test(message) || /\bECONNRESET\b|\bECONNREFUSED\b|\bETIMEDOUT\b/i.test(message);
+}
+function isBinaryBuildPending(build) {
+    return Boolean(build && (build.status === "queued" || build.status === "running"));
+}
+function formatBinaryBuildMessage(build) {
+    const lines = [
+        build.status === "completed"
+            ? "Portable starter bundle ready."
+            : build.status === "failed"
+                ? "Portable starter bundle failed."
+                : build.status === "running"
+                    ? "Portable starter bundle is still building."
+                    : "Portable starter bundle is queued on the Binary IDE server.",
+        `Build: ${build.id}`,
+        `Intent: ${build.intent}`,
+        `Target runtime: ${build.targetEnvironment.runtime}`,
+    ];
+    if (build.reliability) {
+        lines.push(`Reliability: ${build.reliability.status.toUpperCase()} (${build.reliability.score}/100)`);
+        lines.push(build.reliability.summary);
+    }
+    if (build.artifact) {
+        lines.push(`Artifact: ${build.artifact.fileName} (${formatBytes(build.artifact.sizeBytes)})`);
+    }
+    if (build.manifest) {
+        lines.push(`Entrypoint: ${build.manifest.entrypoint}`);
+        lines.push(`Start: ${build.manifest.startCommand}`);
+    }
+    if (build.publish?.downloadUrl) {
+        lines.push(`Download: ${build.publish.downloadUrl}`);
+    }
+    if (build.errorMessage) {
+        lines.push(`Error: ${build.errorMessage}`);
+    }
+    return lines.join("\n");
+}
 class PlaygroundViewProvider {
     constructor(context, auth, historyService, qwenHistoryService, qwenCodeRuntime, contextCollector, actionRunner, toolExecutor, indexManager) {
         this.context = context;
@@ -86,7 +150,11 @@ class PlaygroundViewProvider {
         this.indexManager = indexManager;
         this.sessionId = null;
         this.didPrimeFreshChat = false;
+        this.bootstrapPromise = null;
+        this.didBootstrap = false;
         this.draftText = "";
+        this.draftPreviewTimer = null;
+        this.draftPreviewSequence = 0;
         this.manualContext = {
             attachedFiles: [],
             attachedSelection: null,
@@ -110,6 +178,7 @@ class PlaygroundViewProvider {
             runtimePhase: "idle",
             followUpActions: [],
             draftText: "",
+            binary: createDefaultBinaryPanelState(),
         };
         this.auth.onDidChange(() => void this.handleAuthChange());
         this.actionRunner.onDidChangeUndo((canUndo) => {
@@ -127,7 +196,6 @@ class PlaygroundViewProvider {
         view.webview.onDidReceiveMessage((message) => {
             void this.handleMessage(message);
         });
-        void this.bootstrap();
     }
     async show(prefill) {
         await vscode.commands.executeCommand("workbench.view.extension.xpersona").then(undefined, () => undefined);
@@ -135,6 +203,86 @@ class PlaygroundViewProvider {
         if (prefill && this.view) {
             this.view.webview.postMessage({ type: "prefill", text: prefill });
         }
+    }
+    async runBinaryGenerate(intent) {
+        await this.show(intent);
+        const nextIntent = String(intent || "").trim() ||
+            (await vscode.window.showInputBox({
+                title: "Generate Binary IDE Portable Starter Bundle",
+                prompt: "Describe the portable package bundle you want to generate.",
+                ignoreFocusOut: true,
+            })) ||
+            "";
+        if (!nextIntent.trim())
+            return;
+        await this.generateBinaryBuild(nextIntent);
+    }
+    async runBinaryValidate() {
+        await this.show();
+        await this.validateBinaryBuild();
+    }
+    async runBinaryDeploy() {
+        await this.show();
+        await this.publishBinaryBuild();
+    }
+    async openBinaryConfiguration() {
+        await this.show();
+        const runtimeLabel = this.state.runtime === "qwenCode" ? "Qwen Code" : "Binary IDE API";
+        const nextRuntime = this.state.runtime === "qwenCode" ? "Binary IDE API" : "Qwen Code";
+        const selection = await vscode.window.showQuickPick([
+            { label: "Set API key", detail: "Save or clear the Binary IDE API key.", action: "apiKey" },
+            {
+                label: `Switch runtime to ${nextRuntime}`,
+                detail: `Current runtime: ${runtimeLabel}.`,
+                action: "runtime",
+            },
+            {
+                label: "Open Binary IDE settings",
+                detail: "Open the VS Code settings UI filtered to xpersona.binary.",
+                action: "settings",
+            },
+            ...(this.state.runtime === "playgroundApi"
+                ? [{ label: "Browser sign in", detail: "Authenticate the hosted Binary IDE API in the browser.", action: "signIn" }]
+                : []),
+        ], {
+            title: "Configure Binary IDE",
+            ignoreFocusOut: true,
+        });
+        if (!selection)
+            return;
+        let message = "";
+        switch (selection.action) {
+            case "apiKey":
+                message = await this.performSetApiKey();
+                break;
+            case "runtime": {
+                const pickedRuntime = await vscode.window.showQuickPick([
+                    { label: "Qwen Code", runtime: "qwenCode" },
+                    { label: "Binary IDE API", runtime: "playgroundApi" },
+                ], {
+                    title: "Choose Binary IDE Runtime",
+                    ignoreFocusOut: true,
+                });
+                if (!pickedRuntime)
+                    return;
+                await this.setRuntime(pickedRuntime.runtime);
+                message = `Binary IDE runtime switched to ${pickedRuntime.label}.`;
+                break;
+            }
+            case "settings":
+                await vscode.commands.executeCommand("workbench.action.openSettings", "xpersona.binary");
+                message = "Opened Binary IDE settings.";
+                break;
+            case "signIn":
+                message = await this.performSignIn();
+                break;
+            default:
+                return;
+        }
+        if (!message)
+            return;
+        this.appendMessage("system", message);
+        this.postState();
     }
     getDraftSessionId() {
         return this.state.selectedSessionId || this.sessionId || null;
@@ -173,12 +321,12 @@ class PlaygroundViewProvider {
         await this.refreshAuth();
         await this.refreshHistory();
         return this.state.auth.kind === "none"
-            ? "Playground API key cleared."
-            : "Playground API key updated.";
+            ? "Binary IDE API key cleared."
+            : "Binary IDE API key updated.";
     }
     async performSignIn() {
         if (this.state.runtime === "qwenCode") {
-            return "Qwen Code uses your Playground API key. Use /key or the Key button instead of browser sign-in.";
+            return "Qwen Code uses your Binary IDE API key. Use /key or the Key button instead of browser sign-in.";
         }
         await this.auth.signInWithBrowser();
         return "Browser sign-in opened.";
@@ -188,13 +336,46 @@ class PlaygroundViewProvider {
         await this.newChat();
         await this.refreshAuth();
         await this.refreshHistory();
-        return "Playground auth cleared.";
+        return "Binary IDE auth cleared.";
     }
     async performUndo() {
         if (this.state.runtime === "qwenCode") {
-            return "Undo is only available for Playground API runs. For Qwen Code sessions, use source control or Qwen checkpoints.";
+            return "Undo is only available for hosted Binary IDE runs. For Qwen Code sessions, use source control or Qwen checkpoints.";
         }
         return this.actionRunner.undoLastBatch();
+    }
+    async waitForBinaryBuildCompletion(auth, initialBuild) {
+        let current = initialBuild;
+        let lastActivity = "";
+        let attempt = 0;
+        let transientFailures = 0;
+        while (isBinaryBuildPending(current)) {
+            const nextActivity = current.status === "queued"
+                ? "Portable starter bundle queued"
+                : "Building portable starter bundle";
+            if (nextActivity !== lastActivity) {
+                this.pushActivity(nextActivity);
+                lastActivity = nextActivity;
+            }
+            this.setActiveBinaryBuild(current);
+            this.postState();
+            await delay(Math.min(1000 + attempt * 250, 2500));
+            try {
+                current = await (0, binary_client_1.getBinaryBuild)(auth, current.id);
+                transientFailures = 0;
+            }
+            catch (error) {
+                if (!isTransientBinaryPollError(error) || transientFailures >= 4) {
+                    throw error;
+                }
+                transientFailures += 1;
+                this.pushActivity(`Retrying bundle status (${transientFailures}/4)`);
+                await delay(400 * transientFailures);
+                continue;
+            }
+            attempt += 1;
+        }
+        return current;
     }
     async handleSlashCommand(text) {
         const command = (0, slash_commands_1.parseSlashCommand)(text);
@@ -226,7 +407,7 @@ class PlaygroundViewProvider {
                 return true;
             case "runtime":
                 await this.setRuntime(command.runtime);
-                this.appendMessage("system", `Runtime set to ${command.runtime === "qwenCode" ? "Qwen Code" : "Playground API"}.`);
+                this.appendMessage("system", `Runtime set to ${command.runtime === "qwenCode" ? "Qwen Code" : "Binary IDE API"}.`);
                 this.state.runtimePhase = this.getRuntimePhaseForDraft();
                 this.postState();
                 return true;
@@ -281,6 +462,7 @@ class PlaygroundViewProvider {
             this.state.messages = [];
             this.state.activity = [];
             this.state.followUpActions = [];
+            this.setActiveBinaryBuild(null);
             this.state.runtimePhase = "idle";
             this.lastPrompt = null;
             this.pendingClarification = null;
@@ -313,12 +495,17 @@ class PlaygroundViewProvider {
         this.postState();
     }
     async newChat() {
+        this.clearDraftPreviewTimer();
         this.sessionId = null;
         this.state.messages = [];
         this.state.activity = [];
         this.state.selectedSessionId = null;
         this.state.canUndo = this.state.runtime === "playgroundApi" && this.actionRunner.canUndo();
         this.state.followUpActions = [];
+        this.state.binary = {
+            ...createDefaultBinaryPanelState(),
+            targetEnvironment: this.state.binary.targetEnvironment,
+        };
         this.lastPrompt = null;
         this.pendingClarification = null;
         await this.loadDraftText();
@@ -327,21 +514,36 @@ class PlaygroundViewProvider {
         this.postState();
     }
     async bootstrap() {
-        if (!this.didPrimeFreshChat) {
-            this.didPrimeFreshChat = true;
-            this.sessionId = null;
-            this.state.messages = [];
-            this.state.activity = [];
-            this.state.selectedSessionId = null;
-            this.state.busy = false;
-            this.state.canUndo = this.state.runtime === "playgroundApi" && this.actionRunner.canUndo();
-            this.state.followUpActions = [];
-            this.state.runtimePhase = "idle";
-            this.lastPrompt = null;
-            this.pendingClarification = null;
+        if (this.didBootstrap)
+            return;
+        if (this.bootstrapPromise) {
+            await this.bootstrapPromise;
+            return;
         }
-        await this.loadDraftText();
-        await this.refreshConfiguration();
+        this.bootstrapPromise = (async () => {
+            if (!this.didPrimeFreshChat) {
+                this.didPrimeFreshChat = true;
+                this.sessionId = null;
+                this.state.messages = [];
+                this.state.activity = [];
+                this.state.selectedSessionId = null;
+                this.state.busy = false;
+                this.state.canUndo = this.state.runtime === "playgroundApi" && this.actionRunner.canUndo();
+                this.state.followUpActions = [];
+                this.state.runtimePhase = "idle";
+                this.lastPrompt = null;
+                this.pendingClarification = null;
+            }
+            await this.loadDraftText();
+            await this.refreshConfiguration();
+            this.didBootstrap = true;
+        })();
+        try {
+            await this.bootstrapPromise;
+        }
+        finally {
+            this.bootstrapPromise = null;
+        }
     }
     async handleAuthChange() {
         await this.refreshAuth();
@@ -352,8 +554,8 @@ class PlaygroundViewProvider {
         if (this.state.runtime === "qwenCode") {
             const apiKey = await this.auth.getApiKey().catch(() => null);
             this.state.auth = apiKey
-                ? { kind: "apiKey", label: "Qwen Code via Playground API key" }
-                : { kind: "none", label: "Qwen Code needs a Playground API key" };
+                ? { kind: "apiKey", label: "Qwen Code via Binary IDE API key" }
+                : { kind: "none", label: "Qwen Code needs a Binary IDE API key" };
             this.postState();
             return;
         }
@@ -366,6 +568,7 @@ class PlaygroundViewProvider {
     async openSession(sessionId) {
         if (!sessionId)
             return;
+        this.setActiveBinaryBuild(null);
         if (this.state.runtime === "qwenCode") {
             this.sessionId = sessionId;
             this.state.selectedSessionId = sessionId;
@@ -394,6 +597,9 @@ class PlaygroundViewProvider {
     async handleMessage(message) {
         if (!message || typeof message !== "object")
             return;
+        if (message.type !== "ready") {
+            await this.bootstrap();
+        }
         switch (message.type) {
             case "ready":
                 await this.bootstrap();
@@ -401,12 +607,27 @@ class PlaygroundViewProvider {
             case "sendPrompt":
                 await this.sendPrompt(String(message.text || ""));
                 return;
+            case "generateBinary":
+                await this.generateBinaryBuild(String(message.text || this.draftText || ""));
+                return;
+            case "validateBinary":
+                await this.validateBinaryBuild();
+                return;
+            case "deployBinary":
+                await this.publishBinaryBuild();
+                return;
+            case "configureBinary":
+                await this.openBinaryConfiguration();
+                return;
+            case "setBinaryTarget":
+                await this.setBinaryTargetRuntime(String(message.runtime || "node18"));
+                return;
             case "newChat":
                 await this.newChat();
                 return;
             case "previewContext":
                 await this.setDraftText(String(message.text || ""));
-                await this.refreshDraftContext(this.draftText);
+                this.queueDraftContextRefresh(this.draftText);
                 return;
             case "setMode":
                 await this.setMode(String(message.value || "auto"));
@@ -478,14 +699,45 @@ class PlaygroundViewProvider {
         this.state.runtimePhase = this.getRuntimePhaseForDraft();
         this.pendingClarification = null;
     }
+    hasManualDraftContext() {
+        return Boolean(this.manualContext.attachedFiles.length || this.manualContext.attachedSelection);
+    }
+    clearDraftPreviewTimer() {
+        if (!this.draftPreviewTimer)
+            return;
+        clearTimeout(this.draftPreviewTimer);
+        this.draftPreviewTimer = null;
+    }
+    queueDraftContextRefresh(text) {
+        this.clearDraftPreviewTimer();
+        if (this.state.runtime !== "qwenCode")
+            return;
+        const draft = String(text || "");
+        this.draftPreviewTimer = setTimeout(() => {
+            void this.refreshDraftContext(draft);
+        }, draft.trim() ? 90 : 0);
+    }
     async refreshDraftContext(text) {
         if (this.state.runtime !== "qwenCode")
             return;
         const draft = String(text || "");
+        if (!draft.trim() && !this.hasManualDraftContext()) {
+            this.state.intent = "ask";
+            this.state.contextConfidence = "low";
+            this.state.contextSummary = createEmptyContextSummary();
+            if (!this.state.busy && !this.shouldPreserveTerminalPhase()) {
+                this.state.runtimePhase = "idle";
+            }
+            this.postState();
+            return;
+        }
+        const sequence = ++this.draftPreviewSequence;
         const preview = await this.contextCollector.preview(draft, await this.getQwenContextOptions({
             searchDepth: "fast",
             intent: draft.trim() ? (0, assistant_ux_1.classifyIntent)(draft) : undefined,
         }));
+        if (sequence !== this.draftPreviewSequence)
+            return;
         this.applyPreviewState(preview);
         if (!this.state.busy && (!this.shouldPreserveTerminalPhase() || draft.trim())) {
             this.state.runtimePhase = draft.trim() ? "radar" : "idle";
@@ -497,6 +749,20 @@ class PlaygroundViewProvider {
         if (!editor)
             return null;
         return (0, config_1.toWorkspaceRelativePath)(editor.document.uri);
+    }
+    setActiveBinaryBuild(build) {
+        this.state.binary.activeBuild = build;
+        if (build?.targetEnvironment) {
+            this.state.binary.targetEnvironment = build.targetEnvironment;
+        }
+    }
+    async setBinaryTargetRuntime(runtime) {
+        const nextRuntime = runtime === "node20" ? "node20" : "node18";
+        this.state.binary.targetEnvironment = {
+            ...this.state.binary.targetEnvironment,
+            runtime: nextRuntime,
+        };
+        this.postState();
     }
     async attachActiveFile() {
         const activePath = this.getActiveEditorPath();
@@ -536,6 +802,138 @@ class PlaygroundViewProvider {
             attachedSelection: null,
         };
         await this.refreshDraftContext(this.draftText);
+    }
+    async generateBinaryBuild(rawIntent) {
+        const intent = rawIntent.trim();
+        if (!intent) {
+            this.appendMessage("system", "Add an intent in the composer before generating a portable starter bundle.");
+            this.postState();
+            return;
+        }
+        const auth = await this.auth.getRequestAuth();
+        if (!auth) {
+            this.appendMessage("system", "Authenticate with an API key or browser sign-in before generating a portable starter bundle.");
+            this.postState();
+            return;
+        }
+        this.state.binary.busy = true;
+        this.state.binary.lastAction = "generate";
+        this.pushActivity("Creating portable starter bundle");
+        this.postState();
+        try {
+            const { context, retrievalHints } = await this.contextCollector.collect(intent, {
+                recentTouchedPaths: this.actionRunner.getRecentTouchedPaths(),
+                attachedFiles: this.manualContext.attachedFiles,
+                attachedSelection: this.manualContext.attachedSelection,
+                searchDepth: "fast",
+                intent: (0, assistant_ux_1.classifyIntent)(intent),
+            });
+            const build = await (0, binary_client_1.createBinaryBuild)({
+                auth,
+                intent,
+                workspaceFingerprint: (0, config_1.getWorkspaceHash)(),
+                historySessionId: this.sessionId && !(0, qwen_history_1.isPendingQwenSessionId)(this.sessionId) ? this.sessionId : undefined,
+                targetEnvironment: this.state.binary.targetEnvironment,
+                context: {
+                    activeFile: context.activeFile,
+                    openFiles: context.openFiles,
+                },
+                retrievalHints,
+            });
+            this.setActiveBinaryBuild(build);
+            const finalBuild = isBinaryBuildPending(build)
+                ? await this.waitForBinaryBuildCompletion(auth, build)
+                : build;
+            this.setActiveBinaryBuild(finalBuild);
+            this.appendMessage(finalBuild.status === "completed" ? "assistant" : "system", formatBinaryBuildMessage(finalBuild));
+            await this.refreshHistory();
+        }
+        catch (error) {
+            this.appendMessage("system", `Binary generation failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        finally {
+            this.state.binary.busy = false;
+            this.postState();
+        }
+    }
+    async validateBinaryBuild() {
+        const build = this.state.binary.activeBuild;
+        if (!build) {
+            this.appendMessage("system", "Generate a portable starter bundle before running Binary IDE validation.");
+            this.postState();
+            return;
+        }
+        if (isBinaryBuildPending(build)) {
+            this.appendMessage("system", "Wait for the current portable starter bundle build to finish before validating it.");
+            this.postState();
+            return;
+        }
+        const auth = await this.auth.getRequestAuth();
+        if (!auth) {
+            this.appendMessage("system", "Authenticate before validating the current portable starter bundle.");
+            this.postState();
+            return;
+        }
+        this.state.binary.busy = true;
+        this.state.binary.lastAction = "validate";
+        this.pushActivity("Validating portable starter bundle");
+        this.postState();
+        try {
+            const updated = await (0, binary_client_1.validateBinaryBuild)({
+                auth,
+                buildId: build.id,
+                targetEnvironment: this.state.binary.targetEnvironment,
+            });
+            this.setActiveBinaryBuild(updated);
+            this.appendMessage("system", formatBinaryBuildMessage(updated));
+            await this.refreshHistory();
+        }
+        catch (error) {
+            this.appendMessage("system", `Binary validation failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        finally {
+            this.state.binary.busy = false;
+            this.postState();
+        }
+    }
+    async publishBinaryBuild() {
+        const build = this.state.binary.activeBuild;
+        if (!build) {
+            this.appendMessage("system", "Generate a portable starter bundle before publishing it.");
+            this.postState();
+            return;
+        }
+        if (isBinaryBuildPending(build)) {
+            this.appendMessage("system", "Wait for the current portable starter bundle build to finish before publishing it.");
+            this.postState();
+            return;
+        }
+        const auth = await this.auth.getRequestAuth();
+        if (!auth) {
+            this.appendMessage("system", "Authenticate before publishing the current portable starter bundle.");
+            this.postState();
+            return;
+        }
+        this.state.binary.busy = true;
+        this.state.binary.lastAction = "deploy";
+        this.pushActivity("Publishing portable starter bundle");
+        this.postState();
+        try {
+            const updated = await (0, binary_client_1.publishBinaryBuild)({
+                auth,
+                buildId: build.id,
+            });
+            this.setActiveBinaryBuild(updated);
+            this.appendMessage("assistant", formatBinaryBuildMessage(updated));
+            await this.refreshHistory();
+        }
+        catch (error) {
+            this.appendMessage("system", `Binary publish failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        finally {
+            this.state.binary.busy = false;
+            this.postState();
+        }
     }
     async handleFollowUpAction(id) {
         const action = this.state.followUpActions.find((item) => item.id === id);
@@ -596,6 +994,7 @@ class PlaygroundViewProvider {
         const text = rawText.trim();
         if (!text || this.state.busy)
             return;
+        this.clearDraftPreviewTimer();
         if (await this.handleSlashCommand(text)) {
             return;
         }
@@ -631,6 +1030,12 @@ class PlaygroundViewProvider {
             preview.intent === "change" ||
             preview.intent === "find" ||
             preview.intent === "explain");
+    }
+    shouldRequireEditClarification(preview) {
+        if (!(0, assistant_ux_1.isEditLikeIntent)(preview.intent) || preview.confidence !== "low") {
+            return false;
+        }
+        return !preview.resolvedFiles.length && !preview.attachedFiles.length && !preview.attachedSelection;
     }
     async runQwenPrompt(input) {
         const text = input.text.trim();
@@ -690,7 +1095,7 @@ class PlaygroundViewProvider {
             this.postState();
             return;
         }
-        if ((0, assistant_ux_1.isEditLikeIntent)(preview.intent) && preview.confidence === "low") {
+        if (this.shouldRequireEditClarification(preview)) {
             this.pendingClarification = {
                 text,
                 intent: preview.intent,
@@ -746,6 +1151,19 @@ class PlaygroundViewProvider {
                     qwenExecutablePath: (0, config_1.getQwenExecutablePath)() || null,
                 }),
                 onPartial: (partial) => {
+                    if ((0, qwen_ux_1.shouldSuppressQwenPartialOutput)({
+                        text: partial,
+                        task: text,
+                        workspaceRoot,
+                        executablePath: (0, config_1.getQwenExecutablePath)() || null,
+                        workspaceTargets: [
+                            fullPreview.activeFile || "",
+                            ...fullPreview.resolvedFiles,
+                            ...fullPreview.selectedFiles,
+                        ],
+                    })) {
+                        return;
+                    }
                     const next = (0, qwen_ux_1.sanitizeQwenAssistantOutput)({
                         text: partial,
                         task: text,

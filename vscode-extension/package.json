@@ -1,7 +1,7 @@
 {
   "name": "xpersona-playground",
-  "displayName": "Playground",
-  "description": "Minimal AI coding chat in VS Code.",
+  "displayName": "Binary IDE",
+  "description": "Binary IDE for generating portable starter bundles from VS Code.",
   "version": "0.0.59",
   "publisher": "playgroundai",
   "license": "UNLICENSED",
@@ -16,6 +16,10 @@
     "onStartupFinished",
     "onUri",
     "onView:xpersona.playgroundView",
+    "onCommand:binary.generate",
+    "onCommand:binary.validate",
+    "onCommand:binary.deploy",
+    "onCommand:binary.configure",
     "onCommand:xpersona.playground.prompt",
     "onCommand:xpersona.playground.openWithSelection",
     "onCommand:xpersona.playground.setApiKey",
@@ -29,7 +33,7 @@
       "activitybar": [
         {
           "id": "xpersona",
-          "title": "Playground",
+          "title": "Binary IDE",
           "icon": "media/xpersona.png"
         }
       ]
@@ -38,7 +42,7 @@
       "xpersona": [
         {
           "id": "xpersona.playgroundView",
-          "name": "Playground",
+          "name": "Binary IDE",
           "type": "webview",
           "when": "true"
         }
@@ -46,97 +50,81 @@
     },
     "commands": [
       {
-        "command": "xpersona.playground.prompt",
-        "title": "New Chat",
-        "category": "Playground"
+        "command": "binary.generate",
+        "title": "Generate Portable Starter Bundle",
+        "category": "Binary IDE"
       },
       {
-        "command": "xpersona.playground.openWithSelection",
-        "title": "Chat with Selection",
-        "category": "Playground"
+        "command": "binary.validate",
+        "title": "Validate Current Portable Bundle",
+        "category": "Binary IDE"
       },
       {
-        "command": "xpersona.playground.setApiKey",
-        "title": "Set API Key",
-        "category": "Playground"
+        "command": "binary.deploy",
+        "title": "Publish Current Portable Bundle",
+        "category": "Binary IDE"
       },
       {
-        "command": "xpersona.playground.signIn",
-        "title": "Sign In (Browser)",
-        "category": "Playground"
-      },
-      {
-        "command": "xpersona.playground.signOut",
-        "title": "Sign Out",
-        "category": "Playground"
-      },
-      {
-        "command": "xpersona.playground.undoLastChanges",
-        "title": "Undo Playground Changes",
-        "category": "Playground"
+        "command": "binary.configure",
+        "title": "Configure Binary IDE",
+        "category": "Binary IDE"
       }
     ],
     "menus": {
       "commandPalette": [
         {
-          "command": "xpersona.playground.prompt"
+          "command": "binary.generate"
         },
         {
-          "command": "xpersona.playground.openWithSelection"
+          "command": "binary.validate"
         },
         {
-          "command": "xpersona.playground.setApiKey"
+          "command": "binary.deploy"
         },
         {
-          "command": "xpersona.playground.signIn"
-        },
-        {
-          "command": "xpersona.playground.signOut"
-        },
-        {
-          "command": "xpersona.playground.undoLastChanges"
+          "command": "binary.configure"
         }
       ],
       "editor/context": [
         {
-          "command": "xpersona.playground.openWithSelection",
+          "command": "binary.generate",
           "group": "2_xpersona@1",
           "when": "editorHasSelection"
         },
         {
-          "command": "xpersona.playground.undoLastChanges",
+          "command": "binary.validate",
           "group": "2_xpersona@2"
         }
       ]
     },
     "configuration": {
-      "title": "Playground",
+      "title": "Binary IDE",
       "properties": {
-        "xpersona.playground.baseApiUrl": {
+        "xpersona.binary.baseApiUrl": {
           "type": "string",
           "default": "http://localhost:3000",
-          "description": "Base URL for the Playground API. Use http://localhost:3000 for local development."
+          "description": "Base URL for the Binary IDE API. Use http://localhost:3000 for local development."
         },
-        "xpersona.playground.runtime": {
+        "xpersona.binary.runtime": {
           "type": "string",
           "enum": [
             "playgroundApi",
             "qwenCode"
           ],
           "default": "qwenCode",
-          "description": "Choose whether Playground uses the local Qwen Code runtime or the hosted Playground API."
+          "description": "Choose whether Binary IDE uses the local Qwen Code runtime or the hosted Binary IDE API."
         },
-        "xpersona.playground.qwen.model": {
+        "xpersona.binary.qwen.model": {
           "type": "string",
-          "default": "Qwen/Qwen3-4B-Thinking-2507:nscale",
+          "default": "Qwen/Qwen3-Coder-30B-A3B-Instruct:featherless-ai",
           "description": "Model name passed to Qwen Code when the runtime is set to qwenCode."
         },
-        "xpersona.playground.qwen.baseUrl": {
+        "xpersona.binary.qwen.baseUrl": {
           "type": "string",
           "default": "http://localhost:3000/api/v1/hf",
-          "description": "OpenAI-compatible base URL for Qwen Code. This should be the path prefix before /chat/completions."
+          "description": "OpenAI-compatible base URL for Qwen Code. The default routes through the Binary IDE proxy."
         },
-        "xpersona.playground.qwen.executable": {
+        "xpersona.binary.qwen.executable": {
           "type": "string",
           "default": "",
           "description": "Optional path or command for a custom Qwen Code executable. Leave empty to use the SDK-bundled CLI."
@@ -148,7 +136,8 @@
     "compile": "tsc -p .",
     "watch": "tsc -p . -w",
     "build": "tsc -p .",
-    "package": "vsce package --allow-missing-repository"
+    "package": "vsce package --allow-missing-repository",
+    "package:check": "node ./scripts/check-vsix.mjs"
   },
   "devDependencies": {
     "@types/node": "^25.3.3",

@@ -12,6 +12,12 @@ import {
 import { AuthManager } from "./auth";
 import { ActionRunner } from "./actions";
 import { requestJson } from "./api-client";
+import {
+  createBinaryBuild as requestBinaryBuild,
+  getBinaryBuild as requestBinaryStatus,
+  publishBinaryBuild as requestBinaryPublish,
+  validateBinaryBuild as requestBinaryValidate,
+} from "./binary-client";
 import { ContextAttachmentSelection, ContextCollector } from "./context";
 import {
   EXTENSION_NAMESPACE,
@@ -31,6 +37,7 @@ import { DraftStore } from "./draft-store";
 import {
   explainQwenFailure,
   sanitizeQwenAssistantOutput,
+  shouldSuppressQwenPartialOutput,
   validateQwenPreflight,
 } from "./qwen-ux";
 import { createPendingQwenSessionId, isPendingQwenSessionId, QwenHistoryService } from "./qwen-history";
@@ -48,6 +55,8 @@ import type {
   AssistPlan,
   AssistRunEnvelope,
   AuthState,
+  BinaryBuildRecord,
+  BinaryPanelState,
   ChatMessage,
   ContextConfidence,
   ContextSummary,
@@ -78,6 +87,7 @@ type WebviewState = {
   runtimePhase: RuntimePhase;
   followUpActions: FollowUpAction[];
   draftText: string;
+  binary: BinaryPanelState;
 };
 
 type ManualContextState = {
@@ -122,11 +132,82 @@ function createEmptyContextSummary(): ContextSummary {
   };
 }
 
+function createDefaultBinaryPanelState(): BinaryPanelState {
+  return {
+    targetEnvironment: {
+      runtime: "node18",
+      platform: "portable",
+      packageManager: "npm",
+    },
+    activeBuild: null,
+    busy: false,
+    lastAction: null,
+  };
+}
+
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "0 B";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientBinaryPollError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /\bHTTP 5\d\d\b/i.test(message) || /\bECONNRESET\b|\bECONNREFUSED\b|\bETIMEDOUT\b/i.test(message);
+}
+
+function isBinaryBuildPending(build: BinaryBuildRecord | null | undefined): boolean {
+  return Boolean(build && (build.status === "queued" || build.status === "running"));
+}
+
+function formatBinaryBuildMessage(build: BinaryBuildRecord): string {
+  const lines = [
+    build.status === "completed"
+      ? "Portable starter bundle ready."
+      : build.status === "failed"
+        ? "Portable starter bundle failed."
+        : build.status === "running"
+          ? "Portable starter bundle is still building."
+          : "Portable starter bundle is queued on the Binary IDE server.",
+    `Build: ${build.id}`,
+    `Intent: ${build.intent}`,
+    `Target runtime: ${build.targetEnvironment.runtime}`,
+  ];
+
+  if (build.reliability) {
+    lines.push(`Reliability: ${build.reliability.status.toUpperCase()} (${build.reliability.score}/100)`);
+    lines.push(build.reliability.summary);
+  }
+  if (build.artifact) {
+    lines.push(`Artifact: ${build.artifact.fileName} (${formatBytes(build.artifact.sizeBytes)})`);
+  }
+  if (build.manifest) {
+    lines.push(`Entrypoint: ${build.manifest.entrypoint}`);
+    lines.push(`Start: ${build.manifest.startCommand}`);
+  }
+  if (build.publish?.downloadUrl) {
+    lines.push(`Download: ${build.publish.downloadUrl}`);
+  }
+  if (build.errorMessage) {
+    lines.push(`Error: ${build.errorMessage}`);
+  }
+  return lines.join("\n");
+}
+
 export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
   private sessionId: string | null = null;
   private didPrimeFreshChat = false;
+  private bootstrapPromise: Promise<void> | null = null;
+  private didBootstrap = false;
   private draftText = "";
+  private draftPreviewTimer: ReturnType<typeof setTimeout> | null = null;
+  private draftPreviewSequence = 0;
   private manualContext: ManualContextState = {
     attachedFiles: [],
     attachedSelection: null,
@@ -164,6 +245,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       runtimePhase: "idle",
       followUpActions: [],
       draftText: "",
+      binary: createDefaultBinaryPanelState(),
     };
 
     this.auth.onDidChange(() => void this.handleAuthChange());
@@ -183,7 +265,6 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     view.webview.onDidReceiveMessage((message) => {
       void this.handleMessage(message);
     });
-    void this.bootstrap();
   }
 
   async show(prefill?: string): Promise<void> {
@@ -192,6 +273,95 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     if (prefill && this.view) {
       this.view.webview.postMessage({ type: "prefill", text: prefill });
     }
+  }
+
+  async runBinaryGenerate(intent?: string): Promise<void> {
+    await this.show(intent);
+    const nextIntent =
+      String(intent || "").trim() ||
+      (await vscode.window.showInputBox({
+        title: "Generate Binary IDE Portable Starter Bundle",
+        prompt: "Describe the portable package bundle you want to generate.",
+        ignoreFocusOut: true,
+      })) ||
+      "";
+    if (!nextIntent.trim()) return;
+    await this.generateBinaryBuild(nextIntent);
+  }
+
+  async runBinaryValidate(): Promise<void> {
+    await this.show();
+    await this.validateBinaryBuild();
+  }
+
+  async runBinaryDeploy(): Promise<void> {
+    await this.show();
+    await this.publishBinaryBuild();
+  }
+
+  async openBinaryConfiguration(): Promise<void> {
+    await this.show();
+    const runtimeLabel = this.state.runtime === "qwenCode" ? "Qwen Code" : "Binary IDE API";
+    const nextRuntime = this.state.runtime === "qwenCode" ? "Binary IDE API" : "Qwen Code";
+    const selection = await vscode.window.showQuickPick(
+      [
+        { label: "Set API key", detail: "Save or clear the Binary IDE API key.", action: "apiKey" },
+        {
+          label: `Switch runtime to ${nextRuntime}`,
+          detail: `Current runtime: ${runtimeLabel}.`,
+          action: "runtime",
+        },
+        {
+          label: "Open Binary IDE settings",
+          detail: "Open the VS Code settings UI filtered to xpersona.binary.",
+          action: "settings",
+        },
+        ...(this.state.runtime === "playgroundApi"
+          ? [{ label: "Browser sign in", detail: "Authenticate the hosted Binary IDE API in the browser.", action: "signIn" }]
+          : []),
+      ],
+      {
+        title: "Configure Binary IDE",
+        ignoreFocusOut: true,
+      }
+    );
+    if (!selection) return;
+
+    let message = "";
+    switch (selection.action) {
+      case "apiKey":
+        message = await this.performSetApiKey();
+        break;
+      case "runtime": {
+        const pickedRuntime = await vscode.window.showQuickPick(
+          [
+            { label: "Qwen Code", runtime: "qwenCode" as const },
+            { label: "Binary IDE API", runtime: "playgroundApi" as const },
+          ],
+          {
+            title: "Choose Binary IDE Runtime",
+            ignoreFocusOut: true,
+          }
+        );
+        if (!pickedRuntime) return;
+        await this.setRuntime(pickedRuntime.runtime);
+        message = `Binary IDE runtime switched to ${pickedRuntime.label}.`;
+        break;
+      }
+      case "settings":
+        await vscode.commands.executeCommand("workbench.action.openSettings", "xpersona.binary");
+        message = "Opened Binary IDE settings.";
+        break;
+      case "signIn":
+        message = await this.performSignIn();
+        break;
+      default:
+        return;
+    }
+
+    if (!message) return;
+    this.appendMessage("system", message);
+    this.postState();
   }
 
   private getDraftSessionId(): string | null {
@@ -237,13 +407,13 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     await this.refreshAuth();
     await this.refreshHistory();
     return this.state.auth.kind === "none"
-      ? "Playground API key cleared."
-      : "Playground API key updated.";
+      ? "Binary IDE API key cleared."
+      : "Binary IDE API key updated.";
   }
 
   private async performSignIn(): Promise<string> {
     if (this.state.runtime === "qwenCode") {
-      return "Qwen Code uses your Playground API key. Use /key or the Key button instead of browser sign-in.";
+      return "Qwen Code uses your Binary IDE API key. Use /key or the Key button instead of browser sign-in.";
     }
     await this.auth.signInWithBrowser();
     return "Browser sign-in opened.";
@@ -254,14 +424,55 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     await this.newChat();
     await this.refreshAuth();
     await this.refreshHistory();
-    return "Playground auth cleared.";
+    return "Binary IDE auth cleared.";
   }
 
   private async performUndo(): Promise<string> {
     if (this.state.runtime === "qwenCode") {
-      return "Undo is only available for Playground API runs. For Qwen Code sessions, use source control or Qwen checkpoints.";
+      return "Undo is only available for hosted Binary IDE runs. For Qwen Code sessions, use source control or Qwen checkpoints.";
     }
     return this.actionRunner.undoLastBatch();
+  }
+
+  private async waitForBinaryBuildCompletion(
+    auth: RequestAuth,
+    initialBuild: BinaryBuildRecord
+  ): Promise<BinaryBuildRecord> {
+    let current = initialBuild;
+    let lastActivity = "";
+    let attempt = 0;
+    let transientFailures = 0;
+
+    while (isBinaryBuildPending(current)) {
+      const nextActivity =
+        current.status === "queued"
+          ? "Portable starter bundle queued"
+          : "Building portable starter bundle";
+      if (nextActivity !== lastActivity) {
+        this.pushActivity(nextActivity);
+        lastActivity = nextActivity;
+      }
+
+      this.setActiveBinaryBuild(current);
+      this.postState();
+      await delay(Math.min(1_000 + attempt * 250, 2_500));
+      try {
+        current = await requestBinaryStatus(auth, current.id);
+        transientFailures = 0;
+      } catch (error) {
+        if (!isTransientBinaryPollError(error) || transientFailures >= 4) {
+          throw error;
+        }
+
+        transientFailures += 1;
+        this.pushActivity(`Retrying bundle status (${transientFailures}/4)`);
+        await delay(400 * transientFailures);
+        continue;
+      }
+      attempt += 1;
+    }
+
+    return current;
   }
 
   private async handleSlashCommand(text: string): Promise<boolean> {
@@ -297,7 +508,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         await this.setRuntime(command.runtime);
         this.appendMessage(
           "system",
-          `Runtime set to ${command.runtime === "qwenCode" ? "Qwen Code" : "Playground API"}.`
+          `Runtime set to ${command.runtime === "qwenCode" ? "Qwen Code" : "Binary IDE API"}.`
         );
         this.state.runtimePhase = this.getRuntimePhaseForDraft();
         this.postState();
@@ -360,6 +571,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       this.state.messages = [];
       this.state.activity = [];
       this.state.followUpActions = [];
+      this.setActiveBinaryBuild(null);
       this.state.runtimePhase = "idle";
       this.lastPrompt = null;
       this.pendingClarification = null;
@@ -396,12 +608,17 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   }
 
   async newChat(): Promise<void> {
+    this.clearDraftPreviewTimer();
     this.sessionId = null;
     this.state.messages = [];
     this.state.activity = [];
     this.state.selectedSessionId = null;
     this.state.canUndo = this.state.runtime === "playgroundApi" && this.actionRunner.canUndo();
     this.state.followUpActions = [];
+    this.state.binary = {
+      ...createDefaultBinaryPanelState(),
+      targetEnvironment: this.state.binary.targetEnvironment,
+    };
     this.lastPrompt = null;
     this.pendingClarification = null;
     await this.loadDraftText();
@@ -411,21 +628,36 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async bootstrap(): Promise<void> {
-    if (!this.didPrimeFreshChat) {
-      this.didPrimeFreshChat = true;
-      this.sessionId = null;
-      this.state.messages = [];
-      this.state.activity = [];
-      this.state.selectedSessionId = null;
-      this.state.busy = false;
-      this.state.canUndo = this.state.runtime === "playgroundApi" && this.actionRunner.canUndo();
-      this.state.followUpActions = [];
-      this.state.runtimePhase = "idle";
-      this.lastPrompt = null;
-      this.pendingClarification = null;
+    if (this.didBootstrap) return;
+    if (this.bootstrapPromise) {
+      await this.bootstrapPromise;
+      return;
     }
-    await this.loadDraftText();
-    await this.refreshConfiguration();
+
+    this.bootstrapPromise = (async () => {
+      if (!this.didPrimeFreshChat) {
+        this.didPrimeFreshChat = true;
+        this.sessionId = null;
+        this.state.messages = [];
+        this.state.activity = [];
+        this.state.selectedSessionId = null;
+        this.state.busy = false;
+        this.state.canUndo = this.state.runtime === "playgroundApi" && this.actionRunner.canUndo();
+        this.state.followUpActions = [];
+        this.state.runtimePhase = "idle";
+        this.lastPrompt = null;
+        this.pendingClarification = null;
+      }
+      await this.loadDraftText();
+      await this.refreshConfiguration();
+      this.didBootstrap = true;
+    })();
+
+    try {
+      await this.bootstrapPromise;
+    } finally {
+      this.bootstrapPromise = null;
+    }
   }
 
   private async handleAuthChange(): Promise<void> {
@@ -438,8 +670,8 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     if (this.state.runtime === "qwenCode") {
       const apiKey = await this.auth.getApiKey().catch(() => null);
       this.state.auth = apiKey
-        ? { kind: "apiKey", label: "Qwen Code via Playground API key" }
-        : { kind: "none", label: "Qwen Code needs a Playground API key" };
+        ? { kind: "apiKey", label: "Qwen Code via Binary IDE API key" }
+        : { kind: "none", label: "Qwen Code needs a Binary IDE API key" };
       this.postState();
       return;
     }
@@ -453,6 +685,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
 
   private async openSession(sessionId: string): Promise<void> {
     if (!sessionId) return;
+    this.setActiveBinaryBuild(null);
 
     if (this.state.runtime === "qwenCode") {
       this.sessionId = sessionId;
@@ -482,6 +715,10 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   private async handleMessage(message: any): Promise<void> {
     if (!message || typeof message !== "object") return;
 
+    if (message.type !== "ready") {
+      await this.bootstrap();
+    }
+
     switch (message.type) {
       case "ready":
         await this.bootstrap();
@@ -489,12 +726,27 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       case "sendPrompt":
         await this.sendPrompt(String(message.text || ""));
         return;
+      case "generateBinary":
+        await this.generateBinaryBuild(String(message.text || this.draftText || ""));
+        return;
+      case "validateBinary":
+        await this.validateBinaryBuild();
+        return;
+      case "deployBinary":
+        await this.publishBinaryBuild();
+        return;
+      case "configureBinary":
+        await this.openBinaryConfiguration();
+        return;
+      case "setBinaryTarget":
+        await this.setBinaryTargetRuntime(String(message.runtime || "node18"));
+        return;
       case "newChat":
         await this.newChat();
         return;
       case "previewContext":
         await this.setDraftText(String(message.text || ""));
-        await this.refreshDraftContext(this.draftText);
+        this.queueDraftContextRefresh(this.draftText);
         return;
       case "setMode":
         await this.setMode(String(message.value || "auto") as Mode);
@@ -574,10 +826,42 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     this.pendingClarification = null;
   }
 
+  private hasManualDraftContext(): boolean {
+    return Boolean(this.manualContext.attachedFiles.length || this.manualContext.attachedSelection);
+  }
+
+  private clearDraftPreviewTimer(): void {
+    if (!this.draftPreviewTimer) return;
+    clearTimeout(this.draftPreviewTimer);
+    this.draftPreviewTimer = null;
+  }
+
+  private queueDraftContextRefresh(text: string): void {
+    this.clearDraftPreviewTimer();
+    if (this.state.runtime !== "qwenCode") return;
+
+    const draft = String(text || "");
+    this.draftPreviewTimer = setTimeout(() => {
+      void this.refreshDraftContext(draft);
+    }, draft.trim() ? 90 : 0);
+  }
+
   private async refreshDraftContext(text: string): Promise<void> {
     if (this.state.runtime !== "qwenCode") return;
 
     const draft = String(text || "");
+    if (!draft.trim() && !this.hasManualDraftContext()) {
+      this.state.intent = "ask";
+      this.state.contextConfidence = "low";
+      this.state.contextSummary = createEmptyContextSummary();
+      if (!this.state.busy && !this.shouldPreserveTerminalPhase()) {
+        this.state.runtimePhase = "idle";
+      }
+      this.postState();
+      return;
+    }
+
+    const sequence = ++this.draftPreviewSequence;
     const preview = await this.contextCollector.preview(
       draft,
       await this.getQwenContextOptions({
@@ -585,6 +869,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         intent: draft.trim() ? classifyIntent(draft) : undefined,
       })
     );
+    if (sequence !== this.draftPreviewSequence) return;
     this.applyPreviewState(preview);
     if (!this.state.busy && (!this.shouldPreserveTerminalPhase() || draft.trim())) {
       this.state.runtimePhase = draft.trim() ? "radar" : "idle";
@@ -596,6 +881,22 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     const editor = vscode.window.activeTextEditor;
     if (!editor) return null;
     return toWorkspaceRelativePath(editor.document.uri);
+  }
+
+  private setActiveBinaryBuild(build: BinaryBuildRecord | null): void {
+    this.state.binary.activeBuild = build;
+    if (build?.targetEnvironment) {
+      this.state.binary.targetEnvironment = build.targetEnvironment;
+    }
+  }
+
+  private async setBinaryTargetRuntime(runtime: string): Promise<void> {
+    const nextRuntime = runtime === "node20" ? "node20" : "node18";
+    this.state.binary.targetEnvironment = {
+      ...this.state.binary.targetEnvironment,
+      runtime: nextRuntime,
+    };
+    this.postState();
   }
 
   private async attachActiveFile(): Promise<void> {
@@ -645,6 +946,157 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       attachedSelection: null,
     };
     await this.refreshDraftContext(this.draftText);
+  }
+
+  private async generateBinaryBuild(rawIntent: string): Promise<void> {
+    const intent = rawIntent.trim();
+    if (!intent) {
+      this.appendMessage("system", "Add an intent in the composer before generating a portable starter bundle.");
+      this.postState();
+      return;
+    }
+
+    const auth = await this.auth.getRequestAuth();
+    if (!auth) {
+      this.appendMessage("system", "Authenticate with an API key or browser sign-in before generating a portable starter bundle.");
+      this.postState();
+      return;
+    }
+
+    this.state.binary.busy = true;
+    this.state.binary.lastAction = "generate";
+    this.pushActivity("Creating portable starter bundle");
+    this.postState();
+
+    try {
+      const { context, retrievalHints } = await this.contextCollector.collect(intent, {
+        recentTouchedPaths: this.actionRunner.getRecentTouchedPaths(),
+        attachedFiles: this.manualContext.attachedFiles,
+        attachedSelection: this.manualContext.attachedSelection,
+        searchDepth: "fast",
+        intent: classifyIntent(intent),
+      });
+
+      const build = await requestBinaryBuild({
+        auth,
+        intent,
+        workspaceFingerprint: getWorkspaceHash(),
+        historySessionId:
+          this.sessionId && !isPendingQwenSessionId(this.sessionId) ? this.sessionId : undefined,
+        targetEnvironment: this.state.binary.targetEnvironment,
+        context: {
+          activeFile: context.activeFile,
+          openFiles: context.openFiles,
+        },
+        retrievalHints,
+      });
+
+      this.setActiveBinaryBuild(build);
+      const finalBuild = isBinaryBuildPending(build)
+        ? await this.waitForBinaryBuildCompletion(auth, build)
+        : build;
+
+      this.setActiveBinaryBuild(finalBuild);
+      this.appendMessage(finalBuild.status === "completed" ? "assistant" : "system", formatBinaryBuildMessage(finalBuild));
+      await this.refreshHistory();
+    } catch (error) {
+      this.appendMessage(
+        "system",
+        `Binary generation failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      this.state.binary.busy = false;
+      this.postState();
+    }
+  }
+
+  private async validateBinaryBuild(): Promise<void> {
+    const build = this.state.binary.activeBuild;
+    if (!build) {
+      this.appendMessage("system", "Generate a portable starter bundle before running Binary IDE validation.");
+      this.postState();
+      return;
+    }
+    if (isBinaryBuildPending(build)) {
+      this.appendMessage("system", "Wait for the current portable starter bundle build to finish before validating it.");
+      this.postState();
+      return;
+    }
+
+    const auth = await this.auth.getRequestAuth();
+    if (!auth) {
+      this.appendMessage("system", "Authenticate before validating the current portable starter bundle.");
+      this.postState();
+      return;
+    }
+
+    this.state.binary.busy = true;
+    this.state.binary.lastAction = "validate";
+    this.pushActivity("Validating portable starter bundle");
+    this.postState();
+
+    try {
+      const updated = await requestBinaryValidate({
+        auth,
+        buildId: build.id,
+        targetEnvironment: this.state.binary.targetEnvironment,
+      });
+      this.setActiveBinaryBuild(updated);
+      this.appendMessage("system", formatBinaryBuildMessage(updated));
+      await this.refreshHistory();
+    } catch (error) {
+      this.appendMessage(
+        "system",
+        `Binary validation failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      this.state.binary.busy = false;
+      this.postState();
+    }
+  }
+
+  private async publishBinaryBuild(): Promise<void> {
+    const build = this.state.binary.activeBuild;
+    if (!build) {
+      this.appendMessage("system", "Generate a portable starter bundle before publishing it.");
+      this.postState();
+      return;
+    }
+    if (isBinaryBuildPending(build)) {
+      this.appendMessage("system", "Wait for the current portable starter bundle build to finish before publishing it.");
+      this.postState();
+      return;
+    }
+
+    const auth = await this.auth.getRequestAuth();
+    if (!auth) {
+      this.appendMessage("system", "Authenticate before publishing the current portable starter bundle.");
+      this.postState();
+      return;
+    }
+
+    this.state.binary.busy = true;
+    this.state.binary.lastAction = "deploy";
+    this.pushActivity("Publishing portable starter bundle");
+    this.postState();
+
+    try {
+      const updated = await requestBinaryPublish({
+        auth,
+        buildId: build.id,
+      });
+      this.setActiveBinaryBuild(updated);
+      this.appendMessage("assistant", formatBinaryBuildMessage(updated));
+      await this.refreshHistory();
+    } catch (error) {
+      this.appendMessage(
+        "system",
+        `Binary publish failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      this.state.binary.busy = false;
+      this.postState();
+    }
   }
 
   private async handleFollowUpAction(id: string): Promise<void> {
@@ -711,6 +1163,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   private async sendPrompt(rawText: string): Promise<void> {
     const text = rawText.trim();
     if (!text || this.state.busy) return;
+    this.clearDraftPreviewTimer();
 
     if (await this.handleSlashCommand(text)) {
       return;
@@ -754,6 +1207,16 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         preview.intent === "find" ||
         preview.intent === "explain"
     );
+  }
+
+  private shouldRequireEditClarification(
+    preview: Awaited<ReturnType<ContextCollector["preview"]>>
+  ): boolean {
+    if (!isEditLikeIntent(preview.intent) || preview.confidence !== "low") {
+      return false;
+    }
+
+    return !preview.resolvedFiles.length && !preview.attachedFiles.length && !preview.attachedSelection;
   }
 
   private async runQwenPrompt(input: {
@@ -830,7 +1293,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    if (isEditLikeIntent(preview.intent) && preview.confidence === "low") {
+    if (this.shouldRequireEditClarification(preview)) {
       this.pendingClarification = {
         text,
         intent: preview.intent,
@@ -894,6 +1357,21 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
           qwenExecutablePath: getQwenExecutablePath() || null,
         }),
         onPartial: (partial) => {
+          if (
+            shouldSuppressQwenPartialOutput({
+              text: partial,
+              task: text,
+              workspaceRoot,
+              executablePath: getQwenExecutablePath() || null,
+              workspaceTargets: [
+                fullPreview.activeFile || "",
+                ...fullPreview.resolvedFiles,
+                ...fullPreview.selectedFiles,
+              ],
+            })
+          ) {
+            return;
+          }
           const next = sanitizeQwenAssistantOutput({
             text: partial,
             task: text,

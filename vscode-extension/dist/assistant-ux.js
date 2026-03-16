@@ -30,7 +30,7 @@ function classifyIntent(task) {
     if (/\b(fix|change|update|edit|modify|patch|refactor|rewrite|implement|add|create|remove|delete|rename|replace|apply|wire|support|improve|clean up|make)\b/.test(text)) {
         return "change";
     }
-    if (/\b(explain|why|walk me through|help me understand|what does|what is happening|summarize|break down)\b/.test(text)) {
+    if (/\b(explain|why|walk me through|help me understand|what does|what is happening|summarize|break down|expand on|elaborate on|build on)\b/.test(text)) {
         return "explain";
     }
     if (/\b(find|search|locate|where is|grep|look for|show me references|trace)\b/.test(text)) {

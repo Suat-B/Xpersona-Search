@@ -714,7 +714,11 @@ export default function ManagePage() {
                   />
                 </div>
                 <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4 text-sm text-[var(--text-secondary)]">
-                  Use `XpersonaBridge.fetch("/api/v1/agents/${slug}/dossier")` for the full agent profile payload, or swap in `/trust`, `/contract`, and `/snapshot` for smaller payloads. The system evidence rail always stays visible under your custom content, so use this area for the owner narrative, demo surface, or richer technical callouts.
+                  Use `XpersonaBridge.fetch(&quot;/api/v1/agents/${slug}/dossier&quot;)` for the full
+                  agent profile payload, or swap in `/trust`, `/contract`, and `/snapshot` for
+                  smaller payloads. The system evidence rail always stays visible under your custom
+                  content, so use this area for the owner narrative, demo surface, or richer
+                  technical callouts.
                 </div>
                 <div className="flex flex-wrap gap-3">
                   <button

@@ -122,6 +122,41 @@ describe("qwen-prompt", () => {
     expect(prompt).not.toContain("The user shared a path");
   });
 
+  it("anchors current-context requests to the active workspace file instead of inviting path confusion", () => {
+    const prompt = buildQwenPrompt({
+      task: "expand on my current files integration plan please",
+      mode: "auto",
+      workspaceRoot: "c:/repo",
+      preview: {
+        activeFile: "Binary IDE Plan.md",
+        openFiles: ["Binary IDE Plan.md"],
+        candidateFiles: ["Binary IDE Plan.md"],
+        attachedFiles: ["Binary IDE Plan.md"],
+        memoryFiles: [],
+        resolvedFiles: ["Binary IDE Plan.md"],
+        selectedFiles: ["Binary IDE Plan.md"],
+        diagnostics: [],
+        intent: "explain",
+        confidence: "high",
+        confidenceScore: 0.9,
+        rationale: "active file inferred",
+        workspaceRoot: "c:/repo",
+        snippets: [],
+      },
+      context: {
+        activeFile: {
+          path: "Binary IDE Plan.md",
+          language: "markdown",
+          content: "# Binary IDE Plan",
+        },
+      },
+    });
+
+    expect(prompt).toContain("The user is referring to the current workspace context.");
+    expect(prompt).toContain("Default to the active file");
+    expect(prompt).toContain("Binary IDE Plan.md");
+  });
+
   it("drops runtime narrative history about .trae extension installs", () => {
     const prompt = buildQwenPrompt({
       task: "continue fixing route.ts",
@@ -273,5 +308,47 @@ describe("qwen-prompt", () => {
     expect(prompt).not.toContain("location of the Qwen Code SDK");
     expect(prompt).not.toContain("confirm the installation");
     expect(prompt).not.toContain("troubleshoot an issue related to the SDK");
+  });
+
+  it("keeps legitimate Qwen workspace history when the current file is about Qwen integration", () => {
+    const prompt = buildQwenPrompt({
+      task: "expand the qwen adapter logic in qwen-client.ts",
+      mode: "auto",
+      workspaceRoot: "c:/repo",
+      preview: {
+        activeFile: "src/qwen-client.ts",
+        openFiles: ["src/qwen-client.ts"],
+        candidateFiles: ["src/qwen-client.ts"],
+        attachedFiles: ["src/qwen-client.ts"],
+        memoryFiles: [],
+        resolvedFiles: ["src/qwen-client.ts"],
+        selectedFiles: ["src/qwen-client.ts"],
+        diagnostics: [],
+        intent: "explain",
+        confidence: "high",
+        confidenceScore: 0.9,
+        rationale: "active file inferred",
+        workspaceRoot: "c:/repo",
+        snippets: [],
+      },
+      history: [
+        {
+          id: "m-1",
+          role: "assistant",
+          content: "Let's expand src/qwen-client.ts by improving the Qwen adapter and retry handling.",
+        },
+      ],
+      context: {
+        activeFile: {
+          path: "src/qwen-client.ts",
+          language: "typescript",
+          content: "export function createQwenClient() {}",
+        },
+      },
+    });
+
+    expect(prompt).toContain("src/qwen-client.ts");
+    expect(prompt).toContain("Qwen adapter and retry handling");
+    expect(prompt).not.toContain("SDK's CLI executable");
   });
 });

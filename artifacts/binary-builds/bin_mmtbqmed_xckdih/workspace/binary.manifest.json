@@ -1,0 +1,26 @@
+{
+  "buildId": "bin_mmtbqmed_xckdih",
+  "artifactKind": "package_bundle",
+  "name": "binary-hello",
+  "displayName": "Hello",
+  "description": "hello",
+  "intent": "hello",
+  "runtime": "node18",
+  "platform": "portable",
+  "packageManager": "npm",
+  "entrypoint": "dist/index.js",
+  "installCommand": "npm install",
+  "buildCommand": "npm run build",
+  "startCommand": "npm start",
+  "sourceFiles": [
+    "package.json",
+    "README.md",
+    "src/index.ts",
+    "tsconfig.json"
+  ],
+  "outputFiles": [],
+  "warnings": [
+    "The intent is short, so the generated scaffold may need refinement."
+  ],
+  "createdAt": "2026-03-16T15:14:21.343Z"
+}

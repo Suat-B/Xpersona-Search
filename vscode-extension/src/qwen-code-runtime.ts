@@ -22,6 +22,7 @@ import {
   isSafeInspectionToolRequest,
 } from "./qwen-runtime-utils";
 import { mergeAssistantResponseText } from "./qwen-response-assembly";
+import { formatAssistantStreamText } from "./qwen-stream-format";
 import type { Mode } from "./shared";
 
 function trimToSentence(value: string, limit = 220): string {
@@ -34,6 +35,14 @@ function extractText(blocks: ContentBlock[]): string {
   return blocks
     .filter((block): block is Extract<ContentBlock, { type: "text" }> => block.type === "text")
     .map((block) => block.text)
+    .join("")
+    .trim();
+}
+
+function extractThinking(blocks: ContentBlock[]): string {
+  return blocks
+    .filter((block): block is Extract<ContentBlock, { type: "thinking" }> => block.type === "thinking")
+    .map((block) => block.thinking)
     .join("")
     .trim();
 }
@@ -107,17 +116,41 @@ export class QwenCodeRuntime {
     const includePartialMessages = true;
     const requestedSessionId = input.sessionId || undefined;
     let assistantText = "";
-    let streamingMessageText = "";
+    let completedReasoningText = "";
+    let completedAnswerText = "";
+    let streamingReasoningText = "";
+    let streamingAnswerText = "";
     const permissionDenials: string[] = [];
     const usedToolNames = new Set<string>();
     const approvedToolRequests = new Set<string>();
     let didMutate = false;
 
-    const publishAssistantText = (candidate: string) => {
-      const merged = mergeAssistantResponseText(assistantText, candidate);
-      if (!merged || merged === assistantText) return;
-      assistantText = merged;
-      input.onPartial?.(assistantText);
+    const publishAssistantText = (reasoningCandidate: string, answerCandidate: string) => {
+      const nextText = formatAssistantStreamText({
+        reasoningText: reasoningCandidate,
+        answerText: answerCandidate,
+      });
+      if (!nextText || nextText === assistantText) return;
+      assistantText = nextText;
+      input.onPartial?.(nextText);
+    };
+
+    const publishStreamingState = () => {
+      publishAssistantText(
+        mergeAssistantResponseText(completedReasoningText, streamingReasoningText),
+        mergeAssistantResponseText(completedAnswerText, streamingAnswerText)
+      );
+    };
+
+    const commitAssistantText = (reasoningCandidate: string, answerCandidate: string) => {
+      const nextReasoning = mergeAssistantResponseText(completedReasoningText, reasoningCandidate);
+      const nextAnswer = mergeAssistantResponseText(completedAnswerText, answerCandidate);
+      const didChange =
+        nextReasoning !== completedReasoningText || nextAnswer !== completedAnswerText;
+      completedReasoningText = nextReasoning;
+      completedAnswerText = nextAnswer;
+      if (!didChange) return;
+      publishAssistantText(completedReasoningText, completedAnswerText);
     };
 
     const result = query({
@@ -168,7 +201,7 @@ export class QwenCodeRuntime {
           }
 
           input.onActivity?.(`Denied tool: ${summarizeToolRequest(toolName, toolInput)}`);
-          return { behavior: "deny", message: "Tool use denied in Playground." } as const;
+          return { behavior: "deny", message: "Tool use denied in Binary IDE." } as const;
         },
       },
     });
@@ -177,7 +210,8 @@ export class QwenCodeRuntime {
       for await (const message of result) {
         if (isSDKPartialAssistantMessage(message)) {
           if (message.event.type === "message_start") {
-            streamingMessageText = "";
+            streamingReasoningText = "";
+            streamingAnswerText = "";
             continue;
           }
 
@@ -185,14 +219,24 @@ export class QwenCodeRuntime {
             message.event.type === "content_block_delta" &&
             message.event.delta.type === "text_delta"
           ) {
-            streamingMessageText += message.event.delta.text;
-            publishAssistantText(streamingMessageText);
+            streamingAnswerText += message.event.delta.text;
+            publishStreamingState();
+            continue;
+          }
+
+          if (
+            message.event.type === "content_block_delta" &&
+            message.event.delta.type === "thinking_delta"
+          ) {
+            streamingReasoningText += message.event.delta.thinking;
+            publishStreamingState();
             continue;
           }
 
           if (message.event.type === "message_stop") {
-            publishAssistantText(streamingMessageText);
-            streamingMessageText = "";
+            commitAssistantText(streamingReasoningText, streamingAnswerText);
+            streamingReasoningText = "";
+            streamingAnswerText = "";
           }
           continue;
         }
@@ -210,8 +254,9 @@ export class QwenCodeRuntime {
 
         if (isSDKAssistantMessage(message)) {
           const nextText = extractText(message.message.content);
-          if (nextText) {
-            publishAssistantText(nextText);
+          const nextThinking = extractThinking(message.message.content);
+          if (nextText || nextThinking) {
+            commitAssistantText(nextThinking, nextText);
           }
           for (const toolUse of extractToolUses(message.message.content)) {
             usedToolNames.add(toolUse.name);
@@ -225,7 +270,7 @@ export class QwenCodeRuntime {
 
         if (isSDKResultMessage(message)) {
           if (message.result && typeof message.result === "string" && message.result.trim()) {
-            publishAssistantText(message.result);
+            commitAssistantText("", message.result);
           }
           for (const denial of message.permission_denials || []) {
             permissionDenials.push(trimToSentence(`${denial.tool_name} denied`));
@@ -240,7 +285,10 @@ export class QwenCodeRuntime {
       sessionId: result.getSessionId(),
       assistantText:
         assistantText ||
-        streamingMessageText.trim() ||
+        formatAssistantStreamText({
+          reasoningText: mergeAssistantResponseText(completedReasoningText, streamingReasoningText),
+          answerText: mergeAssistantResponseText(completedAnswerText, streamingAnswerText),
+        }) ||
         "Qwen Code finished without returning a final message.",
       permissionDenials,
       usedTools: Array.from(usedToolNames),

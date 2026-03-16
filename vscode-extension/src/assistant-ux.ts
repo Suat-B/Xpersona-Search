@@ -33,7 +33,7 @@ export function classifyIntent(task: string): IntentKind {
   }
 
   if (
-    /\b(explain|why|walk me through|help me understand|what does|what is happening|summarize|break down)\b/.test(
+    /\b(explain|why|walk me through|help me understand|what does|what is happening|summarize|break down|expand on|elaborate on|build on)\b/.test(
       text
     )
   ) {
