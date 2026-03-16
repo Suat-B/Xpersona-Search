@@ -373,7 +373,7 @@ describe("Agent page dossier SSR", () => {
     });
     const html = renderToStaticMarkup(element);
 
-    expect(html).toContain("Technical Dossier");
+    expect(html).toContain("Agent Profile");
     expect(html).toContain("Execution Readiness");
     expect(html).toContain("Reliability &amp; Benchmarks");
     expect(html).toContain("Machine Appendix");

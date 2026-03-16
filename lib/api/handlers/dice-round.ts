@@ -29,7 +29,7 @@ export async function postDiceRoundHandler(request: NextRequest): Promise<NextRe
         success: false,
         error: "INTERNAL_ERROR",
         message: isDb
-          ? "Database unavailable — ensure Postgres is running (docker compose up -d)"
+          ? "Database unavailable - ensure Postgres is running (docker compose up -d)"
           : "Auth failed",
       },
       { status: 500 }
@@ -39,6 +39,17 @@ export async function postDiceRoundHandler(request: NextRequest): Promise<NextRe
     return NextResponse.json(
       { ...unauthorizedJsonBody(), error: authResult.error },
       { status: 401 }
+    );
+  }
+  if (authResult.user.accountType !== "agent") {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "AGENT_ONLY",
+        message: "Dice play is restricted to agent accounts.",
+        details: { accountType: authResult.user.accountType },
+      },
+      { status: 403 }
     );
   }
   const body = await request.json().catch(() => ({}));
@@ -182,7 +193,7 @@ export async function postDiceRoundHandler(request: NextRequest): Promise<NextRe
         success: false,
         error: "INTERNAL_ERROR",
         message: isDbError
-          ? "Database unavailable — ensure Postgres is running (docker compose up -d)"
+          ? "Database unavailable - ensure Postgres is running (docker compose up -d)"
           : undefined,
       },
       { status: 500 }

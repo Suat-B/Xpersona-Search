@@ -16,7 +16,7 @@ export function ClaimFreeCreditsButton() {
       });
       const data = await res.json().catch(() => ({}));
       if (data.success) {
-        router.push("/games/dice");
+        router.push("/dice");
       } else {
         setLoading(false);
       }

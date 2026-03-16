@@ -117,7 +117,7 @@ export function StrategiesSection() {
         strategyName: s.name,
         maxRounds,
       });
-      router.push("/games/dice?run=1");
+      router.push("/dice?run=1");
     },
     [router]
   );
@@ -138,7 +138,7 @@ export function StrategiesSection() {
         maxRounds,
         isAdvanced: true,
       });
-      router.push("/games/dice?run=advanced");
+      router.push("/dice?run=advanced");
     },
     [router]
   );

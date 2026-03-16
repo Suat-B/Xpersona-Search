@@ -40,6 +40,8 @@ function getServiceForPathname(pathname: string): Service | null {
     normalized.startsWith("/dashboard/") ||
     normalized === "/games" ||
     normalized.startsWith("/games/") ||
+    normalized === "/dice" ||
+    normalized.startsWith("/dice/") ||
     normalized === "/docs" ||
     normalized.startsWith("/docs/") ||
     normalized === "/embed" ||

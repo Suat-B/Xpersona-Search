@@ -21,7 +21,13 @@ function formatDownloads(downloads: number | null): string | null {
   return `${downloads.toLocaleString()} downloads`;
 }
 
+function stripCrawledPrefix(name: string): string {
+  const cleaned = name.replace(/^\s*crawled[\s:-]+/i, "").trim();
+  return cleaned || name;
+}
+
 export function AgentMiniCard({ agent }: AgentMiniCardProps) {
+  const displayName = stripCrawledPrefix(agent.name);
   const downloads = formatDownloads(agent.downloads);
   const updated = toRelativeUpdatedLabel(agent.updatedAt);
 
@@ -32,7 +38,7 @@ export function AgentMiniCard({ agent }: AgentMiniCardProps) {
           href={`/agent/${agent.slug}`}
           className="text-base font-semibold text-[var(--text-primary)] hover:text-[var(--accent-heart)] hover:underline"
         >
-          {agent.name}
+          {displayName}
         </Link>
         <span className="text-xs rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-0.5 text-[var(--text-tertiary)]">
           {agent.source}

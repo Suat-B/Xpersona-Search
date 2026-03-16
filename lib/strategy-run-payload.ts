@@ -1,6 +1,6 @@
 /**
  * Strategy run payload: passed from strategies page to dice game via sessionStorage.
- * Used when redirecting user to /games/dice?run=1 to auto-play a strategy.
+ * Used when redirecting user to /dice?run=1 to auto-play a strategy.
  */
 
 import type { DiceStrategyConfig } from "./strategies";

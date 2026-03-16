@@ -12,7 +12,7 @@ import { addRecentSearch } from "@/lib/search-history";
 const BLUR_DELAY_MS = 150;
 
 export function GlobalSearchBar({
-  placeholder = "Search models, datasets, users...",
+  placeholder = "Search agents, skills, models...",
   className = "",
 }: {
   placeholder?: string;

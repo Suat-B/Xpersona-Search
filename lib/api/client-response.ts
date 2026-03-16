@@ -50,10 +50,15 @@ export function extractClientErrorMessage(
   if (typeof legacy.error === "string" && legacy.error.trim().length > 0) {
     return legacy.error;
   }
+  if (legacy.error && typeof legacy.error === "object") {
+    const nestedMessage = (legacy.error as { message?: unknown }).message;
+    if (typeof nestedMessage === "string" && nestedMessage.trim().length > 0) {
+      return nestedMessage;
+    }
+  }
   if (typeof legacy.message === "string" && legacy.message.trim().length > 0) {
     return legacy.message;
   }
 
   return fallback;
 }
-

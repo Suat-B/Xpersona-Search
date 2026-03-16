@@ -74,6 +74,28 @@ interface Agent {
   };
 }
 
+interface MixedDocResult {
+  id: string;
+  kind?: "agent" | "artifact" | "doc" | "page";
+  docType?: string;
+  source?: string;
+  sourceId?: string;
+  url?: string;
+  domain?: string;
+  agentSlug?: string | null;
+  agentUrl?: string | null;
+  title?: string | null;
+  snippet?: string | null;
+  qualityScore?: number;
+  safetyScore?: number;
+  freshnessScore?: number;
+  confidenceScore?: number;
+  indexedAt?: string;
+  overallRank?: number;
+}
+
+type SearchResultItem = Agent | MixedDocResult;
+
 interface Facets {
   protocols?: Array<{ protocol: string[]; count: number }>;
 }
@@ -113,7 +135,7 @@ interface MediaResult {
 }
 
 interface SearchResponsePayload {
-  results?: Agent[];
+  results?: SearchResultItem[];
   mediaResults?: MediaResult[];
   pagination?: { hasMore?: boolean; nextCursor?: string | null; total?: number };
   facets?: Facets;
@@ -127,7 +149,7 @@ interface SearchOverrides {
   selectedCapabilities?: string[];
   minSafety?: number;
   sort?: string;
-  vertical?: "agents" | "skills" | "artifacts";
+  vertical?: "all" | "agents" | "skills" | "artifacts";
   intent?: "discover" | "execute";
   taskType?: string;
   maxLatencyMs?: string;
@@ -143,8 +165,8 @@ interface SearchOverrides {
 
 const PAGE_SIZE = 30;
 
-type PageKey = "agents" | "artifacts";
-type PageCache = Record<number, Agent[]>;
+type PageKey = "results" | "artifacts";
+type PageCache = Record<number, SearchResultItem[]>;
 type MediaPageCache = Record<number, MediaResult[]>;
 type PageCursorMap = Record<number, string | null>;
 
@@ -155,6 +177,10 @@ function dedupeById<T extends { id: string }>(items: T[]): T[] {
     seen.add(item.id);
     return true;
   });
+}
+
+function isAgentResult(item: SearchResultItem): item is Agent {
+  return typeof (item as Agent).slug === "string" && typeof (item as Agent).name === "string";
 }
 
 function buildPageItems(current: number, totalPages: number): Array<number | "ellipsis"> {
@@ -208,6 +234,13 @@ function parseBoolFromUrl(value: string | null): boolean {
   return value === "1" || value === "true";
 }
 
+function parseSortFromUrl(value: string | null): string {
+  if (value === "rank" || value === "safety" || value === "popularity" || value === "freshness") {
+    return value;
+  }
+  return "popularity";
+}
+
 export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -220,7 +253,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
     [normalizedBasePath]
   );
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const [agents, setAgents] = useState<SearchResultItem[]>([]);
   const [mediaResults, setMediaResults] = useState<MediaResult[]>([]);
   const [fallbackAgents, setFallbackAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(false);
@@ -233,15 +266,23 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
     parseCapabilitiesFromUrl(searchParams.get("capabilities"))
   );
   const [minSafety, setMinSafety] = useState(0);
-  const [sort, setSort] = useState("rank");
+  const [sort, setSort] = useState(() => parseSortFromUrl(searchParams.get("sort")));
   const [facets, setFacets] = useState<Facets | undefined>(undefined);
   const [intent, setIntent] = useState<"discover" | "execute">(
     searchParams.get("intent") === "execute" ? "execute" : "discover"
   );
-  const [vertical, setVertical] = useState<"agents" | "skills" | "artifacts">(() => {
+  const [vertical, setVertical] = useState<"all" | "agents" | "skills" | "artifacts">(() => {
     const urlVertical = searchParams.get("vertical");
-    if (urlVertical === "artifacts" || urlVertical === "skills") return urlVertical;
-    return "agents";
+    if (
+      urlVertical === "artifacts" ||
+      urlVertical === "skills" ||
+      urlVertical === "all" ||
+      urlVertical === "agents" ||
+      urlVertical === "docs"
+    ) {
+      return urlVertical === "docs" ? "all" : urlVertical;
+    }
+    return "all";
   }
   );
   const [taskType, setTaskType] = useState(searchParams.get("taskType") ?? "");
@@ -264,13 +305,13 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
   );
   const [page, setPage] = useState(1);
   const [pageCursors, setPageCursors] = useState<{
-    agents: PageCursorMap;
+    results: PageCursorMap;
     artifacts: PageCursorMap;
-  }>({ agents: { 1: null }, artifacts: { 1: null } });
+  }>({ results: { 1: null }, artifacts: { 1: null } });
   const [pageCache, setPageCache] = useState<{
-    agents: PageCache;
+    results: PageCache;
     artifacts: MediaPageCache;
-  }>({ agents: {}, artifacts: {} });
+  }>({ results: {}, artifacts: {} });
 
   const handleProtocolChange = useCallback(
     (protocols: string[]) => {
@@ -304,11 +345,13 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
       const nextRecall = overrides?.recall ?? recall;
       const nextIncludeSources = overrides?.includeSources ?? includeSources;
 
-      const requestVertical = nextVertical === "skills" ? "agents" : nextVertical;
+      // Keep "All" and "Agents" sourced from the same ranking pipeline so totals are comparable.
+      const requestVertical =
+        nextVertical === "skills" || nextVertical === "all" ? "agents" : nextVertical;
       const requestSkillsOnly = nextVertical === "skills";
       const urlIncludeSources = nextIncludeSources;
       const requestIncludeSources = nextIncludeSources;
-      const paginationKey: PageKey = requestVertical === "artifacts" ? "artifacts" : "agents";
+      const paginationKey: PageKey = requestVertical === "artifacts" ? "artifacts" : "results";
       const cached = overrides?.resetCaches ? undefined : pageCache[paginationKey][pageIndex];
       const cursorMap = pageCursors[paginationKey];
       const pageCursor = pageIndex === 1 ? null : cursorMap[pageIndex] ?? null;
@@ -376,7 +419,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
             setMediaResults(cached as MediaResult[]);
             setAgents([]);
           } else {
-            setAgents(cached as Agent[]);
+            setAgents(cached as SearchResultItem[]);
             setMediaResults([]);
           }
           setPage(pageIndex);
@@ -420,7 +463,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
         } else {
           setPageCache((prev) => ({
             ...prev,
-            agents: { ...prev.agents, [pageIndex]: nextAgents },
+            results: { ...prev.results, [pageIndex]: nextAgents },
           }));
         }
 
@@ -435,7 +478,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
             const fallbackResponse = await safeFetchJson(`/api/v1/search?${fallbackParams}`);
             if (fallbackResponse.ok) {
               const fallbackData = unwrapClientResponse<SearchResponsePayload>(fallbackResponse.data);
-              setFallbackAgents(fallbackData.results ?? []);
+              setFallbackAgents((fallbackData.results ?? []).filter(isAgentResult));
             } else {
               setFallbackAgents([]);
             }
@@ -481,11 +524,11 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
   );
 
   const handleVerticalChange = useCallback(
-    (v: "agents" | "skills" | "artifacts") => {
+    (v: "all" | "agents" | "skills" | "artifacts") => {
       setVertical(v);
       setPage(1);
-      setPageCursors({ agents: { 1: null }, artifacts: { 1: null } });
-      setPageCache({ agents: {}, artifacts: {} });
+      setPageCursors({ results: { 1: null }, artifacts: { 1: null } });
+      setPageCache({ results: {}, artifacts: {} });
       const params = new URLSearchParams(searchParams.toString());
       params.set("vertical", v);
       params.set("page", "1");
@@ -496,8 +539,8 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
 
   useEffect(() => {
     setPage(1);
-    setPageCursors({ agents: { 1: null }, artifacts: { 1: null } });
-    setPageCache({ agents: {}, artifacts: {} });
+    setPageCursors({ results: { 1: null }, artifacts: { 1: null } });
+    setPageCache({ results: {}, artifacts: {} });
     loadPage(1, { resetCaches: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -528,8 +571,19 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
     setSelectedProtocols(urlProtocols);
     setSelectedCapabilities(urlCapabilities);
     setIntent(searchParams.get("intent") === "execute" ? "execute" : "discover");
+    setSort(parseSortFromUrl(searchParams.get("sort")));
     const urlVertical = searchParams.get("vertical");
-    setVertical(urlVertical === "artifacts" || urlVertical === "skills" ? urlVertical : "agents");
+    if (
+      urlVertical === "artifacts" ||
+      urlVertical === "skills" ||
+      urlVertical === "all" ||
+      urlVertical === "agents" ||
+      urlVertical === "docs"
+    ) {
+      setVertical(urlVertical === "docs" ? "all" : urlVertical);
+    } else {
+      setVertical("all");
+    }
     setTaskType(searchParams.get("taskType") ?? "");
     setMaxLatencyMs(searchParams.get("maxLatencyMs") ?? "");
     setMaxCostUsd(searchParams.get("maxCostUsd") ?? "");
@@ -570,7 +624,15 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
   const countValue = vertical === "artifacts" ? mediaResults.length : agents.length;
   const totalValue = total > 0 ? total : countValue;
   const totalLabel = totalValue > 0
-    ? `${totalValue} ${vertical === "artifacts" ? "assets" : vertical === "skills" ? "skills" : "agents"}`
+    ? `${totalValue} ${
+      vertical === "artifacts"
+        ? "assets"
+        : vertical === "skills"
+          ? "skills"
+          : vertical === "all"
+            ? "results"
+            : "agents"
+    }`
     : undefined;
 
   const handleExploreAllAgents = useCallback(async () => {
@@ -578,7 +640,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
     setSelectedProtocols([]);
     setSelectedCapabilities([]);
     setMinSafety(0);
-    setSort("rank");
+    setSort("popularity");
     setVertical("agents");
     setIntent("discover");
     setTaskType("");
@@ -597,7 +659,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
       selectedProtocols: [],
       selectedCapabilities: [],
       minSafety: 0,
-      sort: "rank",
+      sort: "popularity",
       vertical: "agents",
       intent: "discover",
       taskType: "",
@@ -615,7 +677,7 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
   }, [loadPage]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const paginationKey: PageKey = vertical === "artifacts" ? "artifacts" : "agents";
+  const paginationKey: PageKey = vertical === "artifacts" ? "artifacts" : "results";
   const maxNavigablePage = Math.max(
     1,
     ...Object.keys(pageCursors[paginationKey]).map((p) => Number(p)),
@@ -684,10 +746,14 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
                 void handleExploreAllAgents();
                 return;
               }
+              const submitSort = resolvedQuery ? "popularity" : sort;
+              if (resolvedQuery && sort !== "popularity") {
+                setSort("popularity");
+              }
               setPage(1);
-              setPageCursors({ agents: { 1: null }, artifacts: { 1: null } });
-              setPageCache({ agents: {}, artifacts: {} });
-              void loadPage(1, { query: resolvedQuery, resetCaches: true });
+              setPageCursors({ results: { 1: null }, artifacts: { 1: null } });
+              setPageCache({ results: {}, artifacts: {} });
+              void loadPage(1, { query: resolvedQuery, sort: submitSort, resetCaches: true });
             }}
             loading={loading}
             vertical={vertical}
@@ -789,6 +855,8 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
                     <p className="text-[var(--text-secondary)] font-medium">
                       {vertical === "artifacts"
                         ? "No machine-usable visual assets found for this query."
+                        : vertical === "all"
+                          ? "No results found. Try different filters or search terms."
                         : vertical === "skills"
                           ? "No skills found. Try different filters or search terms."
                           : "No agents found. Try different filters or search terms."}
@@ -825,9 +893,56 @@ export function SearchLanding({ basePath = "/" }: { basePath?: string }) {
                       </p>
                     )}
 
-                    {vertical !== "artifacts" ? (
+                    {vertical === "all" ? (
                       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 auto-rows-[64px] items-stretch pt-4">
-                        {agents.map((agent) => (
+                        {agents.map((item) =>
+                          isAgentResult(item) ? (
+                            <HFModelCard key={item.id} agent={item} />
+                          ) : (
+                            <div key={item.id} className="rounded-lg bg-gradient-to-r from-[#6366f1] via-[#8b5cf6] to-[#ec4899] p-[1px]">
+                              <article className="group flex h-full min-h-[64px] items-center gap-3 overflow-hidden rounded-[7px] border border-transparent bg-white px-3 py-1.5 transition-all duration-200 hover:bg-white">
+                                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                                  {item.kind ?? "doc"}
+                                </div>
+                                <div className="min-w-0 flex-1 overflow-hidden">
+                                  <div className="flex items-center justify-between gap-3">
+                                    {item.agentUrl ? (
+                                      <Link
+                                        href={item.agentUrl}
+                                        className="min-w-0 truncate text-sm font-semibold text-slate-900 transition-colors hover:text-[var(--accent-heart)]"
+                                      >
+                                        {item.title?.trim() || item.url || item.sourceId || "Untitled result"}
+                                      </Link>
+                                    ) : item.url?.startsWith("http") ? (
+                                      <a
+                                        href={item.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="min-w-0 truncate text-sm font-semibold text-slate-900 transition-colors hover:text-[var(--accent-heart)]"
+                                      >
+                                        {item.title?.trim() || item.url || item.sourceId || "Untitled result"}
+                                      </a>
+                                    ) : (
+                                      <h3 className="min-w-0 truncate text-sm font-semibold text-slate-900">
+                                        {item.title?.trim() || item.url || item.sourceId || "Untitled result"}
+                                      </h3>
+                                    )}
+                                    <span className="shrink-0 text-xs text-slate-500">
+                                      {item.domain || item.source || "document"}
+                                    </span>
+                                  </div>
+                                  <p className="mt-1 truncate text-[11px] leading-none text-slate-500">
+                                    {item.snippet || item.url || item.sourceId || "Open result"}
+                                  </p>
+                                </div>
+                              </article>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    ) : vertical !== "artifacts" ? (
+                      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 auto-rows-[64px] items-stretch pt-4">
+                        {agents.filter(isAgentResult).map((agent) => (
                           <HFModelCard key={agent.id} agent={agent} />
                         ))}
                       </div>

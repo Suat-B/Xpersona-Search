@@ -25,5 +25,9 @@ describe("extractClientErrorMessage", () => {
   it("reads legacy error strings", () => {
     expect(extractClientErrorMessage({ error: "legacy fail" })).toBe("legacy fail");
   });
-});
 
+  it("reads legacy nested error messages", () => {
+    const payload = { error: { message: "legacy nested fail" } };
+    expect(extractClientErrorMessage(payload)).toBe("legacy nested fail");
+  });
+});

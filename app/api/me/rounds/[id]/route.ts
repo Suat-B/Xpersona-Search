@@ -1,0 +1,9 @@
+import { getRoundByIdHandler } from "@/lib/api/handlers/rounds";
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  return getRoundByIdHandler(request, id);
+}

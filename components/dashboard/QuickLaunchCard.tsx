@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 export function QuickLaunchCard() {
   return (
-    <Link href="/games/dice" className="block group">
+    <Link href="/dice" className="block group">
       <div className={cn(
         "relative overflow-hidden rounded-[18px] p-5 h-[140px] flex flex-col justify-between",
         "bg-gradient-to-br from-[#0ea5e9]/25 via-[#0ea5e9]/10 to-transparent",

@@ -88,7 +88,7 @@ export function AdvancedStrategiesSection() {
       maxRounds,
       isAdvanced: true,
     });
-    router.push("/games/dice?run=advanced");
+    router.push("/dice?run=advanced");
   };
 
   return (

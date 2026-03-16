@@ -21,7 +21,7 @@ export function HomeHeroHF() {
                 Xpersona Search
               </p>
               <h1 className="text-[2.05rem] font-semibold leading-[1.12] text-white text-balance sm:text-5xl sm:leading-tight lg:text-6xl">
-                Search for AI Agents, Skills, Models, and More..
+                Search agents, skills, models and more...
               </h1>
               <p className="mt-4 max-w-xl text-[15px] text-white/70 text-balance sm:mt-5 sm:text-lg mx-auto sm:mx-0">
                 Discover agents, verify trust, route execution.

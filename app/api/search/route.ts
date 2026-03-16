@@ -63,6 +63,7 @@ import {
 import { parseCapabilityParam } from "@/lib/search/capability-tokens";
 import {
   canonicalSourceSql,
+  canonicalizeSource,
   expandSourceBuckets,
   REGISTRY_SOURCES,
 } from "@/lib/search/source-taxonomy";
@@ -75,6 +76,7 @@ let hasAgentCapabilityContractsTableCache: boolean | null = null;
 let hasAgentEmbeddingsTableCache: boolean | null = null;
 let hasAgentHandshakeTableCache: boolean | null = null;
 let hasAgentReputationTableCache: boolean | null = null;
+let hasSearchDocumentsTableCache: boolean | null = null;
 
 type SearchMatchMode =
   | "strict_lexical"
@@ -82,6 +84,8 @@ type SearchMatchMode =
   | "semantic"
   | "filter_only_fallback"
   | "global_fallback";
+
+const SKILL_PRIORITY_SOURCES = [...REGISTRY_SOURCES, "CLAWHUB", "GITHUB_OPENCLEW", "GITHUB_REPOS"] as const;
 
 function escapeLike(s: string): string {
   return s.replace(/[%_\\]/g, (c) => `\\${c}`);
@@ -246,6 +250,47 @@ function buildCapabilityPresenceCondition(): SQL {
     ) AS cap
     WHERE lower(trim(both '-' from regexp_replace(cap, '[^a-zA-Z0-9]+', '-', 'g'))) <> ''
   )`;
+}
+
+function buildSkillPriorityExpr(sourceExpr: SQL): SQL {
+  return sql`CASE
+    WHEN ${sourceExpr} = ANY(ARRAY[${sql.join(
+      SKILL_PRIORITY_SOURCES.map((source) => sql`${source}`),
+      sql`, `
+    )}]::text[]) THEN 2
+    WHEN ${agents.openclawData} IS NOT NULL THEN 2
+    WHEN ${buildCapabilityPresenceCondition()} THEN 1
+    WHEN (
+      ${agents.readme} IS NOT NULL
+      AND (
+        ${agents.readme} ILIKE '%protocols:%'
+        OR ${agents.readme} ILIKE '%capability:%'
+      )
+    ) THEN 1
+    ELSE 0
+  END`;
+}
+
+function hasCapabilityTokens(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  return value.some((entry) => typeof entry === "string" && entry.trim().length > 0);
+}
+
+function computeSkillPriorityFromCursorRow(row: {
+  source: string | null;
+  sourceId: string | null;
+  openclawData: unknown;
+  capabilities: unknown;
+  readme: string | null;
+}): number {
+  const source = canonicalizeSource(row.source ?? "", row.sourceId ?? null);
+  if (SKILL_PRIORITY_SOURCES.includes(source as (typeof SKILL_PRIORITY_SOURCES)[number])) {
+    return 2;
+  }
+  if (row.openclawData != null) return 2;
+  if (hasCapabilityTokens(row.capabilities)) return 1;
+  if (typeof row.readme === "string" && /protocols:|capability:/i.test(row.readme)) return 1;
+  return 0;
 }
 
 function buildSourceFilterCondition(values: string[]): SQL {
@@ -448,6 +493,12 @@ function isMissingSearchClicksTableError(err: unknown): boolean {
   return msg.includes('relation "search_clicks" does not exist');
 }
 
+function isMissingSearchDocumentsTableError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return msg.includes('relation "search_documents" does not exist');
+}
+
 function isHybridRankingEnabled(): boolean {
   return process.env.SEARCH_HYBRID_RANKING === "1";
 }
@@ -529,6 +580,12 @@ async function hasAgentHandshakeTable() {
 async function hasAgentReputationTable() {
   const value = await hasTable("agent_reputation_snapshots", hasAgentReputationTableCache);
   hasAgentReputationTableCache = value;
+  return value;
+}
+
+async function hasSearchDocumentsTable() {
+  const value = await hasTable("search_documents", hasSearchDocumentsTableCache);
+  hasSearchDocumentsTableCache = value;
   return value;
 }
 
@@ -656,25 +713,45 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
   }
 
   const pageLimit = params.recall === "high" ? Math.min(200, params.limit * 3) : params.limit;
+  const mediaSkillPriorityExpr = buildSkillPriorityExpr(
+    canonicalSourceSql(agents.source, agents.sourceId)
+  );
   const mediaCursor = params.mediaCursor?.trim() || null;
   if (mediaCursor) {
     const parts = mediaCursor.split("|");
-    if (parts.length === 3) {
-      const cursorRank = Number(parts[0]);
-      const cursorUpdatedAt = new Date(parts[1]);
-      const cursorId = parts[2];
+    if (parts.length === 3 || parts.length === 4) {
+      const hasPriority = parts.length === 4;
+      const cursorSkillPriority = hasPriority ? Number(parts[0]) : 0;
+      const rankIndex = hasPriority ? 1 : 0;
+      const updatedAtIndex = hasPriority ? 2 : 1;
+      const idIndex = hasPriority ? 3 : 2;
+      const cursorRank = Number(parts[rankIndex]);
+      const cursorUpdatedAt = new Date(parts[updatedAtIndex]);
+      const cursorId = parts[idIndex];
       if (
+        (hasPriority ? Number.isFinite(cursorSkillPriority) : true) &&
         Number.isFinite(cursorRank) &&
         !Number.isNaN(cursorUpdatedAt.getTime()) &&
         cursorId.length > 0
       ) {
-        conditions.push(
-          sql`(
-            coalesce(${agentMediaAssets.rankScore}, 0),
-            ${agentMediaAssets.updatedAt},
-            ${agentMediaAssets.id}
-          ) < (${cursorRank}, ${cursorUpdatedAt}, ${cursorId}::uuid)`
-        );
+        if (hasPriority) {
+          conditions.push(
+            sql`(
+              ${mediaSkillPriorityExpr},
+              coalesce(${agentMediaAssets.rankScore}, 0),
+              ${agentMediaAssets.updatedAt},
+              ${agentMediaAssets.id}
+            ) < (${cursorSkillPriority}, ${cursorRank}, ${cursorUpdatedAt}, ${cursorId}::uuid)`
+          );
+        } else {
+          conditions.push(
+            sql`(
+              coalesce(${agentMediaAssets.rankScore}, 0),
+              ${agentMediaAssets.updatedAt},
+              ${agentMediaAssets.id}
+            ) < (${cursorRank}, ${cursorUpdatedAt}, ${cursorId}::uuid)`
+          );
+        }
       }
     }
   }
@@ -698,6 +775,7 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
       ${agentMediaAssets.qualityScore} AS quality_score,
       ${agentMediaAssets.safetyScore} AS safety_score,
       ${agentMediaAssets.rankScore} AS rank_score,
+      ${mediaSkillPriorityExpr} AS skill_priority,
       ${agentMediaAssets.updatedAt} AS updated_at,
       ${agentMediaAssets.crawlDomain} AS crawl_domain,
       ${agentMediaAssets.discoveryMethod} AS discovery_method
@@ -705,6 +783,7 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
     INNER JOIN ${agents} ON ${agents.id} = ${agentMediaAssets.agentId}
     WHERE ${and(...conditions)}
     ORDER BY
+      ${mediaSkillPriorityExpr} DESC,
       ${agentMediaAssets.rankScore} DESC,
       ${agentMediaAssets.qualityScore} DESC,
       ${agents.overallRank} DESC,
@@ -718,7 +797,7 @@ async function runMediaVerticalQuery(params: SearchParams): Promise<{
   const lastRow = pageRows[pageRows.length - 1];
   const nextCursor =
     hasMore && lastRow
-      ? `${Number(lastRow.rank_score ?? 0)}|${new Date(lastRow.updated_at as Date).toISOString()}|${
+      ? `${Number(lastRow.skill_priority ?? 0)}|${Number(lastRow.rank_score ?? 0)}|${new Date(lastRow.updated_at as Date).toISOString()}|${
           lastRow.id as string
         }`
       : null;
@@ -781,64 +860,92 @@ async function runDocumentVerticalQuery(
 
   const sourceCondition =
     params.includeSources.length > 0
-      ? sql`AND source = ANY(ARRAY[${sql.join(
+      ? sql`AND sd.source = ANY(ARRAY[${sql.join(
           params.includeSources.map((v) => sql`${v}`),
           sql`, `
         )}]::text[])`
       : sql``;
   const docTypeCondition =
     mode === "docs"
-      ? sql`AND doc_type = ANY(ARRAY['web_page','web_chunk']::text[])`
+      ? sql`AND sd.doc_type = ANY(ARRAY['web_page','web_chunk']::text[])`
       : sql``;
   const lexicalRankExpr = hasQuery
-    ? sql`ts_rank_cd(body_tsv, websearch_to_tsquery('english', ${rawQuery}))`
+    ? sql`ts_rank_cd(sd.body_tsv, websearch_to_tsquery('english', ${rawQuery}))`
     : sql`0::double precision`;
   const finalScoreExpr = hasQuery
     ? sql`(
         ${lexicalRankExpr} * 45
-        + quality_score * 0.20
-        + freshness_score * 0.15
-        + safety_score * 0.10
-        + confidence_score * 0.10
+        + sd.quality_score * 0.20
+        + sd.freshness_score * 0.15
+        + sd.safety_score * 0.10
+        + sd.confidence_score * 0.10
       )`
     : sql`(
-        quality_score * 0.45
-        + freshness_score * 0.25
-        + safety_score * 0.15
-        + confidence_score * 0.15
+        sd.quality_score * 0.45
+        + sd.freshness_score * 0.25
+        + sd.safety_score * 0.15
+        + sd.confidence_score * 0.15
       )`;
+  const documentPriorityExpr = sql`CASE
+    WHEN sd.doc_type = 'agent' THEN 2
+    WHEN doc_agent.slug IS NOT NULL THEN 2
+    WHEN sd.source = ANY(ARRAY[${sql.join(
+      SKILL_PRIORITY_SOURCES.map((source) => sql`${source}`),
+      sql`, `
+    )}]::text[]) THEN 1
+    ELSE 0
+  END`;
   const textCondition = hasQuery
     ? sql`AND (
-        body_tsv @@ websearch_to_tsquery('english', ${rawQuery})
-        OR coalesce(title, '') ILIKE ${queryPattern!}
-        OR coalesce(snippet, '') ILIKE ${queryPattern!}
-        OR canonical_url ILIKE ${queryPattern!}
+        sd.body_tsv @@ websearch_to_tsquery('english', ${rawQuery})
+        OR coalesce(sd.title, '') ILIKE ${queryPattern!}
+        OR coalesce(sd.snippet, '') ILIKE ${queryPattern!}
+        OR sd.canonical_url ILIKE ${queryPattern!}
       )`
     : sql``;
-
-  const result = await db.execute(sql`
-    SELECT
-      id,
-      doc_type,
-      source,
-      source_id,
-      canonical_url,
-      domain,
-      title,
-      snippet,
-      quality_score,
-      safety_score,
-      freshness_score,
-      confidence_score,
-      indexed_at,
-      ${lexicalRankExpr} AS lexical_rank,
-      ${finalScoreExpr} AS final_score
-    FROM search_documents
-    WHERE is_public = true
+  const syntheticSourceIdExpr = sql`('CRAWLED_DOC:' || sd.url_norm_hash || ':' || left(sd.content_hash, 16))`;
+  const baseWhere = sql`
+    FROM search_documents sd
+    LEFT JOIN agents doc_agent ON doc_agent.source_id = ${syntheticSourceIdExpr}
+    WHERE sd.is_public = true
       ${docTypeCondition}
       ${sourceCondition}
       ${textCondition}
-    ORDER BY final_score DESC, indexed_at DESC, id DESC
+  `;
+
+  const totalResult = await db.execute(sql`
+    SELECT COUNT(*)::int AS total
+    ${baseWhere}
+  `);
+  const totalMatches =
+    Number(
+      (totalResult as unknown as { rows?: Array<{ total?: number | string }> }).rows?.[0]?.total ??
+        0
+    ) || 0;
+
+  const result = await db.execute(sql`
+    SELECT
+      sd.id,
+      sd.doc_type,
+      sd.source,
+      sd.source_id,
+      sd.canonical_url,
+      sd.domain,
+      sd.title,
+      sd.snippet,
+      sd.quality_score,
+      sd.safety_score,
+      sd.freshness_score,
+      sd.confidence_score,
+      sd.indexed_at,
+      sd.url_norm_hash,
+      sd.content_hash,
+      doc_agent.slug AS agent_slug,
+      ${documentPriorityExpr} AS document_priority,
+      ${lexicalRankExpr} AS lexical_rank,
+      ${finalScoreExpr} AS final_score
+    ${baseWhere}
+    ORDER BY document_priority DESC, final_score DESC, sd.indexed_at DESC, sd.id DESC
     LIMIT ${pageLimit + 1}
   `);
 
@@ -850,6 +957,16 @@ async function runDocumentVerticalQuery(
 
   const mapped = pageRows.map((row) => {
     const docType = String(row.doc_type ?? "web_chunk");
+    const urlNormHash = String(row.url_norm_hash ?? "");
+    const contentHash = String(row.content_hash ?? "");
+    const fallbackSlug =
+      urlNormHash && contentHash
+        ? `crawl-${urlNormHash.slice(0, 16)}-${contentHash.slice(0, 12)}`
+        : null;
+    const mappedAgentSlug =
+      (typeof row.agent_slug === "string" && row.agent_slug.trim().length > 0
+        ? row.agent_slug.trim()
+        : fallbackSlug) ?? null;
     const kind =
       docType === "web_page"
         ? "page"
@@ -866,6 +983,8 @@ async function runDocumentVerticalQuery(
       sourceId: String(row.source_id ?? ""),
       url: String(row.canonical_url ?? ""),
       domain: String(row.domain ?? ""),
+      agentSlug: mappedAgentSlug,
+      agentUrl: mappedAgentSlug ? `/agent/${encodeURIComponent(mappedAgentSlug)}` : null,
       title: row.title as string | null,
       snippet: row.snippet as string | null,
       qualityScore: Number(row.quality_score ?? 0),
@@ -882,7 +1001,7 @@ async function runDocumentVerticalQuery(
 
   return {
     results: mapped,
-    pagination: { hasMore, nextCursor, total: mapped.length },
+    pagination: { hasMore, nextCursor, total: totalMatches },
     facets: { protocols: [] },
     searchMeta: {
       fallbackApplied: false,
@@ -891,6 +1010,24 @@ async function runDocumentVerticalQuery(
       queryInterpreted: rawQuery,
       filtersHonored: true,
       stagesTried: [`${mode}_vertical_documents`],
+    },
+  };
+}
+
+function buildDocsUnavailableResponse(params: SearchParams) {
+  const rawQuery = params.q?.trim() ?? "";
+  return {
+    results: [],
+    pagination: { hasMore: false, nextCursor: null, total: 0 },
+    facets: { protocols: [] },
+    searchMeta: {
+      fallbackApplied: true,
+      matchMode: "filter_only_fallback" as const,
+      queryOriginal: rawQuery,
+      queryInterpreted: rawQuery,
+      filtersHonored: false,
+      stagesTried: ["documents_vertical_unavailable"],
+      fallbackReason: "documents-index-unavailable",
     },
   };
 }
@@ -1053,20 +1190,45 @@ export async function GET(req: NextRequest) {
     }
 
     if (params.vertical === "all" || params.vertical === "docs") {
-      const docsResponse = await runDocumentVerticalQuery(
-        params,
-        params.vertical === "docs" ? "docs" : "all"
-      );
-      searchResultsCache.set(cacheKey, docsResponse);
-      const response = NextResponse.json(docsResponse);
-      response.headers.set(
-        "Cache-Control",
-        "public, s-maxage=30, stale-while-revalidate=60"
-      );
-      response.headers.set("X-Cache", "MISS");
-      applyRequestIdHeader(response, req);
-      recordApiResponse("/api/search", req, response, startedAt);
-      return response;
+      const docsTableAvailable = await hasSearchDocumentsTable();
+      if (docsTableAvailable) {
+        try {
+          const docsResponse = await runDocumentVerticalQuery(
+            params,
+            params.vertical === "docs" ? "docs" : "all"
+          );
+          searchResultsCache.set(cacheKey, docsResponse);
+          const response = NextResponse.json(docsResponse);
+          response.headers.set(
+            "Cache-Control",
+            "public, s-maxage=30, stale-while-revalidate=60"
+          );
+          response.headers.set("X-Cache", "MISS");
+          applyRequestIdHeader(response, req);
+          recordApiResponse("/api/search", req, response, startedAt);
+          return response;
+        } catch (err) {
+          if (!isMissingSearchDocumentsTableError(err)) throw err;
+          hasSearchDocumentsTableCache = false;
+        }
+      }
+
+      if (params.vertical === "docs") {
+        const docsFallbackResponse = buildDocsUnavailableResponse(params);
+        searchResultsCache.set(cacheKey, docsFallbackResponse);
+        const response = NextResponse.json(docsFallbackResponse);
+        response.headers.set(
+          "Cache-Control",
+          "public, s-maxage=30, stale-while-revalidate=60"
+        );
+        response.headers.set("X-Cache", "MISS");
+        response.headers.set("X-Search-Degraded", "documents-index-unavailable");
+        applyRequestIdHeader(response, req);
+        recordApiResponse("/api/search", req, response, startedAt);
+        return response;
+      }
+
+      params.vertical = "agents";
     }
 
     // --- Query processing pipeline ---
@@ -1134,6 +1296,8 @@ export async function GET(req: NextRequest) {
           : params.sort === "popularity"
             ? agents.popularityScore
             : agents.freshnessScore;
+    const canonicalSourceForRanking = canonicalSourceSql(agents.source, agents.sourceId);
+    const skillPriorityExpr = buildSkillPriorityExpr(canonicalSourceForRanking);
 
     const limit = params.limit + 1;
     let allConditions = [...conditions];
@@ -1146,6 +1310,7 @@ export async function GET(req: NextRequest) {
         const cursorRows = await db.execute(
           sql`SELECT
                 CASE WHEN homepage IS NOT NULL AND homepage != '' THEN 1 ELSE 0 END AS has_homepage,
+                ${skillPriorityExpr} AS skill_priority,
                 (
                   ts_rank(
                     search_vector,
@@ -1169,6 +1334,7 @@ export async function GET(req: NextRequest) {
           allConditions.push(
             sql`(
               ${homepagePriority},
+              ${skillPriorityExpr},
               (
                 ts_rank(
                   search_vector,
@@ -1185,6 +1351,7 @@ export async function GET(req: NextRequest) {
               ${agents.id}
             ) < (
               ${Number(cr.has_homepage)},
+              ${Number(cr.skill_priority ?? 0)},
               ${Number(cr.relevance)},
               ${Number(cr.overall_rank)},
               ${(cr.created_at as Date) ?? new Date(0)},
@@ -1201,12 +1368,24 @@ export async function GET(req: NextRequest) {
             popularityScore: agents.popularityScore,
             freshnessScore: agents.freshnessScore,
             createdAt: agents.createdAt,
+            source: agents.source,
+            sourceId: agents.sourceId,
+            openclawData: agents.openclawData,
+            capabilities: agents.capabilities,
+            readme: agents.readme,
           })
           .from(agents)
           .where(eq(agents.id, params.cursor))
           .limit(1);
         if (cursorRow) {
           const cursorHasHomepage = cursorRow.homepage ? 1 : 0;
+          const cursorSkillPriority = computeSkillPriorityFromCursorRow({
+            source: (cursorRow.source as string | null) ?? null,
+            sourceId: (cursorRow.sourceId as string | null) ?? null,
+            openclawData: cursorRow.openclawData,
+            capabilities: cursorRow.capabilities,
+            readme: (cursorRow.readme as string | null) ?? null,
+          });
           const cv =
             params.sort === "rank"
               ? cursorRow.overallRank
@@ -1217,7 +1396,7 @@ export async function GET(req: NextRequest) {
                   : cursorRow.freshnessScore;
           const cd = cursorRow.createdAt ?? new Date(0);
           allConditions.push(
-            sql`(${homepagePriority}, ${sortCol}, ${agents.createdAt}, ${agents.id}) < (${cursorHasHomepage}, ${cv}, ${cd}, ${params.cursor})`
+            sql`(${homepagePriority}, ${skillPriorityExpr}, ${sortCol}, ${agents.createdAt}, ${agents.id}) < (${cursorHasHomepage}, ${cursorSkillPriority}, ${cv}, ${cd}, ${params.cursor})`
           );
         }
       }
@@ -1360,6 +1539,7 @@ export async function GET(req: NextRequest) {
                   capabilities, protocols, canonical_agent_id,
                   safety_score, popularity_score, freshness_score, overall_rank, github_data, npm_data, openclaw_data,
                   languages, created_at, ${claimCols}
+                  ${skillPriorityExpr} AS skill_priority,
                   (
                     ts_rank(search_vector, ${rankTsQuery})
                     + CASE WHEN lower(name) = lower(${textQuery}) THEN 0.35 ELSE 0 END
@@ -1435,6 +1615,7 @@ export async function GET(req: NextRequest) {
               FROM base
               ORDER BY
                 CASE WHEN homepage IS NOT NULL AND homepage != '' THEN 1 ELSE 0 END DESC,
+                skill_priority DESC,
                 CASE
                   WHEN ${useHybridRanking}
                     THEN (
@@ -1457,6 +1638,7 @@ export async function GET(req: NextRequest) {
               capabilities, protocols, canonical_agent_id, safety_score, popularity_score,
               freshness_score, overall_rank, github_data, npm_data, openclaw_data,
               languages, created_at, ${claimCols}
+              ${skillPriorityExpr} AS skill_priority,
               ${textQuery
                 ? sql`ts_headline('english', coalesce(description, ''),
                     plainto_tsquery('english', ${textQuery}),
@@ -1468,6 +1650,7 @@ export async function GET(req: NextRequest) {
             WHERE ${and(...allConditions)}
             ORDER BY
               CASE WHEN homepage IS NOT NULL AND homepage != '' THEN 1 ELSE 0 END DESC,
+              skill_priority DESC,
               ${sortCol === agents.overallRank
                 ? sql`overall_rank DESC`
                 : sortCol === agents.safetyScore

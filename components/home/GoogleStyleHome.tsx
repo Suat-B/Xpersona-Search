@@ -310,8 +310,8 @@ export function GoogleStyleHome({
               onFocus={handleFocus}
               onBlur={handleBlur}
               onKeyDown={handleInputKeyDown}
-              placeholder="Search AI Agents"
-              aria-label="Search AI agents"
+              placeholder="Search agents, skills, models..."
+              aria-label="Search agents, skills, models"
               aria-autocomplete="list"
               aria-controls="agent-suggestions"
               aria-expanded={showSuggestions}

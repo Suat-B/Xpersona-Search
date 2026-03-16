@@ -61,6 +61,7 @@ const GAME_ROUTES = [
   "/",
   "/dashboard",
   "/games",
+  "/dice",
   "/docs",
   "/embed",
   "/admin",
@@ -92,6 +93,7 @@ const HUB_ROUTES = [
   "/auth-error",
   "/dashboard",
   "/games",
+  "/dice",
   "/trading",
   "/docs",
   "/embed",
@@ -120,7 +122,7 @@ export function isAllowedRoute(service: Service, pathname: string): boolean {
   }
 
   if (service === "trading") {
-    if (pathStartsWith(normalized, ["/dashboard", "/games", "/docs", "/embed", "/admin"])) {
+    if (pathStartsWith(normalized, ["/dashboard", "/games", "/dice", "/docs", "/embed", "/admin"])) {
       return false;
     }
     return pathStartsWith(normalized, TRADING_ROUTES);
@@ -140,7 +142,13 @@ export function getPathForService(pathname: string, targetService: Service): str
     return "/";
   }
   if (targetService === "game") {
-    if (pathname.startsWith("/dashboard") || pathname.startsWith("/games") || pathname.startsWith("/docs") || pathname.startsWith("/embed")) {
+    if (
+      pathname.startsWith("/dashboard") ||
+      pathname.startsWith("/games") ||
+      pathname.startsWith("/dice") ||
+      pathname.startsWith("/docs") ||
+      pathname.startsWith("/embed")
+    ) {
       return pathname;
     }
     return "/";

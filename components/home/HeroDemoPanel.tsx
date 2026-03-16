@@ -99,7 +99,7 @@ export default function HeroDemoPanel({ query = "mcp pdf" }: { query?: string })
   }, [activeTab, results]);
 
   return (
-    <div className="w-full overflow-hidden rounded-[24px] border border-[var(--accent-heart)]/28 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.22),transparent_58%),linear-gradient(145deg,#060b12_0%,#08111b_50%,#060a11_100%)] shadow-[0_24px_90px_rgba(4,20,38,0.62)] ring-1 ring-[var(--accent-heart)]/12 sm:rounded-[28px]">
+    <div className="w-full overflow-hidden rounded-[24px] border border-[var(--accent-heart)]/28 bg-gradient-to-br from-[#0ea5e9] via-[#14b8a6] to-[#22c55e] shadow-[0_24px_90px_rgba(4,20,38,0.62)] ring-1 ring-[var(--accent-heart)]/12 sm:rounded-[28px]">
       <div className="flex items-center justify-between gap-2 border-b border-[var(--accent-heart)]/20 bg-[#07111b]/78 px-4 py-3">
         <div className="flex items-center gap-2">
           {TABS.map((tab) => (

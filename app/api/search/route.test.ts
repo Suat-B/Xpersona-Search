@@ -297,6 +297,33 @@ describe("GET /api/search", () => {
     expect(res.status).toBe(200);
   });
 
+  it("falls back to agent search when vertical=all and document index is unavailable", async () => {
+    mockDb.execute
+      .mockResolvedValueOnce({ rows: [{ regclass: null }] }) // search_documents table check
+      .mockResolvedValue({ rows: [] });
+
+    const res = await GET(new NextRequest("http://localhost/api/search?vertical=all&sort=rank"));
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(data.results)).toBe(true);
+    expect(data.searchMeta).toBeDefined();
+    expect(res.headers.get("X-Search-Degraded")).toBeNull();
+  });
+
+  it("returns safe empty docs payload when vertical=docs and document index is unavailable", async () => {
+    mockDb.execute.mockResolvedValueOnce({ rows: [{ regclass: null }] });
+
+    const res = await GET(new NextRequest("http://localhost/api/search?vertical=docs&sort=rank"));
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data.results).toEqual([]);
+    expect(data.pagination).toEqual({ hasMore: false, nextCursor: null, total: 0 });
+    expect(data.searchMeta.fallbackReason).toBe("documents-index-unavailable");
+    expect(res.headers.get("X-Search-Degraded")).toBe("documents-index-unavailable");
+  });
+
   // --- Cache behavior ---
 
   it("returns cached result on cache hit", async () => {

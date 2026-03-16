@@ -113,7 +113,13 @@ function pickGradient(seed: string) {
   return CARD_GRADIENTS[Math.abs(hash) % CARD_GRADIENTS.length];
 }
 
+function stripCrawledPrefix(name: string): string {
+  const cleaned = name.replace(/^\s*crawled[\s:-]+/i, "").trim();
+  return cleaned || name;
+}
+
 export function HFModelCard({ agent }: HFModelCardProps) {
+  const displayName = stripCrawledPrefix(agent.name);
   const primaryTask = getPrimaryTask(agent.capabilities);
   const taskIcon = TASK_ICONS[primaryTask] || "🤖";
   const primaryProtocol = agent.protocols[0] || "CUSTOM";
@@ -121,10 +127,10 @@ export function HFModelCard({ agent }: HFModelCardProps) {
   const stars = agent.githubData?.stars || 0;
   const forks = agent.githubData?.forks || 0;
 
-  const nameParts = agent.name.split("/");
+  const nameParts = displayName.split("/");
   const orgName = nameParts.length > 1 ? nameParts[0] : "";
-  const modelName = nameParts.length > 1 ? nameParts[1] : agent.name;
-  const nameTokens = agent.name.split(/[\s/]+/).map((token) => token.trim()).filter(Boolean);
+  const modelName = nameParts.length > 1 ? nameParts[1] : displayName;
+  const nameTokens = displayName.split(/[\s/]+/).map((token) => token.trim()).filter(Boolean);
   const firstLetter = nameTokens[0]?.[0] ?? "";
   const lastLetter = nameTokens.length > 1 ? (nameTokens[nameTokens.length - 1]?.[0] ?? "") : "";
   const avatarText = (firstLetter + (lastLetter && lastLetter !== firstLetter ? lastLetter : "")).toUpperCase() || "X";
@@ -148,7 +154,7 @@ export function HFModelCard({ agent }: HFModelCardProps) {
           <div className="flex-1 min-w-0 overflow-hidden">
             <div className="flex items-center justify-between gap-3">
               <h3 className="min-w-0 text-sm font-semibold text-slate-900 group-hover:text-[var(--accent-heart)] transition-colors truncate">
-                {agent.name}
+                {displayName}
               </h3>
               <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 shrink-0">
                 <span>{taskIcon}</span>

@@ -156,7 +156,7 @@ export function SearchResultsBar({
 
   return (
     <div
-      className="sticky top-0 z-20 bg-[var(--bg-deep)]/95 backdrop-blur-sm border-b border-[var(--border)] overflow-hidden"
+      className="sticky top-0 z-20 bg-[var(--bg-deep)]/95 backdrop-blur-sm border-b border-[var(--border)] overflow-visible"
     >
       <div className="max-w-4xl mx-auto px-3 sm:px-4 py-3">
         {/* Top row: search */}

@@ -164,7 +164,7 @@ export function AgentTechnicalDossier({ dossier, from }: AgentTechnicalDossierPr
           <div className="max-w-3xl space-y-4">
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-xs uppercase tracking-[0.22em] text-[var(--text-tertiary)]">
-                Technical Dossier
+                Agent Profile
               </p>
               <SourceBadge source={dossier.source} />
               {dossier.claimStatus === "CLAIMED" ? (

@@ -681,7 +681,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, Props>(
     return (
       <div
         id={id}
-        className={`left-0 right-0 z-50 rounded-2xl border border-white/10 bg-[var(--bg-deep)]/95 shadow-2xl overflow-hidden overflow-y-auto overscroll-contain ${
+        className={`left-0 right-0 z-50 rounded-2xl border border-white/10 bg-[var(--bg-deep)] shadow-2xl overflow-hidden overflow-y-auto overscroll-contain ${
           mobileInline
             ? `absolute top-full mt-2 sm:mt-0 ${panelPlacement === "top" ? "sm:bottom-full sm:top-auto sm:mb-1" : "sm:top-full sm:mt-1"}`
             : `absolute ${panelPlacement === "top" ? "bottom-full mb-1" : "top-full mt-1"}`

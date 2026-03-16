@@ -12,8 +12,8 @@ interface SearchTopControlsBarProps {
   setQuery: (q: string) => void;
   onSearch: (overrideQuery?: string) => void;
   loading: boolean;
-  vertical: "agents" | "skills" | "artifacts";
-  onVerticalChange: (v: "agents" | "skills" | "artifacts") => void;
+  vertical: "all" | "agents" | "skills" | "artifacts";
+  onVerticalChange: (v: "all" | "agents" | "skills" | "artifacts") => void;
   sort: string;
   onSortChange: (s: string) => void;
   totalLabel?: string;
@@ -113,23 +113,29 @@ export function SearchTopControlsBar({
 
   return (
     <div
-      className={`sticky top-0 z-20 border-b border-[var(--border)] bg-black/95 backdrop-blur-sm overflow-hidden transition-[max-height,transform,opacity,border-color] duration-300 ${
+      className={`sticky top-0 z-20 border-b border-[var(--border)] bg-black/95 backdrop-blur-sm transition-[max-height,transform,opacity,border-color] duration-300 ${
         headerHidden
-          ? "max-h-0 -translate-y-2 opacity-0 pointer-events-none border-transparent"
-          : "max-h-[24rem] translate-y-0 opacity-100"
+          ? "overflow-hidden max-h-0 -translate-y-2 opacity-0 pointer-events-none border-transparent"
+          : "overflow-visible max-h-[24rem] translate-y-0 opacity-100"
       }`}
     >
       <div className="mx-auto w-full max-w-[1260px] px-4 sm:px-6 py-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-xl font-semibold text-[var(--text-primary)]">
-              {vertical === "agents" ? "Agents" : vertical === "skills" ? "Skills" : "Artifacts"}
+              {vertical === "all"
+                ? "Results"
+                : vertical === "agents"
+                  ? "Agents"
+                  : vertical === "skills"
+                    ? "Skills"
+                    : "Artifacts"}
             </h1>
             <p className="mt-1 text-sm text-[var(--text-tertiary)]">
               {totalLabel ? `About ${totalLabel}` : "Search results"}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              {(["agents", "skills", "artifacts"] as const).map((v) => (
+              {(["all", "agents", "skills", "artifacts"] as const).map((v) => (
                 <button
                   key={v}
                   type="button"
@@ -140,7 +146,13 @@ export function SearchTopControlsBar({
                       : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
                   }`}
                 >
-                  {v === "agents" ? "Agents" : v === "skills" ? "Skills" : "Artifacts"}
+                  {v === "all"
+                    ? "All"
+                    : v === "agents"
+                      ? "Agents"
+                      : v === "skills"
+                        ? "Skills"
+                        : "Artifacts"}
                 </button>
               ))}
             </div>

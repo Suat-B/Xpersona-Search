@@ -10,7 +10,7 @@ import { eq, desc, and, sql } from "drizzle-orm";
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 10000;
 const VERIFICATION_FORMULA =
-  "SHA256(serverSeed + clientSeed + ':' + nonce) → first 8 hex chars as integer → / 2^32 → * 100 = dice value in [0, 100).";
+  "SHA256(serverSeed + clientSeed + ':' + nonce) -> first 8 hex chars as integer -> / 2^32 -> * 100 = dice value in [0, 100).";
 
 export async function getRoundsHandler(request: Request): Promise<NextResponse> {
   const authResult = await getAuthUser(request as NextRequest);
