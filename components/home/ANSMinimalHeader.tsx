@@ -14,6 +14,7 @@ export function ANSMinimalHeader({
   const isDark = variant === "dark";
   const navLinks = [
     { href: "/search", label: "Search" },
+    { href: "/artifacts", label: "Artifacts" },
     { href: "/playground", label: "Playground" },
     { href: "/chat", label: "Chat" },
   ];

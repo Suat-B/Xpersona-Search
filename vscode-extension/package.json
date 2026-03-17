@@ -116,7 +116,7 @@
         },
         "xpersona.binary.qwen.model": {
           "type": "string",
-          "default": "Qwen/Qwen3-Coder-30B-A3B-Instruct:featherless-ai",
+          "default": "Qwen/Qwen3-Coder-Next-FP8:together",
           "description": "Model name passed to Qwen Code when the runtime is set to qwenCode."
         },
         "xpersona.binary.qwen.baseUrl": {

@@ -44,6 +44,7 @@ const MAX_FILE_BYTES = 160000;
 const UPSERT_BATCH_SIZE = 120;
 const CHUNK_SIZE = 4000;
 const CHUNK_OVERLAP = 300;
+const WORKSPACE_FILE_EXCLUDE_GLOB = "**/{.git,node_modules,dist,build,.next,coverage,_vsix_*,_vsix_tmp,artifacts}/**";
 function sha1(input) {
     return (0, crypto_1.createHash)("sha1").update(input, "utf8").digest("hex");
 }
@@ -324,7 +325,7 @@ class CloudIndexManager {
         return [...exactStarts, ...fuzzy].slice(0, 12);
     }
     async collectWorkspaceFiles() {
-        const files = await vscode.workspace.findFiles("**/*", undefined, MAX_INDEXED_FILES);
+        const files = await vscode.workspace.findFiles("**/*", WORKSPACE_FILE_EXCLUDE_GLOB, MAX_INDEXED_FILES);
         this.fileCache = files
             .map((uri) => (0, config_1.toWorkspaceRelativePath)(uri))
             .filter((value) => Boolean(value))

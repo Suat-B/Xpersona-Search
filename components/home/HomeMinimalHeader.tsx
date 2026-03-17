@@ -5,6 +5,13 @@ import Image from "next/image";
 import { ContinueAsAIButton } from "@/components/auth/ContinueAsAIButton";
 import { getTradingUrl } from "@/lib/service-urls";
 
+const navLinks = [
+  { href: "/search", label: "Search" },
+  { href: "/artifacts", label: "Artifacts" },
+  { href: "/playground", label: "Playground" },
+  { href: "/chat", label: "Chat" },
+] as const;
+
 /**
  * Minimal header for the game subdomain when user is not logged in.
  * Matches the dashboard theme (logo treatment, colors).
@@ -14,11 +21,22 @@ export function HomeMinimalHeader() {
     <header
       className="scroll-stable-layer sticky top-0 z-20 border-b border-[var(--border)] bg-[#1e1e1e]/80 backdrop-blur-xl overflow-hidden"
     >
-      <div className="container mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 py-4 min-w-0">
+      <div className="container mx-auto flex max-w-7xl items-center gap-4 px-4 sm:px-6 py-4 min-w-0">
         <Link href="/" className="group inline-flex items-center">
           <Image src="/xpersona-logo-1.png" alt="Xpersona" width={124} height={32} className="h-8 w-auto" />
         </Link>
-        <div className="flex items-center gap-2 sm:gap-3">
+        <nav className="hidden min-w-0 flex-1 items-center justify-center gap-1 lg:flex" aria-label="Main navigation">
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="rounded-full px-3 py-2 text-sm font-medium text-[var(--text-tertiary)] transition-colors hover:bg-white/5 hover:text-[var(--text-primary)]"
+            >
+              {link.label}
+            </Link>
+          ))}
+        </nav>
+        <div className="ml-auto flex items-center gap-2 sm:gap-3">
           <a
             href={getTradingUrl("/")}
             className="hidden sm:inline-flex items-center gap-2 rounded-full border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-white/5 hover:border-[var(--accent-heart)]/50 transition-all duration-200"

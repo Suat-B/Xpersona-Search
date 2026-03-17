@@ -45,6 +45,26 @@
       canCancel: false,
       lastAction: null,
     },
+    binaryHero: {
+      active: false,
+      sourceId: null,
+      sourceKind: null,
+      transport: "",
+      title: "",
+      phase: "",
+      progress: 0,
+      status: "pending",
+      activity: "",
+      lines: [],
+      lastContentLength: 0,
+      lastLogCursor: 0,
+      lastFileCursor: 0,
+      lastActivityValue: "",
+      lastLogValue: "",
+      lastFileValue: "",
+      lastHeartbeatAt: 0,
+      lastFrameAt: 0,
+    },
   };
 
   const elements = {
@@ -96,9 +116,13 @@
     binaryProgressValue: document.getElementById("binaryProgressValue"),
     binaryProgressFill: document.getElementById("binaryProgressFill"),
     binaryManifestPreview: document.getElementById("binaryManifestPreview"),
+    binaryManifestCard: document.getElementById("binaryManifestCard"),
     binaryWarnings: document.getElementById("binaryWarnings"),
+    binaryWarningsCard: document.getElementById("binaryWarningsCard"),
     binaryPreviewFiles: document.getElementById("binaryPreviewFiles"),
+    binaryPreviewFilesCard: document.getElementById("binaryPreviewFilesCard"),
     binaryLogPreview: document.getElementById("binaryLogPreview"),
+    binaryLogPreviewCard: document.getElementById("binaryLogPreviewCard"),
     generateBinaryButton: document.getElementById("generateBinaryButton"),
     cancelBinaryButton: document.getElementById("cancelBinaryButton"),
     validateBinaryButton: document.getElementById("validateBinaryButton"),
@@ -117,10 +141,17 @@
   let planConfirmDismissed = false;
   let hasAutoFocused = false;
   let shouldStickToBottom = true;
+  let preservedChatScrollTop = null;
+  let preserveChatScrollFrames = 0;
   let previewTimer = 0;
   let lastPreviewText = null;
   let lastDraftKey = "";
   let lastDraftText = "";
+  let binaryHeroTimer = 0;
+  const binaryEncoder = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
+  const BINARY_HERO_MAX_LINES = 72;
+  const BINARY_HERO_LINE_BYTES = 5;
+  const BINARY_HERO_HEARTBEAT_MS = 900;
 
   function shouldSubmitEnter(event) {
     if (!event) return false;
@@ -252,6 +283,227 @@
     element.classList.toggle("is-hidden", Boolean(hidden));
   }
 
+  function createBinaryHeroState() {
+    return {
+      active: false,
+      sourceId: null,
+      sourceKind: null,
+      transport: "",
+      title: "",
+      phase: "",
+      progress: 0,
+      status: "pending",
+      activity: "",
+      lines: [],
+      lastContentLength: 0,
+      lastLogCursor: 0,
+      lastFileCursor: 0,
+      lastActivityValue: "",
+      lastLogValue: "",
+      lastFileValue: "",
+      lastHeartbeatAt: 0,
+      lastFrameAt: 0,
+    };
+  }
+
+  function currentLiveMessage() {
+    const liveChat = state.liveChat;
+    if (!liveChat || !liveChat.messageId) return null;
+    const messages = Array.isArray(state.messages) ? state.messages : [];
+    return messages.find((message) => message && message.id === liveChat.messageId) || null;
+  }
+
+  function getActiveBinaryHeroSource() {
+    const liveChat = state.liveChat;
+    if (
+      liveChat &&
+      liveChat.messageId &&
+      liveChat.status !== "done" &&
+      liveChat.status !== "failed" &&
+      liveChat.status !== "canceled"
+    ) {
+      const liveMessage = currentLiveMessage();
+      return {
+        kind: "live",
+        id: `live:${liveChat.messageId}`,
+        transport: liveTransportLabel(liveChat),
+        title: liveChat.mode === "build" ? "Portable bundle assembly" : "Live assistant response",
+        phase: livePhaseLabel(liveChat.phase),
+        progress: clampProgress(liveChat.progress || 0),
+        status: String(liveChat.status || "pending"),
+        activity: truncateText(liveChat.latestActivity || "Waiting for runtime activity.", 160),
+        content: liveMessage ? String(liveMessage.content || "") : "",
+        latestLog: String(liveChat.latestLog || ""),
+        latestFile: String(liveChat.latestFile || ""),
+        logs: [],
+        files: [],
+      };
+    }
+
+    const binary = state.binary || {};
+    const build = binary.activeBuild || null;
+    const isBuildActive = Boolean(
+      binary.busy ||
+        binary.streamConnected ||
+        (build && (build.status === "queued" || build.status === "running"))
+    );
+    if (!isBuildActive) return null;
+
+    const previewFiles = Array.isArray(binary.previewFiles) ? binary.previewFiles : [];
+    const recentLogs = Array.isArray(binary.recentLogs) ? binary.recentLogs : [];
+    const buildPhase =
+      binary.phase ||
+      (build && build.phase) ||
+      (build && build.status === "running" ? "planning" : "queued");
+
+    return {
+      kind: "build",
+      id: `build:${build && build.id ? build.id : "active"}`,
+      transport: "Bundle stream",
+      title: build ? `${binaryPhaseLabel(buildPhase)} portable starter bundle` : "Streaming binary assembly",
+      phase: binaryPhaseLabel(buildPhase),
+      progress: clampProgress(
+        binary.progress != null
+          ? binary.progress
+          : build && build.progress != null
+            ? build.progress
+            : 0
+      ),
+      status: build ? String(build.status || "running") : "running",
+      activity: truncateText(
+        recentLogs.length
+          ? recentLogs[recentLogs.length - 1]
+          : build
+            ? binaryPhaseCaption(buildPhase)
+            : "Preparing portable starter bundle.",
+        160
+      ),
+      content: "",
+      latestLog: recentLogs.length ? String(recentLogs[recentLogs.length - 1] || "") : "",
+      latestFile:
+        previewFiles.length && previewFiles[previewFiles.length - 1]
+          ? String(previewFiles[previewFiles.length - 1].path || "")
+          : "",
+      logs: recentLogs,
+      files: previewFiles,
+    };
+  }
+
+  function textToBinaryChunks(text) {
+    if (!binaryEncoder) return [];
+    const value = String(text || "");
+    if (!value) return [];
+    const bytes = Array.from(binaryEncoder.encode(value));
+    return bytes.map((byte) => byte.toString(2).padStart(8, "0"));
+  }
+
+  function appendBinaryHeroText(text, tone) {
+    const chunks = textToBinaryChunks(text);
+    if (!chunks.length) return false;
+
+    for (let index = 0; index < chunks.length; index += BINARY_HERO_LINE_BYTES) {
+      const slice = chunks.slice(index, index + BINARY_HERO_LINE_BYTES);
+      state.binaryHero.lines.push({
+        id: `${Date.now()}_${index}_${Math.random().toString(16).slice(2, 8)}`,
+        bits: slice.join(" "),
+        tone: tone || "content",
+      });
+    }
+
+    if (state.binaryHero.lines.length > BINARY_HERO_MAX_LINES) {
+      state.binaryHero.lines = state.binaryHero.lines.slice(-BINARY_HERO_MAX_LINES);
+    }
+
+    state.binaryHero.lastFrameAt = Date.now();
+    return true;
+  }
+
+  function updateBinaryHeroState(options) {
+    const source = getActiveBinaryHeroSource();
+    if (!source) {
+      state.binaryHero.active = false;
+      return;
+    }
+
+    if (state.binaryHero.sourceId !== source.id) {
+      state.binaryHero = {
+        ...createBinaryHeroState(),
+        active: true,
+        sourceId: source.id,
+        sourceKind: source.kind,
+      };
+    }
+
+    state.binaryHero.active = true;
+    state.binaryHero.transport = source.transport;
+    state.binaryHero.title = source.title;
+    state.binaryHero.phase = source.phase;
+    state.binaryHero.progress = source.progress;
+    state.binaryHero.status = source.status;
+    state.binaryHero.activity = source.activity;
+
+    let appended = false;
+    const nextContent = String(source.content || "");
+    if (nextContent.length > state.binaryHero.lastContentLength) {
+      appended =
+        appendBinaryHeroText(nextContent.slice(state.binaryHero.lastContentLength), "content") || appended;
+      state.binaryHero.lastContentLength = nextContent.length;
+    } else if (nextContent.length < state.binaryHero.lastContentLength) {
+      state.binaryHero.lastContentLength = nextContent.length;
+    }
+
+    const logs = Array.isArray(source.logs) ? source.logs : [];
+    if (logs.length > state.binaryHero.lastLogCursor) {
+      logs.slice(state.binaryHero.lastLogCursor).forEach((value) => {
+        appended = appendBinaryHeroText(String(value || ""), "log") || appended;
+      });
+      state.binaryHero.lastLogCursor = logs.length;
+      state.binaryHero.lastLogValue = logs.length ? String(logs[logs.length - 1] || "") : state.binaryHero.lastLogValue;
+    } else if (source.latestLog && source.latestLog !== state.binaryHero.lastLogValue) {
+      appended = appendBinaryHeroText(source.latestLog, "log") || appended;
+      state.binaryHero.lastLogValue = source.latestLog;
+    }
+
+    if (source.activity && source.activity !== state.binaryHero.lastActivityValue) {
+      appended = appendBinaryHeroText(source.activity, "activity") || appended;
+      state.binaryHero.lastActivityValue = source.activity;
+    }
+
+    const files = Array.isArray(source.files) ? source.files : [];
+    if (files.length > state.binaryHero.lastFileCursor) {
+      files.slice(state.binaryHero.lastFileCursor).forEach((file) => {
+        const fileText = [
+          String(file && file.path ? file.path : ""),
+          String(file && file.preview ? file.preview : ""),
+        ]
+          .filter(Boolean)
+          .join("\n");
+        appended = appendBinaryHeroText(fileText, "file") || appended;
+      });
+      state.binaryHero.lastFileCursor = files.length;
+      state.binaryHero.lastFileValue =
+        files.length && files[files.length - 1] ? String(files[files.length - 1].path || "") : state.binaryHero.lastFileValue;
+    } else if (source.latestFile && source.latestFile !== state.binaryHero.lastFileValue) {
+      appended = appendBinaryHeroText(source.latestFile, "file") || appended;
+      state.binaryHero.lastFileValue = source.latestFile;
+    }
+
+    if (!appended && options && options.allowHeartbeat) {
+      const now = Date.now();
+      if (now - state.binaryHero.lastHeartbeatAt >= BINARY_HERO_HEARTBEAT_MS) {
+        appendBinaryHeroText(
+          `${source.phase} ${source.progress}% ${source.transport} ${source.activity || source.title}`,
+          "heartbeat"
+        );
+        state.binaryHero.lastHeartbeatAt = now;
+      }
+    }
+  }
+
+  function isBinaryHeroActive() {
+    return Boolean(state.binaryHero && state.binaryHero.active);
+  }
+
   function isPlanShortcutValue(value) {
     return String(value || "").trim().toLowerCase() === "/plan";
   }
@@ -341,10 +593,12 @@
     const historyOpen = Boolean(state.historyDrawerOpen);
     const detailsOpen = Boolean(state.binaryDetailsOpen);
     const panelOpen = Boolean(state.binaryPanelOpen);
+    const binaryHeroOpen = isBinaryHeroActive();
 
     if (elements.workspaceShell) {
       elements.workspaceShell.setAttribute("data-history-open", String(historyOpen));
       elements.workspaceShell.setAttribute("data-binary-details", String(detailsOpen));
+      elements.workspaceShell.setAttribute("data-binary-hero", String(binaryHeroOpen));
     }
     if (elements.historyToggle) {
       elements.historyToggle.classList.toggle("active", historyOpen);
@@ -355,7 +609,7 @@
     }
     setHidden(elements.historyScrim, !historyOpen);
     if (elements.binaryDetailsButton) {
-      elements.binaryDetailsButton.textContent = detailsOpen ? "Hide details" : "Details";
+      elements.binaryDetailsButton.textContent = detailsOpen ? "Less" : "More";
       elements.binaryDetailsButton.setAttribute("aria-expanded", String(detailsOpen));
     }
     setHidden(elements.binaryDetailsPanel, !detailsOpen);
@@ -454,9 +708,35 @@
 
   function scrollToLatest(behavior) {
     if (!elements.messages) return;
+    preservedChatScrollTop = null;
+    preserveChatScrollFrames = 0;
     elements.messages.scrollTo({ top: elements.messages.scrollHeight, behavior: behavior || "auto" });
     shouldStickToBottom = true;
     updateJumpButton();
+  }
+
+  function preserveChatScrollPosition(frames) {
+    if (!elements.messages) return;
+    preservedChatScrollTop = elements.messages.scrollTop;
+    preserveChatScrollFrames = Math.max(preserveChatScrollFrames, Number.isFinite(frames) ? frames : 1);
+    shouldStickToBottom = false;
+    updateJumpButton();
+  }
+
+  function restorePreservedChatScrollPosition() {
+    if (!elements.messages || !Number.isFinite(preservedChatScrollTop) || preserveChatScrollFrames <= 0) {
+      preservedChatScrollTop = null;
+      preserveChatScrollFrames = 0;
+      return false;
+    }
+    const maxScrollTop = Math.max(0, elements.messages.scrollHeight - elements.messages.clientHeight);
+    elements.messages.scrollTop = Math.min(preservedChatScrollTop, maxScrollTop);
+    preserveChatScrollFrames -= 1;
+    if (preserveChatScrollFrames <= 0) {
+      preservedChatScrollTop = null;
+      preserveChatScrollFrames = 0;
+    }
+    return true;
   }
 
   function updateJumpButton() {
@@ -591,6 +871,71 @@
     return chips.join("");
   }
 
+  function renderBinaryStreamMarkup() {
+    return [
+      '<span class="binary-build-stream-label">Live Stream</span>',
+      '<div class="binary-build-stream-viewport">',
+      '<div class="binary-build-stream-track">',
+      '<span class="binary-build-line hot">101010 001101 101010 110010 010101</span>',
+      '<span class="binary-build-line">010101 110010 001101 101010 011001</span>',
+      '<span class="binary-build-line">111000 101010 010101 001111 101000</span>',
+      '<span class="binary-build-line accent">001101 010101 111000 101010 010011</span>',
+      '<span class="binary-build-line">110010 001101 010101 111000 101101</span>',
+      '<span class="binary-build-line">011001 101010 110010 001101 010101</span>',
+      '<span class="binary-build-line hot">101101 011010 001111 101010 110001</span>',
+      '<span class="binary-build-line">010011 111000 010101 110010 001101</span>',
+      '<span class="binary-build-line hot">101010 001101 101010 110010 010101</span>',
+      '<span class="binary-build-line">010101 110010 001101 101010 011001</span>',
+      '<span class="binary-build-line">111000 101010 010101 001111 101000</span>',
+      '<span class="binary-build-line accent">001101 010101 111000 101010 010011</span>',
+      '<span class="binary-build-line">110010 001101 010101 111000 101101</span>',
+      '<span class="binary-build-line">011001 101010 110010 001101 010101</span>',
+      '<span class="binary-build-line hot">101101 011010 001111 101010 110001</span>',
+      '<span class="binary-build-line">010011 111000 010101 110010 001101</span>',
+      "</div>",
+      "</div>",
+    ].join("");
+  }
+
+  function renderBinaryHeroMarkup() {
+    const hero = state.binaryHero || createBinaryHeroState();
+    const lines = Array.isArray(hero.lines) ? hero.lines.slice(-BINARY_HERO_MAX_LINES) : [];
+    const renderedLines = lines.length
+      ? lines
+          .map((line, index) => {
+            const tone = String((line && line.tone) || "content");
+            const age = lines.length - index - 1;
+            const prismClass = index % 7 === 0 ? " prism" : "";
+            return `<span class="binary-hero-line tone-${escapeHtml(tone)}${prismClass}" style="--hero-age:${Math.min(age, 18)}">${escapeHtml(
+              String((line && line.bits) || "")
+            )}</span>`;
+          })
+          .join("")
+      : '<span class="binary-hero-line tone-heartbeat">01010011 01110100 01110010 01100101 01100001</span>';
+
+    return [
+      '<section class="chat-binary-hero" aria-label="Realtime binary hero stream">',
+      '<div class="chat-binary-hero-overlay">',
+      '<div class="chat-binary-hero-kicker"><span class="chat-binary-kicker-dot" aria-hidden="true"></span><span>Realtime Binary</span></div>',
+      '<div class="chat-binary-hero-pills">',
+      `<span class="chat-binary-pill live">${escapeHtml(hero.transport || "Live shell")}</span>`,
+      `<span class="chat-binary-pill">${escapeHtml(hero.phase || "Streaming")}</span>`,
+      `<span class="chat-binary-pill">${escapeHtml(String(clampProgress(hero.progress || 0)))}%</span>`,
+      "</div>",
+      `<h2 class="chat-binary-hero-title">${escapeHtml(hero.title || "Live assistant response")}</h2>`,
+      `<p class="chat-binary-hero-activity">${escapeHtml(
+        truncateText(hero.activity || "Waiting for the next live frame.", 160)
+      )}</p>`,
+      "</div>",
+      '<div class="chat-binary-hero-stream" aria-hidden="true">',
+      '<div class="chat-binary-hero-grid">',
+      renderedLines,
+      "</div>",
+      "</div>",
+      "</section>",
+    ].join("");
+  }
+
   function renderHistory() {
     if (!elements.history) return;
     const items = Array.isArray(state.history) ? state.history : [];
@@ -709,7 +1054,9 @@
     ].join("");
 
     window.requestAnimationFrame(() => {
-      if (shouldStickToBottom) {
+      if (restorePreservedChatScrollPosition()) {
+        updateJumpButton();
+      } else if (shouldStickToBottom) {
         scrollToLatest("auto");
       } else {
         updateJumpButton();
@@ -876,7 +1223,41 @@
     const hasBody = Boolean(String(item.content || "").trim());
     const settled = status === "done" || status === "failed" || status === "canceled";
     const liveClass = settled ? " settled" : status === "streaming" ? " active" : "";
-    const bodyClass = hasBody ? "" : " is-hidden";
+    const heroDominant = isBinaryHeroActive() && !settled;
+    const bodyClass = hasBody && !heroDominant ? "" : " is-hidden";
+    const streamPlaceholder =
+      liveTransportLabel(live) === "Qwen stream"
+        ? "Waiting for Qwen text stream..."
+        : "Waiting for live text stream...";
+
+    if (heroDominant) {
+      return [
+        `<article class="message assistant live-binary hero-collapsed${liveClass}">`,
+        '<div class="message-meta">Streaming Binary IDE</div>',
+        '<div class="live-message-shell compact">',
+        '<div class="live-message-head compact">',
+        '<div class="live-message-kicker"><span class="live-message-dot" aria-hidden="true"></span><span>Streaming Binary IDE</span></div>',
+        '<div class="live-message-settled-meta">',
+        `<span class="live-message-pill">${escapeHtml(liveTransportLabel(live))}</span>`,
+        `<span class="live-message-pill">${escapeHtml(livePhaseLabel(live.phase))}</span>`,
+        `<span class="live-message-pill">${escapeHtml(String(progress))}%</span>`,
+        "</div>",
+        "</div>",
+        '<div class="live-message-summary">',
+        `<span class="live-message-summary-text">${escapeHtml(
+          truncateText(live.latestActivity || livePhaseCopy(live), 132)
+        )}</span>`,
+        "</div>",
+        `<div class="live-message-transcript${hasBody ? "" : " is-empty"}">${
+          hasBody
+            ? `<div class="message-body">${formatMessageBody(item.content)}</div>`
+            : `<p class="live-message-transcript-placeholder">${escapeHtml(streamPlaceholder)}</p>`
+        }</div>`,
+        "</div>",
+        includeFollowups ? renderFollowUpActions() : "",
+        "</article>",
+      ].join("");
+    }
 
     if (settled) {
       return [
@@ -932,13 +1313,7 @@
       )}</span><span class="live-message-note-value">${escapeHtml(liveMode === "build" ? latestFile : latestLog)}</span></div>`,
       "</div>",
       "</div>",
-      '<div class="live-message-stream" aria-hidden="true">',
-      '<span class="binary-build-stream-label">Live Stream</span>',
-      '<span class="binary-build-line">101010 001101 101010 110010 010101</span>',
-      '<span class="binary-build-line">010101 110010 001101 101010 011001</span>',
-      '<span class="binary-build-line">111000 101010 010101 001111 101000</span>',
-      '<span class="binary-build-line">001101 010101 111000 101010 010011</span>',
-      "</div>",
+      `<div class="live-message-stream" aria-hidden="true">${renderBinaryStreamMarkup()}</div>`,
       "</div>",
       `<div class="message-body${bodyClass}">${hasBody ? formatMessageBody(item.content) : ""}</div>`,
       includeFollowups ? renderFollowUpActions() : "",
@@ -1012,142 +1387,12 @@
 
   function renderChatBinarySpotlight() {
     if (!elements.chatBinarySpotlight) return;
-    if (state.liveChat && state.liveChat.messageId) {
-      const live = state.liveChat;
-      const show = live.status !== "done" && live.status !== "failed" && live.status !== "canceled";
-      if (!show) {
-        elements.chatBinarySpotlight.innerHTML = "";
-        elements.chatBinarySpotlight.classList.add("is-hidden");
-        return;
-      }
-      elements.chatBinarySpotlight.innerHTML = [
-        '<div class="chat-binary-spotlight-shell">',
-        '<section class="chat-binary-spotlight live" aria-label="Streaming binary chat">',
-        '<div class="chat-binary-copy">',
-        '<div class="chat-binary-head">',
-        '<div class="chat-binary-kicker"><span class="chat-binary-kicker-dot" aria-hidden="true"></span><span>Streaming Binary IDE</span></div>',
-        `<span class="chat-binary-pill live">${escapeHtml(liveTransportLabel(live))}</span>`,
-        "</div>",
-        `<h2 class="chat-binary-title">${escapeHtml(
-          live.mode === "build" ? "Portable bundle assembly" : "Live assistant response"
-        )}</h2>`,
-        `<p class="chat-binary-caption">${escapeHtml(livePhaseCopy(live))}</p>`,
-        '<div class="chat-binary-metrics">',
-        `<div class="chat-binary-metric"><span>Phase</span><strong>${escapeHtml(livePhaseLabel(live.phase))}</strong></div>`,
-        `<div class="chat-binary-metric"><span>Progress</span><strong>${escapeHtml(String(clampProgress(live.progress || 0)))}%</strong></div>`,
-        `<div class="chat-binary-metric"><span>Transport</span><strong>${escapeHtml(liveTransportLabel(live))}</strong></div>`,
-        `<div class="chat-binary-metric"><span>Status</span><strong>${escapeHtml(String(live.status || "pending"))}</strong></div>`,
-        "</div>",
-        '<div class="chat-binary-notes">',
-        '<div class="chat-binary-note">',
-        '<span class="chat-binary-note-label">Live activity</span>',
-        `<span class="chat-binary-note-value">${escapeHtml(truncateText(live.latestActivity || "Waiting for runtime activity.", 120))}</span>`,
-        `<span class="chat-binary-note-copy">${escapeHtml(truncateText(live.latestLog || live.latestFile || "Binary pulse stays active until the answer fully lands.", 160))}</span>`,
-        "</div>",
-        '<div class="chat-binary-note">',
-        '<span class="chat-binary-note-label">Transcript handoff</span>',
-        `<span class="chat-binary-note-value">${escapeHtml(
-          live.mode === "answer" ? "Same assistant bubble, now streaming text." : "Same assistant bubble, warming up."
-        )}</span>`,
-        '<span class="chat-binary-note-copy">This live shell collapses into the final answer instead of adding another row.</span>',
-        "</div>",
-        "</div>",
-        "</div>",
-        '<div class="binary-build-stream" aria-hidden="true">',
-        '<span class="binary-build-stream-label">Live Stream</span>',
-        '<span class="binary-build-line">101010 001101 101010 110010 010101</span>',
-        '<span class="binary-build-line">010101 110010 001101 101010 011001</span>',
-        '<span class="binary-build-line">111000 101010 010101 001111 101000</span>',
-        '<span class="binary-build-line">001101 010101 111000 101010 010011</span>',
-        '<span class="binary-build-line">110010 001101 010101 111000 101101</span>',
-        "</div>",
-        "</section>",
-        "</div>",
-      ].join("");
-      elements.chatBinarySpotlight.classList.remove("is-hidden");
-      return;
-    }
-    const view = getBinaryViewModel();
-    const { binary, build, reliability, artifactState, previewFiles, recentLogs, phase, progress, runtimeLabel } = view;
-    const show = Boolean(binary.busy || binary.streamConnected || build);
-
-    if (!show) {
+    if (!isBinaryHeroActive()) {
       elements.chatBinarySpotlight.innerHTML = "";
       elements.chatBinarySpotlight.classList.add("is-hidden");
       return;
     }
-
-    const latestFile = previewFiles.length ? previewFiles[previewFiles.length - 1] : null;
-    const latestLog = recentLogs.length ? recentLogs[recentLogs.length - 1] : "";
-    const streamLabel = binary.streamConnected ? "Live stream attached" : build ? "Saved build snapshot" : "Idle";
-    const pillClass = binary.streamConnected ? "live" : build ? "saved" : "";
-    const buildTitle = build
-      ? `${binaryPhaseLabel(phase)} portable starter bundle`
-      : "Streaming binary assembly";
-    const fileValue = artifactState && artifactState.latestFile
-      ? artifactState.latestFile
-      : latestFile
-        ? `${latestFile.path}${latestFile.completed ? " [done]" : " [writing]"}`
-        : "Waiting for generated files";
-    const fileCopy = artifactState
-      ? `${artifactState.sourceFilesReady}/${artifactState.sourceFilesTotal} source files formed. ${artifactState.outputFilesReady} compiled outputs detected. ${artifactState.runnable ? "Runtime is callable." : "Runtime is not callable yet."}`
-      : latestFile
-        ? truncateText(latestFile.preview || "(empty preview)", 160)
-        : "New source previews will appear here as soon as the live build materializes them.";
-    const logValue = latestLog ? truncateText(latestLog, 84) : "Waiting for streaming logs";
-    const logCopy = latestLog
-      ? "Latest build output from the live binary stream."
-      : "npm install, build, and validation output will stream here while you chat.";
-    const formationLabel = artifactState ? `${artifactState.coverage}% formed` : "--";
-    const runnableLabel = artifactState ? (artifactState.runnable ? "Runnable" : "Not runnable yet") : "--";
-    const outputLabel = artifactState ? String(artifactState.outputFilesReady) : "--";
-
-    elements.chatBinarySpotlight.innerHTML = [
-      '<div class="chat-binary-spotlight-shell">',
-      `<section class="chat-binary-spotlight${binary.streamConnected ? " live" : ""}" aria-label="Streaming binary build">`,
-      '<div class="chat-binary-copy">',
-      '<div class="chat-binary-head">',
-      '<div class="chat-binary-kicker"><span class="chat-binary-kicker-dot" aria-hidden="true"></span><span>Streaming Binary IDE</span></div>',
-      `<span class="chat-binary-pill${pillClass ? ` ${pillClass}` : ""}">${escapeHtml(streamLabel)}</span>`,
-      "</div>",
-      `<h2 class="chat-binary-title">${escapeHtml(buildTitle)}</h2>`,
-      `<p class="chat-binary-caption">${escapeHtml(binaryPhaseCaption(phase))}</p>`,
-      '<div class="chat-binary-metrics">',
-      `<div class="chat-binary-metric"><span>Phase</span><strong>${escapeHtml(binaryPhaseLabel(phase))}</strong></div>`,
-      `<div class="chat-binary-metric"><span>Progress</span><strong>${escapeHtml(String(progress))}%</strong></div>`,
-      `<div class="chat-binary-metric"><span>Runtime</span><strong>${escapeHtml(runtimeLabel)}</strong></div>`,
-      `<div class="chat-binary-metric"><span>Reliability</span><strong>${escapeHtml(
-        reliability ? `${reliability.score}/100` : "--"
-      )}</strong></div>`,
-      `<div class="chat-binary-metric"><span>Formation</span><strong>${escapeHtml(formationLabel)}</strong></div>`,
-      `<div class="chat-binary-metric"><span>State</span><strong>${escapeHtml(runnableLabel)}</strong></div>`,
-      `<div class="chat-binary-metric"><span>Outputs</span><strong>${escapeHtml(outputLabel)}</strong></div>`,
-      "</div>",
-      '<div class="chat-binary-notes">',
-      '<div class="chat-binary-note">',
-      '<span class="chat-binary-note-label">Live artifact</span>',
-      `<span class="chat-binary-note-value">${escapeHtml(fileValue)}</span>`,
-      `<span class="chat-binary-note-copy">${escapeHtml(fileCopy)}</span>`,
-      "</div>",
-      '<div class="chat-binary-note">',
-      '<span class="chat-binary-note-label">Live log</span>',
-      `<span class="chat-binary-note-value">${escapeHtml(logValue)}</span>`,
-      `<span class="chat-binary-note-copy">${escapeHtml(logCopy)}</span>`,
-      "</div>",
-      "</div>",
-      "</div>",
-      '<div class="binary-build-stream" aria-hidden="true">',
-      '<span class="binary-build-stream-label">Live Stream</span>',
-      '<span class="binary-build-line">101010 001101 101010 110010 010101</span>',
-      '<span class="binary-build-line">010101 110010 001101 101010 011001</span>',
-      '<span class="binary-build-line">111000 101010 010101 001111 101000</span>',
-      '<span class="binary-build-line">001101 010101 111000 101010 010011</span>',
-      '<span class="binary-build-line">110010 001101 010101 111000 101101</span>',
-      "</div>",
-      "</section>",
-      "</div>",
-    ].join("");
-
+    elements.chatBinarySpotlight.innerHTML = renderBinaryHeroMarkup();
     elements.chatBinarySpotlight.classList.remove("is-hidden");
   }
 
@@ -1155,10 +1400,12 @@
     const { binary, build, reliability, artifactState, manifest, plan, previewFiles, recentLogs, phase, progress, isPending, showVisual, runtimeLabel, summaryStatus } =
       getBinaryViewModel();
     const shouldAutoOpenPanel = !state.binaryPanelOpen && Boolean(binary.busy || binary.streamConnected || isPending);
-    const shouldAutoOpenDetails =
-      !state.binaryDetailsOpen &&
-      Boolean(binary.busy || binary.streamConnected || isPending) &&
-      Boolean(previewFiles.length || recentLogs.length || plan || manifest);
+    const hasWarnings = Boolean((reliability && Array.isArray(reliability.warnings) && reliability.warnings.length) || (manifest && Array.isArray(manifest.warnings) && manifest.warnings.length) || (build && build.errorMessage));
+    const hasPreviewFiles = previewFiles.length > 0;
+    const hasRecentLogs = recentLogs.length > 0;
+    const hasManifest = Boolean(manifest || plan);
+    const hasExtraDetails = hasWarnings || hasPreviewFiles || hasRecentLogs;
+    const canShowCompletedActions = Boolean(build && build.status === "completed");
     const warnings = [];
 
     if (reliability && Array.isArray(reliability.warnings)) {
@@ -1219,15 +1466,14 @@
       elements.binaryPhaseLabel.textContent = binaryPhaseLabel(phase);
     }
     if (elements.binaryPanelSummary) {
-      const streamState = binary.streamConnected ? "Live stream" : build ? "Saved build" : "Idle";
       const formationLabel = artifactState ? `${artifactState.coverage}% formed` : summaryStatus;
-      elements.binaryPanelSummary.textContent = `${runtimeLabel} - ${formationLabel} - ${streamState}`;
+      elements.binaryPanelSummary.textContent = `${runtimeLabel} · ${formationLabel}`;
     }
     if (elements.binaryPanelMeta) {
       elements.binaryPanelMeta.textContent = build
         ? artifactState
-          ? `${artifactState.runnable ? "Runnable" : "Not runnable"} - ${artifactState.outputFilesReady} outputs ready`
-          : `Build ${build.id.slice(0, 8)} - ${binaryPhaseLabel(phase)}`
+          ? `${artifactState.runnable ? "Runnable" : "Not runnable"} · ${artifactState.outputFilesReady} outputs ready`
+          : `Build ${build.id.slice(0, 8)} · ${binaryPhaseLabel(phase)}`
         : "Runtime, reliability, publish, and download controls.";
     }
 
@@ -1328,16 +1574,20 @@
     if (elements.cancelBinaryButton) {
       elements.cancelBinaryButton.disabled = !binary.canCancel;
       elements.cancelBinaryButton.textContent = build && build.status === "canceled" ? "Canceled" : "Cancel";
+      setHidden(elements.cancelBinaryButton, !binary.canCancel && !(build && build.status === "canceled"));
     }
     if (elements.validateBinaryButton) {
       elements.validateBinaryButton.disabled = Boolean(binary.busy || !build || build.status !== "completed");
+      setHidden(elements.validateBinaryButton, !canShowCompletedActions);
     }
     if (elements.deployBinaryButton) {
       elements.deployBinaryButton.disabled = Boolean(binary.busy || !build || build.status !== "completed");
+      setHidden(elements.deployBinaryButton, !canShowCompletedActions);
     }
 
     if (elements.binaryDetailsButton) {
       elements.binaryDetailsButton.disabled = Boolean(binary.busy && !build);
+      setHidden(elements.binaryDetailsButton, !hasManifest && !hasExtraDetails);
     }
 
     if (elements.binaryDownloadLink) {
@@ -1346,11 +1596,13 @@
       elements.binaryDownloadLink.classList.toggle("is-hidden", !href);
     }
 
+    setHidden(elements.binaryManifestCard, !hasManifest);
+    setHidden(elements.binaryWarningsCard, !hasWarnings);
+    setHidden(elements.binaryPreviewFilesCard, !hasPreviewFiles);
+    setHidden(elements.binaryLogPreviewCard, !hasRecentLogs);
+
     if (shouldAutoOpenPanel) {
       setBinaryPanelOpen(true);
-    }
-    if (shouldAutoOpenDetails) {
-      setBinaryDetailsOpen(true);
     }
 
     syncShellState();
@@ -1412,6 +1664,7 @@
   }
 
   function render() {
+    updateBinaryHeroState();
     syncShellState();
     syncComposerFromState(state);
     if (elements.authChip) {
@@ -1555,6 +1808,7 @@
         return;
       case "generateBinary":
         setHistoryDrawerOpen(false);
+        preserveChatScrollPosition(3);
         vscode.postMessage({
           type: "generateBinary",
           text: elements.composer ? elements.composer.value : "",
@@ -1865,6 +2119,12 @@
   restoreDraft();
   syncComposerHeight();
   render();
+  binaryHeroTimer = window.setInterval(() => {
+    if (!isBinaryHeroActive()) return;
+    updateBinaryHeroState({ allowHeartbeat: true });
+    syncShellState();
+    renderChatBinarySpotlight();
+  }, 360);
   window.setTimeout(() => {
     focusComposer(true);
   }, 30);

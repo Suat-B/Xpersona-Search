@@ -2081,45 +2081,6 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     searchDepth: "fast" | "deep";
   }): Promise<void> {
     const text = input.text.trim();
-    const apiKey = await this.auth.getApiKey();
-    const workspaceRoot = getWorkspaceRootPath();
-    const preflightMessage = await validateQwenPreflight({
-      workspaceRoot,
-      apiKey,
-      qwenBaseUrl: getQwenOpenAiBaseUrl(),
-      playgroundBaseUrl: getBaseApiUrl(),
-      executablePath: getQwenExecutablePath(),
-    });
-
-    if (
-      this.sessionId &&
-      !isPendingQwenSessionId(this.sessionId) &&
-      !(await this.qwenHistoryService.hasSession(this.sessionId))
-    ) {
-      this.sessionId = null;
-      this.state.selectedSessionId = null;
-      this.state.activity = [];
-    }
-
-    const localSessionId = this.sessionId || createPendingQwenSessionId();
-    this.sessionId = localSessionId;
-    this.state.selectedSessionId = localSessionId;
-
-    const intent = classifyIntent(text);
-    const preview = await this.contextCollector.preview(
-      text,
-      await this.getQwenContextOptions({
-        searchDepth: input.searchDepth,
-        intent,
-      })
-    );
-    this.applyPreviewState(preview);
-    this.lastPrompt = {
-      text,
-      intent: preview.intent,
-      searchDepth: input.searchDepth,
-    };
-
     if (input.appendUser) {
       this.appendMessage("user", text);
     }
@@ -2144,6 +2105,63 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       latestActivity: "Collecting context",
     });
     this.postState();
+
+    const workspaceRoot = getWorkspaceRootPath();
+    let apiKey = "";
+    let preflightMessage: string | null = null;
+    let localSessionId = this.sessionId || createPendingQwenSessionId();
+    let preview: Awaited<ReturnType<ContextCollector["preview"]>>;
+
+    try {
+      apiKey = String((await this.auth.getApiKey()) || "");
+      preflightMessage = await validateQwenPreflight({
+        workspaceRoot,
+        apiKey,
+        qwenBaseUrl: getQwenOpenAiBaseUrl(),
+        playgroundBaseUrl: getBaseApiUrl(),
+        executablePath: getQwenExecutablePath(),
+      });
+
+      if (
+        this.sessionId &&
+        !isPendingQwenSessionId(this.sessionId) &&
+        !(await this.qwenHistoryService.hasSession(this.sessionId))
+      ) {
+        this.sessionId = null;
+        this.state.selectedSessionId = null;
+        this.state.activity = [];
+      }
+
+      localSessionId = this.sessionId || createPendingQwenSessionId();
+      this.sessionId = localSessionId;
+      this.state.selectedSessionId = localSessionId;
+
+      const intent = classifyIntent(text);
+      preview = await this.contextCollector.preview(
+        text,
+        await this.getQwenContextOptions({
+          searchDepth: input.searchDepth,
+          intent,
+        })
+      );
+      this.applyPreviewState(preview);
+      this.lastPrompt = {
+        text,
+        intent: preview.intent,
+        searchDepth: input.searchDepth,
+      };
+    } catch (error) {
+      this.applyChatLiveEvent({
+        type: "failed",
+        text: `Unable to prepare Qwen Code: ${error instanceof Error ? error.message : String(error)}`,
+        phase: "failed",
+      });
+      this.pushActivity("Failed");
+      this.state.runtimePhase = "failed";
+      this.state.busy = false;
+      this.postState();
+      return;
+    }
 
     if (preflightMessage) {
       this.applyChatLiveEvent({

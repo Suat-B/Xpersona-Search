@@ -1840,36 +1840,6 @@ class PlaygroundViewProvider {
     }
     async runQwenPrompt(input) {
         const text = input.text.trim();
-        const apiKey = await this.auth.getApiKey();
-        const workspaceRoot = (0, config_1.getWorkspaceRootPath)();
-        const preflightMessage = await (0, qwen_ux_1.validateQwenPreflight)({
-            workspaceRoot,
-            apiKey,
-            qwenBaseUrl: (0, config_1.getQwenOpenAiBaseUrl)(),
-            playgroundBaseUrl: (0, config_1.getBaseApiUrl)(),
-            executablePath: (0, config_1.getQwenExecutablePath)(),
-        });
-        if (this.sessionId &&
-            !(0, qwen_history_1.isPendingQwenSessionId)(this.sessionId) &&
-            !(await this.qwenHistoryService.hasSession(this.sessionId))) {
-            this.sessionId = null;
-            this.state.selectedSessionId = null;
-            this.state.activity = [];
-        }
-        const localSessionId = this.sessionId || (0, qwen_history_1.createPendingQwenSessionId)();
-        this.sessionId = localSessionId;
-        this.state.selectedSessionId = localSessionId;
-        const intent = (0, assistant_ux_1.classifyIntent)(text);
-        const preview = await this.contextCollector.preview(text, await this.getQwenContextOptions({
-            searchDepth: input.searchDepth,
-            intent,
-        }));
-        this.applyPreviewState(preview);
-        this.lastPrompt = {
-            text,
-            intent: preview.intent,
-            searchDepth: input.searchDepth,
-        };
         if (input.appendUser) {
             this.appendMessage("user", text);
         }
@@ -1892,6 +1862,54 @@ class PlaygroundViewProvider {
             latestActivity: "Collecting context",
         });
         this.postState();
+        const workspaceRoot = (0, config_1.getWorkspaceRootPath)();
+        let apiKey = "";
+        let preflightMessage = null;
+        let localSessionId = this.sessionId || (0, qwen_history_1.createPendingQwenSessionId)();
+        let preview;
+        try {
+            apiKey = String((await this.auth.getApiKey()) || "");
+            preflightMessage = await (0, qwen_ux_1.validateQwenPreflight)({
+                workspaceRoot,
+                apiKey,
+                qwenBaseUrl: (0, config_1.getQwenOpenAiBaseUrl)(),
+                playgroundBaseUrl: (0, config_1.getBaseApiUrl)(),
+                executablePath: (0, config_1.getQwenExecutablePath)(),
+            });
+            if (this.sessionId &&
+                !(0, qwen_history_1.isPendingQwenSessionId)(this.sessionId) &&
+                !(await this.qwenHistoryService.hasSession(this.sessionId))) {
+                this.sessionId = null;
+                this.state.selectedSessionId = null;
+                this.state.activity = [];
+            }
+            localSessionId = this.sessionId || (0, qwen_history_1.createPendingQwenSessionId)();
+            this.sessionId = localSessionId;
+            this.state.selectedSessionId = localSessionId;
+            const intent = (0, assistant_ux_1.classifyIntent)(text);
+            preview = await this.contextCollector.preview(text, await this.getQwenContextOptions({
+                searchDepth: input.searchDepth,
+                intent,
+            }));
+            this.applyPreviewState(preview);
+            this.lastPrompt = {
+                text,
+                intent: preview.intent,
+                searchDepth: input.searchDepth,
+            };
+        }
+        catch (error) {
+            this.applyChatLiveEvent({
+                type: "failed",
+                text: `Unable to prepare Qwen Code: ${error instanceof Error ? error.message : String(error)}`,
+                phase: "failed",
+            });
+            this.pushActivity("Failed");
+            this.state.runtimePhase = "failed";
+            this.state.busy = false;
+            this.postState();
+            return;
+        }
         if (preflightMessage) {
             this.applyChatLiveEvent({
                 type: "failed",

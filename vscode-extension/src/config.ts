@@ -86,9 +86,9 @@ export function getRuntimeBackend(): RuntimeBackend {
 export function getQwenModel(): string {
   const configured = getConfigurationValue<string>(
     "qwen.model",
-    "Qwen/Qwen3-Coder-30B-A3B-Instruct:featherless-ai"
+    "Qwen/Qwen3-Coder-Next-FP8:together"
   );
-  return String(configured || "Qwen/Qwen3-Coder-30B-A3B-Instruct:featherless-ai").trim();
+  return String(configured || "Qwen/Qwen3-Coder-Next-FP8:together").trim();
 }
 
 export function getQwenOpenAiBaseUrl(): string {

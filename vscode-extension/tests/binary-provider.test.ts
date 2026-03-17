@@ -792,6 +792,25 @@ describe("binary provider", () => {
     expect(provider.state.liveChat).toBeNull();
   });
 
+  it("shows the live assistant shell before qwen context preview starts", async () => {
+    const { provider, contextCollector } = createProvider();
+
+    const runPromise = provider.runQwenPrompt({
+      text: "please fix the bug",
+      appendUser: true,
+      searchDepth: "fast",
+    });
+
+    const assistantMessages = provider.state.messages.filter((message: any) => message.role === "assistant");
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].presentation).toBe("live_binary");
+    expect(assistantMessages[0].live?.phase).toBe("collecting_context");
+    expect(provider.state.liveChat?.latestActivity).toBe("Collecting context");
+    expect(contextCollector.preview).not.toHaveBeenCalled();
+
+    await runPromise;
+  });
+
   it("streams hosted assist events into a single live assistant bubble", async () => {
     configurationValues["xpersona.binary"].runtime = "playgroundApi";
     const { provider } = createProvider();

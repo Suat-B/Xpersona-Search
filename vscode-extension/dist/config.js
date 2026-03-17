@@ -117,8 +117,8 @@ function getRuntimeBackend() {
     return configured === "playgroundApi" ? "playgroundApi" : "qwenCode";
 }
 function getQwenModel() {
-    const configured = getConfigurationValue("qwen.model", "Qwen/Qwen3-Coder-30B-A3B-Instruct:featherless-ai");
-    return String(configured || "Qwen/Qwen3-Coder-30B-A3B-Instruct:featherless-ai").trim();
+    const configured = getConfigurationValue("qwen.model", "Qwen/Qwen3-Coder-Next-FP8:together");
+    return String(configured || "Qwen/Qwen3-Coder-Next-FP8:together").trim();
 }
 function getQwenOpenAiBaseUrl() {
     const configured = getConfigurationValue("qwen.baseUrl", `${getBaseApiUrl()}/api/v1/hf`);

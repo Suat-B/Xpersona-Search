@@ -109,4 +109,21 @@ describe("indexer", () => {
     expect(changedBatch).toHaveLength(1);
     expect(changedBatch[0]?.pathDisplay).toBe("src/two.ts");
   });
+
+  it("excludes heavy directories during file discovery so mention suggestions stay populated", async () => {
+    findFiles.mockImplementation(async (_include: string, exclude: string | undefined) => {
+      if (exclude) {
+        return [{ fsPath: "C:\\repo\\src\\route.ts" }];
+      }
+      return [{ fsPath: "C:\\repo\\node_modules\\leftpad\\index.js" }];
+    });
+    readFile.mockResolvedValue(bytes("export const ok = true;\n"));
+    requestJson.mockResolvedValue({ ok: true });
+
+    const manager = new CloudIndexManager(createContext() as any, async () => ({ apiKey: "key" }));
+    const suggestions = await manager.getMentionSuggestions("");
+
+    expect(findFiles).toHaveBeenCalledWith("**/*", expect.stringContaining("node_modules"), 2000);
+    expect(suggestions).toContain("src/route.ts");
+  });
 });
