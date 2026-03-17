@@ -3236,16 +3236,32 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     toolResult: ToolResult,
     signal?: AbortSignal
   ): Promise<AssistRunEnvelope> {
-    const response = await requestJson<{ data?: AssistRunEnvelope }>(
-      "POST",
-      `${getBaseApiUrl()}/api/v1/playground/runs/${encodeURIComponent(runId)}/continue`,
-      auth,
-      {
-        toolResult,
-      },
-      { signal }
-    );
-    return (response?.data || response) as AssistRunEnvelope;
+    const url = `${getBaseApiUrl()}/api/v1/playground/runs/${encodeURIComponent(runId)}/continue`;
+    const body = { toolResult };
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        const delay = 400 * attempt;
+        await new Promise((r) => setTimeout(r, delay));
+      }
+      if (signal?.aborted) throw new Error("Prompt aborted");
+      try {
+        const response = await requestJson<{ data?: AssistRunEnvelope }>(
+          "POST",
+          url,
+          auth,
+          body,
+          { signal }
+        );
+        return (response?.data || response) as AssistRunEnvelope;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        const msg = lastError.message;
+        if (msg.includes("RUN_NOT_FOUND") && attempt < 2) continue;
+        throw lastError;
+      }
+    }
+    throw lastError ?? new Error("Continue run failed");
   }
 
   private async executeToolLoop(input: {
