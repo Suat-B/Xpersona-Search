@@ -92,8 +92,8 @@ export function buildSlashStatusMessage(input: {
 }): string {
   const sessionLabel = input.sessionId?.trim() || "New chat";
   const lines = [
-    "Streaming Binary IDE status:",
-    `- Runtime: ${input.runtime === "qwenCode" ? "Qwen Code" : "Streaming Binary IDE API"}`,
+    "Binary IDE status:",
+    `- Runtime: ${input.runtime === "qwenCode" ? "Qwen Code" : "Binary IDE API"}`,
     `- Mode: ${input.mode === "plan" ? "Plan" : input.mode === "yolo" ? "Yolo" : "Auto"}`,
     `- Auth: ${input.authLabel}`,
     `- Phase: ${describeRuntimePhase(input.runtimePhase)}`,

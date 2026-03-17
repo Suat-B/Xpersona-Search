@@ -21,6 +21,8 @@ function isLikelyPathReference(value) {
         return false;
     if (value.length > 260)
         return false;
+    if ((0, intelligence_utils_1.isRuntimePathLeak)(value))
+        return false;
     return /[./\\]/.test(value);
 }
 function getLineFromMatch(match) {
@@ -28,6 +30,11 @@ function getLineFromMatch(match) {
     return Number.isInteger(raw) && raw > 0 ? raw : undefined;
 }
 function extractTaskPathReferences(task) {
+    const normalizedTask = (0, intelligence_utils_1.normalizeContextPath)(task).toLowerCase();
+    const hasRuntimeLeakInTask = normalizedTask.includes(".trae/extensions/") ||
+        normalizedTask.includes("playgroundai.xpersona-playground-") ||
+        normalizedTask.includes("@qwen-code/sdk/dist/cli/cli.js") ||
+        normalizedTask.includes("node_modules/@qwen-code/sdk/dist/cli/cli.js");
     const patterns = [
         /@?((?:[A-Za-z0-9_.-]+[\\/])+[A-Za-z0-9_.-]+(?:\.[A-Za-z0-9_-]+)?)(?::(\d+)|#L(\d+))?/g,
         /@?([A-Za-z0-9_.-]+\.[A-Za-z0-9_-]+)(?::(\d+)|#L(\d+))?/g,
@@ -38,7 +45,9 @@ function extractTaskPathReferences(task) {
         let match = pattern.exec(task);
         while (match) {
             const query = (0, intelligence_utils_1.normalizeContextPath)(match[1] || "");
-            if (isLikelyPathReference(query)) {
+            const queryBase = basename(query);
+            const looksLikeRuntimeBasename = hasRuntimeLeakInTask && (queryBase === "cli.js" || queryBase === "qwen");
+            if (isLikelyPathReference(query) && !(0, intelligence_utils_1.isRuntimePathLeak)(query) && !looksLikeRuntimeBasename) {
                 const line = getLineFromMatch(match);
                 const key = `${query.toLowerCase()}#${line || 0}`;
                 if (!seen.has(key)) {

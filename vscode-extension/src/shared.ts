@@ -12,6 +12,7 @@ export type RuntimePhase =
   | "saving_session"
   | "clarify"
   | "done"
+  | "canceled"
   | "failed";
 export type OrchestrationProtocol = "batch_v1" | "tool_loop_v1";
 export type PlaygroundToolName =

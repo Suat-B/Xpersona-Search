@@ -23,13 +23,43 @@ function normalizeTimestamp(value: string | undefined): string {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : new Date().toISOString();
 }
 
-function deriveTitle(text: string): string {
-  return (
-    String(text || "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 80) || "Qwen Code chat"
-  );
+function basename(pathValue: string): string {
+  const normalized = String(pathValue || "").replace(/\\/g, "/");
+  const parts = normalized.split("/").filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : normalized;
+}
+
+function normalizeTask(text: string): string {
+  return String(text || "")
+    .replace(/@[A-Za-z0-9_./-]+/g, "")
+    .replace(/[<3]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function deriveTitle(input: {
+  text: string;
+  intent?: IntentKind;
+  targets?: string[];
+}): string {
+  const task = normalizeTask(input.text);
+  const primaryTarget = basename((input.targets || []).find((target) => String(target || "").trim()) || "");
+
+  let prefix = "";
+  if (input.intent === "change") {
+    prefix = primaryTarget ? `Change ${primaryTarget}` : "Change request";
+  } else if (input.intent === "find") {
+    prefix = primaryTarget ? `Find in ${primaryTarget}` : "Find request";
+  } else if (input.intent === "explain") {
+    prefix = primaryTarget ? `Explain ${primaryTarget}` : "Explain request";
+  }
+
+  if (prefix && task) {
+    return `${prefix}: ${task}`.slice(0, 96);
+  }
+  if (prefix) return prefix.slice(0, 96);
+  if (task) return task.slice(0, 96);
+  return primaryTarget ? `Chat about ${primaryTarget}` : "Binary IDE chat";
 }
 
 function cloneMessages(messages: ChatMessage[]): ChatMessage[] {
@@ -138,12 +168,15 @@ export class QwenHistoryService {
     const sessions = this.readSessions();
     const nextSession: QwenSessionRecord = {
       id: input.sessionId,
-      title: deriveTitle(
-        input.title ||
+      title: deriveTitle({
+        text:
+          input.title ||
           input.messages.find((message) => message.role === "user")?.content ||
           input.messages[0]?.content ||
-          ""
-      ),
+          "",
+        intent: input.intent,
+        targets: input.targets,
+      }),
       mode: toStoredMode(input.mode),
       updatedAt: new Date().toISOString(),
       messages: cloneMessages(input.messages),
@@ -183,7 +216,25 @@ export class QwenHistoryService {
 
         const session: QwenSessionRecord = {
           id: record.id,
-          title: deriveTitle(typeof record.title === "string" ? record.title : ""),
+          title:
+            typeof record.title === "string" && record.title.trim()
+              ? record.title.slice(0, 96)
+              : deriveTitle({
+                  text:
+                    messages.find((message) => message.role === "user")?.content ||
+                    messages[0]?.content ||
+                    "",
+                  intent:
+                    record.lastIntent === "ask" ||
+                    record.lastIntent === "explain" ||
+                    record.lastIntent === "find" ||
+                    record.lastIntent === "change"
+                      ? record.lastIntent
+                      : undefined,
+                  targets: Array.isArray(record.lastTargets)
+                    ? record.lastTargets.map((target) => String(target || "")).filter(Boolean).slice(0, 8)
+                    : undefined,
+                }),
           mode: record.mode === "plan" ? "plan" : "auto",
           updatedAt: normalizeTimestamp(typeof record.updatedAt === "string" ? record.updatedAt : undefined),
           messages,

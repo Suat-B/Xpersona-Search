@@ -57,7 +57,7 @@ function extractMentionPaths(task) {
     const matches = task.match(/@([A-Za-z0-9_./-]+)/g) || [];
     return matches
         .map((value) => (0, intelligence_utils_1.normalizeContextPath)(value))
-        .filter(Boolean)
+        .filter((value) => value && !(0, intelligence_utils_1.isRuntimePathLeak)(value))
         .slice(0, 12);
 }
 function extractCandidateSymbols(task) {
@@ -70,7 +70,7 @@ function uniquePaths(values, limit) {
     for (const value of values) {
         const normalized = (0, intelligence_utils_1.normalizeContextPath)(value);
         const key = normalized.toLowerCase();
-        if (!normalized || seen.has(key))
+        if (!normalized || (0, intelligence_utils_1.isRuntimePathLeak)(normalized) || seen.has(key))
             continue;
         seen.add(key);
         out.push(normalized);

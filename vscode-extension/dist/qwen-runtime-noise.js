@@ -94,8 +94,15 @@ function containsStrongRuntimeNarrativeNoise(text) {
         /\b(qwen|sdk|extension)\b/.test(normalized)) {
         return true;
     }
-    if ((normalized.includes("shared a path to") || normalized.includes("provided a path to")) &&
+    if ((normalized.includes("shared a path to") ||
+        normalized.includes("provided a path to") ||
+        normalized.includes("shared a file path to") ||
+        normalized.includes("provided a file path to")) &&
         /\b(qwen|sdk|cli|installation|extension)\b/.test(normalized)) {
+        return true;
+    }
+    if (normalized.includes("i can see you've provided") &&
+        /\b(file path|qwen|sdk|cli)\b/.test(normalized)) {
         return true;
     }
     if (normalized.includes("i notice you've shared") &&

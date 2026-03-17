@@ -67,4 +67,29 @@ describe("qwen history", () => {
       { id: "1", role: "user", content: "fix route.ts" },
     ]);
   });
+
+  it("builds a detailed title from intent and target file", async () => {
+    const service = new QwenHistoryService(context as any);
+
+    await service.saveConversation({
+      sessionId: "session-detailed",
+      mode: "auto",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          content: "please create a trailing stop loss in @Emergent_Swarm_Intelligence.pine",
+        },
+      ],
+      targets: [
+        "trading/ai-trading-research/Math-Foundations One/strategies/pending/Emergent_Swarm_Intelligence.pine",
+      ],
+      intent: "change",
+    });
+
+    const sessions = await service.list();
+    const item = sessions.find((entry) => entry.id === "session-detailed");
+    expect(item?.title).toContain("Change Emergent_Swarm_Intelligence.pine:");
+    expect(item?.title).toContain("please create a trailing stop loss");
+  });
 });

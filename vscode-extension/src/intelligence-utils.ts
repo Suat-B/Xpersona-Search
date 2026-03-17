@@ -40,6 +40,18 @@ export function normalizeContextPath(input: string | null | undefined): string {
     .replace(/[),.;:!?]+$/g, "");
 }
 
+export function isRuntimePathLeak(input: string | null | undefined): boolean {
+  const normalized = normalizeContextPath(input).toLowerCase();
+  if (!normalized) return false;
+  return (
+    normalized.includes(".trae/extensions/") ||
+    normalized.includes("playgroundai.xpersona-playground-") ||
+    normalized.includes("@qwen-code/sdk/dist/cli/cli.js") ||
+    normalized.includes("node_modules/@qwen-code/sdk/dist/cli/cli.js") ||
+    normalized.includes("sdk/dist/cli/cli.js")
+  );
+}
+
 export function buildRetrievalHints(input: {
   mentionPaths?: string[];
   candidateSymbols?: string[];
@@ -48,7 +60,9 @@ export function buildRetrievalHints(input: {
   recentTouchedPaths?: string[];
 }): RetrievalHints {
   const mentionedPaths = dedupeStrings(
-    (input.mentionPaths || []).map((path) => normalizeContextPath(path)).filter(Boolean),
+    (input.mentionPaths || [])
+      .map((path) => normalizeContextPath(path))
+      .filter((path) => path && !isRuntimePathLeak(path)),
     12,
     260
   );
@@ -58,7 +72,8 @@ export function buildRetrievalHints(input: {
     8,
     240
   );
-  const preferredTargetPath = normalizeContextPath(input.preferredTargetPath || "");
+  const preferredTargetPathRaw = normalizeContextPath(input.preferredTargetPath || "");
+  const preferredTargetPath = isRuntimePathLeak(preferredTargetPathRaw) ? "" : preferredTargetPathRaw;
   const recentTouchedPaths = dedupeStrings(
     (input.recentTouchedPaths || []).map((path) => normalizeContextPath(path)).filter(Boolean),
     12,

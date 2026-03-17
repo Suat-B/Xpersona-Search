@@ -33,4 +33,12 @@ describe("context-utils", () => {
       "lib/other-route.ts",
     ]);
   });
+
+  it("ignores leaked .trae/@qwen-code runtime paths as task file references", () => {
+    expect(
+      extractTaskPathReferences(
+        "please edit app/api/v1/playground/models/route.ts and c:\\Users\\suatb\\.trae\\extensions\\playgroundai.xpersona-playground-0.0.59\\node_modules\\@qwen-code\\sdk\\dist\\cli\\cli.js"
+      )
+    ).toEqual([{ query: "app/api/v1/playground/models/route.ts" }]);
+  });
 });

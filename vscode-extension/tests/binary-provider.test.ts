@@ -6,6 +6,7 @@ const {
   showQuickPick,
   showInformationMessage,
   showInputBox,
+  writeClipboardText,
   activeTextEditorState,
   configurationValues,
   requestBinaryBuild,
@@ -22,6 +23,7 @@ const {
   showQuickPick: vi.fn(async () => undefined),
   showInformationMessage: vi.fn(),
   showInputBox: vi.fn(async () => ""),
+  writeClipboardText: vi.fn(async () => undefined),
   activeTextEditorState: {
     current: undefined as unknown,
   },
@@ -59,6 +61,11 @@ vi.mock("vscode", () => ({
     showInputBox,
     get activeTextEditor() {
       return activeTextEditorState.current;
+    },
+  },
+  env: {
+    clipboard: {
+      writeText: writeClipboardText,
     },
   },
   commands: {
@@ -300,8 +307,11 @@ function createEvent<TType extends BinaryBuildEvent["type"]>(
   } as BinaryBuildEvent;
 }
 
-function createProvider() {
+function createProvider(options?: { persistedMode?: "auto" | "plan" }) {
   const context = createContext();
+  if (options?.persistedMode) {
+    context.workspaceState.values.set("xpersona.playground.mode", options.persistedMode);
+  }
   const auth = {
     onDidChange: vi.fn(() => ({ dispose() {} })),
     getRequestAuth: vi.fn(async () => ({ apiKey: "test-key" })),
@@ -393,6 +403,7 @@ function createProvider() {
         permissionDenials: [],
         usedTools: [],
         didMutate: true,
+        toolEvents: [],
       })),
     } as any,
     contextCollector as any,
@@ -419,6 +430,7 @@ describe("binary provider", () => {
     showQuickPick.mockReset();
     showInformationMessage.mockReset();
     showInputBox.mockReset();
+    writeClipboardText.mockReset();
     requestBinaryBuild.mockReset();
     requestBinaryBuildStream.mockReset();
     requestBinaryStreamEvents.mockReset();
@@ -664,10 +676,10 @@ describe("binary provider", () => {
     expect(provider.state.messages.some((message: any) => /Only completed portable starter bundles can be published/i.test(message.content))).toBe(true);
   });
 
-  it("opens the Streaming Binary IDE settings surface from configure", async () => {
+  it("opens the Binary IDE settings surface from configure", async () => {
     const { provider } = createProvider();
     showQuickPick.mockResolvedValueOnce({
-      label: "Open Streaming Binary IDE settings",
+      label: "Open Binary IDE settings",
       detail: "Open the VS Code settings UI filtered to xpersona.binary.",
       action: "settings",
     });
@@ -675,7 +687,7 @@ describe("binary provider", () => {
     await provider.openBinaryConfiguration();
 
     expect(executeCommand).toHaveBeenCalledWith("workbench.action.openSettings", "xpersona.binary");
-    expect(provider.state.messages.at(-1)?.content).toBe("Opened Streaming Binary IDE settings.");
+    expect(provider.state.messages.at(-1)?.content).toBe("Opened Binary IDE settings.");
   });
 
   it("skips expensive preview work for a blank fresh draft", async () => {
@@ -692,6 +704,27 @@ describe("binary provider", () => {
       attachedFiles: [],
       memoryTargets: [],
     });
+  });
+
+  it("does not inject workspace memory hints into fresh-chat context collection", async () => {
+    const { provider, qwenHistoryService, contextCollector } = createProvider();
+    qwenHistoryService.getWorkspaceHints.mockResolvedValueOnce({
+      recentTargets: ["src/from-history.ts"],
+      recentIntents: ["change"],
+    });
+
+    await provider.runQwenPrompt({
+      text: "please update the active file",
+      appendUser: true,
+      searchDepth: "fast",
+    });
+
+    expect(contextCollector.preview).toHaveBeenCalled();
+    expect(contextCollector.collect).toHaveBeenCalled();
+    const previewOptions = contextCollector.preview.mock.calls[0]?.[1];
+    const collectOptions = contextCollector.collect.mock.calls[0]?.[1];
+    expect(previewOptions?.memoryTargets).toEqual([]);
+    expect(collectOptions?.memoryTargets).toEqual([]);
   });
 
   it("does not block edit prompts when the active file is already the inferred target", async () => {
@@ -774,6 +807,7 @@ describe("binary provider", () => {
           permissionDenials: [],
           usedTools: ["read_file"],
           didMutate: false,
+          toolEvents: [],
         };
       }
     );
@@ -895,6 +929,11 @@ describe("binary provider", () => {
     expect(provider.draftText).toBe("");
   });
 
+  it("defaults to auto mode on startup even if a prior plan mode was persisted", () => {
+    const { provider } = createProvider({ persistedMode: "plan" });
+    expect(provider.state.mode).toBe("auto");
+  });
+
   it("toggles into plan mode from the composer shortcut", async () => {
     const { provider } = createProvider();
     provider.didBootstrap = true;
@@ -920,4 +959,147 @@ describe("binary provider", () => {
     expect(provider.state.mode).toBe("auto");
     expect(provider.state.messages.at(-1)?.content).toBe("Mode set to Auto.");
   });
+
+  it("retries once with tool-first instructions when Qwen falls into clarification-loop text", async () => {
+    const { provider } = createProvider();
+    provider.qwenCodeRuntime.runPrompt
+      .mockResolvedValueOnce({
+        sessionId: "qwen_session",
+        assistantText: [
+          "Are you looking to:",
+          "1. Read and examine the file contents?",
+          "2. Help modify or debug something related to it?",
+          "3. Something else entirely?",
+        ].join("\n"),
+        permissionDenials: [],
+        usedTools: ["read_file"],
+        didMutate: false,
+        toolEvents: [],
+      })
+      .mockResolvedValueOnce({
+        sessionId: "qwen_session",
+        assistantText: "I updated the trailing stop loss logic in the active file.",
+        permissionDenials: [],
+        usedTools: ["read_file", "edit"],
+        didMutate: true,
+        toolEvents: [],
+      });
+
+    await provider.runQwenPrompt({
+      text: "create a trailing stop loss in this file",
+      appendUser: true,
+      searchDepth: "fast",
+    });
+
+    expect(provider.qwenCodeRuntime.runPrompt).toHaveBeenCalledTimes(2);
+    expect(provider.state.messages.at(-1)?.content).toContain("trailing stop loss");
+    expect(provider.state.activity.some((line: string) => /tool-first/i.test(line))).toBe(true);
+  });
+
+  it("retries when Qwen output is runtime chatter even if a read tool ran", async () => {
+    const { provider } = createProvider();
+    provider.qwenCodeRuntime.runPrompt
+      .mockResolvedValueOnce({
+        sessionId: "qwen_session",
+        assistantText: "I can see you've provided a file path to a Node.js CLI script from the Qwen SDK.",
+        permissionDenials: [],
+        usedTools: ["read_file"],
+        didMutate: false,
+        toolEvents: [],
+      })
+      .mockResolvedValueOnce({
+        sessionId: "qwen_session",
+        assistantText: "I updated src/index.ts with the requested trailing stop logic.",
+        permissionDenials: [],
+        usedTools: ["read_file", "edit"],
+        didMutate: true,
+        toolEvents: [],
+      });
+
+    await provider.runQwenPrompt({
+      text: "please create a trailing stop loss in this file",
+      appendUser: true,
+      searchDepth: "fast",
+    });
+
+    expect(provider.qwenCodeRuntime.runPrompt).toHaveBeenCalledTimes(2);
+    expect(provider.state.messages.at(-1)?.content).toContain("trailing stop");
+    expect(provider.state.activity.some((line: string) => /tool-first/i.test(line))).toBe(true);
+  });
+
+  it("copies a debug report that includes latest Qwen tool usage", async () => {
+    const { provider } = createProvider();
+    provider.qwenCodeRuntime.runPrompt.mockResolvedValueOnce({
+      sessionId: "qwen_session",
+      assistantText: "Applied update.",
+      permissionDenials: [],
+      usedTools: ["read_file", "edit"],
+      didMutate: true,
+      toolEvents: [
+        {
+          phase: "requested",
+          toolName: "read_file",
+          summary: "read_file: src/index.ts",
+          timestamp: "2026-03-16T12:00:00.000Z",
+        },
+        {
+          phase: "executed",
+          toolName: "edit",
+          summary: "edit: src/index.ts",
+          timestamp: "2026-03-16T12:00:01.000Z",
+        },
+      ],
+    });
+
+    await provider.runQwenPrompt({
+      text: "please fix this file",
+      appendUser: true,
+      searchDepth: "fast",
+    });
+
+    provider.didBootstrap = true;
+    await provider.handleMessage({ type: "copyDebugReport" });
+
+    expect(writeClipboardText).toHaveBeenCalledTimes(1);
+    const payload = String(writeClipboardText.mock.calls[0]?.[0] || "");
+    expect(payload).toContain("Binary IDE Debug Report");
+    expect(payload).toContain("please fix this file");
+    expect(payload).toContain("usedTools=read_file, edit");
+    expect(payload).toContain("Attempt 1 tool timeline:");
+    expect(payload).toContain("requested | read_file: src/index.ts");
+    expect(showInformationMessage).toHaveBeenCalledWith("Copied Binary IDE debug report to clipboard.");
+  });
+
+  it("cancels an active streamed prompt", async () => {
+    const { provider } = createProvider();
+    provider.qwenCodeRuntime.runPrompt.mockImplementationOnce(
+      async ({ abortController }: { abortController?: AbortController }) =>
+        await new Promise((_resolve, reject) => {
+          abortController?.signal.addEventListener(
+            "abort",
+            () => {
+              const error = new Error("Request aborted");
+              (error as Error & { name: string }).name = "AbortError";
+              reject(error);
+            },
+            { once: true }
+          );
+        })
+    );
+
+    const run = provider.runQwenPrompt({
+      text: "please keep streaming",
+      appendUser: true,
+      searchDepth: "fast",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    provider.cancelActivePrompt();
+    await run;
+
+    expect(provider.state.busy).toBe(false);
+    expect(provider.state.runtimePhase).toBe("canceled");
+    expect(provider.state.messages.at(-1)?.content).toContain("Canceled current response");
+  });
+
 });

@@ -19,7 +19,18 @@ function containsGenericProjectClarification(text) {
     const normalized = normalizeLoopText(text);
     if (!normalized)
         return false;
-    return (normalized.includes("could you clarify what you'd like me to help with regarding the") ||
+    const looksLikeMenuLoop = normalized.includes("are you looking to") &&
+        (normalized.includes("something else entirely") ||
+            normalized.includes("examine or modify this file") ||
+            normalized.includes("help modify or debug") ||
+            normalized.includes("understand what it does"));
+    const looksLikeScopedClarificationLoop = normalized.includes("let me know what you'd like to do") &&
+        (normalized.includes("examine or modify this file") ||
+            normalized.includes("troubleshoot an issue with it") ||
+            normalized.includes("understand what it does"));
+    return (looksLikeMenuLoop ||
+        looksLikeScopedClarificationLoop ||
+        normalized.includes("could you clarify what you'd like me to help with regarding the") ||
         normalized.includes("if you're looking for help with the") ||
         normalized.includes("within the project scope") ||
         (normalized.includes("need assistance with any code changes") &&

@@ -25,13 +25,18 @@ export async function requestJson<T>(
   method: string,
   url: string,
   auth?: RequestAuth | null,
-  body?: unknown
+  body?: unknown,
+  options?: { signal?: AbortSignal }
 ): Promise<T> {
   const target = new URL(url);
   const transport = target.protocol === "https:" ? https : http;
   const payload = body === undefined ? null : JSON.stringify(body);
 
   return new Promise<T>((resolve, reject) => {
+    if (options?.signal?.aborted) {
+      reject(new Error("Request aborted"));
+      return;
+    }
     const req = transport.request(
       target,
       {
@@ -52,6 +57,13 @@ export async function requestJson<T>(
       }
     );
     req.on("error", reject);
+    if (options?.signal) {
+      const onAbort = () => {
+        req.destroy(new Error("Request aborted"));
+      };
+      options.signal.addEventListener("abort", onAbort, { once: true });
+      req.on("close", () => options.signal?.removeEventListener("abort", onAbort));
+    }
     if (payload !== null) req.write(payload);
     req.end();
   });
@@ -62,13 +74,18 @@ export async function streamJsonEvents(
   url: string,
   auth: RequestAuth | null | undefined,
   body: unknown,
-  onEvent: (event: string, data: unknown) => void | Promise<void>
+  onEvent: (event: string, data: unknown) => void | Promise<void>,
+  options?: { signal?: AbortSignal }
 ): Promise<void> {
   const target = new URL(url);
   const transport = target.protocol === "https:" ? https : http;
   const payload = JSON.stringify(body);
 
   return new Promise<void>((resolve, reject) => {
+    if (options?.signal?.aborted) {
+      reject(new Error("Request aborted"));
+      return;
+    }
     const req = transport.request(
       target,
       {
@@ -144,6 +161,13 @@ export async function streamJsonEvents(
       }
     );
     req.on("error", reject);
+    if (options?.signal) {
+      const onAbort = () => {
+        req.destroy(new Error("Request aborted"));
+      };
+      options.signal.addEventListener("abort", onAbort, { once: true });
+      req.on("close", () => options.signal?.removeEventListener("abort", onAbort));
+    }
     req.write(payload);
     req.end();
   });

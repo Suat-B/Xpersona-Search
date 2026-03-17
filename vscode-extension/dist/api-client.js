@@ -59,11 +59,15 @@ function parseJsonOrText(raw) {
         return trimmed;
     }
 }
-async function requestJson(method, url, auth, body) {
+async function requestJson(method, url, auth, body, options) {
     const target = new url_1.URL(url);
     const transport = target.protocol === "https:" ? https : http;
     const payload = body === undefined ? null : JSON.stringify(body);
     return new Promise((resolve, reject) => {
+        if (options?.signal?.aborted) {
+            reject(new Error("Request aborted"));
+            return;
+        }
         const req = transport.request(target, {
             method,
             headers: buildHeaders(auth, payload !== null),
@@ -80,16 +84,27 @@ async function requestJson(method, url, auth, body) {
             });
         });
         req.on("error", reject);
+        if (options?.signal) {
+            const onAbort = () => {
+                req.destroy(new Error("Request aborted"));
+            };
+            options.signal.addEventListener("abort", onAbort, { once: true });
+            req.on("close", () => options.signal?.removeEventListener("abort", onAbort));
+        }
         if (payload !== null)
             req.write(payload);
         req.end();
     });
 }
-async function streamJsonEvents(method, url, auth, body, onEvent) {
+async function streamJsonEvents(method, url, auth, body, onEvent, options) {
     const target = new url_1.URL(url);
     const transport = target.protocol === "https:" ? https : http;
     const payload = JSON.stringify(body);
     return new Promise((resolve, reject) => {
+        if (options?.signal?.aborted) {
+            reject(new Error("Request aborted"));
+            return;
+        }
         const req = transport.request(target, {
             method,
             headers: {
@@ -156,6 +171,13 @@ async function streamJsonEvents(method, url, auth, body, onEvent) {
             });
         });
         req.on("error", reject);
+        if (options?.signal) {
+            const onAbort = () => {
+                req.destroy(new Error("Request aborted"));
+            };
+            options.signal.addEventListener("abort", onAbort, { once: true });
+            req.on("close", () => options.signal?.removeEventListener("abort", onAbort));
+        }
         req.write(payload);
         req.end();
     });

@@ -88,8 +88,8 @@ export class AuthManager implements vscode.UriHandler {
 
   async setApiKeyInteractive(): Promise<void> {
     const key = await vscode.window.showInputBox({
-      title: "Set Streaming Binary IDE API Key",
-      prompt: "Paste your Streaming Binary IDE API key",
+      title: "Set Binary IDE API Key",
+      prompt: "Paste your Binary IDE API key",
       password: true,
       ignoreFocusOut: true,
     });
@@ -99,11 +99,11 @@ export class AuthManager implements vscode.UriHandler {
     if (!trimmed) {
       await this.context.secrets.delete(API_KEY_SECRET);
       await this.context.secrets.delete(API_KEY_LEGACY_SECRET);
-      vscode.window.showInformationMessage("Stored Streaming Binary IDE API key cleared.");
+      vscode.window.showInformationMessage("Stored Binary IDE API key cleared.");
     } else {
       await this.context.secrets.store(API_KEY_SECRET, trimmed);
       await this.context.secrets.delete(API_KEY_LEGACY_SECRET);
-      vscode.window.showInformationMessage("Streaming Binary IDE API key saved.");
+      vscode.window.showInformationMessage("Binary IDE API key saved.");
     }
 
     await this.emitCurrentState();
@@ -148,7 +148,7 @@ export class AuthManager implements vscode.UriHandler {
     this.accessTokenExpiresAt = 0;
     this.signedInEmail = null;
     await this.emitCurrentState();
-    vscode.window.showInformationMessage("Streaming Binary IDE auth cleared.");
+    vscode.window.showInformationMessage("Binary IDE auth cleared.");
   }
 
   private async completeBrowserSignIn(uri: vscode.Uri): Promise<void> {

@@ -93,6 +93,25 @@ function buildApprovalKey(toolName, input) {
 function toPermissionMode(mode) {
     return mode === "plan" ? "plan" : "auto-edit";
 }
+function extractPseudoToolMarkupEvents(text) {
+    const source = String(text || "");
+    if (!source)
+        return [];
+    const toolCallMatches = Array.from(source.matchAll(/<tool_call>[\s\S]*?<function=([A-Za-z0-9_.:-]+)>[\s\S]*?<\/tool_call>/gi));
+    if (!toolCallMatches.length)
+        return [];
+    return toolCallMatches.map((match) => {
+        const toolName = String(match[1] || "unknown_tool").trim() || "unknown_tool";
+        const snippet = String(match[0] || "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 220);
+        return {
+            toolName,
+            summary: snippet ? `${toolName}: ${snippet}` : toolName,
+        };
+    });
+}
 class QwenCodeRuntime {
     async runPrompt(input) {
         const cwd = (0, config_1.getWorkspaceRootPath)();
@@ -110,7 +129,18 @@ class QwenCodeRuntime {
         const permissionDenials = [];
         const usedToolNames = new Set();
         const approvedToolRequests = new Set();
+        const toolEvents = [];
         let didMutate = false;
+        const pushToolEvent = (phase, toolName, input, detail) => {
+            const summary = summarizeToolRequest(toolName, input || {});
+            toolEvents.push({
+                phase,
+                toolName,
+                summary,
+                detail: detail ? trimToSentence(detail) : undefined,
+                timestamp: new Date().toISOString(),
+            });
+        };
         const publishAssistantText = (reasoningCandidate, answerCandidate) => {
             const nextText = (0, qwen_stream_format_1.formatAssistantStreamText)({
                 reasoningText: reasoningCandidate,
@@ -144,6 +174,7 @@ class QwenCodeRuntime {
                 permissionMode: toPermissionMode(input.mode),
                 allowedTools: (0, qwen_runtime_utils_1.getAutoApprovedQwenTools)(),
                 includePartialMessages,
+                ...(input.abortController ? { abortController: input.abortController } : {}),
                 env: {
                     OPENAI_API_KEY: input.apiKey,
                     OPENAI_BASE_URL: (0, config_1.getQwenOpenAiBaseUrl)(),
@@ -154,13 +185,16 @@ class QwenCodeRuntime {
                     if (options.signal.aborted) {
                         return { behavior: "deny", message: "Request was aborted." };
                     }
+                    pushToolEvent("requested", toolName, toolInput);
                     if ((0, qwen_runtime_utils_1.isSafeInspectionToolRequest)(toolName, toolInput)) {
                         input.onActivity?.((0, qwen_runtime_utils_1.describeToolActivity)(toolName, toolInput));
+                        pushToolEvent("approved", toolName, toolInput, "Auto-approved safe inspection tool.");
                         return { behavior: "allow", updatedInput: toolInput };
                     }
                     const approvalKey = buildApprovalKey(toolName, toolInput);
                     if (approvedToolRequests.has(approvalKey)) {
                         input.onActivity?.(`Reusing prior approval: ${summarizeToolRequest(toolName, toolInput)}`);
+                        pushToolEvent("reused_approval", toolName, toolInput);
                         return { behavior: "allow", updatedInput: toolInput };
                     }
                     input.onActivity?.("Awaiting tool approval");
@@ -168,10 +202,12 @@ class QwenCodeRuntime {
                     if (approved === "Allow Once") {
                         approvedToolRequests.add(approvalKey);
                         input.onActivity?.(`Approved tool: ${summarizeToolRequest(toolName, toolInput)}`);
+                        pushToolEvent("approved", toolName, toolInput, "Approved from modal prompt.");
                         return { behavior: "allow", updatedInput: toolInput };
                     }
                     input.onActivity?.(`Denied tool: ${summarizeToolRequest(toolName, toolInput)}`);
-                    return { behavior: "deny", message: "Tool use denied in Streaming Binary IDE." };
+                    pushToolEvent("denied", toolName, toolInput, "Denied from modal prompt.");
+                    return { behavior: "deny", message: "Tool use denied in Binary IDE." };
                 },
             },
         });
@@ -213,12 +249,22 @@ class QwenCodeRuntime {
                     const nextThinking = extractThinking(message.message.content);
                     if (nextText || nextThinking) {
                         commitAssistantText(nextThinking, nextText);
+                        for (const pseudoEvent of extractPseudoToolMarkupEvents(nextText)) {
+                            toolEvents.push({
+                                phase: "pseudo_markup",
+                                toolName: pseudoEvent.toolName,
+                                summary: pseudoEvent.summary,
+                                detail: "Assistant emitted literal tool-call markup instead of executing an SDK tool.",
+                                timestamp: new Date().toISOString(),
+                            });
+                        }
                     }
                     for (const toolUse of extractToolUses(message.message.content)) {
                         usedToolNames.add(toolUse.name);
                         if ((0, qwen_runtime_utils_1.isMutationToolName)(toolUse.name)) {
                             didMutate = true;
                         }
+                        pushToolEvent("executed", toolUse.name, toolUse.input);
                         input.onActivity?.((0, qwen_runtime_utils_1.describeToolActivity)(toolUse.name, toolUse.input));
                     }
                     continue;
@@ -228,7 +274,9 @@ class QwenCodeRuntime {
                         commitAssistantText("", message.result);
                     }
                     for (const denial of message.permission_denials || []) {
-                        permissionDenials.push(trimToSentence(`${denial.tool_name} denied`));
+                        const denialSummary = trimToSentence(`${denial.tool_name} denied`);
+                        permissionDenials.push(denialSummary);
+                        pushToolEvent("permission_denial", denial.tool_name, {}, denialSummary);
                     }
                 }
             }
@@ -247,6 +295,7 @@ class QwenCodeRuntime {
             permissionDenials,
             usedTools: Array.from(usedToolNames),
             didMutate,
+            toolEvents,
         };
     }
 }

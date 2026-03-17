@@ -399,4 +399,125 @@ describe("qwen-prompt", () => {
     expect(prompt).toContain("Do not ask broad project-scope clarification questions");
     expect(prompt).toContain("trading/strategies/FractalDimensionOscillator.pine");
   });
+
+  it("drops option-menu clarification loops from assistant history", () => {
+    const prompt = buildQwenPrompt({
+      task: "create a trailing stop loss in this file",
+      mode: "auto",
+      workspaceRoot: "c:/repo",
+      preview: {
+        activeFile: "trading/strategies/FractalDimensionOscillator.pine",
+        openFiles: ["trading/strategies/FractalDimensionOscillator.pine"],
+        candidateFiles: ["trading/strategies/FractalDimensionOscillator.pine"],
+        attachedFiles: ["trading/strategies/FractalDimensionOscillator.pine"],
+        memoryFiles: [],
+        resolvedFiles: ["trading/strategies/FractalDimensionOscillator.pine"],
+        selectedFiles: ["trading/strategies/FractalDimensionOscillator.pine"],
+        diagnostics: [],
+        intent: "change",
+        confidence: "high",
+        confidenceScore: 0.91,
+        rationale: "single likely target",
+        workspaceRoot: "c:/repo",
+        snippets: [],
+      },
+      history: [
+        {
+          id: "m-1",
+          role: "assistant",
+          content: [
+            "Are you looking to:",
+            "1. Read and examine the file's contents?",
+            "2. Help modify or debug something related to it?",
+            "3. Something else entirely?",
+            "Let me know what you'd like to do.",
+          ].join("\n"),
+        },
+      ],
+      context: {
+        activeFile: {
+          path: "trading/strategies/FractalDimensionOscillator.pine",
+          language: "pine",
+          content: "// strategy",
+        },
+      },
+    });
+
+    expect(prompt).not.toContain("Are you looking to");
+    expect(prompt).not.toContain("Something else entirely");
+    expect(prompt).toContain("trading/strategies/FractalDimensionOscillator.pine");
+  });
+
+  it("redacts leaked .trae qwen runtime paths from non-runtime user requests", () => {
+    const prompt = buildQwenPrompt({
+      task:
+        "continue route.ts c:\\Users\\suatb\\.trae\\extensions\\playgroundai.xpersona-playground-0.0.59\\node_modules\\@qwen-code\\sdk\\dist\\cli\\cli.js",
+      mode: "auto",
+      workspaceRoot: "c:/repo",
+      preview: {
+        activeFile: "app/api/v1/playground/models/route.ts",
+        openFiles: ["app/api/v1/playground/models/route.ts"],
+        candidateFiles: ["app/api/v1/playground/models/route.ts"],
+        attachedFiles: [],
+        memoryFiles: [],
+        resolvedFiles: ["app/api/v1/playground/models/route.ts"],
+        selectedFiles: ["app/api/v1/playground/models/route.ts"],
+        diagnostics: [],
+        intent: "change",
+        confidence: "high",
+        confidenceScore: 0.9,
+        rationale: "single likely target",
+        workspaceRoot: "c:/repo",
+        snippets: [],
+      },
+      context: {
+        activeFile: {
+          path: "app/api/v1/playground/models/route.ts",
+          language: "typescript",
+          content: "export async function GET() {}",
+        },
+      },
+    });
+
+    expect(prompt).toContain("[runtime-path-redacted]");
+    expect(prompt).not.toContain("@qwen-code");
+    expect(prompt).not.toContain(".trae");
+  });
+
+  it("forces actionable file-specific plans in plan mode when a target file is already resolved", () => {
+    const prompt = buildQwenPrompt({
+      task: "please create a trailing stop loss in @Emergent_Swarm_Intelligence.pine",
+      mode: "plan",
+      workspaceRoot: "c:/repo",
+      preview: {
+        activeFile: "trading/strategies/Emergent_Swarm_Intelligence.pine",
+        openFiles: ["trading/strategies/Emergent_Swarm_Intelligence.pine"],
+        candidateFiles: ["trading/strategies/Emergent_Swarm_Intelligence.pine"],
+        attachedFiles: [],
+        memoryFiles: [],
+        resolvedFiles: ["trading/strategies/Emergent_Swarm_Intelligence.pine"],
+        selectedFiles: ["trading/strategies/Emergent_Swarm_Intelligence.pine"],
+        diagnostics: [],
+        intent: "change",
+        confidence: "high",
+        confidenceScore: 0.93,
+        rationale: "single likely target",
+        workspaceRoot: "c:/repo",
+        snippets: [],
+      },
+      context: {
+        activeFile: {
+          path: "trading/strategies/Emergent_Swarm_Intelligence.pine",
+          language: "pine",
+          content: "// strategy",
+        },
+      },
+      forceActionable: true,
+    });
+
+    expect(prompt).toContain("Stay in plan mode.");
+    expect(prompt).toContain("provide a concrete implementation plan now");
+    expect(prompt).toContain("Do not respond with a generic clarification request");
+    expect(prompt).toContain("Retry override: the previous answer was not actionable");
+  });
 });

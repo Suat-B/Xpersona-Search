@@ -24,8 +24,10 @@
     draftText: "",
     liveChat: null,
     historyDrawerOpen: false,
+    artifactsDrawerOpen: false,
     binaryDetailsOpen: false,
     binaryPanelOpen: false,
+    localArtifacts: [],
     binary: {
       targetEnvironment: {
         runtime: "node18",
@@ -69,9 +71,15 @@
 
   const elements = {
     workspaceShell: document.getElementById("workspaceShell"),
+    currentChatTitle: document.getElementById("currentChatTitle"),
     historyToggle: document.getElementById("historyToggle"),
+    artifactsToggle: document.getElementById("artifactsToggle"),
     historyDrawer: document.getElementById("historyDrawer"),
     historyScrim: document.getElementById("historyScrim"),
+    artifactsDrawer: document.getElementById("artifactsDrawer"),
+    artifactsScrim: document.getElementById("artifactsScrim"),
+    artifactsList: document.getElementById("artifactsList"),
+    artifactsCount: document.getElementById("artifactsCount"),
     history: document.getElementById("history"),
     historyCount: document.getElementById("historyCount"),
     historyFooter: document.getElementById("historyFooter"),
@@ -152,6 +160,8 @@
   const BINARY_HERO_MAX_LINES = 72;
   const BINARY_HERO_LINE_BYTES = 5;
   const BINARY_HERO_HEARTBEAT_MS = 900;
+  const SEND_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h12 M13 6l6 6-6 6"></path></svg>';
+  const CANCEL_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6h12v12H6z"></path></svg>';
 
   function shouldSubmitEnter(event) {
     if (!event) return false;
@@ -165,6 +175,32 @@
       !event.ctrlKey &&
       !event.metaKey &&
       !event.isComposing
+    );
+  }
+
+  function isArrowDownKey(event) {
+    if (!event) return false;
+    const key = String(event.key || "");
+    const code = String(event.code || "");
+    return key === "ArrowDown" || key === "Down" || code === "ArrowDown" || event.keyCode === 40;
+  }
+
+  function isArrowUpKey(event) {
+    if (!event) return false;
+    const key = String(event.key || "");
+    const code = String(event.code || "");
+    return key === "ArrowUp" || key === "Up" || code === "ArrowUp" || event.keyCode === 38;
+  }
+
+  function canCancelLivePrompt() {
+    const live = state.liveChat;
+    return Boolean(
+      state.busy &&
+      live &&
+      live.mode !== "build" &&
+      live.status !== "done" &&
+      live.status !== "failed" &&
+      live.status !== "canceled"
     );
   }
 
@@ -208,7 +244,7 @@
   function roleLabel(role) {
     if (role === "user") return "You";
     if (role === "system") return "System";
-    return "Streaming Binary IDE";
+    return "Binary IDE";
   }
 
   function intentLabel(intent) {
@@ -261,6 +297,32 @@
       return state.auth && state.auth.kind !== "none" ? "Ready" : "Key";
     }
     return state.auth && state.auth.kind !== "none" ? "Auth" : "Key";
+  }
+
+  function shortTitle(value, maxLength) {
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    if (!text) return "";
+    if (!Number.isFinite(maxLength) || maxLength <= 0 || text.length <= maxLength) {
+      return text;
+    }
+    return `${text.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
+  }
+
+  function deriveCurrentChatTitle() {
+    const historyItems = Array.isArray(state.history) ? state.history : [];
+    if (state.selectedSessionId) {
+      const selected = historyItems.find((item) => item && item.id === state.selectedSessionId);
+      if (selected && selected.title) return shortTitle(selected.title, 88);
+    }
+
+    const messages = Array.isArray(state.messages) ? state.messages : [];
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (!message || message.role !== "user") continue;
+      const title = shortTitle(message.content, 88);
+      if (title) return title;
+    }
+    return "New chat";
   }
 
   function shortPath(value) {
@@ -501,7 +563,8 @@
   }
 
   function isBinaryHeroActive() {
-    return Boolean(state.binaryHero && state.binaryHero.active);
+    // Hero spotlight mode is disabled; keep standard chat layout active.
+    return false;
   }
 
   function isPlanShortcutValue(value) {
@@ -547,6 +610,7 @@
     if (!elements.composer || state.busy) return;
     shouldStickToBottom = true;
     setHistoryDrawerOpen(false);
+    setArtifactsDrawerOpen(false);
     window.clearTimeout(previewTimer);
     vscode.postMessage({ type: "confirmPlanMode" });
     elements.composer.value = "";
@@ -573,6 +637,18 @@
 
   function setHistoryDrawerOpen(open) {
     state.historyDrawerOpen = Boolean(open);
+    if (state.historyDrawerOpen) {
+      state.artifactsDrawerOpen = false;
+    }
+    syncShellState();
+    persistDraft();
+  }
+
+  function setArtifactsDrawerOpen(open) {
+    state.artifactsDrawerOpen = Boolean(open);
+    if (state.artifactsDrawerOpen) {
+      state.historyDrawerOpen = false;
+    }
     syncShellState();
     persistDraft();
   }
@@ -591,12 +667,14 @@
 
   function syncShellState() {
     const historyOpen = Boolean(state.historyDrawerOpen);
+    const artifactsOpen = Boolean(state.artifactsDrawerOpen);
     const detailsOpen = Boolean(state.binaryDetailsOpen);
     const panelOpen = Boolean(state.binaryPanelOpen);
     const binaryHeroOpen = isBinaryHeroActive();
 
     if (elements.workspaceShell) {
       elements.workspaceShell.setAttribute("data-history-open", String(historyOpen));
+      elements.workspaceShell.setAttribute("data-artifacts-open", String(artifactsOpen));
       elements.workspaceShell.setAttribute("data-binary-details", String(detailsOpen));
       elements.workspaceShell.setAttribute("data-binary-hero", String(binaryHeroOpen));
     }
@@ -604,10 +682,18 @@
       elements.historyToggle.classList.toggle("active", historyOpen);
       elements.historyToggle.setAttribute("aria-expanded", String(historyOpen));
     }
+    if (elements.artifactsToggle) {
+      elements.artifactsToggle.classList.toggle("active", artifactsOpen);
+      elements.artifactsToggle.setAttribute("aria-expanded", String(artifactsOpen));
+    }
     if (elements.historyDrawer) {
       elements.historyDrawer.setAttribute("aria-hidden", String(!historyOpen));
     }
+    if (elements.artifactsDrawer) {
+      elements.artifactsDrawer.setAttribute("aria-hidden", String(!artifactsOpen));
+    }
     setHidden(elements.historyScrim, !historyOpen);
+    setHidden(elements.artifactsScrim, !artifactsOpen);
     if (elements.binaryDetailsButton) {
       elements.binaryDetailsButton.textContent = detailsOpen ? "Less" : "More";
       elements.binaryDetailsButton.setAttribute("aria-expanded", String(detailsOpen));
@@ -626,8 +712,10 @@
     vscode.setState({
       draft: elements.composer ? elements.composer.value : "",
       historyDrawerOpen: state.historyDrawerOpen,
+      artifactsDrawerOpen: state.artifactsDrawerOpen,
       binaryDetailsOpen: state.binaryDetailsOpen,
       binaryPanelOpen: state.binaryPanelOpen,
+      localArtifacts: state.localArtifacts,
     });
   }
 
@@ -635,8 +723,10 @@
     const saved = vscode.getState();
     if (saved && typeof saved === "object") {
       state.historyDrawerOpen = Boolean(saved.historyDrawerOpen);
+      state.artifactsDrawerOpen = Boolean(saved.artifactsDrawerOpen);
       state.binaryDetailsOpen = Boolean(saved.binaryDetailsOpen);
       state.binaryPanelOpen = Boolean(saved.binaryPanelOpen);
+      state.localArtifacts = Array.isArray(saved.localArtifacts) ? saved.localArtifacts : [];
     }
     if (saved && typeof saved === "object" && typeof saved.draft === "string" && elements.composer) {
       elements.composer.value = saved.draft;
@@ -978,6 +1068,88 @@
       .join("");
   }
 
+  function toLocalArtifact(build) {
+    if (!build || !build.id) return null;
+    const artifact = build.artifact || null;
+    const publish = build.publish || null;
+    const reliability = build.reliability || null;
+    const target = build.targetEnvironment || {};
+    return {
+      id: String(build.id),
+      title: artifact && artifact.fileName ? artifact.fileName : `Bundle ${String(build.id)}`,
+      status: String(build.status || "queued"),
+      runtime: String(target.runtime || "node18"),
+      platform: String(target.platform || "portable"),
+      updatedAt: String(build.updatedAt || new Date().toISOString()),
+      reliabilityScore: reliability && Number.isFinite(reliability.score) ? reliability.score : null,
+      downloadUrl: publish && publish.downloadUrl ? String(publish.downloadUrl) : "",
+      artifactSize: artifact && Number.isFinite(artifact.sizeBytes) ? artifact.sizeBytes : null,
+    };
+  }
+
+  function upsertLocalArtifact(item) {
+    if (!item || !item.id) return;
+    const existing = Array.isArray(state.localArtifacts) ? state.localArtifacts : [];
+    const next = [item, ...existing.filter((entry) => entry && entry.id !== item.id)].slice(0, 24);
+    state.localArtifacts = next;
+  }
+
+  function syncLocalArtifactsFromBuild() {
+    const build = state.binary && state.binary.activeBuild ? state.binary.activeBuild : null;
+    const local = toLocalArtifact(build);
+    if (!local) return;
+    upsertLocalArtifact(local);
+  }
+
+  function artifactStatusLabel(status) {
+    if (status === "completed") return "Completed";
+    if (status === "failed") return "Failed";
+    if (status === "canceled") return "Canceled";
+    if (status === "running") return "Running";
+    return "Queued";
+  }
+
+  function renderArtifacts() {
+    if (!elements.artifactsList) return;
+    const items = Array.isArray(state.localArtifacts) ? state.localArtifacts : [];
+    if (elements.artifactsCount) {
+      elements.artifactsCount.textContent = String(items.length);
+    }
+    if (!items.length) {
+      elements.artifactsList.innerHTML =
+        '<div class="task-empty">No local artifacts yet. Generate a bundle and it will appear here.</div>';
+      return;
+    }
+
+    elements.artifactsList.innerHTML = items
+      .map((item) => {
+        const status = artifactStatusLabel(String(item.status || ""));
+        const updated = formatRelativeTime(item.updatedAt || "");
+        const reliability = Number.isFinite(item.reliabilityScore)
+          ? `${item.reliabilityScore}/100`
+          : "--";
+        const download = item.downloadUrl
+          ? `<a class="binary-link" href="${escapeHtml(item.downloadUrl)}" target="_blank" rel="noreferrer">Download</a>`
+          : "";
+        return [
+          '<div class="task-item">',
+          '<div class="task-line">',
+          '<div class="task-copy">',
+          `<span class="task-name">${escapeHtml(item.title || "Portable bundle")}</span>`,
+          `<div class="task-meta">${escapeHtml(item.runtime || "node18")} · ${escapeHtml(item.platform || "portable")} · Reliability ${escapeHtml(reliability)}</div>`,
+          "</div>",
+          '<div class="task-aside">',
+          `<span class="task-mode">${escapeHtml(status)}</span>`,
+          updated ? `<span class="task-time">${escapeHtml(updated)}</span>` : "",
+          "</div>",
+          "</div>",
+          download ? `<div class="task-meta">${download}</div>` : "",
+          "</div>",
+        ].join("");
+      })
+      .join("");
+  }
+
   function renderFollowUpActions() {
     const actions = Array.isArray(state.followUpActions) ? state.followUpActions : [];
     if (!actions.length) return "";
@@ -1006,7 +1178,7 @@
       '<div class="message-stack">',
       '<div class="empty-stage"><div class="empty-stage-inner">',
       '<div class="empty-stage-logo">',
-      logoUri ? `<img src="${escapeHtml(logoUri)}" alt="Streaming Binary IDE" />` : "",
+      logoUri ? `<img src="${escapeHtml(logoUri)}" alt="Binary IDE" />` : "",
       "</div>",
       `<span>Compose for ${escapeHtml(workspaceName)}. Chat stays primary, and bundle actions stay docked below.</span>`,
       "</div></div>",
@@ -1194,7 +1366,7 @@
       case "canceled":
         return "The live response was canceled.";
       default:
-        return "Streaming Binary IDE is warming up this reply.";
+        return "Binary IDE is warming up this reply.";
     }
   }
 
@@ -1213,109 +1385,12 @@
   }
 
   function renderLiveBinaryMessage(item, includeFollowups) {
-    const live = item && item.live ? item.live : {};
-    const status = String(live.status || "pending");
-    const liveMode = String(live.mode || "shell");
-    const progress = clampProgress(live.progress != null ? live.progress : 0);
-    const latestActivity = truncateText(live.latestActivity || "", 88) || "Streaming Binary IDE is preparing your response.";
-    const latestLog = truncateText(live.latestLog || "", 96) || "No live logs yet.";
-    const latestFile = truncateText(live.latestFile || "", 72) || "No file attached yet.";
     const hasBody = Boolean(String(item.content || "").trim());
-    const settled = status === "done" || status === "failed" || status === "canceled";
-    const liveClass = settled ? " settled" : status === "streaming" ? " active" : "";
-    const heroDominant = isBinaryHeroActive() && !settled;
-    const bodyClass = hasBody && !heroDominant ? "" : " is-hidden";
-    const streamPlaceholder =
-      liveTransportLabel(live) === "Qwen stream"
-        ? "Waiting for Qwen text stream..."
-        : "Waiting for live text stream...";
-
-    if (heroDominant) {
-      return [
-        `<article class="message assistant live-binary hero-collapsed${liveClass}">`,
-        '<div class="message-meta">Streaming Binary IDE</div>',
-        '<div class="live-message-shell compact">',
-        '<div class="live-message-head compact">',
-        '<div class="live-message-kicker"><span class="live-message-dot" aria-hidden="true"></span><span>Streaming Binary IDE</span></div>',
-        '<div class="live-message-settled-meta">',
-        `<span class="live-message-pill">${escapeHtml(liveTransportLabel(live))}</span>`,
-        `<span class="live-message-pill">${escapeHtml(livePhaseLabel(live.phase))}</span>`,
-        `<span class="live-message-pill">${escapeHtml(String(progress))}%</span>`,
-        "</div>",
-        "</div>",
-        '<div class="live-message-summary">',
-        `<span class="live-message-summary-text">${escapeHtml(
-          truncateText(live.latestActivity || livePhaseCopy(live), 132)
-        )}</span>`,
-        "</div>",
-        `<div class="live-message-transcript${hasBody ? "" : " is-empty"}">${
-          hasBody
-            ? `<div class="message-body">${formatMessageBody(item.content)}</div>`
-            : `<p class="live-message-transcript-placeholder">${escapeHtml(streamPlaceholder)}</p>`
-        }</div>`,
-        "</div>",
-        includeFollowups ? renderFollowUpActions() : "",
-        "</article>",
-      ].join("");
-    }
-
-    if (settled) {
-      return [
-        `<article class="message assistant live-binary${liveClass}">`,
-        '<div class="message-meta">Streaming Binary IDE</div>',
-        '<div class="live-message-shell compact">',
-        '<div class="live-message-head compact">',
-        '<div class="live-message-kicker"><span class="live-message-dot" aria-hidden="true"></span><span>Streaming Binary IDE</span></div>',
-        '<div class="live-message-settled-meta">',
-        `<span class="live-message-pill">${escapeHtml(liveTransportLabel(live))}</span>`,
-        `<span class="live-message-pill status-${escapeHtml(status)}">${escapeHtml(livePhaseLabel(live.phase))}</span>`,
-        "</div>",
-        "</div>",
-        '<div class="live-message-summary">',
-        `<span class="live-message-summary-text">${escapeHtml(
-          liveMode === "build"
-            ? latestFile !== "No file attached yet."
-              ? `Last file: ${latestFile}`
-              : latestActivity
-            : latestActivity
-        )}</span>`,
-        "</div>",
-        "</div>",
-        `<div class="message-body${bodyClass}">${hasBody ? formatMessageBody(item.content) : ""}</div>`,
-        includeFollowups ? renderFollowUpActions() : "",
-        "</article>",
-      ].join("");
-    }
-
+    if (!hasBody) return "";
     return [
-      `<article class="message assistant live-binary${liveClass}">`,
-      '<div class="message-meta">Streaming Binary IDE</div>',
-      '<div class="live-message-shell">',
-      '<div class="live-message-head">',
-      '<div class="live-message-kicker"><span class="live-message-dot" aria-hidden="true"></span><span>Streaming Binary IDE</span></div>',
-      `<span class="live-message-pill">${escapeHtml(liveTransportLabel(live))}</span>`,
-      "</div>",
-      '<div class="live-message-main">',
-      '<div class="live-message-copy">',
-      `<h3 class="live-message-title">${escapeHtml(
-        liveMode === "build" ? "Portable bundle assembly" : hasBody ? "Live assistant response" : "Live assistant warmup"
-      )}</h3>`,
-      `<p class="live-message-caption">${escapeHtml(livePhaseCopy(live))}</p>`,
-      '<div class="live-message-metrics">',
-      `<span class="live-message-metric"><strong>${escapeHtml(livePhaseLabel(live.phase))}</strong> phase</span>`,
-      `<span class="live-message-metric"><strong>${escapeHtml(String(progress))}%</strong> progress</span>`,
-      `<span class="live-message-metric"><strong>${escapeHtml(status)}</strong> status</span>`,
-      "</div>",
-      '<div class="live-message-notes">',
-      `<div class="live-message-note"><span class="live-message-note-label">Activity</span><span class="live-message-note-value">${escapeHtml(latestActivity)}</span></div>`,
-      `<div class="live-message-note"><span class="live-message-note-label">${escapeHtml(
-        liveMode === "build" ? "Live file" : "Live detail"
-      )}</span><span class="live-message-note-value">${escapeHtml(liveMode === "build" ? latestFile : latestLog)}</span></div>`,
-      "</div>",
-      "</div>",
-      `<div class="live-message-stream" aria-hidden="true">${renderBinaryStreamMarkup()}</div>`,
-      "</div>",
-      `<div class="message-body${bodyClass}">${hasBody ? formatMessageBody(item.content) : ""}</div>`,
+      '<article class="message assistant">',
+      '<div class="message-meta">Binary IDE</div>',
+      `<div class="message-body">${formatMessageBody(item.content)}</div>`,
       includeFollowups ? renderFollowUpActions() : "",
       "</article>",
     ].join("");
@@ -1387,13 +1462,8 @@
 
   function renderChatBinarySpotlight() {
     if (!elements.chatBinarySpotlight) return;
-    if (!isBinaryHeroActive()) {
-      elements.chatBinarySpotlight.innerHTML = "";
-      elements.chatBinarySpotlight.classList.add("is-hidden");
-      return;
-    }
-    elements.chatBinarySpotlight.innerHTML = renderBinaryHeroMarkup();
-    elements.chatBinarySpotlight.classList.remove("is-hidden");
+    elements.chatBinarySpotlight.innerHTML = "";
+    elements.chatBinarySpotlight.classList.add("is-hidden");
   }
 
   function renderBinaryPanel() {
@@ -1540,7 +1610,7 @@
       if (!warnings.length) {
         elements.binaryWarnings.textContent = build && build.errorMessage
           ? build.errorMessage
-          : "No Streaming Binary IDE warnings yet.";
+          : "No Binary IDE warnings yet.";
       } else {
         elements.binaryWarnings.textContent = warnings.join("\n");
       }
@@ -1625,7 +1695,7 @@
     if (elements.contextNote) {
       elements.contextNote.textContent =
         summary.note ||
-        "Type a file name or symbol and Streaming Binary IDE will resolve likely targets before you send.";
+        "Type a file name or symbol and Binary IDE will resolve likely targets before you send.";
     }
     if (elements.contextRoot) {
       elements.contextRoot.textContent = summary.workspaceRoot
@@ -1665,6 +1735,7 @@
 
   function render() {
     updateBinaryHeroState();
+    syncLocalArtifactsFromBuild();
     syncShellState();
     syncComposerFromState(state);
     if (elements.authChip) {
@@ -1673,8 +1744,17 @@
         elements.authChip.parentElement.title = authButtonLabel();
       }
     }
+    if (elements.currentChatTitle) {
+      elements.currentChatTitle.textContent = deriveCurrentChatTitle();
+      elements.currentChatTitle.title = deriveCurrentChatTitle();
+    }
     if (elements.send) {
-      elements.send.disabled = Boolean(state.busy);
+      const cancelable = canCancelLivePrompt();
+      const lockedBusy = Boolean(state.busy && !cancelable);
+      elements.send.disabled = lockedBusy;
+      elements.send.innerHTML = cancelable ? CANCEL_ICON : SEND_ICON;
+      elements.send.setAttribute("aria-label", cancelable ? "Cancel response" : "Send");
+      elements.send.title = cancelable ? "Cancel response" : "Send";
     }
     if (elements.undoChanges) {
       elements.undoChanges.disabled = !state.canUndo || state.runtime === "qwenCode";
@@ -1682,12 +1762,10 @@
     setHidden(elements.signIn, state.runtime === "qwenCode");
     setHidden(elements.signOut, state.auth && state.auth.kind === "none");
     if (elements.composer) {
-      elements.composer.placeholder =
-        state.runtime === "qwenCode"
-          ? "Draft the portable starter bundle you want. @ to add files, / for commands"
-          : "Ask Streaming Binary IDE to inspect code, patch files, or prepare a portable starter bundle";
+      elements.composer.placeholder = "Ask Binary IDE anything.. @ for files, / for commands.";
     }
     renderHistory();
+    renderArtifacts();
     renderActivity();
     renderBinaryPanel();
     renderChatBinarySpotlight();
@@ -1725,6 +1803,10 @@
   }
 
   function sendPrompt() {
+    if (canCancelLivePrompt()) {
+      vscode.postMessage({ type: "cancelPrompt" });
+      return;
+    }
     const value = String(elements.composer ? elements.composer.value : "").trim();
     if (!value || state.busy) return;
     if (isPlanShortcutValue(value)) {
@@ -1766,13 +1848,21 @@
         }
         return;
       }
+      case "openArtifacts":
+        setArtifactsDrawerOpen(!state.artifactsDrawerOpen);
+        return;
       case "closeHistory":
         setHistoryDrawerOpen(false);
+        focusComposer(false);
+        return;
+      case "closeArtifacts":
+        setArtifactsDrawerOpen(false);
         focusComposer(false);
         return;
       case "newChat":
         shouldStickToBottom = true;
         setHistoryDrawerOpen(false);
+        setArtifactsDrawerOpen(false);
         hideMentions();
         if (elements.composer) {
           elements.composer.value = "";
@@ -1796,6 +1886,7 @@
         setBinaryPanelOpen(!state.binaryPanelOpen);
         return;
       case "configureBinary":
+      case "copyDebugReport":
       case "setApiKey":
       case "signIn":
       case "signOut":
@@ -1808,7 +1899,7 @@
         return;
       case "generateBinary":
         setHistoryDrawerOpen(false);
-        preserveChatScrollPosition(3);
+        setArtifactsDrawerOpen(false);
         vscode.postMessage({
           type: "generateBinary",
           text: elements.composer ? elements.composer.value : "",
@@ -1818,6 +1909,7 @@
       case "deployBinary":
       case "cancelBinary":
         setHistoryDrawerOpen(false);
+        setArtifactsDrawerOpen(false);
         vscode.postMessage({ type: action });
         return;
       default:
@@ -1840,13 +1932,37 @@
     vscode.postMessage({ type: "mentionsQuery", query: match[2] || "", requestId: mentionRequestId });
   }
 
+  function resolveActiveMentionRange() {
+    if (!elements.composer) return null;
+    if (
+      activeMentionRange &&
+      Number.isFinite(activeMentionRange.start) &&
+      Number.isFinite(activeMentionRange.end) &&
+      activeMentionRange.start >= 0 &&
+      activeMentionRange.end >= activeMentionRange.start
+    ) {
+      return activeMentionRange;
+    }
+    const value = elements.composer.value || "";
+    const fallbackCursor =
+      typeof elements.composer.selectionStart === "number" ? elements.composer.selectionStart : value.length;
+    const cursor = Math.max(0, Math.min(fallbackCursor, value.length));
+    const prefix = value.slice(0, cursor);
+    const match = /(^|\s)@([A-Za-z0-9_./-]*)$/.exec(prefix);
+    if (!match) return null;
+    const nextRange = { start: cursor - match[2].length - 1, end: cursor };
+    activeMentionRange = nextRange;
+    return nextRange;
+  }
+
   function applyMention(pathValue) {
-    if (!elements.composer || !activeMentionRange) return;
+    const mentionRange = resolveActiveMentionRange();
+    if (!elements.composer || !mentionRange) return;
     const value = elements.composer.value || "";
     const label = mentionLabel(pathValue);
     elements.composer.value =
-      value.slice(0, activeMentionRange.start) + "@" + label + " " + value.slice(activeMentionRange.end);
-    const nextCursor = activeMentionRange.start + label.length + 2;
+      value.slice(0, mentionRange.start) + "@" + label + " " + value.slice(mentionRange.end);
+    const nextCursor = mentionRange.start + label.length + 2;
     elements.composer.setSelectionRange(nextCursor, nextCursor);
     syncComposerHeight();
     persistDraft();
@@ -1942,30 +2058,16 @@
 
   if (elements.composer) {
     elements.composer.addEventListener("keydown", (event) => {
-      if (mentionItems.length && event.key === "ArrowDown") {
+      if (mentionItems.length && isArrowDownKey(event)) {
         event.preventDefault();
         mentionKeyboardActive = true;
-        if (document.activeElement === elements.composer) {
-          if (!moveMentionSelection(1, { focus: true })) {
-            focusActiveMentionButton();
-          }
-        } else {
-          moveMentionSelection(1, { focus: true });
-        }
+        moveMentionSelection(1, { focus: false });
         return;
       }
-      if (mentionItems.length && event.key === "ArrowUp") {
+      if (mentionItems.length && isArrowUpKey(event)) {
         event.preventDefault();
         mentionKeyboardActive = true;
-        if (document.activeElement === elements.composer) {
-          if (!moveMentionSelection(-1, { focus: true })) {
-            selectedMentionIndex = mentionItems.length - 1;
-            renderMentions();
-            focusActiveMentionButton();
-          }
-        } else {
-          moveMentionSelection(-1, { focus: true });
-        }
+        moveMentionSelection(-1, { focus: false });
         return;
       }
       if (mentionItems.length && event.key === "Enter" && !event.shiftKey) {
@@ -2035,6 +2137,14 @@
   }
 
   if (elements.mentions) {
+    elements.mentions.addEventListener("mousedown", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (!target.closest("[data-mention-value]")) return;
+      // Keep focus on the textarea so mention range/cursor are preserved for click-to-insert.
+      event.preventDefault();
+    });
+
     elements.mentions.addEventListener("keydown", (event) => {
       if (!mentionItems.length) return;
       if (event.key === "ArrowDown") {

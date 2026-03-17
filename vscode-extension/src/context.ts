@@ -4,7 +4,7 @@ import {
   classifyIntent,
 } from "./assistant-ux";
 import { extractTaskPathReferences, rankWorkspacePathMatches } from "./context-utils";
-import { buildRetrievalHints, normalizeContextPath } from "./intelligence-utils";
+import { buildRetrievalHints, isRuntimePathLeak, normalizeContextPath } from "./intelligence-utils";
 import { getWorkspaceRootPath, toAbsoluteWorkspacePath, toWorkspaceRelativePath } from "./config";
 import { CloudIndexManager } from "./indexer";
 import type { AssistContext, ContextPreview, IntentKind, RetrievalHints } from "./shared";
@@ -74,7 +74,7 @@ function extractMentionPaths(task: string): string[] {
   const matches = task.match(/@([A-Za-z0-9_./-]+)/g) || [];
   return matches
     .map((value) => normalizeContextPath(value))
-    .filter(Boolean)
+    .filter((value) => value && !isRuntimePathLeak(value))
     .slice(0, 12);
 }
 
@@ -89,7 +89,7 @@ function uniquePaths(values: Iterable<string>, limit: number): string[] {
   for (const value of values) {
     const normalized = normalizeContextPath(value);
     const key = normalized.toLowerCase();
-    if (!normalized || seen.has(key)) continue;
+    if (!normalized || isRuntimePathLeak(normalized) || seen.has(key)) continue;
     seen.add(key);
     out.push(normalized);
     if (out.length >= limit) break;

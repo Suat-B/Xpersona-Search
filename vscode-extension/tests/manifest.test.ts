@@ -6,7 +6,7 @@ const manifestPath = path.resolve(__dirname, "../package.json");
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 
 describe("vscode manifest", () => {
-  it("exposes the public Streaming Binary IDE commands while keeping legacy aliases out of the manifest", () => {
+  it("exposes the public Binary IDE commands while keeping legacy aliases out of the manifest", () => {
     const commands = Array.isArray(manifest.contributes?.commands) ? manifest.contributes.commands : [];
     const ids = commands.map((command) => String(command.command));
     expect(new Set(ids)).toEqual(
@@ -19,7 +19,7 @@ describe("vscode manifest", () => {
     );
   });
 
-  it("surfaces only Streaming Binary IDE commands in the palette", () => {
+  it("surfaces only Binary IDE commands in the palette", () => {
     const palette = Array.isArray(manifest.contributes?.menus?.commandPalette)
       ? manifest.contributes.menus.commandPalette
       : [];
@@ -31,7 +31,7 @@ describe("vscode manifest", () => {
     expect(paletteCommands).not.toContain("xpersona.playground.setApiKey");
   });
 
-  it("publishes the renamed Streaming Binary IDE settings namespace", () => {
+  it("publishes the renamed Binary IDE settings namespace", () => {
     const properties = manifest.contributes?.configuration?.properties || {};
     expect(Object.keys(properties)).toEqual(
       expect.arrayContaining([

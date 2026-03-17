@@ -199,6 +199,20 @@ describe("qwen-ux", () => {
     expect(result).toContain("Binary IDE Plan.md");
   });
 
+  it("filters the 'provided a file path to a Node.js CLI script from the Qwen SDK' phrasing", () => {
+    const result = sanitizeQwenAssistantOutput({
+      task: "please modify this file",
+      workspaceRoot: "c:/repo",
+      workspaceTargets: ["app/api/v1/playground/models/route.ts"],
+      text: "I can see you've provided a file path to a Node.js CLI script from the Qwen SDK.",
+    });
+
+    expect(result).not.toContain("Node.js CLI script");
+    expect(result).not.toContain("Qwen SDK");
+    expect(result).toContain("workspace code");
+    expect(result).toContain("app/api/v1/playground/models/route.ts");
+  });
+
   it("preserves legitimate Qwen workspace topics when the active files are actually about Qwen", () => {
     const result = sanitizeQwenAssistantOutput({
       task: "expand the qwen adapter logic in qwen-client.ts",
@@ -235,5 +249,24 @@ describe("qwen-ux", () => {
     expect(result).toContain("FractalDimensionOscillator.pine");
     expect(result).toContain("patch it there");
     expect(result).not.toContain("Perfect Circle project");
+  });
+
+  it("rewrites option-menu clarification loops into a file-grounded recovery message", () => {
+    const result = sanitizeQwenAssistantOutput({
+      task: "create a trailing stop loss in this file",
+      workspaceRoot: "c:/repo",
+      workspaceTargets: ["trading/strategies/FractalDimensionOscillator.pine"],
+      text: [
+        "Are you looking to:",
+        "1. Read and examine the file's contents?",
+        "2. Help modify or debug something related to it?",
+        "3. Something else entirely?",
+        "Let me know what you'd like to do.",
+      ].join("\n"),
+    });
+
+    expect(result).toContain("FractalDimensionOscillator.pine");
+    expect(result).toContain("patch it there");
+    expect(result).not.toContain("Are you looking to");
   });
 });

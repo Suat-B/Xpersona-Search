@@ -3,6 +3,7 @@ import {
   containsRuntimeNoiseForContext,
   isExplicitRuntimeTask,
 } from "./qwen-runtime-noise";
+import { isRuntimePathLeak } from "./intelligence-utils";
 import { containsGenericProjectClarification } from "./qwen-loop-guard";
 
 function trimBlock(value: string | undefined, limit: number): string {
@@ -201,6 +202,7 @@ function buildExecutionLane(input: {
   searchDepth: "fast" | "deep";
   task: string;
   requireToolUse?: boolean;
+  forceActionable?: boolean;
 }): string {
   const lines = [
     "Execution policy lane:",
@@ -242,13 +244,38 @@ function buildExecutionLane(input: {
     lines.push("- Tool-first override: you must use at least one workspace tool before your final answer. A prose-only response is not acceptable for this request.");
   }
 
+  if (input.forceActionable) {
+    lines.push("- Retry override: the previous answer was not actionable. Do not ask generic clarification questions.");
+    lines.push("- Produce a direct, concrete answer tied to the resolved/active file context in this prompt.");
+  }
+
   if (input.mode === "plan") {
     lines.push("- Stay in plan mode. Explain the approach without making edits.");
+    lines.push("- If the intent is change and a target file is already resolved/selected/active, provide a concrete implementation plan now.");
+    lines.push("- Include exact target file path(s), step-by-step code changes, and quick verification checks.");
+    lines.push("- Do not respond with a generic clarification request unless no concrete target file context exists.");
   } else {
     lines.push("- You may inspect and edit files in the workspace when needed, but ask before risky command execution.");
   }
 
   return lines.join("\n");
+}
+
+function sanitizeTaskForPrompt(task: string): string {
+  const raw = String(task || "");
+  if (!raw.trim()) return "";
+  if (isExplicitRuntimeTask(raw)) return raw;
+
+  const cleaned = raw
+    .replace(/[A-Za-z]:\\Users\\[^ \n\r\t]+\\\.trae\\extensions\\playgroundai\.xpersona-playground-[^ \n\r\t]+/gi, "[runtime-path-redacted]")
+    .replace(/[A-Za-z]:\\[^ \n\r\t]*@qwen-code\\sdk\\dist\\cli\\cli\.js/gi, "[runtime-path-redacted]")
+    .replace(/\/\.trae\/extensions\/playgroundai\.xpersona-playground-[^\s)]+/gi, "[runtime-path-redacted]")
+    .replace(/\/node_modules\/@qwen-code\/sdk\/dist\/cli\/cli\.js/gi, "[runtime-path-redacted]");
+
+  if (isRuntimePathLeak(cleaned)) {
+    return cleaned.replace(/@qwen-code\/sdk\/dist\/cli\/cli\.js/gi, "[runtime-path-redacted]");
+  }
+  return cleaned;
 }
 
 export function buildQwenPrompt(input: {
@@ -261,6 +288,7 @@ export function buildQwenPrompt(input: {
   history?: ChatMessage[];
   qwenExecutablePath?: string | null;
   requireToolUse?: boolean;
+  forceActionable?: boolean;
 }): string {
   const workspaceTargets = Array.from(
     new Set(
@@ -277,7 +305,7 @@ export function buildQwenPrompt(input: {
   );
 
   return [
-    `User request:\n${input.task}`,
+    `User request:\n${sanitizeTaskForPrompt(input.task)}`,
     buildConversationLane({
       task: input.task,
       history: input.history,
@@ -298,6 +326,7 @@ export function buildQwenPrompt(input: {
       searchDepth: input.searchDepth || "fast",
       task: input.task,
       requireToolUse: input.requireToolUse,
+      forceActionable: input.forceActionable,
     }),
   ]
     .filter(Boolean)

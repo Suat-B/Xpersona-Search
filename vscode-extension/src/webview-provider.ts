@@ -43,10 +43,12 @@ import {
   validateQwenPreflight,
 } from "./qwen-ux";
 import { createPendingQwenSessionId, isPendingQwenSessionId, QwenHistoryService } from "./qwen-history";
-import { QwenCodeRuntime, type QwenPromptResult } from "./qwen-code-runtime";
+import { QwenCodeRuntime, type QwenPromptResult, type QwenToolEvent } from "./qwen-code-runtime";
 import { ToolExecutor } from "./tool-executor";
 import { buildPlaygroundWebviewHtml } from "./webview-html";
 import { buildQwenPrompt } from "./qwen-prompt";
+import { containsGenericProjectClarification } from "./qwen-loop-guard";
+import { containsRuntimeNoiseForContext } from "./qwen-runtime-noise";
 import {
   buildSlashCommandHelpMessage,
   buildSlashStatusMessage,
@@ -107,6 +109,32 @@ type LastPromptState = {
   text: string;
   intent: IntentKind;
   searchDepth: "fast" | "deep";
+};
+
+type QwenDebugAttempt = {
+  requireToolUse: boolean;
+  usedTools: string[];
+  didMutate: boolean;
+  permissionDenials: string[];
+  assistantTextPreview: string;
+  toolEvents: QwenToolEvent[];
+};
+
+type QwenDebugSnapshot = {
+  timestamp: string;
+  task: string;
+  mode: Mode;
+  intent: IntentKind;
+  confidence: ContextConfidence;
+  workspaceRoot: string | null;
+  activeFile: string;
+  resolvedFiles: string[];
+  selectedFiles: string[];
+  retriedWithToolDirective: boolean;
+  attempts: QwenDebugAttempt[];
+  runtimePhase: RuntimePhase;
+  recentActivity: string[];
+  error?: string;
 };
 
 const BINARY_ACTIVE_BUILD_KEY = "xpersona.binary.activeBuildId";
@@ -196,7 +224,7 @@ function formatBinaryBuildMessage(build: BinaryBuildRecord): string {
         ? "Portable starter bundle failed."
         : build.status === "running"
           ? "Portable starter bundle is still building."
-          : "Portable starter bundle is queued on the Streaming Binary IDE server.",
+          : "Portable starter bundle is queued on the Binary IDE server.",
     `Build: ${build.id}`,
     `Intent: ${build.intent}`,
     `Target runtime: ${build.targetEnvironment.runtime}`,
@@ -239,6 +267,23 @@ function isBinaryTerminalStatus(status: BinaryBuildRecord["status"] | undefined)
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function formatToolEventLine(event: QwenToolEvent): string {
+  const timestamp = String(event.timestamp || "").trim() || nowIso();
+  const summary = String(event.summary || event.toolName || "(unknown tool)").trim();
+  const detail = String(event.detail || "").trim();
+  return `${timestamp} | ${event.phase} | ${summary}${detail ? ` | ${detail}` : ""}`;
+}
+
+function containsPseudoToolMarkupText(value: string): boolean {
+  const text = String(value || "");
+  if (!text) return false;
+  return (
+    /<tool_call>[\s\S]*?<\/tool_call>/i.test(text) ||
+    /<function=[^>]+>/i.test(text) ||
+    /<parameter=[^>]+>/i.test(text)
+  );
 }
 
 function liveProgressForPhase(phase: string): number {
@@ -305,9 +350,11 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   private readonly draftStore: DraftStore;
   private state: WebviewState;
   private binaryStreamAbort: AbortController | null = null;
+  private promptAbort: AbortController | null = null;
   private binaryStreamBuildId: string | null = null;
   private liveHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private readonly binarySeenEventIds = new Map<string, Set<string>>();
+  private lastQwenDebugSnapshot: QwenDebugSnapshot | null = null;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -322,7 +369,8 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   ) {
     this.draftStore = new DraftStore(this.context.workspaceState);
     this.state = {
-      mode: normalizeMode(this.context.workspaceState.get<Mode>(MODE_KEY)),
+      // Always boot in autonomous chat mode. Plan mode is opt-in per session.
+      mode: "auto",
       runtime: getRuntimeBackend(),
       auth: { kind: "none", label: "Not signed in" },
       history: [],
@@ -373,7 +421,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     const nextIntent =
       String(intent || "").trim() ||
       (await vscode.window.showInputBox({
-        title: "Generate Streaming Binary IDE Portable Starter Bundle",
+        title: "Generate Binary IDE Portable Starter Bundle",
         prompt: "Describe the portable package bundle you want to generate.",
         ignoreFocusOut: true,
       })) ||
@@ -394,27 +442,27 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
 
   async openBinaryConfiguration(): Promise<void> {
     await this.show();
-    const runtimeLabel = this.state.runtime === "qwenCode" ? "Qwen Code" : "Streaming Binary IDE API";
-    const nextRuntime = this.state.runtime === "qwenCode" ? "Streaming Binary IDE API" : "Qwen Code";
+    const runtimeLabel = this.state.runtime === "qwenCode" ? "Qwen Code" : "Binary IDE API";
+    const nextRuntime = this.state.runtime === "qwenCode" ? "Binary IDE API" : "Qwen Code";
     const selection = await vscode.window.showQuickPick(
       [
-        { label: "Set API key", detail: "Save or clear the Streaming Binary IDE API key.", action: "apiKey" },
+        { label: "Set API key", detail: "Save or clear the Binary IDE API key.", action: "apiKey" },
         {
           label: `Switch runtime to ${nextRuntime}`,
           detail: `Current runtime: ${runtimeLabel}.`,
           action: "runtime",
         },
         {
-          label: "Open Streaming Binary IDE settings",
+          label: "Open Binary IDE settings",
           detail: "Open the VS Code settings UI filtered to xpersona.binary.",
           action: "settings",
         },
         ...(this.state.runtime === "playgroundApi"
-          ? [{ label: "Browser sign in", detail: "Authenticate the hosted Streaming Binary IDE API in the browser.", action: "signIn" }]
+          ? [{ label: "Browser sign in", detail: "Authenticate the hosted Binary IDE API in the browser.", action: "signIn" }]
           : []),
       ],
       {
-        title: "Configure Streaming Binary IDE",
+        title: "Configure Binary IDE",
         ignoreFocusOut: true,
       }
     );
@@ -429,21 +477,21 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         const pickedRuntime = await vscode.window.showQuickPick(
           [
             { label: "Qwen Code", runtime: "qwenCode" as const },
-            { label: "Streaming Binary IDE API", runtime: "playgroundApi" as const },
+            { label: "Binary IDE API", runtime: "playgroundApi" as const },
           ],
           {
-            title: "Choose Streaming Binary IDE Runtime",
+            title: "Choose Binary IDE Runtime",
             ignoreFocusOut: true,
           }
         );
         if (!pickedRuntime) return;
         await this.setRuntime(pickedRuntime.runtime);
-        message = `Streaming Binary IDE runtime switched to ${pickedRuntime.label}.`;
+        message = `Binary IDE runtime switched to ${pickedRuntime.label}.`;
         break;
       }
       case "settings":
         await vscode.commands.executeCommand("workbench.action.openSettings", "xpersona.binary");
-        message = "Opened Streaming Binary IDE settings.";
+        message = "Opened Binary IDE settings.";
         break;
       case "signIn":
         message = await this.performSignIn();
@@ -500,13 +548,13 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     await this.refreshAuth();
     await this.refreshHistory();
     return this.state.auth.kind === "none"
-      ? "Streaming Binary IDE API key cleared."
-      : "Streaming Binary IDE API key updated.";
+      ? "Binary IDE API key cleared."
+      : "Binary IDE API key updated.";
   }
 
   private async performSignIn(): Promise<string> {
     if (this.state.runtime === "qwenCode") {
-      return "Qwen Code uses your Streaming Binary IDE API key. Use /key or the Key button instead of browser sign-in.";
+      return "Qwen Code uses your Binary IDE API key. Use /key or the Key button instead of browser sign-in.";
     }
     await this.auth.signInWithBrowser();
     return "Browser sign-in opened.";
@@ -517,12 +565,12 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     await this.newChat();
     await this.refreshAuth();
     await this.refreshHistory();
-    return "Streaming Binary IDE auth cleared.";
+    return "Binary IDE auth cleared.";
   }
 
   private async performUndo(): Promise<string> {
     if (this.state.runtime === "qwenCode") {
-      return "Undo is only available for hosted Streaming Binary IDE runs. For Qwen Code sessions, use source control or Qwen checkpoints.";
+      return "Undo is only available for hosted Binary IDE runs. For Qwen Code sessions, use source control or Qwen checkpoints.";
     }
     return this.actionRunner.undoLastBatch();
   }
@@ -598,7 +646,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         await this.setRuntime(command.runtime);
         this.appendMessage(
           "system",
-          `Runtime set to ${command.runtime === "qwenCode" ? "Qwen Code" : "Streaming Binary IDE API"}.`
+          `Runtime set to ${command.runtime === "qwenCode" ? "Qwen Code" : "Binary IDE API"}.`
         );
         this.state.runtimePhase = this.getRuntimePhaseForDraft();
         this.postState();
@@ -786,8 +834,8 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     if (this.state.runtime === "qwenCode") {
       const apiKey = await this.auth.getApiKey().catch(() => null);
       this.state.auth = apiKey
-        ? { kind: "apiKey", label: "Qwen Code via Streaming Binary IDE API key" }
-        : { kind: "none", label: "Qwen Code needs a Streaming Binary IDE API key" };
+        ? { kind: "apiKey", label: "Qwen Code via Binary IDE API key" }
+        : { kind: "none", label: "Qwen Code needs a Binary IDE API key" };
       this.postState();
       return;
     }
@@ -864,6 +912,9 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       case "cancelBinary":
         await this.cancelBinaryBuild();
         return;
+      case "cancelPrompt":
+        this.cancelActivePrompt();
+        return;
       case "configureBinary":
         await this.openBinaryConfiguration();
         return;
@@ -918,6 +969,9 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         this.view?.webview.postMessage({ type: "mentions", requestId, items });
         return;
       }
+      case "copyDebugReport":
+        await this.copyDebugReport();
+        return;
       default:
         return;
     }
@@ -926,11 +980,18 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   private async getQwenContextOptions(input?: {
     searchDepth?: "fast" | "deep";
     intent?: IntentKind;
+    includeWorkspaceHints?: boolean;
   }) {
-    const hints = await this.qwenHistoryService.getWorkspaceHints().catch(() => ({
-      recentTargets: [] as string[],
-      recentIntents: [] as IntentKind[],
-    }));
+    const includeWorkspaceHints = input?.includeWorkspaceHints !== false;
+    const hints = includeWorkspaceHints
+      ? await this.qwenHistoryService.getWorkspaceHints().catch(() => ({
+          recentTargets: [] as string[],
+          recentIntents: [] as IntentKind[],
+        }))
+      : {
+          recentTargets: [] as string[],
+          recentIntents: [] as IntentKind[],
+        };
 
     return {
       recentTouchedPaths: this.actionRunner.getRecentTouchedPaths(),
@@ -991,11 +1052,13 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     }
 
     const sequence = ++this.draftPreviewSequence;
+    const includeWorkspaceHints = Boolean(this.sessionId || this.state.selectedSessionId);
     const preview = await this.contextCollector.preview(
       draft,
       await this.getQwenContextOptions({
         searchDepth: "fast",
         intent: draft.trim() ? classifyIntent(draft) : undefined,
+        includeWorkspaceHints,
       })
     );
     if (sequence !== this.draftPreviewSequence) return;
@@ -1046,6 +1109,42 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       };
       this.postState();
     }, LIVE_CHAT_HEARTBEAT_MS);
+  }
+
+  private isPromptAbortError(error: unknown): boolean {
+    if (!error) return false;
+    if (error instanceof Error) {
+      if (error.name === "AbortError") return true;
+      return /\babort(?:ed|ing)?\b/i.test(error.message || "");
+    }
+    return /\babort(?:ed|ing)?\b/i.test(String(error));
+  }
+
+  private clearPromptAbort(controller?: AbortController | null): void {
+    if (!this.promptAbort) return;
+    if (!controller || this.promptAbort === controller) {
+      this.promptAbort = null;
+    }
+  }
+
+  private cancelActivePrompt(): void {
+    const live = this.state.liveChat;
+    if (!live || live.mode === "build" || !this.state.busy) {
+      this.appendMessage("system", "There is no active response stream to cancel.");
+      this.postState();
+      return;
+    }
+    this.promptAbort?.abort();
+    this.promptAbort = null;
+    this.pushActivity("Canceled current response");
+    this.state.runtimePhase = "canceled";
+    this.applyChatLiveEvent({
+      type: "canceled",
+      text: "Canceled current response.",
+      phase: "canceled",
+    });
+    this.state.busy = false;
+    this.postState();
   }
 
   private getMessageById(id: string): ChatMessage | null {
@@ -1223,7 +1322,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         return;
       case "canceled":
         this.resolveLiveAssistant({
-          content: event.text || "Streaming Binary IDE canceled the active run.",
+          content: event.text || "Binary IDE canceled the active run.",
           status: "canceled",
           mode: this.state.liveChat.mode,
           phase: event.phase || "canceled",
@@ -1841,7 +1940,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   private async validateBinaryBuild(): Promise<void> {
     const build = this.state.binary.activeBuild;
     if (!build) {
-      this.appendMessage("system", "Generate a portable starter bundle before running Streaming Binary IDE validation.");
+      this.appendMessage("system", "Generate a portable starter bundle before running Binary IDE validation.");
       this.postState();
       return;
     }
@@ -2059,9 +2158,36 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
 
   private shouldRetryQwenWithToolDirective(
     result: QwenPromptResult,
-    preview: Awaited<ReturnType<ContextCollector["preview"]>>
+    preview: Awaited<ReturnType<ContextCollector["preview"]>>,
+    input: {
+      task: string;
+      workspaceRoot?: string | null;
+      executablePath?: string | null;
+      workspaceTargets?: string[];
+    }
   ): boolean {
-    if (this.state.mode === "plan") return false;
+    const isLoopLikeClarification = containsGenericProjectClarification(result.assistantText || "");
+    const editOrDiscoveryIntent =
+      preview.intent === "change" || preview.intent === "find" || preview.intent === "explain";
+    const hasRuntimeNoise =
+      !result.didMutate &&
+      containsRuntimeNoiseForContext({
+        text: result.assistantText || "",
+        task: input.task,
+        workspaceRoot: input.workspaceRoot,
+        executablePath: input.executablePath,
+        workspaceTargets: input.workspaceTargets,
+      });
+    const hasPseudoToolMarkup = containsPseudoToolMarkupText(result.assistantText || "");
+    if (hasPseudoToolMarkup && editOrDiscoveryIntent && !result.didMutate) {
+      return true;
+    }
+    if (hasRuntimeNoise && editOrDiscoveryIntent) {
+      return true;
+    }
+    if (isLoopLikeClarification && editOrDiscoveryIntent && !result.didMutate) {
+      return true;
+    }
     if (result.usedTools.length > 0 || result.didMutate) return false;
     if (preview.intent !== "change" && preview.intent !== "find") return false;
     if (
@@ -2107,10 +2233,15 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     this.postState();
 
     const workspaceRoot = getWorkspaceRootPath();
+    const promptAbort = new AbortController();
+    this.promptAbort = promptAbort;
     let apiKey = "";
     let preflightMessage: string | null = null;
+    const hadExistingSession = Boolean(this.sessionId);
     let localSessionId = this.sessionId || createPendingQwenSessionId();
     let preview: Awaited<ReturnType<ContextCollector["preview"]>>;
+    const qwenDebugAttempts: QwenDebugAttempt[] = [];
+    let retriedWithToolDirective = false;
 
     try {
       apiKey = String((await this.auth.getApiKey()) || "");
@@ -2142,8 +2273,12 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         await this.getQwenContextOptions({
           searchDepth: input.searchDepth,
           intent,
+          includeWorkspaceHints: hadExistingSession,
         })
       );
+      if (promptAbort.signal.aborted) {
+        throw new Error("Prompt aborted");
+      }
       this.applyPreviewState(preview);
       this.lastPrompt = {
         text,
@@ -2223,8 +2358,12 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         await this.getQwenContextOptions({
           searchDepth: input.searchDepth,
           intent: preview.intent,
+          includeWorkspaceHints: hadExistingSession,
         })
       );
+      if (promptAbort.signal.aborted) {
+        throw new Error("Prompt aborted");
+      }
       this.applyPreviewState(fullPreview);
       const attachedTargets = (
         fullPreview.selectedFiles.length ? fullPreview.selectedFiles : fullPreview.resolvedFiles
@@ -2255,11 +2394,13 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       const executablePath = getQwenExecutablePath() || null;
       const runPromptAttempt = async (
         requireToolUse: boolean,
-        historyMessages: ChatMessage[]
+        historyMessages: ChatMessage[],
+        forceActionable: boolean
       ): Promise<QwenPromptResult> =>
         this.qwenCodeRuntime.runPrompt({
           apiKey: String(apiKey || ""),
           mode: this.state.mode,
+          abortController: promptAbort,
           prompt: buildQwenPrompt({
             task: text,
             mode: this.state.mode,
@@ -2270,6 +2411,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
             history: historyMessages,
             qwenExecutablePath: executablePath,
             requireToolUse,
+            forceActionable,
           }),
           onPartial: (partial) => {
             if (
@@ -2324,18 +2466,93 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
           },
         });
 
-      let result = await runPromptAttempt(false, this.state.messages);
-      if (this.shouldRetryQwenWithToolDirective(result, fullPreview)) {
-        this.pushActivity("Retrying with tool-first instructions");
+      let result = await runPromptAttempt(false, this.state.messages, false);
+      if (promptAbort.signal.aborted) {
+        throw new Error("Prompt aborted");
+      }
+      qwenDebugAttempts.push({
+        requireToolUse: false,
+        usedTools: [...result.usedTools],
+        didMutate: result.didMutate,
+        permissionDenials: [...result.permissionDenials],
+        assistantTextPreview: String(result.assistantText || "").slice(0, 240),
+        toolEvents: [...(result.toolEvents || [])],
+      });
+      if (
+        this.shouldRetryQwenWithToolDirective(result, fullPreview, {
+          task: text,
+          workspaceRoot,
+          executablePath,
+          workspaceTargets,
+        })
+      ) {
+        this.pushActivity(
+          this.state.mode === "plan"
+            ? "Retrying with actionable plan instructions"
+            : "Retrying with tool-first instructions"
+        );
         this.state.runtimePhase = "waiting_for_qwen";
+        retriedWithToolDirective = true;
         this.applyChatLiveEvent({
           type: "activity",
-          activity: "Retrying with tool-first instructions",
+          activity:
+            this.state.mode === "plan"
+              ? "Retrying with actionable plan instructions"
+              : "Retrying with tool-first instructions",
           phase: "connecting_runtime",
         });
         this.postState();
         const historyWithoutCurrentAssistant = this.state.messages.filter((message) => message.id !== assistantMessageId);
-        result = await runPromptAttempt(true, historyWithoutCurrentAssistant);
+        result = await runPromptAttempt(
+          this.state.mode === "plan" ? false : true,
+          historyWithoutCurrentAssistant,
+          false
+        );
+        if (promptAbort.signal.aborted) {
+          throw new Error("Prompt aborted");
+        }
+        qwenDebugAttempts.push({
+          requireToolUse: true,
+          usedTools: [...result.usedTools],
+          didMutate: result.didMutate,
+          permissionDenials: [...result.permissionDenials],
+          assistantTextPreview: String(result.assistantText || "").slice(0, 240),
+          toolEvents: [...(result.toolEvents || [])],
+        });
+
+        if (
+          this.shouldRetryQwenWithToolDirective(result, fullPreview, {
+            task: text,
+            workspaceRoot,
+            executablePath,
+            workspaceTargets,
+          })
+        ) {
+          this.pushActivity("Retrying with strict actionable instructions");
+          this.state.runtimePhase = "waiting_for_qwen";
+          this.applyChatLiveEvent({
+            type: "activity",
+            activity: "Retrying with strict actionable instructions",
+            phase: "connecting_runtime",
+          });
+          this.postState();
+          result = await runPromptAttempt(
+            this.state.mode === "plan" ? false : true,
+            historyWithoutCurrentAssistant,
+            true
+          );
+          if (promptAbort.signal.aborted) {
+            throw new Error("Prompt aborted");
+          }
+          qwenDebugAttempts.push({
+            requireToolUse: true,
+            usedTools: [...result.usedTools],
+            didMutate: result.didMutate,
+            permissionDenials: [...result.permissionDenials],
+            assistantTextPreview: String(result.assistantText || "").slice(0, 240),
+            toolEvents: [...(result.toolEvents || [])],
+          });
+        }
       }
 
       const resolvedSessionId = localSessionId;
@@ -2384,10 +2601,38 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         targets: fullPreview.resolvedFiles,
         intent: fullPreview.intent,
       });
+      if (promptAbort.signal.aborted) {
+        throw new Error("Prompt aborted");
+      }
       await this.refreshHistory();
       this.pushActivity("Done");
       this.state.runtimePhase = "done";
+      this.lastQwenDebugSnapshot = {
+        timestamp: nowIso(),
+        task: text,
+        mode: this.state.mode,
+        intent: fullPreview.intent,
+        confidence: fullPreview.confidence,
+        workspaceRoot: workspaceRoot || null,
+        activeFile: String(fullPreview.activeFile || ""),
+        resolvedFiles: [...fullPreview.resolvedFiles],
+        selectedFiles: [...fullPreview.selectedFiles],
+        retriedWithToolDirective,
+        attempts: qwenDebugAttempts,
+        runtimePhase: this.state.runtimePhase,
+        recentActivity: [...this.state.activity].slice(-12),
+      };
     } catch (error) {
+      if (this.isPromptAbortError(error)) {
+        this.pushActivity("Canceled");
+        this.state.runtimePhase = "canceled";
+        this.applyChatLiveEvent({
+          type: "canceled",
+          text: "Canceled current response.",
+          phase: "canceled",
+        });
+        return;
+      }
       this.applyChatLiveEvent({
         type: "failed",
         text: explainQwenFailure(error, {
@@ -2407,15 +2652,98 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         intent: preview.intent,
       });
       await this.refreshHistory();
+      this.lastQwenDebugSnapshot = {
+        timestamp: nowIso(),
+        task: text,
+        mode: this.state.mode,
+        intent: preview.intent,
+        confidence: preview.confidence,
+        workspaceRoot: workspaceRoot || null,
+        activeFile: String(preview.activeFile || ""),
+        resolvedFiles: [...preview.resolvedFiles],
+        selectedFiles: [...preview.selectedFiles],
+        retriedWithToolDirective,
+        attempts: qwenDebugAttempts,
+        runtimePhase: this.state.runtimePhase,
+        recentActivity: [...this.state.activity].slice(-12),
+        error: error instanceof Error ? error.message : String(error || "Unknown error"),
+      };
     } finally {
+      this.clearPromptAbort(promptAbort);
       this.state.busy = false;
       this.state.canUndo = false;
       this.postState();
     }
   }
 
+  private buildQwenDebugReport(): string {
+    const snapshot = this.lastQwenDebugSnapshot;
+    if (!snapshot) {
+      return [
+        "Binary IDE Debug Report",
+        `Generated: ${nowIso()}`,
+        `Runtime: ${this.state.runtime}`,
+        "No Qwen prompt debug snapshot captured yet in this window.",
+      ].join("\n");
+    }
+
+    const lines = [
+      "Binary IDE Debug Report",
+      `Generated: ${nowIso()}`,
+      `Captured: ${snapshot.timestamp}`,
+      `Task: ${snapshot.task}`,
+      `Mode: ${snapshot.mode}`,
+      `Intent: ${snapshot.intent}`,
+      `Context confidence: ${snapshot.confidence}`,
+      `Workspace root: ${snapshot.workspaceRoot || "(none)"}`,
+      `Active file: ${snapshot.activeFile || "(none)"}`,
+      `Resolved files: ${snapshot.resolvedFiles.join(", ") || "(none)"}`,
+      `Selected files: ${snapshot.selectedFiles.join(", ") || "(none)"}`,
+      `Retried tool-first: ${snapshot.retriedWithToolDirective ? "yes" : "no"}`,
+      `Runtime phase: ${snapshot.runtimePhase}`,
+      `Attempts: ${snapshot.attempts.length}`,
+    ];
+
+    snapshot.attempts.forEach((attempt, index) => {
+      lines.push(
+        `Attempt ${index + 1}: requireToolUse=${attempt.requireToolUse ? "yes" : "no"} | usedTools=${attempt.usedTools.join(", ") || "(none)"} | didMutate=${attempt.didMutate ? "yes" : "no"}`
+      );
+      if (attempt.permissionDenials.length) {
+        lines.push(`Attempt ${index + 1} denials: ${attempt.permissionDenials.join(" | ")}`);
+      }
+      if (attempt.toolEvents.length) {
+        lines.push(`Attempt ${index + 1} tool timeline:`);
+        for (const event of attempt.toolEvents) {
+          lines.push(`  - ${formatToolEventLine(event)}`);
+        }
+      } else {
+        lines.push(`Attempt ${index + 1} tool timeline: (none)`);
+      }
+      if (attempt.assistantTextPreview) {
+        lines.push(`Attempt ${index + 1} assistant preview: ${attempt.assistantTextPreview}`);
+      }
+    });
+
+    if (snapshot.error) {
+      lines.push(`Error: ${snapshot.error}`);
+    }
+    if (snapshot.recentActivity.length) {
+      lines.push(`Recent activity: ${snapshot.recentActivity.join(" -> ")}`);
+    }
+
+    return lines.join("\n");
+  }
+
+  private async copyDebugReport(): Promise<void> {
+    const report = this.buildQwenDebugReport();
+    await vscode.env.clipboard.writeText(report);
+    vscode.window.showInformationMessage("Copied Binary IDE debug report to clipboard.");
+  }
+
   private async sendPromptWithPlaygroundApi(text: string): Promise<void> {
     this.state.busy = true;
+    const promptAbort = new AbortController();
+    this.promptAbort = promptAbort;
     this.appendMessage("user", text);
     this.applyChatLiveEvent({
       type: "accepted",
@@ -2453,6 +2781,9 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
           intent: classifyIntent(text),
         }
       );
+      if (promptAbort.signal.aborted) {
+        throw new Error("Prompt aborted");
+      }
 
       const workspaceHash = getWorkspaceHash();
       const requestBody = {
@@ -2482,8 +2813,11 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
 
       let initial: AssistRunEnvelope;
       try {
-        initial = await this.requestAssistStream(auth, requestBody);
+        initial = await this.requestAssistStream(auth, requestBody, promptAbort.signal);
       } catch (error) {
+        if (this.isPromptAbortError(error)) {
+          throw error;
+        }
         this.pushActivity("Assist stream unavailable, falling back to standard response.");
         this.applyChatLiveEvent({
           type: "activity",
@@ -2493,7 +2827,10 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         initial = await this.requestAssist(auth, {
           ...requestBody,
           stream: false,
-        });
+        }, promptAbort.signal);
+      }
+      if (promptAbort.signal.aborted) {
+        throw new Error("Prompt aborted");
       }
 
       if (initial.sessionId) {
@@ -2517,7 +2854,11 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
           auth,
           initialEnvelope: envelope,
           workspaceFingerprint: workspaceHash,
+          signal: promptAbort.signal,
         });
+      }
+      if (promptAbort.signal.aborted) {
+        throw new Error("Prompt aborted");
       }
 
       const assistantBody =
@@ -2569,30 +2910,47 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
 
       await this.refreshHistory();
     } catch (error) {
+      if (this.isPromptAbortError(error)) {
+        this.pushActivity("Canceled");
+        this.state.runtimePhase = "canceled";
+        this.applyChatLiveEvent({
+          type: "canceled",
+          text: "Canceled current response.",
+          phase: "canceled",
+        });
+        return;
+      }
       this.applyChatLiveEvent({
         type: "failed",
         text: `Request failed: ${error instanceof Error ? error.message : String(error)}`,
         phase: "failed",
       });
     } finally {
+      this.clearPromptAbort(promptAbort);
       this.state.busy = false;
       this.postState();
     }
   }
 
-  private async requestAssist(auth: RequestAuth, body: Record<string, unknown>): Promise<AssistRunEnvelope> {
+  private async requestAssist(
+    auth: RequestAuth,
+    body: Record<string, unknown>,
+    signal?: AbortSignal
+  ): Promise<AssistRunEnvelope> {
     const response = await requestJson<{ data?: AssistRunEnvelope }>(
       "POST",
       `${getBaseApiUrl()}/api/v1/playground/assist`,
       auth,
-      body
+      body,
+      { signal }
     );
     return (response?.data || response) as AssistRunEnvelope;
   }
 
   private async requestAssistStream(
     auth: RequestAuth,
-    body: Record<string, unknown>
+    body: Record<string, unknown>,
+    signal?: AbortSignal
   ): Promise<AssistRunEnvelope> {
     const envelope: Partial<AssistRunEnvelope> = {
       actions: [],
@@ -2689,7 +3047,8 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
           default:
             return;
         }
-      }
+      },
+      { signal }
     );
 
     if (!envelope.sessionId || !envelope.decision || !envelope.validationPlan || !envelope.targetInference || !envelope.contextSelection || !envelope.completionStatus) {
@@ -2702,7 +3061,8 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   private async continueRun(
     auth: RequestAuth,
     runId: string,
-    toolResult: ToolResult
+    toolResult: ToolResult,
+    signal?: AbortSignal
   ): Promise<AssistRunEnvelope> {
     const response = await requestJson<{ data?: AssistRunEnvelope }>(
       "POST",
@@ -2710,7 +3070,8 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       auth,
       {
         toolResult,
-      }
+      },
+      { signal }
     );
     return (response?.data || response) as AssistRunEnvelope;
   }
@@ -2719,9 +3080,13 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     auth: RequestAuth;
     initialEnvelope: AssistRunEnvelope;
     workspaceFingerprint: string;
+    signal?: AbortSignal;
   }): Promise<AssistRunEnvelope> {
     let envelope = input.initialEnvelope;
     while (envelope.pendingToolCall && envelope.runId) {
+      if (input.signal?.aborted) {
+        throw new Error("Prompt aborted");
+      }
       const pendingToolCall: PendingToolCall = envelope.pendingToolCall;
       this.pushActivity(`Step ${pendingToolCall.step}: ${pendingToolCall.toolCall.name}`);
       this.applyChatLiveEvent({
@@ -2736,6 +3101,9 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         sessionId: this.sessionId || undefined,
         workspaceFingerprint: input.workspaceFingerprint,
       });
+      if (input.signal?.aborted) {
+        throw new Error("Prompt aborted");
+      }
       this.pushActivity(toolResult.summary);
       this.applyChatLiveEvent({
         type: "activity",
@@ -2744,7 +3112,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       });
       this.postState();
 
-      envelope = await this.continueRun(input.auth, envelope.runId, toolResult);
+      envelope = await this.continueRun(input.auth, envelope.runId, toolResult, input.signal);
       if (envelope.sessionId) {
         this.sessionId = envelope.sessionId;
         this.state.selectedSessionId = envelope.sessionId;

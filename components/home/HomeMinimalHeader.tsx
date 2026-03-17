@@ -7,7 +7,6 @@ import { getTradingUrl } from "@/lib/service-urls";
 
 const navLinks = [
   { href: "/search", label: "Search" },
-  { href: "/artifacts", label: "Artifacts" },
   { href: "/playground", label: "Playground" },
   { href: "/chat", label: "Chat" },
 ] as const;

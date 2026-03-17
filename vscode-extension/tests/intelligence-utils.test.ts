@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildIndexChunkMetadata,
   buildRetrievalHints,
+  isRuntimePathLeak,
 } from "../src/intelligence-utils";
 
 describe("vsix intelligence utils", () => {
@@ -43,5 +44,28 @@ describe("vsix intelligence utils", () => {
     expect(metadata.headings).toContain("Extension Runtime");
     expect(metadata.summary).toContain("Extension Runtime");
     expect(metadata.source).toBe("cloud");
+  });
+
+  it("drops leaked runtime paths from retrieval hints", () => {
+    const hints = buildRetrievalHints({
+      mentionPaths: [
+        "app/api/v1/playground/models/route.ts",
+        "c:/Users/suatb/.trae/extensions/playgroundai.xpersona-playground-0.0.59/node_modules/@qwen-code/sdk/dist/cli/cli.js",
+      ],
+      preferredTargetPath:
+        "c:/Users/suatb/.trae/extensions/playgroundai.xpersona-playground-0.0.59/node_modules/@qwen-code/sdk/dist/cli/cli.js",
+    });
+
+    expect(hints.mentionedPaths).toEqual(["app/api/v1/playground/models/route.ts"]);
+    expect(hints.preferredTargetPath).toBeUndefined();
+  });
+
+  it("detects known extension runtime leak path markers", () => {
+    expect(
+      isRuntimePathLeak(
+        "c:/Users/suatb/.trae/extensions/playgroundai.xpersona-playground-0.0.59/node_modules/@qwen-code/sdk/dist/cli/cli.js"
+      )
+    ).toBe(true);
+    expect(isRuntimePathLeak("app/api/v1/playground/models/route.ts")).toBe(false);
   });
 });
