@@ -3,6 +3,7 @@ import { createHash } from "crypto";
 import { buildIndexChunkMetadata } from "./intelligence-utils";
 import { requestJson } from "./api-client";
 import {
+  INDEX_FILE_STATE_KEY,
   INDEX_STATE_KEY,
   getBaseApiUrl,
   getProjectKey,
@@ -28,6 +29,13 @@ type IndexRow = {
     reason?: string;
   };
 };
+
+type IndexedFileState = {
+  contentHash: string;
+  chunkCount: number;
+};
+
+type IndexedFileStateMap = Record<string, IndexedFileState>;
 
 const MAX_INDEXED_FILES = 2_000;
 const MAX_FILE_BYTES = 160_000;
@@ -106,6 +114,9 @@ export class CloudIndexManager {
   private readonly onDidChangeStateEmitter = new vscode.EventEmitter<IndexState>();
   private rebuildTimer: NodeJS.Timeout | null = null;
   private fileCache: string[] = [];
+  private indexedFiles: IndexedFileStateMap;
+  private rebuildPromise: Promise<void> | null = null;
+  private queuedRebuildReason: "manual" | "background" | null = null;
 
   public readonly onDidChangeState = this.onDidChangeStateEmitter.event;
 
@@ -120,6 +131,7 @@ export class CloudIndexManager {
         freshness: "idle",
         lastQueryMatches: 0,
       };
+    this.indexedFiles = context.workspaceState.get<IndexedFileStateMap>(INDEX_FILE_STATE_KEY) || {};
   }
 
   getState(): IndexState {
@@ -140,6 +152,27 @@ export class CloudIndexManager {
   }
 
   async rebuild(reason: "manual" | "background" = "manual"): Promise<void> {
+    if (this.rebuildPromise) {
+      this.queuedRebuildReason =
+        this.queuedRebuildReason === "manual" || reason === "manual" ? "manual" : "background";
+      await this.rebuildPromise;
+      return;
+    }
+
+    this.rebuildPromise = this.performRebuild(reason);
+    try {
+      await this.rebuildPromise;
+    } finally {
+      this.rebuildPromise = null;
+      if (this.queuedRebuildReason) {
+        const nextReason = this.queuedRebuildReason;
+        this.queuedRebuildReason = null;
+        void this.rebuild(nextReason);
+      }
+    }
+  }
+
+  private async performRebuild(reason: "manual" | "background"): Promise<void> {
     const projectKey = getProjectKey();
     const auth = await this.getAuth();
     if (!projectKey) {
@@ -172,6 +205,7 @@ export class CloudIndexManager {
     try {
       const files = await this.collectWorkspaceFiles();
       let uploadedChunks = 0;
+      let totalChunks = 0;
       const pendingChunks: Array<{
         pathHash: string;
         chunkHash: string;
@@ -179,6 +213,7 @@ export class CloudIndexManager {
         content: string;
         metadata: Record<string, unknown>;
       }> = [];
+      const nextIndexedFiles: IndexedFileStateMap = {};
 
       for (const file of files) {
         const bytes = await vscode.workspace.fs.readFile(file);
@@ -187,7 +222,20 @@ export class CloudIndexManager {
         const relativePath = toWorkspaceRelativePath(file);
         if (!relativePath || isExcludedPath(relativePath)) continue;
 
+        const contentHash = sha1(content);
+        const previousEntry = this.indexedFiles[relativePath];
+        if (previousEntry?.contentHash === contentHash) {
+          nextIndexedFiles[relativePath] = previousEntry;
+          totalChunks += previousEntry.chunkCount;
+          continue;
+        }
+
         const chunks = chunkText(content);
+        nextIndexedFiles[relativePath] = {
+          contentHash,
+          chunkCount: chunks.length,
+        };
+        totalChunks += chunks.length;
         for (const chunk of chunks) {
           pendingChunks.push({
             pathHash: sha1(relativePath),
@@ -204,28 +252,33 @@ export class CloudIndexManager {
         }
       }
 
-      for (let index = 0; index < pendingChunks.length; index += UPSERT_BATCH_SIZE) {
-        const batch = pendingChunks.slice(index, index + UPSERT_BATCH_SIZE);
-        await requestJson(
-          "POST",
-          `${getBaseApiUrl()}/api/v1/playground/index/upsert`,
-          auth,
-          {
-            projectKey,
-            chunks: batch,
-            cursor: String(index + batch.length),
-            stats: {
-              chunkCount: pendingChunks.length,
-              fileCount: files.length,
-            },
-          }
-        );
-        uploadedChunks += batch.length;
+      if (pendingChunks.length > 0) {
+        for (let index = 0; index < pendingChunks.length; index += UPSERT_BATCH_SIZE) {
+          const batch = pendingChunks.slice(index, index + UPSERT_BATCH_SIZE);
+          await requestJson(
+            "POST",
+            `${getBaseApiUrl()}/api/v1/playground/index/upsert`,
+            auth,
+            {
+              projectKey,
+              chunks: batch,
+              cursor: String(index + batch.length),
+              stats: {
+                chunkCount: pendingChunks.length,
+                fileCount: files.length,
+              },
+            }
+          );
+          uploadedChunks += batch.length;
+        }
       }
+
+      this.indexedFiles = nextIndexedFiles;
+      await this.context.workspaceState.update(INDEX_FILE_STATE_KEY, nextIndexedFiles);
 
       this.updateState({
         projectKey,
-        chunks: uploadedChunks,
+        chunks: totalChunks,
         freshness: "ready",
         lastQueryMatches: this.state.lastQueryMatches,
         lastRebuildAt: new Date().toISOString(),

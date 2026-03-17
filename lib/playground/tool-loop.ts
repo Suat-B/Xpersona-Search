@@ -109,8 +109,11 @@ function buildToolCallKey(toolCall: ToolCallContract): string {
   });
 }
 
-function buildObservationPrimer(targetInference: AssistTargetInference): ToolCallContract {
-  if (targetInference.path) {
+function buildObservationPrimer(
+  targetInference: AssistTargetInference,
+  availableTools: PlaygroundToolName[]
+): ToolCallContract | null {
+  if (targetInference.path && availableTools.includes("read_file")) {
     return {
       id: `call_${Date.now().toString(36)}_read`,
       name: "read_file",
@@ -119,6 +122,7 @@ function buildObservationPrimer(targetInference: AssistTargetInference): ToolCal
       summary: `Inspect ${targetInference.path} before mutating it.`,
     };
   }
+  if (!availableTools.includes("list_files")) return null;
   return {
     id: `call_${Date.now().toString(36)}_list`,
     name: "list_files",
@@ -398,11 +402,14 @@ function enforceLoopSafeguards(input: {
   let loopState = { ...input.state.loopState };
 
   if (loopState.stepCount === 0 && !isObservationTool(candidate.name)) {
-    candidate = buildObservationPrimer(input.state.targetInference);
-    deferredToolCall = null;
+    const observationPrimer = buildObservationPrimer(input.state.targetInference, input.state.availableTools);
+    if (observationPrimer) {
+      candidate = observationPrimer;
+      deferredToolCall = null;
+    }
   }
 
-  if (isMutatingTool(candidate.name) && !checkpointCreated) {
+  if (isMutatingTool(candidate.name) && !checkpointCreated && input.state.availableTools.includes("create_checkpoint")) {
     deferredToolCall = candidate;
     candidate = buildCheckpointToolCall(input.request.task);
   }

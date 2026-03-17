@@ -1,7 +1,7 @@
 {
   "name": "xpersona-playground",
-  "displayName": "Binary IDE",
-  "description": "Binary IDE for generating portable starter bundles from VS Code.",
+  "displayName": "Streaming Binary IDE",
+  "description": "Streaming Binary IDE for generating portable starter bundles from VS Code.",
   "version": "0.0.59",
   "publisher": "playgroundai",
   "license": "UNLICENSED",
@@ -33,7 +33,7 @@
       "activitybar": [
         {
           "id": "xpersona",
-          "title": "Binary IDE",
+          "title": "Streaming Binary IDE",
           "icon": "media/xpersona.png"
         }
       ]
@@ -42,7 +42,7 @@
       "xpersona": [
         {
           "id": "xpersona.playgroundView",
-          "name": "Binary IDE",
+          "name": "Streaming Binary IDE",
           "type": "webview",
           "when": "true"
         }
@@ -52,22 +52,22 @@
       {
         "command": "binary.generate",
         "title": "Generate Portable Starter Bundle",
-        "category": "Binary IDE"
+        "category": "Streaming Binary IDE"
       },
       {
         "command": "binary.validate",
         "title": "Validate Current Portable Bundle",
-        "category": "Binary IDE"
+        "category": "Streaming Binary IDE"
       },
       {
         "command": "binary.deploy",
         "title": "Publish Current Portable Bundle",
-        "category": "Binary IDE"
+        "category": "Streaming Binary IDE"
       },
       {
         "command": "binary.configure",
-        "title": "Configure Binary IDE",
-        "category": "Binary IDE"
+        "title": "Configure Streaming Binary IDE",
+        "category": "Streaming Binary IDE"
       }
     ],
     "menus": {
@@ -98,12 +98,12 @@
       ]
     },
     "configuration": {
-      "title": "Binary IDE",
+      "title": "Streaming Binary IDE",
       "properties": {
         "xpersona.binary.baseApiUrl": {
           "type": "string",
           "default": "http://localhost:3000",
-          "description": "Base URL for the Binary IDE API. Use http://localhost:3000 for local development."
+          "description": "Base URL for the Streaming Binary IDE API. Use http://localhost:3000 for local development."
         },
         "xpersona.binary.runtime": {
           "type": "string",
@@ -112,7 +112,7 @@
             "qwenCode"
           ],
           "default": "qwenCode",
-          "description": "Choose whether Binary IDE uses the local Qwen Code runtime or the hosted Binary IDE API."
+          "description": "Choose whether Streaming Binary IDE uses the local Qwen Code runtime or the hosted Streaming Binary IDE API."
         },
         "xpersona.binary.qwen.model": {
           "type": "string",
@@ -122,7 +122,7 @@
         "xpersona.binary.qwen.baseUrl": {
           "type": "string",
           "default": "http://localhost:3000/api/v1/hf",
-          "description": "OpenAI-compatible base URL for Qwen Code. The default routes through the Binary IDE proxy."
+          "description": "OpenAI-compatible base URL for Qwen Code. The default routes through the Streaming Binary IDE proxy."
         },
         "xpersona.binary.qwen.executable": {
           "type": "string",

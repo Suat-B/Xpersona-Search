@@ -153,7 +153,7 @@ export function buildContextPreviewMessage(preview: ContextPreview): string {
 export function buildClarificationActions(input: {
   candidateFiles: string[];
 }): FollowUpAction[] {
-  const targetActions = input.candidateFiles.slice(0, 4).map((pathValue) => ({
+  return input.candidateFiles.slice(0, 4).map((pathValue) => ({
     id: `target:${pathValue}`,
     label: pathValue.split("/").pop() || pathValue,
     kind: "target" as const,
@@ -161,22 +161,6 @@ export function buildClarificationActions(input: {
     detail: pathValue,
     emphasized: true,
   }));
-
-  return [
-    ...targetActions,
-    {
-      id: "search-deeper",
-      label: "Search deeper",
-      kind: "rerun",
-      detail: "Broader workspace scan",
-    },
-    {
-      id: "retry-more-context",
-      label: "Retry with more context",
-      kind: "rerun",
-      detail: "Attach more local context and rerun",
-    },
-  ];
 }
 
 export function buildFollowUpActions(input: {
@@ -185,61 +169,7 @@ export function buildFollowUpActions(input: {
   preview: ContextPreview;
   patchConfidence?: "high" | "needs_review" | null;
 }): FollowUpAction[] {
-  const targets = input.preview.resolvedFiles.slice(0, 2).join(", ");
-  const scope = targets ? ` in ${targets}` : "";
-
-  const actions: FollowUpAction[] = [];
-  if (input.patchConfidence) {
-    actions.push({
-      id: "patch-confidence",
-      label: input.patchConfidence === "high" ? "High confidence" : "Needs review",
-      kind: "info",
-      disabled: true,
-      detail: scope || "Based on current context",
-    });
-  }
-
-  if (input.intent === "change") {
-    actions.push(
-      {
-        id: "show-diff",
-        label: "Show diff",
-        kind: "prompt",
-        prompt: `Show me the exact diff for the last change${scope}. Keep it concise.`,
-      },
-      {
-        id: "explain-change",
-        label: "Explain this change",
-        kind: "prompt",
-        prompt: `Explain the last change${scope} step by step and point out any tradeoffs.`,
-      }
-    );
-  } else {
-    actions.push({
-      id: "apply-fix",
-      label: "Apply fix",
-      kind: "prompt",
-      prompt: `Apply the fix directly in the workspace for this request: ${input.lastTask}`,
-      emphasized: true,
-    });
-  }
-
-  actions.push(
-    {
-      id: "search-deeper",
-      label: "Search deeper",
-      kind: "rerun",
-      detail: "Broaden the workspace scan",
-    },
-    {
-      id: "retry-more-context",
-      label: "Retry with more context",
-      kind: "rerun",
-      detail: "Attach more local context first",
-    }
-  );
-
-  return actions.slice(0, 5);
+  return [];
 }
 
 export function buildPatchConfidence(input: {

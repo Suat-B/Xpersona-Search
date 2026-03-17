@@ -61,11 +61,11 @@ describe("assistant-ux", () => {
 
     expect(summary.attachedFiles).toEqual(["app/api/v1/playground/models/route.ts"]);
     expect(summary.attachedSelection?.path).toBe("app/api/v1/playground/models/route.ts");
-    expect(actions.map((action) => action.id)).toContain("search-deeper");
     expect(actions.some((action) => action.kind === "target")).toBe(true);
+    expect(actions.some((action) => action.kind === "rerun")).toBe(false);
   });
 
-  it("builds follow-up actions with patch confidence for edits", () => {
+  it("does not build automatic follow-up action pills for normal assistant replies", () => {
     const preview = {
       activeFile: "app/api/v1/playground/models/route.ts",
       openFiles: ["app/api/v1/playground/models/route.ts"],
@@ -96,7 +96,6 @@ describe("assistant-ux", () => {
     });
 
     expect(patchConfidence).toBe("high");
-    expect(actions[0]?.label).toBe("High confidence");
-    expect(actions.some((action) => action.id === "show-diff")).toBe(true);
+    expect(actions).toEqual([]);
   });
 });

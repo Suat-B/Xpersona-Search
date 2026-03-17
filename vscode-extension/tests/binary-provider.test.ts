@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { BinaryBuildEvent, BinaryBuildRecord, BinaryPlanPreview, BinaryPreviewFile } from "../src/shared";
 
 const {
   executeCommand,
@@ -8,9 +9,14 @@ const {
   activeTextEditorState,
   configurationValues,
   requestBinaryBuild,
+  requestBinaryBuildStream,
+  requestBinaryStreamEvents,
+  requestBinaryCancel,
   requestBinaryStatus,
   requestBinaryValidate,
   requestBinaryPublish,
+  requestJsonMock,
+  streamJsonEventsMock,
 } = vi.hoisted(() => ({
   executeCommand: vi.fn(async () => undefined),
   showQuickPick: vi.fn(async () => undefined),
@@ -30,9 +36,14 @@ const {
     "xpersona.playground": {},
   } as Record<string, Record<string, unknown>>,
   requestBinaryBuild: vi.fn(),
+  requestBinaryBuildStream: vi.fn(),
+  requestBinaryStreamEvents: vi.fn(),
+  requestBinaryCancel: vi.fn(),
   requestBinaryStatus: vi.fn(),
   requestBinaryValidate: vi.fn(),
   requestBinaryPublish: vi.fn(),
+  requestJsonMock: vi.fn(),
+  streamJsonEventsMock: vi.fn(),
 }));
 
 function configurationTargetValue(target: unknown): "global" | "workspace" | "workspaceFolder" {
@@ -52,6 +63,11 @@ vi.mock("vscode", () => ({
   },
   commands: {
     executeCommand,
+  },
+  extensions: {
+    getExtension: vi.fn(() => ({
+      packageJSON: { version: "0.0.59" },
+    })),
   },
   workspace: {
     workspaceFolders: [
@@ -100,16 +116,31 @@ vi.mock("vscode", () => ({
 
 vi.mock("../src/binary-client", () => ({
   createBinaryBuild: requestBinaryBuild,
+  createBinaryBuildStream: requestBinaryBuildStream,
+  streamBinaryBuildEvents: requestBinaryStreamEvents,
+  cancelBinaryBuild: requestBinaryCancel,
   getBinaryBuild: requestBinaryStatus,
   validateBinaryBuild: requestBinaryValidate,
   publishBinaryBuild: requestBinaryPublish,
 }));
 
+vi.mock("../src/api-client", () => ({
+  requestJson: requestJsonMock,
+  streamJsonEvents: streamJsonEventsMock,
+}));
+
 import { PlaygroundViewProvider } from "../src/webview-provider";
 
-function createMemento() {
+type TestMemento = {
+  values: Map<string, unknown>;
+  get: <T>(key: string) => T;
+  update: (key: string, value: unknown) => Promise<void>;
+};
+
+function createMemento(): TestMemento {
   const values = new Map<string, unknown>();
   return {
+    values,
     get: <T>(key: string) => values.get(key) as T,
     update: async (key: string, value: unknown) => {
       values.set(key, value);
@@ -125,7 +156,152 @@ function createContext() {
   };
 }
 
+const TARGET_ENVIRONMENT = {
+  runtime: "node18",
+  platform: "portable",
+  packageManager: "npm",
+} as const;
+
+function createPlanPreview(overrides: Partial<BinaryPlanPreview> = {}): BinaryPlanPreview {
+  return {
+    name: "binary-starter",
+    displayName: "Binary Starter",
+    description: "Starter bundle",
+    entrypoint: "dist/index.js",
+    buildCommand: "npm run build",
+    startCommand: "npm start",
+    sourceFiles: ["package.json", "src/index.ts"],
+    warnings: [],
+    ...overrides,
+  };
+}
+
+function createPreviewFile(overrides: Partial<BinaryPreviewFile> = {}): BinaryPreviewFile {
+  return {
+    path: "src/index.ts",
+    language: "typescript",
+    preview: "export const ready = true;",
+    hash: "hash-123",
+    completed: true,
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function createReliabilityReport(
+  overrides: Partial<NonNullable<BinaryBuildRecord["reliability"]>> = {}
+): NonNullable<BinaryBuildRecord["reliability"]> {
+  return {
+    status: "pass",
+    score: 98,
+    summary: "Bundle looks good.",
+    targetEnvironment: { ...TARGET_ENVIRONMENT },
+    issues: [],
+    warnings: [],
+    generatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function createManifest(buildId: string, intent = "starter bundle") {
+  return {
+    buildId,
+    artifactKind: "package_bundle" as const,
+    name: "binary-starter",
+    displayName: "Binary Starter",
+    description: "Starter bundle",
+    intent,
+    runtime: "node18" as const,
+    platform: "portable" as const,
+    packageManager: "npm" as const,
+    entrypoint: "dist/index.js",
+    installCommand: "npm install",
+    buildCommand: "npm run build",
+    startCommand: "npm start",
+    sourceFiles: ["src/index.ts"],
+    outputFiles: ["dist/index.js"],
+    warnings: [],
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function createArtifact(buildId: string) {
+  return {
+    fileName: `${buildId}.zip`,
+    relativePath: `artifacts/${buildId}.zip`,
+    sizeBytes: 1024,
+    sha256: "abc123",
+  };
+}
+
+function createArtifactState(overrides: Partial<NonNullable<BinaryBuildRecord["artifactState"]>> = {}) {
+  return {
+    coverage: 72,
+    runnable: false,
+    sourceFilesTotal: 2,
+    sourceFilesReady: 2,
+    outputFilesReady: 0,
+    entryPoints: [],
+    latestFile: "src/index.ts",
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function createBuild(overrides: Partial<BinaryBuildRecord> = {}): BinaryBuildRecord {
+  const id = overrides.id || "bin_test";
+  const intent = overrides.intent || "starter bundle";
+  return {
+    id,
+    userId: "user-1",
+    historySessionId: null,
+    runId: null,
+    workflow: "binary_generate",
+    artifactKind: "package_bundle",
+    status: "queued",
+    phase: "queued",
+    progress: 0,
+    intent,
+    workspaceFingerprint: "workspace-1",
+    targetEnvironment: { ...TARGET_ENVIRONMENT },
+    logs: [],
+    preview: {
+      plan: null,
+      files: [],
+      recentLogs: [],
+    },
+    cancelable: true,
+    manifest: null,
+    reliability: null,
+    artifact: null,
+    publish: null,
+    errorMessage: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+let eventSequence = 0;
+
+function createEvent<TType extends BinaryBuildEvent["type"]>(
+  type: TType,
+  data: Extract<BinaryBuildEvent, { type: TType }>["data"],
+  buildId = "bin_test",
+  id?: string
+): BinaryBuildEvent {
+  eventSequence += 1;
+  return {
+    id: id || `evt_${eventSequence}`,
+    buildId,
+    timestamp: new Date().toISOString(),
+    type,
+    data,
+  } as BinaryBuildEvent;
+}
+
 function createProvider() {
+  const context = createContext();
   const auth = {
     onDidChange: vi.fn(() => ({ dispose() {} })),
     getRequestAuth: vi.fn(async () => ({ apiKey: "test-key" })),
@@ -160,6 +336,21 @@ function createProvider() {
         candidateSymbols: [],
         candidateErrors: [],
       },
+      preview: {
+        activeFile: "src/index.ts",
+        openFiles: [],
+        candidateFiles: [],
+        attachedFiles: [],
+        memoryFiles: [],
+        resolvedFiles: ["src/index.ts"],
+        selectedFiles: [],
+        diagnostics: [],
+        intent: "change",
+        confidence: "high",
+        confidenceScore: 0.9,
+        rationale: "high confidence",
+        snippets: [],
+      },
     })),
     preview: vi.fn(async () => ({
       activeFile: "src/index.ts",
@@ -191,7 +382,7 @@ function createProvider() {
   };
 
   const provider = new PlaygroundViewProvider(
-    createContext() as any,
+    context as any,
     auth as any,
     historyService as any,
     qwenHistoryService as any,
@@ -212,6 +403,7 @@ function createProvider() {
 
   return {
     provider: provider as any,
+    context,
     auth,
     historyService,
     qwenHistoryService,
@@ -222,167 +414,260 @@ function createProvider() {
 describe("binary provider", () => {
   beforeEach(() => {
     vi.useRealTimers();
+    eventSequence = 0;
     executeCommand.mockClear();
     showQuickPick.mockReset();
     showInformationMessage.mockReset();
     showInputBox.mockReset();
     requestBinaryBuild.mockReset();
+    requestBinaryBuildStream.mockReset();
+    requestBinaryStreamEvents.mockReset();
+    requestBinaryCancel.mockReset();
     requestBinaryStatus.mockReset();
     requestBinaryValidate.mockReset();
     requestBinaryPublish.mockReset();
+    requestJsonMock.mockReset();
+    streamJsonEventsMock.mockReset();
     configurationValues["xpersona.binary"].runtime = "qwenCode";
     activeTextEditorState.current = undefined;
   });
 
-  it("polls queued starter bundles until they complete", async () => {
-    vi.useFakeTimers();
+  it("streams bundle generation first and updates realtime binary state", async () => {
+    configurationValues["xpersona.binary"].runtime = "playgroundApi";
     const { provider } = createProvider();
-
-    requestBinaryBuild.mockResolvedValue({
-      id: "bin_queued",
-      status: "queued",
-      intent: "starter bundle",
-      targetEnvironment: { runtime: "node18", platform: "portable", packageManager: "npm" },
-      logs: [],
+    const plan = createPlanPreview();
+    const previewFile = createPreviewFile();
+    const completedBuild = createBuild({
+      id: "bin_live",
+      status: "completed",
+      phase: "completed",
+      progress: 100,
+      cancelable: false,
+      logs: ["Synthesizing bundle plan.", "npm install", "npm run build"],
+      preview: {
+        plan,
+        files: [previewFile],
+        recentLogs: ["npm install", "npm run build"],
+      },
+      manifest: createManifest("bin_live"),
+      reliability: createReliabilityReport(),
+      artifactState: createArtifactState({
+        coverage: 100,
+        runnable: true,
+        outputFilesReady: 1,
+        entryPoints: ["dist/index.js"],
+        latestFile: "bin_live.zip",
+      }),
+      artifact: createArtifact("bin_live"),
     });
-    requestBinaryStatus
-      .mockResolvedValueOnce({
-        id: "bin_queued",
-        status: "running",
-        intent: "starter bundle",
-        targetEnvironment: { runtime: "node18", platform: "portable", packageManager: "npm" },
-        logs: ["Starting build"],
-      })
-      .mockResolvedValueOnce({
-        id: "bin_queued",
-        status: "completed",
-        intent: "starter bundle",
-        targetEnvironment: { runtime: "node18", platform: "portable", packageManager: "npm" },
-        logs: ["Done"],
-        artifact: { fileName: "bin_queued.zip", relativePath: "artifacts/bin_queued.zip", sizeBytes: 1024, sha256: "abc" },
-        manifest: {
-          buildId: "bin_queued",
-          artifactKind: "package_bundle",
-          name: "binary-starter",
-          displayName: "Binary Starter",
-          description: "Starter bundle",
-          intent: "starter bundle",
-          runtime: "node18",
-          platform: "portable",
-          packageManager: "npm",
-          entrypoint: "dist/index.js",
-          installCommand: "npm install",
-          buildCommand: "npm run build",
-          startCommand: "npm start",
-          sourceFiles: ["src/index.ts"],
-          outputFiles: ["dist/index.js"],
-          warnings: [],
-          createdAt: new Date().toISOString(),
-        },
-        reliability: {
-          status: "pass",
-          score: 98,
-          summary: "Bundle looks good.",
-          targetEnvironment: { runtime: "node18", platform: "portable", packageManager: "npm" },
-          issues: [],
-          warnings: [],
-          generatedAt: new Date().toISOString(),
-        },
-      });
 
-    const run = provider.generateBinaryBuild("starter bundle");
-    await vi.advanceTimersByTimeAsync(1_000);
-    await vi.advanceTimersByTimeAsync(1_250);
-    await run;
+    requestBinaryBuildStream.mockImplementation(async ({ onEvent }: { onEvent: (event: BinaryBuildEvent) => Promise<void> }) => {
+      await onEvent(createEvent("build.created", { build: createBuild({ id: "bin_live" }) }, "bin_live"));
+      await onEvent(
+        createEvent(
+          "phase.changed",
+          { status: "running", phase: "planning", progress: 12, message: "Synthesizing bundle plan." },
+          "bin_live"
+        )
+      );
+      await onEvent(createEvent("plan.updated", { plan }, "bin_live"));
+      await onEvent(createEvent("file.updated", previewFile, "bin_live"));
+      await onEvent(
+        createEvent(
+          "artifact.delta",
+          {
+            artifactState: createArtifactState({
+              coverage: 78,
+              runnable: false,
+              latestFile: "src/index.ts",
+            }),
+          },
+          "bin_live"
+        )
+      );
+      await onEvent(createEvent("log.chunk", { stream: "stdout", chunk: "npm install" }, "bin_live"));
+      await onEvent(
+        createEvent(
+          "reliability.delta",
+          { kind: "prebuild", report: createReliabilityReport({ status: "warn", score: 88 }) },
+          "bin_live"
+        )
+      );
+      await onEvent(createEvent("build.completed", { build: completedBuild }, "bin_live"));
+    });
 
-    expect(requestBinaryStatus).toHaveBeenCalledTimes(2);
-    expect(provider.state.binary.activeBuild.status).toBe("completed");
-    expect(provider.state.binary.busy).toBe(false);
+    await provider.generateBinaryBuild("starter bundle");
+
+    expect(requestBinaryBuildStream).toHaveBeenCalledTimes(1);
+    expect(requestBinaryBuild).not.toHaveBeenCalled();
+    expect(provider.state.binary.activeBuild?.id).toBe("bin_live");
+    expect(provider.state.binary.activeBuild?.status).toBe("completed");
+    expect(provider.state.binary.phase).toBe("completed");
+    expect(provider.state.binary.progress).toBe(100);
+    expect(provider.state.binary.previewFiles[0]?.path).toBe("src/index.ts");
+    expect(provider.state.binary.recentLogs).toContain("npm run build");
+    expect(provider.state.binary.reliability?.score).toBe(98);
+    expect(provider.state.binary.artifactState?.runnable).toBe(true);
+    expect(provider.state.binary.artifactState?.entryPoints).toContain("dist/index.js");
+    expect(provider.state.binary.canCancel).toBe(false);
+    expect(provider.state.messages.filter((message: any) => message.role === "assistant")).toHaveLength(1);
     expect(provider.state.messages.at(-1)?.content).toContain("Portable starter bundle ready.");
+    expect(provider.state.messages.at(-1)?.presentation).toBe("live_binary");
   });
 
-  it("retries transient bundle status failures before surfacing an error", async () => {
+  it("falls back to polling when streaming is unavailable", async () => {
     vi.useFakeTimers();
+    configurationValues["xpersona.binary"].runtime = "playgroundApi";
     const { provider } = createProvider();
 
-    requestBinaryBuild.mockResolvedValue({
-      id: "bin_retry",
-      status: "queued",
-      intent: "starter bundle",
-      targetEnvironment: { runtime: "node18", platform: "portable", packageManager: "npm" },
-      logs: [],
-    });
-    requestBinaryStatus
-      .mockRejectedValueOnce(new Error("HTTP 500: Internal Server Error"))
-      .mockResolvedValueOnce({
-        id: "bin_retry",
+    requestBinaryBuildStream.mockRejectedValueOnce(new Error("HTTP 503: streaming disabled"));
+    requestBinaryBuild.mockResolvedValue(
+      createBuild({
+        id: "bin_fallback",
+        status: "queued",
+        phase: "queued",
+        progress: 0,
+      })
+    );
+    requestBinaryStatus.mockResolvedValueOnce(
+      createBuild({
+        id: "bin_fallback",
         status: "completed",
-        intent: "starter bundle",
-        targetEnvironment: { runtime: "node18", platform: "portable", packageManager: "npm" },
-        logs: ["Done"],
-        artifact: { fileName: "bin_retry.zip", relativePath: "artifacts/bin_retry.zip", sizeBytes: 1024, sha256: "abc" },
-        manifest: {
-          buildId: "bin_retry",
-          artifactKind: "package_bundle",
-          name: "binary-starter",
-          displayName: "Binary Starter",
-          description: "Starter bundle",
-          intent: "starter bundle",
-          runtime: "node18",
-          platform: "portable",
-          packageManager: "npm",
-          entrypoint: "dist/index.js",
-          installCommand: "npm install",
-          buildCommand: "npm run build",
-          startCommand: "npm start",
-          sourceFiles: ["src/index.ts"],
-          outputFiles: ["dist/index.js"],
-          warnings: [],
-          createdAt: new Date().toISOString(),
-        },
-        reliability: {
-          status: "pass",
-          score: 98,
-          summary: "Bundle looks good.",
-          targetEnvironment: { runtime: "node18", platform: "portable", packageManager: "npm" },
-          issues: [],
-          warnings: [],
-          generatedAt: new Date().toISOString(),
-        },
-      });
+        phase: "completed",
+        progress: 100,
+        cancelable: false,
+        manifest: createManifest("bin_fallback"),
+        reliability: createReliabilityReport({ score: 97 }),
+        artifact: createArtifact("bin_fallback"),
+      })
+    );
 
     const run = provider.generateBinaryBuild("starter bundle");
-    await vi.advanceTimersByTimeAsync(1_000);
-    await vi.advanceTimersByTimeAsync(500);
-    await vi.advanceTimersByTimeAsync(1_250);
+    await vi.advanceTimersByTimeAsync(1_100);
     await run;
 
-    expect(requestBinaryStatus).toHaveBeenCalledTimes(2);
-    expect(provider.state.binary.activeBuild.status).toBe("completed");
-    expect(provider.state.messages.at(-1)?.content).toContain("Portable starter bundle ready.");
+    expect(requestBinaryBuildStream).toHaveBeenCalledTimes(1);
+    expect(requestBinaryBuild).toHaveBeenCalledTimes(1);
+    expect(requestBinaryStatus).toHaveBeenCalledTimes(1);
+    expect(provider.state.binary.activeBuild?.status).toBe("completed");
+    expect(provider.state.activity).toContain("Streaming unavailable, falling back to polling.");
     expect(provider.state.messages.some((message: any) => /Binary generation failed/i.test(message.content))).toBe(false);
   });
 
-  it("blocks validation while a starter bundle is still queued", async () => {
-    const { provider } = createProvider();
-    provider.state.binary.activeBuild = {
-      id: "bin_queued",
-      status: "queued",
-      intent: "starter bundle",
-      targetEnvironment: { runtime: "node18", platform: "portable", packageManager: "npm" },
-      logs: [],
-    };
+  it("resumes an active streamed build from a persisted cursor", async () => {
+    configurationValues["xpersona.binary"].runtime = "playgroundApi";
+    const { provider, context } = createProvider();
+    await context.workspaceState.update("xpersona.binary.activeBuildId", "bin_resume");
+    await context.workspaceState.update("xpersona.binary.streamCursorByBuild", { bin_resume: "evt_saved" });
 
-    await provider.validateBinaryBuild();
+    requestBinaryStatus.mockResolvedValue(
+      createBuild({
+        id: "bin_resume",
+        status: "running",
+        phase: "compiling",
+        progress: 65,
+        cancelable: true,
+        logs: ["existing log"],
+        preview: {
+          plan: createPlanPreview(),
+          files: [],
+          recentLogs: ["existing log"],
+        },
+      })
+    );
+    requestBinaryStreamEvents.mockImplementation(
+      async ({
+        buildId,
+        cursor,
+        onEvent,
+      }: {
+        buildId: string;
+        cursor?: string | null;
+        onEvent: (event: BinaryBuildEvent) => Promise<void>;
+      }) => {
+        expect(buildId).toBe("bin_resume");
+        expect(cursor).toBe("evt_saved");
 
-    expect(requestBinaryValidate).not.toHaveBeenCalled();
-    expect(provider.state.messages.at(-1)?.content).toContain("Wait for the current portable starter bundle build to finish");
+        await onEvent(createEvent("log.chunk", { stream: "stdout", chunk: "build resumed" }, "bin_resume", "evt_next"));
+        await onEvent(
+          createEvent(
+            "build.completed",
+            {
+              build: createBuild({
+                id: "bin_resume",
+                status: "completed",
+                phase: "completed",
+                progress: 100,
+                cancelable: false,
+                logs: ["existing log", "build resumed"],
+                preview: {
+                  plan: createPlanPreview(),
+                  files: [],
+                  recentLogs: ["existing log", "build resumed"],
+                },
+                manifest: createManifest("bin_resume"),
+                reliability: createReliabilityReport({ score: 96 }),
+                artifact: createArtifact("bin_resume"),
+              }),
+            },
+            "bin_resume",
+            "evt_done"
+          )
+        );
+      }
+    );
+
+    await provider.refreshConfiguration();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(requestBinaryStatus).toHaveBeenCalledTimes(1);
+    expect(requestBinaryStreamEvents).toHaveBeenCalledTimes(1);
+    expect(provider.state.binary.activeBuild?.status).toBe("completed");
+
+    expect(provider.state.binary.lastEventId).toBe("evt_done");
+    expect(provider.state.binary.recentLogs).toContain("build resumed");
   });
 
-  it("opens the Binary IDE settings surface from configure", async () => {
+  it("cancels a running build and blocks validate/publish until completion", async () => {
+    configurationValues["xpersona.binary"].runtime = "playgroundApi";
+    const { provider } = createProvider();
+    provider.state.binary.activeBuild = createBuild({
+      id: "bin_cancel",
+      status: "running",
+      phase: "compiling",
+      progress: 72,
+      cancelable: true,
+    });
+    provider.state.binary.canCancel = true;
+
+    requestBinaryCancel.mockResolvedValue(
+      createBuild({
+        id: "bin_cancel",
+        status: "canceled",
+        phase: "canceled",
+        progress: 100,
+        cancelable: false,
+        errorMessage: "Canceled by user.",
+      })
+    );
+
+    await provider.cancelBinaryBuild();
+    await provider.validateBinaryBuild();
+    await provider.publishBinaryBuild();
+
+    expect(requestBinaryCancel).toHaveBeenCalledTimes(1);
+    expect(provider.state.binary.activeBuild?.status).toBe("canceled");
+    expect(provider.state.binary.canCancel).toBe(false);
+    expect(requestBinaryValidate).not.toHaveBeenCalled();
+    expect(requestBinaryPublish).not.toHaveBeenCalled();
+    expect(provider.state.messages.some((message: any) => /Only completed portable starter bundles can be validated/i.test(message.content))).toBe(true);
+    expect(provider.state.messages.some((message: any) => /Only completed portable starter bundles can be published/i.test(message.content))).toBe(true);
+  });
+
+  it("opens the Streaming Binary IDE settings surface from configure", async () => {
     const { provider } = createProvider();
     showQuickPick.mockResolvedValueOnce({
-      label: "Open Binary IDE settings",
+      label: "Open Streaming Binary IDE settings",
       detail: "Open the VS Code settings UI filtered to xpersona.binary.",
       action: "settings",
     });
@@ -390,7 +675,7 @@ describe("binary provider", () => {
     await provider.openBinaryConfiguration();
 
     expect(executeCommand).toHaveBeenCalledWith("workbench.action.openSettings", "xpersona.binary");
-    expect(provider.state.messages.at(-1)?.content).toBe("Opened Binary IDE settings.");
+    expect(provider.state.messages.at(-1)?.content).toBe("Opened Streaming Binary IDE settings.");
   });
 
   it("skips expensive preview work for a blank fresh draft", async () => {
@@ -471,8 +756,86 @@ describe("binary provider", () => {
     });
 
     expect(provider.state.runtimePhase).toBe("done");
-    expect(provider.state.followUpActions.some((action: any) => action.id === "show-diff")).toBe(true);
+    expect(provider.state.followUpActions).toEqual([]);
     expect(provider.state.messages.some((message: any) => /do not want to guess before editing/i.test(message.content))).toBe(false);
+  });
+
+  it("creates one live assistant bubble for qwen partials and resolves it in place", async () => {
+    const { provider } = createProvider();
+    provider.qwenCodeRuntime.runPrompt.mockImplementationOnce(
+      async ({ onActivity, onPartial }: { onActivity?: (value: string) => void; onPartial?: (value: string) => void }) => {
+        onActivity?.("Awaiting tool approval");
+        onPartial?.("Thinking through the patch.");
+        onActivity?.("Applying result");
+        onPartial?.("Applied the requested change.");
+        return {
+          sessionId: "qwen_session",
+          assistantText: "Applied the requested change.",
+          permissionDenials: [],
+          usedTools: ["read_file"],
+          didMutate: false,
+        };
+      }
+    );
+
+    await provider.runQwenPrompt({
+      text: "please fix the bug",
+      appendUser: true,
+      searchDepth: "fast",
+    });
+
+    const assistantMessages = provider.state.messages.filter((message: any) => message.role === "assistant");
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].content).toContain("Applied the requested change.");
+    expect(assistantMessages[0].presentation).toBe("live_binary");
+    expect(assistantMessages[0].live?.status).toBe("done");
+    expect(provider.state.liveChat).toBeNull();
+  });
+
+  it("streams hosted assist events into a single live assistant bubble", async () => {
+    configurationValues["xpersona.binary"].runtime = "playgroundApi";
+    const { provider } = createProvider();
+
+    streamJsonEventsMock.mockImplementationOnce(
+      async (
+        _method: string,
+        _url: string,
+        _auth: unknown,
+        _body: unknown,
+        onEvent: (event: string, data: unknown) => Promise<void>
+      ) => {
+        await onEvent("ack", "Assist stream connected.");
+        await onEvent("status", "Starting Playground assist run...");
+        await onEvent("activity", "Resolving context and orchestration plan.");
+        await onEvent("meta", {
+          sessionId: "sess_hosted",
+          decision: { mode: "auto", reason: "x", confidence: 0.9 },
+          validationPlan: {
+            scope: "targeted",
+            checks: [],
+            touchedFiles: [],
+            reason: "targeted",
+          },
+          targetInference: { confidence: 0.8, source: "unknown" },
+          contextSelection: { files: [], snippets: 0, usedCloudIndex: false },
+          completionStatus: "complete",
+          missingRequirements: [],
+          actions: [],
+          plan: null,
+        });
+        await onEvent("final", "Hosted stream answer.");
+      }
+    );
+
+    await provider.sendPromptWithPlaygroundApi("help me with this file");
+
+    expect(streamJsonEventsMock).toHaveBeenCalledTimes(1);
+    expect(requestJsonMock).not.toHaveBeenCalled();
+    const assistantMessages = provider.state.messages.filter((message: any) => message.role === "assistant");
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].content).toContain("Hosted stream answer.");
+    expect(assistantMessages[0].presentation).toBe("live_binary");
+    expect(provider.state.liveChat).toBeNull();
   });
 
   it("waits for bootstrap before handling the first send prompt", async () => {
@@ -496,5 +859,46 @@ describe("binary provider", () => {
     expect(provider.bootstrap).toHaveBeenCalledTimes(1);
     expect(provider.sendPrompt).toHaveBeenCalledWith("hello world");
     expect(events).toEqual(["bootstrap", "sendPrompt"]);
+  });
+
+  it("switches to plan mode from the composer confirmation message", async () => {
+    const { provider } = createProvider();
+    provider.didBootstrap = true;
+    provider.state.mode = "auto";
+    provider.draftText = "/plan";
+
+    await provider.handleMessage({
+      type: "confirmPlanMode",
+    });
+
+    expect(provider.state.mode).toBe("plan");
+    expect(provider.state.messages.at(-1)?.content).toBe("Mode set to Plan.");
+    expect(provider.draftText).toBe("");
+  });
+
+  it("toggles into plan mode from the composer shortcut", async () => {
+    const { provider } = createProvider();
+    provider.didBootstrap = true;
+    provider.state.mode = "auto";
+
+    await provider.handleMessage({
+      type: "togglePlanMode",
+    });
+
+    expect(provider.state.mode).toBe("plan");
+    expect(provider.state.messages.at(-1)?.content).toBe("Mode set to Plan.");
+  });
+
+  it("toggles back to auto mode from the composer shortcut", async () => {
+    const { provider } = createProvider();
+    provider.didBootstrap = true;
+    provider.state.mode = "plan";
+
+    await provider.handleMessage({
+      type: "togglePlanMode",
+    });
+
+    expect(provider.state.mode).toBe("auto");
+    expect(provider.state.messages.at(-1)?.content).toBe("Mode set to Auto.");
   });
 });

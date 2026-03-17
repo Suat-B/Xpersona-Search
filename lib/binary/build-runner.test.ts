@@ -1,6 +1,10 @@
 import * as fs from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
-import { runPackageBundleBuild, type BinaryBuildExecutor } from "@/lib/binary/build-runner";
+import {
+  resolveBinaryCommandLaunchAttempts,
+  runPackageBundleBuild,
+  type BinaryBuildExecutor,
+} from "@/lib/binary/build-runner";
 import { getBinaryArtifactPath, getBinaryBuildRootDir } from "@/lib/binary/store";
 
 const CREATED_BUILD_IDS: string[] = [];
@@ -14,9 +18,45 @@ afterEach(async () => {
 });
 
 describe("binary build runner", () => {
+  it("falls back to cmd.exe for npm commands on Windows", () => {
+    expect(
+      resolveBinaryCommandLaunchAttempts({
+        command: "npm.cmd",
+        args: ["install"],
+        platform: "win32",
+      })
+    ).toEqual([
+      {
+        command: "npm.cmd",
+        args: ["install"],
+      },
+      {
+        command: "cmd.exe",
+        args: ["/d", "/s", "/c", "npm.cmd", "install"],
+      },
+    ]);
+  });
+
+  it("keeps a direct spawn attempt for non-Windows platforms", () => {
+    expect(
+      resolveBinaryCommandLaunchAttempts({
+        command: "npm",
+        args: ["run", "build"],
+        platform: "linux",
+      })
+    ).toEqual([
+      {
+        command: "npm",
+        args: ["run", "build"],
+      },
+    ]);
+  });
+
   it("creates a completed package bundle with manifest and artifact metadata", async () => {
     const buildId = "bin_test_success";
     CREATED_BUILD_IDS.push(buildId);
+    const previewFiles: string[] = [];
+    const artifactCoverage: number[] = [];
     const executor: BinaryBuildExecutor = async ({ args, cwd }) => {
       if (args[0] === "install") {
         await fs.writeFile(
@@ -44,12 +84,25 @@ describe("binary build runner", () => {
         },
       },
       executor,
+      hooks: {
+        onFileUpdated: async (file) => {
+          previewFiles.push(file.path);
+        },
+        onArtifactState: async (state) => {
+          artifactCoverage.push(state.coverage);
+        },
+      },
     });
 
     expect(result.status).toBe("completed");
     expect(result.artifact?.fileName).toBe(`${buildId}.zip`);
     expect(result.manifest.entrypoint).toBe("dist/index.js");
     expect(result.reliability.status).toBe("pass");
+    expect(result.artifactState.runnable).toBe(true);
+    expect(result.artifactState.entryPoints).toContain("dist/index.js");
+    expect(previewFiles).toContain("src/index.ts");
+    expect(previewFiles).toContain("dist/index.js");
+    expect(artifactCoverage.at(-1)).toBe(100);
     await expect(fs.access(getBinaryArtifactPath(buildId))).resolves.toBeUndefined();
   });
 

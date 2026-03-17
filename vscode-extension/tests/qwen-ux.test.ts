@@ -222,4 +222,18 @@ describe("qwen-ux", () => {
 
     expect(suppressed).toBe(false);
   });
+
+  it("rewrites generic project-scope clarification loops into a file-grounded recovery message", () => {
+    const result = sanitizeQwenAssistantOutput({
+      task: "please create a trailing stop loss <3",
+      workspaceRoot: "c:/repo",
+      workspaceTargets: ["trading/strategies/FractalDimensionOscillator.pine"],
+      text:
+        "If you're looking for help with the Perfect Circle project or need assistance with any code changes, I'm ready to help with that instead.",
+    });
+
+    expect(result).toContain("FractalDimensionOscillator.pine");
+    expect(result).toContain("patch it there");
+    expect(result).not.toContain("Perfect Circle project");
+  });
 });

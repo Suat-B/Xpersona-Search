@@ -24,6 +24,30 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
 
+function summarizeCommandFailure(result: {
+  command: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  timedOut?: boolean;
+}): string {
+  if (result.timedOut) {
+    return `Command timed out: ${result.command}`;
+  }
+  const detail = String(result.stderr || result.stdout || "").trim();
+  return detail
+    ? `Command failed (${result.exitCode}): ${detail.slice(0, 400)}`
+    : `Command failed (${result.exitCode}): ${result.command}`;
+}
+
+function findMutationFailureDetail(details: string[]): string | undefined {
+  return details.find((line) =>
+    /^(FAIL\b|Skipped\b|Patch failed\b|Patch produced no content change\b|Edit could not create missing file\b)/.test(
+      line
+    )
+  );
+}
+
 function isExcludedPath(relativePath: string): boolean {
   const normalized = relativePath.toLowerCase();
   return (
@@ -388,14 +412,31 @@ export class ToolExecutor {
       workspaceFingerprint: input.workspaceFingerprint,
     });
 
-    const blocked = report.blockedActions.length > 0 && report.changedFiles.length === 0 && report.commandResults.length === 0;
-    const firstFailure = report.blockedActions[0] || report.details.find((line) => line.startsWith("FAIL "));
+    const changedTarget =
+      input.name === "edit" || input.name === "write_file"
+        ? report.changedFiles.includes(String(input.args.path || ""))
+        : input.name === "mkdir"
+          ? report.createdDirectories.includes(String(input.args.path || ""))
+          : report.commandResults.length > 0;
+    const commandFailure = report.commandResults.find((result) => result.exitCode !== 0 || result.timedOut);
+    const blocked =
+      report.blockedActions.length > 0 &&
+      report.changedFiles.length === 0 &&
+      report.createdDirectories.length === 0 &&
+      report.commandResults.length === 0;
+    const detailFailure = findMutationFailureDetail(report.details);
+    const firstFailure =
+      report.blockedActions[0] ||
+      (commandFailure ? summarizeCommandFailure(commandFailure) : undefined) ||
+      (!changedTarget ? detailFailure || report.summary : undefined);
+    const ok = !blocked && !commandFailure && changedTarget;
     return {
-      ok: !blocked && !firstFailure,
+      ok,
       blocked,
-      summary: report.summary,
+      summary: ok ? report.summary : firstFailure || report.summary,
       data: {
         changedFiles: report.changedFiles,
+        createdDirectories: report.createdDirectories,
         blockedActions: report.blockedActions,
         commandResults: report.commandResults,
         details: report.details,

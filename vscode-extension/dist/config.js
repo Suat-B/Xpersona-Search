@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PENDING_PKCE_KEY = exports.INDEX_STATE_KEY = exports.MODE_KEY = exports.REFRESH_TOKEN_SECRET = exports.API_KEY_LEGACY_SECRET = exports.API_KEY_SECRET = exports.WEBVIEW_VIEW_ID = exports.LEGACY_EXTENSION_NAMESPACE = exports.EXTENSION_NAMESPACE = void 0;
+exports.PENDING_PKCE_KEY = exports.INDEX_FILE_STATE_KEY = exports.INDEX_STATE_KEY = exports.MODE_KEY = exports.REFRESH_TOKEN_SECRET = exports.API_KEY_LEGACY_SECRET = exports.API_KEY_SECRET = exports.WEBVIEW_VIEW_ID = exports.LEGACY_EXTENSION_NAMESPACE = exports.EXTENSION_NAMESPACE = void 0;
 exports.migrateLegacyConfiguration = migrateLegacyConfiguration;
 exports.getBaseApiUrl = getBaseApiUrl;
 exports.getRuntimeBackend = getRuntimeBackend;
@@ -58,6 +58,7 @@ exports.API_KEY_LEGACY_SECRET = "xpersona.playground.apiKey";
 exports.REFRESH_TOKEN_SECRET = "xpersona.playground.vscodeRefreshToken";
 exports.MODE_KEY = "xpersona.playground.mode";
 exports.INDEX_STATE_KEY = "xpersona.playground.indexState";
+exports.INDEX_FILE_STATE_KEY = "xpersona.playground.indexFileState";
 exports.PENDING_PKCE_KEY = "xpersona.playground.pendingPkce";
 const MIGRATABLE_CONFIGURATION_KEYS = [
     "baseApiUrl",

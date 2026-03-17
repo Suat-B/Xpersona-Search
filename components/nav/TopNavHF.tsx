@@ -12,6 +12,7 @@ import {
 
 const NAV_LINKS = [
   { href: "/search", label: "Search" },
+  { href: "/artifacts", label: "Artifacts" },
   { href: "/playground", label: "Playground" },
   { href: "/chat", label: "Chat" },
 ] as const;

@@ -22,6 +22,7 @@
     runtimePhase: "idle",
     followUpActions: [],
     draftText: "",
+    liveChat: null,
     historyDrawerOpen: false,
     binaryDetailsOpen: false,
     binaryPanelOpen: false,
@@ -33,6 +34,15 @@
       },
       activeBuild: null,
       busy: false,
+      phase: "queued",
+      progress: 0,
+      streamConnected: false,
+      lastEventId: null,
+      previewFiles: [],
+      recentLogs: [],
+      reliability: null,
+      artifactState: null,
+      canCancel: false,
       lastAction: null,
     },
   };
@@ -47,16 +57,16 @@
     historyFooter: document.getElementById("historyFooter"),
     historyFooterButton: document.getElementById("historyFooterButton"),
     messages: document.getElementById("messages"),
+    messageList: document.getElementById("messageList"),
+    chatBinarySpotlight: document.getElementById("chatBinarySpotlight"),
     composer: document.getElementById("composer"),
     send: document.getElementById("send"),
     mentions: document.getElementById("mentions"),
+    composerConfirm: document.getElementById("composerConfirm"),
+    composerConfirmButton: document.getElementById("composerConfirmButton"),
     timelineWrap: document.getElementById("timelineWrap"),
     activity: document.getElementById("activity"),
     jumpToLatest: document.getElementById("jumpToLatest"),
-    busyLabel: document.getElementById("busyLabel"),
-    statusLabel: document.getElementById("statusLabel"),
-    runtimeChip: document.getElementById("runtimeChip"),
-    modeChip: document.getElementById("modeChip"),
     authChip: document.getElementById("authChip"),
     signIn: document.getElementById("signIn"),
     signOut: document.getElementById("signOut"),
@@ -78,12 +88,19 @@
     binaryReliabilityScore: document.getElementById("binaryReliabilityScore"),
     binaryArtifactLabel: document.getElementById("binaryArtifactLabel"),
     binaryPublishLabel: document.getElementById("binaryPublishLabel"),
+    binaryPhaseLabel: document.getElementById("binaryPhaseLabel"),
     binaryBuildVisual: document.getElementById("binaryBuildVisual"),
     binaryBuildTitle: document.getElementById("binaryBuildTitle"),
     binaryBuildCaption: document.getElementById("binaryBuildCaption"),
+    binaryProgressLabel: document.getElementById("binaryProgressLabel"),
+    binaryProgressValue: document.getElementById("binaryProgressValue"),
+    binaryProgressFill: document.getElementById("binaryProgressFill"),
     binaryManifestPreview: document.getElementById("binaryManifestPreview"),
     binaryWarnings: document.getElementById("binaryWarnings"),
+    binaryPreviewFiles: document.getElementById("binaryPreviewFiles"),
+    binaryLogPreview: document.getElementById("binaryLogPreview"),
     generateBinaryButton: document.getElementById("generateBinaryButton"),
+    cancelBinaryButton: document.getElementById("cancelBinaryButton"),
     validateBinaryButton: document.getElementById("validateBinaryButton"),
     deployBinaryButton: document.getElementById("deployBinaryButton"),
     binaryDownloadLink: document.getElementById("binaryDownloadLink"),
@@ -95,6 +112,9 @@
   let activeMentionRange = null;
   let mentionItems = [];
   let selectedMentionIndex = 0;
+  let mentionKeyboardActive = false;
+  let planConfirmVisible = false;
+  let planConfirmDismissed = false;
   let hasAutoFocused = false;
   let shouldStickToBottom = true;
   let previewTimer = 0;
@@ -157,7 +177,7 @@
   function roleLabel(role) {
     if (role === "user") return "You";
     if (role === "system") return "System";
-    return "Binary IDE";
+    return "Streaming Binary IDE";
   }
 
   function intentLabel(intent) {
@@ -198,47 +218,6 @@
     }
   }
 
-  function phaseChipLabel(phase) {
-    switch (phase) {
-      case "radar":
-        return "Draft";
-      case "collecting_context":
-        return "Collect";
-      case "waiting_for_qwen":
-        return "Waiting";
-      case "awaiting_approval":
-        return "Approve";
-      case "applying_result":
-        return "Applying";
-      case "saving_session":
-        return "Saving";
-      case "clarify":
-        return "Clarify";
-      case "done":
-        return "Done";
-      case "failed":
-        return "Failed";
-      default:
-        return "Ready";
-    }
-  }
-
-  function runtimeName() {
-    return state.runtime === "qwenCode" ? "Qwen Code" : "Binary IDE API";
-  }
-
-  function runtimeChipLabel() {
-    return state.runtime === "qwenCode" ? "Qwen" : "Cloud";
-  }
-
-  function modeName() {
-    return state.mode === "plan" ? "Plan mode" : "Auto mode";
-  }
-
-  function modeChipLabel() {
-    return state.mode === "plan" ? "Plan" : "Auto";
-  }
-
   function authButtonLabel() {
     if (state.runtime === "qwenCode") {
       return state.auth && state.auth.kind !== "none" ? "API key ready" : "Set API key";
@@ -251,24 +230,6 @@
       return state.auth && state.auth.kind !== "none" ? "Ready" : "Key";
     }
     return state.auth && state.auth.kind !== "none" ? "Auth" : "Key";
-  }
-
-  function statusSummary() {
-    if (state.runtime === "qwenCode") {
-      return state.auth && state.auth.kind !== "none"
-        ? "Local runtime connected"
-        : "Add a Binary IDE API key";
-    }
-    return state.auth && state.auth.kind !== "none"
-      ? state.auth.label || "Signed in"
-      : "Browser sign in or API key required";
-  }
-
-  function statusChipLabel() {
-    if (state.runtime === "qwenCode") {
-      return state.auth && state.auth.kind !== "none" ? "Local" : "Needs key";
-    }
-    return state.auth && state.auth.kind !== "none" ? "Signed in" : "Needs auth";
   }
 
   function shortPath(value) {
@@ -289,6 +250,73 @@
   function setHidden(element, hidden) {
     if (!element) return;
     element.classList.toggle("is-hidden", Boolean(hidden));
+  }
+
+  function isPlanShortcutValue(value) {
+    return String(value || "").trim().toLowerCase() === "/plan";
+  }
+
+  function hidePlanConfirm(options) {
+    planConfirmVisible = false;
+    if (options && options.dismissed) {
+      planConfirmDismissed = true;
+    }
+    if (elements.composerConfirm) {
+      elements.composerConfirm.classList.remove("show");
+    }
+  }
+
+  function renderPlanConfirm() {
+    if (!elements.composerConfirm) return;
+    const shouldShow =
+      planConfirmVisible &&
+      !mentionItems.length &&
+      !state.busy &&
+      isPlanShortcutValue(elements.composer ? elements.composer.value : "");
+    elements.composerConfirm.classList.toggle("show", shouldShow);
+  }
+
+  function updatePlanConfirm() {
+    const composerValue = elements.composer ? elements.composer.value : "";
+    if (!isPlanShortcutValue(composerValue)) {
+      planConfirmDismissed = false;
+      hidePlanConfirm();
+      return;
+    }
+    if (planConfirmDismissed) {
+      hidePlanConfirm();
+      return;
+    }
+    planConfirmVisible = true;
+    renderPlanConfirm();
+  }
+
+  function confirmPlanMode() {
+    if (!elements.composer || state.busy) return;
+    shouldStickToBottom = true;
+    setHistoryDrawerOpen(false);
+    window.clearTimeout(previewTimer);
+    vscode.postMessage({ type: "confirmPlanMode" });
+    elements.composer.value = "";
+    syncComposerHeight();
+    persistDraft();
+    lastPreviewText = "";
+    planConfirmDismissed = false;
+    hidePlanConfirm();
+    hideMentions();
+  }
+
+  function truncateText(value, maxLength) {
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    if (!text) return "";
+    if (!Number.isFinite(maxLength) || maxLength <= 0 || text.length <= maxLength) {
+      return text;
+    }
+    return `${text.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
+  }
+
+  function isFocusInsideMentions() {
+    return Boolean(elements.mentions && document.activeElement && elements.mentions.contains(document.activeElement));
   }
 
   function setHistoryDrawerOpen(open) {
@@ -633,7 +661,7 @@
       '<div class="message-stack">',
       '<div class="empty-stage"><div class="empty-stage-inner">',
       '<div class="empty-stage-logo">',
-      logoUri ? `<img src="${escapeHtml(logoUri)}" alt="Binary IDE" />` : "",
+      logoUri ? `<img src="${escapeHtml(logoUri)}" alt="Streaming Binary IDE" />` : "",
       "</div>",
       `<span>Compose for ${escapeHtml(workspaceName)}. Chat stays primary, and bundle actions stay docked below.</span>`,
       "</div></div>",
@@ -642,10 +670,10 @@
   }
 
   function renderMessages() {
-    if (!elements.messages) return;
+    if (!elements.messageList) return;
     const messages = Array.isArray(state.messages) ? state.messages : [];
     if (!messages.length) {
-      elements.messages.innerHTML = renderEmptyStage();
+      elements.messageList.innerHTML = renderEmptyStage();
       window.requestAnimationFrame(updateJumpButton);
       return;
     }
@@ -660,11 +688,14 @@
       }
     }
 
-    elements.messages.innerHTML = [
+    elements.messageList.innerHTML = [
       '<div class="message-stack">',
       messages
         .map((item, index) => {
           const role = item.role || "assistant";
+          if (item && item.presentation === "live_binary") {
+            return renderLiveBinaryMessage(item, index === followUpIndex);
+          }
           return [
             `<article class="message ${escapeHtml(role)}">`,
             `<div class="message-meta">${escapeHtml(roleLabel(role))}</div>`,
@@ -713,24 +744,422 @@
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  function renderBinaryPanel() {
+  function clampProgress(value) {
+    const progress = Number(value);
+    if (!Number.isFinite(progress)) return 0;
+    return Math.max(0, Math.min(100, Math.round(progress)));
+  }
+
+  function binaryPhaseLabel(phase) {
+    switch (phase) {
+      case "planning":
+        return "Planning";
+      case "materializing":
+        return "Materializing";
+      case "installing":
+        return "Installing";
+      case "compiling":
+        return "Compiling";
+      case "validating":
+        return "Validating";
+      case "packaging":
+        return "Packaging";
+      case "completed":
+        return "Completed";
+      case "failed":
+        return "Failed";
+      case "canceled":
+        return "Canceled";
+      default:
+        return "Queued";
+    }
+  }
+
+  function binaryPhaseCaption(phase) {
+    switch (phase) {
+      case "planning":
+        return "Designing the portable bundle plan and manifest.";
+      case "materializing":
+        return "Writing scaffolded source files into the workspace bundle.";
+      case "installing":
+        return "Streaming dependency installation output from npm.";
+      case "compiling":
+        return "Running the generated build command and collecting logs.";
+      case "validating":
+        return "Scoring the bundle for runtime reliability and warnings.";
+      case "packaging":
+        return "Sealing the final portable package bundle.";
+      case "completed":
+        return "Portable starter bundle is ready for validation, publish, and download.";
+      case "failed":
+        return "The live build stopped before the portable bundle was completed.";
+      case "canceled":
+        return "The live build was canceled before completion.";
+      default:
+        return "Waiting for the next portable bundle build to start.";
+    }
+  }
+
+  function livePhaseLabel(phase) {
+    switch (String(phase || "")) {
+      case "accepted":
+        return "Accepted";
+      case "collecting_context":
+        return "Collecting context";
+      case "connecting_runtime":
+        return "Connecting runtime";
+      case "awaiting_tool_approval":
+        return "Awaiting tool";
+      case "streaming_answer":
+        return "Streaming answer";
+      case "saving_session":
+        return "Saving session";
+      case "completed":
+        return "Completed";
+      case "failed":
+        return "Failed";
+      case "canceled":
+        return "Canceled";
+      default:
+        return "Streaming";
+    }
+  }
+
+  function livePhaseCopy(live) {
+    const phase = String((live && live.phase) || "");
+    switch (phase) {
+      case "accepted":
+        return "Prompt received. Spinning up the live Binary IDE shell.";
+      case "collecting_context":
+        return "Gathering workspace context before the real answer lands.";
+      case "connecting_runtime":
+        return "Connecting to the runtime and waiting for the first streamed answer.";
+      case "awaiting_tool_approval":
+        return "A tool decision is blocking the next step.";
+      case "streaming_answer":
+        return "Answer text is now arriving through the live assistant stream.";
+      case "saving_session":
+        return "Wrapping up the session and locking in the final response.";
+      case "completed":
+        return "Live response finished.";
+      case "failed":
+        return "The live response failed before completion.";
+      case "canceled":
+        return "The live response was canceled.";
+      default:
+        return "Streaming Binary IDE is warming up this reply.";
+    }
+  }
+
+  function liveTransportLabel(live) {
+    const transport = String((live && live.transport) || "");
+    switch (transport) {
+      case "qwen":
+        return "Qwen stream";
+      case "playground":
+        return "Hosted stream";
+      case "binary":
+        return "Bundle stream";
+      default:
+        return "Live shell";
+    }
+  }
+
+  function renderLiveBinaryMessage(item, includeFollowups) {
+    const live = item && item.live ? item.live : {};
+    const status = String(live.status || "pending");
+    const liveMode = String(live.mode || "shell");
+    const progress = clampProgress(live.progress != null ? live.progress : 0);
+    const latestActivity = truncateText(live.latestActivity || "", 88) || "Streaming Binary IDE is preparing your response.";
+    const latestLog = truncateText(live.latestLog || "", 96) || "No live logs yet.";
+    const latestFile = truncateText(live.latestFile || "", 72) || "No file attached yet.";
+    const hasBody = Boolean(String(item.content || "").trim());
+    const settled = status === "done" || status === "failed" || status === "canceled";
+    const liveClass = settled ? " settled" : status === "streaming" ? " active" : "";
+    const bodyClass = hasBody ? "" : " is-hidden";
+
+    if (settled) {
+      return [
+        `<article class="message assistant live-binary${liveClass}">`,
+        '<div class="message-meta">Streaming Binary IDE</div>',
+        '<div class="live-message-shell compact">',
+        '<div class="live-message-head compact">',
+        '<div class="live-message-kicker"><span class="live-message-dot" aria-hidden="true"></span><span>Streaming Binary IDE</span></div>',
+        '<div class="live-message-settled-meta">',
+        `<span class="live-message-pill">${escapeHtml(liveTransportLabel(live))}</span>`,
+        `<span class="live-message-pill status-${escapeHtml(status)}">${escapeHtml(livePhaseLabel(live.phase))}</span>`,
+        "</div>",
+        "</div>",
+        '<div class="live-message-summary">',
+        `<span class="live-message-summary-text">${escapeHtml(
+          liveMode === "build"
+            ? latestFile !== "No file attached yet."
+              ? `Last file: ${latestFile}`
+              : latestActivity
+            : latestActivity
+        )}</span>`,
+        "</div>",
+        "</div>",
+        `<div class="message-body${bodyClass}">${hasBody ? formatMessageBody(item.content) : ""}</div>`,
+        includeFollowups ? renderFollowUpActions() : "",
+        "</article>",
+      ].join("");
+    }
+
+    return [
+      `<article class="message assistant live-binary${liveClass}">`,
+      '<div class="message-meta">Streaming Binary IDE</div>',
+      '<div class="live-message-shell">',
+      '<div class="live-message-head">',
+      '<div class="live-message-kicker"><span class="live-message-dot" aria-hidden="true"></span><span>Streaming Binary IDE</span></div>',
+      `<span class="live-message-pill">${escapeHtml(liveTransportLabel(live))}</span>`,
+      "</div>",
+      '<div class="live-message-main">',
+      '<div class="live-message-copy">',
+      `<h3 class="live-message-title">${escapeHtml(
+        liveMode === "build" ? "Portable bundle assembly" : hasBody ? "Live assistant response" : "Live assistant warmup"
+      )}</h3>`,
+      `<p class="live-message-caption">${escapeHtml(livePhaseCopy(live))}</p>`,
+      '<div class="live-message-metrics">',
+      `<span class="live-message-metric"><strong>${escapeHtml(livePhaseLabel(live.phase))}</strong> phase</span>`,
+      `<span class="live-message-metric"><strong>${escapeHtml(String(progress))}%</strong> progress</span>`,
+      `<span class="live-message-metric"><strong>${escapeHtml(status)}</strong> status</span>`,
+      "</div>",
+      '<div class="live-message-notes">',
+      `<div class="live-message-note"><span class="live-message-note-label">Activity</span><span class="live-message-note-value">${escapeHtml(latestActivity)}</span></div>`,
+      `<div class="live-message-note"><span class="live-message-note-label">${escapeHtml(
+        liveMode === "build" ? "Live file" : "Live detail"
+      )}</span><span class="live-message-note-value">${escapeHtml(liveMode === "build" ? latestFile : latestLog)}</span></div>`,
+      "</div>",
+      "</div>",
+      '<div class="live-message-stream" aria-hidden="true">',
+      '<span class="binary-build-stream-label">Live Stream</span>',
+      '<span class="binary-build-line">101010 001101 101010 110010 010101</span>',
+      '<span class="binary-build-line">010101 110010 001101 101010 011001</span>',
+      '<span class="binary-build-line">111000 101010 010101 001111 101000</span>',
+      '<span class="binary-build-line">001101 010101 111000 101010 010011</span>',
+      "</div>",
+      "</div>",
+      `<div class="message-body${bodyClass}">${hasBody ? formatMessageBody(item.content) : ""}</div>`,
+      includeFollowups ? renderFollowUpActions() : "",
+      "</article>",
+    ].join("");
+  }
+
+  function getBinaryViewModel() {
     const binary = state.binary || {};
     const build = binary.activeBuild || null;
-    const reliability = build && build.reliability ? build.reliability : null;
+    const reliability = binary.reliability || (build && build.reliability) || null;
+    const artifactState = binary.artifactState || (build && build.artifactState) || null;
     const manifest = build && build.manifest ? build.manifest : null;
-    const isBuilding = Boolean(binary.busy || (build && (build.status === "queued" || build.status === "running")));
-    const warnings = [];
+    const plan = build && build.preview && build.preview.plan ? build.preview.plan : null;
+    const previewFiles = Array.isArray(binary.previewFiles) ? binary.previewFiles : [];
+    const recentLogs = Array.isArray(binary.recentLogs) ? binary.recentLogs : [];
+    const phase =
+      binary.phase ||
+      (build && build.phase) ||
+      (build && build.status === "completed"
+        ? "completed"
+        : build && build.status === "failed"
+          ? "failed"
+          : build && build.status === "canceled"
+            ? "canceled"
+            : build && build.status === "running"
+              ? "planning"
+              : "queued");
+    const progress = clampProgress(
+      binary.progress != null
+        ? binary.progress
+        : build && build.progress != null
+          ? build.progress
+          : build && build.status === "completed"
+            ? 100
+            : 0
+    );
+    const isPending = Boolean(build && (build.status === "queued" || build.status === "running"));
+    const showVisual = Boolean(binary.busy || binary.streamConnected || build);
     const runtimeLabel =
       binary.targetEnvironment && binary.targetEnvironment.runtime === "node20" ? "Node 20" : "Node 18";
     const summaryStatus = build
       ? build.status === "completed"
         ? "Bundle ready"
-        : build.status === "failed"
-          ? "Build failed"
-          : build.status === "running"
-            ? "Building"
-            : "Queued"
+        : build.status === "canceled"
+          ? "Build canceled"
+          : build.status === "failed"
+            ? "Build failed"
+            : build.status === "running"
+              ? "Building"
+              : "Queued"
       : "No bundle yet";
+
+    return {
+      binary,
+      build,
+      reliability,
+      artifactState,
+      manifest,
+      plan,
+      previewFiles,
+      recentLogs,
+      phase,
+      progress,
+      isPending,
+      showVisual,
+      runtimeLabel,
+      summaryStatus,
+    };
+  }
+
+  function renderChatBinarySpotlight() {
+    if (!elements.chatBinarySpotlight) return;
+    if (state.liveChat && state.liveChat.messageId) {
+      const live = state.liveChat;
+      const show = live.status !== "done" && live.status !== "failed" && live.status !== "canceled";
+      if (!show) {
+        elements.chatBinarySpotlight.innerHTML = "";
+        elements.chatBinarySpotlight.classList.add("is-hidden");
+        return;
+      }
+      elements.chatBinarySpotlight.innerHTML = [
+        '<div class="chat-binary-spotlight-shell">',
+        '<section class="chat-binary-spotlight live" aria-label="Streaming binary chat">',
+        '<div class="chat-binary-copy">',
+        '<div class="chat-binary-head">',
+        '<div class="chat-binary-kicker"><span class="chat-binary-kicker-dot" aria-hidden="true"></span><span>Streaming Binary IDE</span></div>',
+        `<span class="chat-binary-pill live">${escapeHtml(liveTransportLabel(live))}</span>`,
+        "</div>",
+        `<h2 class="chat-binary-title">${escapeHtml(
+          live.mode === "build" ? "Portable bundle assembly" : "Live assistant response"
+        )}</h2>`,
+        `<p class="chat-binary-caption">${escapeHtml(livePhaseCopy(live))}</p>`,
+        '<div class="chat-binary-metrics">',
+        `<div class="chat-binary-metric"><span>Phase</span><strong>${escapeHtml(livePhaseLabel(live.phase))}</strong></div>`,
+        `<div class="chat-binary-metric"><span>Progress</span><strong>${escapeHtml(String(clampProgress(live.progress || 0)))}%</strong></div>`,
+        `<div class="chat-binary-metric"><span>Transport</span><strong>${escapeHtml(liveTransportLabel(live))}</strong></div>`,
+        `<div class="chat-binary-metric"><span>Status</span><strong>${escapeHtml(String(live.status || "pending"))}</strong></div>`,
+        "</div>",
+        '<div class="chat-binary-notes">',
+        '<div class="chat-binary-note">',
+        '<span class="chat-binary-note-label">Live activity</span>',
+        `<span class="chat-binary-note-value">${escapeHtml(truncateText(live.latestActivity || "Waiting for runtime activity.", 120))}</span>`,
+        `<span class="chat-binary-note-copy">${escapeHtml(truncateText(live.latestLog || live.latestFile || "Binary pulse stays active until the answer fully lands.", 160))}</span>`,
+        "</div>",
+        '<div class="chat-binary-note">',
+        '<span class="chat-binary-note-label">Transcript handoff</span>',
+        `<span class="chat-binary-note-value">${escapeHtml(
+          live.mode === "answer" ? "Same assistant bubble, now streaming text." : "Same assistant bubble, warming up."
+        )}</span>`,
+        '<span class="chat-binary-note-copy">This live shell collapses into the final answer instead of adding another row.</span>',
+        "</div>",
+        "</div>",
+        "</div>",
+        '<div class="binary-build-stream" aria-hidden="true">',
+        '<span class="binary-build-stream-label">Live Stream</span>',
+        '<span class="binary-build-line">101010 001101 101010 110010 010101</span>',
+        '<span class="binary-build-line">010101 110010 001101 101010 011001</span>',
+        '<span class="binary-build-line">111000 101010 010101 001111 101000</span>',
+        '<span class="binary-build-line">001101 010101 111000 101010 010011</span>',
+        '<span class="binary-build-line">110010 001101 010101 111000 101101</span>',
+        "</div>",
+        "</section>",
+        "</div>",
+      ].join("");
+      elements.chatBinarySpotlight.classList.remove("is-hidden");
+      return;
+    }
+    const view = getBinaryViewModel();
+    const { binary, build, reliability, artifactState, previewFiles, recentLogs, phase, progress, runtimeLabel } = view;
+    const show = Boolean(binary.busy || binary.streamConnected || build);
+
+    if (!show) {
+      elements.chatBinarySpotlight.innerHTML = "";
+      elements.chatBinarySpotlight.classList.add("is-hidden");
+      return;
+    }
+
+    const latestFile = previewFiles.length ? previewFiles[previewFiles.length - 1] : null;
+    const latestLog = recentLogs.length ? recentLogs[recentLogs.length - 1] : "";
+    const streamLabel = binary.streamConnected ? "Live stream attached" : build ? "Saved build snapshot" : "Idle";
+    const pillClass = binary.streamConnected ? "live" : build ? "saved" : "";
+    const buildTitle = build
+      ? `${binaryPhaseLabel(phase)} portable starter bundle`
+      : "Streaming binary assembly";
+    const fileValue = artifactState && artifactState.latestFile
+      ? artifactState.latestFile
+      : latestFile
+        ? `${latestFile.path}${latestFile.completed ? " [done]" : " [writing]"}`
+        : "Waiting for generated files";
+    const fileCopy = artifactState
+      ? `${artifactState.sourceFilesReady}/${artifactState.sourceFilesTotal} source files formed. ${artifactState.outputFilesReady} compiled outputs detected. ${artifactState.runnable ? "Runtime is callable." : "Runtime is not callable yet."}`
+      : latestFile
+        ? truncateText(latestFile.preview || "(empty preview)", 160)
+        : "New source previews will appear here as soon as the live build materializes them.";
+    const logValue = latestLog ? truncateText(latestLog, 84) : "Waiting for streaming logs";
+    const logCopy = latestLog
+      ? "Latest build output from the live binary stream."
+      : "npm install, build, and validation output will stream here while you chat.";
+    const formationLabel = artifactState ? `${artifactState.coverage}% formed` : "--";
+    const runnableLabel = artifactState ? (artifactState.runnable ? "Runnable" : "Not runnable yet") : "--";
+    const outputLabel = artifactState ? String(artifactState.outputFilesReady) : "--";
+
+    elements.chatBinarySpotlight.innerHTML = [
+      '<div class="chat-binary-spotlight-shell">',
+      `<section class="chat-binary-spotlight${binary.streamConnected ? " live" : ""}" aria-label="Streaming binary build">`,
+      '<div class="chat-binary-copy">',
+      '<div class="chat-binary-head">',
+      '<div class="chat-binary-kicker"><span class="chat-binary-kicker-dot" aria-hidden="true"></span><span>Streaming Binary IDE</span></div>',
+      `<span class="chat-binary-pill${pillClass ? ` ${pillClass}` : ""}">${escapeHtml(streamLabel)}</span>`,
+      "</div>",
+      `<h2 class="chat-binary-title">${escapeHtml(buildTitle)}</h2>`,
+      `<p class="chat-binary-caption">${escapeHtml(binaryPhaseCaption(phase))}</p>`,
+      '<div class="chat-binary-metrics">',
+      `<div class="chat-binary-metric"><span>Phase</span><strong>${escapeHtml(binaryPhaseLabel(phase))}</strong></div>`,
+      `<div class="chat-binary-metric"><span>Progress</span><strong>${escapeHtml(String(progress))}%</strong></div>`,
+      `<div class="chat-binary-metric"><span>Runtime</span><strong>${escapeHtml(runtimeLabel)}</strong></div>`,
+      `<div class="chat-binary-metric"><span>Reliability</span><strong>${escapeHtml(
+        reliability ? `${reliability.score}/100` : "--"
+      )}</strong></div>`,
+      `<div class="chat-binary-metric"><span>Formation</span><strong>${escapeHtml(formationLabel)}</strong></div>`,
+      `<div class="chat-binary-metric"><span>State</span><strong>${escapeHtml(runnableLabel)}</strong></div>`,
+      `<div class="chat-binary-metric"><span>Outputs</span><strong>${escapeHtml(outputLabel)}</strong></div>`,
+      "</div>",
+      '<div class="chat-binary-notes">',
+      '<div class="chat-binary-note">',
+      '<span class="chat-binary-note-label">Live artifact</span>',
+      `<span class="chat-binary-note-value">${escapeHtml(fileValue)}</span>`,
+      `<span class="chat-binary-note-copy">${escapeHtml(fileCopy)}</span>`,
+      "</div>",
+      '<div class="chat-binary-note">',
+      '<span class="chat-binary-note-label">Live log</span>',
+      `<span class="chat-binary-note-value">${escapeHtml(logValue)}</span>`,
+      `<span class="chat-binary-note-copy">${escapeHtml(logCopy)}</span>`,
+      "</div>",
+      "</div>",
+      "</div>",
+      '<div class="binary-build-stream" aria-hidden="true">',
+      '<span class="binary-build-stream-label">Live Stream</span>',
+      '<span class="binary-build-line">101010 001101 101010 110010 010101</span>',
+      '<span class="binary-build-line">010101 110010 001101 101010 011001</span>',
+      '<span class="binary-build-line">111000 101010 010101 001111 101000</span>',
+      '<span class="binary-build-line">001101 010101 111000 101010 010011</span>',
+      '<span class="binary-build-line">110010 001101 010101 111000 101101</span>',
+      "</div>",
+      "</section>",
+      "</div>",
+    ].join("");
+
+    elements.chatBinarySpotlight.classList.remove("is-hidden");
+  }
+
+  function renderBinaryPanel() {
+    const { binary, build, reliability, artifactState, manifest, plan, previewFiles, recentLogs, phase, progress, isPending, showVisual, runtimeLabel, summaryStatus } =
+      getBinaryViewModel();
+    const shouldAutoOpenPanel = !state.binaryPanelOpen && Boolean(binary.busy || binary.streamConnected || isPending);
+    const shouldAutoOpenDetails =
+      !state.binaryDetailsOpen &&
+      Boolean(binary.busy || binary.streamConnected || isPending) &&
+      Boolean(previewFiles.length || recentLogs.length || plan || manifest);
+    const warnings = [];
 
     if (reliability && Array.isArray(reliability.warnings)) {
       warnings.push(...reliability.warnings);
@@ -744,25 +1173,29 @@
       const label =
         status === "completed"
           ? "Bundle ready"
-          : status === "failed"
-            ? "Build failed"
-            : status === "running"
-              ? "Building"
-              : status === "queued"
-                ? "Queued"
-                : binary.busy
-                  ? "Working"
-                  : "No bundle yet";
+          : status === "canceled"
+            ? "Build canceled"
+            : status === "failed"
+              ? "Build failed"
+              : status === "running"
+                ? "Building"
+                : status === "queued"
+                  ? "Queued"
+                  : binary.busy
+                    ? "Working"
+                    : "No bundle yet";
+      const statusClass =
+        reliability?.status || status === "failed" || status === "canceled"
+          ? reliability?.status || "fail"
+          : "";
       elements.binaryStatusBadge.textContent = label;
-      elements.binaryStatusBadge.className = `binary-status ${
-        reliability ? reliability.status : status === "failed" ? "fail" : ""
-      }`.trim();
+      elements.binaryStatusBadge.className = `binary-status ${statusClass}`.trim();
     }
 
     if (elements.binaryTargetRuntime) {
       elements.binaryTargetRuntime.value =
         binary.targetEnvironment && binary.targetEnvironment.runtime === "node20" ? "node20" : "node18";
-      elements.binaryTargetRuntime.disabled = Boolean(binary.busy);
+      elements.binaryTargetRuntime.disabled = Boolean(binary.busy || isPending);
     }
 
     if (elements.binaryReliabilityScore) {
@@ -772,35 +1205,53 @@
     if (elements.binaryArtifactLabel) {
       elements.binaryArtifactLabel.textContent = build && build.artifact
         ? `${build.artifact.fileName} (${formatBytes(build.artifact.sizeBytes)})`
-        : "No bundle yet";
+        : artifactState
+          ? artifactState.runnable
+            ? `Runnable preview (${artifactState.outputFilesReady} outputs)`
+            : `${artifactState.coverage}% formed`
+          : "No bundle yet";
     }
 
     if (elements.binaryPublishLabel) {
       elements.binaryPublishLabel.textContent = build && build.publish ? "Published" : "Private";
     }
+    if (elements.binaryPhaseLabel) {
+      elements.binaryPhaseLabel.textContent = binaryPhaseLabel(phase);
+    }
     if (elements.binaryPanelSummary) {
-      elements.binaryPanelSummary.textContent = `${runtimeLabel} • ${summaryStatus}`;
+      const streamState = binary.streamConnected ? "Live stream" : build ? "Saved build" : "Idle";
+      const formationLabel = artifactState ? `${artifactState.coverage}% formed` : summaryStatus;
+      elements.binaryPanelSummary.textContent = `${runtimeLabel} - ${formationLabel} - ${streamState}`;
     }
     if (elements.binaryPanelMeta) {
-      elements.binaryPanelMeta.textContent = build && build.publish
-        ? "Published bundle controls and manifest details."
+      elements.binaryPanelMeta.textContent = build
+        ? artifactState
+          ? `${artifactState.runnable ? "Runnable" : "Not runnable"} - ${artifactState.outputFilesReady} outputs ready`
+          : `Build ${build.id.slice(0, 8)} - ${binaryPhaseLabel(phase)}`
         : "Runtime, reliability, publish, and download controls.";
     }
 
     if (elements.binaryBuildVisual) {
-      elements.binaryBuildVisual.classList.toggle("show", isBuilding);
+      elements.binaryBuildVisual.classList.toggle("show", showVisual);
     }
     if (elements.binaryBuildTitle) {
-      elements.binaryBuildTitle.textContent =
-        build && build.status === "running"
-          ? "Assembling Binary package bundle"
-          : "Encoding Binary starter bundle";
+      elements.binaryBuildTitle.textContent = build
+        ? `${binaryPhaseLabel(phase)} portable starter bundle`
+        : "Encoding Binary starter bundle";
     }
     if (elements.binaryBuildCaption) {
-      elements.binaryBuildCaption.textContent =
-        build && build.status === "running"
-          ? "101010 in motion. Resolving files, compiling output, and sealing the bundle."
-          : "Queue locked. Preparing a portable package bundle from your current intent.";
+      elements.binaryBuildCaption.textContent = artifactState
+        ? `${binaryPhaseCaption(phase)} ${artifactState.sourceFilesReady}/${artifactState.sourceFilesTotal} source files formed, ${artifactState.outputFilesReady} compiled outputs, ${artifactState.runnable ? "runtime is callable" : "runtime not callable yet"}.`
+        : binaryPhaseCaption(phase);
+    }
+    if (elements.binaryProgressLabel) {
+      elements.binaryProgressLabel.textContent = binaryPhaseLabel(phase);
+    }
+    if (elements.binaryProgressValue) {
+      elements.binaryProgressValue.textContent = `${progress}%`;
+    }
+    if (elements.binaryProgressFill) {
+      elements.binaryProgressFill.style.width = `${progress}%`;
     }
 
     if (elements.binaryManifestPreview) {
@@ -811,22 +1262,72 @@
             `Entrypoint: ${manifest.entrypoint}`,
             `Build: ${manifest.buildCommand}`,
             `Start: ${manifest.startCommand}`,
+            ...(artifactState
+              ? [
+                  `Formation: ${artifactState.coverage}%`,
+                  `Runnable: ${artifactState.runnable ? "yes" : "no"}`,
+                  `Outputs ready: ${artifactState.outputFilesReady}`,
+                ]
+              : []),
           ].join("\n")
-        : "Generate a portable starter bundle to inspect its manifest.";
+        : plan
+          ? [
+              `Name: ${plan.displayName}`,
+              `Entrypoint: ${plan.entrypoint}`,
+              `Build: ${plan.buildCommand}`,
+              `Start: ${plan.startCommand}`,
+              ...(artifactState
+                ? [
+                    `Formation: ${artifactState.coverage}%`,
+                    `Runnable: ${artifactState.runnable ? "yes" : "no"}`,
+                    `Outputs ready: ${artifactState.outputFilesReady}`,
+                  ]
+                : []),
+              "",
+              "Planned source files:",
+              ...(Array.isArray(plan.sourceFiles) && plan.sourceFiles.length ? plan.sourceFiles : ["(none yet)"]),
+            ].join("\n")
+          : "Generate a portable starter bundle to inspect its manifest.";
     }
 
     if (elements.binaryWarnings) {
       if (!warnings.length) {
         elements.binaryWarnings.textContent = build && build.errorMessage
           ? build.errorMessage
-          : "No Binary IDE warnings yet.";
+          : "No Streaming Binary IDE warnings yet.";
       } else {
         elements.binaryWarnings.textContent = warnings.join("\n");
       }
     }
 
+    if (elements.binaryPreviewFiles) {
+      elements.binaryPreviewFiles.textContent = previewFiles.length
+        ? previewFiles
+            .slice(0, 6)
+            .map((file) =>
+              [
+                `${file.path}${file.completed ? " [done]" : " [writing]"}`,
+                file.preview || "(empty preview)",
+              ].join("\n")
+            )
+            .join("\n\n")
+        : artifactState
+          ? "Source and compiled file previews will appear here as the artifact forms."
+          : "Generated file previews will appear here as the build progresses.";
+    }
+
+    if (elements.binaryLogPreview) {
+      elements.binaryLogPreview.textContent = recentLogs.length
+        ? recentLogs.slice(-18).join("\n")
+        : "Streaming build logs will appear here.";
+    }
+
     if (elements.generateBinaryButton) {
-      elements.generateBinaryButton.disabled = Boolean(binary.busy);
+      elements.generateBinaryButton.disabled = Boolean(binary.busy || isPending);
+    }
+    if (elements.cancelBinaryButton) {
+      elements.cancelBinaryButton.disabled = !binary.canCancel;
+      elements.cancelBinaryButton.textContent = build && build.status === "canceled" ? "Canceled" : "Cancel";
     }
     if (elements.validateBinaryButton) {
       elements.validateBinaryButton.disabled = Boolean(binary.busy || !build || build.status !== "completed");
@@ -843,6 +1344,13 @@
       const href = build && build.publish && build.publish.downloadUrl ? build.publish.downloadUrl : "";
       elements.binaryDownloadLink.href = href || "#";
       elements.binaryDownloadLink.classList.toggle("is-hidden", !href);
+    }
+
+    if (shouldAutoOpenPanel) {
+      setBinaryPanelOpen(true);
+    }
+    if (shouldAutoOpenDetails) {
+      setBinaryDetailsOpen(true);
     }
 
     syncShellState();
@@ -865,7 +1373,7 @@
     if (elements.contextNote) {
       elements.contextNote.textContent =
         summary.note ||
-        "Type a file name or symbol and Binary IDE will resolve likely targets before you send.";
+        "Type a file name or symbol and Streaming Binary IDE will resolve likely targets before you send.";
     }
     if (elements.contextRoot) {
       elements.contextRoot.textContent = summary.workspaceRoot
@@ -896,7 +1404,9 @@
       .map((item, index) => {
         const active = index === selectedMentionIndex ? " active" : "";
         const label = mentionLabel(item);
-        return `<div class="mention-item"><button type="button" class="${active.trim()}" data-mention-index="${index}" data-mention-value="${escapeHtml(item)}" title="${escapeHtml(item)}">${escapeHtml(label)}</button></div>`;
+        const tabIndex = index === selectedMentionIndex ? "0" : "-1";
+        const selected = index === selectedMentionIndex ? "true" : "false";
+        return `<div class="mention-item"><button type="button" class="${active.trim()}" data-mention-index="${index}" data-mention-value="${escapeHtml(item)}" title="${escapeHtml(item)}" tabindex="${tabIndex}" aria-selected="${selected}">${escapeHtml(label)}</button></div>`;
       })
       .join("");
   }
@@ -904,22 +1414,6 @@
   function render() {
     syncShellState();
     syncComposerFromState(state);
-    if (elements.runtimeChip) {
-      elements.runtimeChip.textContent = runtimeChipLabel();
-      elements.runtimeChip.title = runtimeName();
-    }
-    if (elements.modeChip) {
-      elements.modeChip.textContent = modeChipLabel();
-      elements.modeChip.title = modeName();
-    }
-    if (elements.statusLabel) {
-      elements.statusLabel.textContent = statusChipLabel();
-      elements.statusLabel.title = statusSummary();
-    }
-    if (elements.busyLabel) {
-      elements.busyLabel.textContent = phaseChipLabel(state.runtimePhase || "idle");
-      elements.busyLabel.title = phaseLabel(state.runtimePhase || "idle");
-    }
     if (elements.authChip) {
       elements.authChip.textContent = authButtonShortLabel();
       if (elements.authChip.parentElement) {
@@ -938,13 +1432,15 @@
       elements.composer.placeholder =
         state.runtime === "qwenCode"
           ? "Draft the portable starter bundle you want. @ to add files, / for commands"
-          : "Ask Binary IDE to inspect code, patch files, or prepare a portable starter bundle";
+          : "Ask Streaming Binary IDE to inspect code, patch files, or prepare a portable starter bundle";
     }
     renderHistory();
     renderActivity();
     renderBinaryPanel();
+    renderChatBinarySpotlight();
     renderMessages();
     renderMentions();
+    renderPlanConfirm();
     syncComposerHeight();
     if (!hasAutoFocused && !state.busy) {
       focusComposer(true);
@@ -955,7 +1451,9 @@
     activeMentionRange = null;
     mentionItems = [];
     selectedMentionIndex = 0;
+    mentionKeyboardActive = false;
     renderMentions();
+    renderPlanConfirm();
   }
 
   function sendPreviewContextNow(force) {
@@ -976,6 +1474,16 @@
   function sendPrompt() {
     const value = String(elements.composer ? elements.composer.value : "").trim();
     if (!value || state.busy) return;
+    if (isPlanShortcutValue(value)) {
+      if (planConfirmVisible) {
+        confirmPlanMode();
+      } else {
+        planConfirmDismissed = false;
+        planConfirmVisible = true;
+        renderPlanConfirm();
+      }
+      return;
+    }
     shouldStickToBottom = true;
     setHistoryDrawerOpen(false);
     window.clearTimeout(previewTimer);
@@ -987,6 +1495,7 @@
       lastPreviewText = "";
     }
     hideMentions();
+    hidePlanConfirm();
   }
 
   function dispatchAction(action) {
@@ -1053,6 +1562,7 @@
         return;
       case "validateBinary":
       case "deployBinary":
+      case "cancelBinary":
         setHistoryDrawerOpen(false);
         vscode.postMessage({ type: action });
         return;
@@ -1091,13 +1601,24 @@
     schedulePreviewContext(0);
   }
 
-  function moveMentionSelection(delta) {
+  function focusActiveMentionButton() {
+    if (!elements.mentions || !mentionItems.length) return;
+    const activeButton = elements.mentions.querySelector(`[data-mention-index="${selectedMentionIndex}"]`);
+    if (activeButton && typeof activeButton.focus === "function") {
+      activeButton.focus();
+    }
+  }
+
+  function moveMentionSelection(delta, options) {
     if (!mentionItems.length) return false;
     selectedMentionIndex = (selectedMentionIndex + delta + mentionItems.length) % mentionItems.length;
     renderMentions();
-    const activeItem = elements.mentions && elements.mentions.querySelector(".active");
+    const activeItem = elements.mentions && elements.mentions.querySelector(`[data-mention-index="${selectedMentionIndex}"]`);
     if (activeItem && typeof activeItem.scrollIntoView === "function") {
       activeItem.scrollIntoView({ block: "nearest" });
+    }
+    if (options && options.focus) {
+      focusActiveMentionButton();
     }
     return true;
   }
@@ -1118,6 +1639,12 @@
     const mentionButton = target.closest("[data-mention-value]");
     if (mentionButton) {
       applyMention(mentionButton.getAttribute("data-mention-value") || "");
+      return;
+    }
+
+    const planConfirmButton = target.closest("#composerConfirmButton");
+    if (planConfirmButton) {
+      confirmPlanMode();
       return;
     }
 
@@ -1163,12 +1690,28 @@
     elements.composer.addEventListener("keydown", (event) => {
       if (mentionItems.length && event.key === "ArrowDown") {
         event.preventDefault();
-        moveMentionSelection(1);
+        mentionKeyboardActive = true;
+        if (document.activeElement === elements.composer) {
+          if (!moveMentionSelection(1, { focus: true })) {
+            focusActiveMentionButton();
+          }
+        } else {
+          moveMentionSelection(1, { focus: true });
+        }
         return;
       }
       if (mentionItems.length && event.key === "ArrowUp") {
         event.preventDefault();
-        moveMentionSelection(-1);
+        mentionKeyboardActive = true;
+        if (document.activeElement === elements.composer) {
+          if (!moveMentionSelection(-1, { focus: true })) {
+            selectedMentionIndex = mentionItems.length - 1;
+            renderMentions();
+            focusActiveMentionButton();
+          }
+        } else {
+          moveMentionSelection(-1, { focus: true });
+        }
         return;
       }
       if (mentionItems.length && event.key === "Enter" && !event.shiftKey) {
@@ -1176,7 +1719,23 @@
         applyMention(mentionItems[selectedMentionIndex] || "");
         return;
       }
+      if (!mentionItems.length && event.key === "Tab" && event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        hidePlanConfirm();
+        vscode.postMessage({ type: "togglePlanMode" });
+        return;
+      }
+      if (planConfirmVisible && event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        confirmPlanMode();
+        return;
+      }
       if (event.key === "Escape") {
+        if (planConfirmVisible) {
+          hidePlanConfirm({ dismissed: true });
+        }
         hideMentions();
         return;
       }
@@ -1208,15 +1767,66 @@
       syncComposerHeight();
       persistDraft();
       updateMentionQuery();
+      updatePlanConfirm();
       schedulePreviewContext(120);
     });
 
     elements.composer.addEventListener("blur", () => {
       window.setTimeout(() => {
-        if (document.activeElement !== elements.composer) {
+        if (document.activeElement !== elements.composer && !isFocusInsideMentions()) {
           hideMentions();
         }
       }, 120);
+    });
+  }
+
+  if (elements.mentions) {
+    elements.mentions.addEventListener("keydown", (event) => {
+      if (!mentionItems.length) return;
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        mentionKeyboardActive = true;
+        moveMentionSelection(1, { focus: true });
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        mentionKeyboardActive = true;
+        moveMentionSelection(-1, { focus: true });
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        applyMention(mentionItems[selectedMentionIndex] || "");
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        hideMentions();
+        focusComposer(true);
+      }
+    });
+
+    elements.mentions.addEventListener("focusin", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const index = Number(target.getAttribute("data-mention-index"));
+      if (!Number.isFinite(index) || index < 0) return;
+      selectedMentionIndex = index;
+      mentionKeyboardActive = true;
+      renderMentions();
+    });
+
+    elements.mentions.addEventListener("mousemove", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const button = target.closest("[data-mention-index]");
+      if (!button) return;
+      const index = Number(button.getAttribute("data-mention-index"));
+      if (!Number.isFinite(index) || index === selectedMentionIndex) return;
+      selectedMentionIndex = index;
+      mentionKeyboardActive = true;
+      renderMentions();
     });
   }
 
@@ -1238,6 +1848,7 @@
       persistDraft();
       focusComposer(true);
       updateMentionQuery();
+      updatePlanConfirm();
       schedulePreviewContext(0);
       return;
     }
@@ -1245,7 +1856,9 @@
       if (Number(message.requestId || 0) !== mentionRequestId) return;
       mentionItems = Array.isArray(message.items) ? message.items : [];
       selectedMentionIndex = 0;
+      mentionKeyboardActive = false;
       renderMentions();
+      renderPlanConfirm();
     }
   });
 

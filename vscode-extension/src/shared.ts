@@ -170,7 +170,43 @@ export type ChatMessage = {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  presentation?: "plain" | "live_binary";
+  live?: ChatLiveState;
 };
+
+export type ChatLiveMode = "shell" | "answer" | "build";
+export type ChatLiveStatus = "pending" | "streaming" | "done" | "failed" | "canceled";
+export type ChatLiveTransport = "local" | "qwen" | "playground" | "binary";
+
+export type ChatLiveState = {
+  mode: ChatLiveMode;
+  status: ChatLiveStatus;
+  phase: string;
+  transport: ChatLiveTransport;
+  progress?: number;
+  buildId?: string;
+  latestActivity?: string;
+  latestLog?: string;
+  latestFile?: string;
+  startedAt?: string;
+  updatedAt?: string;
+};
+
+export type LiveChatState = ChatLiveState & {
+  messageId: string;
+};
+
+export type ChatLiveEvent =
+  | { type: "accepted"; transport: ChatLiveTransport; mode?: ChatLiveMode; phase?: string }
+  | { type: "phase"; phase: string; status?: ChatLiveStatus; progress?: number; latestActivity?: string }
+  | { type: "activity"; activity: string; phase?: string }
+  | { type: "partial_text"; text: string; phase?: string }
+  | { type: "build_attached"; buildId: string; phase?: string; progress?: number }
+  | { type: "build_event"; eventType: BinaryBuildEvent["type"]; phase?: string; progress?: number; latestLog?: string; latestFile?: string }
+  | { type: "tool_approval"; activity: string }
+  | { type: "final"; text: string }
+  | { type: "failed"; text: string; phase?: string }
+  | { type: "canceled"; text?: string; phase?: string };
 
 export type FollowUpAction = {
   id: string;
@@ -249,6 +285,7 @@ export type LocalApplyReport = {
   summary: string;
   details: string[];
   changedFiles: string[];
+  createdDirectories: string[];
   blockedActions: string[];
   commandResults: CommandExecutionResult[];
   canUndo: boolean;
@@ -271,6 +308,18 @@ export type BinaryTargetEnvironment = {
   platform: "portable";
   packageManager: "npm";
 };
+
+export type BinaryBuildPhase =
+  | "queued"
+  | "planning"
+  | "materializing"
+  | "installing"
+  | "compiling"
+  | "validating"
+  | "packaging"
+  | "completed"
+  | "failed"
+  | "canceled";
 
 export type BinaryValidationIssue = {
   code: string;
@@ -316,6 +365,64 @@ export type BinaryArtifactMetadata = {
   sha256: string;
 };
 
+export type BinaryPlanPreview = {
+  name: string;
+  displayName: string;
+  description: string;
+  entrypoint: string;
+  buildCommand: string;
+  startCommand: string;
+  sourceFiles: string[];
+  warnings: string[];
+};
+
+export type BinaryPreviewFile = {
+  path: string;
+  language?: string;
+  preview: string;
+  hash: string;
+  completed: boolean;
+  updatedAt: string;
+};
+
+export type BinaryBuildPreview = {
+  plan?: BinaryPlanPreview | null;
+  files: BinaryPreviewFile[];
+  recentLogs: string[];
+};
+
+export type BinaryBuildStream = {
+  enabled: boolean;
+  transport: "sse";
+  streamPath: string;
+  eventsPath: string;
+  controlPath: string;
+  lastEventId?: string | null;
+};
+
+export type BinaryArtifactState = {
+  coverage: number;
+  runnable: boolean;
+  sourceFilesTotal: number;
+  sourceFilesReady: number;
+  outputFilesReady: number;
+  entryPoints: string[];
+  latestFile?: string;
+  updatedAt: string;
+};
+
+export type BinaryBuildCheckpoint = {
+  id: string;
+  buildId: string;
+  phase: BinaryBuildPhase;
+  savedAt: string;
+  preview?: BinaryBuildPreview | null;
+  manifest?: BinaryManifest | null;
+  reliability?: BinaryValidationReport | null;
+  artifactState?: BinaryArtifactState | null;
+  artifact?: BinaryArtifactMetadata | null;
+};
+
 export type BinaryPublishResult = {
   publishedAt: string;
   downloadUrl: string;
@@ -329,13 +436,19 @@ export type BinaryBuildRecord = {
   runId?: string | null;
   workflow: "binary_generate" | "binary_validate" | "binary_deploy";
   artifactKind: "package_bundle";
-  status: "queued" | "running" | "completed" | "failed";
+  status: "queued" | "running" | "completed" | "failed" | "canceled";
+  phase?: BinaryBuildPhase;
+  progress?: number;
   intent: string;
   workspaceFingerprint: string;
   targetEnvironment: BinaryTargetEnvironment;
   logs: string[];
+  stream?: BinaryBuildStream;
+  preview?: BinaryBuildPreview | null;
+  cancelable?: boolean;
   manifest?: BinaryManifest | null;
   reliability?: BinaryValidationReport | null;
+  artifactState?: BinaryArtifactState | null;
   artifact?: BinaryArtifactMetadata | null;
   publish?: BinaryPublishResult | null;
   errorMessage?: string | null;
@@ -343,9 +456,63 @@ export type BinaryBuildRecord = {
   updatedAt: string;
 };
 
+export type BinaryBuildEvent =
+  | { id: string; buildId: string; timestamp: string; type: "build.created"; data: { build: BinaryBuildRecord } }
+  | {
+      id: string;
+      buildId: string;
+      timestamp: string;
+      type: "phase.changed";
+      data: { status: BinaryBuildRecord["status"]; phase: BinaryBuildPhase; progress?: number; message?: string };
+    }
+  | { id: string; buildId: string; timestamp: string; type: "plan.updated"; data: { plan: BinaryPlanPreview } }
+  | { id: string; buildId: string; timestamp: string; type: "file.updated"; data: BinaryPreviewFile }
+  | { id: string; buildId: string; timestamp: string; type: "log.chunk"; data: { stream: "stdout" | "stderr" | "system"; chunk: string } }
+  | {
+      id: string;
+      buildId: string;
+      timestamp: string;
+      type: "reliability.delta";
+      data: { kind: "prebuild" | "full"; report: BinaryValidationReport };
+    }
+  | {
+      id: string;
+      buildId: string;
+      timestamp: string;
+      type: "artifact.delta";
+      data: { artifactState: BinaryArtifactState };
+    }
+  | {
+      id: string;
+      buildId: string;
+      timestamp: string;
+      type: "checkpoint.saved";
+      data: { checkpoint: BinaryBuildCheckpoint };
+    }
+  | {
+      id: string;
+      buildId: string;
+      timestamp: string;
+      type: "artifact.ready";
+      data: { artifact: BinaryArtifactMetadata; manifest: BinaryManifest };
+    }
+  | { id: string; buildId: string; timestamp: string; type: "build.completed"; data: { build: BinaryBuildRecord } }
+  | { id: string; buildId: string; timestamp: string; type: "build.failed"; data: { errorMessage: string; build: BinaryBuildRecord } }
+  | { id: string; buildId: string; timestamp: string; type: "build.canceled"; data: { reason?: string; build: BinaryBuildRecord } }
+  | { id: string; buildId: string; timestamp: string; type: "heartbeat"; data: { phase?: BinaryBuildPhase; progress?: number } };
+
 export type BinaryPanelState = {
   targetEnvironment: BinaryTargetEnvironment;
   activeBuild: BinaryBuildRecord | null;
   busy: boolean;
+  phase?: BinaryBuildPhase;
+  progress?: number;
+  streamConnected: boolean;
+  lastEventId?: string | null;
+  previewFiles: BinaryPreviewFile[];
+  recentLogs: string[];
+  reliability: BinaryValidationReport | null;
+  artifactState: BinaryArtifactState | null;
+  canCancel: boolean;
   lastAction: "generate" | "validate" | "deploy" | null;
 };

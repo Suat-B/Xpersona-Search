@@ -34,7 +34,7 @@ describe("slash commands", () => {
     const status = buildSlashStatusMessage({
       runtime: "qwenCode",
       mode: "plan",
-      authLabel: "Qwen Code via Binary IDE API key",
+      authLabel: "Qwen Code via Streaming Binary IDE API key",
       runtimePhase: "awaiting_approval",
       sessionId: "pending:123",
       attachedFiles: ["app/api/v1/playground/models/route.ts"],
@@ -43,7 +43,7 @@ describe("slash commands", () => {
 
     expect(help).toContain("/runtime qwen");
     expect(help).toContain("/status");
-    expect(status).toContain("Binary IDE status:");
+    expect(status).toContain("Streaming Binary IDE status:");
     expect(status).toContain("Runtime: Qwen Code");
     expect(status).toContain("Mode: Plan");
     expect(status).toContain("Phase: Awaiting tool approval");

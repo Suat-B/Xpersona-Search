@@ -12,6 +12,7 @@ export const API_KEY_LEGACY_SECRET = "xpersona.playground.apiKey";
 export const REFRESH_TOKEN_SECRET = "xpersona.playground.vscodeRefreshToken";
 export const MODE_KEY = "xpersona.playground.mode";
 export const INDEX_STATE_KEY = "xpersona.playground.indexState";
+export const INDEX_FILE_STATE_KEY = "xpersona.playground.indexFileState";
 export const PENDING_PKCE_KEY = "xpersona.playground.pendingPkce";
 
 const MIGRATABLE_CONFIGURATION_KEYS = [

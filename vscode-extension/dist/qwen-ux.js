@@ -40,6 +40,7 @@ exports.shouldSuppressQwenPartialOutput = shouldSuppressQwenPartialOutput;
 const fs = __importStar(require("fs/promises"));
 const url_1 = require("url");
 const qwen_runtime_noise_1 = require("./qwen-runtime-noise");
+const qwen_loop_guard_1 = require("./qwen-loop-guard");
 function looksLikePath(value) {
     return /[\\/]/.test(value) || /^[a-z]:/i.test(value);
 }
@@ -92,7 +93,7 @@ async function validateQwenPreflight(input) {
         return "Open a workspace folder before using Qwen Code.";
     }
     if (!String(input.apiKey || "").trim()) {
-        return "Set a Binary IDE API key before using the Qwen Code runtime.";
+        return "Set a Streaming Binary IDE API key before using the Qwen Code runtime.";
     }
     try {
         new url_1.URL(String(input.qwenBaseUrl || "").trim());
@@ -104,7 +105,7 @@ async function validateQwenPreflight(input) {
         new url_1.URL(String(input.playgroundBaseUrl || "").trim());
     }
     catch {
-        return "The configured Binary IDE base URL is invalid. Update xpersona.binary.baseApiUrl and try again.";
+        return "The configured Streaming Binary IDE base URL is invalid. Update xpersona.binary.baseApiUrl and try again.";
     }
     const executablePath = String(input.executablePath || "").trim();
     if (executablePath && looksLikePath(executablePath)) {
@@ -130,7 +131,7 @@ function explainQwenFailure(error, input) {
         return `Could not reach the Qwen endpoint at ${input.qwenBaseUrl}. Check the endpoint and update xpersona.binary.qwen.baseUrl if needed.`;
     }
     if (/\b401\b|\b403\b|unauthorized|forbidden/i.test(normalized)) {
-        return "The Qwen endpoint rejected the current Binary IDE API key. Save a fresh key and try again.";
+        return "The Qwen endpoint rejected the current Streaming Binary IDE API key. Save a fresh key and try again.";
     }
     if (/ENOENT|not found/i.test(normalized) && String(input.executablePath || "").trim()) {
         return `The configured Qwen executable could not be found at ${String(input.executablePath).trim()}.`;
@@ -191,6 +192,13 @@ function sanitizeQwenAssistantOutput(input) {
         .join("\n\n")
         .replace(/\n{3,}/g, "\n\n")
         .trim();
+    if ((0, qwen_loop_guard_1.containsGenericProjectClarification)(cleaned) && (input.workspaceTargets?.length || input.workspaceRoot)) {
+        return (0, qwen_loop_guard_1.buildProjectLoopRecoveryMessage)({
+            task: input.task,
+            workspaceTargets: input.workspaceTargets,
+            workspaceRoot: input.workspaceRoot,
+        });
+    }
     if (!cleaned ||
         (0, qwen_runtime_noise_1.containsRuntimeNoiseForContext)({
             text: cleaned,

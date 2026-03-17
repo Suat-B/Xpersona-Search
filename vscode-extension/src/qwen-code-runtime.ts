@@ -201,7 +201,7 @@ export class QwenCodeRuntime {
           }
 
           input.onActivity?.(`Denied tool: ${summarizeToolRequest(toolName, toolInput)}`);
-          return { behavior: "deny", message: "Tool use denied in Binary IDE." } as const;
+          return { behavior: "deny", message: "Tool use denied in Streaming Binary IDE." } as const;
         },
       },
     });

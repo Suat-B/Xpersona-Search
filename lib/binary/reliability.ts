@@ -70,10 +70,12 @@ export async function computeBinaryValidationReport(input: {
   manifest: BinaryManifest;
   targetEnvironment: BinaryTargetEnvironment;
   buildSucceeded: boolean;
+  stage?: "prebuild" | "full";
 }): Promise<BinaryValidationReport> {
   const issues: BinaryValidationIssue[] = [];
   const warnings: string[] = [];
   let score = 100;
+  const stage = input.stage || "full";
 
   const packageJson = await readJsonFile<{
     dependencies?: Record<string, string>;
@@ -87,11 +89,13 @@ export async function computeBinaryValidationReport(input: {
     ...(packageJson?.devDependencies || {}),
   };
 
-  if (!input.buildSucceeded || !entrypointExists) {
+  if (!input.buildSucceeded || (stage === "full" && !entrypointExists)) {
     issues.push({
       code: "build_failed",
       severity: "error",
-      message: "The package bundle did not produce the expected compiled entrypoint.",
+      message: input.buildSucceeded
+        ? "The package bundle did not produce the expected compiled entrypoint."
+        : "The package bundle did not complete a successful build.",
       detail: `Expected entrypoint: ${input.manifest.entrypoint}`,
     });
     score -= 35;
@@ -107,7 +111,7 @@ export async function computeBinaryValidationReport(input: {
     score -= 15;
   }
 
-  if (!packageLockExists) {
+  if (stage === "full" && !packageLockExists) {
     issues.push({
       code: "missing_lockfile",
       severity: "warning",
@@ -161,7 +165,14 @@ export async function computeBinaryValidationReport(input: {
   return {
     status,
     score: Math.max(0, Math.min(100, score)),
-    summary: buildSummary(status, issues),
+    summary:
+      stage === "prebuild"
+        ? status === "pass"
+          ? "Pre-build reliability snapshot looks healthy."
+          : status === "warn"
+            ? `Pre-build reliability snapshot found ${issues.length} advisory issue${issues.length === 1 ? "" : "s"}.`
+            : `Pre-build reliability snapshot found ${issues.length} blocking issue${issues.length === 1 ? "" : "s"}.`
+        : buildSummary(status, issues),
     targetEnvironment: input.targetEnvironment,
     issues,
     warnings,

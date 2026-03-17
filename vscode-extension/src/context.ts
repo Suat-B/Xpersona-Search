@@ -406,9 +406,34 @@ export class ContextCollector {
     const indexedBuckets = await Promise.all(
       queryVariants.map((queryText) => this.indexManager.query(queryText, retrievalHints))
     );
-    const indexedSnippetRows = indexedBuckets
+    const rawIndexedSnippetRows = indexedBuckets
       .flat()
       .filter((item, index, array) => array.findIndex((row) => row.path === item.path && row.content === item.content) === index);
+
+    const shouldConstrainIndexedSnippets =
+      analysis.intent === "change" &&
+      analysis.explicitReferenceCount === 0 &&
+      !analysis.attachedSelection &&
+      analysis.resolvedFiles.length === 1 &&
+      Boolean(analysis.activePath || analysis.attachedFiles.length);
+    const allowedFocusPaths = shouldConstrainIndexedSnippets
+      ? new Set(
+          uniquePaths(
+            [
+              analysis.resolvedFiles[0] || "",
+              analysis.activePath || "",
+              ...analysis.attachedFiles,
+            ],
+            8
+          ).map((pathValue) => pathValue.toLowerCase())
+        )
+      : null;
+    const indexedSnippetRows =
+      allowedFocusPaths && allowedFocusPaths.size
+        ? rawIndexedSnippetRows.filter((item) =>
+            allowedFocusPaths.has(normalizeContextPath(item.path || "").toLowerCase())
+          )
+        : rawIndexedSnippetRows;
 
     const explicitTargetSnippets: IndexedSnippet[] = (
       await Promise.all(

@@ -46,6 +46,9 @@ const qwen_history_1 = require("./qwen-history");
 const webview_html_1 = require("./webview-html");
 const qwen_prompt_1 = require("./qwen-prompt");
 const slash_commands_1 = require("./slash-commands");
+const BINARY_ACTIVE_BUILD_KEY = "xpersona.binary.activeBuildId";
+const BINARY_STREAM_CURSOR_KEY = "xpersona.binary.streamCursorByBuild";
+const LIVE_CHAT_HEARTBEAT_MS = 900;
 function normalizeMode(value) {
     if (value === "plan")
         return "plan";
@@ -83,6 +86,15 @@ function createDefaultBinaryPanelState() {
         },
         activeBuild: null,
         busy: false,
+        phase: "queued",
+        progress: 0,
+        streamConnected: false,
+        lastEventId: null,
+        previewFiles: [],
+        recentLogs: [],
+        reliability: null,
+        artifactState: null,
+        canCancel: false,
         lastAction: null,
     };
 }
@@ -109,11 +121,13 @@ function formatBinaryBuildMessage(build) {
     const lines = [
         build.status === "completed"
             ? "Portable starter bundle ready."
-            : build.status === "failed"
-                ? "Portable starter bundle failed."
-                : build.status === "running"
-                    ? "Portable starter bundle is still building."
-                    : "Portable starter bundle is queued on the Binary IDE server.",
+            : build.status === "canceled"
+                ? "Portable starter bundle canceled."
+                : build.status === "failed"
+                    ? "Portable starter bundle failed."
+                    : build.status === "running"
+                        ? "Portable starter bundle is still building."
+                        : "Portable starter bundle is queued on the Streaming Binary IDE server.",
         `Build: ${build.id}`,
         `Intent: ${build.intent}`,
         `Target runtime: ${build.targetEnvironment.runtime}`,
@@ -121,6 +135,13 @@ function formatBinaryBuildMessage(build) {
     if (build.reliability) {
         lines.push(`Reliability: ${build.reliability.status.toUpperCase()} (${build.reliability.score}/100)`);
         lines.push(build.reliability.summary);
+    }
+    if (build.artifactState) {
+        lines.push(`Formation: ${build.artifactState.coverage}% formed, ${build.artifactState.runnable ? "runnable" : "not runnable yet"}`);
+        lines.push(`Files: ${build.artifactState.sourceFilesReady}/${build.artifactState.sourceFilesTotal} source, ${build.artifactState.outputFilesReady} output`);
+        if (build.artifactState.entryPoints.length) {
+            lines.push(`Entry points: ${build.artifactState.entryPoints.join(", ")}`);
+        }
     }
     if (build.artifact) {
         lines.push(`Artifact: ${build.artifact.fileName} (${formatBytes(build.artifact.sizeBytes)})`);
@@ -136,6 +157,56 @@ function formatBinaryBuildMessage(build) {
         lines.push(`Error: ${build.errorMessage}`);
     }
     return lines.join("\n");
+}
+function isBinaryTerminalStatus(status) {
+    return status === "completed" || status === "failed" || status === "canceled";
+}
+function nowIso() {
+    return new Date().toISOString();
+}
+function liveProgressForPhase(phase) {
+    switch (phase) {
+        case "accepted":
+            return 4;
+        case "collecting_context":
+            return 14;
+        case "connecting_runtime":
+            return 24;
+        case "awaiting_tool_approval":
+            return 32;
+        case "streaming_answer":
+            return 58;
+        case "saving_session":
+            return 88;
+        case "completed":
+        case "failed":
+        case "canceled":
+            return 100;
+        default:
+            return 8;
+    }
+}
+function livePhaseFromRuntimePhase(phase) {
+    switch (phase) {
+        case "collecting_context":
+            return "collecting_context";
+        case "waiting_for_qwen":
+            return "connecting_runtime";
+        case "awaiting_approval":
+            return "awaiting_tool_approval";
+        case "applying_result":
+            return "streaming_answer";
+        case "saving_session":
+            return "saving_session";
+        case "done":
+            return "completed";
+        case "failed":
+            return "failed";
+        case "clarify":
+            return "awaiting_tool_approval";
+        default:
+            return "accepted";
+    }
 }
 class PlaygroundViewProvider {
     constructor(context, auth, historyService, qwenHistoryService, qwenCodeRuntime, contextCollector, actionRunner, toolExecutor, indexManager) {
@@ -161,6 +232,10 @@ class PlaygroundViewProvider {
         };
         this.lastPrompt = null;
         this.pendingClarification = null;
+        this.binaryStreamAbort = null;
+        this.binaryStreamBuildId = null;
+        this.liveHeartbeatTimer = null;
+        this.binarySeenEventIds = new Map();
         this.draftStore = new draft_store_1.DraftStore(this.context.workspaceState);
         this.state = {
             mode: normalizeMode(this.context.workspaceState.get(config_1.MODE_KEY)),
@@ -178,6 +253,7 @@ class PlaygroundViewProvider {
             runtimePhase: "idle",
             followUpActions: [],
             draftText: "",
+            liveChat: null,
             binary: createDefaultBinaryPanelState(),
         };
         this.auth.onDidChange(() => void this.handleAuthChange());
@@ -208,7 +284,7 @@ class PlaygroundViewProvider {
         await this.show(intent);
         const nextIntent = String(intent || "").trim() ||
             (await vscode.window.showInputBox({
-                title: "Generate Binary IDE Portable Starter Bundle",
+                title: "Generate Streaming Binary IDE Portable Starter Bundle",
                 prompt: "Describe the portable package bundle you want to generate.",
                 ignoreFocusOut: true,
             })) ||
@@ -227,25 +303,25 @@ class PlaygroundViewProvider {
     }
     async openBinaryConfiguration() {
         await this.show();
-        const runtimeLabel = this.state.runtime === "qwenCode" ? "Qwen Code" : "Binary IDE API";
-        const nextRuntime = this.state.runtime === "qwenCode" ? "Binary IDE API" : "Qwen Code";
+        const runtimeLabel = this.state.runtime === "qwenCode" ? "Qwen Code" : "Streaming Binary IDE API";
+        const nextRuntime = this.state.runtime === "qwenCode" ? "Streaming Binary IDE API" : "Qwen Code";
         const selection = await vscode.window.showQuickPick([
-            { label: "Set API key", detail: "Save or clear the Binary IDE API key.", action: "apiKey" },
+            { label: "Set API key", detail: "Save or clear the Streaming Binary IDE API key.", action: "apiKey" },
             {
                 label: `Switch runtime to ${nextRuntime}`,
                 detail: `Current runtime: ${runtimeLabel}.`,
                 action: "runtime",
             },
             {
-                label: "Open Binary IDE settings",
+                label: "Open Streaming Binary IDE settings",
                 detail: "Open the VS Code settings UI filtered to xpersona.binary.",
                 action: "settings",
             },
             ...(this.state.runtime === "playgroundApi"
-                ? [{ label: "Browser sign in", detail: "Authenticate the hosted Binary IDE API in the browser.", action: "signIn" }]
+                ? [{ label: "Browser sign in", detail: "Authenticate the hosted Streaming Binary IDE API in the browser.", action: "signIn" }]
                 : []),
         ], {
-            title: "Configure Binary IDE",
+            title: "Configure Streaming Binary IDE",
             ignoreFocusOut: true,
         });
         if (!selection)
@@ -258,20 +334,20 @@ class PlaygroundViewProvider {
             case "runtime": {
                 const pickedRuntime = await vscode.window.showQuickPick([
                     { label: "Qwen Code", runtime: "qwenCode" },
-                    { label: "Binary IDE API", runtime: "playgroundApi" },
+                    { label: "Streaming Binary IDE API", runtime: "playgroundApi" },
                 ], {
-                    title: "Choose Binary IDE Runtime",
+                    title: "Choose Streaming Binary IDE Runtime",
                     ignoreFocusOut: true,
                 });
                 if (!pickedRuntime)
                     return;
                 await this.setRuntime(pickedRuntime.runtime);
-                message = `Binary IDE runtime switched to ${pickedRuntime.label}.`;
+                message = `Streaming Binary IDE runtime switched to ${pickedRuntime.label}.`;
                 break;
             }
             case "settings":
                 await vscode.commands.executeCommand("workbench.action.openSettings", "xpersona.binary");
-                message = "Opened Binary IDE settings.";
+                message = "Opened Streaming Binary IDE settings.";
                 break;
             case "signIn":
                 message = await this.performSignIn();
@@ -321,12 +397,12 @@ class PlaygroundViewProvider {
         await this.refreshAuth();
         await this.refreshHistory();
         return this.state.auth.kind === "none"
-            ? "Binary IDE API key cleared."
-            : "Binary IDE API key updated.";
+            ? "Streaming Binary IDE API key cleared."
+            : "Streaming Binary IDE API key updated.";
     }
     async performSignIn() {
         if (this.state.runtime === "qwenCode") {
-            return "Qwen Code uses your Binary IDE API key. Use /key or the Key button instead of browser sign-in.";
+            return "Qwen Code uses your Streaming Binary IDE API key. Use /key or the Key button instead of browser sign-in.";
         }
         await this.auth.signInWithBrowser();
         return "Browser sign-in opened.";
@@ -336,11 +412,11 @@ class PlaygroundViewProvider {
         await this.newChat();
         await this.refreshAuth();
         await this.refreshHistory();
-        return "Binary IDE auth cleared.";
+        return "Streaming Binary IDE auth cleared.";
     }
     async performUndo() {
         if (this.state.runtime === "qwenCode") {
-            return "Undo is only available for hosted Binary IDE runs. For Qwen Code sessions, use source control or Qwen checkpoints.";
+            return "Undo is only available for hosted Streaming Binary IDE runs. For Qwen Code sessions, use source control or Qwen checkpoints.";
         }
         return this.actionRunner.undoLastBatch();
     }
@@ -394,10 +470,7 @@ class PlaygroundViewProvider {
                 this.postState();
                 return true;
             case "plan":
-                await this.setMode("plan");
-                this.appendMessage("system", "Mode set to Plan.");
-                this.state.runtimePhase = this.getRuntimePhaseForDraft();
-                this.postState();
+                await this.activatePlanMode();
                 return true;
             case "auto":
                 await this.setMode("auto");
@@ -407,7 +480,7 @@ class PlaygroundViewProvider {
                 return true;
             case "runtime":
                 await this.setRuntime(command.runtime);
-                this.appendMessage("system", `Runtime set to ${command.runtime === "qwenCode" ? "Qwen Code" : "Binary IDE API"}.`);
+                this.appendMessage("system", `Runtime set to ${command.runtime === "qwenCode" ? "Qwen Code" : "Streaming Binary IDE API"}.`);
                 this.state.runtimePhase = this.getRuntimePhaseForDraft();
                 this.postState();
                 return true;
@@ -457,9 +530,12 @@ class PlaygroundViewProvider {
         this.state.runtime = runtime;
         this.state.canUndo = runtime === "playgroundApi" && this.actionRunner.canUndo();
         if (runtimeChanged) {
+            this.stopBinaryStream();
+            this.stopLiveHeartbeat();
             this.sessionId = null;
             this.state.selectedSessionId = null;
             this.state.messages = [];
+            this.state.liveChat = null;
             this.state.activity = [];
             this.state.followUpActions = [];
             this.setActiveBinaryBuild(null);
@@ -471,12 +547,27 @@ class PlaygroundViewProvider {
         await this.refreshAuth();
         await this.refreshHistory();
         await this.refreshDraftContext(this.draftText);
+        await this.resumeBinaryBuildIfNeeded();
         this.postState();
     }
     async setMode(mode) {
         const nextMode = normalizeMode(mode);
         this.state.mode = nextMode;
         await this.context.workspaceState.update(config_1.MODE_KEY, nextMode);
+        this.postState();
+    }
+    async activatePlanMode() {
+        await this.setDraftText("");
+        await this.setMode("plan");
+        this.appendMessage("system", "Mode set to Plan.");
+        this.state.runtimePhase = this.getRuntimePhaseForDraft();
+        this.postState();
+    }
+    async togglePlanMode() {
+        const nextMode = this.state.mode === "plan" ? "auto" : "plan";
+        await this.setMode(nextMode);
+        this.appendMessage("system", nextMode === "plan" ? "Mode set to Plan." : "Mode set to Auto.");
+        this.state.runtimePhase = this.getRuntimePhaseForDraft();
         this.postState();
     }
     async refreshHistory() {
@@ -496,8 +587,12 @@ class PlaygroundViewProvider {
     }
     async newChat() {
         this.clearDraftPreviewTimer();
+        this.stopBinaryStream();
+        this.stopLiveHeartbeat();
+        this.clearBinaryEventTracking();
         this.sessionId = null;
         this.state.messages = [];
+        this.state.liveChat = null;
         this.state.activity = [];
         this.state.selectedSessionId = null;
         this.state.canUndo = this.state.runtime === "playgroundApi" && this.actionRunner.canUndo();
@@ -508,6 +603,7 @@ class PlaygroundViewProvider {
         };
         this.lastPrompt = null;
         this.pendingClarification = null;
+        await this.persistActiveBinaryBuildId(null);
         await this.loadDraftText();
         this.state.runtimePhase = this.getRuntimePhaseForDraft();
         await this.refreshDraftContext(this.draftText);
@@ -525,6 +621,7 @@ class PlaygroundViewProvider {
                 this.didPrimeFreshChat = true;
                 this.sessionId = null;
                 this.state.messages = [];
+                this.state.liveChat = null;
                 this.state.activity = [];
                 this.state.selectedSessionId = null;
                 this.state.busy = false;
@@ -554,8 +651,8 @@ class PlaygroundViewProvider {
         if (this.state.runtime === "qwenCode") {
             const apiKey = await this.auth.getApiKey().catch(() => null);
             this.state.auth = apiKey
-                ? { kind: "apiKey", label: "Qwen Code via Binary IDE API key" }
-                : { kind: "none", label: "Qwen Code needs a Binary IDE API key" };
+                ? { kind: "apiKey", label: "Qwen Code via Streaming Binary IDE API key" }
+                : { kind: "none", label: "Qwen Code needs a Streaming Binary IDE API key" };
             this.postState();
             return;
         }
@@ -568,7 +665,11 @@ class PlaygroundViewProvider {
     async openSession(sessionId) {
         if (!sessionId)
             return;
+        this.stopBinaryStream();
+        this.stopLiveHeartbeat();
+        this.clearBinaryEventTracking();
         this.setActiveBinaryBuild(null);
+        this.state.liveChat = null;
         if (this.state.runtime === "qwenCode") {
             this.sessionId = sessionId;
             this.state.selectedSessionId = sessionId;
@@ -607,6 +708,12 @@ class PlaygroundViewProvider {
             case "sendPrompt":
                 await this.sendPrompt(String(message.text || ""));
                 return;
+            case "confirmPlanMode":
+                await this.activatePlanMode();
+                return;
+            case "togglePlanMode":
+                await this.togglePlanMode();
+                return;
             case "generateBinary":
                 await this.generateBinaryBuild(String(message.text || this.draftText || ""));
                 return;
@@ -615,6 +722,9 @@ class PlaygroundViewProvider {
                 return;
             case "deployBinary":
                 await this.publishBinaryBuild();
+                return;
+            case "cancelBinary":
+                await this.cancelBinaryBuild();
                 return;
             case "configureBinary":
                 await this.openBinaryConfiguration();
@@ -744,16 +854,579 @@ class PlaygroundViewProvider {
         }
         this.postState();
     }
+    stopLiveHeartbeat() {
+        if (!this.liveHeartbeatTimer)
+            return;
+        clearInterval(this.liveHeartbeatTimer);
+        this.liveHeartbeatTimer = null;
+    }
+    startLiveHeartbeat() {
+        this.stopLiveHeartbeat();
+        this.liveHeartbeatTimer = setInterval(() => {
+            const liveChat = this.state.liveChat;
+            if (!liveChat) {
+                this.stopLiveHeartbeat();
+                return;
+            }
+            if (liveChat.status === "done" || liveChat.status === "failed" || liveChat.status === "canceled") {
+                this.stopLiveHeartbeat();
+                return;
+            }
+            const nextProgress = Math.min(liveChat.mode === "answer" ? 82 : 46, Math.max(typeof liveChat.progress === "number" ? liveChat.progress : liveProgressForPhase(liveChat.phase), liveProgressForPhase(liveChat.phase)) + 2);
+            this.upsertMessage(liveChat.messageId, "assistant", this.getMessageById(liveChat.messageId)?.content || "", {
+                presentation: "live_binary",
+                live: {
+                    ...liveChat,
+                    progress: nextProgress,
+                    updatedAt: nowIso(),
+                },
+            });
+            this.state.liveChat = {
+                ...liveChat,
+                progress: nextProgress,
+                updatedAt: nowIso(),
+            };
+            this.postState();
+        }, LIVE_CHAT_HEARTBEAT_MS);
+    }
+    getMessageById(id) {
+        return this.state.messages.find((message) => message.id === id) || null;
+    }
+    createLiveAssistantMessage(input) {
+        const messageId = (0, crypto_1.randomUUID)();
+        const live = {
+            messageId,
+            mode: input.mode || "shell",
+            status: "pending",
+            phase: input.phase || "accepted",
+            transport: input.transport,
+            progress: liveProgressForPhase(input.phase || "accepted"),
+            latestActivity: input.latestActivity,
+            startedAt: nowIso(),
+            updatedAt: nowIso(),
+        };
+        this.state.liveChat = live;
+        this.upsertMessage(messageId, "assistant", input.content || "", {
+            presentation: "live_binary",
+            live,
+        });
+        this.startLiveHeartbeat();
+        return messageId;
+    }
+    updateLiveAssistant(input) {
+        const current = this.state.liveChat;
+        if (!current)
+            return;
+        const message = this.getMessageById(current.messageId);
+        const nextLive = {
+            ...current,
+            ...input,
+            messageId: current.messageId,
+            updatedAt: nowIso(),
+            progress: typeof input.progress === "number"
+                ? input.progress
+                : typeof current.progress === "number"
+                    ? current.progress
+                    : liveProgressForPhase(input.phase || current.phase),
+        };
+        if (nextLive.mode === "answer" && nextLive.status === "pending") {
+            nextLive.status = "streaming";
+        }
+        this.state.liveChat = nextLive;
+        this.upsertMessage(current.messageId, input.role || "assistant", input.content ?? message?.content ?? "", {
+            presentation: "live_binary",
+            live: nextLive,
+        });
+    }
+    resolveLiveAssistant(input) {
+        const current = this.state.liveChat;
+        if (!current)
+            return;
+        const nextLive = {
+            ...current,
+            mode: input.mode || current.mode,
+            status: input.status || "done",
+            phase: input.phase || (input.status === "failed" ? "failed" : input.status === "canceled" ? "canceled" : "completed"),
+            progress: 100,
+            latestActivity: input.latestActivity || current.latestActivity,
+            latestLog: input.latestLog || current.latestLog,
+            latestFile: input.latestFile || current.latestFile,
+            updatedAt: nowIso(),
+        };
+        this.upsertMessage(current.messageId, input.role || "assistant", input.content, {
+            presentation: "live_binary",
+            live: nextLive,
+        });
+        this.state.liveChat = null;
+        this.stopLiveHeartbeat();
+    }
+    applyChatLiveEvent(event) {
+        if (event.type === "accepted") {
+            this.createLiveAssistantMessage({
+                transport: event.transport,
+                mode: event.mode || "shell",
+                phase: event.phase || "accepted",
+            });
+            return;
+        }
+        if (!this.state.liveChat)
+            return;
+        switch (event.type) {
+            case "phase":
+                this.updateLiveAssistant({
+                    phase: event.phase,
+                    status: event.status || this.state.liveChat.status,
+                    progress: typeof event.progress === "number" ? event.progress : liveProgressForPhase(event.phase),
+                    latestActivity: event.latestActivity || this.state.liveChat.latestActivity,
+                });
+                return;
+            case "activity":
+                this.updateLiveAssistant({
+                    latestActivity: event.activity,
+                    phase: event.phase || this.state.liveChat.phase,
+                    progress: liveProgressForPhase(event.phase || this.state.liveChat.phase),
+                });
+                return;
+            case "partial_text":
+                this.updateLiveAssistant({
+                    mode: "answer",
+                    status: "streaming",
+                    phase: event.phase || "streaming_answer",
+                    progress: Math.max(this.state.liveChat.progress || 0, liveProgressForPhase("streaming_answer")),
+                    content: event.text,
+                });
+                return;
+            case "build_attached":
+                this.updateLiveAssistant({
+                    mode: "build",
+                    transport: "binary",
+                    buildId: event.buildId,
+                    phase: event.phase || "planning",
+                    progress: typeof event.progress === "number" ? event.progress : liveProgressForPhase(event.phase || "planning"),
+                });
+                return;
+            case "build_event":
+                this.updateLiveAssistant({
+                    mode: "build",
+                    transport: "binary",
+                    phase: event.phase || this.state.liveChat.phase,
+                    progress: typeof event.progress === "number"
+                        ? event.progress
+                        : this.state.liveChat.progress,
+                    latestLog: event.latestLog || this.state.liveChat.latestLog,
+                    latestFile: event.latestFile || this.state.liveChat.latestFile,
+                });
+                return;
+            case "tool_approval":
+                this.updateLiveAssistant({
+                    phase: "awaiting_tool_approval",
+                    latestActivity: event.activity,
+                    progress: liveProgressForPhase("awaiting_tool_approval"),
+                });
+                return;
+            case "final":
+                this.resolveLiveAssistant({
+                    content: event.text,
+                    status: "done",
+                    mode: this.state.liveChat.mode === "build" ? "build" : "answer",
+                    phase: "completed",
+                });
+                return;
+            case "failed":
+                this.resolveLiveAssistant({
+                    content: event.text,
+                    status: "failed",
+                    mode: this.state.liveChat.mode,
+                    phase: event.phase || "failed",
+                    role: "assistant",
+                });
+                return;
+            case "canceled":
+                this.resolveLiveAssistant({
+                    content: event.text || "Streaming Binary IDE canceled the active run.",
+                    status: "canceled",
+                    mode: this.state.liveChat.mode,
+                    phase: event.phase || "canceled",
+                });
+                return;
+            default:
+                return;
+        }
+    }
     getActiveEditorPath() {
         const editor = vscode.window.activeTextEditor;
         if (!editor)
             return null;
         return (0, config_1.toWorkspaceRelativePath)(editor.document.uri);
     }
-    setActiveBinaryBuild(build) {
+    stopBinaryStream() {
+        this.binaryStreamAbort?.abort();
+        this.binaryStreamAbort = null;
+        this.binaryStreamBuildId = null;
+        this.state.binary.streamConnected = false;
+    }
+    clearBinaryEventTracking(buildId) {
+        if (buildId) {
+            this.binarySeenEventIds.delete(buildId);
+            return;
+        }
+        this.binarySeenEventIds.clear();
+    }
+    rememberBinaryEvent(buildId, eventId) {
+        const next = this.binarySeenEventIds.get(buildId) || new Set();
+        if (next.has(eventId))
+            return false;
+        next.add(eventId);
+        if (next.size > 256) {
+            const oldest = next.values().next().value;
+            if (oldest)
+                next.delete(oldest);
+        }
+        this.binarySeenEventIds.set(buildId, next);
+        return true;
+    }
+    async persistActiveBinaryBuildId(buildId) {
+        await this.context.workspaceState.update(BINARY_ACTIVE_BUILD_KEY, buildId);
+    }
+    getPersistedBinaryCursor(buildId) {
+        const raw = this.context.workspaceState.get(BINARY_STREAM_CURSOR_KEY) || {};
+        const value = raw[buildId];
+        return typeof value === "string" && value.trim() ? value.trim() : null;
+    }
+    async persistBinaryCursor(buildId, eventId) {
+        const raw = this.context.workspaceState.get(BINARY_STREAM_CURSOR_KEY) || {};
+        const next = { ...raw };
+        if (eventId)
+            next[buildId] = eventId;
+        else
+            delete next[buildId];
+        await this.context.workspaceState.update(BINARY_STREAM_CURSOR_KEY, next);
+    }
+    deriveBinaryPhase(build) {
+        if (!build)
+            return undefined;
+        if (build.phase)
+            return build.phase;
+        if (build.status === "completed")
+            return "completed";
+        if (build.status === "failed")
+            return "failed";
+        if (build.status === "canceled")
+            return "canceled";
+        return build.status === "running" ? "planning" : "queued";
+    }
+    phaseProgressLabel(phase) {
+        switch (phase) {
+            case "planning":
+                return "Designing bundle plan";
+            case "materializing":
+                return "Writing source files";
+            case "installing":
+                return "Installing dependencies";
+            case "compiling":
+                return "Compiling generated source";
+            case "validating":
+                return "Scoring reliability";
+            case "packaging":
+                return "Sealing portable bundle";
+            case "completed":
+                return "Portable starter bundle ready";
+            case "failed":
+                return "Portable starter bundle failed";
+            case "canceled":
+                return "Portable starter bundle canceled";
+            default:
+                return "Queued for build";
+        }
+    }
+    syncBinaryPanelFromBuild(build) {
         this.state.binary.activeBuild = build;
+        this.state.binary.phase = this.deriveBinaryPhase(build);
+        this.state.binary.progress = build?.progress ?? (build?.status === "completed" ? 100 : 0);
+        this.state.binary.previewFiles = build?.preview?.files || [];
+        this.state.binary.recentLogs = build?.preview?.recentLogs || [];
+        this.state.binary.reliability = build?.reliability || null;
+        this.state.binary.artifactState = build?.artifactState || null;
+        this.state.binary.canCancel = Boolean(build?.cancelable && isBinaryBuildPending(build));
         if (build?.targetEnvironment) {
             this.state.binary.targetEnvironment = build.targetEnvironment;
+        }
+    }
+    setActiveBinaryBuild(build) {
+        this.syncBinaryPanelFromBuild(build);
+        if (build && this.state.liveChat && (this.state.liveChat.mode === "build" || this.state.liveChat.buildId === build.id)) {
+            const latestFile = build.artifactState?.latestFile || build.preview?.files?.[0]?.path;
+            const latestLog = build.preview?.recentLogs?.slice(-1)[0];
+            if (isBinaryTerminalStatus(build.status)) {
+                this.resolveLiveAssistant({
+                    content: formatBinaryBuildMessage(build),
+                    status: build.status === "canceled" ? "canceled" : build.status === "failed" ? "failed" : "done",
+                    mode: "build",
+                    phase: build.phase || (build.status === "completed" ? "completed" : build.status),
+                    latestActivity: this.phaseProgressLabel(build.phase),
+                    latestLog,
+                    latestFile,
+                    role: build.status === "completed" ? "assistant" : "assistant",
+                });
+            }
+            else {
+                this.updateLiveAssistant({
+                    mode: "build",
+                    transport: "binary",
+                    buildId: build.id,
+                    phase: build.phase || "planning",
+                    status: "streaming",
+                    progress: build.progress ?? liveProgressForPhase(build.phase || "planning"),
+                    latestActivity: this.phaseProgressLabel(build.phase),
+                    latestLog,
+                    latestFile,
+                });
+            }
+        }
+        void this.persistActiveBinaryBuildId(build?.id || null);
+    }
+    async handleBinaryBuildEvent(event) {
+        if (!this.rememberBinaryEvent(event.buildId, event.id)) {
+            return;
+        }
+        this.state.binary.streamConnected = true;
+        this.state.binary.lastEventId = event.id;
+        this.binaryStreamBuildId = event.buildId;
+        await this.persistBinaryCursor(event.buildId, event.id);
+        const current = this.state.binary.activeBuild?.id === event.buildId ? this.state.binary.activeBuild : null;
+        switch (event.type) {
+            case "build.created":
+                this.applyChatLiveEvent({
+                    type: "build_attached",
+                    buildId: event.data.build.id,
+                    phase: event.data.build.phase || "planning",
+                    progress: event.data.build.progress,
+                });
+                this.setActiveBinaryBuild(event.data.build);
+                break;
+            case "phase.changed": {
+                const nextBuild = current
+                    ? {
+                        ...current,
+                        status: event.data.status,
+                        phase: event.data.phase,
+                        progress: event.data.progress,
+                        logs: event.data.message ? [...current.logs, event.data.message].slice(-500) : current.logs,
+                    }
+                    : null;
+                if (nextBuild)
+                    this.setActiveBinaryBuild(nextBuild);
+                if (event.data.message)
+                    this.pushActivity(event.data.message);
+                else
+                    this.pushActivity(this.phaseProgressLabel(event.data.phase));
+                this.applyChatLiveEvent({
+                    type: "build_event",
+                    eventType: event.type,
+                    phase: event.data.phase,
+                    progress: event.data.progress,
+                    latestLog: event.data.message,
+                });
+                break;
+            }
+            case "plan.updated":
+                if (current) {
+                    this.setActiveBinaryBuild({
+                        ...current,
+                        preview: {
+                            ...(current.preview || { files: [], recentLogs: [] }),
+                            plan: event.data.plan,
+                        },
+                    });
+                }
+                break;
+            case "file.updated":
+                this.applyChatLiveEvent({
+                    type: "build_event",
+                    eventType: event.type,
+                    phase: current?.phase || "materializing",
+                    progress: current?.progress,
+                    latestFile: event.data.path,
+                });
+                if (current) {
+                    const files = [event.data, ...(current.preview?.files || []).filter((item) => item.path !== event.data.path)].slice(0, 24);
+                    this.setActiveBinaryBuild({
+                        ...current,
+                        preview: {
+                            plan: current.preview?.plan || null,
+                            files,
+                            recentLogs: current.preview?.recentLogs || [],
+                        },
+                    });
+                }
+                break;
+            case "log.chunk":
+                this.applyChatLiveEvent({
+                    type: "build_event",
+                    eventType: event.type,
+                    phase: current?.phase || "installing",
+                    progress: current?.progress,
+                    latestLog: String(event.data.chunk || "").trim(),
+                });
+                if (current) {
+                    const chunk = String(event.data.chunk || "").trim();
+                    this.setActiveBinaryBuild({
+                        ...current,
+                        logs: [...current.logs, chunk].slice(-500),
+                        preview: {
+                            plan: current.preview?.plan || null,
+                            files: current.preview?.files || [],
+                            recentLogs: [...(current.preview?.recentLogs || []), chunk].slice(-80),
+                        },
+                    });
+                }
+                break;
+            case "reliability.delta":
+                this.applyChatLiveEvent({
+                    type: "build_event",
+                    eventType: event.type,
+                    phase: current?.phase || "validating",
+                    progress: current?.progress,
+                });
+                if (current) {
+                    this.setActiveBinaryBuild({
+                        ...current,
+                        reliability: event.data.report,
+                    });
+                }
+                break;
+            case "artifact.delta":
+                this.applyChatLiveEvent({
+                    type: "build_event",
+                    eventType: event.type,
+                    phase: current?.phase || "materializing",
+                    progress: current?.progress,
+                    latestFile: event.data.artifactState.latestFile,
+                });
+                if (current) {
+                    this.setActiveBinaryBuild({
+                        ...current,
+                        artifactState: event.data.artifactState,
+                    });
+                }
+                break;
+            case "checkpoint.saved":
+                this.applyChatLiveEvent({
+                    type: "build_event",
+                    eventType: event.type,
+                    phase: event.data.checkpoint.phase,
+                    progress: current?.progress,
+                    latestFile: event.data.checkpoint.preview?.files?.[0]?.path,
+                    latestLog: event.data.checkpoint.preview?.recentLogs?.slice(-1)[0],
+                });
+                if (current) {
+                    this.setActiveBinaryBuild({
+                        ...current,
+                        preview: event.data.checkpoint.preview || current.preview || null,
+                        manifest: event.data.checkpoint.manifest || current.manifest || null,
+                        reliability: event.data.checkpoint.reliability || current.reliability || null,
+                        artifactState: event.data.checkpoint.artifactState || current.artifactState || null,
+                        artifact: event.data.checkpoint.artifact || current.artifact || null,
+                    });
+                }
+                break;
+            case "artifact.ready":
+                this.applyChatLiveEvent({
+                    type: "build_event",
+                    eventType: event.type,
+                    phase: "packaging",
+                    progress: 96,
+                });
+                if (current) {
+                    this.setActiveBinaryBuild({
+                        ...current,
+                        artifact: event.data.artifact,
+                        manifest: event.data.manifest,
+                    });
+                }
+                break;
+            case "build.completed":
+            case "build.failed":
+            case "build.canceled":
+                this.setActiveBinaryBuild(event.data.build);
+                break;
+            case "heartbeat":
+                this.applyChatLiveEvent({
+                    type: "build_event",
+                    eventType: event.type,
+                    phase: event.data.phase || current?.phase || "planning",
+                    progress: event.data.progress ?? current?.progress,
+                });
+                if (current) {
+                    this.setActiveBinaryBuild({
+                        ...current,
+                        phase: event.data.phase || current.phase,
+                        progress: event.data.progress ?? current.progress,
+                    });
+                }
+                break;
+            default:
+                break;
+        }
+        this.postState();
+    }
+    async followBinaryBuildStream(input) {
+        this.stopBinaryStream();
+        const abort = new AbortController();
+        this.binaryStreamAbort = abort;
+        this.state.binary.streamConnected = false;
+        this.postState();
+        try {
+            if (input.create) {
+                await (0, binary_client_1.createBinaryBuildStream)({
+                    ...input.create,
+                    signal: abort.signal,
+                    onEvent: (event) => this.handleBinaryBuildEvent(event),
+                });
+            }
+            else if (input.buildId) {
+                await (0, binary_client_1.streamBinaryBuildEvents)({
+                    auth: input.auth,
+                    buildId: input.buildId,
+                    cursor: this.getPersistedBinaryCursor(input.buildId),
+                    signal: abort.signal,
+                    onEvent: (event) => this.handleBinaryBuildEvent(event),
+                });
+            }
+            return this.state.binary.activeBuild;
+        }
+        finally {
+            if (this.binaryStreamAbort === abort) {
+                this.binaryStreamAbort = null;
+                this.binaryStreamBuildId = null;
+                this.state.binary.streamConnected = false;
+                this.postState();
+            }
+        }
+    }
+    async resumeBinaryBuildIfNeeded() {
+        if (this.state.runtime !== "playgroundApi")
+            return;
+        const buildId = this.context.workspaceState.get(BINARY_ACTIVE_BUILD_KEY);
+        if (!buildId)
+            return;
+        if (this.binaryStreamBuildId === buildId && this.binaryStreamAbort)
+            return;
+        const auth = await this.auth.getRequestAuth();
+        if (!auth)
+            return;
+        try {
+            const build = await (0, binary_client_1.getBinaryBuild)(auth, buildId);
+            this.setActiveBinaryBuild(build);
+            if (isBinaryBuildPending(build)) {
+                void this.followBinaryBuildStream({
+                    auth,
+                    buildId,
+                }).catch(() => undefined);
+            }
+        }
+        catch {
+            // Ignore stale persisted build ids.
         }
     }
     async setBinaryTargetRuntime(runtime) {
@@ -810,6 +1483,11 @@ class PlaygroundViewProvider {
             this.postState();
             return;
         }
+        if (this.state.binary.busy || isBinaryBuildPending(this.state.binary.activeBuild)) {
+            this.appendMessage("system", "Wait for the current portable starter bundle build to finish before starting another one.");
+            this.postState();
+            return;
+        }
         const auth = await this.auth.getRequestAuth();
         if (!auth) {
             this.appendMessage("system", "Authenticate with an API key or browser sign-in before generating a portable starter bundle.");
@@ -819,6 +1497,17 @@ class PlaygroundViewProvider {
         this.state.binary.busy = true;
         this.state.binary.lastAction = "generate";
         this.pushActivity("Creating portable starter bundle");
+        this.applyChatLiveEvent({
+            type: "accepted",
+            transport: "binary",
+            mode: "build",
+            phase: "accepted",
+        });
+        this.applyChatLiveEvent({
+            type: "activity",
+            activity: "Creating portable starter bundle",
+            phase: "planning",
+        });
         this.postState();
         try {
             const { context, retrievalHints } = await this.contextCollector.collect(intent, {
@@ -828,7 +1517,7 @@ class PlaygroundViewProvider {
                 searchDepth: "fast",
                 intent: (0, assistant_ux_1.classifyIntent)(intent),
             });
-            const build = await (0, binary_client_1.createBinaryBuild)({
+            const createInput = {
                 auth,
                 intent,
                 workspaceFingerprint: (0, config_1.getWorkspaceHash)(),
@@ -839,32 +1528,124 @@ class PlaygroundViewProvider {
                     openFiles: context.openFiles,
                 },
                 retrievalHints,
-            });
-            this.setActiveBinaryBuild(build);
-            const finalBuild = isBinaryBuildPending(build)
-                ? await this.waitForBinaryBuildCompletion(auth, build)
-                : build;
-            this.setActiveBinaryBuild(finalBuild);
-            this.appendMessage(finalBuild.status === "completed" ? "assistant" : "system", formatBinaryBuildMessage(finalBuild));
+            };
+            this.stopBinaryStream();
+            this.clearBinaryEventTracking();
+            this.setActiveBinaryBuild(null);
+            this.state.binary.phase = "queued";
+            this.state.binary.progress = 0;
+            this.state.binary.streamConnected = false;
+            this.state.binary.lastEventId = null;
+            this.state.binary.previewFiles = [];
+            this.state.binary.recentLogs = [];
+            this.state.binary.reliability = null;
+            this.state.binary.artifactState = null;
+            this.state.binary.canCancel = false;
+            this.postState();
+            let finalBuild = null;
+            try {
+                finalBuild = await this.followBinaryBuildStream({
+                    auth,
+                    create: createInput,
+                });
+            }
+            catch (error) {
+                this.pushActivity("Streaming unavailable, falling back to polling.");
+                this.applyChatLiveEvent({
+                    type: "activity",
+                    activity: "Streaming unavailable, falling back to polling.",
+                    phase: "planning",
+                });
+                const streamedBuild = this.state.binary.activeBuild;
+                if (streamedBuild?.id) {
+                    finalBuild = isBinaryBuildPending(streamedBuild)
+                        ? await this.waitForBinaryBuildCompletion(auth, streamedBuild)
+                        : streamedBuild;
+                }
+                else {
+                    const build = await (0, binary_client_1.createBinaryBuild)(createInput);
+                    this.setActiveBinaryBuild(build);
+                    finalBuild = isBinaryBuildPending(build)
+                        ? await this.waitForBinaryBuildCompletion(auth, build)
+                        : build;
+                }
+                if (!finalBuild)
+                    throw error;
+            }
+            if (finalBuild) {
+                this.setActiveBinaryBuild(finalBuild);
+            }
+            const resolvedBuild = finalBuild || this.state.binary.activeBuild;
+            if (!resolvedBuild) {
+                throw new Error("Binary build finished without a build record.");
+            }
+            await this.persistBinaryCursor(resolvedBuild.id, this.state.binary.lastEventId || null);
+            this.setActiveBinaryBuild(resolvedBuild);
             await this.refreshHistory();
         }
         catch (error) {
-            this.appendMessage("system", `Binary generation failed: ${error instanceof Error ? error.message : String(error)}`);
+            this.applyChatLiveEvent({
+                type: "failed",
+                text: `Binary generation failed: ${error instanceof Error ? error.message : String(error)}`,
+                phase: "failed",
+            });
         }
         finally {
             this.state.binary.busy = false;
             this.postState();
         }
     }
+    async cancelBinaryBuild() {
+        const build = this.state.binary.activeBuild;
+        if (!build || !isBinaryBuildPending(build)) {
+            this.appendMessage("system", "There is no active portable starter bundle build to cancel.");
+            this.postState();
+            return;
+        }
+        const auth = await this.auth.getRequestAuth();
+        if (!auth) {
+            this.appendMessage("system", "Authenticate before canceling the current portable starter bundle.");
+            this.postState();
+            return;
+        }
+        const previousCanCancel = this.state.binary.canCancel;
+        this.state.binary.canCancel = false;
+        this.postState();
+        try {
+            const updated = await (0, binary_client_1.cancelBinaryBuild)({
+                auth,
+                buildId: build.id,
+            });
+            this.setActiveBinaryBuild(updated);
+            this.pushActivity("Cancellation requested");
+            this.applyChatLiveEvent({
+                type: "activity",
+                activity: "Cancellation requested",
+                phase: "canceled",
+            });
+        }
+        catch (error) {
+            this.state.binary.canCancel = previousCanCancel;
+            this.appendMessage("system", `Binary cancel failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        finally {
+            this.postState();
+        }
+    }
     async validateBinaryBuild() {
         const build = this.state.binary.activeBuild;
         if (!build) {
-            this.appendMessage("system", "Generate a portable starter bundle before running Binary IDE validation.");
+            this.appendMessage("system", "Generate a portable starter bundle before running Streaming Binary IDE validation.");
             this.postState();
             return;
         }
         if (isBinaryBuildPending(build)) {
             this.appendMessage("system", "Wait for the current portable starter bundle build to finish before validating it.");
+            this.postState();
+            return;
+        }
+        if (build.status !== "completed") {
+            this.appendMessage("system", "Only completed portable starter bundles can be validated.");
             this.postState();
             return;
         }
@@ -905,6 +1686,11 @@ class PlaygroundViewProvider {
         }
         if (isBinaryBuildPending(build)) {
             this.appendMessage("system", "Wait for the current portable starter bundle build to finish before publishing it.");
+            this.postState();
+            return;
+        }
+        if (build.status !== "completed") {
+            this.appendMessage("system", "Only completed portable starter bundles can be published.");
             this.postState();
             return;
         }
@@ -1037,6 +1823,21 @@ class PlaygroundViewProvider {
         }
         return !preview.resolvedFiles.length && !preview.attachedFiles.length && !preview.attachedSelection;
     }
+    shouldRetryQwenWithToolDirective(result, preview) {
+        if (this.state.mode === "plan")
+            return false;
+        if (result.usedTools.length > 0 || result.didMutate)
+            return false;
+        if (preview.intent !== "change" && preview.intent !== "find")
+            return false;
+        if (preview.confidence === "low" &&
+            !preview.resolvedFiles.length &&
+            !preview.selectedFiles.length &&
+            !preview.activeFile) {
+            return false;
+        }
+        return true;
+    }
     async runQwenPrompt(input) {
         const text = input.text.trim();
         const apiKey = await this.auth.getApiKey();
@@ -1072,14 +1873,31 @@ class PlaygroundViewProvider {
         if (input.appendUser) {
             this.appendMessage("user", text);
         }
+        const assistantMessageId = this.createLiveAssistantMessage({
+            transport: "qwen",
+            mode: "shell",
+            phase: "accepted",
+            latestActivity: "Prompt received",
+        });
         this.state.followUpActions = [];
         this.state.activity = [];
         this.pushActivity("Collecting context");
         this.state.runtimePhase = "collecting_context";
         this.state.busy = true;
+        this.applyChatLiveEvent({
+            type: "phase",
+            phase: "collecting_context",
+            status: "pending",
+            progress: liveProgressForPhase("collecting_context"),
+            latestActivity: "Collecting context",
+        });
         this.postState();
         if (preflightMessage) {
-            this.appendMessage("system", preflightMessage);
+            this.applyChatLiveEvent({
+                type: "failed",
+                text: preflightMessage,
+                phase: "failed",
+            });
             this.pushActivity("Failed");
             this.state.runtimePhase = "failed";
             this.state.busy = false;
@@ -1101,7 +1919,12 @@ class PlaygroundViewProvider {
                 intent: preview.intent,
                 searchDepth: input.searchDepth,
             };
-            this.appendMessage("system", this.buildClarificationMessage(preview));
+            this.resolveLiveAssistant({
+                content: this.buildClarificationMessage(preview),
+                status: "done",
+                mode: "answer",
+                phase: "completed",
+            });
             this.state.followUpActions = (0, assistant_ux_1.buildClarificationActions)({
                 candidateFiles: preview.candidateFiles,
             });
@@ -1120,24 +1943,38 @@ class PlaygroundViewProvider {
             return;
         }
         this.pendingClarification = null;
-        const assistantMessageId = (0, crypto_1.randomUUID)();
         try {
             const { context, preview: fullPreview } = await this.contextCollector.collect(text, await this.getQwenContextOptions({
                 searchDepth: input.searchDepth,
                 intent: preview.intent,
             }));
             this.applyPreviewState(fullPreview);
-            if (this.shouldShowContextPreview(fullPreview)) {
-                this.appendMessage("system", (0, assistant_ux_1.buildContextPreviewMessage)(fullPreview));
-            }
             const attachedTargets = (fullPreview.selectedFiles.length ? fullPreview.selectedFiles : fullPreview.resolvedFiles).slice(0, 3);
             if (attachedTargets.length) {
                 this.pushActivity(`Context attached: ${attachedTargets.join(", ")}`);
+                this.applyChatLiveEvent({
+                    type: "activity",
+                    activity: `Context attached: ${attachedTargets.join(", ")}`,
+                    phase: "collecting_context",
+                });
             }
             this.pushActivity("Waiting for Qwen");
             this.state.runtimePhase = "waiting_for_qwen";
+            this.applyChatLiveEvent({
+                type: "phase",
+                phase: "connecting_runtime",
+                status: "pending",
+                progress: liveProgressForPhase("connecting_runtime"),
+                latestActivity: "Waiting for Qwen",
+            });
             this.postState();
-            const result = await this.qwenCodeRuntime.runPrompt({
+            const workspaceTargets = [
+                fullPreview.activeFile || "",
+                ...fullPreview.resolvedFiles,
+                ...fullPreview.selectedFiles,
+            ];
+            const executablePath = (0, config_1.getQwenExecutablePath)() || null;
+            const runPromptAttempt = async (requireToolUse, historyMessages) => this.qwenCodeRuntime.runPrompt({
                 apiKey: String(apiKey || ""),
                 mode: this.state.mode,
                 prompt: (0, qwen_prompt_1.buildQwenPrompt)({
@@ -1147,20 +1984,17 @@ class PlaygroundViewProvider {
                     context,
                     workspaceRoot,
                     searchDepth: input.searchDepth,
-                    history: this.state.messages,
-                    qwenExecutablePath: (0, config_1.getQwenExecutablePath)() || null,
+                    history: historyMessages,
+                    qwenExecutablePath: executablePath,
+                    requireToolUse,
                 }),
                 onPartial: (partial) => {
                     if ((0, qwen_ux_1.shouldSuppressQwenPartialOutput)({
                         text: partial,
                         task: text,
                         workspaceRoot,
-                        executablePath: (0, config_1.getQwenExecutablePath)() || null,
-                        workspaceTargets: [
-                            fullPreview.activeFile || "",
-                            ...fullPreview.resolvedFiles,
-                            ...fullPreview.selectedFiles,
-                        ],
+                        executablePath,
+                        workspaceTargets,
                     })) {
                         return;
                     }
@@ -1168,43 +2002,71 @@ class PlaygroundViewProvider {
                         text: partial,
                         task: text,
                         workspaceRoot,
-                        executablePath: (0, config_1.getQwenExecutablePath)() || null,
-                        workspaceTargets: [
-                            fullPreview.activeFile || "",
-                            ...fullPreview.resolvedFiles,
-                            ...fullPreview.selectedFiles,
-                        ],
+                        executablePath,
+                        workspaceTargets,
                     }).trim();
                     if (!next)
                         return;
-                    this.upsertMessage(assistantMessageId, "assistant", next);
+                    this.applyChatLiveEvent({
+                        type: "partial_text",
+                        text: next,
+                        phase: "streaming_answer",
+                    });
                     this.postState();
                 },
                 onActivity: (activity) => {
                     this.pushActivity(activity);
                     if (/awaiting tool approval/i.test(activity)) {
                         this.state.runtimePhase = "awaiting_approval";
+                        this.applyChatLiveEvent({
+                            type: "tool_approval",
+                            activity,
+                        });
                     }
                     else if (/applying result/i.test(activity)) {
                         this.state.runtimePhase = "applying_result";
+                        this.applyChatLiveEvent({
+                            type: "activity",
+                            activity,
+                            phase: "streaming_answer",
+                        });
+                    }
+                    else {
+                        this.applyChatLiveEvent({
+                            type: "activity",
+                            activity,
+                            phase: livePhaseFromRuntimePhase(this.state.runtimePhase),
+                        });
                     }
                     this.postState();
                 },
             });
+            let result = await runPromptAttempt(false, this.state.messages);
+            if (this.shouldRetryQwenWithToolDirective(result, fullPreview)) {
+                this.pushActivity("Retrying with tool-first instructions");
+                this.state.runtimePhase = "waiting_for_qwen";
+                this.applyChatLiveEvent({
+                    type: "activity",
+                    activity: "Retrying with tool-first instructions",
+                    phase: "connecting_runtime",
+                });
+                this.postState();
+                const historyWithoutCurrentAssistant = this.state.messages.filter((message) => message.id !== assistantMessageId);
+                result = await runPromptAttempt(true, historyWithoutCurrentAssistant);
+            }
             const resolvedSessionId = localSessionId;
             this.sessionId = resolvedSessionId;
             this.state.selectedSessionId = resolvedSessionId;
-            this.upsertMessage(assistantMessageId, "assistant", (0, qwen_ux_1.sanitizeQwenAssistantOutput)({
-                text: result.assistantText || "Qwen Code finished without a final message.",
-                task: text,
-                workspaceRoot,
-                executablePath: (0, config_1.getQwenExecutablePath)() || null,
-                workspaceTargets: [
-                    fullPreview.activeFile || "",
-                    ...fullPreview.resolvedFiles,
-                    ...fullPreview.selectedFiles,
-                ],
-            }));
+            this.applyChatLiveEvent({
+                type: "final",
+                text: (0, qwen_ux_1.sanitizeQwenAssistantOutput)({
+                    text: result.assistantText || "Qwen Code finished without a final message.",
+                    task: text,
+                    workspaceRoot,
+                    executablePath,
+                    workspaceTargets,
+                }),
+            });
             this.state.followUpActions = (0, assistant_ux_1.buildFollowUpActions)({
                 intent: fullPreview.intent,
                 lastTask: text,
@@ -1220,6 +2082,13 @@ class PlaygroundViewProvider {
             }
             this.pushActivity("Saving session");
             this.state.runtimePhase = "saving_session";
+            this.applyChatLiveEvent({
+                type: "phase",
+                phase: "saving_session",
+                status: "streaming",
+                progress: liveProgressForPhase("saving_session"),
+                latestActivity: "Saving session",
+            });
             this.postState();
             await this.qwenHistoryService.saveConversation({
                 sessionId: resolvedSessionId,
@@ -1234,10 +2103,14 @@ class PlaygroundViewProvider {
             this.state.runtimePhase = "done";
         }
         catch (error) {
-            this.appendMessage("system", (0, qwen_ux_1.explainQwenFailure)(error, {
-                qwenBaseUrl: (0, config_1.getQwenOpenAiBaseUrl)(),
-                executablePath: (0, config_1.getQwenExecutablePath)(),
-            }));
+            this.applyChatLiveEvent({
+                type: "failed",
+                text: (0, qwen_ux_1.explainQwenFailure)(error, {
+                    qwenBaseUrl: (0, config_1.getQwenOpenAiBaseUrl)(),
+                    executablePath: (0, config_1.getQwenExecutablePath)(),
+                }),
+                phase: "failed",
+            });
             this.pushActivity("Failed");
             this.state.runtimePhase = "failed";
             await this.qwenHistoryService.saveConversation({
@@ -1257,15 +2130,31 @@ class PlaygroundViewProvider {
         }
     }
     async sendPromptWithPlaygroundApi(text) {
+        this.state.busy = true;
+        this.appendMessage("user", text);
+        this.applyChatLiveEvent({
+            type: "accepted",
+            transport: "playground",
+            mode: "shell",
+            phase: "accepted",
+        });
+        this.applyChatLiveEvent({
+            type: "activity",
+            activity: "Prompt received",
+            phase: "accepted",
+        });
+        this.postState();
         const auth = await this.auth.getRequestAuth();
         if (!auth) {
-            this.appendMessage("system", "Authenticate with browser sign-in or an API key before sending prompts.");
+            this.applyChatLiveEvent({
+                type: "failed",
+                text: "Authenticate with browser sign-in or an API key before sending prompts.",
+                phase: "failed",
+            });
+            this.state.busy = false;
             this.postState();
             return;
         }
-        this.state.busy = true;
-        this.appendMessage("user", text);
-        this.postState();
         try {
             const { context, retrievalHints, preview } = await this.contextCollector.collect(text, {
                 recentTouchedPaths: this.actionRunner.getRecentTouchedPaths(),
@@ -1275,10 +2164,10 @@ class PlaygroundViewProvider {
                 intent: (0, assistant_ux_1.classifyIntent)(text),
             });
             const workspaceHash = (0, config_1.getWorkspaceHash)();
-            const initial = await this.requestAssist(auth, {
+            const requestBody = {
                 mode: this.state.mode,
                 task: text,
-                stream: false,
+                stream: true,
                 orchestrationProtocol: this.state.mode === "plan" ? "batch_v1" : "tool_loop_v1",
                 clientCapabilities: this.state.mode === "plan"
                     ? undefined
@@ -1295,7 +2184,23 @@ class PlaygroundViewProvider {
                     extensionVersion: String(vscode.extensions.getExtension("playgroundai.xpersona-playground")?.packageJSON?.version || "0.0.0"),
                     workspaceHash,
                 },
-            });
+            };
+            let initial;
+            try {
+                initial = await this.requestAssistStream(auth, requestBody);
+            }
+            catch (error) {
+                this.pushActivity("Assist stream unavailable, falling back to standard response.");
+                this.applyChatLiveEvent({
+                    type: "activity",
+                    activity: "Assist stream unavailable, falling back to standard response.",
+                    phase: "connecting_runtime",
+                });
+                initial = await this.requestAssist(auth, {
+                    ...requestBody,
+                    stream: false,
+                });
+            }
             if (initial.sessionId) {
                 this.sessionId = initial.sessionId;
                 this.state.selectedSessionId = initial.sessionId;
@@ -1305,6 +2210,11 @@ class PlaygroundViewProvider {
                 : "Prepared a batch response.");
             let envelope = initial;
             if (envelope.pendingToolCall && envelope.runId) {
+                this.applyChatLiveEvent({
+                    type: "activity",
+                    activity: `Waiting for ${envelope.pendingToolCall.toolCall.name}`,
+                    phase: "awaiting_tool_approval",
+                });
                 envelope = await this.executeToolLoop({
                     auth,
                     initialEnvelope: envelope,
@@ -1314,17 +2224,20 @@ class PlaygroundViewProvider {
             const assistantBody = this.state.mode === "plan" && envelope.plan
                 ? [envelope.final || "Plan ready.", "", formatPlan(envelope.plan)].filter(Boolean).join("\n")
                 : envelope.final || "No final response text was returned.";
-            this.appendMessage("assistant", (0, qwen_ux_1.sanitizeQwenAssistantOutput)({
-                text: assistantBody,
-                task: text,
-                workspaceRoot: (0, config_1.getWorkspaceRootPath)(),
-                executablePath: (0, config_1.getQwenExecutablePath)() || null,
-                workspaceTargets: [
-                    preview.activeFile || "",
-                    ...preview.resolvedFiles,
-                    ...preview.selectedFiles,
-                ],
-            }));
+            this.applyChatLiveEvent({
+                type: "final",
+                text: (0, qwen_ux_1.sanitizeQwenAssistantOutput)({
+                    text: assistantBody,
+                    task: text,
+                    workspaceRoot: (0, config_1.getWorkspaceRootPath)(),
+                    executablePath: (0, config_1.getQwenExecutablePath)() || null,
+                    workspaceTargets: [
+                        preview.activeFile || "",
+                        ...preview.resolvedFiles,
+                        ...preview.selectedFiles,
+                    ],
+                }),
+            });
             if (envelope.completionStatus === "incomplete" && envelope.missingRequirements?.length) {
                 this.appendMessage("system", `Missing: ${envelope.missingRequirements.join(", ")}`);
             }
@@ -1351,7 +2264,11 @@ class PlaygroundViewProvider {
             await this.refreshHistory();
         }
         catch (error) {
-            this.appendMessage("system", `Request failed: ${error instanceof Error ? error.message : String(error)}`);
+            this.applyChatLiveEvent({
+                type: "failed",
+                text: `Request failed: ${error instanceof Error ? error.message : String(error)}`,
+                phase: "failed",
+            });
         }
         finally {
             this.state.busy = false;
@@ -1361,6 +2278,105 @@ class PlaygroundViewProvider {
     async requestAssist(auth, body) {
         const response = await (0, api_client_1.requestJson)("POST", `${(0, config_1.getBaseApiUrl)()}/api/v1/playground/assist`, auth, body);
         return (response?.data || response);
+    }
+    async requestAssistStream(auth, body) {
+        const envelope = {
+            actions: [],
+            final: "",
+            missingRequirements: [],
+        };
+        await (0, api_client_1.streamJsonEvents)("POST", `${(0, config_1.getBaseApiUrl)()}/api/v1/playground/assist`, auth, body, async (event, data) => {
+            switch (event) {
+                case "ack":
+                case "status": {
+                    const message = typeof data === "string" ? data.trim() : "";
+                    if (!message)
+                        return;
+                    this.pushActivity(message);
+                    this.applyChatLiveEvent({
+                        type: "activity",
+                        activity: message,
+                        phase: event === "ack" ? "accepted" : "connecting_runtime",
+                    });
+                    this.postState();
+                    return;
+                }
+                case "activity": {
+                    const activity = typeof data === "string" ? data.trim() : "";
+                    if (!activity)
+                        return;
+                    this.pushActivity(activity);
+                    this.applyChatLiveEvent({
+                        type: /tool/i.test(activity)
+                            ? "tool_approval"
+                            : "activity",
+                        ...(/tool/i.test(activity)
+                            ? { activity }
+                            : { activity, phase: "connecting_runtime" }),
+                    });
+                    this.postState();
+                    return;
+                }
+                case "plan":
+                    envelope.plan = data;
+                    return;
+                case "actions":
+                    envelope.actions = Array.isArray(data) ? data : [];
+                    return;
+                case "run":
+                    if (data && typeof data === "object") {
+                        const record = data;
+                        envelope.runId = typeof record.runId === "string" ? record.runId : envelope.runId;
+                        envelope.adapter = record.adapter;
+                        envelope.loopState = record.loopState || envelope.loopState;
+                    }
+                    return;
+                case "tool_request":
+                    envelope.pendingToolCall = data;
+                    this.pushActivity(`Awaiting ${envelope.pendingToolCall.toolCall.name}`);
+                    this.applyChatLiveEvent({
+                        type: "tool_approval",
+                        activity: `Awaiting ${envelope.pendingToolCall.toolCall.name}`,
+                    });
+                    this.postState();
+                    return;
+                case "meta":
+                    if (data && typeof data === "object") {
+                        const record = data;
+                        Object.assign(envelope, record);
+                        if (record.sessionId) {
+                            this.sessionId = record.sessionId;
+                            this.state.selectedSessionId = record.sessionId;
+                        }
+                    }
+                    return;
+                case "partial": {
+                    const text = typeof data === "string" ? data : "";
+                    if (!text.trim())
+                        return;
+                    this.applyChatLiveEvent({
+                        type: "partial_text",
+                        text,
+                        phase: "streaming_answer",
+                    });
+                    this.postState();
+                    return;
+                }
+                case "final":
+                    envelope.final = typeof data === "string" ? data : "";
+                    return;
+                case "error": {
+                    const message = typeof data === "string" ? data : "Assist stream failed.";
+                    throw new Error(message);
+                }
+                default:
+                    return;
+            }
+        });
+        if (!envelope.sessionId || !envelope.decision || !envelope.validationPlan || !envelope.targetInference || !envelope.contextSelection || !envelope.completionStatus) {
+            throw new Error("Assist stream completed without a usable response envelope.");
+        }
+        return envelope;
     }
     async continueRun(auth, runId, toolResult) {
         const response = await (0, api_client_1.requestJson)("POST", `${(0, config_1.getBaseApiUrl)()}/api/v1/playground/runs/${encodeURIComponent(runId)}/continue`, auth, {
@@ -1373,6 +2389,10 @@ class PlaygroundViewProvider {
         while (envelope.pendingToolCall && envelope.runId) {
             const pendingToolCall = envelope.pendingToolCall;
             this.pushActivity(`Step ${pendingToolCall.step}: ${pendingToolCall.toolCall.name}`);
+            this.applyChatLiveEvent({
+                type: "tool_approval",
+                activity: `Step ${pendingToolCall.step}: ${pendingToolCall.toolCall.name}`,
+            });
             this.postState();
             const toolResult = await this.toolExecutor.executeToolCall({
                 pendingToolCall,
@@ -1381,6 +2401,11 @@ class PlaygroundViewProvider {
                 workspaceFingerprint: input.workspaceFingerprint,
             });
             this.pushActivity(toolResult.summary);
+            this.applyChatLiveEvent({
+                type: "activity",
+                activity: toolResult.summary,
+                phase: "streaming_answer",
+            });
             this.postState();
             envelope = await this.continueRun(input.auth, envelope.runId, toolResult);
             if (envelope.sessionId) {
@@ -1389,24 +2414,28 @@ class PlaygroundViewProvider {
             }
             if (envelope.pendingToolCall) {
                 this.pushActivity(`Queued next tool: ${envelope.pendingToolCall.toolCall.name}`);
+                this.applyChatLiveEvent({
+                    type: "tool_approval",
+                    activity: `Queued next tool: ${envelope.pendingToolCall.toolCall.name}`,
+                });
             }
             this.postState();
         }
         return envelope;
     }
-    appendMessage(role, content) {
-        this.state.messages = [...this.state.messages, { id: (0, crypto_1.randomUUID)(), role, content }];
+    appendMessage(role, content, extras) {
+        this.state.messages = [...this.state.messages, { id: (0, crypto_1.randomUUID)(), role, content, ...extras }];
     }
-    upsertMessage(id, role, content) {
+    upsertMessage(id, role, content, extras) {
         const nextContent = content.trim();
         const index = this.state.messages.findIndex((message) => message.id === id);
         if (index >= 0) {
             const nextMessages = [...this.state.messages];
-            nextMessages[index] = { ...nextMessages[index], role, content: nextContent };
+            nextMessages[index] = { ...nextMessages[index], role, content: nextContent, ...extras };
             this.state.messages = nextMessages;
             return;
         }
-        this.state.messages = [...this.state.messages, { id, role, content: nextContent }];
+        this.state.messages = [...this.state.messages, { id, role, content: nextContent, ...extras }];
     }
     pushActivity(text) {
         const next = text.trim();

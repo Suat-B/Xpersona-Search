@@ -147,6 +147,7 @@ function buildToolLoopUserPrompt(input: ToolLoopTurnInput, tools: PlaygroundTool
     `Recent tool trace:\n${traceLines}`,
     resultSection,
     `Plan objective: ${input.fallbackPlan.objective}`,
+    "Return either one toolCall or a final answer. Do not return an actions array in tool_loop_v1.",
     `Task:\n${input.request.task}`,
   ].join("\n\n");
 }
@@ -158,11 +159,11 @@ function buildTextActionsSystemPrompt(): string {
     "Choose exactly one of these shapes:",
     '{"toolCall":{"id":"call_1","name":"read_file","arguments":{"path":"src/app.ts"},"kind":"observe","summary":"Inspect the current file"}}',
     '{"final":"string"}',
-    '{"final":"string","actions":[{"type":"edit","path":"src/app.ts","patch":"diff --git ..."}]}',
     "Use at most one tool call per response.",
     "Prefer observation tools before mutation unless the trace already provides enough grounding.",
     "Only use tools from the provided catalog.",
     "Paths must stay workspace-relative.",
+    "Never return an actions array in tool_loop_v1.",
   ].join("\n");
 }
 
@@ -172,6 +173,7 @@ function buildNativeToolsSystemPrompt(): string {
     "Use tool calls when you need more workspace information or need to change the workspace.",
     "If the task is complete, respond with a concise final answer.",
     "Prefer observation tools before mutation unless prior tool results already grounded the change.",
+    "Do not return batch actions or an actions array in tool_loop_v1.",
   ].join("\n");
 }
 
@@ -264,11 +266,9 @@ function normalizeToolCall(value: unknown, availableTools: PlaygroundToolName[])
   };
 }
 
-function parseToolLoopJson(
+export function parseToolLoopJson(
   raw: string,
-  availableTools: PlaygroundToolName[],
-  fallbackPlan: AssistPlan,
-  targetPath?: string
+  availableTools: PlaygroundToolName[]
 ): Omit<ToolLoopTurnOutput, "adapter" | "logs" | "modelSelection"> | null {
   const parsed = parseJsonCandidate(raw);
   if (!parsed) return null;
@@ -281,18 +281,7 @@ function parseToolLoopJson(
     };
   }
 
-  const batch = parseStructuredAssistResponse({
-    raw,
-    mode: "yolo",
-    targetPath,
-    fallbackPlan,
-  });
-  if (batch.actions.length > 0) {
-    return {
-      final: batch.final,
-      actions: batch.actions,
-    };
-  }
+  if (Array.isArray(parsed.actions)) return null;
 
   const final = typeof parsed.final === "string" ? parsed.final.trim() : "";
   if (final) return { final };
@@ -539,12 +528,13 @@ async function callNativeToolTurn(input: ToolLoopTurnInput, tools: PlaygroundToo
 
   const content = String(message?.content || "").trim();
   if (!content) return {};
-  const parsed = parseToolLoopJson(content, tools, input.fallbackPlan, input.targetInference.path);
+  const parsed = parseToolLoopJson(content, tools);
   if (parsed?.toolCall) return { toolCall: parsed.toolCall };
-  if (parsed?.actions?.length) {
-    return { final: parsed.final || `Prepared ${parsed.actions.length} batch action(s).` };
+  if (parsed?.final) return { final: parsed.final };
+  if (parseJsonCandidate(content)) {
+    throw new Error("Native tool response used an unsupported tool_loop_v1 JSON shape.");
   }
-  return { final: content };
+  return {};
 }
 
 export function selectToolLoopAdapter(requestedModel?: string): {
@@ -596,13 +586,12 @@ export async function requestToolLoopTurn(input: ToolLoopTurnInput): Promise<Too
         throw error;
       }
       const raw = await callTextActionsTurn(input, availableTools);
-      const parsed = parseToolLoopJson(raw || "", availableTools, fallbackPlan, input.targetInference.path);
+      const parsed = parseToolLoopJson(raw || "", availableTools);
       if (parsed) {
         return {
           adapter: "text_actions",
           final: parsed.final || "",
           toolCall: parsed.toolCall,
-          actions: parsed.actions,
           logs: [
             "adapter=native_tools",
             `native_tools_error=${error instanceof Error ? error.message : String(error)}`,
@@ -617,13 +606,12 @@ export async function requestToolLoopTurn(input: ToolLoopTurnInput): Promise<Too
 
   if (selection.adapter === "text_actions") {
     const raw = await callTextActionsTurn(input, availableTools);
-    const parsed = parseToolLoopJson(raw || "", availableTools, fallbackPlan, input.targetInference.path);
+    const parsed = parseToolLoopJson(raw || "", availableTools);
     if (parsed) {
       return {
         adapter: "text_actions",
         final: parsed.final || "",
         toolCall: parsed.toolCall,
-        actions: parsed.actions,
         logs: ["adapter=text_actions"],
         modelSelection: selection.modelSelection,
       };

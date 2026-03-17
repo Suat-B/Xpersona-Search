@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildQwenPrompt = buildQwenPrompt;
 const qwen_runtime_noise_1 = require("./qwen-runtime-noise");
+const qwen_loop_guard_1 = require("./qwen-loop-guard");
 function trimBlock(value, limit) {
     return String(value || "")
         .replace(/\r\n/g, "\n")
@@ -45,14 +46,21 @@ function buildConversationLane(input) {
     const explicitRuntimeTask = (0, qwen_runtime_noise_1.isExplicitRuntimeTask)(input.task);
     const filtered = (input.history || [])
         .filter((message) => message.role === "user" || message.role === "assistant")
-        .filter((message) => explicitRuntimeTask ||
-        !(0, qwen_runtime_noise_1.containsRuntimeNoiseForContext)({
+        .filter((message) => {
+        if (message.role === "assistant" && (0, qwen_loop_guard_1.containsGenericProjectClarification)(message.content)) {
+            return false;
+        }
+        if (explicitRuntimeTask) {
+            return true;
+        }
+        return !(0, qwen_runtime_noise_1.containsRuntimeNoiseForContext)({
             text: message.content,
             task: input.task,
             workspaceRoot: input.workspaceRoot,
             executablePath: input.qwenExecutablePath,
             workspaceTargets: input.workspaceTargets,
-        }));
+        });
+    });
     if (filtered.length &&
         filtered[filtered.length - 1]?.role === "user" &&
         filtered[filtered.length - 1]?.content.trim() === input.task.trim()) {
@@ -150,6 +158,7 @@ function buildExecutionLane(input) {
         "- Suppress long generic reasoning unless the user explicitly asked for explanation.",
         "- Ignore stale extension-bundle or SDK CLI paths unless the user explicitly asks about the extension internals.",
         "- Never begin your answer by discussing the Qwen SDK, CLI executable, extension runtime, auth setup, or local install paths unless the user explicitly asked about those internals.",
+        "- Do not ask broad project-scope clarification questions when you already have a likely target file or grounded workspace context. Either act on the likely file or ask a narrow file-specific clarification.",
         "- Do not emit literal <tool_call>, <function=...>, or <parameter=...> markup in your answer. Either use the SDK's real tool mechanism or respond in normal prose.",
         "- If the user quotes prior assistant chatter about SDK locations, installation checks, CLI executables, or runtime folders, treat that as a context-loss bug report and pivot back to the active workspace files.",
         "- When in doubt, explain the likely target file or active editor content instead of speculating about SDK installation state.",
@@ -160,6 +169,13 @@ function buildExecutionLane(input) {
     }
     if (input.preview.intent === "change") {
         lines.push("- For code changes, show a brief patch plan before making edits.");
+        lines.push("- Inspect the likely target file with workspace tools before answering. If confidence is high, make the smallest correct edit instead of replying with prose only.");
+    }
+    if (input.preview.intent === "find") {
+        lines.push("- Use workspace search/read tools to verify at least one real file or symbol before answering. Do not answer from prompt text alone.");
+    }
+    if (input.requireToolUse) {
+        lines.push("- Tool-first override: you must use at least one workspace tool before your final answer. A prose-only response is not acceptable for this request.");
     }
     if (input.mode === "plan") {
         lines.push("- Stay in plan mode. Explain the approach without making edits.");
@@ -200,6 +216,7 @@ function buildQwenPrompt(input) {
             workspaceRoot: input.workspaceRoot,
             searchDepth: input.searchDepth || "fast",
             task: input.task,
+            requireToolUse: input.requireToolUse,
         }),
     ]
         .filter(Boolean)

@@ -67,6 +67,39 @@ function sse(value: unknown): string {
   return `data: ${JSON.stringify(value)}\n\n`;
 }
 
+function buildPartialPrefixes(text: string): string[] {
+  const normalized = String(text || "").trim();
+  if (!normalized) return [];
+
+  const words = normalized.split(/\s+/);
+  if (words.length <= 3) return [normalized];
+
+  const prefixes: string[] = [];
+  let buffer = "";
+  let remainingBudget = 22;
+
+  for (const word of words) {
+    buffer = buffer ? `${buffer} ${word}` : word;
+    remainingBudget -= word.length + 1;
+    if (remainingBudget > 0) continue;
+    prefixes.push(buffer);
+    remainingBudget = 22;
+    if (prefixes.length >= 10) break;
+  }
+
+  if (!prefixes.length || prefixes[prefixes.length - 1] !== normalized) {
+    prefixes.push(normalized);
+  }
+
+  const unique: string[] = [];
+  for (const prefix of prefixes) {
+    if (!unique.length || unique[unique.length - 1] !== prefix) {
+      unique.push(prefix);
+    }
+  }
+  return unique.slice(0, 12);
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
   const auth = await authenticatePlaygroundRequest(request);
   if (!auth) return unauthorized(request);
@@ -193,12 +226,23 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   void (async () => {
     try {
+      await emit("ack", "Assist stream connected.");
       await emit("status", "Starting Playground assist run...");
+      await emit("activity", "Resolving context and orchestration plan.");
       const result = await runTask();
+      await emit(
+        "activity",
+        result.orchestrationProtocol === "tool_loop_v1"
+          ? `Tool loop ready${result.runId ? ` (${result.runId})` : ""}.`
+          : "Assist result prepared."
+      );
       if (result.plan) await emit("plan", result.plan);
       await emit("actions", result.actions);
       if (result.runId) await emit("run", { runId: result.runId, adapter: result.adapter, loopState: result.loopState });
-      if (result.pendingToolCall) await emit("tool_request", result.pendingToolCall);
+      if (result.pendingToolCall) {
+        await emit("activity", `Awaiting tool request: ${result.pendingToolCall.toolCall.name}`);
+        await emit("tool_request", result.pendingToolCall);
+      }
       await emit("meta", {
         decision: result.decision,
         validationPlan: result.validationPlan,
@@ -215,11 +259,15 @@ export async function POST(request: NextRequest): Promise<Response> {
         pendingToolCall: result.pendingToolCall,
         toolTrace: result.toolTrace ?? [],
       });
+      for (const partial of buildPartialPrefixes(result.final)) {
+        await emit("partial", partial);
+      }
       await emit("final", result.final);
       await writer.write(encoder.encode("data: [DONE]\n\n"));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await emit("status", "Assist request failed.");
+      await emit("error", message);
       await emit("final", `I hit an error while preparing the response: ${message}`);
       await writer.write(encoder.encode("data: [DONE]\n\n"));
     } finally {

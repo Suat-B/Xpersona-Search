@@ -4,6 +4,10 @@ import {
   containsRuntimeNoiseForContext,
   isExplicitRuntimeTask,
 } from "./qwen-runtime-noise";
+import {
+  buildProjectLoopRecoveryMessage,
+  containsGenericProjectClarification,
+} from "./qwen-loop-guard";
 
 function looksLikePath(value: string): boolean {
   return /[\\/]/.test(value) || /^[a-z]:/i.test(value);
@@ -79,7 +83,7 @@ export async function validateQwenPreflight(input: {
   }
 
   if (!String(input.apiKey || "").trim()) {
-    return "Set a Binary IDE API key before using the Qwen Code runtime.";
+    return "Set a Streaming Binary IDE API key before using the Qwen Code runtime.";
   }
 
   try {
@@ -91,7 +95,7 @@ export async function validateQwenPreflight(input: {
   try {
     new URL(String(input.playgroundBaseUrl || "").trim());
   } catch {
-    return "The configured Binary IDE base URL is invalid. Update xpersona.binary.baseApiUrl and try again.";
+    return "The configured Streaming Binary IDE base URL is invalid. Update xpersona.binary.baseApiUrl and try again.";
   }
 
   const executablePath = String(input.executablePath || "").trim();
@@ -129,7 +133,7 @@ export function explainQwenFailure(
   }
 
   if (/\b401\b|\b403\b|unauthorized|forbidden/i.test(normalized)) {
-    return "The Qwen endpoint rejected the current Binary IDE API key. Save a fresh key and try again.";
+    return "The Qwen endpoint rejected the current Streaming Binary IDE API key. Save a fresh key and try again.";
   }
 
   if (/ENOENT|not found/i.test(normalized) && String(input.executablePath || "").trim()) {
@@ -207,6 +211,14 @@ export function sanitizeQwenAssistantOutput(input: {
     .join("\n\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+
+  if (containsGenericProjectClarification(cleaned) && (input.workspaceTargets?.length || input.workspaceRoot)) {
+    return buildProjectLoopRecoveryMessage({
+      task: input.task,
+      workspaceTargets: input.workspaceTargets,
+      workspaceRoot: input.workspaceRoot,
+    });
+  }
 
   if (
     !cleaned ||

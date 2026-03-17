@@ -351,4 +351,52 @@ describe("qwen-prompt", () => {
     expect(prompt).toContain("Qwen adapter and retry handling");
     expect(prompt).not.toContain("SDK's CLI executable");
   });
+
+  it("drops generic project-scope clarification loops from assistant history", () => {
+    const prompt = buildQwenPrompt({
+      task: "please create a trailing stop loss <3",
+      mode: "auto",
+      workspaceRoot: "c:/repo",
+      preview: {
+        activeFile: "trading/strategies/FractalDimensionOscillator.pine",
+        openFiles: ["trading/strategies/FractalDimensionOscillator.pine"],
+        candidateFiles: ["trading/strategies/FractalDimensionOscillator.pine"],
+        attachedFiles: ["trading/strategies/FractalDimensionOscillator.pine"],
+        memoryFiles: [],
+        resolvedFiles: ["trading/strategies/FractalDimensionOscillator.pine"],
+        selectedFiles: ["trading/strategies/FractalDimensionOscillator.pine"],
+        diagnostics: [],
+        intent: "change",
+        confidence: "high",
+        confidenceScore: 0.91,
+        rationale: "single likely target",
+        workspaceRoot: "c:/repo",
+        snippets: [],
+      },
+      history: [
+        {
+          id: "m-1",
+          role: "assistant",
+          content:
+            "Could you clarify what you'd like me to help with regarding the Perfect Circle project? I can assist with code implementation, analysis, or other tasks within the project scope.",
+        },
+        {
+          id: "m-2",
+          role: "user",
+          content: "please create a trailing stop loss <3",
+        },
+      ],
+      context: {
+        activeFile: {
+          path: "trading/strategies/FractalDimensionOscillator.pine",
+          language: "pine",
+          content: "// strategy",
+        },
+      },
+    });
+
+    expect(prompt).not.toContain("Perfect Circle project");
+    expect(prompt).toContain("Do not ask broad project-scope clarification questions");
+    expect(prompt).toContain("trading/strategies/FractalDimensionOscillator.pine");
+  });
 });

@@ -24,6 +24,7 @@ describe("tool executor", () => {
         summary: "Applied changes to 1 file.",
         details: ["Patched hello.py."],
         changedFiles: ["hello.py"],
+        createdDirectories: [],
         blockedActions: [],
         commandResults: [],
         canUndo: true,
@@ -97,6 +98,85 @@ describe("tool executor", () => {
     });
     expect(result.ok).toBe(true);
     expect(result.summary).toContain("Applied changes");
+  });
+
+  it("marks edit tools as failed when no file change was applied", async () => {
+    actionRunner.apply.mockResolvedValueOnce({
+      summary: "No local changes were applied.",
+      details: ["Patch failed for hello.py: hunk mismatch."],
+      changedFiles: [],
+      createdDirectories: [],
+      blockedActions: [],
+      commandResults: [],
+      canUndo: false,
+    });
+    const executor = new ToolExecutor(actionRunner as any, { query: vi.fn() } as any);
+    const result = await executor.executeToolCall({
+      pendingToolCall: {
+        step: 2,
+        adapter: "text_actions",
+        requiresClientExecution: true,
+        toolCall: {
+          id: "call_edit_failed",
+          name: "edit",
+          arguments: {
+            path: "hello.py",
+            patch: "@@ -1,1 +1,1 @@\n-print('hi')\n+print('hello')",
+          },
+        },
+        createdAt: new Date().toISOString(),
+      },
+      auth: { apiKey: "x" },
+      sessionId: "session-1",
+      workspaceFingerprint: "workspace-1",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.summary).toContain("Patch failed");
+    expect(result.error).toContain("Patch failed");
+  });
+
+  it("marks command tools as failed when the command exits non-zero", async () => {
+    actionRunner.apply.mockResolvedValueOnce({
+      summary: "Ran 1 command.",
+      details: ["FAIL npm test: test suite failed"],
+      changedFiles: [],
+      createdDirectories: [],
+      blockedActions: [],
+      commandResults: [
+        {
+          command: "npm test",
+          exitCode: 1,
+          stdout: "",
+          stderr: "test suite failed",
+          timedOut: false,
+        },
+      ],
+      canUndo: false,
+    });
+    const executor = new ToolExecutor(actionRunner as any, { query: vi.fn() } as any);
+    const result = await executor.executeToolCall({
+      pendingToolCall: {
+        step: 3,
+        adapter: "text_actions",
+        requiresClientExecution: true,
+        toolCall: {
+          id: "call_command_failed",
+          name: "run_command",
+          arguments: {
+            command: "npm test",
+            category: "implementation",
+          },
+        },
+        createdAt: new Date().toISOString(),
+      },
+      auth: { apiKey: "x" },
+      workspaceFingerprint: "workspace-1",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.summary).toContain("Command failed");
+    expect(result.error).toContain("Command failed");
   });
 
   it("runs command tools in yolo mode for full-auto execution", async () => {

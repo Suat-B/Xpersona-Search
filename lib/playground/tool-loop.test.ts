@@ -279,28 +279,14 @@ describe("playground tool loop", () => {
       },
     });
 
-    expect(afterRead.pendingToolCall?.toolCall.name).toBe("create_checkpoint");
-
-    const afterCheckpoint = await continueAssistToolLoop({
-      userId: "user-2",
-      traceId: "trace-7",
-      runId: started.runId!,
-      toolResult: {
-        toolCallId: afterRead.pendingToolCall!.toolCall.id,
-        name: "create_checkpoint",
-        ok: true,
-        summary: "Checkpoint created.",
-      },
-    });
-
-    expect(afterCheckpoint.pendingToolCall?.toolCall.name).toBe("run_command");
+    expect(afterRead.pendingToolCall?.toolCall.name).toBe("run_command");
 
     const repaired = await continueAssistToolLoop({
       userId: "user-2",
       traceId: "trace-8",
       runId: started.runId!,
       toolResult: {
-        toolCallId: afterCheckpoint.pendingToolCall!.toolCall.id,
+        toolCallId: afterRead.pendingToolCall!.toolCall.id,
         name: "run_command",
         ok: false,
         blocked: true,
@@ -325,5 +311,46 @@ describe("playground tool loop", () => {
 
     expect(failed.loopState?.status).toBe("failed");
     expect(failed.missingRequirements).toContain("tool_result_failed");
+  });
+
+  it("does not inject unsupported primer or checkpoint tools", async () => {
+    mockedRequestToolLoopTurn.mockResolvedValueOnce({
+      adapter: "text_actions",
+      final: "",
+      toolCall: {
+        id: "call_edit_direct",
+        name: "edit",
+        arguments: {
+          path: "hello.py",
+          patch: "@@ -1,1 +1,1 @@\n-print('hi')\n+print('hello')",
+        },
+        kind: "mutate",
+        summary: "Patch hello.py directly",
+      },
+      logs: ["adapter=text_actions"],
+      modelSelection: {} as any,
+    });
+
+    const started = await startAssistToolLoop({
+      userId: "user-3",
+      sessionId: "session-3",
+      traceId: "trace-10",
+      request: {
+        mode: "auto",
+        task: "Patch hello.py directly",
+        orchestrationProtocol: "tool_loop_v1",
+        clientCapabilities: {
+          toolLoop: true,
+          supportedTools: ["edit"],
+          autoExecute: true,
+        },
+        context: {
+          activeFile: { path: "hello.py", content: "print('hi')\n" },
+        },
+      },
+    });
+
+    expect(started.pendingToolCall?.toolCall.name).toBe("edit");
+    expect(started.pendingToolCall?.availableTools).toEqual(["edit"]);
   });
 });
