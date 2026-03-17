@@ -1,7 +1,19 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { createHash } from "crypto";
+import { existsSync } from "fs";
 import type { RuntimeBackend } from "./shared";
+
+/** Path to the CLI wrapper that sanitizes argv[1] to avoid leaking extension paths into model context. */
+export function getQwenCliWrapperPath(): string | undefined {
+  const wrapperPath = path.join(__dirname, "..", "scripts", "qwen-cli-wrapper.js");
+  return existsSync(wrapperPath) ? path.resolve(wrapperPath) : undefined;
+}
+
+/** Whether to use the CLI wrapper (experimental; may cause "CLI process exited with code 1"). */
+export function getQwenCliWrapperEnabled(): boolean {
+  return getConfigurationValue<boolean>("qwen.cliWrapper", false);
+}
 
 export const EXTENSION_NAMESPACE = "xpersona.binary";
 export const LEGACY_EXTENSION_NAMESPACE = "xpersona.playground";
@@ -86,14 +98,14 @@ export function getRuntimeBackend(): RuntimeBackend {
 export function getQwenModel(): string {
   const configured = getConfigurationValue<string>(
     "qwen.model",
-    "Qwen/Qwen3-Coder-Next-FP8:together"
+    "Qwen/Qwen3-Next-80B-A3B-Thinking:fastest"
   );
-  return String(configured || "Qwen/Qwen3-Coder-Next-FP8:together").trim();
+  return String(configured || "Qwen/Qwen3-Next-80B-A3B-Thinking:fastest").trim();
 }
 
 export function getQwenOpenAiBaseUrl(): string {
-  const configured = getConfigurationValue<string>("qwen.baseUrl", `${getBaseApiUrl()}/api/v1/hf`);
-  const value = String(configured || `${getBaseApiUrl()}/api/v1/hf`).trim();
+  const configured = getConfigurationValue<string>("qwen.baseUrl", "https://router.huggingface.co/v1");
+  const value = String(configured || "https://router.huggingface.co/v1").trim();
   return value.replace(/\/+$/, "");
 }
 

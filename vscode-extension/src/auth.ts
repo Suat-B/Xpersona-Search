@@ -62,7 +62,7 @@ export class AuthManager implements vscode.UriHandler {
     if (apiKey) {
       return {
         kind: "apiKey",
-        label: "Using stored API key",
+        label: "Using Xpersona Binary IDE API key",
       };
     }
 
@@ -88,8 +88,8 @@ export class AuthManager implements vscode.UriHandler {
 
   async setApiKeyInteractive(): Promise<void> {
     const key = await vscode.window.showInputBox({
-      title: "Set Binary IDE API Key",
-      prompt: "Paste your Binary IDE API key",
+      title: "Set Xpersona Binary IDE API Key",
+      prompt: "Paste your Xpersona Binary IDE API key",
       password: true,
       ignoreFocusOut: true,
     });
@@ -99,11 +99,11 @@ export class AuthManager implements vscode.UriHandler {
     if (!trimmed) {
       await this.context.secrets.delete(API_KEY_SECRET);
       await this.context.secrets.delete(API_KEY_LEGACY_SECRET);
-      vscode.window.showInformationMessage("Stored Binary IDE API key cleared.");
+      vscode.window.showInformationMessage("Xpersona Binary IDE API key cleared.");
     } else {
       await this.context.secrets.store(API_KEY_SECRET, trimmed);
       await this.context.secrets.delete(API_KEY_LEGACY_SECRET);
-      vscode.window.showInformationMessage("Binary IDE API key saved.");
+      vscode.window.showInformationMessage("Xpersona Binary IDE API key saved.");
     }
 
     await this.emitCurrentState();

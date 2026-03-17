@@ -35,9 +35,19 @@ export function containsGenericProjectClarification(text: string): boolean {
       normalized.includes("troubleshoot an issue with it") ||
       normalized.includes("understand what it does"));
 
+  const looksLikeWouldYouLikeLoop =
+    (normalized.includes("would you like me to") || normalized.includes("how can i help you with this")) &&
+    ((normalized.includes("read") && normalized.includes("file")) ||
+      normalized.includes("explain what") ||
+      normalized.includes("fix an issue") ||
+      normalized.includes("help with an issue") ||
+      normalized.includes("something else")) &&
+    (normalized.includes("let me know") || normalized.includes("how can i help"));
+
   return (
     looksLikeMenuLoop ||
     looksLikeScopedClarificationLoop ||
+    looksLikeWouldYouLikeLoop ||
     normalized.includes("could you clarify what you'd like me to help with regarding the") ||
     normalized.includes("if you're looking for help with the") ||
     normalized.includes("within the project scope") ||

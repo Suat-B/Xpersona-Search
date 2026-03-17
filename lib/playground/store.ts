@@ -676,6 +676,10 @@ export async function updateAgentRun(input: {
 }
 
 export async function getAgentRunById(input: { userId: string; runId: string }): Promise<AgentRunRecord | null> {
+  const fromMemory = () => {
+    const existing = memory.runs.get(input.userId) ?? [];
+    return existing.find((row) => row.id === input.runId) ?? null;
+  };
   try {
     const rows = await db
       .select({
@@ -695,10 +699,11 @@ export async function getAgentRunById(input: { userId: string; runId: string }):
       .from(playgroundAgentRuns)
       .where(and(eq(playgroundAgentRuns.userId, input.userId), eq(playgroundAgentRuns.id, input.runId)))
       .limit(1);
-    return rows[0] ?? null;
+    const row = rows[0] ?? null;
+    if (row) return row;
+    return fromMemory();
   } catch {
-    const existing = memory.runs.get(input.userId) ?? [];
-    return existing.find((row) => row.id === input.runId) ?? null;
+    return fromMemory();
   }
 }
 

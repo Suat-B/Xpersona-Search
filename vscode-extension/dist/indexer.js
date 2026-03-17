@@ -44,7 +44,8 @@ const MAX_FILE_BYTES = 160000;
 const UPSERT_BATCH_SIZE = 120;
 const CHUNK_SIZE = 4000;
 const CHUNK_OVERLAP = 300;
-const WORKSPACE_FILE_EXCLUDE_GLOB = "**/{.git,node_modules,dist,build,.next,coverage,_vsix_*,_vsix_tmp,artifacts}/**";
+const MIN_BACKGROUND_REBUILD_GAP_MS = 20000;
+const WORKSPACE_FILE_EXCLUDE_GLOB = "**/{.git,node_modules,dist,build,.next,coverage,.trae,.vscode,.idea,_vsix_*,_vsix_tmp,artifacts}/**";
 function sha1(input) {
     return (0, crypto_1.createHash)("sha1").update(input, "utf8").digest("hex");
 }
@@ -52,6 +53,12 @@ function isExcludedPath(relativePath) {
     const normalized = relativePath.toLowerCase();
     return (normalized.startsWith(".git/") ||
         normalized.includes("/.git/") ||
+        normalized.startsWith(".trae/") ||
+        normalized.includes("/.trae/") ||
+        normalized.startsWith(".vscode/") ||
+        normalized.includes("/.vscode/") ||
+        normalized.startsWith(".idea/") ||
+        normalized.includes("/.idea/") ||
         normalized.startsWith("node_modules/") ||
         normalized.includes("/node_modules/") ||
         normalized.startsWith("dist/") ||
@@ -120,6 +127,7 @@ class CloudIndexManager {
         this.fileCache = [];
         this.rebuildPromise = null;
         this.queuedRebuildReason = null;
+        this.lastBackgroundRebuildAt = 0;
         this.onDidChangeState = this.onDidChangeStateEmitter.event;
         this.state =
             context.workspaceState.get(config_1.INDEX_STATE_KEY) || {
@@ -137,13 +145,22 @@ class CloudIndexManager {
         void this.refreshFileCache();
         this.scheduleRebuild(1500);
     }
+    shouldTrackUri(uri) {
+        const relativePath = (0, config_1.toWorkspaceRelativePath)(uri);
+        if (!relativePath)
+            return false;
+        return !isExcludedPath(relativePath);
+    }
     scheduleRebuild(delayMs = 3000) {
+        const elapsed = Date.now() - this.lastBackgroundRebuildAt;
+        const minGapDelay = elapsed >= MIN_BACKGROUND_REBUILD_GAP_MS ? 0 : MIN_BACKGROUND_REBUILD_GAP_MS - elapsed;
+        const nextDelay = Math.max(delayMs, minGapDelay);
         if (this.rebuildTimer)
             clearTimeout(this.rebuildTimer);
         this.rebuildTimer = setTimeout(() => {
             this.rebuildTimer = null;
             void this.rebuild("background");
-        }, delayMs);
+        }, nextDelay);
     }
     async rebuild(reason = "manual") {
         if (this.rebuildPromise) {
@@ -267,6 +284,9 @@ class CloudIndexManager {
                 freshness: "error",
                 lastError: error instanceof Error ? error.message : String(error),
             });
+        }
+        finally {
+            this.lastBackgroundRebuildAt = Date.now();
         }
     }
     async query(query, hints) {

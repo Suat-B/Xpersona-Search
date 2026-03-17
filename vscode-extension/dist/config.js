@@ -34,6 +34,8 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PENDING_PKCE_KEY = exports.INDEX_FILE_STATE_KEY = exports.INDEX_STATE_KEY = exports.MODE_KEY = exports.REFRESH_TOKEN_SECRET = exports.API_KEY_LEGACY_SECRET = exports.API_KEY_SECRET = exports.WEBVIEW_VIEW_ID = exports.LEGACY_EXTENSION_NAMESPACE = exports.EXTENSION_NAMESPACE = void 0;
+exports.getQwenCliWrapperPath = getQwenCliWrapperPath;
+exports.getQwenCliWrapperEnabled = getQwenCliWrapperEnabled;
 exports.migrateLegacyConfiguration = migrateLegacyConfiguration;
 exports.getBaseApiUrl = getBaseApiUrl;
 exports.getRuntimeBackend = getRuntimeBackend;
@@ -50,6 +52,16 @@ exports.toAbsoluteWorkspacePath = toAbsoluteWorkspacePath;
 const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
 const crypto_1 = require("crypto");
+const fs_1 = require("fs");
+/** Path to the CLI wrapper that sanitizes argv[1] to avoid leaking extension paths into model context. */
+function getQwenCliWrapperPath() {
+    const wrapperPath = path.join(__dirname, "..", "scripts", "qwen-cli-wrapper.js");
+    return (0, fs_1.existsSync)(wrapperPath) ? path.resolve(wrapperPath) : undefined;
+}
+/** Whether to use the CLI wrapper (experimental; may cause "CLI process exited with code 1"). */
+function getQwenCliWrapperEnabled() {
+    return getConfigurationValue("qwen.cliWrapper", false);
+}
 exports.EXTENSION_NAMESPACE = "xpersona.binary";
 exports.LEGACY_EXTENSION_NAMESPACE = "xpersona.playground";
 exports.WEBVIEW_VIEW_ID = "xpersona.playgroundView";
@@ -117,12 +129,12 @@ function getRuntimeBackend() {
     return configured === "playgroundApi" ? "playgroundApi" : "qwenCode";
 }
 function getQwenModel() {
-    const configured = getConfigurationValue("qwen.model", "Qwen/Qwen3-Coder-Next-FP8:together");
-    return String(configured || "Qwen/Qwen3-Coder-Next-FP8:together").trim();
+    const configured = getConfigurationValue("qwen.model", "Qwen/Qwen3-Next-80B-A3B-Thinking:fastest");
+    return String(configured || "Qwen/Qwen3-Next-80B-A3B-Thinking:fastest").trim();
 }
 function getQwenOpenAiBaseUrl() {
-    const configured = getConfigurationValue("qwen.baseUrl", `${getBaseApiUrl()}/api/v1/hf`);
-    const value = String(configured || `${getBaseApiUrl()}/api/v1/hf`).trim();
+    const configured = getConfigurationValue("qwen.baseUrl", "https://router.huggingface.co/v1");
+    const value = String(configured || "https://router.huggingface.co/v1").trim();
     return value.replace(/\/+$/, "");
 }
 function getQwenExecutablePath() {

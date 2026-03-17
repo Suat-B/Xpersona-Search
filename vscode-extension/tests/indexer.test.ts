@@ -126,4 +126,12 @@ describe("indexer", () => {
     expect(findFiles).toHaveBeenCalledWith("**/*", expect.stringContaining("node_modules"), 2000);
     expect(suggestions).toContain("src/route.ts");
   });
+
+  it("ignores volatile workspace paths like .trae for change-triggered rebuilds", async () => {
+    const manager = new CloudIndexManager(createContext() as any, async () => ({ apiKey: "key" }));
+
+    expect(manager.shouldTrackUri({ fsPath: "C:\\repo\\src\\route.ts" } as any)).toBe(true);
+    expect(manager.shouldTrackUri({ fsPath: "C:\\repo\\.trae\\session.json" } as any)).toBe(false);
+    expect(manager.shouldTrackUri({ fsPath: "C:\\repo\\.vscode\\settings.json" } as any)).toBe(false);
+  });
 });

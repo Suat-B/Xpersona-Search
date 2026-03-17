@@ -59,7 +59,7 @@ describe("playground webview shell", () => {
     expect(html).toContain('class="composer-card"');
     expect(html).toContain('id="composer"');
     expect(html).toContain('id="composerConfirm"');
-    expect(html).toContain("Create a plan?");
+    expect(html).toContain("Press Enter to switch to Plan mode.");
     expect(html).toContain('id="jumpToLatest"');
     expect(html).toContain("Use @ for files.");
     expect(html).toContain("Ask Binary IDE anything.. @ for files, / for commands.");
@@ -79,9 +79,9 @@ describe("playground webview shell", () => {
     expect(html).toContain("var(--vscode-sideBar-background");
     expect(html).toContain("var(--vscode-button-background");
     expect(html).toContain("var(--vscode-button-hoverBackground");
-    expect(html).toContain(".workspace-shell{display:grid;grid-template-rows:44px minmax(0,1fr);height:100vh");
+    expect(html).toContain(".workspace-shell{display:grid;grid-template-rows:44px minmax(0,1fr);height:100%;min-height:100%");
     expect(html).toContain(".utility-rail{display:flex;align-items:center;justify-content:space-between");
-    expect(html).toContain(".workspace-header-title{min-width:0;flex:1 1 auto");
+    expect(html).toContain(".workspace-header-title{min-width:0;max-width:none;flex:1 1 auto");
     expect(html).toContain(".workspace-header-actions{display:flex;align-items:center;justify-content:flex-end");
     expect(html).toContain(".composer-dock{flex:none;overflow:visible;padding:10px 20px 16px");
     expect(html).toContain(".chat-binary-spotlight-host{position:sticky;top:0;z-index:8");
@@ -97,7 +97,7 @@ describe("playground webview shell", () => {
     expect(html).toContain(".live-message-main{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,240px);gap:16px");
     expect(html).toContain(".binary-summary-optional{display:none}");
     expect(html).toContain('.chat-binary-hero{position:relative;z-index:3;min-height:min(20vh,240px)');
-    expect(html).toContain('.workspace-shell[data-binary-hero="true"] .message-stack{max-width:min(680px,100%);min-height:calc(80vh - 24px)');
+    expect(html).toContain('.workspace-shell[data-binary-hero="true"] .message-stack{max-width:min(680px,100%);min-height:0');
     expect(html).toContain('.workspace-shell[data-binary-hero="true"] .message.live-binary.hero-collapsed .live-message-transcript{overflow:visible}');
     expect(html).toContain('.binary-hero-line{display:block;font-family:var(--vscode-editor-font-family');
     expect(html).toContain('.binary-hero-line.prism{background:linear-gradient(92deg,#7ee7ff 0%,#8cf7b0 35%,#ffd27e 70%,#f7a4ff 100%)');

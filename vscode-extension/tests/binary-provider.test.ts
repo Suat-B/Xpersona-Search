@@ -319,7 +319,7 @@ function createProvider(options?: { persistedMode?: "auto" | "plan" }) {
     signInWithBrowser: vi.fn(async () => undefined),
     signOut: vi.fn(async () => undefined),
     getApiKey: vi.fn(async () => "test-key"),
-    getAuthState: vi.fn(async () => ({ kind: "apiKey", label: "Using stored API key" })),
+    getAuthState: vi.fn(async () => ({ kind: "apiKey", label: "Using Xpersona Binary IDE API key" })),
   };
   const historyService = {
     list: vi.fn(async () => []),

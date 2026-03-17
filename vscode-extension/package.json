@@ -116,18 +116,23 @@
         },
         "xpersona.binary.qwen.model": {
           "type": "string",
-          "default": "Qwen/Qwen3-Coder-Next-FP8:together",
-          "description": "Model name passed to Qwen Code when the runtime is set to qwenCode."
+          "default": "Qwen/Qwen3-Next-80B-A3B-Thinking:fastest",
+          "description": "Model name for the Qwen Code runtime. Passed to the API when runtime is qwenCode."
         },
         "xpersona.binary.qwen.baseUrl": {
           "type": "string",
-          "default": "http://localhost:3000/api/v1/hf",
-          "description": "OpenAI-compatible base URL for Qwen Code. The default routes through the Binary IDE proxy."
+          "default": "https://router.huggingface.co/v1",
+          "description": "OpenAI-compatible base URL for the Binary IDE backend. Xpersona uses this to serve models to your extension."
         },
         "xpersona.binary.qwen.executable": {
           "type": "string",
           "default": "",
           "description": "Optional path or command for a custom Qwen Code executable. Leave empty to use the SDK-bundled CLI."
+        },
+        "xpersona.binary.qwen.cliWrapper": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use CLI wrapper to avoid path leak into model context. Experimental; may cause 'CLI process exited with code 1'."
         }
       }
     }

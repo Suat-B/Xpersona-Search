@@ -83,7 +83,7 @@ export async function validateQwenPreflight(input: {
   }
 
   if (!String(input.apiKey || "").trim()) {
-    return "Set a Binary IDE API key before using the Qwen Code runtime.";
+    return "Set your Xpersona Binary IDE API key before using the Qwen Code runtime.";
   }
 
   try {
@@ -133,7 +133,7 @@ export function explainQwenFailure(
   }
 
   if (/\b401\b|\b403\b|unauthorized|forbidden/i.test(normalized)) {
-    return "The Qwen endpoint rejected the current Binary IDE API key. Save a fresh key and try again.";
+    return "The Qwen endpoint rejected the current Xpersona Binary IDE API key. Save a fresh key and try again.";
   }
 
   if (/ENOENT|not found/i.test(normalized) && String(input.executablePath || "").trim()) {

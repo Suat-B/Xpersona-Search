@@ -115,7 +115,24 @@ async function activate(context) {
             event.affectsConfiguration(`${config_1.LEGACY_EXTENSION_NAMESPACE}.qwen.executable`)) {
             void provider.refreshConfiguration();
         }
-    }), vscode.workspace.onDidSaveTextDocument(() => indexManager.scheduleRebuild()), vscode.workspace.onDidCreateFiles(() => indexManager.scheduleRebuild()), vscode.workspace.onDidDeleteFiles(() => indexManager.scheduleRebuild()), vscode.workspace.onDidRenameFiles(() => indexManager.scheduleRebuild()));
+    }), vscode.workspace.onDidSaveTextDocument((document) => {
+        if (!indexManager.shouldTrackUri(document.uri))
+            return;
+        indexManager.scheduleRebuild();
+    }), vscode.workspace.onDidCreateFiles((event) => {
+        if (!event.files.some((uri) => indexManager.shouldTrackUri(uri)))
+            return;
+        indexManager.scheduleRebuild();
+    }), vscode.workspace.onDidDeleteFiles((event) => {
+        if (!event.files.some((uri) => indexManager.shouldTrackUri(uri)))
+            return;
+        indexManager.scheduleRebuild();
+    }), vscode.workspace.onDidRenameFiles((event) => {
+        const touchedTrackedUri = event.files.some((entry) => indexManager.shouldTrackUri(entry.oldUri) || indexManager.shouldTrackUri(entry.newUri));
+        if (!touchedTrackedUri)
+            return;
+        indexManager.scheduleRebuild();
+    }));
     indexManager.start();
 }
 function deactivate() { }

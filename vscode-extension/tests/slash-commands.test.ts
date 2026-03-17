@@ -34,7 +34,7 @@ describe("slash commands", () => {
     const status = buildSlashStatusMessage({
       runtime: "qwenCode",
       mode: "plan",
-      authLabel: "Qwen Code via Binary IDE API key",
+      authLabel: "Qwen Code via Xpersona Binary IDE API key",
       runtimePhase: "awaiting_approval",
       sessionId: "pending:123",
       attachedFiles: ["app/api/v1/playground/models/route.ts"],

@@ -128,9 +128,13 @@ function buildSnippetLane(input) {
     if (input.context.activeFile?.path) {
         sections.push(`Active editor context:\n${renderContextFile(input.context.activeFile)}`);
     }
-    if (input.context.indexedSnippets?.length) {
-        sections.push(`Relevant workspace snippets:\n${input.context.indexedSnippets
-            .slice(0, 4)
+    const allSnippets = [
+        ...(input.injectedSnippets || []),
+        ...(input.context.indexedSnippets || []),
+    ];
+    if (allSnippets.length) {
+        sections.push(`Relevant workspace snippets:\n${allSnippets
+            .slice(0, 5)
             .map((snippet) => renderSnippet(snippet.path, snippet.reason, snippet.content))
             .join("\n\n")}`);
     }
@@ -161,6 +165,7 @@ function buildExecutionLane(input) {
         "- Never begin your answer by discussing the Qwen SDK, CLI executable, extension runtime, auth setup, or local install paths unless the user explicitly asked about those internals.",
         "- Do not ask broad project-scope clarification questions when you already have a likely target file or grounded workspace context. Either act on the likely file or ask a narrow file-specific clarification.",
         "- Do not emit literal <tool_call>, <function=...>, or <parameter=...> markup in your answer. Either use the SDK's real tool mechanism or respond in normal prose.",
+        "- All file operations (read_file, edit, etc.) must use paths from the Target lane or workspace root only. Never use extension paths, .trae/extensions, node_modules in the extension, or @qwen-code/sdk paths. The workspace root is the only valid base for file paths.",
         "- If the user quotes prior assistant chatter about SDK locations, installation checks, CLI executables, or runtime folders, treat that as a context-loss bug report and pivot back to the active workspace files.",
         "- When in doubt, explain the likely target file or active editor content instead of speculating about SDK installation state.",
     ];
@@ -177,6 +182,7 @@ function buildExecutionLane(input) {
     }
     if (input.requireToolUse) {
         lines.push("- Tool-first override: you must use at least one workspace tool before your final answer. A prose-only response is not acceptable for this request.");
+        lines.push("- Use read_file or other tools with paths from the Target lane (e.g. the resolved/active file paths above). Never use paths outside the workspace.");
     }
     if (input.forceActionable) {
         lines.push("- Retry override: the previous answer was not actionable. Do not ask generic clarification questions.");
@@ -193,19 +199,29 @@ function buildExecutionLane(input) {
     }
     return lines.join("\n");
 }
+const RUNTIME_PATH_REDACTED = "[runtime-path-redacted]";
+/** Redacts extension/SDK paths that can confuse the model into thinking the user asked about them. */
+function sanitizeRuntimePaths(text) {
+    if (!text || !text.trim())
+        return text;
+    return text
+        .replace(/[A-Za-z]:\\Users\\[^ \n\r\t]+\\\.trae\\extensions\\playgroundai\.xpersona-playground-[^ \n\r\t]*/gi, RUNTIME_PATH_REDACTED)
+        .replace(/[A-Za-z]:\\[^ \n\r\t]*\\node_modules\\@qwen-code\\sdk\\dist\\cli\\cli\.js/gi, RUNTIME_PATH_REDACTED)
+        .replace(/[A-Za-z]:\\[^ \n\r\t]*@qwen-code\\sdk\\dist\\cli\\cli\.js/gi, RUNTIME_PATH_REDACTED)
+        .replace(/\/\.trae\/extensions\/playgroundai\.xpersona-playground-[^\s)]*/gi, RUNTIME_PATH_REDACTED)
+        .replace(/\/node_modules\/@qwen-code\/sdk\/dist\/cli\/cli\.js/gi, RUNTIME_PATH_REDACTED)
+        .replace(/[A-Za-z]:\/[^ \n\r\t]*\/\.trae\/extensions\/[^\s)]*/gi, RUNTIME_PATH_REDACTED)
+        .replace(/[A-Za-z]:\/[^ \n\r\t]*\/node_modules\/@qwen-code\/sdk\/dist\/cli\/cli\.js/gi, RUNTIME_PATH_REDACTED);
+}
 function sanitizeTaskForPrompt(task) {
     const raw = String(task || "");
     if (!raw.trim())
         return "";
     if ((0, qwen_runtime_noise_1.isExplicitRuntimeTask)(raw))
         return raw;
-    const cleaned = raw
-        .replace(/[A-Za-z]:\\Users\\[^ \n\r\t]+\\\.trae\\extensions\\playgroundai\.xpersona-playground-[^ \n\r\t]+/gi, "[runtime-path-redacted]")
-        .replace(/[A-Za-z]:\\[^ \n\r\t]*@qwen-code\\sdk\\dist\\cli\\cli\.js/gi, "[runtime-path-redacted]")
-        .replace(/\/\.trae\/extensions\/playgroundai\.xpersona-playground-[^\s)]+/gi, "[runtime-path-redacted]")
-        .replace(/\/node_modules\/@qwen-code\/sdk\/dist\/cli\/cli\.js/gi, "[runtime-path-redacted]");
+    const cleaned = sanitizeRuntimePaths(raw);
     if ((0, intelligence_utils_1.isRuntimePathLeak)(cleaned)) {
-        return cleaned.replace(/@qwen-code\/sdk\/dist\/cli\/cli\.js/gi, "[runtime-path-redacted]");
+        return cleaned.replace(/@qwen-code\/sdk\/dist\/cli\/cli\.js/gi, RUNTIME_PATH_REDACTED);
     }
     return cleaned;
 }
@@ -219,7 +235,7 @@ function buildQwenPrompt(input) {
     ]
         .map((target) => String(target || "").trim())
         .filter(Boolean)));
-    return [
+    const rawPrompt = [
         `User request:\n${sanitizeTaskForPrompt(input.task)}`,
         buildConversationLane({
             task: input.task,
@@ -233,6 +249,7 @@ function buildQwenPrompt(input) {
         buildSnippetLane({
             preview: input.preview,
             context: input.context,
+            injectedSnippets: input.injectedSnippets,
         }),
         buildExecutionLane({
             preview: input.preview,
@@ -246,5 +263,6 @@ function buildQwenPrompt(input) {
     ]
         .filter(Boolean)
         .join("\n\n");
+    return sanitizeRuntimePaths(rawPrompt);
 }
 //# sourceMappingURL=qwen-prompt.js.map

@@ -27,6 +27,7 @@
     artifactsDrawerOpen: false,
     binaryDetailsOpen: false,
     binaryPanelOpen: false,
+    settingsMenuOpen: false,
     localArtifacts: [],
     binary: {
       targetEnvironment: {
@@ -74,6 +75,13 @@
     currentChatTitle: document.getElementById("currentChatTitle"),
     historyToggle: document.getElementById("historyToggle"),
     artifactsToggle: document.getElementById("artifactsToggle"),
+    settingsToggle: document.getElementById("settingsToggle"),
+    settingsMenu: document.getElementById("settingsMenu"),
+    settingsSignIn: document.getElementById("settingsSignIn"),
+    settingsSignOut: document.getElementById("settingsSignOut"),
+    settingsRuntimeQwen: document.getElementById("settingsRuntimeQwen"),
+    settingsRuntimeHosted: document.getElementById("settingsRuntimeHosted"),
+    settingsUndo: document.getElementById("settingsUndo"),
     historyDrawer: document.getElementById("historyDrawer"),
     historyScrim: document.getElementById("historyScrim"),
     artifactsDrawer: document.getElementById("artifactsDrawer"),
@@ -96,8 +104,8 @@
     activity: document.getElementById("activity"),
     jumpToLatest: document.getElementById("jumpToLatest"),
     authChip: document.getElementById("authChip"),
-    signIn: document.getElementById("signIn"),
-    signOut: document.getElementById("signOut"),
+    authStatusButton: document.getElementById("authStatusButton"),
+    authStatusDot: document.getElementById("authStatusDot"),
     undoChanges: document.getElementById("undoChanges"),
     contextNote: document.getElementById("contextNote"),
     contextRoot: document.getElementById("contextRoot"),
@@ -287,9 +295,9 @@
 
   function authButtonLabel() {
     if (state.runtime === "qwenCode") {
-      return state.auth && state.auth.kind !== "none" ? "API key ready" : "Set API key";
+      return state.auth && state.auth.kind !== "none" ? "Xpersona API key ready" : "Set Xpersona API key";
     }
-    return state.auth && state.auth.kind !== "none" ? "Auth ready" : "Set API key";
+    return state.auth && state.auth.kind !== "none" ? "Auth ready" : "Set Xpersona API key";
   }
 
   function authButtonShortLabel() {
@@ -312,14 +320,14 @@
     const historyItems = Array.isArray(state.history) ? state.history : [];
     if (state.selectedSessionId) {
       const selected = historyItems.find((item) => item && item.id === state.selectedSessionId);
-      if (selected && selected.title) return shortTitle(selected.title, 88);
+      if (selected && selected.title) return shortTitle(selected.title, 64);
     }
 
     const messages = Array.isArray(state.messages) ? state.messages : [];
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const message = messages[index];
       if (!message || message.role !== "user") continue;
-      const title = shortTitle(message.content, 88);
+      const title = shortTitle(message.content, 64);
       if (title) return title;
     }
     return "New chat";
@@ -568,7 +576,7 @@
   }
 
   function isPlanShortcutValue(value) {
-    return String(value || "").trim().toLowerCase() === "/plan";
+    return /^\/plan(?:\s|$)/i.test(String(value || "").trim());
   }
 
   function hidePlanConfirm(options) {
@@ -608,11 +616,12 @@
 
   function confirmPlanMode() {
     if (!elements.composer || state.busy) return;
+    const composerValue = String(elements.composer.value || "").trim();
     shouldStickToBottom = true;
     setHistoryDrawerOpen(false);
     setArtifactsDrawerOpen(false);
     window.clearTimeout(previewTimer);
-    vscode.postMessage({ type: "confirmPlanMode" });
+    vscode.postMessage({ type: "confirmPlanMode", text: composerValue });
     elements.composer.value = "";
     syncComposerHeight();
     persistDraft();
@@ -640,6 +649,7 @@
     if (state.historyDrawerOpen) {
       state.artifactsDrawerOpen = false;
     }
+    state.settingsMenuOpen = false;
     syncShellState();
     persistDraft();
   }
@@ -648,6 +658,17 @@
     state.artifactsDrawerOpen = Boolean(open);
     if (state.artifactsDrawerOpen) {
       state.historyDrawerOpen = false;
+    }
+    state.settingsMenuOpen = false;
+    syncShellState();
+    persistDraft();
+  }
+
+  function setSettingsMenuOpen(open) {
+    state.settingsMenuOpen = Boolean(open);
+    if (state.settingsMenuOpen) {
+      state.historyDrawerOpen = false;
+      state.artifactsDrawerOpen = false;
     }
     syncShellState();
     persistDraft();
@@ -670,6 +691,7 @@
     const artifactsOpen = Boolean(state.artifactsDrawerOpen);
     const detailsOpen = Boolean(state.binaryDetailsOpen);
     const panelOpen = Boolean(state.binaryPanelOpen);
+    const settingsOpen = Boolean(state.settingsMenuOpen);
     const binaryHeroOpen = isBinaryHeroActive();
 
     if (elements.workspaceShell) {
@@ -686,6 +708,10 @@
       elements.artifactsToggle.classList.toggle("active", artifactsOpen);
       elements.artifactsToggle.setAttribute("aria-expanded", String(artifactsOpen));
     }
+    if (elements.settingsToggle) {
+      elements.settingsToggle.classList.toggle("active", settingsOpen);
+      elements.settingsToggle.setAttribute("aria-expanded", String(settingsOpen));
+    }
     if (elements.historyDrawer) {
       elements.historyDrawer.setAttribute("aria-hidden", String(!historyOpen));
     }
@@ -694,6 +720,7 @@
     }
     setHidden(elements.historyScrim, !historyOpen);
     setHidden(elements.artifactsScrim, !artifactsOpen);
+    setHidden(elements.settingsMenu, !settingsOpen);
     if (elements.binaryDetailsButton) {
       elements.binaryDetailsButton.textContent = detailsOpen ? "Less" : "More";
       elements.binaryDetailsButton.setAttribute("aria-expanded", String(detailsOpen));
@@ -715,6 +742,7 @@
       artifactsDrawerOpen: state.artifactsDrawerOpen,
       binaryDetailsOpen: state.binaryDetailsOpen,
       binaryPanelOpen: state.binaryPanelOpen,
+      settingsMenuOpen: state.settingsMenuOpen,
       localArtifacts: state.localArtifacts,
     });
   }
@@ -726,6 +754,7 @@
       state.artifactsDrawerOpen = Boolean(saved.artifactsDrawerOpen);
       state.binaryDetailsOpen = Boolean(saved.binaryDetailsOpen);
       state.binaryPanelOpen = Boolean(saved.binaryPanelOpen);
+      state.settingsMenuOpen = Boolean(saved.settingsMenuOpen);
       state.localArtifacts = Array.isArray(saved.localArtifacts) ? saved.localArtifacts : [];
     }
     if (saved && typeof saved === "object" && typeof saved.draft === "string" && elements.composer) {
@@ -1740,13 +1769,21 @@
     syncComposerFromState(state);
     if (elements.authChip) {
       elements.authChip.textContent = authButtonShortLabel();
-      if (elements.authChip.parentElement) {
-        elements.authChip.parentElement.title = authButtonLabel();
+      if (elements.authStatusButton) {
+        elements.authStatusButton.title = authButtonLabel();
       }
     }
+    if (elements.authStatusButton) {
+      const ready = Boolean(state.auth && state.auth.kind !== "none");
+      elements.authStatusButton.classList.toggle("is-ready", ready);
+    }
+    if (elements.authStatusDot) {
+      elements.authStatusDot.title = state.auth && state.auth.kind !== "none" ? "Xpersona API key ready" : "Xpersona API key not set";
+    }
     if (elements.currentChatTitle) {
-      elements.currentChatTitle.textContent = deriveCurrentChatTitle();
-      elements.currentChatTitle.title = deriveCurrentChatTitle();
+      const currentTitle = deriveCurrentChatTitle();
+      elements.currentChatTitle.textContent = currentTitle;
+      elements.currentChatTitle.title = currentTitle;
     }
     if (elements.send) {
       const cancelable = canCancelLivePrompt();
@@ -1756,11 +1793,25 @@
       elements.send.setAttribute("aria-label", cancelable ? "Cancel response" : "Send");
       elements.send.title = cancelable ? "Cancel response" : "Send";
     }
+    const undoDisabled = !state.canUndo || state.runtime === "qwenCode";
     if (elements.undoChanges) {
-      elements.undoChanges.disabled = !state.canUndo || state.runtime === "qwenCode";
+      elements.undoChanges.disabled = undoDisabled;
     }
-    setHidden(elements.signIn, state.runtime === "qwenCode");
-    setHidden(elements.signOut, state.auth && state.auth.kind === "none");
+    if (elements.settingsUndo) {
+      elements.settingsUndo.disabled = undoDisabled;
+    }
+    setHidden(elements.settingsSignIn, state.runtime === "qwenCode");
+    setHidden(elements.settingsSignOut, state.auth && state.auth.kind === "none");
+    if (elements.settingsRuntimeQwen) {
+      const isQwen = state.runtime === "qwenCode";
+      elements.settingsRuntimeQwen.classList.toggle("active", isQwen);
+      elements.settingsRuntimeQwen.disabled = isQwen;
+    }
+    if (elements.settingsRuntimeHosted) {
+      const isHosted = state.runtime === "playgroundApi";
+      elements.settingsRuntimeHosted.classList.toggle("active", isHosted);
+      elements.settingsRuntimeHosted.disabled = isHosted;
+    }
     if (elements.composer) {
       elements.composer.placeholder = "Ask Binary IDE anything.. @ for files, / for commands.";
     }
@@ -1851,6 +1902,9 @@
       case "openArtifacts":
         setArtifactsDrawerOpen(!state.artifactsDrawerOpen);
         return;
+      case "toggleSettings":
+        setSettingsMenuOpen(!state.settingsMenuOpen);
+        return;
       case "closeHistory":
         setHistoryDrawerOpen(false);
         focusComposer(false);
@@ -1885,6 +1939,14 @@
       case "toggleBinaryPanel":
         setBinaryPanelOpen(!state.binaryPanelOpen);
         return;
+      case "runtimeQwen":
+        setSettingsMenuOpen(false);
+        vscode.postMessage({ type: "setRuntimeBackend", runtime: "qwenCode" });
+        return;
+      case "runtimeHosted":
+        setSettingsMenuOpen(false);
+        vscode.postMessage({ type: "setRuntimeBackend", runtime: "playgroundApi" });
+        return;
       case "configureBinary":
       case "copyDebugReport":
       case "setApiKey":
@@ -1895,11 +1957,13 @@
       case "attachActiveFile":
       case "attachSelection":
       case "clearAttachedContext":
+        setSettingsMenuOpen(false);
         vscode.postMessage({ type: action });
         return;
       case "generateBinary":
         setHistoryDrawerOpen(false);
         setArtifactsDrawerOpen(false);
+        setSettingsMenuOpen(false);
         vscode.postMessage({
           type: "generateBinary",
           text: elements.composer ? elements.composer.value : "",
@@ -1910,6 +1974,7 @@
       case "cancelBinary":
         setHistoryDrawerOpen(false);
         setArtifactsDrawerOpen(false);
+        setSettingsMenuOpen(false);
         vscode.postMessage({ type: action });
         return;
       default:
@@ -2029,6 +2094,15 @@
     const actionButton = target.closest("[data-action]");
     if (actionButton) {
       dispatchAction(actionButton.getAttribute("data-action") || "");
+      return;
+    }
+
+    if (
+      state.settingsMenuOpen &&
+      !target.closest("#settingsMenu") &&
+      !target.closest("#settingsToggle")
+    ) {
+      setSettingsMenuOpen(false);
     }
   });
 
@@ -2199,6 +2273,14 @@
     if (message.type === "state") {
       const nextState = message.state || {};
       Object.assign(state, nextState);
+      // Defensive: ensure busy is cleared when chat has ended or failed
+      const live = state.liveChat;
+      const terminal =
+        (live && ["failed", "canceled", "done"].includes(String(live.status || ""))) ||
+        state.runtimePhase === "failed";
+      if (terminal) {
+        state.busy = false;
+      }
       render();
       return;
     }

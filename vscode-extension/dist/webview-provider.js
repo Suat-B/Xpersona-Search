@@ -45,6 +45,7 @@ const qwen_ux_1 = require("./qwen-ux");
 const qwen_history_1 = require("./qwen-history");
 const webview_html_1 = require("./webview-html");
 const qwen_prompt_1 = require("./qwen-prompt");
+const pseudo_markup_utils_1 = require("./pseudo-markup-utils");
 const qwen_loop_guard_1 = require("./qwen-loop-guard");
 const qwen_runtime_noise_1 = require("./qwen-runtime-noise");
 const slash_commands_1 = require("./slash-commands");
@@ -254,6 +255,7 @@ class PlaygroundViewProvider {
         this.liveHeartbeatTimer = null;
         this.binarySeenEventIds = new Map();
         this.lastQwenDebugSnapshot = null;
+        this.lastHostedDebugSnapshot = null;
         this.draftStore = new draft_store_1.DraftStore(this.context.workspaceState);
         this.state = {
             // Always boot in autonomous chat mode. Plan mode is opt-in per session.
@@ -325,7 +327,7 @@ class PlaygroundViewProvider {
         const runtimeLabel = this.state.runtime === "qwenCode" ? "Qwen Code" : "Binary IDE API";
         const nextRuntime = this.state.runtime === "qwenCode" ? "Binary IDE API" : "Qwen Code";
         const selection = await vscode.window.showQuickPick([
-            { label: "Set API key", detail: "Save or clear the Binary IDE API key.", action: "apiKey" },
+            { label: "Set Xpersona API key", detail: "Save or clear your Xpersona Binary IDE API key.", action: "apiKey" },
             {
                 label: `Switch runtime to ${nextRuntime}`,
                 detail: `Current runtime: ${runtimeLabel}.`,
@@ -416,12 +418,12 @@ class PlaygroundViewProvider {
         await this.refreshAuth();
         await this.refreshHistory();
         return this.state.auth.kind === "none"
-            ? "Binary IDE API key cleared."
-            : "Binary IDE API key updated.";
+            ? "Xpersona Binary IDE API key cleared."
+            : "Xpersona Binary IDE API key updated.";
     }
     async performSignIn() {
         if (this.state.runtime === "qwenCode") {
-            return "Qwen Code uses your Binary IDE API key. Use /key or the Key button instead of browser sign-in.";
+            return "Qwen Code uses your Xpersona Binary IDE API key. Use /key or the Key button instead of browser sign-in.";
         }
         await this.auth.signInWithBrowser();
         return "Browser sign-in opened.";
@@ -614,6 +616,7 @@ class PlaygroundViewProvider {
         this.state.liveChat = null;
         this.state.activity = [];
         this.state.selectedSessionId = null;
+        this.state.busy = false;
         this.state.canUndo = this.state.runtime === "playgroundApi" && this.actionRunner.canUndo();
         this.state.followUpActions = [];
         this.state.binary = {
@@ -670,8 +673,8 @@ class PlaygroundViewProvider {
         if (this.state.runtime === "qwenCode") {
             const apiKey = await this.auth.getApiKey().catch(() => null);
             this.state.auth = apiKey
-                ? { kind: "apiKey", label: "Qwen Code via Binary IDE API key" }
-                : { kind: "none", label: "Qwen Code needs a Binary IDE API key" };
+                ? { kind: "apiKey", label: "Qwen Code via Xpersona Binary IDE API key" }
+                : { kind: "none", label: "Qwen Code needs an Xpersona Binary IDE API key" };
             this.postState();
             return;
         }
@@ -728,7 +731,12 @@ class PlaygroundViewProvider {
                 await this.sendPrompt(String(message.text || ""));
                 return;
             case "confirmPlanMode":
-                await this.activatePlanMode();
+                if (String(message.text || "").trim()) {
+                    await this.sendPrompt(String(message.text || ""));
+                }
+                else {
+                    await this.activatePlanMode();
+                }
                 return;
             case "togglePlanMode":
                 await this.togglePlanMode();
@@ -767,6 +775,15 @@ class PlaygroundViewProvider {
             case "setApiKey":
                 await this.performSetApiKey();
                 return;
+            case "setRuntimeBackend": {
+                const runtime = String(message.runtime || "");
+                if (runtime === "qwenCode" || runtime === "playgroundApi") {
+                    await this.setRuntime(runtime);
+                    this.appendMessage("system", `Binary IDE runtime switched to ${runtime === "qwenCode" ? "Qwen Code" : "Binary IDE API"}.`);
+                    this.postState();
+                }
+                return;
+            }
             case "signIn":
                 vscode.window.showInformationMessage(await this.performSignIn());
                 return;
@@ -1559,7 +1576,7 @@ class PlaygroundViewProvider {
         }
         const auth = await this.auth.getRequestAuth();
         if (!auth) {
-            this.appendMessage("system", "Authenticate with an API key or browser sign-in before generating a portable starter bundle.");
+            this.appendMessage("system", "Authenticate with an Xpersona API key or browser sign-in before generating a portable starter bundle.");
             this.postState();
             return;
         }
@@ -1850,7 +1867,26 @@ class PlaygroundViewProvider {
         if (!text || this.state.busy)
             return;
         this.clearDraftPreviewTimer();
+        const inlinePlanMatch = /^\/plan(?:\s+([\s\S]+))?$/i.exec(text);
+        if (inlinePlanMatch) {
+            const planTask = String(inlinePlanMatch[1] || "").trim();
+            if (planTask) {
+                await this.setMode("plan");
+                await this.clearCurrentDraft();
+                if (this.state.runtime === "qwenCode") {
+                    await this.runQwenPrompt({
+                        text: planTask,
+                        appendUser: true,
+                        searchDepth: "fast",
+                    });
+                    return;
+                }
+                await this.sendPromptWithPlaygroundApi(planTask);
+                return;
+            }
+        }
         if (await this.handleSlashCommand(text)) {
+            await this.clearCurrentDraft();
             return;
         }
         await this.clearCurrentDraft();
@@ -2092,7 +2128,7 @@ class PlaygroundViewProvider {
                 ...fullPreview.selectedFiles,
             ];
             const executablePath = (0, config_1.getQwenExecutablePath)() || null;
-            const runPromptAttempt = async (requireToolUse, historyMessages, forceActionable) => this.qwenCodeRuntime.runPrompt({
+            const runPromptAttempt = async (requireToolUse, historyMessages, forceActionable, injectedSnippets) => this.qwenCodeRuntime.runPrompt({
                 apiKey: String(apiKey || ""),
                 mode: this.state.mode,
                 abortController: promptAbort,
@@ -2107,6 +2143,7 @@ class PlaygroundViewProvider {
                     qwenExecutablePath: executablePath,
                     requireToolUse,
                     forceActionable,
+                    injectedSnippets,
                 }),
                 onPartial: (partial) => {
                     if ((0, qwen_ux_1.shouldSuppressQwenPartialOutput)({
@@ -2193,7 +2230,20 @@ class PlaygroundViewProvider {
                 });
                 this.postState();
                 const historyWithoutCurrentAssistant = this.state.messages.filter((message) => message.id !== assistantMessageId);
-                result = await runPromptAttempt(this.state.mode === "plan" ? false : true, historyWithoutCurrentAssistant, false);
+                const hasPseudoMarkup = /<tool_call>[\s\S]*?<\/tool_call>/i.test(result.assistantText || "");
+                let injectedSnippets;
+                if (hasPseudoMarkup && workspaceRoot) {
+                    const fallbackPaths = [
+                        fullPreview.activeFile || "",
+                        ...fullPreview.resolvedFiles,
+                        ...fullPreview.selectedFiles,
+                    ].filter(Boolean);
+                    injectedSnippets = await (0, pseudo_markup_utils_1.augmentContextFromPseudoMarkup)(result.assistantText || "", workspaceRoot, fallbackPaths);
+                    if (injectedSnippets.length) {
+                        this.pushActivity(`Injected ${injectedSnippets.length} file(s) from workspace into retry`);
+                    }
+                }
+                result = await runPromptAttempt(this.state.mode === "plan" ? false : true, historyWithoutCurrentAssistant, false, injectedSnippets);
                 if (promptAbort.signal.aborted) {
                     throw new Error("Prompt aborted");
                 }
@@ -2236,15 +2286,37 @@ class PlaygroundViewProvider {
             const resolvedSessionId = localSessionId;
             this.sessionId = resolvedSessionId;
             this.state.selectedSessionId = resolvedSessionId;
-            this.applyChatLiveEvent({
-                type: "final",
-                text: (0, qwen_ux_1.sanitizeQwenAssistantOutput)({
+            const exhaustedToolExecution = !result.didMutate &&
+                result.usedTools.length === 0 &&
+                (fullPreview.intent === "change" || fullPreview.intent === "find") &&
+                this.shouldRetryQwenWithToolDirective(result, fullPreview, {
+                    task: text,
+                    workspaceRoot,
+                    executablePath,
+                    workspaceTargets,
+                });
+            if (exhaustedToolExecution) {
+                this.pushActivity("Model returned without real tool execution");
+            }
+            const finalAssistantText = exhaustedToolExecution
+                ? [
+                    (0, qwen_loop_guard_1.buildProjectLoopRecoveryMessage)({
+                        task: text,
+                        workspaceTargets,
+                        workspaceRoot,
+                    }),
+                    "The current model run did not execute workspace tools. Try again, or switch to Hosted runtime for stronger tool-call reliability.",
+                ].join("\n\n")
+                : (0, qwen_ux_1.sanitizeQwenAssistantOutput)({
                     text: result.assistantText || "Qwen Code finished without a final message.",
                     task: text,
                     workspaceRoot,
                     executablePath,
                     workspaceTargets,
-                }),
+                });
+            this.applyChatLiveEvent({
+                type: "final",
+                text: finalAssistantText,
             });
             this.state.followUpActions = (0, assistant_ux_1.buildFollowUpActions)({
                 intent: fullPreview.intent,
@@ -2297,6 +2369,7 @@ class PlaygroundViewProvider {
                 attempts: qwenDebugAttempts,
                 runtimePhase: this.state.runtimePhase,
                 recentActivity: [...this.state.activity].slice(-12),
+                model: (0, config_1.getQwenModel)(),
             };
         }
         catch (error) {
@@ -2343,6 +2416,7 @@ class PlaygroundViewProvider {
                 attempts: qwenDebugAttempts,
                 runtimePhase: this.state.runtimePhase,
                 recentActivity: [...this.state.activity].slice(-12),
+                model: (0, config_1.getQwenModel)(),
                 error: error instanceof Error ? error.message : String(error || "Unknown error"),
             };
         }
@@ -2353,60 +2427,85 @@ class PlaygroundViewProvider {
             this.postState();
         }
     }
-    buildQwenDebugReport() {
-        const snapshot = this.lastQwenDebugSnapshot;
-        if (!snapshot) {
-            return [
-                "Binary IDE Debug Report",
-                `Generated: ${nowIso()}`,
-                `Runtime: ${this.state.runtime}`,
-                "No Qwen prompt debug snapshot captured yet in this window.",
-            ].join("\n");
-        }
+    buildDebugReport() {
         const lines = [
             "Binary IDE Debug Report",
             `Generated: ${nowIso()}`,
-            `Captured: ${snapshot.timestamp}`,
-            `Task: ${snapshot.task}`,
-            `Mode: ${snapshot.mode}`,
-            `Intent: ${snapshot.intent}`,
-            `Context confidence: ${snapshot.confidence}`,
-            `Workspace root: ${snapshot.workspaceRoot || "(none)"}`,
-            `Active file: ${snapshot.activeFile || "(none)"}`,
-            `Resolved files: ${snapshot.resolvedFiles.join(", ") || "(none)"}`,
-            `Selected files: ${snapshot.selectedFiles.join(", ") || "(none)"}`,
-            `Retried tool-first: ${snapshot.retriedWithToolDirective ? "yes" : "no"}`,
-            `Runtime phase: ${snapshot.runtimePhase}`,
-            `Attempts: ${snapshot.attempts.length}`,
+            `Current runtime: ${this.state.runtime}`,
+            "",
         ];
-        snapshot.attempts.forEach((attempt, index) => {
-            lines.push(`Attempt ${index + 1}: requireToolUse=${attempt.requireToolUse ? "yes" : "no"} | usedTools=${attempt.usedTools.join(", ") || "(none)"} | didMutate=${attempt.didMutate ? "yes" : "no"}`);
-            if (attempt.permissionDenials.length) {
-                lines.push(`Attempt ${index + 1} denials: ${attempt.permissionDenials.join(" | ")}`);
-            }
-            if (attempt.toolEvents.length) {
-                lines.push(`Attempt ${index + 1} tool timeline:`);
-                for (const event of attempt.toolEvents) {
-                    lines.push(`  - ${formatToolEventLine(event)}`);
+        const qwen = this.lastQwenDebugSnapshot;
+        if (qwen) {
+            lines.push("=== Qwen Code (last run) ===");
+            lines.push(`Captured: ${qwen.timestamp}`);
+            lines.push(`Task: ${qwen.task}`);
+            lines.push(`Mode: ${qwen.mode}`);
+            lines.push(`Model: ${qwen.model || "(not captured)"}`);
+            lines.push(`Intent: ${qwen.intent}`);
+            lines.push(`Context confidence: ${qwen.confidence}`);
+            lines.push(`Workspace root: ${qwen.workspaceRoot || "(none)"}`);
+            lines.push(`Active file: ${qwen.activeFile || "(none)"}`);
+            lines.push(`Resolved files: ${qwen.resolvedFiles.join(", ") || "(none)"}`);
+            lines.push(`Selected files: ${qwen.selectedFiles.join(", ") || "(none)"}`);
+            lines.push(`Retried tool-first: ${qwen.retriedWithToolDirective ? "yes" : "no"}`);
+            lines.push(`Runtime phase: ${qwen.runtimePhase}`);
+            lines.push(`Attempts: ${qwen.attempts.length}`);
+            qwen.attempts.forEach((attempt, index) => {
+                lines.push(`Attempt ${index + 1}: requireToolUse=${attempt.requireToolUse ? "yes" : "no"} | usedTools=${attempt.usedTools.join(", ") || "(none)"} | didMutate=${attempt.didMutate ? "yes" : "no"}`);
+                if (attempt.permissionDenials.length) {
+                    lines.push(`Attempt ${index + 1} denials: ${attempt.permissionDenials.join(" | ")}`);
                 }
-            }
-            else {
-                lines.push(`Attempt ${index + 1} tool timeline: (none)`);
-            }
-            if (attempt.assistantTextPreview) {
-                lines.push(`Attempt ${index + 1} assistant preview: ${attempt.assistantTextPreview}`);
-            }
-        });
-        if (snapshot.error) {
-            lines.push(`Error: ${snapshot.error}`);
+                if (attempt.toolEvents.length) {
+                    lines.push(`Attempt ${index + 1} tool timeline:`);
+                    for (const event of attempt.toolEvents) {
+                        lines.push(`  - ${formatToolEventLine(event)}`);
+                    }
+                }
+                else {
+                    lines.push(`Attempt ${index + 1} tool timeline: (none)`);
+                }
+                if (attempt.assistantTextPreview) {
+                    lines.push(`Attempt ${index + 1} assistant preview: ${attempt.assistantTextPreview}`);
+                }
+            });
+            if (qwen.error)
+                lines.push(`Error: ${qwen.error}`);
+            if (qwen.recentActivity.length)
+                lines.push(`Recent activity: ${qwen.recentActivity.join(" -> ")}`);
+            lines.push("");
         }
-        if (snapshot.recentActivity.length) {
-            lines.push(`Recent activity: ${snapshot.recentActivity.join(" -> ")}`);
+        const hosted = this.lastHostedDebugSnapshot;
+        if (hosted) {
+            lines.push("=== Hosted API (last run) ===");
+            lines.push(`Captured: ${hosted.timestamp}`);
+            lines.push(`Task: ${hosted.task}`);
+            lines.push(`Mode: ${hosted.mode}`);
+            lines.push(`Intent: ${hosted.intent}`);
+            lines.push(`Context confidence: ${hosted.confidence}`);
+            lines.push(`Workspace root: ${hosted.workspaceRoot || "(none)"}`);
+            lines.push(`Active file: ${hosted.activeFile || "(none)"}`);
+            lines.push(`Resolved files: ${hosted.resolvedFiles.join(", ") || "(none)"}`);
+            lines.push(`Selected files: ${hosted.selectedFiles.join(", ") || "(none)"}`);
+            lines.push(`Runtime phase: ${hosted.runtimePhase}`);
+            lines.push(`Run ID: ${hosted.runId || "(none)"}`);
+            lines.push(`Adapter: ${hosted.adapter || "(none)"}`);
+            lines.push(`Completion status: ${hosted.completionStatus || "(none)"}`);
+            lines.push(`Tools used: ${hosted.toolCallsUsed.join(", ") || "(none)"}`);
+            if (hosted.assistantPreview)
+                lines.push(`Assistant preview: ${hosted.assistantPreview}`);
+            if (hosted.error)
+                lines.push(`Error: ${hosted.error}`);
+            if (hosted.recentActivity.length)
+                lines.push(`Recent activity: ${hosted.recentActivity.join(" -> ")}`);
+            lines.push("");
         }
-        return lines.join("\n");
+        if (!qwen && !hosted) {
+            lines.push("No debug snapshots captured yet. Send a prompt with Qwen Code or Hosted runtime to populate.");
+        }
+        return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
     }
     async copyDebugReport() {
-        const report = this.buildQwenDebugReport();
+        const report = this.buildDebugReport();
         await vscode.env.clipboard.writeText(report);
         vscode.window.showInformationMessage("Copied Binary IDE debug report to clipboard.");
     }
@@ -2431,13 +2530,16 @@ class PlaygroundViewProvider {
         if (!auth) {
             this.applyChatLiveEvent({
                 type: "failed",
-                text: "Authenticate with browser sign-in or an API key before sending prompts.",
+                text: "Authenticate with browser sign-in or an Xpersona API key before sending prompts.",
                 phase: "failed",
             });
             this.state.busy = false;
             this.postState();
             return;
         }
+        const hostedToolCallsUsed = [];
+        const hostedDebugRef = { runId: undefined, adapter: undefined };
+        let hostedPreview = null;
         try {
             const { context, retrievalHints, preview } = await this.contextCollector.collect(text, {
                 recentTouchedPaths: this.actionRunner.getRecentTouchedPaths(),
@@ -2446,6 +2548,7 @@ class PlaygroundViewProvider {
                 searchDepth: "fast",
                 intent: (0, assistant_ux_1.classifyIntent)(text),
             });
+            hostedPreview = preview;
             if (promptAbort.signal.aborted) {
                 throw new Error("Prompt aborted");
             }
@@ -2500,6 +2603,8 @@ class PlaygroundViewProvider {
             this.pushActivity(initial.orchestrationProtocol === "tool_loop_v1"
                 ? `Started run ${initial.runId || "pending"} via ${initial.adapter || "tool loop"}.`
                 : "Prepared a batch response.");
+            hostedDebugRef.runId = initial.runId;
+            hostedDebugRef.adapter = initial.adapter;
             let envelope = initial;
             if (envelope.pendingToolCall && envelope.runId) {
                 this.applyChatLiveEvent({
@@ -2512,6 +2617,8 @@ class PlaygroundViewProvider {
                     initialEnvelope: envelope,
                     workspaceFingerprint: workspaceHash,
                     signal: promptAbort.signal,
+                    toolCallsUsed: hostedToolCallsUsed,
+                    debugRef: hostedDebugRef,
                 });
             }
             if (promptAbort.signal.aborted) {
@@ -2557,6 +2664,25 @@ class PlaygroundViewProvider {
                 const label = String(receipt.status || "ready");
                 this.pushActivity(`Receipt: ${label}.`);
             }
+            this.state.runtimePhase = "done";
+            this.lastHostedDebugSnapshot = {
+                timestamp: nowIso(),
+                task: text,
+                mode: this.state.mode,
+                intent: preview.intent,
+                confidence: preview.confidence,
+                workspaceRoot: (0, config_1.getWorkspaceRootPath)() || null,
+                activeFile: String(preview.activeFile || ""),
+                resolvedFiles: [...preview.resolvedFiles],
+                selectedFiles: [...preview.selectedFiles],
+                runtimePhase: this.state.runtimePhase,
+                recentActivity: [...this.state.activity].slice(-12),
+                runId: envelope.runId,
+                adapter: envelope.adapter,
+                completionStatus: envelope.completionStatus,
+                toolCallsUsed: [...hostedToolCallsUsed],
+                assistantPreview: assistantBody ? String(assistantBody).slice(0, 300) : undefined,
+            };
             await this.refreshHistory();
         }
         catch (error) {
@@ -2575,6 +2701,24 @@ class PlaygroundViewProvider {
                 text: `Request failed: ${error instanceof Error ? error.message : String(error)}`,
                 phase: "failed",
             });
+            this.state.runtimePhase = "failed";
+            this.lastHostedDebugSnapshot = {
+                timestamp: nowIso(),
+                task: text,
+                mode: this.state.mode,
+                intent: hostedPreview?.intent ?? "ask",
+                confidence: hostedPreview?.confidence ?? "low",
+                workspaceRoot: (0, config_1.getWorkspaceRootPath)() || null,
+                activeFile: String(hostedPreview?.activeFile ?? ""),
+                resolvedFiles: hostedPreview ? [...hostedPreview.resolvedFiles] : [],
+                selectedFiles: hostedPreview ? [...hostedPreview.selectedFiles] : [],
+                runtimePhase: "failed",
+                recentActivity: [...this.state.activity].slice(-12),
+                runId: hostedDebugRef.runId,
+                adapter: hostedDebugRef.adapter,
+                toolCallsUsed: [...hostedToolCallsUsed],
+                error: error instanceof Error ? error.message : String(error),
+            };
         }
         finally {
             this.clearPromptAbort(promptAbort);
@@ -2698,6 +2842,7 @@ class PlaygroundViewProvider {
                 throw new Error("Prompt aborted");
             }
             const pendingToolCall = envelope.pendingToolCall;
+            input.toolCallsUsed?.push(pendingToolCall.toolCall.name);
             this.pushActivity(`Step ${pendingToolCall.step}: ${pendingToolCall.toolCall.name}`);
             this.applyChatLiveEvent({
                 type: "tool_approval",
@@ -2720,6 +2865,10 @@ class PlaygroundViewProvider {
                 phase: "streaming_answer",
             });
             this.postState();
+            if (input.debugRef) {
+                input.debugRef.runId = envelope.runId;
+                input.debugRef.adapter = envelope.adapter;
+            }
             envelope = await this.continueRun(input.auth, envelope.runId, toolResult, input.signal);
             if (envelope.sessionId) {
                 this.sessionId = envelope.sessionId;

@@ -339,12 +339,14 @@ class ContextCollector {
             .flat()
             .filter((item, index, array) => array.findIndex((row) => row.path === item.path && row.content === item.content) === index);
         const shouldConstrainIndexedSnippets = analysis.intent === "change" &&
-            analysis.explicitReferenceCount === 0 &&
-            !analysis.attachedSelection &&
-            analysis.resolvedFiles.length === 1 &&
-            Boolean(analysis.activePath || analysis.attachedFiles.length);
+            (mentionPaths.length > 0 ||
+                (analysis.explicitReferenceCount === 0 &&
+                    !analysis.attachedSelection &&
+                    analysis.resolvedFiles.length === 1 &&
+                    Boolean(analysis.activePath || analysis.attachedFiles.length)));
         const allowedFocusPaths = shouldConstrainIndexedSnippets
             ? new Set(uniquePaths([
+                ...mentionPaths,
                 analysis.resolvedFiles[0] || "",
                 analysis.activePath || "",
                 ...analysis.attachedFiles,

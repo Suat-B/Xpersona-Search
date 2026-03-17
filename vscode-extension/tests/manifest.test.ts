@@ -43,7 +43,7 @@ describe("vscode manifest", () => {
       ])
     );
     expect(properties["xpersona.binary.qwen.model"]?.default).toBe(
-      "Qwen/Qwen3-Coder-Next-FP8:together"
+      "meta-llama/Llama-3.1-8B-Instruct:fastest"
     );
     expect(properties["xpersona.binary.qwen.baseUrl"]?.default).toBe(
       "http://localhost:3000/api/v1/hf"

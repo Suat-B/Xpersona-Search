@@ -169,7 +169,11 @@ class QwenCodeRuntime {
             options: {
                 cwd,
                 model,
-                ...((0, config_1.getQwenExecutablePath)() ? { pathToQwenExecutable: (0, config_1.getQwenExecutablePath)() } : {}),
+                ...((0, config_1.getQwenExecutablePath)()
+                    ? { pathToQwenExecutable: (0, config_1.getQwenExecutablePath)() }
+                    : (0, config_1.getQwenCliWrapperEnabled)() && (0, config_1.getQwenCliWrapperPath)()
+                        ? { pathToQwenExecutable: (0, config_1.getQwenCliWrapperPath)() }
+                        : {}),
                 authType: "openai",
                 permissionMode: toPermissionMode(input.mode),
                 allowedTools: (0, qwen_runtime_utils_1.getAutoApprovedQwenTools)(),

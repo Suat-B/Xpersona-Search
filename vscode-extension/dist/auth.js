@@ -68,7 +68,7 @@ class AuthManager {
         if (apiKey) {
             return {
                 kind: "apiKey",
-                label: "Using stored API key",
+                label: "Using Xpersona Binary IDE API key",
             };
         }
         return {
@@ -90,8 +90,8 @@ class AuthManager {
     }
     async setApiKeyInteractive() {
         const key = await vscode.window.showInputBox({
-            title: "Set Binary IDE API Key",
-            prompt: "Paste your Binary IDE API key",
+            title: "Set Xpersona Binary IDE API Key",
+            prompt: "Paste your Xpersona Binary IDE API key",
             password: true,
             ignoreFocusOut: true,
         });
@@ -101,12 +101,12 @@ class AuthManager {
         if (!trimmed) {
             await this.context.secrets.delete(config_1.API_KEY_SECRET);
             await this.context.secrets.delete(config_1.API_KEY_LEGACY_SECRET);
-            vscode.window.showInformationMessage("Stored Binary IDE API key cleared.");
+            vscode.window.showInformationMessage("Xpersona Binary IDE API key cleared.");
         }
         else {
             await this.context.secrets.store(config_1.API_KEY_SECRET, trimmed);
             await this.context.secrets.delete(config_1.API_KEY_LEGACY_SECRET);
-            vscode.window.showInformationMessage("Binary IDE API key saved.");
+            vscode.window.showInformationMessage("Xpersona Binary IDE API key saved.");
         }
         await this.emitCurrentState();
     }

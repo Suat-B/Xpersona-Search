@@ -2,4 +2,5 @@
     "chatgpt.openOnStartup": true,
     "xpersona.playground.baseApiUrl": "http://localhost:3000",
     "xpersona.playground.model": "Playground 1",
+    "xpersona.binary.baseApiUrl": "http://localhost:3000",
 }

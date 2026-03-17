@@ -10,6 +10,8 @@ import {
 } from "@qwen-code/sdk";
 import {
   getBaseApiUrl,
+  getQwenCliWrapperEnabled,
+  getQwenCliWrapperPath,
   getQwenExecutablePath,
   getQwenModel,
   getQwenOpenAiBaseUrl,
@@ -217,7 +219,11 @@ export class QwenCodeRuntime {
       options: {
         cwd,
         model,
-        ...(getQwenExecutablePath() ? { pathToQwenExecutable: getQwenExecutablePath() } : {}),
+        ...(getQwenExecutablePath()
+          ? { pathToQwenExecutable: getQwenExecutablePath() }
+          : getQwenCliWrapperEnabled() && getQwenCliWrapperPath()
+            ? { pathToQwenExecutable: getQwenCliWrapperPath() }
+            : {}),
         authType: "openai",
         permissionMode: toPermissionMode(input.mode),
         allowedTools: getAutoApprovedQwenTools(),

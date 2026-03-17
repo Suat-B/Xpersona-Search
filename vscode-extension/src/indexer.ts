@@ -42,8 +42,9 @@ const MAX_FILE_BYTES = 160_000;
 const UPSERT_BATCH_SIZE = 120;
 const CHUNK_SIZE = 4_000;
 const CHUNK_OVERLAP = 300;
+const MIN_BACKGROUND_REBUILD_GAP_MS = 20_000;
 const WORKSPACE_FILE_EXCLUDE_GLOB =
-  "**/{.git,node_modules,dist,build,.next,coverage,_vsix_*,_vsix_tmp,artifacts}/**";
+  "**/{.git,node_modules,dist,build,.next,coverage,.trae,.vscode,.idea,_vsix_*,_vsix_tmp,artifacts}/**";
 
 function sha1(input: string): string {
   return createHash("sha1").update(input, "utf8").digest("hex");
@@ -54,6 +55,12 @@ function isExcludedPath(relativePath: string): boolean {
   return (
     normalized.startsWith(".git/") ||
     normalized.includes("/.git/") ||
+    normalized.startsWith(".trae/") ||
+    normalized.includes("/.trae/") ||
+    normalized.startsWith(".vscode/") ||
+    normalized.includes("/.vscode/") ||
+    normalized.startsWith(".idea/") ||
+    normalized.includes("/.idea/") ||
     normalized.startsWith("node_modules/") ||
     normalized.includes("/node_modules/") ||
     normalized.startsWith("dist/") ||
@@ -119,6 +126,7 @@ export class CloudIndexManager {
   private indexedFiles: IndexedFileStateMap;
   private rebuildPromise: Promise<void> | null = null;
   private queuedRebuildReason: "manual" | "background" | null = null;
+  private lastBackgroundRebuildAt = 0;
 
   public readonly onDidChangeState = this.onDidChangeStateEmitter.event;
 
@@ -145,12 +153,21 @@ export class CloudIndexManager {
     this.scheduleRebuild(1_500);
   }
 
+  shouldTrackUri(uri: vscode.Uri): boolean {
+    const relativePath = toWorkspaceRelativePath(uri);
+    if (!relativePath) return false;
+    return !isExcludedPath(relativePath);
+  }
+
   scheduleRebuild(delayMs = 3_000): void {
+    const elapsed = Date.now() - this.lastBackgroundRebuildAt;
+    const minGapDelay = elapsed >= MIN_BACKGROUND_REBUILD_GAP_MS ? 0 : MIN_BACKGROUND_REBUILD_GAP_MS - elapsed;
+    const nextDelay = Math.max(delayMs, minGapDelay);
     if (this.rebuildTimer) clearTimeout(this.rebuildTimer);
     this.rebuildTimer = setTimeout(() => {
       this.rebuildTimer = null;
       void this.rebuild("background");
-    }, delayMs);
+    }, nextDelay);
   }
 
   async rebuild(reason: "manual" | "background" = "manual"): Promise<void> {
@@ -292,6 +309,8 @@ export class CloudIndexManager {
         freshness: "error",
         lastError: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      this.lastBackgroundRebuildAt = Date.now();
     }
   }
 
