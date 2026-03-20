@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.isLikelyClarificationContinuation = isLikelyClarificationContinuation;
 exports.containsGenericProjectClarification = containsGenericProjectClarification;
 exports.buildProjectLoopRecoveryMessage = buildProjectLoopRecoveryMessage;
 const assistant_ux_1 = require("./assistant-ux");
@@ -14,6 +15,22 @@ function formatTargets(targets) {
     return Array.from(new Set((targets || [])
         .map((target) => String(target || "").trim())
         .filter(Boolean))).slice(0, 2);
+}
+function isLikelyClarificationContinuation(text) {
+    const normalized = normalizeLoopText(text);
+    if (!normalized)
+        return false;
+    if (normalized.length > 80)
+        return false;
+    if (/\b(fix|change|update|edit|modify|patch|refactor|rewrite|implement|add|create|remove|delete|rename|replace|search|find|explain|debug|investigate|inspect|read|expand|build)\b/.test(normalized)) {
+        return false;
+    }
+    return (/^(y(es|ea|ep|up)?|sure|ok(ay)?|go ahead|continue|proceed|please do|do it|that one|first one|second one|same|sounds good|correct|right|use that|yes sure)([\s.!?,:-].*)?$/i.test(normalized) || normalized.startsWith("yes ") ||
+        normalized.startsWith("sure ") ||
+        normalized.startsWith("ok ") ||
+        normalized.startsWith("okay ") ||
+        normalized.startsWith("continue ") ||
+        normalized.startsWith("go ahead "));
 }
 function containsGenericProjectClarification(text) {
     const normalized = normalizeLoopText(text);

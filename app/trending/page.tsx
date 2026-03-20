@@ -2,39 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { AgentGridSection } from "@/components/agent/AgentGridSection";
 import { getTrendingAgents } from "@/lib/agents/hub-data";
-import {
-  capabilityTokenToLabel,
-  normalizeCapabilityToken,
-} from "@/lib/search/capability-tokens";
+import { normalizeCapabilityToken } from "@/lib/search/capability-tokens";
+import { buildTrendingCapabilities } from "@/lib/search/trending-capabilities";
 
 const baseUrl = process.env.NEXTAUTH_URL ?? "https://xpersona.co";
 
-type CapabilitySummary = { name: string; count: number };
-
 function toCapabilitySlug(name: string): string {
   return normalizeCapabilityToken(name);
-}
-
-function buildTopCapabilities(
-  agents: Array<{ capabilities: string[] }>,
-  limit: number
-): CapabilitySummary[] {
-  const counts = new Map<string, { count: number; label: string }>();
-  for (const agent of agents) {
-    for (const cap of agent.capabilities) {
-      const key = normalizeCapabilityToken(cap);
-      if (!key) continue;
-      const current = counts.get(key);
-      counts.set(key, {
-        count: (current?.count ?? 0) + 1,
-        label: current?.label ?? capabilityTokenToLabel(key),
-      });
-    }
-  }
-  return [...counts.entries()]
-    .sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
-    .slice(0, limit)
-    .map(([name, value]) => ({ name: value.label, count: value.count }));
 }
 
 export const metadata: Metadata = {
@@ -54,7 +28,7 @@ export default async function TrendingPage() {
   const agents = trendingPool
     .filter((agent) => !agent.protocols.some((p) => p.toUpperCase() === "MCP"))
     .slice(0, 24);
-  const capabilities = buildTopCapabilities(trendingPool, 18);
+  const capabilities = buildTrendingCapabilities(trendingPool, 18);
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-8 md:py-10">

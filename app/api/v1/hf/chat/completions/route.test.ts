@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { signVscodeAccessToken } from "@/lib/playground/vscode-tokens";
 
 const mockDb = vi.hoisted(() => ({
   select: vi.fn(),
@@ -130,6 +131,28 @@ describe("POST /api/v1/hf/chat/completions", () => {
     expect(res.status).toBe(401);
   });
 
+  it("accepts a VS Code bearer token from browser sign-in", async () => {
+    vi.stubEnv("NEXTAUTH_SECRET", "test-secret-test-secret-test-secret-123");
+    vi.stubEnv("AUTH_SECRET", "test-secret-test-secret-test-secret-123");
+    const token = signVscodeAccessToken({ userId: "user-1", email: "user@example.com" });
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    const req = new NextRequest("http://localhost/api/v1/hf/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({ model: "x", messages: [{ role: "user", content: "hi" }] }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    });
+
+    const res = await POST(req);
+    expect(res.status).not.toBe(401);
+  });
+
   it("returns 402 when user has no active playground subscription", async () => {
     mockGetUserPlan.mockResolvedValue(null);
 
@@ -213,6 +236,27 @@ describe("POST /api/v1/hf/chat/completions", () => {
     expect(body.choices[0].message.content).toBe("Hello from HF");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(mockIncrementUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a clearer message when the upstream HF router rejects the token", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }));
+
+    const req = new NextRequest("http://localhost/api/v1/hf/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({
+        model: "Qwen/Qwen3-4B-Instruct-2507:nscale",
+        messages: [{ role: "user", content: "hello" }],
+      }),
+      headers: { "Content-Type": "application/json", "X-API-Key": "key" },
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(401);
+    expect(body.error).toBe("HF router authorization failed");
+    expect(body.message).toContain("Unauthorized");
   });
 });
 

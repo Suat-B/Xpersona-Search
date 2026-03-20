@@ -4,6 +4,7 @@ import { apiV1 } from "@/lib/api/url";
 import { fetchWithTimeout } from "@/lib/api/fetch-timeout";
 import { applyResponseMetaHeaders, getOrCreateRequestId } from "@/lib/api/request-meta";
 import { recordApiResponse } from "@/lib/metrics/record";
+import { buildTrendingCapabilities } from "@/lib/search/trending-capabilities";
 
 type SearchAgent = {
   id: string;
@@ -16,8 +17,6 @@ type SearchAgent = {
   overallRank: number | null;
   popularityScore?: number | null;
 };
-
-type CapabilitySummary = { name: string; count: number };
 
 type TrendingResponse = { trending?: string[] };
 type SearchResponse = { results?: SearchAgent[] };
@@ -48,21 +47,6 @@ function matchTrending(agent: SearchAgent, queries: string[]): boolean {
   if (queries.length === 0) return false;
   const haystack = `${agent.name} ${agent.description ?? ""}`.toLowerCase();
   return queries.some((q) => q.length > 1 && haystack.includes(q));
-}
-
-function topCapabilities(results: SearchAgent[], limit: number): CapabilitySummary[] {
-  const counts = new Map<string, number>();
-  for (const result of results) {
-    for (const cap of result.capabilities) {
-      const key = cap.trim();
-      if (!key) continue;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-  }
-  return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .slice(0, limit)
-    .map(([name, count]) => ({ name, count }));
 }
 
 export async function GET(req: NextRequest) {
@@ -101,7 +85,7 @@ export async function GET(req: NextRequest) {
     const agents = [...agentMatches, ...agentPool].filter((item, index, self) => {
       return self.findIndex((other) => other.id === item.id) === index;
     }).slice(0, 9);
-    const capabilities = topCapabilities(normalizedResults, 9);
+    const capabilities = buildTrendingCapabilities(normalizedResults, 9);
 
     const response = ok(
       {

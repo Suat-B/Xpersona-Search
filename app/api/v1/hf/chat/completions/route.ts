@@ -10,11 +10,13 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "crypto";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { hfUsageLogs } from "@/lib/db/playground-schema";
 import { eq } from "drizzle-orm";
 import { isAdminEmail } from "@/lib/admin";
+import { verifyVscodeAccessToken } from "@/lib/playground/vscode-tokens";
 import { 
   checkRateLimits, 
   getUserPlan,
@@ -49,23 +51,37 @@ interface ChatCompletionRequest {
   presence_penalty?: number;
 }
 
-/**
- * Authenticate request using X-API-Key header
- */
+function buildUpstreamAuthMessage(status: number, errorText: string): string {
+  const trimmed = errorText.trim();
+  if (status !== 401) return trimmed || `Upstream HF error (${status})`;
+
+  return (
+    trimmed ||
+    "The Hugging Face router rejected the token configured in .env.local. Set HF_ROUTER_TOKEN (preferred) or HF_TOKEN to a valid Hugging Face access token and restart the Next.js server."
+  );
+}
+
+function hasUnlimitedPlaygroundAccess(email: string): boolean {
+  const normalized = email.trim().toLowerCase();
+  return isAdminEmail(normalized) || UNLIMITED_PLAYGROUND_EMAILS.has(normalized);
+}
+
 async function authenticateRequest(
   request: NextRequest
-): Promise<{ userId: string; email: string; apiKeyPrefix: string } | null> {
-  const apiKey = request.headers.get("X-API-Key") || request.headers.get("Authorization")?.replace("Bearer ", "");
-  
-  if (!apiKey) {
-    return null;
+): Promise<{ userId: string; email: string; apiKeyPrefix: string | null } | null> {
+  const rawAuth = request.headers.get("Authorization") ?? "";
+  const bearer = rawAuth.toLowerCase().startsWith("bearer ") ? rawAuth.slice(7).trim() : "";
+  if (bearer.startsWith("xp_vsat_")) {
+    const verified = verifyVscodeAccessToken(bearer);
+    if (!verified) return null;
+    return { userId: verified.userId, email: verified.email, apiKeyPrefix: null };
   }
 
-  // Hash the API key to look it up
-  const crypto = require("crypto");
-  const apiKeyHash = crypto.createHash("sha256").update(apiKey).digest("hex");
-  
-  const user = await db
+  const apiKey = request.headers.get("X-API-Key") || bearer;
+  if (!apiKey) return null;
+
+  const apiKeyHash = createHash("sha256").update(apiKey, "utf8").digest("hex");
+  const found = await db
     .select({
       id: users.id,
       email: users.email,
@@ -74,21 +90,12 @@ async function authenticateRequest(
     .from(users)
     .where(eq(users.apiKeyHash, apiKeyHash))
     .limit(1);
-
-  if (user.length === 0) {
-    return null;
-  }
-
-  return { 
-    userId: user[0].id, 
-    email: user[0].email,
-    apiKeyPrefix: user[0].apiKeyPrefix || "unknown" 
+  if (!found.length) return null;
+  return {
+    userId: found[0].id,
+    email: found[0].email,
+    apiKeyPrefix: found[0].apiKeyPrefix || null,
   };
-}
-
-function hasUnlimitedPlaygroundAccess(email: string): boolean {
-  const normalized = email.trim().toLowerCase();
-  return isAdminEmail(normalized) || UNLIMITED_PLAYGROUND_EMAILS.has(normalized);
 }
 
 /**
@@ -317,7 +324,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const auth = await authenticateRequest(request);
   if (!auth) {
     return NextResponse.json(
-      { error: "Unauthorized", message: "Invalid or missing API key" },
+      { error: "Unauthorized", message: "Invalid or missing Binary IDE auth token or API key" },
       { status: 401 }
     );
   }
@@ -420,7 +427,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     if (!hfResponse.ok) {
       const errorText = await hfResponse.text();
-      const errorMessage = errorText?.trim() || `Upstream HF error (${hfResponse.status})`;
+      const errorMessage = buildUpstreamAuthMessage(hfResponse.status, errorText);
 
       await logUsage({
         userId,
@@ -435,7 +442,10 @@ export async function POST(request: NextRequest): Promise<Response> {
       });
 
       return NextResponse.json(
-        { error: "HF API error", message: errorMessage },
+        {
+          error: hfResponse.status === 401 ? "HF router authorization failed" : "HF API error",
+          message: errorMessage,
+        },
         { status: hfResponse.status }
       );
     }

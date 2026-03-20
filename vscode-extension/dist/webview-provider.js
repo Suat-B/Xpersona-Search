@@ -181,6 +181,15 @@ function containsPseudoToolMarkupText(value) {
         /<function=[^>]+>/i.test(text) ||
         /<parameter=[^>]+>/i.test(text));
 }
+function buildContinuationPrompt(baseText, followUpText) {
+    const base = String(baseText || "").trim();
+    const followUp = String(followUpText || "").trim();
+    if (!base)
+        return followUp;
+    if (!followUp)
+        return base;
+    return [base, `User follow-up: ${followUp}`].join("\n\n");
+}
 function liveProgressForPhase(phase) {
     switch (phase) {
         case "accepted":
@@ -728,11 +737,11 @@ class PlaygroundViewProvider {
                 await this.bootstrap();
                 return;
             case "sendPrompt":
-                await this.sendPrompt(String(message.text || ""));
+                await this.sendPrompt(String(message.text || ""), String(message.clientMessageId || ""));
                 return;
             case "confirmPlanMode":
                 if (String(message.text || "").trim()) {
-                    await this.sendPrompt(String(message.text || ""));
+                    await this.sendPrompt(String(message.text || ""), String(message.clientMessageId || ""));
                 }
                 else {
                     await this.activatePlanMode();
@@ -1028,6 +1037,14 @@ class PlaygroundViewProvider {
         const current = this.state.liveChat;
         if (!current)
             return;
+        const currentMessage = this.getMessageById(current.messageId);
+        const currentContent = String(currentMessage?.content || "");
+        const finalContent = String(input.content || "");
+        const shouldPreserveStreamedContent = currentContent.length > 0 &&
+            finalContent.length > 0 &&
+            currentContent.length >= finalContent.length + 20 &&
+            !currentContent.includes(finalContent);
+        const contentToUse = shouldPreserveStreamedContent ? currentContent : finalContent;
         const nextLive = {
             ...current,
             mode: input.mode || current.mode,
@@ -1039,7 +1056,7 @@ class PlaygroundViewProvider {
             latestFile: input.latestFile || current.latestFile,
             updatedAt: nowIso(),
         };
-        this.upsertMessage(current.messageId, input.role || "assistant", input.content, {
+        this.upsertMessage(current.messageId, input.role || "assistant", contentToUse, {
             presentation: "live_binary",
             live: nextLive,
         });
@@ -1862,7 +1879,7 @@ class PlaygroundViewProvider {
             });
         }
     }
-    async sendPrompt(rawText) {
+    async sendPrompt(rawText, clientMessageId = "") {
         const text = rawText.trim();
         if (!text || this.state.busy)
             return;
@@ -1878,10 +1895,11 @@ class PlaygroundViewProvider {
                         text: planTask,
                         appendUser: true,
                         searchDepth: "fast",
+                        clientMessageId,
                     });
                     return;
                 }
-                await this.sendPromptWithPlaygroundApi(planTask);
+                await this.sendPromptWithPlaygroundApi(planTask, clientMessageId);
                 return;
             }
         }
@@ -1889,16 +1907,29 @@ class PlaygroundViewProvider {
             await this.clearCurrentDraft();
             return;
         }
+        const continuationBase = this.pendingClarification || this.lastPrompt;
+        const shouldContinuePreviousTask = Boolean(continuationBase && (0, qwen_loop_guard_1.isLikelyClarificationContinuation)(text));
+        const promptText = shouldContinuePreviousTask && continuationBase
+            ? buildContinuationPrompt(continuationBase.text, text)
+            : text;
+        const searchDepth = shouldContinuePreviousTask && continuationBase
+            ? continuationBase.searchDepth
+            : "fast";
+        if (shouldContinuePreviousTask) {
+            this.pendingClarification = null;
+        }
         await this.clearCurrentDraft();
         if (this.state.runtime === "qwenCode") {
             await this.runQwenPrompt({
                 text,
+                promptText,
                 appendUser: true,
-                searchDepth: "fast",
+                searchDepth,
+                clientMessageId,
             });
             return;
         }
-        await this.sendPromptWithPlaygroundApi(text);
+        await this.sendPromptWithPlaygroundApi(text, clientMessageId, promptText);
     }
     buildClarificationMessage(preview) {
         if (preview.candidateFiles.length) {
@@ -1963,8 +1994,9 @@ class PlaygroundViewProvider {
     }
     async runQwenPrompt(input) {
         const text = input.text.trim();
+        const taskText = String(input.promptText || input.text || "").trim() || text;
         if (input.appendUser) {
-            this.appendMessage("user", text);
+            this.appendMessage("user", text, undefined, input.clientMessageId);
         }
         const assistantMessageId = this.createLiveAssistantMessage({
             transport: "qwen",
@@ -1988,7 +2020,7 @@ class PlaygroundViewProvider {
         const workspaceRoot = (0, config_1.getWorkspaceRootPath)();
         const promptAbort = new AbortController();
         this.promptAbort = promptAbort;
-        let apiKey = "";
+        let qwenAuthToken = "";
         let preflightMessage = null;
         const hadExistingSession = Boolean(this.sessionId);
         let localSessionId = this.sessionId || (0, qwen_history_1.createPendingQwenSessionId)();
@@ -1996,10 +2028,11 @@ class PlaygroundViewProvider {
         const qwenDebugAttempts = [];
         let retriedWithToolDirective = false;
         try {
-            apiKey = String((await this.auth.getApiKey()) || "");
+            const requestAuth = await this.auth.getRequestAuth();
+            qwenAuthToken = String(requestAuth?.bearer || requestAuth?.apiKey || "");
             preflightMessage = await (0, qwen_ux_1.validateQwenPreflight)({
                 workspaceRoot,
-                apiKey,
+                apiKey: qwenAuthToken,
                 qwenBaseUrl: (0, config_1.getQwenOpenAiBaseUrl)(),
                 playgroundBaseUrl: (0, config_1.getBaseApiUrl)(),
                 executablePath: (0, config_1.getQwenExecutablePath)(),
@@ -2014,8 +2047,8 @@ class PlaygroundViewProvider {
             localSessionId = this.sessionId || (0, qwen_history_1.createPendingQwenSessionId)();
             this.sessionId = localSessionId;
             this.state.selectedSessionId = localSessionId;
-            const intent = (0, assistant_ux_1.classifyIntent)(text);
-            preview = await this.contextCollector.preview(text, await this.getQwenContextOptions({
+            const intent = (0, assistant_ux_1.classifyIntent)(taskText);
+            preview = await this.contextCollector.preview(taskText, await this.getQwenContextOptions({
                 searchDepth: input.searchDepth,
                 intent,
                 includeWorkspaceHints: hadExistingSession,
@@ -2025,7 +2058,7 @@ class PlaygroundViewProvider {
             }
             this.applyPreviewState(preview);
             this.lastPrompt = {
-                text,
+                text: taskText,
                 intent: preview.intent,
                 searchDepth: input.searchDepth,
             };
@@ -2054,7 +2087,7 @@ class PlaygroundViewProvider {
             await this.qwenHistoryService.saveConversation({
                 sessionId: localSessionId,
                 mode: this.state.mode,
-                title: text,
+                title: taskText,
                 messages: this.state.messages,
                 targets: preview.resolvedFiles,
                 intent: preview.intent,
@@ -2065,7 +2098,7 @@ class PlaygroundViewProvider {
         }
         if (this.shouldRequireEditClarification(preview)) {
             this.pendingClarification = {
-                text,
+                text: taskText,
                 intent: preview.intent,
                 searchDepth: input.searchDepth,
             };
@@ -2083,7 +2116,7 @@ class PlaygroundViewProvider {
             await this.qwenHistoryService.saveConversation({
                 sessionId: localSessionId,
                 mode: this.state.mode,
-                title: text,
+                title: taskText,
                 messages: this.state.messages,
                 targets: preview.resolvedFiles.length ? preview.resolvedFiles : preview.candidateFiles,
                 intent: preview.intent,
@@ -2129,11 +2162,11 @@ class PlaygroundViewProvider {
             ];
             const executablePath = (0, config_1.getQwenExecutablePath)() || null;
             const runPromptAttempt = async (requireToolUse, historyMessages, forceActionable, injectedSnippets) => this.qwenCodeRuntime.runPrompt({
-                apiKey: String(apiKey || ""),
+                apiKey: String(qwenAuthToken || ""),
                 mode: this.state.mode,
                 abortController: promptAbort,
                 prompt: (0, qwen_prompt_1.buildQwenPrompt)({
-                    task: text,
+                    task: taskText,
                     mode: this.state.mode,
                     preview: fullPreview,
                     context,
@@ -2146,24 +2179,24 @@ class PlaygroundViewProvider {
                     injectedSnippets,
                 }),
                 onPartial: (partial) => {
-                    if ((0, qwen_ux_1.shouldSuppressQwenPartialOutput)({
-                        text: partial,
-                        task: text,
-                        workspaceRoot,
-                        executablePath,
-                        workspaceTargets,
-                    })) {
-                        return;
-                    }
                     const next = (0, qwen_ux_1.sanitizeQwenAssistantOutput)({
                         text: partial,
-                        task: text,
+                        task: taskText,
                         workspaceRoot,
                         executablePath,
                         workspaceTargets,
                     }).trim();
                     if (!next)
                         return;
+                    if ((0, qwen_ux_1.shouldSuppressQwenPartialOutput)({
+                        text: next,
+                        task: taskText,
+                        workspaceRoot,
+                        executablePath,
+                        workspaceTargets,
+                    })) {
+                        return;
+                    }
                     this.applyChatLiveEvent({
                         type: "partial_text",
                         text: next,
@@ -2211,7 +2244,7 @@ class PlaygroundViewProvider {
                 toolEvents: [...(result.toolEvents || [])],
             });
             if (this.shouldRetryQwenWithToolDirective(result, fullPreview, {
-                task: text,
+                task: taskText,
                 workspaceRoot,
                 executablePath,
                 workspaceTargets,
@@ -2256,7 +2289,7 @@ class PlaygroundViewProvider {
                     toolEvents: [...(result.toolEvents || [])],
                 });
                 if (this.shouldRetryQwenWithToolDirective(result, fullPreview, {
-                    task: text,
+                    task: taskText,
                     workspaceRoot,
                     executablePath,
                     workspaceTargets,
@@ -2290,7 +2323,7 @@ class PlaygroundViewProvider {
                 result.usedTools.length === 0 &&
                 (fullPreview.intent === "change" || fullPreview.intent === "find") &&
                 this.shouldRetryQwenWithToolDirective(result, fullPreview, {
-                    task: text,
+                    task: taskText,
                     workspaceRoot,
                     executablePath,
                     workspaceTargets,
@@ -2301,7 +2334,7 @@ class PlaygroundViewProvider {
             const finalAssistantText = exhaustedToolExecution
                 ? [
                     (0, qwen_loop_guard_1.buildProjectLoopRecoveryMessage)({
-                        task: text,
+                        task: taskText,
                         workspaceTargets,
                         workspaceRoot,
                     }),
@@ -2309,7 +2342,7 @@ class PlaygroundViewProvider {
                 ].join("\n\n")
                 : (0, qwen_ux_1.sanitizeQwenAssistantOutput)({
                     text: result.assistantText || "Qwen Code finished without a final message.",
-                    task: text,
+                    task: taskText,
                     workspaceRoot,
                     executablePath,
                     workspaceTargets,
@@ -2320,7 +2353,7 @@ class PlaygroundViewProvider {
             });
             this.state.followUpActions = (0, assistant_ux_1.buildFollowUpActions)({
                 intent: fullPreview.intent,
-                lastTask: text,
+                lastTask: taskText,
                 preview: fullPreview,
                 patchConfidence: (0, assistant_ux_1.buildPatchConfidence)({
                     intent: fullPreview.intent,
@@ -2344,7 +2377,7 @@ class PlaygroundViewProvider {
             await this.qwenHistoryService.saveConversation({
                 sessionId: resolvedSessionId,
                 mode: this.state.mode,
-                title: text,
+                title: taskText,
                 messages: this.state.messages,
                 targets: fullPreview.resolvedFiles,
                 intent: fullPreview.intent,
@@ -2357,7 +2390,7 @@ class PlaygroundViewProvider {
             this.state.runtimePhase = "done";
             this.lastQwenDebugSnapshot = {
                 timestamp: nowIso(),
-                task: text,
+                task: taskText,
                 mode: this.state.mode,
                 intent: fullPreview.intent,
                 confidence: fullPreview.confidence,
@@ -2396,7 +2429,7 @@ class PlaygroundViewProvider {
             await this.qwenHistoryService.saveConversation({
                 sessionId: localSessionId,
                 mode: this.state.mode,
-                title: text,
+                title: taskText,
                 messages: this.state.messages,
                 targets: preview.resolvedFiles,
                 intent: preview.intent,
@@ -2404,7 +2437,7 @@ class PlaygroundViewProvider {
             await this.refreshHistory();
             this.lastQwenDebugSnapshot = {
                 timestamp: nowIso(),
-                task: text,
+                task: taskText,
                 mode: this.state.mode,
                 intent: preview.intent,
                 confidence: preview.confidence,
@@ -2509,11 +2542,11 @@ class PlaygroundViewProvider {
         await vscode.env.clipboard.writeText(report);
         vscode.window.showInformationMessage("Copied Binary IDE debug report to clipboard.");
     }
-    async sendPromptWithPlaygroundApi(text) {
+    async sendPromptWithPlaygroundApi(text, clientMessageId = "", promptText) {
         this.state.busy = true;
         const promptAbort = new AbortController();
         this.promptAbort = promptAbort;
-        this.appendMessage("user", text);
+        this.appendMessage("user", text, undefined, clientMessageId);
         this.applyChatLiveEvent({
             type: "accepted",
             transport: "playground",
@@ -2540,13 +2573,14 @@ class PlaygroundViewProvider {
         const hostedToolCallsUsed = [];
         const hostedDebugRef = { runId: undefined, adapter: undefined };
         let hostedPreview = null;
+        const taskText = String(promptText || text).trim() || text;
         try {
-            const { context, retrievalHints, preview } = await this.contextCollector.collect(text, {
+            const { context, retrievalHints, preview } = await this.contextCollector.collect(taskText, {
                 recentTouchedPaths: this.actionRunner.getRecentTouchedPaths(),
                 attachedFiles: this.manualContext.attachedFiles,
                 attachedSelection: this.manualContext.attachedSelection,
                 searchDepth: "fast",
-                intent: (0, assistant_ux_1.classifyIntent)(text),
+                intent: (0, assistant_ux_1.classifyIntent)(taskText),
             });
             hostedPreview = preview;
             if (promptAbort.signal.aborted) {
@@ -2555,7 +2589,7 @@ class PlaygroundViewProvider {
             const workspaceHash = (0, config_1.getWorkspaceHash)();
             const requestBody = {
                 mode: this.state.mode,
-                task: text,
+                task: taskText,
                 stream: true,
                 orchestrationProtocol: this.state.mode === "plan" ? "batch_v1" : "tool_loop_v1",
                 clientCapabilities: this.state.mode === "plan"
@@ -2631,7 +2665,7 @@ class PlaygroundViewProvider {
                 type: "final",
                 text: (0, qwen_ux_1.sanitizeQwenAssistantOutput)({
                     text: assistantBody,
-                    task: text,
+                    task: taskText,
                     workspaceRoot: (0, config_1.getWorkspaceRootPath)(),
                     executablePath: (0, config_1.getQwenExecutablePath)() || null,
                     workspaceTargets: [
@@ -2667,7 +2701,7 @@ class PlaygroundViewProvider {
             this.state.runtimePhase = "done";
             this.lastHostedDebugSnapshot = {
                 timestamp: nowIso(),
-                task: text,
+                task: taskText,
                 mode: this.state.mode,
                 intent: preview.intent,
                 confidence: preview.confidence,
@@ -2704,7 +2738,7 @@ class PlaygroundViewProvider {
             this.state.runtimePhase = "failed";
             this.lastHostedDebugSnapshot = {
                 timestamp: nowIso(),
-                task: text,
+                task: taskText,
                 mode: this.state.mode,
                 intent: hostedPreview?.intent ?? "ask",
                 confidence: hostedPreview?.confidence ?? "low",
@@ -2904,8 +2938,8 @@ class PlaygroundViewProvider {
         }
         return envelope;
     }
-    appendMessage(role, content, extras) {
-        this.state.messages = [...this.state.messages, { id: (0, crypto_1.randomUUID)(), role, content, ...extras }];
+    appendMessage(role, content, extras, id) {
+        this.state.messages = [...this.state.messages, { id: id || (0, crypto_1.randomUUID)(), role, content, ...extras }];
     }
     upsertMessage(id, role, content, extras) {
         const nextContent = content.trim();

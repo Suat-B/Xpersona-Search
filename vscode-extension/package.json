@@ -121,8 +121,8 @@
         },
         "xpersona.binary.qwen.baseUrl": {
           "type": "string",
-          "default": "https://router.huggingface.co/v1",
-          "description": "OpenAI-compatible base URL for the Binary IDE backend. Xpersona uses this to serve models to your extension."
+          "default": "http://localhost:3000/api/v1/hf",
+          "description": "OpenAI-compatible base URL for the Binary IDE backend. Defaults to the local Xpersona proxy."
         },
         "xpersona.binary.qwen.executable": {
           "type": "string",
@@ -153,5 +153,4 @@
     "@qwen-code/sdk": "^0.1.5"
   }
 }
-
 

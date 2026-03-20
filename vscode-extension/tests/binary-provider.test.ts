@@ -826,6 +826,37 @@ describe("binary provider", () => {
     expect(provider.state.liveChat).toBeNull();
   });
 
+  it("keeps the richer streamed body when the final qwen message is much shorter", async () => {
+    const { provider } = createProvider();
+    const streamedBody =
+      "I found the likely issue and I am going to explain the full fix path step by step so the stream stays readable and complete.";
+    provider.qwenCodeRuntime.runPrompt.mockImplementationOnce(
+      async ({ onPartial }: { onPartial?: (value: string) => void }) => {
+        onPartial?.(streamedBody);
+        return {
+          sessionId: "qwen_session",
+          assistantText: "Done.",
+          permissionDenials: [],
+          usedTools: [],
+          didMutate: false,
+          toolEvents: [],
+        };
+      }
+    );
+
+    await provider.runQwenPrompt({
+      text: "please fix the bug",
+      appendUser: true,
+      searchDepth: "fast",
+    });
+
+    const assistantMessages = provider.state.messages.filter((message: any) => message.role === "assistant");
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].content).toContain(streamedBody);
+    expect(assistantMessages[0].content).not.toBe("Done.");
+    expect(assistantMessages[0].live?.status).toBe("done");
+  });
+
   it("shows the live assistant shell before qwen context preview starts", async () => {
     const { provider, contextCollector } = createProvider();
 

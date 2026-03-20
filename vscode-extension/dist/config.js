@@ -53,6 +53,7 @@ const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
 const crypto_1 = require("crypto");
 const fs_1 = require("fs");
+const intelligence_utils_1 = require("./intelligence-utils");
 /** Path to the CLI wrapper that sanitizes argv[1] to avoid leaking extension paths into model context. */
 function getQwenCliWrapperPath() {
     const wrapperPath = path.join(__dirname, "..", "scripts", "qwen-cli-wrapper.js");
@@ -133,14 +134,16 @@ function getQwenModel() {
     return String(configured || "Qwen/Qwen3-Next-80B-A3B-Thinking:fastest").trim();
 }
 function getQwenOpenAiBaseUrl() {
-    const configured = getConfigurationValue("qwen.baseUrl", "https://router.huggingface.co/v1");
-    const value = String(configured || "https://router.huggingface.co/v1").trim();
+    const configured = getConfigurationValue("qwen.baseUrl", `${getBaseApiUrl()}/api/v1/hf`);
+    const value = String(configured || `${getBaseApiUrl()}/api/v1/hf`).trim();
     return value.replace(/\/+$/, "");
 }
 function getQwenExecutablePath() {
     const configured = getConfigurationValue("qwen.executable", "");
     const value = String(configured || "").trim();
-    return value || undefined;
+    if (!value)
+        return undefined;
+    return (0, intelligence_utils_1.isRuntimePathLeak)(value) ? undefined : value;
 }
 function getWorkspaceFolder() {
     return vscode.workspace.workspaceFolders?.[0] ?? null;

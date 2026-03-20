@@ -165,7 +165,7 @@ function buildExecutionLane(input) {
         "- Never begin your answer by discussing the Qwen SDK, CLI executable, extension runtime, auth setup, or local install paths unless the user explicitly asked about those internals.",
         "- Do not ask broad project-scope clarification questions when you already have a likely target file or grounded workspace context. Either act on the likely file or ask a narrow file-specific clarification.",
         "- Do not emit literal <tool_call>, <function=...>, or <parameter=...> markup in your answer. Either use the SDK's real tool mechanism or respond in normal prose.",
-        "- All file operations (read_file, edit, etc.) must use paths from the Target lane or workspace root only. Never use extension paths, .trae/extensions, node_modules in the extension, or @qwen-code/sdk paths. The workspace root is the only valid base for file paths.",
+        "- All file operations (read_file, edit, etc.) must use paths from the Target lane or workspace root only. Never use extension install paths, bundled SDK paths, or node_modules inside the extension. The workspace root is the only valid base for file paths.",
         "- If the user quotes prior assistant chatter about SDK locations, installation checks, CLI executables, or runtime folders, treat that as a context-loss bug report and pivot back to the active workspace files.",
         "- When in doubt, explain the likely target file or active editor content instead of speculating about SDK installation state.",
     ];

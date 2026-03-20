@@ -49,7 +49,11 @@ import { ToolExecutor } from "./tool-executor";
 import { buildPlaygroundWebviewHtml } from "./webview-html";
 import { buildQwenPrompt } from "./qwen-prompt";
 import { augmentContextFromPseudoMarkup } from "./pseudo-markup-utils";
-import { buildProjectLoopRecoveryMessage, containsGenericProjectClarification } from "./qwen-loop-guard";
+import {
+  buildProjectLoopRecoveryMessage,
+  containsGenericProjectClarification,
+  isLikelyClarificationContinuation,
+} from "./qwen-loop-guard";
 import { containsRuntimeNoiseForContext } from "./qwen-runtime-noise";
 import {
   buildSlashCommandHelpMessage,
@@ -307,6 +311,14 @@ function containsPseudoToolMarkupText(value: string): boolean {
     /<function=[^>]+>/i.test(text) ||
     /<parameter=[^>]+>/i.test(text)
   );
+}
+
+function buildContinuationPrompt(baseText: string, followUpText: string): string {
+  const base = String(baseText || "").trim();
+  const followUp = String(followUpText || "").trim();
+  if (!base) return followUp;
+  if (!followUp) return base;
+  return [base, `User follow-up: ${followUp}`].join("\n\n");
 }
 
 function liveProgressForPhase(phase: string): number {
@@ -917,11 +929,11 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         await this.bootstrap();
         return;
       case "sendPrompt":
-        await this.sendPrompt(String(message.text || ""));
+        await this.sendPrompt(String(message.text || ""), String(message.clientMessageId || ""));
         return;
       case "confirmPlanMode":
         if (String(message.text || "").trim()) {
-          await this.sendPrompt(String(message.text || ""));
+          await this.sendPrompt(String(message.text || ""), String(message.clientMessageId || ""));
         } else {
           await this.activatePlanMode();
         }
@@ -1258,6 +1270,15 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   }): void {
     const current = this.state.liveChat;
     if (!current) return;
+    const currentMessage = this.getMessageById(current.messageId);
+    const currentContent = String(currentMessage?.content || "");
+    const finalContent = String(input.content || "");
+    const shouldPreserveStreamedContent =
+      currentContent.length > 0 &&
+      finalContent.length > 0 &&
+      currentContent.length >= finalContent.length + 20 &&
+      !currentContent.includes(finalContent);
+    const contentToUse = shouldPreserveStreamedContent ? currentContent : finalContent;
     const nextLive: ChatLiveState = {
       ...current,
       mode: input.mode || current.mode,
@@ -1269,7 +1290,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       latestFile: input.latestFile || current.latestFile,
       updatedAt: nowIso(),
     };
-    this.upsertMessage(current.messageId, input.role || "assistant", input.content, {
+    this.upsertMessage(current.messageId, input.role || "assistant", contentToUse, {
       presentation: "live_binary",
       live: nextLive,
     });
@@ -2138,7 +2159,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async sendPrompt(rawText: string): Promise<void> {
+  private async sendPrompt(rawText: string, clientMessageId = ""): Promise<void> {
     const text = rawText.trim();
     if (!text || this.state.busy) return;
     this.clearDraftPreviewTimer();
@@ -2154,30 +2175,47 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
             text: planTask,
             appendUser: true,
             searchDepth: "fast",
+            clientMessageId,
           });
           return;
         }
-        await this.sendPromptWithPlaygroundApi(planTask);
+        await this.sendPromptWithPlaygroundApi(planTask, clientMessageId);
         return;
       }
     }
 
-  if (await this.handleSlashCommand(text)) {
-    await this.clearCurrentDraft();
-    return;
-  }
+    if (await this.handleSlashCommand(text)) {
+      await this.clearCurrentDraft();
+      return;
+    }
+
+    const continuationBase = this.pendingClarification || this.lastPrompt;
+    const shouldContinuePreviousTask = Boolean(
+      continuationBase && isLikelyClarificationContinuation(text)
+    );
+    const promptText = shouldContinuePreviousTask && continuationBase
+      ? buildContinuationPrompt(continuationBase.text, text)
+      : text;
+    const searchDepth = shouldContinuePreviousTask && continuationBase
+      ? continuationBase.searchDepth
+      : "fast";
+    if (shouldContinuePreviousTask) {
+      this.pendingClarification = null;
+    }
 
     await this.clearCurrentDraft();
 
     if (this.state.runtime === "qwenCode") {
       await this.runQwenPrompt({
         text,
+        promptText,
         appendUser: true,
-        searchDepth: "fast",
+        searchDepth,
+        clientMessageId,
       });
       return;
     }
-    await this.sendPromptWithPlaygroundApi(text);
+    await this.sendPromptWithPlaygroundApi(text, clientMessageId, promptText);
   }
 
   private buildClarificationMessage(preview: Awaited<ReturnType<ContextCollector["preview"]>>): string {
@@ -2264,12 +2302,15 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
 
   private async runQwenPrompt(input: {
     text: string;
+    promptText?: string;
     appendUser: boolean;
     searchDepth: "fast" | "deep";
+    clientMessageId?: string;
   }): Promise<void> {
     const text = input.text.trim();
+    const taskText = String(input.promptText || input.text || "").trim() || text;
     if (input.appendUser) {
-      this.appendMessage("user", text);
+      this.appendMessage("user", text, undefined, input.clientMessageId);
     }
 
     const assistantMessageId = this.createLiveAssistantMessage({
@@ -2296,7 +2337,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     const workspaceRoot = getWorkspaceRootPath();
     const promptAbort = new AbortController();
     this.promptAbort = promptAbort;
-    let apiKey = "";
+    let qwenAuthToken = "";
     let preflightMessage: string | null = null;
     const hadExistingSession = Boolean(this.sessionId);
     let localSessionId = this.sessionId || createPendingQwenSessionId();
@@ -2305,10 +2346,11 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     let retriedWithToolDirective = false;
 
     try {
-      apiKey = String((await this.auth.getApiKey()) || "");
+      const requestAuth = await this.auth.getRequestAuth();
+      qwenAuthToken = String(requestAuth?.bearer || requestAuth?.apiKey || "");
       preflightMessage = await validateQwenPreflight({
         workspaceRoot,
-        apiKey,
+        apiKey: qwenAuthToken,
         qwenBaseUrl: getQwenOpenAiBaseUrl(),
         playgroundBaseUrl: getBaseApiUrl(),
         executablePath: getQwenExecutablePath(),
@@ -2328,9 +2370,9 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       this.sessionId = localSessionId;
       this.state.selectedSessionId = localSessionId;
 
-      const intent = classifyIntent(text);
+      const intent = classifyIntent(taskText);
       preview = await this.contextCollector.preview(
-        text,
+        taskText,
         await this.getQwenContextOptions({
           searchDepth: input.searchDepth,
           intent,
@@ -2342,7 +2384,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       }
       this.applyPreviewState(preview);
       this.lastPrompt = {
-        text,
+        text: taskText,
         intent: preview.intent,
         searchDepth: input.searchDepth,
       };
@@ -2371,7 +2413,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       await this.qwenHistoryService.saveConversation({
         sessionId: localSessionId,
         mode: this.state.mode,
-        title: text,
+        title: taskText,
         messages: this.state.messages,
         targets: preview.resolvedFiles,
         intent: preview.intent,
@@ -2383,7 +2425,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
 
     if (this.shouldRequireEditClarification(preview)) {
       this.pendingClarification = {
-        text,
+        text: taskText,
         intent: preview.intent,
         searchDepth: input.searchDepth,
       };
@@ -2401,7 +2443,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       await this.qwenHistoryService.saveConversation({
         sessionId: localSessionId,
         mode: this.state.mode,
-        title: text,
+        title: taskText,
         messages: this.state.messages,
         targets: preview.resolvedFiles.length ? preview.resolvedFiles : preview.candidateFiles,
         intent: preview.intent,
@@ -2460,11 +2502,11 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         injectedSnippets?: Array<{ path: string; content: string; reason: string }>
       ): Promise<QwenPromptResult> =>
         this.qwenCodeRuntime.runPrompt({
-          apiKey: String(apiKey || ""),
+          apiKey: String(qwenAuthToken || ""),
           mode: this.state.mode,
           abortController: promptAbort,
           prompt: buildQwenPrompt({
-            task: text,
+            task: taskText,
             mode: this.state.mode,
             preview: fullPreview,
             context,
@@ -2477,10 +2519,18 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
             injectedSnippets,
           }),
           onPartial: (partial) => {
+            const next = sanitizeQwenAssistantOutput({
+              text: partial,
+              task: taskText,
+              workspaceRoot,
+              executablePath,
+              workspaceTargets,
+            }).trim();
+            if (!next) return;
             if (
               shouldSuppressQwenPartialOutput({
-                text: partial,
-                task: text,
+                text: next,
+                task: taskText,
                 workspaceRoot,
                 executablePath,
                 workspaceTargets,
@@ -2488,14 +2538,6 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
             ) {
               return;
             }
-            const next = sanitizeQwenAssistantOutput({
-              text: partial,
-              task: text,
-              workspaceRoot,
-              executablePath,
-              workspaceTargets,
-            }).trim();
-            if (!next) return;
             this.applyChatLiveEvent({
               type: "partial_text",
               text: next,
@@ -2543,7 +2585,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       });
       if (
         this.shouldRetryQwenWithToolDirective(result, fullPreview, {
-          task: text,
+          task: taskText,
           workspaceRoot,
           executablePath,
           workspaceTargets,
@@ -2603,7 +2645,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
 
         if (
           this.shouldRetryQwenWithToolDirective(result, fullPreview, {
-            task: text,
+            task: taskText,
             workspaceRoot,
             executablePath,
             workspaceTargets,
@@ -2644,7 +2686,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         result.usedTools.length === 0 &&
         (fullPreview.intent === "change" || fullPreview.intent === "find") &&
         this.shouldRetryQwenWithToolDirective(result, fullPreview, {
-          task: text,
+          task: taskText,
           workspaceRoot,
           executablePath,
           workspaceTargets,
@@ -2655,7 +2697,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       const finalAssistantText = exhaustedToolExecution
         ? [
             buildProjectLoopRecoveryMessage({
-              task: text,
+              task: taskText,
               workspaceTargets,
               workspaceRoot,
             }),
@@ -2663,7 +2705,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
           ].join("\n\n")
         : sanitizeQwenAssistantOutput({
             text: result.assistantText || "Qwen Code finished without a final message.",
-            task: text,
+            task: taskText,
             workspaceRoot,
             executablePath,
             workspaceTargets,
@@ -2674,7 +2716,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       });
       this.state.followUpActions = buildFollowUpActions({
         intent: fullPreview.intent,
-        lastTask: text,
+        lastTask: taskText,
         preview: fullPreview,
         patchConfidence: buildPatchConfidence({
           intent: fullPreview.intent,
@@ -2700,7 +2742,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       await this.qwenHistoryService.saveConversation({
         sessionId: resolvedSessionId,
         mode: this.state.mode,
-        title: text,
+        title: taskText,
         messages: this.state.messages,
         targets: fullPreview.resolvedFiles,
         intent: fullPreview.intent,
@@ -2713,7 +2755,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       this.state.runtimePhase = "done";
       this.lastQwenDebugSnapshot = {
         timestamp: nowIso(),
-        task: text,
+        task: taskText,
         mode: this.state.mode,
         intent: fullPreview.intent,
         confidence: fullPreview.confidence,
@@ -2751,7 +2793,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       await this.qwenHistoryService.saveConversation({
         sessionId: localSessionId,
         mode: this.state.mode,
-        title: text,
+        title: taskText,
         messages: this.state.messages,
         targets: preview.resolvedFiles,
         intent: preview.intent,
@@ -2759,7 +2801,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       await this.refreshHistory();
       this.lastQwenDebugSnapshot = {
         timestamp: nowIso(),
-        task: text,
+        task: taskText,
         mode: this.state.mode,
         intent: preview.intent,
         confidence: preview.confidence,
@@ -2866,11 +2908,15 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     vscode.window.showInformationMessage("Copied Binary IDE debug report to clipboard.");
   }
 
-  private async sendPromptWithPlaygroundApi(text: string): Promise<void> {
+  private async sendPromptWithPlaygroundApi(
+    text: string,
+    clientMessageId = "",
+    promptText?: string
+  ): Promise<void> {
     this.state.busy = true;
     const promptAbort = new AbortController();
     this.promptAbort = promptAbort;
-    this.appendMessage("user", text);
+    this.appendMessage("user", text, undefined, clientMessageId);
     this.applyChatLiveEvent({
       type: "accepted",
       transport: "playground",
@@ -2899,15 +2945,16 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     const hostedToolCallsUsed: string[] = [];
     const hostedDebugRef = { runId: undefined as string | undefined, adapter: undefined as string | undefined };
     let hostedPreview: Awaited<ReturnType<ContextCollector["collect"]>>["preview"] | null = null;
+    const taskText = String(promptText || text).trim() || text;
     try {
       const { context, retrievalHints, preview } = await this.contextCollector.collect(
-        text,
+        taskText,
         {
           recentTouchedPaths: this.actionRunner.getRecentTouchedPaths(),
           attachedFiles: this.manualContext.attachedFiles,
           attachedSelection: this.manualContext.attachedSelection,
           searchDepth: "fast",
-          intent: classifyIntent(text),
+          intent: classifyIntent(taskText),
         }
       );
       hostedPreview = preview;
@@ -2918,7 +2965,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       const workspaceHash = getWorkspaceHash();
       const requestBody = {
         mode: this.state.mode,
-        task: text,
+        task: taskText,
         stream: true,
         orchestrationProtocol: this.state.mode === "plan" ? "batch_v1" : "tool_loop_v1",
         clientCapabilities:
@@ -3003,7 +3050,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         type: "final",
         text: sanitizeQwenAssistantOutput({
           text: assistantBody,
-          task: text,
+          task: taskText,
           workspaceRoot: getWorkspaceRootPath(),
           executablePath: getQwenExecutablePath() || null,
           workspaceTargets: [
@@ -3045,7 +3092,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       this.state.runtimePhase = "done";
       this.lastHostedDebugSnapshot = {
         timestamp: nowIso(),
-        task: text,
+        task: taskText,
         mode: this.state.mode,
         intent: preview.intent,
         confidence: preview.confidence,
@@ -3082,7 +3129,7 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       this.state.runtimePhase = "failed";
       this.lastHostedDebugSnapshot = {
         timestamp: nowIso(),
-        task: text,
+        task: taskText,
         mode: this.state.mode,
         intent: hostedPreview?.intent ?? "ask",
         confidence: hostedPreview?.confidence ?? "low",
@@ -3327,9 +3374,10 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
   private appendMessage(
     role: ChatMessage["role"],
     content: string,
-    extras?: Partial<Pick<ChatMessage, "presentation" | "live">>
+    extras?: Partial<Pick<ChatMessage, "presentation" | "live">>,
+    id?: string
   ): void {
-    this.state.messages = [...this.state.messages, { id: randomUUID(), role, content, ...extras }];
+    this.state.messages = [...this.state.messages, { id: id || randomUUID(), role, content, ...extras }];
   }
 
   private upsertMessage(

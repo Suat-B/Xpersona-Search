@@ -3,6 +3,7 @@ import * as path from "path";
 import { createHash } from "crypto";
 import { existsSync } from "fs";
 import type { RuntimeBackend } from "./shared";
+import { isRuntimePathLeak } from "./intelligence-utils";
 
 /** Path to the CLI wrapper that sanitizes argv[1] to avoid leaking extension paths into model context. */
 export function getQwenCliWrapperPath(): string | undefined {
@@ -104,15 +105,16 @@ export function getQwenModel(): string {
 }
 
 export function getQwenOpenAiBaseUrl(): string {
-  const configured = getConfigurationValue<string>("qwen.baseUrl", "https://router.huggingface.co/v1");
-  const value = String(configured || "https://router.huggingface.co/v1").trim();
+  const configured = getConfigurationValue<string>("qwen.baseUrl", `${getBaseApiUrl()}/api/v1/hf`);
+  const value = String(configured || `${getBaseApiUrl()}/api/v1/hf`).trim();
   return value.replace(/\/+$/, "");
 }
 
 export function getQwenExecutablePath(): string | undefined {
   const configured = getConfigurationValue<string>("qwen.executable", "");
   const value = String(configured || "").trim();
-  return value || undefined;
+  if (!value) return undefined;
+  return isRuntimePathLeak(value) ? undefined : value;
 }
 
 export function getWorkspaceFolder(): vscode.WorkspaceFolder | null {

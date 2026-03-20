@@ -4,6 +4,7 @@ import {
   capabilityTokenToLabel,
   normalizeCapabilityToken,
 } from "@/lib/search/capability-tokens";
+import { buildTrendingCapabilities } from "@/lib/search/trending-capabilities";
 
 type SearchAgent = {
   id: string;
@@ -24,7 +25,7 @@ type HomePayload = {
   trending?: {
     agents?: SearchAgent[];
     toolPacks?: SearchAgent[];
-    capabilities?: CapabilitySummary[];
+    capabilities?: Array<{ name: string; count: number }>;
   };
 };
 
@@ -59,25 +60,6 @@ function normalizeAgent(item: SearchAgent): SearchAgent {
 
 function hasMcpProtocol(agent: SearchAgent): boolean {
   return agent.protocols.some((p) => p.trim().toUpperCase() === "MCP");
-}
-
-function topCapabilities(results: SearchAgent[], limit: number): CapabilitySummary[] {
-  const counts = new Map<string, { count: number; label: string }>();
-  for (const result of results) {
-    for (const cap of result.capabilities) {
-      const key = normalizeCapabilityToken(cap);
-      if (!key) continue;
-      const current = counts.get(key);
-      counts.set(key, {
-        count: (current?.count ?? 0) + 1,
-        label: current?.label ?? capabilityTokenToLabel(key),
-      });
-    }
-  }
-  return [...counts.entries()]
-    .sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
-    .slice(0, limit)
-    .map(([name, value]) => ({ name: value.label, count: value.count }));
 }
 
 function formatFreshness(item: SearchAgent) {
@@ -138,7 +120,7 @@ export async function TrendingGridHF() {
       toolPacks = fallbackResults.filter(hasMcpProtocol).slice(0, 5);
     }
     if (capabilities.length === 0) {
-      capabilities = topCapabilities(fallbackResults, 5);
+      capabilities = buildTrendingCapabilities(fallbackResults, 5);
     }
   }
 

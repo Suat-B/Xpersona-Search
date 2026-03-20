@@ -18,6 +18,31 @@ function formatTargets(targets: string[] | undefined): string[] {
   ).slice(0, 2);
 }
 
+export function isLikelyClarificationContinuation(text: string): boolean {
+  const normalized = normalizeLoopText(text);
+  if (!normalized) return false;
+  if (normalized.length > 80) return false;
+
+  if (
+    /\b(fix|change|update|edit|modify|patch|refactor|rewrite|implement|add|create|remove|delete|rename|replace|search|find|explain|debug|investigate|inspect|read|expand|build)\b/.test(
+      normalized
+    )
+  ) {
+    return false;
+  }
+
+  return (
+    /^(y(es|ea|ep|up)?|sure|ok(ay)?|go ahead|continue|proceed|please do|do it|that one|first one|second one|same|sounds good|correct|right|use that|yes sure)([\s.!?,:-].*)?$/i.test(
+      normalized
+    ) || normalized.startsWith("yes ") ||
+    normalized.startsWith("sure ") ||
+    normalized.startsWith("ok ") ||
+    normalized.startsWith("okay ") ||
+    normalized.startsWith("continue ") ||
+    normalized.startsWith("go ahead ")
+  );
+}
+
 export function containsGenericProjectClarification(text: string): boolean {
   const normalized = normalizeLoopText(text);
   if (!normalized) return false;

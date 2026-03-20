@@ -164,6 +164,10 @@
   let lastDraftKey = "";
   let lastDraftText = "";
   let binaryHeroTimer = 0;
+  let pendingOutgoingMessage = null;
+  let pendingThinkingCue = null;
+  const THINKING_CUE_MIN_MS = 700;
+  const settledLiveMessageIds = new Set();
   const binaryEncoder = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
   const BINARY_HERO_MAX_LINES = 72;
   const BINARY_HERO_LINE_BYTES = 5;
@@ -184,6 +188,81 @@
       !event.metaKey &&
       !event.isComposing
     );
+  }
+
+  function createClientMessageId() {
+    if (typeof crypto !== "undefined" && crypto && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+    return `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  function setPendingOutgoingMessage(id, content) {
+    const nextId = String(id || "").trim();
+    const nextContent = String(content || "").trim();
+    if (!nextId || !nextContent) return;
+    pendingOutgoingMessage = {
+      id: nextId,
+      content: nextContent,
+    };
+  }
+
+  function setPendingThinkingCue(id, baselineCount) {
+    const nextId = String(id || "").trim();
+    const nextBaseline = Number(baselineCount);
+    if (!nextId || !Number.isFinite(nextBaseline) || nextBaseline < 0) {
+      pendingThinkingCue = null;
+      return;
+    }
+    const startedAt = Date.now();
+    pendingThinkingCue = {
+      id: nextId,
+      baselineCount: Math.floor(nextBaseline),
+      startedAt,
+      visibleUntil: startedAt + THINKING_CUE_MIN_MS,
+    };
+  }
+
+  function clearPendingOutgoingMessage(id) {
+    if (!pendingOutgoingMessage) return;
+    if (!id || pendingOutgoingMessage.id === id) {
+      pendingOutgoingMessage = null;
+    }
+  }
+
+  function clearPendingThinkingCue(id) {
+    if (!pendingThinkingCue) return;
+    if (!id || pendingThinkingCue.id === id) {
+      pendingThinkingCue = null;
+    }
+  }
+
+  function hasFreshAssistantResponse(messages) {
+    if (!pendingThinkingCue) return false;
+    const list = Array.isArray(messages) ? messages : [];
+    const baseline = Math.max(0, Number(pendingThinkingCue.baselineCount) || 0);
+    return list.slice(baseline).some((message) => {
+      if (!message) return false;
+      if (message.presentation === "live_binary") return true;
+      return String(message.role || "assistant") !== "user";
+    });
+  }
+
+  function getRenderableMessages() {
+    const messages = Array.isArray(state.messages) ? state.messages : [];
+    const showThinkingCue = Boolean(pendingThinkingCue) && !hasFreshAssistantResponse(messages);
+    const nextMessages = [
+      ...messages,
+    ];
+    if (showThinkingCue) {
+      nextMessages.push({
+        id: `${pendingOutgoingMessage.id}_thinking`,
+        role: "assistant",
+        content: "Thinking",
+        presentation: "thinking",
+      });
+    }
+    return nextMessages;
   }
 
   function isArrowDownKey(event) {
@@ -621,7 +700,10 @@
     setHistoryDrawerOpen(false);
     setArtifactsDrawerOpen(false);
     window.clearTimeout(previewTimer);
-    vscode.postMessage({ type: "confirmPlanMode", text: composerValue });
+    const clientMessageId = createClientMessageId();
+    setPendingOutgoingMessage(clientMessageId, composerValue);
+    renderMessages();
+    vscode.postMessage({ type: "confirmPlanMode", text: composerValue, clientMessageId });
     elements.composer.value = "";
     syncComposerHeight();
     persistDraft();
@@ -949,8 +1031,19 @@
   }
 
   function renderCodeSegment(segment) {
-    const language = segment.language ? escapeHtml(segment.language) : "code";
-    return `<pre><div class="code-header"><span>${language}</span><span>workspace</span></div><code class="code-block">${escapeHtml(segment.value)}</code></pre>`;
+    const language = String(segment.language || "").trim();
+    const shellLike = /^(bash|sh|zsh|fish|powershell|pwsh|cmd|terminal|shell)$/i.test(language) || looksLikeTerminalCommand(segment.value);
+    if (shellLike) {
+      return `<pre class="terminal-command"><code class="code-block">${escapeHtml(segment.value)}</code></pre>`;
+    }
+    const label = language ? escapeHtml(language) : "code";
+    return `<pre><div class="code-header"><span>${label}</span><span>workspace</span></div><code class="code-block">${escapeHtml(segment.value)}</code></pre>`;
+  }
+
+  function looksLikeTerminalCommand(value) {
+    const text = String(value || "").trim();
+    if (!text) return false;
+    return /^(\$|>\s)?(?:npm|pnpm|yarn|npx|git|cd|dir|ls|python|python3|node|bun|deno|pip|pip3|docker|make|cargo|go|pytest|uv|composer)\b/i.test(text);
   }
 
   function formatMessageBody(value) {
@@ -1106,6 +1199,7 @@
     return {
       id: String(build.id),
       title: artifact && artifact.fileName ? artifact.fileName : `Bundle ${String(build.id)}`,
+      displayName: "",
       status: String(build.status || "queued"),
       runtime: String(target.runtime || "node18"),
       platform: String(target.platform || "portable"),
@@ -1119,8 +1213,38 @@
   function upsertLocalArtifact(item) {
     if (!item || !item.id) return;
     const existing = Array.isArray(state.localArtifacts) ? state.localArtifacts : [];
-    const next = [item, ...existing.filter((entry) => entry && entry.id !== item.id)].slice(0, 24);
+    const current = existing.find((entry) => entry && entry.id === item.id) || null;
+    const nextItem = {
+      ...(current || {}),
+      ...item,
+      displayName:
+        String(item.displayName || "").trim() ||
+        String(current && current.displayName ? current.displayName : "").trim() ||
+        String(current && current.title ? current.title : "").trim() ||
+        String(item.title || "").trim(),
+    };
+    const next = [nextItem, ...existing.filter((entry) => entry && entry.id !== item.id)].slice(0, 24);
     state.localArtifacts = next;
+  }
+
+  function renameLocalArtifact(id) {
+    const artifactId = String(id || "").trim();
+    if (!artifactId) return;
+    const items = Array.isArray(state.localArtifacts) ? state.localArtifacts : [];
+    const current = items.find((entry) => entry && entry.id === artifactId);
+    if (!current) return;
+    const currentLabel = String(current.displayName || current.title || "").trim();
+    const nextName = window.prompt("Rename artifact", currentLabel);
+    if (nextName === null) return;
+    const normalized = String(nextName || "").trim();
+    if (!normalized) return;
+    upsertLocalArtifact({
+      ...current,
+      displayName: normalized,
+      updatedAt: new Date().toISOString(),
+    });
+    renderArtifacts();
+    persistDraft();
   }
 
   function syncLocalArtifactsFromBuild() {
@@ -1164,7 +1288,7 @@
           '<div class="task-item">',
           '<div class="task-line">',
           '<div class="task-copy">',
-          `<span class="task-name">${escapeHtml(item.title || "Portable bundle")}</span>`,
+          `<span class="task-name">${escapeHtml(String(item.displayName || item.title || "Portable bundle"))}</span>`,
           `<div class="task-meta">${escapeHtml(item.runtime || "node18")} · ${escapeHtml(item.platform || "portable")} · Reliability ${escapeHtml(reliability)}</div>`,
           "</div>",
           '<div class="task-aside">',
@@ -1172,7 +1296,12 @@
           updated ? `<span class="task-time">${escapeHtml(updated)}</span>` : "",
           "</div>",
           "</div>",
-          download ? `<div class="task-meta">${download}</div>` : "",
+          '<div class="task-actions">',
+          `<button type="button" class="binary-button artifact-rename-button" data-artifact-rename="${escapeHtml(
+            item.id
+          )}">Rename</button>`,
+          download ? download : "",
+          "</div>",
           "</div>",
         ].join("");
       })
@@ -1201,14 +1330,10 @@
   }
 
   function renderEmptyStage() {
-    const logoUri = document.body.getAttribute("data-logo-uri") || "";
     const workspaceName = document.body.getAttribute("data-workspace-name") || "Workspace";
     return [
       '<div class="message-stack">',
       '<div class="empty-stage"><div class="empty-stage-inner">',
-      '<div class="empty-stage-logo">',
-      logoUri ? `<img src="${escapeHtml(logoUri)}" alt="Binary IDE" />` : "",
-      "</div>",
       `<span>Compose for ${escapeHtml(workspaceName)}. Chat stays primary, and bundle actions stay docked below.</span>`,
       "</div></div>",
       "</div>",
@@ -1217,7 +1342,7 @@
 
   function renderMessages() {
     if (!elements.messageList) return;
-    const messages = Array.isArray(state.messages) ? state.messages : [];
+    const messages = getRenderableMessages();
     if (!messages.length) {
       elements.messageList.innerHTML = renderEmptyStage();
       window.requestAnimationFrame(updateJumpButton);
@@ -1241,6 +1366,9 @@
           const role = item.role || "assistant";
           if (item && item.presentation === "live_binary") {
             return renderLiveBinaryMessage(item, index === followUpIndex);
+          }
+          if (item && item.presentation === "thinking") {
+            return '<article class="message assistant thinking" aria-live="polite"><div class="message-body">Thinking</div></article>';
           }
           return [
             `<article class="message ${escapeHtml(role)}">`,
@@ -1416,13 +1544,55 @@
   function renderLiveBinaryMessage(item, includeFollowups) {
     const hasBody = Boolean(String(item.content || "").trim());
     if (!hasBody) return "";
-    return [
-      '<article class="message assistant">',
+    const live = item.live || {};
+    const alertIconUri = document.body.getAttribute("data-logo-uri") || "";
+    const isBuildMode = String(live.mode || "") === "build";
+    const status = String(live.status || "");
+    const isTerminal = ["done", "failed", "canceled"].includes(status);
+    const settledAnimationClass = isTerminal && !settledLiveMessageIds.has(String(item.id || ""));
+    const statusLabel =
+      status === "done" ? "Finalized" : status === "failed" ? "Failed" : status === "canceled" ? "Canceled" : "Streaming";
+    const statusClass =
+      status === "done" ? "status-done" : status === "failed" ? "status-failed" : status === "canceled" ? "status-canceled" : "";
+    const statusCopy =
+      status === "done"
+        ? "Stream settled and saved into the chat."
+        : status === "failed"
+          ? "Stream stopped before completion."
+          : status === "canceled"
+            ? "Stream was canceled."
+            : "Stream is still live.";
+    const alertTitle =
+      status === "done"
+        ? "Artifact created successfully"
+        : status === "failed"
+          ? "Artifact creation failed"
+          : status === "canceled"
+            ? "Artifact creation canceled"
+            : "Artifact live";
+    const html = [
+      `<article class="message assistant live-binary${isTerminal ? " settled" : ""}${settledAnimationClass ? " settle-animate" : ""}">`,
       '<div class="message-meta">Binary IDE</div>',
       `<div class="message-body">${formatMessageBody(item.content)}</div>`,
+      isBuildMode && isTerminal
+        ? `<div class="live-message-alert status-${escapeHtml(status)}">${
+            alertIconUri
+              ? `<span class="live-message-alert-icon" aria-hidden="true"><img src="${escapeHtml(alertIconUri)}" alt="" /></span>`
+              : ""
+          }<span class="live-message-alert-label">${escapeHtml(alertTitle)}</span><span class="live-message-alert-copy">${escapeHtml(statusCopy)}</span></div>`
+        : "",
+      isTerminal
+        ? `<div class="live-message-settled-meta"><span class="live-message-pill ${statusClass}">${escapeHtml(
+            statusLabel
+          )}</span><span class="live-message-summary-text">${escapeHtml(statusCopy)}</span></div>`
+        : "",
       includeFollowups ? renderFollowUpActions() : "",
       "</article>",
     ].join("");
+    if (settledAnimationClass) {
+      settledLiveMessageIds.add(String(item.id || ""));
+    }
+    return html;
   }
 
   function getBinaryViewModel() {
@@ -1873,7 +2043,11 @@
     shouldStickToBottom = true;
     setHistoryDrawerOpen(false);
     window.clearTimeout(previewTimer);
-    vscode.postMessage({ type: "sendPrompt", text: value });
+    const clientMessageId = createClientMessageId();
+    setPendingThinkingCue(clientMessageId, Array.isArray(state.messages) ? state.messages.length : 0);
+    setPendingOutgoingMessage(clientMessageId, value);
+    renderMessages();
+    vscode.postMessage({ type: "sendPrompt", text: value, clientMessageId });
     if (elements.composer) {
       elements.composer.value = "";
       syncComposerHeight();
@@ -1915,6 +2089,8 @@
         return;
       case "newChat":
         shouldStickToBottom = true;
+        clearPendingOutgoingMessage();
+        clearPendingThinkingCue();
         setHistoryDrawerOpen(false);
         setArtifactsDrawerOpen(false);
         hideMentions();
@@ -2088,6 +2264,12 @@
       shouldStickToBottom = true;
       setHistoryDrawerOpen(false);
       vscode.postMessage({ type: "openSession", id: historyButton.getAttribute("data-history-id") || "" });
+      return;
+    }
+
+    const artifactRenameButton = target.closest("[data-artifact-rename]");
+    if (artifactRenameButton) {
+      renameLocalArtifact(artifactRenameButton.getAttribute("data-artifact-rename") || "");
       return;
     }
 
@@ -2273,11 +2455,22 @@
     if (message.type === "state") {
       const nextState = message.state || {};
       Object.assign(state, nextState);
+      const messages = Array.isArray(state.messages) ? state.messages : [];
+      if (pendingOutgoingMessage && messages.some((messageItem) => messageItem && messageItem.id === pendingOutgoingMessage.id)) {
+        clearPendingOutgoingMessage(pendingOutgoingMessage.id);
+      } else if (pendingOutgoingMessage && !state.busy && !messages.some((messageItem) => messageItem && messageItem.role === "user")) {
+        clearPendingOutgoingMessage();
+      }
       // Defensive: ensure busy is cleared when chat has ended or failed
       const live = state.liveChat;
       const terminal =
         (live && ["failed", "canceled", "done"].includes(String(live.status || ""))) ||
-        state.runtimePhase === "failed";
+        state.runtimePhase === "failed" ||
+        state.runtimePhase === "done" ||
+        state.runtimePhase === "canceled";
+      if (pendingThinkingCue && (hasFreshAssistantResponse(messages) || terminal)) {
+        clearPendingThinkingCue();
+      }
       if (terminal) {
         state.busy = false;
       }
@@ -2285,6 +2478,8 @@
       return;
     }
     if (message.type === "prefill" && elements.composer) {
+      clearPendingOutgoingMessage();
+      clearPendingThinkingCue();
       setHistoryDrawerOpen(false);
       elements.composer.value = message.text || "";
       state.draftText = message.text || "";
