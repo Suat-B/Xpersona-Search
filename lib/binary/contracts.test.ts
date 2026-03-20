@@ -4,6 +4,7 @@ import {
   zBinaryBuildEvent,
   zBinaryBuildRecord,
   zBinaryControlRequest,
+  zBinaryExecuteRequest,
   zBinaryPublishRequest,
   zBinaryValidateRequest,
 } from "@/lib/binary/contracts";
@@ -156,8 +157,14 @@ describe("binary contracts", () => {
     expect(parsed.workflow).toBe("binary_generate");
   });
 
-  it("accepts streaming events and cancel requests", () => {
+  it("accepts streaming events and control requests", () => {
     expect(zBinaryControlRequest.parse({ action: "cancel" }).action).toBe("cancel");
+    expect(zBinaryControlRequest.parse({ action: "refine", intent: "Add a new API route" }).action).toBe("refine");
+    expect(
+      zBinaryControlRequest.parse({ action: "branch", checkpointId: "chk_123", intent: "Try a webhook variant" }).action
+    ).toBe("branch");
+    expect(zBinaryControlRequest.parse({ action: "rewind", checkpointId: "chk_123" }).action).toBe("rewind");
+    expect(zBinaryExecuteRequest.parse({ entryPoint: "health" }).entryPoint).toBe("health");
 
     const parsed = zBinaryBuildEvent.parse({
       id: "evt_123",
@@ -214,5 +221,77 @@ describe("binary contracts", () => {
     });
 
     expect(artifactEvent.type).toBe("artifact.delta");
+
+    const graphEvent = zBinaryBuildEvent.parse({
+      id: "evt_125",
+      buildId: "bin_123",
+      timestamp: new Date().toISOString(),
+      type: "graph.updated",
+      data: {
+        sourceGraph: {
+          coverage: 67,
+          readyModules: 2,
+          totalModules: 3,
+          modules: [
+            {
+              path: "src/index.ts",
+              language: "typescript",
+              imports: ["./lib/health"],
+              exports: ["health"],
+              functions: [
+                {
+                  name: "health",
+                  sourcePath: "src/index.ts",
+                  exported: true,
+                  async: false,
+                  callable: true,
+                  signature: "health()",
+                },
+              ],
+              completed: true,
+              diagnosticCount: 0,
+            },
+          ],
+          dependencies: [
+            {
+              from: "src/index.ts",
+              to: "src/lib/health.ts",
+              kind: "import",
+              resolved: true,
+            },
+          ],
+          diagnostics: [],
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    expect(graphEvent.type).toBe("graph.updated");
+
+    const executionEvent = zBinaryBuildEvent.parse({
+      id: "evt_126",
+      buildId: "bin_123",
+      timestamp: new Date().toISOString(),
+      type: "execution.updated",
+      data: {
+        execution: {
+          runnable: true,
+          mode: "native",
+          availableFunctions: [
+            {
+              name: "health",
+              sourcePath: "src/index.ts",
+              mode: "native",
+              callable: true,
+              signature: "health()",
+            },
+          ],
+          lastRun: null,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    expect(executionEvent.type).toBe("execution.updated");
   });
 });

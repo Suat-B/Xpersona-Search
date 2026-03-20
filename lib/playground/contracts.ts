@@ -15,6 +15,17 @@ export const zPlaygroundToolName = z.enum([
   "mkdir",
   "run_command",
   "get_workspace_memory",
+  "desktop_capture_screen",
+  "desktop_get_active_window",
+  "desktop_list_windows",
+  "desktop_open_app",
+  "desktop_open_url",
+  "desktop_focus_window",
+  "desktop_click",
+  "desktop_type",
+  "desktop_keypress",
+  "desktop_scroll",
+  "desktop_wait",
 ]);
 export const zPlaygroundAdapter = z.enum(["native_tools", "text_actions", "deterministic_batch"]);
 
@@ -40,6 +51,31 @@ const zContextSnippet = z.object({
   reason: z.string().max(240).optional(),
 });
 
+const zDesktopDisplay = z.object({
+  id: z.string().min(1).max(120),
+  label: z.string().max(240).optional(),
+  width: z.number().int().min(1).max(20_000),
+  height: z.number().int().min(1).max(20_000),
+  scaleFactor: z.number().finite().min(0.1).max(20).optional(),
+  isPrimary: z.boolean().optional(),
+});
+
+const zDesktopWindow = z.object({
+  id: z.string().min(1).max(240).optional(),
+  title: z.string().max(2000).optional(),
+  app: z.string().max(240).optional(),
+  displayId: z.string().max(120).optional(),
+});
+
+const zDesktopSnapshotRef = z.object({
+  snapshotId: z.string().min(1).max(120),
+  displayId: z.string().max(120).optional(),
+  width: z.number().int().min(1).max(20_000).optional(),
+  height: z.number().int().min(1).max(20_000).optional(),
+  mimeType: z.string().max(120).optional(),
+  capturedAt: z.string().datetime().optional(),
+});
+
 const zOpenFile = z.object({
   path: z.string().min(1).max(4096),
   language: z.string().min(1).max(64).optional(),
@@ -61,7 +97,7 @@ const zConversationTurn = z.object({
 
 const zClientCapabilities = z.object({
   toolLoop: z.boolean().optional(),
-  supportedTools: z.array(zPlaygroundToolName).max(32).optional(),
+  supportedTools: z.array(zPlaygroundToolName).max(64).optional(),
   autoExecute: z.boolean().optional(),
   supportsNativeToolResults: z.boolean().optional(),
 });
@@ -87,6 +123,14 @@ export const zAssistRequest = z.object({
         })
         .optional(),
       indexedSnippets: z.array(zContextSnippet).max(120).optional(),
+      desktop: z
+        .object({
+          platform: z.string().max(120).optional(),
+          displays: z.array(zDesktopDisplay).max(12).optional(),
+          activeWindow: zDesktopWindow.optional(),
+          recentSnapshots: z.array(zDesktopSnapshotRef).max(12).optional(),
+        })
+        .optional(),
     })
     .optional(),
   retrievalHints: zRetrievalHints.optional(),
@@ -144,7 +188,7 @@ export const zPendingToolCall = z.object({
   adapter: zPlaygroundAdapter,
   requiresClientExecution: z.boolean().default(true),
   toolCall: zToolCall,
-  availableTools: z.array(zPlaygroundToolName).max(32).optional(),
+  availableTools: z.array(zPlaygroundToolName).max(64).optional(),
   createdAt: z.string().datetime(),
 });
 
@@ -202,10 +246,99 @@ const zExecuteRollback = z.object({
   snapshotId: z.string().min(1).max(120),
 });
 
+const zDesktopViewport = z.object({
+  displayId: z.string().min(1).max(120),
+  width: z.number().int().min(1).max(20_000),
+  height: z.number().int().min(1).max(20_000),
+});
+
+const zExecuteDesktopOpenApp = z.object({
+  type: z.literal("desktop_open_app"),
+  app: z.string().min(1).max(512),
+  args: z.array(z.string().max(1000)).max(24).optional(),
+});
+
+const zExecuteDesktopOpenUrl = z.object({
+  type: z.literal("desktop_open_url"),
+  url: z.string().url().max(4000),
+});
+
+const zExecuteDesktopFocusWindow = z.object({
+  type: z.literal("desktop_focus_window"),
+  windowId: z.string().min(1).max(240).optional(),
+  title: z.string().max(2000).optional(),
+  app: z.string().max(240).optional(),
+});
+
+const zExecuteDesktopClick = z.object({
+  type: z.literal("desktop_click"),
+  displayId: z.string().min(1).max(120),
+  viewport: zDesktopViewport,
+  normalizedX: z.number().finite().min(0).max(1),
+  normalizedY: z.number().finite().min(0).max(1),
+  button: z.enum(["left", "right", "middle"]).optional(),
+  clickCount: z.number().int().min(1).max(4).optional(),
+});
+
+const zExecuteDesktopType = z.object({
+  type: z.literal("desktop_type"),
+  text: z.string().min(1).max(4000),
+  delayMs: z.number().int().min(0).max(2000).optional(),
+});
+
+const zExecuteDesktopKeypress = z.object({
+  type: z.literal("desktop_keypress"),
+  keys: z.array(z.string().min(1).max(60)).min(1).max(8),
+});
+
+const zExecuteDesktopScroll = z.object({
+  type: z.literal("desktop_scroll"),
+  displayId: z.string().min(1).max(120).optional(),
+  viewport: zDesktopViewport.optional(),
+  normalizedX: z.number().finite().min(0).max(1).optional(),
+  normalizedY: z.number().finite().min(0).max(1).optional(),
+  deltaX: z.number().int().min(-20_000).max(20_000).optional(),
+  deltaY: z.number().int().min(-20_000).max(20_000).optional(),
+});
+
+const zExecuteDesktopWait = z.object({
+  type: z.literal("desktop_wait"),
+  durationMs: z.number().int().min(0).max(120_000),
+});
+
 export const zExecuteRequest = z.object({
   sessionId: z.string().uuid().optional(),
-  actions: z.array(z.union([zExecuteEdit, zExecuteCommand, zExecuteMkdir, zExecuteWriteFile, zExecuteRollback])).min(1).max(100),
+  actions: z
+    .array(
+      z.union([
+        zExecuteEdit,
+        zExecuteCommand,
+        zExecuteMkdir,
+        zExecuteWriteFile,
+        zExecuteRollback,
+        zExecuteDesktopOpenApp,
+        zExecuteDesktopOpenUrl,
+        zExecuteDesktopFocusWindow,
+        zExecuteDesktopClick,
+        zExecuteDesktopType,
+        zExecuteDesktopKeypress,
+        zExecuteDesktopScroll,
+        zExecuteDesktopWait,
+      ])
+    )
+    .min(1)
+    .max(100),
   workspaceFingerprint: z.string().min(4).max(256),
+});
+
+export const zDesktopSnapshotUploadRequest = z.object({
+  sessionId: z.string().uuid().optional(),
+  displayId: z.string().min(1).max(120).optional(),
+  width: z.number().int().min(1).max(20_000),
+  height: z.number().int().min(1).max(20_000),
+  mimeType: z.string().min(1).max(120).default("image/png"),
+  dataBase64: z.string().min(8).max(8_000_000),
+  activeWindow: zDesktopWindow.optional(),
 });
 
 export const zSessionsListQuery = z.object({
@@ -271,3 +404,5 @@ export type ToolResultContract = z.infer<typeof zToolResult>;
 export type ToolTraceEntryContract = z.infer<typeof zToolTraceEntry>;
 export type LoopStateContract = z.infer<typeof zLoopState>;
 export type PendingToolCallContract = z.infer<typeof zPendingToolCall>;
+export type ExecuteRequestContract = z.infer<typeof zExecuteRequest>;
+export type DesktopSnapshotUploadRequestContract = z.infer<typeof zDesktopSnapshotUploadRequest>;

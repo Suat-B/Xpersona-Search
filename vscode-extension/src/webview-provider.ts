@@ -12,11 +12,15 @@ import { AuthManager } from "./auth";
 import { ActionRunner } from "./actions";
 import { requestJson, streamJsonEvents } from "./api-client";
 import {
+  branchBinaryBuild as requestBinaryBranch,
   cancelBinaryBuild as requestBinaryCancel,
   createBinaryBuild as requestBinaryBuild,
   createBinaryBuildStream as requestBinaryBuildStream,
+  executeBinaryBuild as requestBinaryExecute,
   getBinaryBuild as requestBinaryStatus,
   publishBinaryBuild as requestBinaryPublish,
+  refineBinaryBuild as requestBinaryRefine,
+  rewindBinaryBuild as requestBinaryRewind,
   streamBinaryBuildEvents as requestBinaryStreamEvents,
   validateBinaryBuild as requestBinaryValidate,
 } from "./binary-client";
@@ -216,6 +220,10 @@ function createDefaultBinaryPanelState(): BinaryPanelState {
     recentLogs: [],
     reliability: null,
     artifactState: null,
+    sourceGraph: null,
+    execution: null,
+    checkpoints: [],
+    pendingRefinement: null,
     canCancel: false,
     lastAction: null,
   };
@@ -271,6 +279,31 @@ function formatBinaryBuildMessage(build: BinaryBuildRecord): string {
     if (build.artifactState.entryPoints.length) {
       lines.push(`Entry points: ${build.artifactState.entryPoints.join(", ")}`);
     }
+  }
+  if (build.sourceGraph) {
+    lines.push(
+      `Source graph: ${build.sourceGraph.readyModules}/${build.sourceGraph.totalModules} modules, ${build.sourceGraph.coverage}% covered`
+    );
+    if (build.sourceGraph.diagnostics.length) {
+      lines.push(`Diagnostics: ${build.sourceGraph.diagnostics.length}`);
+    }
+  }
+  if (build.execution) {
+    lines.push(
+      `Partial runtime: ${build.execution.mode}${build.execution.availableFunctions.length ? ` (${build.execution.availableFunctions.length} callable functions)` : ""}`
+    );
+    if (build.execution.lastRun) {
+      lines.push(`Last run: ${build.execution.lastRun.entryPoint} -> ${build.execution.lastRun.status.toUpperCase()}`);
+    }
+  }
+  if (build.checkpoints?.length) {
+    lines.push(`Checkpoints: ${build.checkpoints.length}`);
+  }
+  if (build.pendingRefinement) {
+    lines.push(`Pending refinement: ${build.pendingRefinement.intent}`);
+  }
+  if (build.parentBuildId) {
+    lines.push(`Parent build: ${build.parentBuildId}`);
   }
   if (build.artifact) {
     lines.push(`Artifact: ${build.artifact.fileName} (${formatBytes(build.artifact.sizeBytes)})`);
@@ -944,6 +977,18 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       case "generateBinary":
         await this.generateBinaryBuild(String(message.text || this.draftText || ""));
         return;
+      case "refineBinary":
+        await this.refineBinaryBuild(String(message.text || this.draftText || ""));
+        return;
+      case "branchBinary":
+        await this.branchBinaryBuild(String(message.text || this.draftText || ""), String(message.checkpointId || ""));
+        return;
+      case "rewindBinary":
+        await this.rewindBinaryBuild(String(message.checkpointId || ""));
+        return;
+      case "executeBinary":
+        await this.executeBinaryBuild(String(message.entryPoint || ""));
+        return;
       case "validateBinary":
         await this.validateBinaryBuild();
         return;
@@ -1271,14 +1316,18 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     const current = this.state.liveChat;
     if (!current) return;
     const currentMessage = this.getMessageById(current.messageId);
-    const currentContent = String(currentMessage?.content || "");
-    const finalContent = String(input.content || "");
-    const shouldPreserveStreamedContent =
-      currentContent.length > 0 &&
-      finalContent.length > 0 &&
-      currentContent.length >= finalContent.length + 20 &&
-      !currentContent.includes(finalContent);
-    const contentToUse = shouldPreserveStreamedContent ? currentContent : finalContent;
+    const currentContent = String(currentMessage?.content || "").trim();
+    const finalContent = String(input.content || "").trim();
+    const normalizedCurrent = currentContent.replace(/\s+/g, " ");
+    const normalizedFinal = finalContent.replace(/\s+/g, " ");
+    const finalClearlyExtendsStreamedContent =
+      normalizedCurrent.length > 0 &&
+      normalizedFinal.length >= normalizedCurrent.length + 80 &&
+      normalizedFinal.includes(normalizedCurrent);
+    const contentToUse =
+      currentContent && !finalClearlyExtendsStreamedContent
+        ? currentContent
+        : finalContent || currentContent;
     const nextLive: ChatLiveState = {
       ...current,
       mode: input.mode || current.mode,
@@ -1488,6 +1537,10 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
     this.state.binary.recentLogs = build?.preview?.recentLogs || [];
     this.state.binary.reliability = build?.reliability || null;
     this.state.binary.artifactState = build?.artifactState || null;
+    this.state.binary.sourceGraph = build?.sourceGraph || null;
+    this.state.binary.execution = build?.execution || null;
+    this.state.binary.checkpoints = build?.checkpoints || [];
+    this.state.binary.pendingRefinement = build?.pendingRefinement || null;
     this.state.binary.canCancel = Boolean(build?.cancelable && isBinaryBuildPending(build));
     if (build?.targetEnvironment) {
       this.state.binary.targetEnvironment = build.targetEnvironment;
@@ -1580,6 +1633,34 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
           });
         }
         break;
+      case "generation.delta":
+        this.applyChatLiveEvent({
+          type: "build_event",
+          eventType: event.type,
+          phase: current?.phase || "materializing",
+          progress: current?.progress,
+          latestFile: event.data.delta.path,
+        });
+        if (current) {
+          const previewFile = {
+            path: event.data.delta.path,
+            language: event.data.delta.language,
+            preview: String(event.data.delta.content || "").slice(-1_200),
+            hash: `delta_${event.data.delta.order}`,
+            completed: event.data.delta.completed,
+            updatedAt: event.timestamp,
+          };
+          const files = [previewFile, ...(current.preview?.files || []).filter((item) => item.path !== previewFile.path)].slice(0, 24);
+          this.setActiveBinaryBuild({
+            ...current,
+            preview: {
+              plan: current.preview?.plan || null,
+              files,
+              recentLogs: current.preview?.recentLogs || [],
+            },
+          });
+        }
+        break;
       case "file.updated":
         this.applyChatLiveEvent({
           type: "build_event",
@@ -1635,6 +1716,44 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
           });
         }
         break;
+      case "graph.updated":
+        this.applyChatLiveEvent({
+          type: "build_event",
+          eventType: event.type,
+          phase: current?.phase || "materializing",
+          progress: current?.progress,
+          latestFile: event.data.sourceGraph.modules[0]?.path,
+        });
+        if (current) {
+          this.setActiveBinaryBuild({
+            ...current,
+            sourceGraph: event.data.sourceGraph,
+          });
+        }
+        break;
+      case "execution.updated":
+        this.applyChatLiveEvent({
+          type: "build_event",
+          eventType: event.type,
+          phase: current?.phase || "validating",
+          progress: current?.progress,
+          latestLog: event.data.execution.lastRun?.logs?.slice(-1)[0],
+        });
+        if (current) {
+          const recentLogs = event.data.execution.lastRun?.logs?.length
+            ? [...(current.preview?.recentLogs || []), ...event.data.execution.lastRun.logs].slice(-80)
+            : current.preview?.recentLogs || [];
+          this.setActiveBinaryBuild({
+            ...current,
+            execution: event.data.execution,
+            preview: {
+              plan: current.preview?.plan || null,
+              files: current.preview?.files || [],
+              recentLogs,
+            },
+          });
+        }
+        break;
       case "artifact.delta":
         this.applyChatLiveEvent({
           type: "build_event",
@@ -1660,13 +1779,41 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
           latestLog: event.data.checkpoint.preview?.recentLogs?.slice(-1)[0],
         });
         if (current) {
+          const summary = {
+            id: event.data.checkpoint.id,
+            phase: event.data.checkpoint.phase,
+            savedAt: event.data.checkpoint.savedAt,
+            ...(event.data.checkpoint.label ? { label: event.data.checkpoint.label } : {}),
+          };
+          const checkpoints = [summary, ...(current.checkpoints || []).filter((item) => item.id !== summary.id)].slice(0, 40);
           this.setActiveBinaryBuild({
             ...current,
             preview: event.data.checkpoint.preview || current.preview || null,
             manifest: event.data.checkpoint.manifest || current.manifest || null,
             reliability: event.data.checkpoint.reliability || current.reliability || null,
             artifactState: event.data.checkpoint.artifactState || current.artifactState || null,
+            sourceGraph: event.data.checkpoint.sourceGraph || current.sourceGraph || null,
+            execution: event.data.checkpoint.execution || current.execution || null,
+            checkpointId: event.data.checkpoint.id,
+            checkpoints,
             artifact: event.data.checkpoint.artifact || current.artifact || null,
+          });
+        }
+        break;
+      case "interrupt.accepted":
+        this.applyChatLiveEvent({
+          type: "build_event",
+          eventType: event.type,
+          phase: current?.phase || "planning",
+          progress: current?.progress,
+          latestLog: event.data.message,
+        });
+        if (event.data.message) this.pushActivity(event.data.message);
+        if (current) {
+          this.setActiveBinaryBuild({
+            ...current,
+            pendingRefinement: event.data.pendingRefinement || null,
+            cancelable: event.data.action === "cancel" ? false : current.cancelable,
           });
         }
         break;
@@ -1685,9 +1832,17 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
           });
         }
         break;
+      case "branch.created":
+        this.pushActivity(`Created branch build ${event.data.build.id}.`);
+        this.setActiveBinaryBuild(event.data.build);
+        break;
       case "build.completed":
       case "build.failed":
       case "build.canceled":
+        this.setActiveBinaryBuild(event.data.build);
+        break;
+      case "rewind.completed":
+        this.pushActivity(`Rewound build to checkpoint ${event.data.checkpointId}.`);
         this.setActiveBinaryBuild(event.data.build);
         break;
       case "heartbeat":
@@ -1904,6 +2059,10 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
       this.state.binary.recentLogs = [];
       this.state.binary.reliability = null;
       this.state.binary.artifactState = null;
+      this.state.binary.sourceGraph = null;
+      this.state.binary.execution = null;
+      this.state.binary.checkpoints = [];
+      this.state.binary.pendingRefinement = null;
       this.state.binary.canCancel = false;
       this.postState();
 
@@ -1995,6 +2154,222 @@ export class PlaygroundViewProvider implements vscode.WebviewViewProvider {
         `Binary cancel failed: ${error instanceof Error ? error.message : String(error)}`
       );
     } finally {
+      this.postState();
+    }
+  }
+
+  private async refineBinaryBuild(rawIntent: string): Promise<void> {
+    const build = this.state.binary.activeBuild;
+    if (!build || !isBinaryBuildPending(build)) {
+      this.appendMessage("system", "Start a live Binary IDE build before queuing a refinement.");
+      this.postState();
+      return;
+    }
+
+    const intent = rawIntent.trim();
+    if (!intent) {
+      this.appendMessage("system", "Add refinement instructions in the composer before sending them to the active build.");
+      this.postState();
+      return;
+    }
+
+    const auth = await this.auth.getRequestAuth();
+    if (!auth) {
+      this.appendMessage("system", "Authenticate before refining the active Binary IDE build.");
+      this.postState();
+      return;
+    }
+
+    this.state.binary.lastAction = "refine";
+    this.pushActivity("Queueing refinement for the active binary build");
+    this.postState();
+
+    try {
+      const updated = await requestBinaryRefine({
+        auth,
+        buildId: build.id,
+        intent,
+      });
+      this.setActiveBinaryBuild(updated);
+      this.appendMessage("system", `Queued refinement for build ${updated.id}.`);
+      if (!this.binaryStreamAbort && isBinaryBuildPending(updated)) {
+        void this.followBinaryBuildStream({
+          auth,
+          buildId: updated.id,
+        }).catch(() => undefined);
+      }
+    } catch (error) {
+      this.appendMessage(
+        "system",
+        `Binary refine failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      this.postState();
+    }
+  }
+
+  private async branchBinaryBuild(rawIntent: string, rawCheckpointId = ""): Promise<void> {
+    const build = this.state.binary.activeBuild;
+    if (!build) {
+      this.appendMessage("system", "Generate a Binary IDE build before creating a branch.");
+      this.postState();
+      return;
+    }
+
+    const checkpointId =
+      String(rawCheckpointId || "").trim() ||
+      String(build.checkpointId || "").trim() ||
+      String(build.checkpoints?.[0]?.id || "").trim();
+    if (!checkpointId) {
+      this.appendMessage("system", "Create at least one checkpoint before branching this build.");
+      this.postState();
+      return;
+    }
+
+    const auth = await this.auth.getRequestAuth();
+    if (!auth) {
+      this.appendMessage("system", "Authenticate before branching the current Binary IDE build.");
+      this.postState();
+      return;
+    }
+
+    this.state.binary.busy = true;
+    this.state.binary.lastAction = "branch";
+    this.pushActivity("Creating a branch from the current checkpoint");
+    this.postState();
+
+    try {
+      const updated = await requestBinaryBranch({
+        auth,
+        buildId: build.id,
+        checkpointId,
+        intent: String(rawIntent || "").trim() || undefined,
+      });
+      this.stopBinaryStream();
+      this.clearBinaryEventTracking();
+      this.setActiveBinaryBuild(updated);
+      this.appendMessage("assistant", `Created branch build ${updated.id} from checkpoint ${checkpointId}.`);
+      await this.refreshHistory();
+      if (isBinaryBuildPending(updated)) {
+        void this.followBinaryBuildStream({
+          auth,
+          buildId: updated.id,
+        }).catch(() => undefined);
+      }
+    } catch (error) {
+      this.appendMessage(
+        "system",
+        `Binary branch failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      this.state.binary.busy = false;
+      this.postState();
+    }
+  }
+
+  private async rewindBinaryBuild(rawCheckpointId = ""): Promise<void> {
+    const build = this.state.binary.activeBuild;
+    if (!build) {
+      this.appendMessage("system", "Generate a Binary IDE build before rewinding it.");
+      this.postState();
+      return;
+    }
+    if (isBinaryBuildPending(build)) {
+      this.appendMessage("system", "Wait for the current Binary IDE build to stop streaming before rewinding it.");
+      this.postState();
+      return;
+    }
+
+    const checkpointId =
+      String(rawCheckpointId || "").trim() ||
+      String(build.checkpointId || "").trim() ||
+      String(build.checkpoints?.[0]?.id || "").trim();
+    if (!checkpointId) {
+      this.appendMessage("system", "No checkpoint is available to rewind this build.");
+      this.postState();
+      return;
+    }
+
+    const auth = await this.auth.getRequestAuth();
+    if (!auth) {
+      this.appendMessage("system", "Authenticate before rewinding the current Binary IDE build.");
+      this.postState();
+      return;
+    }
+
+    this.state.binary.busy = true;
+    this.state.binary.lastAction = "rewind";
+    this.pushActivity("Rewinding Binary IDE build");
+    this.postState();
+
+    try {
+      const updated = await requestBinaryRewind({
+        auth,
+        buildId: build.id,
+        checkpointId,
+      });
+      this.setActiveBinaryBuild(updated);
+      this.appendMessage("system", `Rewound build ${updated.id} to checkpoint ${checkpointId}.`);
+      await this.refreshHistory();
+    } catch (error) {
+      this.appendMessage(
+        "system",
+        `Binary rewind failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      this.state.binary.busy = false;
+      this.postState();
+    }
+  }
+
+  private async executeBinaryBuild(entryPoint: string): Promise<void> {
+    const build = this.state.binary.activeBuild;
+    if (!build) {
+      this.appendMessage("system", "Generate a Binary IDE build before running partial execution.");
+      this.postState();
+      return;
+    }
+
+    const normalizedEntryPoint = entryPoint.trim();
+    if (!normalizedEntryPoint) {
+      this.appendMessage("system", "Choose a callable entry point before running the partial runtime.");
+      this.postState();
+      return;
+    }
+
+    const auth = await this.auth.getRequestAuth();
+    if (!auth) {
+      this.appendMessage("system", "Authenticate before running the Binary IDE partial runtime.");
+      this.postState();
+      return;
+    }
+
+    this.state.binary.busy = true;
+    this.state.binary.lastAction = "execute";
+    this.pushActivity(`Running ${normalizedEntryPoint} in the partial runtime`);
+    this.postState();
+
+    try {
+      const updated = await requestBinaryExecute({
+        auth,
+        buildId: build.id,
+        entryPoint: normalizedEntryPoint,
+      });
+      this.setActiveBinaryBuild(updated);
+      const lastRun = updated.execution?.lastRun;
+      this.appendMessage(
+        lastRun?.status === "failed" ? "system" : "assistant",
+        lastRun
+          ? `Executed ${lastRun.entryPoint} -> ${lastRun.status.toUpperCase()}${lastRun.errorMessage ? `\n${lastRun.errorMessage}` : ""}`
+          : `Executed ${normalizedEntryPoint}.`
+      );
+    } catch (error) {
+      this.appendMessage(
+        "system",
+        `Binary execute failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      this.state.binary.busy = false;
       this.postState();
     }
   }

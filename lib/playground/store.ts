@@ -710,7 +710,22 @@ export async function getAgentRunById(input: { userId: string; runId: string }):
 export async function logAction(input: {
   userId: string;
   sessionId?: string;
-  actionType: "edit" | "command" | "mkdir" | "write_file" | "index" | "sync" | "rollback";
+  actionType:
+    | "edit"
+    | "command"
+    | "mkdir"
+    | "write_file"
+    | "index"
+    | "sync"
+    | "rollback"
+    | "desktop_open_app"
+    | "desktop_open_url"
+    | "desktop_focus_window"
+    | "desktop_click"
+    | "desktop_type"
+    | "desktop_keypress"
+    | "desktop_scroll"
+    | "desktop_wait";
   status: "approved" | "blocked" | "executed" | "failed";
   payload: Record<string, unknown>;
   reason?: string;

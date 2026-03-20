@@ -7,6 +7,10 @@ exports.getBinaryBuild = getBinaryBuild;
 exports.validateBinaryBuild = validateBinaryBuild;
 exports.publishBinaryBuild = publishBinaryBuild;
 exports.cancelBinaryBuild = cancelBinaryBuild;
+exports.refineBinaryBuild = refineBinaryBuild;
+exports.branchBinaryBuild = branchBinaryBuild;
+exports.rewindBinaryBuild = rewindBinaryBuild;
+exports.executeBinaryBuild = executeBinaryBuild;
 const api_client_1 = require("./api-client");
 const config_1 = require("./config");
 function buildAuthHeaders(auth) {
@@ -122,6 +126,32 @@ async function publishBinaryBuild(input) {
 }
 async function cancelBinaryBuild(input) {
     const response = await (0, api_client_1.requestJson)("POST", `${(0, config_1.getBaseApiUrl)()}/api/v1/binary/builds/${encodeURIComponent(input.buildId)}/control`, input.auth, { action: "cancel" });
+    return (response?.data || response);
+}
+async function refineBinaryBuild(input) {
+    const response = await (0, api_client_1.requestJson)("POST", `${(0, config_1.getBaseApiUrl)()}/api/v1/binary/builds/${encodeURIComponent(input.buildId)}/control`, input.auth, { action: "refine", intent: input.intent });
+    return (response?.data || response);
+}
+async function branchBinaryBuild(input) {
+    const response = await (0, api_client_1.requestJson)("POST", `${(0, config_1.getBaseApiUrl)()}/api/v1/binary/builds/${encodeURIComponent(input.buildId)}/control`, input.auth, {
+        action: "branch",
+        ...(input.checkpointId ? { checkpointId: input.checkpointId } : {}),
+        ...(input.intent ? { intent: input.intent } : {}),
+    });
+    return (response?.data || response);
+}
+async function rewindBinaryBuild(input) {
+    const response = await (0, api_client_1.requestJson)("POST", `${(0, config_1.getBaseApiUrl)()}/api/v1/binary/builds/${encodeURIComponent(input.buildId)}/control`, input.auth, {
+        action: "rewind",
+        checkpointId: input.checkpointId,
+    });
+    return (response?.data || response);
+}
+async function executeBinaryBuild(input) {
+    const response = await (0, api_client_1.requestJson)("POST", `${(0, config_1.getBaseApiUrl)()}/api/v1/binary/builds/${encodeURIComponent(input.buildId)}/execute`, input.auth, {
+        entryPoint: input.entryPoint,
+        ...(input.args?.length ? { args: input.args } : {}),
+    });
     return (response?.data || response);
 }
 //# sourceMappingURL=binary-client.js.map

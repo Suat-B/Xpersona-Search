@@ -5,6 +5,25 @@ import { zExecuteRequest } from "@/lib/playground/contracts";
 import { ok, parseBody, unauthorized } from "@/lib/playground/http";
 import { validateExecuteAction } from "@/lib/playground/policy";
 
+function summarizeApprovedAction(action: { type: string } & Record<string, unknown>): string {
+  if (action.type === "rollback") return `Rollback prepared for snapshot ${String(action.snapshotId || "")}`;
+  if (action.type === "mkdir") return `Directory approved: ${String(action.path || "")}`;
+  if (action.type === "write_file") return `File write approved: ${String(action.path || "")}`;
+  if (action.type === "edit") return `Edit approved: ${String(action.path || "")}`;
+  if (action.type === "command") return `Command approved: ${String(action.command || "")}`;
+  if (action.type === "desktop_open_app") return `Desktop app launch approved: ${String(action.app || "")}`;
+  if (action.type === "desktop_open_url") return `Desktop URL open approved: ${String(action.url || "")}`;
+  if (action.type === "desktop_focus_window") {
+    return `Desktop window focus approved: ${String(action.windowId || action.title || action.app || "window")}`;
+  }
+  if (action.type === "desktop_click") return "Desktop click approved.";
+  if (action.type === "desktop_type") return "Desktop typing approved.";
+  if (action.type === "desktop_keypress") return "Desktop keypress approved.";
+  if (action.type === "desktop_scroll") return "Desktop scroll approved.";
+  if (action.type === "desktop_wait") return `Desktop wait approved: ${String(action.durationMs || 0)}ms`;
+  return "Policy approved.";
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
   const auth = await authenticatePlaygroundRequest(request);
   if (!auth) return unauthorized(request);
@@ -32,16 +51,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const status = check.ok ? "approved" : "blocked";
     const reason = check.reason;
 
-    const stdout =
-      action.type === "rollback"
-        ? `Rollback prepared for snapshot ${action.snapshotId}`
-        : action.type === "mkdir"
-          ? `Directory approved: ${action.path}`
-          : action.type === "write_file"
-            ? `File write approved: ${action.path}`
-        : check.ok
-          ? "Policy approved."
-          : "";
+    const stdout = check.ok ? summarizeApprovedAction(action as { type: string } & Record<string, unknown>) : "";
     const stderr = check.ok ? "" : reason ?? "Action blocked";
     const exitCode = check.ok ? 0 : 1;
     const durationMs = Date.now() - startedAt;
@@ -59,7 +69,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     await logAction({
       userId: auth.userId,
       sessionId: body.sessionId,
-      actionType: action.type === "rollback" ? "rollback" : action.type,
+      actionType: action.type,
       status,
       payload: action as unknown as Record<string, unknown>,
       reason,

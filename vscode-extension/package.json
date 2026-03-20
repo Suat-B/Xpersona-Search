@@ -150,7 +150,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "@qwen-code/sdk": "^0.1.5"
+    "@qwen-code/sdk": "^0.1.5",
+    "@xpersona/vscode-core": "file:../sdk/xpersona-vscode-core"
   }
 }
-

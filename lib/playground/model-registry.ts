@@ -12,7 +12,18 @@ export type PlaygroundToolName =
   | "write_file"
   | "mkdir"
   | "run_command"
-  | "get_workspace_memory";
+  | "get_workspace_memory"
+  | "desktop_capture_screen"
+  | "desktop_get_active_window"
+  | "desktop_list_windows"
+  | "desktop_open_app"
+  | "desktop_open_url"
+  | "desktop_focus_window"
+  | "desktop_click"
+  | "desktop_type"
+  | "desktop_keypress"
+  | "desktop_scroll"
+  | "desktop_wait";
 
 export type PlaygroundModelCapabilitySet = {
   maxContextTokens: number;
@@ -64,6 +75,17 @@ export const PLAYGROUND_TOOL_LOOP_TOOLS: PlaygroundToolName[] = [
   "mkdir",
   "run_command",
   "get_workspace_memory",
+  "desktop_capture_screen",
+  "desktop_get_active_window",
+  "desktop_list_windows",
+  "desktop_open_app",
+  "desktop_open_url",
+  "desktop_focus_window",
+  "desktop_click",
+  "desktop_type",
+  "desktop_keypress",
+  "desktop_scroll",
+  "desktop_wait",
 ];
 
 const DEFAULT_MODEL_ENTRY: PlaygroundModelRegistryEntry = {

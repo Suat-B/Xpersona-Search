@@ -1,7 +1,9 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type {
+  BinaryExecutionState,
   BinaryManifest,
+  BinarySourceGraph,
   BinaryTargetEnvironment,
   BinaryValidationIssue,
   BinaryValidationReport,
@@ -53,7 +55,22 @@ async function getDirectorySize(rootDir: string): Promise<number> {
   return total;
 }
 
-function buildSummary(status: BinaryValidationReport["status"], issues: BinaryValidationIssue[]): string {
+function buildSummary(
+  status: BinaryValidationReport["status"],
+  issues: BinaryValidationIssue[],
+  stage: "live" | "prebuild" | "full"
+): string {
+  if (stage === "live") {
+    if (status === "pass") return "Live reliability snapshot looks healthy.";
+    if (status === "warn") {
+      return issues.length
+        ? `Live reliability snapshot found ${issues.length} warning${issues.length === 1 ? "" : "s"}.`
+        : "Live reliability snapshot found advisory warnings.";
+    }
+    return issues.length
+      ? `Live reliability snapshot found ${issues.length} blocking issue${issues.length === 1 ? "" : "s"}.`
+      : "Live reliability snapshot found blocking issues.";
+  }
   if (status === "pass") return "Package bundle passed all Binary IDE validation checks.";
   if (status === "warn") {
     return issues.length
@@ -70,7 +87,9 @@ export async function computeBinaryValidationReport(input: {
   manifest: BinaryManifest;
   targetEnvironment: BinaryTargetEnvironment;
   buildSucceeded: boolean;
-  stage?: "prebuild" | "full";
+  stage?: "live" | "prebuild" | "full";
+  sourceGraph?: BinarySourceGraph | null;
+  execution?: BinaryExecutionState | null;
 }): Promise<BinaryValidationReport> {
   const issues: BinaryValidationIssue[] = [];
   const warnings: string[] = [];
@@ -89,7 +108,7 @@ export async function computeBinaryValidationReport(input: {
     ...(packageJson?.devDependencies || {}),
   };
 
-  if (!input.buildSucceeded || (stage === "full" && !entrypointExists)) {
+  if (stage !== "live" && (!input.buildSucceeded || (stage === "full" && !entrypointExists))) {
     issues.push({
       code: "build_failed",
       severity: "error",
@@ -155,6 +174,60 @@ export async function computeBinaryValidationReport(input: {
     score -= 10;
   }
 
+  if (stage === "live" && input.sourceGraph) {
+    const unresolvedDependencies = input.sourceGraph.dependencies
+      .filter((dependency) => !dependency.resolved)
+      .slice(0, 12);
+    for (const dependency of unresolvedDependencies) {
+      issues.push({
+        code: "unresolved_dependency",
+        severity: "warning",
+        message: `Unresolved dependency from ${dependency.from} to ${dependency.to}.`,
+        detail: dependency.kind,
+      });
+      score -= 6;
+    }
+
+    for (const diagnostic of input.sourceGraph.diagnostics.slice(0, 20)) {
+      issues.push({
+        code: `ts_${diagnostic.code}`,
+        severity: diagnostic.severity,
+        message: diagnostic.message,
+        ...(diagnostic.path ? { detail: diagnostic.path } : {}),
+      });
+      score -= diagnostic.severity === "error" ? 8 : 4;
+    }
+
+    if (input.sourceGraph.readyModules < input.sourceGraph.totalModules) {
+      issues.push({
+        code: "incomplete_modules",
+        severity: "warning",
+        message: "Not all planned source modules are fully formed yet.",
+        detail: `${input.sourceGraph.readyModules}/${input.sourceGraph.totalModules} ready`,
+      });
+      score -= 8;
+    }
+  }
+
+  if (stage === "live" && input.execution) {
+    if (!input.execution.runnable) {
+      issues.push({
+        code: "runtime_not_runnable",
+        severity: "warning",
+        message: "The live runtime is not callable yet.",
+      });
+      score -= 10;
+    } else if (input.execution.mode === "stub") {
+      warnings.push("Binary IDE is exposing generated stub entry points until native execution is ready.");
+      issues.push({
+        code: "runtime_stubbed",
+        severity: "warning",
+        message: "The live runtime is currently using generated stubs for execution.",
+      });
+      score -= 6;
+    }
+  }
+
   const status: BinaryValidationReport["status"] =
     issues.some((issue) => issue.severity === "error")
       ? "fail"
@@ -172,7 +245,7 @@ export async function computeBinaryValidationReport(input: {
           : status === "warn"
             ? `Pre-build reliability snapshot found ${issues.length} advisory issue${issues.length === 1 ? "" : "s"}.`
             : `Pre-build reliability snapshot found ${issues.length} blocking issue${issues.length === 1 ? "" : "s"}.`
-        : buildSummary(status, issues),
+        : buildSummary(status, issues, stage),
     targetEnvironment: input.targetEnvironment,
     issues,
     warnings,

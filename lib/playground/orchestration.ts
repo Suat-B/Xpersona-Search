@@ -40,6 +40,31 @@ export type AssistContext = {
     source?: "cloud" | "local_fallback";
     reason?: string;
   }>;
+  desktop?: {
+    platform?: string;
+    displays?: Array<{
+      id: string;
+      label?: string;
+      width: number;
+      height: number;
+      scaleFactor?: number;
+      isPrimary?: boolean;
+    }>;
+    activeWindow?: {
+      id?: string;
+      title?: string;
+      app?: string;
+      displayId?: string;
+    };
+    recentSnapshots?: Array<{
+      snapshotId: string;
+      displayId?: string;
+      width?: number;
+      height?: number;
+      mimeType?: string;
+      capturedAt?: string;
+    }>;
+  };
 };
 
 export type AssistRetrievalHints = {
@@ -474,6 +499,47 @@ export function buildContextPrompt(context?: AssistContext): string {
         })
         .join("\n")}`
     );
+  }
+  if (context.desktop) {
+    const desktopSections: string[] = [];
+    if (context.desktop.platform) {
+      desktopSections.push(`Platform: ${context.desktop.platform}`);
+    }
+    if (context.desktop.activeWindow?.title || context.desktop.activeWindow?.app) {
+      desktopSections.push(
+        `Active window: ${compactWhitespace(
+          [context.desktop.activeWindow.app, context.desktop.activeWindow.title].filter(Boolean).join(" - ")
+        )}`
+      );
+    }
+    if (context.desktop.displays?.length) {
+      desktopSections.push(
+        `Displays:\n${context.desktop.displays
+          .slice(0, 6)
+          .map((display) => {
+            const label = compactWhitespace(display.label || display.id);
+            const suffix = display.isPrimary ? " primary" : "";
+            return `- ${label}: ${display.width}x${display.height}${suffix}`;
+          })
+          .join("\n")}`
+      );
+    }
+    if (context.desktop.recentSnapshots?.length) {
+      desktopSections.push(
+        `Recent snapshots:\n${context.desktop.recentSnapshots
+          .slice(0, 6)
+          .map((snapshot) => {
+            const size =
+              snapshot.width && snapshot.height ? ` ${snapshot.width}x${snapshot.height}` : "";
+            const display = snapshot.displayId ? ` on ${snapshot.displayId}` : "";
+            return `- ${snapshot.snapshotId}${display}${size}`;
+          })
+          .join("\n")}`
+      );
+    }
+    if (desktopSections.length) {
+      sections.push(`Desktop state:\n${desktopSections.join("\n")}`);
+    }
   }
   return sections.length ? sections.join("\n\n") : "IDE context: none.";
 }

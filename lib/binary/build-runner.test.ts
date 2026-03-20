@@ -67,8 +67,8 @@ describe("binary build runner", () => {
         return { exitCode: 0, stdout: "installed", stderr: "" };
       }
 
-      await fs.mkdir(`${cwd}/dist`, { recursive: true });
-      await fs.writeFile(`${cwd}/dist/index.js`, 'console.log("ready");\n', "utf8");
+      await fs.mkdir(`${cwd}/dist/src`, { recursive: true });
+      await fs.writeFile(`${cwd}/dist/src/index.js`, 'console.log("ready");\n', "utf8");
       return { exitCode: 0, stdout: "built", stderr: "" };
     };
 
@@ -96,12 +96,12 @@ describe("binary build runner", () => {
 
     expect(result.status).toBe("completed");
     expect(result.artifact?.fileName).toBe(`${buildId}.zip`);
-    expect(result.manifest.entrypoint).toBe("dist/index.js");
+    expect(result.manifest.entrypoint).toBe("dist/src/index.js");
     expect(result.reliability.status).toBe("pass");
     expect(result.artifactState.runnable).toBe(true);
-    expect(result.artifactState.entryPoints).toContain("dist/index.js");
+    expect(result.artifactState.entryPoints).toContain("dist/src/index.js");
     expect(previewFiles).toContain("src/index.ts");
-    expect(previewFiles).toContain("dist/index.js");
+    expect(previewFiles).toContain("dist/src/index.js");
     expect(artifactCoverage.at(-1)).toBe(100);
     await expect(fs.access(getBinaryArtifactPath(buildId))).resolves.toBeUndefined();
   });

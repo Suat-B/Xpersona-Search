@@ -199,3 +199,71 @@ export async function cancelBinaryBuild(input: {
   );
   return (response?.data || response) as BinaryBuildRecord;
 }
+
+export async function refineBinaryBuild(input: {
+  auth: RequestAuth;
+  buildId: string;
+  intent: string;
+}): Promise<BinaryBuildRecord> {
+  const response = await requestJson<{ data?: BinaryBuildRecord }>(
+    "POST",
+    `${getBaseApiUrl()}/api/v1/binary/builds/${encodeURIComponent(input.buildId)}/control`,
+    input.auth,
+    { action: "refine", intent: input.intent }
+  );
+  return (response?.data || response) as BinaryBuildRecord;
+}
+
+export async function branchBinaryBuild(input: {
+  auth: RequestAuth;
+  buildId: string;
+  checkpointId?: string;
+  intent?: string;
+}): Promise<BinaryBuildRecord> {
+  const response = await requestJson<{ data?: BinaryBuildRecord }>(
+    "POST",
+    `${getBaseApiUrl()}/api/v1/binary/builds/${encodeURIComponent(input.buildId)}/control`,
+    input.auth,
+    {
+      action: "branch",
+      ...(input.checkpointId ? { checkpointId: input.checkpointId } : {}),
+      ...(input.intent ? { intent: input.intent } : {}),
+    }
+  );
+  return (response?.data || response) as BinaryBuildRecord;
+}
+
+export async function rewindBinaryBuild(input: {
+  auth: RequestAuth;
+  buildId: string;
+  checkpointId: string;
+}): Promise<BinaryBuildRecord> {
+  const response = await requestJson<{ data?: BinaryBuildRecord }>(
+    "POST",
+    `${getBaseApiUrl()}/api/v1/binary/builds/${encodeURIComponent(input.buildId)}/control`,
+    input.auth,
+    {
+      action: "rewind",
+      checkpointId: input.checkpointId,
+    }
+  );
+  return (response?.data || response) as BinaryBuildRecord;
+}
+
+export async function executeBinaryBuild(input: {
+  auth: RequestAuth;
+  buildId: string;
+  entryPoint: string;
+  args?: unknown[];
+}): Promise<BinaryBuildRecord> {
+  const response = await requestJson<{ data?: BinaryBuildRecord }>(
+    "POST",
+    `${getBaseApiUrl()}/api/v1/binary/builds/${encodeURIComponent(input.buildId)}/execute`,
+    input.auth,
+    {
+      entryPoint: input.entryPoint,
+      ...(input.args?.length ? { args: input.args } : {}),
+    }
+  );
+  return (response?.data || response) as BinaryBuildRecord;
+}

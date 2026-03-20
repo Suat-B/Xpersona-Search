@@ -45,6 +45,10 @@
       recentLogs: [],
       reliability: null,
       artifactState: null,
+      sourceGraph: null,
+      execution: null,
+      checkpoints: [],
+      pendingRefinement: null,
       canCancel: false,
       lastAction: null,
     },
@@ -135,12 +139,26 @@
     binaryManifestCard: document.getElementById("binaryManifestCard"),
     binaryWarnings: document.getElementById("binaryWarnings"),
     binaryWarningsCard: document.getElementById("binaryWarningsCard"),
+    binaryGraphSummary: document.getElementById("binaryGraphSummary"),
+    binaryGraphCard: document.getElementById("binaryGraphCard"),
+    binaryExecutionSummary: document.getElementById("binaryExecutionSummary"),
+    binaryExecutionCard: document.getElementById("binaryExecutionCard"),
+    binaryCheckpointSelect: document.getElementById("binaryCheckpointSelect"),
+    binaryCheckpointSummary: document.getElementById("binaryCheckpointSummary"),
+    binaryCheckpointCard: document.getElementById("binaryCheckpointCard"),
+    binaryEntryPointSelect: document.getElementById("binaryEntryPointSelect"),
+    binaryEntryPointSummary: document.getElementById("binaryEntryPointSummary"),
+    binaryEntryPointCard: document.getElementById("binaryEntryPointCard"),
     binaryPreviewFiles: document.getElementById("binaryPreviewFiles"),
     binaryPreviewFilesCard: document.getElementById("binaryPreviewFilesCard"),
     binaryLogPreview: document.getElementById("binaryLogPreview"),
     binaryLogPreviewCard: document.getElementById("binaryLogPreviewCard"),
     generateBinaryButton: document.getElementById("generateBinaryButton"),
     cancelBinaryButton: document.getElementById("cancelBinaryButton"),
+    refineBinaryButton: document.getElementById("refineBinaryButton"),
+    branchBinaryButton: document.getElementById("branchBinaryButton"),
+    rewindBinaryButton: document.getElementById("rewindBinaryButton"),
+    executeBinaryButton: document.getElementById("executeBinaryButton"),
     validateBinaryButton: document.getElementById("validateBinaryButton"),
     deployBinaryButton: document.getElementById("deployBinaryButton"),
     binaryDownloadLink: document.getElementById("binaryDownloadLink"),
@@ -159,6 +177,7 @@
   let shouldStickToBottom = true;
   let preservedChatScrollTop = null;
   let preserveChatScrollFrames = 0;
+  let suppressScrollSignalUntil = 0;
   let previewTimer = 0;
   let lastPreviewText = null;
   let lastDraftKey = "";
@@ -243,8 +262,13 @@
     const baseline = Math.max(0, Number(pendingThinkingCue.baselineCount) || 0);
     return list.slice(baseline).some((message) => {
       if (!message) return false;
-      if (message.presentation === "live_binary") return true;
-      return String(message.role || "assistant") !== "user";
+      const role = String(message.role || "assistant");
+      if (role === "user") return false;
+      const hasVisibleContent = Boolean(String(message.content || "").trim());
+      if (message.presentation === "live_binary") {
+        return hasVisibleContent;
+      }
+      return hasVisibleContent;
     });
   }
 
@@ -904,13 +928,15 @@
     if (!elements.messages) return true;
     const remaining =
       elements.messages.scrollHeight - elements.messages.scrollTop - elements.messages.clientHeight;
-    return remaining < 48;
+    const dynamicThreshold = Math.max(96, Math.round((elements.messages.clientHeight || 0) * 0.18));
+    return remaining < dynamicThreshold;
   }
 
   function scrollToLatest(behavior) {
     if (!elements.messages) return;
     preservedChatScrollTop = null;
     preserveChatScrollFrames = 0;
+    suppressScrollSignalUntil = performance.now() + 180;
     elements.messages.scrollTo({ top: elements.messages.scrollHeight, behavior: behavior || "auto" });
     shouldStickToBottom = true;
     updateJumpButton();
@@ -1600,6 +1626,14 @@
     const build = binary.activeBuild || null;
     const reliability = binary.reliability || (build && build.reliability) || null;
     const artifactState = binary.artifactState || (build && build.artifactState) || null;
+    const sourceGraph = binary.sourceGraph || (build && build.sourceGraph) || null;
+    const execution = binary.execution || (build && build.execution) || null;
+    const checkpoints = Array.isArray(binary.checkpoints) && binary.checkpoints.length
+      ? binary.checkpoints
+      : build && Array.isArray(build.checkpoints)
+        ? build.checkpoints
+        : [];
+    const pendingRefinement = binary.pendingRefinement || (build && build.pendingRefinement) || null;
     const manifest = build && build.manifest ? build.manifest : null;
     const plan = build && build.preview && build.preview.plan ? build.preview.plan : null;
     const previewFiles = Array.isArray(binary.previewFiles) ? binary.previewFiles : [];
@@ -1646,6 +1680,10 @@
       build,
       reliability,
       artifactState,
+      sourceGraph,
+      execution,
+      checkpoints,
+      pendingRefinement,
       manifest,
       plan,
       previewFiles,
@@ -1665,23 +1703,56 @@
     elements.chatBinarySpotlight.classList.add("is-hidden");
   }
 
+  function setSelectOptions(select, options, preferredValue, emptyLabel) {
+    if (!select) return "";
+    const normalizedOptions = Array.isArray(options) ? options.filter(Boolean) : [];
+    if (!normalizedOptions.length) {
+      select.innerHTML = `<option value="">${escapeHtml(emptyLabel || "None available")}</option>`;
+      select.value = "";
+      select.disabled = true;
+      return "";
+    }
+
+    const selectedValue = normalizedOptions.some((option) => option.value === preferredValue)
+      ? preferredValue
+      : normalizedOptions[0].value;
+    select.innerHTML = normalizedOptions
+      .map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`)
+      .join("");
+    select.disabled = false;
+    select.value = selectedValue;
+    return selectedValue;
+  }
+
   function renderBinaryPanel() {
-    const { binary, build, reliability, artifactState, manifest, plan, previewFiles, recentLogs, phase, progress, isPending, showVisual, runtimeLabel, summaryStatus } =
+    const { binary, build, reliability, artifactState, sourceGraph, execution, checkpoints, pendingRefinement, manifest, plan, previewFiles, recentLogs, phase, progress, isPending, showVisual, runtimeLabel, summaryStatus } =
       getBinaryViewModel();
     const shouldAutoOpenPanel = !state.binaryPanelOpen && Boolean(binary.busy || binary.streamConnected || isPending);
     const hasWarnings = Boolean((reliability && Array.isArray(reliability.warnings) && reliability.warnings.length) || (manifest && Array.isArray(manifest.warnings) && manifest.warnings.length) || (build && build.errorMessage));
     const hasPreviewFiles = previewFiles.length > 0;
     const hasRecentLogs = recentLogs.length > 0;
     const hasManifest = Boolean(manifest || plan);
-    const hasExtraDetails = hasWarnings || hasPreviewFiles || hasRecentLogs;
+    const hasSourceGraph = Boolean(sourceGraph);
+    const hasExecution = Boolean(execution);
+    const hasCheckpoints = Array.isArray(checkpoints) && checkpoints.length > 0;
+    const hasEntryPoints = Boolean(execution && Array.isArray(execution.availableFunctions) && execution.availableFunctions.length);
+    const hasExtraDetails = hasWarnings || hasPreviewFiles || hasRecentLogs || hasSourceGraph || hasExecution || hasCheckpoints || hasEntryPoints;
     const canShowCompletedActions = Boolean(build && build.status === "completed");
     const warnings = [];
+    const unresolvedDependencies = sourceGraph && Array.isArray(sourceGraph.dependencies)
+      ? sourceGraph.dependencies.filter((dependency) => !dependency.resolved)
+      : [];
+    const graphDiagnostics = sourceGraph && Array.isArray(sourceGraph.diagnostics) ? sourceGraph.diagnostics : [];
+    const executionFunctions = execution && Array.isArray(execution.availableFunctions) ? execution.availableFunctions : [];
 
     if (reliability && Array.isArray(reliability.warnings)) {
       warnings.push(...reliability.warnings);
     }
     if (manifest && Array.isArray(manifest.warnings)) {
       warnings.push(...manifest.warnings);
+    }
+    if (pendingRefinement && pendingRefinement.intent) {
+      warnings.push(`Pending refinement: ${pendingRefinement.intent}`);
     }
 
     if (elements.binaryStatusBadge) {
@@ -1746,6 +1817,13 @@
         : "Runtime, reliability, publish, and download controls.";
     }
 
+    if (elements.binaryPanelSummary && sourceGraph && !artifactState) {
+      elements.binaryPanelSummary.textContent = `${runtimeLabel} · ${sourceGraph.coverage}% graph coverage`;
+    }
+    if (elements.binaryPanelMeta && build && execution) {
+      elements.binaryPanelMeta.textContent = `${execution.mode === "native" ? "Runnable" : execution.mode === "stub" ? "Stub runtime" : "Not runnable"} · ${executionFunctions.length} callable functions`;
+    }
+
     if (elements.binaryBuildVisual) {
       elements.binaryBuildVisual.classList.toggle("show", showVisual);
     }
@@ -1759,6 +1837,17 @@
         ? `${binaryPhaseCaption(phase)} ${artifactState.sourceFilesReady}/${artifactState.sourceFilesTotal} source files formed, ${artifactState.outputFilesReady} compiled outputs, ${artifactState.runnable ? "runtime is callable" : "runtime not callable yet"}.`
         : binaryPhaseCaption(phase);
     }
+    if (elements.binaryBuildTitle) {
+      elements.binaryBuildTitle.textContent = build
+        ? `${binaryPhaseLabel(phase)} Binary IDE workspace`
+        : "Encoding Binary IDE workspace";
+    }
+    if (elements.binaryBuildCaption && execution) {
+      elements.binaryBuildCaption.textContent = `${binaryPhaseCaption(phase)} ${executionFunctions.length} callable functions exposed, runtime mode is ${execution.mode}, and ${pendingRefinement ? "a refinement is queued." : "no refinement is queued."}`;
+    } else if (elements.binaryBuildCaption && sourceGraph && !artifactState) {
+      elements.binaryBuildCaption.textContent = `${binaryPhaseCaption(phase)} ${sourceGraph.readyModules}/${sourceGraph.totalModules} modules parsed with ${graphDiagnostics.length} diagnostics.`;
+    }
+
     if (elements.binaryProgressLabel) {
       elements.binaryProgressLabel.textContent = binaryPhaseLabel(phase);
     }
@@ -1814,6 +1903,88 @@
         elements.binaryWarnings.textContent = warnings.join("\n");
       }
     }
+    if (elements.binaryGraphSummary) {
+      elements.binaryGraphSummary.textContent = sourceGraph
+        ? [
+            `Coverage: ${sourceGraph.coverage}%`,
+            `Modules: ${sourceGraph.readyModules}/${sourceGraph.totalModules}`,
+            `Diagnostics: ${graphDiagnostics.length}`,
+            `Unresolved dependencies: ${unresolvedDependencies.length}`,
+            "",
+            ...(sourceGraph.modules || []).slice(0, 8).map((module) => {
+              const exported = Array.isArray(module.exports) && module.exports.length ? module.exports.join(", ") : "(none)";
+              return `${module.path}${module.diagnosticCount ? ` [${module.diagnosticCount} issues]` : ""}\nexports: ${exported}`;
+            }),
+          ].join("\n")
+        : "The live source graph will appear here.";
+    }
+    if (elements.binaryExecutionSummary) {
+      elements.binaryExecutionSummary.textContent = execution
+        ? [
+            `Mode: ${execution.mode}`,
+            `Runnable: ${execution.runnable ? "yes" : "no"}`,
+            `Callable functions: ${executionFunctions.length}`,
+            pendingRefinement ? `Pending refinement: ${pendingRefinement.intent}` : null,
+            execution.lastRun
+              ? `Last run: ${execution.lastRun.entryPoint} -> ${execution.lastRun.status.toUpperCase()}`
+              : "Last run: none yet",
+            "",
+            ...(executionFunctions || []).slice(0, 10).map((fn) => `${fn.name} (${fn.mode})${fn.signature ? ` ${fn.signature}` : ""}`),
+            execution.lastRun?.logs?.length ? "" : null,
+            ...(execution.lastRun?.logs || []).slice(-8),
+          ].filter(Boolean).join("\n")
+        : "Callable exports and partial execution results will appear here.";
+    }
+
+    const selectedCheckpointId = setSelectOptions(
+      elements.binaryCheckpointSelect,
+      checkpoints.map((checkpoint) => ({
+        value: checkpoint.id,
+        label: checkpoint.label
+          ? `${checkpoint.label} (${checkpoint.phase})`
+          : `${checkpoint.id.slice(0, 8)} · ${checkpoint.phase}`,
+      })),
+      build && build.checkpointId ? build.checkpointId : "",
+      "No checkpoints yet"
+    );
+    if (elements.binaryCheckpointSummary) {
+      const activeCheckpoint = checkpoints.find((checkpoint) => checkpoint.id === selectedCheckpointId) || checkpoints[0];
+      elements.binaryCheckpointSummary.textContent = activeCheckpoint
+        ? [
+            `Current checkpoint: ${activeCheckpoint.id}`,
+            `Phase: ${activeCheckpoint.phase}`,
+            activeCheckpoint.label ? `Label: ${activeCheckpoint.label}` : null,
+            `Saved at: ${activeCheckpoint.savedAt}`,
+            build && build.parentBuildId ? `Parent build: ${build.parentBuildId}` : null,
+          ].filter(Boolean).join("\n")
+        : "Checkpoints will appear here as the build evolves.";
+    }
+
+    const selectedEntryPoint = setSelectOptions(
+      elements.binaryEntryPointSelect,
+      executionFunctions
+        .filter((fn) => fn.callable)
+        .map((fn) => ({
+          value: fn.name,
+          label: `${fn.name} (${fn.mode})`,
+        })),
+      execution && execution.lastRun ? execution.lastRun.entryPoint : "",
+      "No callable exports"
+    );
+    if (elements.binaryEntryPointSummary) {
+      const activeFunction = executionFunctions.find((fn) => fn.name === selectedEntryPoint) || executionFunctions[0];
+      elements.binaryEntryPointSummary.textContent = activeFunction
+        ? [
+            `Entrypoint: ${activeFunction.name}`,
+            `Source: ${activeFunction.sourcePath}`,
+            `Mode: ${activeFunction.mode}`,
+            activeFunction.signature ? `Signature: ${activeFunction.signature}` : null,
+            execution && execution.lastRun && execution.lastRun.entryPoint === activeFunction.name
+              ? `Last run status: ${execution.lastRun.status.toUpperCase()}`
+              : null,
+          ].filter(Boolean).join("\n")
+        : "Available entry points will appear here once the partial runtime is ready.";
+    }
 
     if (elements.binaryPreviewFiles) {
       elements.binaryPreviewFiles.textContent = previewFiles.length
@@ -1845,6 +2016,23 @@
       elements.cancelBinaryButton.textContent = build && build.status === "canceled" ? "Canceled" : "Cancel";
       setHidden(elements.cancelBinaryButton, !binary.canCancel && !(build && build.status === "canceled"));
     }
+    if (elements.refineBinaryButton) {
+      elements.refineBinaryButton.disabled = !Boolean(build && isPending);
+      elements.refineBinaryButton.textContent = pendingRefinement ? "Refining" : "Refine";
+      setHidden(elements.refineBinaryButton, !(build && isPending));
+    }
+    if (elements.branchBinaryButton) {
+      elements.branchBinaryButton.disabled = !Boolean(build && hasCheckpoints);
+      setHidden(elements.branchBinaryButton, !build);
+    }
+    if (elements.rewindBinaryButton) {
+      elements.rewindBinaryButton.disabled = !Boolean(build && hasCheckpoints && !isPending);
+      setHidden(elements.rewindBinaryButton, !Boolean(build && hasCheckpoints));
+    }
+    if (elements.executeBinaryButton) {
+      elements.executeBinaryButton.disabled = !Boolean(build && selectedEntryPoint);
+      setHidden(elements.executeBinaryButton, !Boolean(build && hasEntryPoints));
+    }
     if (elements.validateBinaryButton) {
       elements.validateBinaryButton.disabled = Boolean(binary.busy || !build || build.status !== "completed");
       setHidden(elements.validateBinaryButton, !canShowCompletedActions);
@@ -1866,6 +2054,10 @@
     }
 
     setHidden(elements.binaryManifestCard, !hasManifest);
+    setHidden(elements.binaryGraphCard, !hasSourceGraph);
+    setHidden(elements.binaryExecutionCard, !hasExecution);
+    setHidden(elements.binaryCheckpointCard, !hasCheckpoints);
+    setHidden(elements.binaryEntryPointCard, !hasEntryPoints);
     setHidden(elements.binaryWarningsCard, !hasWarnings);
     setHidden(elements.binaryPreviewFilesCard, !hasPreviewFiles);
     setHidden(elements.binaryLogPreviewCard, !hasRecentLogs);
@@ -2145,6 +2337,43 @@
           text: elements.composer ? elements.composer.value : "",
         });
         return;
+      case "refineBinary":
+        setHistoryDrawerOpen(false);
+        setArtifactsDrawerOpen(false);
+        setSettingsMenuOpen(false);
+        vscode.postMessage({
+          type: "refineBinary",
+          text: elements.composer ? elements.composer.value : "",
+        });
+        return;
+      case "branchBinary":
+        setHistoryDrawerOpen(false);
+        setArtifactsDrawerOpen(false);
+        setSettingsMenuOpen(false);
+        vscode.postMessage({
+          type: "branchBinary",
+          text: elements.composer ? elements.composer.value : "",
+          checkpointId: elements.binaryCheckpointSelect ? elements.binaryCheckpointSelect.value : "",
+        });
+        return;
+      case "rewindBinary":
+        setHistoryDrawerOpen(false);
+        setArtifactsDrawerOpen(false);
+        setSettingsMenuOpen(false);
+        vscode.postMessage({
+          type: "rewindBinary",
+          checkpointId: elements.binaryCheckpointSelect ? elements.binaryCheckpointSelect.value : "",
+        });
+        return;
+      case "executeBinary":
+        setHistoryDrawerOpen(false);
+        setArtifactsDrawerOpen(false);
+        setSettingsMenuOpen(false);
+        vscode.postMessage({
+          type: "executeBinary",
+          entryPoint: elements.binaryEntryPointSelect ? elements.binaryEntryPointSelect.value : "",
+        });
+        return;
       case "validateBinary":
       case "deployBinary":
       case "cancelBinary":
@@ -2307,6 +2536,11 @@
 
   if (elements.messages) {
     elements.messages.addEventListener("scroll", () => {
+      if (performance.now() < suppressScrollSignalUntil) {
+        shouldStickToBottom = true;
+        updateJumpButton();
+        return;
+      }
       shouldStickToBottom = isNearBottom();
       updateJumpButton();
     });

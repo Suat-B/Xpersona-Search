@@ -95,7 +95,20 @@ function buildAvailableTools(request: AssistRuntimeInput): PlaygroundToolName[] 
 }
 
 function isMutatingTool(name: PlaygroundToolName): boolean {
-  return name === "edit" || name === "write_file" || name === "mkdir" || name === "run_command";
+  return (
+    name === "edit" ||
+    name === "write_file" ||
+    name === "mkdir" ||
+    name === "run_command" ||
+    name === "desktop_open_app" ||
+    name === "desktop_open_url" ||
+    name === "desktop_focus_window" ||
+    name === "desktop_click" ||
+    name === "desktop_type" ||
+    name === "desktop_keypress" ||
+    name === "desktop_scroll" ||
+    name === "desktop_wait"
+  );
 }
 
 function isObservationTool(name: PlaygroundToolName): boolean {
@@ -217,6 +230,87 @@ function actionsFromToolTrace(toolTrace: ToolTraceEntryContract[]): ExecuteActio
           args.category === "implementation" || args.category === "validation"
             ? args.category
             : undefined,
+      });
+      continue;
+    }
+    if (name === "desktop_open_app" && typeof args.app === "string") {
+      actions.push({
+        type: "desktop_open_app",
+        app: args.app,
+        args: Array.isArray(args.args) ? args.args.filter((item): item is string => typeof item === "string") : undefined,
+      });
+      continue;
+    }
+    if (name === "desktop_open_url" && typeof args.url === "string") {
+      actions.push({
+        type: "desktop_open_url",
+        url: args.url,
+      });
+      continue;
+    }
+    if (name === "desktop_focus_window") {
+      actions.push({
+        type: "desktop_focus_window",
+        windowId: typeof args.windowId === "string" ? args.windowId : undefined,
+        title: typeof args.title === "string" ? args.title : undefined,
+        app: typeof args.app === "string" ? args.app : undefined,
+      });
+      continue;
+    }
+    if (
+      name === "desktop_click" &&
+      typeof args.displayId === "string" &&
+      typeof args.viewport === "object" &&
+      args.viewport
+    ) {
+      actions.push({
+        type: "desktop_click",
+        displayId: args.displayId,
+        viewport: args.viewport as { displayId: string; width: number; height: number },
+        normalizedX: typeof args.normalizedX === "number" ? args.normalizedX : 0,
+        normalizedY: typeof args.normalizedY === "number" ? args.normalizedY : 0,
+        button:
+          args.button === "left" || args.button === "right" || args.button === "middle"
+            ? args.button
+            : undefined,
+        clickCount: typeof args.clickCount === "number" ? args.clickCount : undefined,
+      });
+      continue;
+    }
+    if (name === "desktop_type" && typeof args.text === "string") {
+      actions.push({
+        type: "desktop_type",
+        text: args.text,
+        delayMs: typeof args.delayMs === "number" ? args.delayMs : undefined,
+      });
+      continue;
+    }
+    if (name === "desktop_keypress" && Array.isArray(args.keys)) {
+      actions.push({
+        type: "desktop_keypress",
+        keys: args.keys.filter((item): item is string => typeof item === "string"),
+      });
+      continue;
+    }
+    if (name === "desktop_scroll") {
+      actions.push({
+        type: "desktop_scroll",
+        displayId: typeof args.displayId === "string" ? args.displayId : undefined,
+        viewport:
+          typeof args.viewport === "object" && args.viewport
+            ? (args.viewport as { displayId: string; width: number; height: number })
+            : undefined,
+        normalizedX: typeof args.normalizedX === "number" ? args.normalizedX : undefined,
+        normalizedY: typeof args.normalizedY === "number" ? args.normalizedY : undefined,
+        deltaX: typeof args.deltaX === "number" ? args.deltaX : undefined,
+        deltaY: typeof args.deltaY === "number" ? args.deltaY : undefined,
+      });
+      continue;
+    }
+    if (name === "desktop_wait" && typeof args.durationMs === "number") {
+      actions.push({
+        type: "desktop_wait",
+        durationMs: args.durationMs,
       });
     }
   }

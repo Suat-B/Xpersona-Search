@@ -17,6 +17,7 @@ import type {
   AssistTargetInference,
 } from "@/lib/playground/orchestration";
 import { buildContextPrompt, parseStructuredAssistResponse } from "@/lib/playground/orchestration";
+import type { ExecuteAction } from "@/lib/playground/policy";
 
 const HF_ROUTER_BASE_URL = "https://router.huggingface.co/v1";
 const DEFAULT_LOOP_MAX_TOKENS = 1_200;
@@ -49,13 +50,7 @@ export type ToolLoopTurnOutput = {
   adapter: PlaygroundAdapter;
   final: string;
   toolCall?: ToolCallContract;
-  actions?: Array<
-    | { type: "edit"; path: string; patch?: string; diff?: string }
-    | { type: "write_file"; path: string; content: string; overwrite?: boolean }
-    | { type: "mkdir"; path: string }
-    | { type: "command"; command: string; cwd?: string; timeoutMs?: number; category?: "implementation" | "validation" }
-    | { type: "rollback"; snapshotId: string }
-  >;
+  actions?: ExecuteAction[];
   logs: string[];
   modelSelection: PlaygroundResolvedModelSelection;
 };
@@ -106,6 +101,19 @@ function buildToolCatalog(tools: PlaygroundToolName[]): string {
     mkdir: "Create a directory. Args: { path: string }",
     run_command: "Run a workspace command. Args: { command: string, timeoutMs?: number, category?: string }",
     get_workspace_memory: "Return persisted workspace memory/summary. Args: {}",
+    desktop_capture_screen: "Capture the current desktop and upload a snapshot. Args: { displayId?: string }",
+    desktop_get_active_window: "Return the currently focused desktop window. Args: {}",
+    desktop_list_windows: "List currently visible desktop windows. Args: {}",
+    desktop_open_app: "Open a desktop application. Args: { app: string, args?: string[] }",
+    desktop_open_url: "Open a URL in the default browser. Args: { url: string }",
+    desktop_focus_window: "Focus a desktop window. Args: { windowId?: string, title?: string, app?: string }",
+    desktop_click:
+      "Click on the desktop using normalized coordinates. Args: { displayId: string, viewport: { displayId: string, width: number, height: number }, normalizedX: number, normalizedY: number, button?: string, clickCount?: number }",
+    desktop_type: "Type text into the focused desktop target. Args: { text: string, delayMs?: number }",
+    desktop_keypress: "Send a desktop keypress chord or sequence. Args: { keys: string[] }",
+    desktop_scroll:
+      "Scroll on the desktop. Args: { displayId?: string, viewport?: { displayId: string, width: number, height: number }, normalizedX?: number, normalizedY?: number, deltaX?: number, deltaY?: number }",
+    desktop_wait: "Wait for a period of time. Args: { durationMs: number }",
   };
   return tools.map((tool) => `- ${tool}: ${details[tool]}`).join("\n");
 }
@@ -413,6 +421,194 @@ function buildOpenAIToolSpec(name: PlaygroundToolName) {
             category: { type: "string" },
           },
           required: ["command"],
+        },
+      },
+    };
+  }
+
+  if (name === "desktop_capture_screen") {
+    return {
+      ...shared,
+      function: {
+        ...shared.function,
+        description: "Capture the current desktop and upload a snapshot.",
+        parameters: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            displayId: { type: "string" },
+          },
+        },
+      },
+    };
+  }
+
+  if (name === "desktop_open_app") {
+    return {
+      ...shared,
+      function: {
+        ...shared.function,
+        description: "Open a desktop application.",
+        parameters: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            app: { type: "string" },
+            args: { type: "array", items: { type: "string" } },
+          },
+          required: ["app"],
+        },
+      },
+    };
+  }
+
+  if (name === "desktop_open_url") {
+    return {
+      ...shared,
+      function: {
+        ...shared.function,
+        description: "Open a URL in the default browser.",
+        parameters: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            url: { type: "string" },
+          },
+          required: ["url"],
+        },
+      },
+    };
+  }
+
+  if (name === "desktop_focus_window") {
+    return {
+      ...shared,
+      function: {
+        ...shared.function,
+        description: "Focus a desktop window.",
+        parameters: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            windowId: { type: "string" },
+            title: { type: "string" },
+            app: { type: "string" },
+          },
+        },
+      },
+    };
+  }
+
+  if (name === "desktop_click") {
+    return {
+      ...shared,
+      function: {
+        ...shared.function,
+        description: "Click on the desktop using normalized coordinates.",
+        parameters: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            displayId: { type: "string" },
+            viewport: {
+              type: "object",
+              properties: {
+                displayId: { type: "string" },
+                width: { type: "number" },
+                height: { type: "number" },
+              },
+              required: ["displayId", "width", "height"],
+            },
+            normalizedX: { type: "number" },
+            normalizedY: { type: "number" },
+            button: { type: "string" },
+            clickCount: { type: "number" },
+          },
+          required: ["displayId", "viewport", "normalizedX", "normalizedY"],
+        },
+      },
+    };
+  }
+
+  if (name === "desktop_type") {
+    return {
+      ...shared,
+      function: {
+        ...shared.function,
+        description: "Type text into the focused desktop target.",
+        parameters: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            text: { type: "string" },
+            delayMs: { type: "number" },
+          },
+          required: ["text"],
+        },
+      },
+    };
+  }
+
+  if (name === "desktop_keypress") {
+    return {
+      ...shared,
+      function: {
+        ...shared.function,
+        description: "Send a desktop keypress chord or sequence.",
+        parameters: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            keys: { type: "array", items: { type: "string" } },
+          },
+          required: ["keys"],
+        },
+      },
+    };
+  }
+
+  if (name === "desktop_scroll") {
+    return {
+      ...shared,
+      function: {
+        ...shared.function,
+        description: "Scroll on the desktop.",
+        parameters: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            displayId: { type: "string" },
+            viewport: {
+              type: "object",
+              properties: {
+                displayId: { type: "string" },
+                width: { type: "number" },
+                height: { type: "number" },
+              },
+            },
+            normalizedX: { type: "number" },
+            normalizedY: { type: "number" },
+            deltaX: { type: "number" },
+            deltaY: { type: "number" },
+          },
+        },
+      },
+    };
+  }
+
+  if (name === "desktop_wait") {
+    return {
+      ...shared,
+      function: {
+        ...shared.function,
+        description: "Wait for a period of time.",
+        parameters: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            durationMs: { type: "number" },
+          },
+          required: ["durationMs"],
         },
       },
     };

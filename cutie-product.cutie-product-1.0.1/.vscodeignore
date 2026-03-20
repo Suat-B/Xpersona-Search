@@ -1,0 +1,6 @@
+src/**
+vendor/**
+tsconfig.json
+package-lock.json
+*.tgz
+out/**/*.map

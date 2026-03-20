@@ -401,6 +401,91 @@ export type BinaryBuildStream = {
   lastEventId?: string | null;
 };
 
+export type BinaryGenerationDelta = {
+  path: string;
+  language?: string;
+  content: string;
+  completed: boolean;
+  order: number;
+  operation: "upsert";
+};
+
+export type BinarySourceGraphFunction = {
+  name: string;
+  sourcePath: string;
+  exported: boolean;
+  async: boolean;
+  callable: boolean;
+  signature?: string;
+};
+
+export type BinarySourceGraphModule = {
+  path: string;
+  language?: string;
+  imports: string[];
+  exports: string[];
+  functions: BinarySourceGraphFunction[];
+  completed: boolean;
+  diagnosticCount: number;
+};
+
+export type BinarySourceGraphDependency = {
+  from: string;
+  to: string;
+  kind: "import" | "dependency";
+  resolved: boolean;
+};
+
+export type BinarySourceGraphDiagnostic = {
+  path?: string;
+  code: string;
+  severity: "info" | "warning" | "error";
+  message: string;
+};
+
+export type BinarySourceGraph = {
+  coverage: number;
+  readyModules: number;
+  totalModules: number;
+  modules: BinarySourceGraphModule[];
+  dependencies: BinarySourceGraphDependency[];
+  diagnostics: BinarySourceGraphDiagnostic[];
+  updatedAt: string;
+};
+
+export type BinaryExecutionFunction = {
+  name: string;
+  sourcePath: string;
+  mode: "none" | "native" | "stub";
+  callable: boolean;
+  signature?: string;
+};
+
+export type BinaryExecutionRun = {
+  id: string;
+  entryPoint: string;
+  args: unknown[];
+  status: "completed" | "failed" | "stubbed";
+  outputJson?: unknown;
+  logs: string[];
+  errorMessage?: string;
+  startedAt: string;
+  completedAt: string;
+};
+
+export type BinaryExecutionState = {
+  runnable: boolean;
+  mode: "none" | "native" | "stub";
+  availableFunctions: BinaryExecutionFunction[];
+  lastRun?: BinaryExecutionRun | null;
+  updatedAt: string;
+};
+
+export type BinaryPendingRefinement = {
+  intent: string;
+  requestedAt: string;
+};
+
 export type BinaryArtifactState = {
   coverage: number;
   runnable: boolean;
@@ -412,15 +497,25 @@ export type BinaryArtifactState = {
   updatedAt: string;
 };
 
+export type BinaryBuildCheckpointSummary = {
+  id: string;
+  phase: BinaryBuildPhase;
+  savedAt: string;
+  label?: string;
+};
+
 export type BinaryBuildCheckpoint = {
   id: string;
   buildId: string;
   phase: BinaryBuildPhase;
   savedAt: string;
+  label?: string;
   preview?: BinaryBuildPreview | null;
   manifest?: BinaryManifest | null;
   reliability?: BinaryValidationReport | null;
   artifactState?: BinaryArtifactState | null;
+  sourceGraph?: BinarySourceGraph | null;
+  execution?: BinaryExecutionState | null;
   artifact?: BinaryArtifactMetadata | null;
 };
 
@@ -450,6 +545,12 @@ export type BinaryBuildRecord = {
   manifest?: BinaryManifest | null;
   reliability?: BinaryValidationReport | null;
   artifactState?: BinaryArtifactState | null;
+  sourceGraph?: BinarySourceGraph | null;
+  execution?: BinaryExecutionState | null;
+  checkpointId?: string | null;
+  checkpoints?: BinaryBuildCheckpointSummary[];
+  parentBuildId?: string | null;
+  pendingRefinement?: BinaryPendingRefinement | null;
   artifact?: BinaryArtifactMetadata | null;
   publish?: BinaryPublishResult | null;
   errorMessage?: string | null;
@@ -467,6 +568,7 @@ export type BinaryBuildEvent =
       data: { status: BinaryBuildRecord["status"]; phase: BinaryBuildPhase; progress?: number; message?: string };
     }
   | { id: string; buildId: string; timestamp: string; type: "plan.updated"; data: { plan: BinaryPlanPreview } }
+  | { id: string; buildId: string; timestamp: string; type: "generation.delta"; data: { delta: BinaryGenerationDelta } }
   | { id: string; buildId: string; timestamp: string; type: "file.updated"; data: BinaryPreviewFile }
   | { id: string; buildId: string; timestamp: string; type: "log.chunk"; data: { stream: "stdout" | "stderr" | "system"; chunk: string } }
   | {
@@ -476,6 +578,8 @@ export type BinaryBuildEvent =
       type: "reliability.delta";
       data: { kind: "prebuild" | "full"; report: BinaryValidationReport };
     }
+  | { id: string; buildId: string; timestamp: string; type: "graph.updated"; data: { sourceGraph: BinarySourceGraph } }
+  | { id: string; buildId: string; timestamp: string; type: "execution.updated"; data: { execution: BinaryExecutionState } }
   | {
       id: string;
       buildId: string;
@@ -494,12 +598,27 @@ export type BinaryBuildEvent =
       id: string;
       buildId: string;
       timestamp: string;
+      type: "interrupt.accepted";
+      data: { action: "cancel" | "refine"; message?: string; pendingRefinement?: BinaryPendingRefinement | null };
+    }
+  | {
+      id: string;
+      buildId: string;
+      timestamp: string;
       type: "artifact.ready";
       data: { artifact: BinaryArtifactMetadata; manifest: BinaryManifest };
     }
   | { id: string; buildId: string; timestamp: string; type: "build.completed"; data: { build: BinaryBuildRecord } }
   | { id: string; buildId: string; timestamp: string; type: "build.failed"; data: { errorMessage: string; build: BinaryBuildRecord } }
+  | {
+      id: string;
+      buildId: string;
+      timestamp: string;
+      type: "branch.created";
+      data: { sourceBuildId: string; checkpointId?: string; build: BinaryBuildRecord };
+    }
   | { id: string; buildId: string; timestamp: string; type: "build.canceled"; data: { reason?: string; build: BinaryBuildRecord } }
+  | { id: string; buildId: string; timestamp: string; type: "rewind.completed"; data: { checkpointId: string; build: BinaryBuildRecord } }
   | { id: string; buildId: string; timestamp: string; type: "heartbeat"; data: { phase?: BinaryBuildPhase; progress?: number } };
 
 export type BinaryPanelState = {
@@ -514,6 +633,10 @@ export type BinaryPanelState = {
   recentLogs: string[];
   reliability: BinaryValidationReport | null;
   artifactState: BinaryArtifactState | null;
+  sourceGraph: BinarySourceGraph | null;
+  execution: BinaryExecutionState | null;
+  checkpoints: BinaryBuildCheckpointSummary[];
+  pendingRefinement: BinaryPendingRefinement | null;
   canCancel: boolean;
-  lastAction: "generate" | "validate" | "deploy" | null;
+  lastAction: "generate" | "refine" | "branch" | "rewind" | "execute" | "validate" | "deploy" | null;
 };

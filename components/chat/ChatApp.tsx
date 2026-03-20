@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import Link from "next/link";
 
@@ -25,6 +25,12 @@ type ChatViewer = {
   accountType: string;
   source: string;
 };
+
+const STARTER_PROMPTS = [
+  "Plan a feature with clear next steps.",
+  "Debug a bug and explain the fix.",
+  "Rewrite this text to sound sharper.",
+] as const;
 
 function makeId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -193,8 +199,10 @@ export function ChatApp() {
 
   const messageViewportRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const drawerCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const pendingSessionIdRef = useRef<string | null>(null);
   const skipNextAutoLoadSessionIdRef = useRef<string | null>(null);
+  const didFocusComposerRef = useRef(false);
   const isEmpty = !loadingMessages && messages.length === 0;
 
   const activeSession = useMemo(
@@ -356,6 +364,17 @@ export function ChatApp() {
     }
   }, [draftStorageKey, input]);
 
+  useLayoutEffect(() => {
+    const element = inputRef.current;
+    if (!element) return;
+    element.style.height = "auto";
+    const minComposerHeight = 52;
+    const maxComposerHeight = 144;
+    const nextHeight = Math.min(element.scrollHeight, maxComposerHeight);
+    element.style.height = `${Math.max(nextHeight, minComposerHeight)}px`;
+    element.style.overflowY = element.scrollHeight > maxComposerHeight ? "auto" : "hidden";
+  }, [input]);
+
   useEffect(() => {
     const html = document.documentElement;
     const body = document.body;
@@ -372,12 +391,37 @@ export function ChatApp() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSidebarOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    drawerCloseButtonRef.current?.focus({ preventScroll: true });
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    if (booting || bootError || didFocusComposerRef.current) return;
+    didFocusComposerRef.current = true;
+    inputRef.current?.focus({ preventScroll: true });
+  }, [bootError, booting]);
+
   const onNewChat = useCallback(async () => {
     try {
       setStatusText(null);
       await createSession();
       await refreshSessions();
       setSidebarOpen(false);
+      inputRef.current?.focus({ preventScroll: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to create chat";
       setStatusText(message);
@@ -385,8 +429,17 @@ export function ChatApp() {
   }, [createSession, refreshSessions]);
 
   const onSelectSession = useCallback((id: string) => {
+    setStatusText(null);
+    setMessages([]);
+    setLoadingMessages(true);
     setActiveSessionId(id);
     setSidebarOpen(false);
+  }, []);
+
+  const onUseStarterPrompt = useCallback((prompt: string) => {
+    setStatusText(null);
+    setInput(prompt);
+    inputRef.current?.focus({ preventScroll: true });
   }, []);
 
   const onSend = useCallback(
@@ -533,24 +586,13 @@ export function ChatApp() {
     [activeSessionId, draftStorageKey, input, refreshSessions, sending]
   );
 
-  const shellTitle = activeSession?.title || "New chat";
-  const viewerLabel = viewer && !viewer.isAnonymous ? viewer.email : "Personal workspace";
-  const sidebarAccountLabel = viewer?.isAnonymous ? "Guest access" : "Signed in";
+  const shellTitle = activeSession?.title && activeSession.title.trim() !== "New chat" ? activeSession.title.trim() : "Chat";
+  const viewerLabel = viewer && !viewer.isAnonymous ? viewer.email : "Guest access";
   const sessionTimestamp = prettyTime(activeSession?.updatedAt ?? null);
 
   const composer = (
-    <form onSubmit={onSend} className="chat-editorial-composer-form mx-auto w-full max-w-[920px]">
-      <div className="chat-editorial-composer rounded-[2rem] px-5 py-4 sm:px-6 sm:py-5">
-        <div className="chat-editorial-composer-head">
-          <div>
-            <p className="chat-editorial-composer-kicker">Playground 1</p>
-            <p className="chat-editorial-composer-subtitle">
-              {activeSessionId ? "Continue the current thread" : "Start a fresh conversation"}
-            </p>
-          </div>
-          <span className="chat-editorial-model-pill">{sending ? "Thinking" : "Text chat"}</span>
-        </div>
-
+    <form onSubmit={onSend} className="chat-editorial-composer-form">
+      <div className="chat-editorial-composer">
         <textarea
           ref={inputRef}
           value={input}
@@ -563,53 +605,45 @@ export function ChatApp() {
             }
           }}
           rows={1}
-          placeholder="Message Playground 1 about your code, workflow, or next step"
-          className={`chat-editorial-textarea ${isEmpty ? "chat-editorial-textarea-hero" : "chat-editorial-textarea-inline"}`}
+          placeholder="Ask for help with code, writing, or next steps"
+          className="chat-editorial-input"
           aria-label="Message input"
         />
 
         <div className="chat-editorial-composer-footer">
-          <div className="chat-editorial-composer-meta">
-            <Link href="/playground" className="chat-editorial-composer-link">
-              Explore Playground plans
-            </Link>
-            {" "}
-            <span className="chat-editorial-composer-helper">Shift+Enter for a new line</span>
+          <div className="chat-editorial-status" role="status" aria-live="polite">
+            {sending ? <span className="chat-editorial-spinner" aria-hidden="true" /> : null}
+            <span>{statusText || (sending ? "Streaming response..." : "Enter to send · Shift+Enter for a new line")}</span>
           </div>
-          <div className="chat-editorial-input-actions">
-            <button
-              type="submit"
-              disabled={sending || !input.trim()}
-              className="chat-editorial-send chat-editorial-send-icon"
-              aria-label="Send"
-            >
-              {sending ? (
-                <span className="chat-editorial-spinner chat-editorial-spinner-sm" aria-hidden="true" />
-              ) : (
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path
-                    d="M5.5 12h12m0 0-4-4m4 4-4 4"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              )}
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={sending || !input.trim()}
+            className="chat-editorial-send"
+            aria-label="Send"
+          >
+            {sending ? (
+              <span className="chat-editorial-spinner" aria-hidden="true" />
+            ) : (
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M5.5 12h11.5m0 0-4.5-4.5m4.5 4.5-4.5 4.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+          </button>
         </div>
-      </div>
-      <div className="chat-editorial-hint" role="status" aria-live="polite">
-        {statusText || "Enter to send. Playground 1 keeps this page text-only for now."}
       </div>
     </form>
   );
 
   if (booting) {
     return (
-      <div className="chat-editorial min-h-dvh flex items-center justify-center p-6">
+      <div className="chat-editorial flex min-h-dvh items-center justify-center p-6">
         <div className="chat-editorial-card flex items-center gap-3 rounded-2xl px-5 py-4">
           <div className="chat-editorial-spinner" aria-hidden="true" />
           <p className="text-sm text-[var(--chat-text-secondary)]">Preparing your workspace...</p>
@@ -620,10 +654,10 @@ export function ChatApp() {
 
   if (bootError) {
     return (
-      <div className="chat-editorial min-h-dvh flex items-center justify-center p-6">
+      <div className="chat-editorial flex min-h-dvh items-center justify-center p-6">
         <div className="chat-editorial-card max-w-lg rounded-3xl p-7">
-          <p className="chat-editorial-kicker">Chat</p>
-          <h1 className="mt-2 text-xl font-semibold tracking-tight text-[var(--chat-text-primary)]">Chat unavailable</h1>
+          <p className="text-xs uppercase tracking-[0.2em] text-[var(--chat-text-muted)]">Chat</p>
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-[var(--chat-text-primary)]">Chat unavailable</h1>
           <p className="mt-3 text-sm leading-6 text-[var(--chat-text-secondary)]">{bootError}</p>
         </div>
       </div>
@@ -631,50 +665,102 @@ export function ChatApp() {
   }
 
   return (
-    <div className="chat-editorial h-dvh min-h-dvh">
-      <div className="flex h-full w-full">
-        <aside
-          className={`chat-editorial-sidebar fixed inset-y-0 left-0 z-40 w-[300px] p-3 transition-transform md:static md:w-[292px] md:translate-x-0 ${
-            sidebarOpen ? "translate-x-0 pointer-events-auto" : "-translate-x-full pointer-events-none md:pointer-events-auto"
-          }`}
-          aria-label="Chat sessions"
-        >
-          <div className="chat-editorial-sidebar-card h-full rounded-[2rem] p-4">
-            <div className="chat-editorial-sidebar-inner">
-              <div className="mb-1 flex items-center justify-end md:hidden">
+    <div className="chat-editorial h-dvh overflow-hidden">
+      <div className="chat-editorial-shell">
+        <header className="chat-editorial-header safe-area-inset-top">
+          <div className="mx-auto flex w-full max-w-[1040px] items-center gap-3 px-4 py-2.5 sm:px-6">
+            <button
+              type="button"
+              className="chat-editorial-control"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open chat history"
+              aria-expanded={sidebarOpen}
+              aria-controls="chat-history-drawer"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4.5 7.5h15" />
+                <path d="M4.5 12h10.5" />
+                <path d="M4.5 16.5h15" />
+              </svg>
+              <span className="hidden sm:inline">History</span>
+            </button>
+
+            <div className="min-w-0 flex-1 text-center">
+              <div className="flex items-center justify-center gap-2">
+                <h1 className="truncate text-sm font-semibold tracking-tight text-[var(--chat-text-primary)] sm:text-base">
+                  {shellTitle}
+                </h1>
+                <span className="chat-editorial-badge">Playground 1</span>
+              </div>
+              <p className="mt-1 truncate text-xs text-[var(--chat-text-muted)] sm:text-sm">
+                {loadingMessages
+                  ? "Loading conversation"
+                  : sessionTimestamp
+                    ? `Updated ${sessionTimestamp}`
+                    : isEmpty
+                      ? "Ready to write"
+                      : "Live conversation"}
+              </p>
+            </div>
+
+            <button type="button" className="chat-editorial-control chat-editorial-control-primary" onClick={() => void onNewChat()} aria-label="Start a new chat">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 5.5v13" />
+                <path d="M5.5 12h13" />
+              </svg>
+              <span className="hidden sm:inline">New chat</span>
+            </button>
+          </div>
+        </header>
+
+        <div className={`chat-editorial-drawer ${sidebarOpen ? "is-open" : ""}`} aria-hidden={!sidebarOpen}>
+          <button
+            type="button"
+            className="chat-editorial-drawer-backdrop"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close chat history"
+            tabIndex={sidebarOpen ? 0 : -1}
+          />
+          <aside
+            id="chat-history-drawer"
+            className="chat-editorial-drawer-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Chat history"
+          >
+            <div className="chat-editorial-drawer-surface">
+              <div className="chat-editorial-drawer-head">
+                <div className="min-w-0">
+                  <p className="text-xs uppercase tracking-[0.2em] text-[var(--chat-text-muted)]">History</p>
+                  <p className="mt-1 text-sm text-[var(--chat-text-secondary)]">Jump back into a recent thread</p>
+                </div>
                 <button
+                  ref={drawerCloseButtonRef}
                   type="button"
-                  className="chat-editorial-mobile-button rounded-xl px-3 py-1.5 text-sm"
+                  className="chat-editorial-control"
                   onClick={() => setSidebarOpen(false)}
-                  aria-label="Close chats"
+                  aria-label="Close chat history"
                 >
-                  Close
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M6 6l12 12" />
+                    <path d="M18 6 6 18" />
+                  </svg>
                 </button>
               </div>
-              <div className="chat-editorial-brand">
-                <span className="chat-editorial-brand-icon" aria-hidden="true">
-                  PL
-                </span>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-[var(--chat-text-primary)]">Playground 1</p>
-                  <p className="truncate text-xs text-[var(--chat-text-muted)]">{viewerLabel}</p>
-                </div>
+
+              <div className="px-4 pb-3">
+                <button type="button" onClick={() => void onNewChat()} className="chat-editorial-control chat-editorial-control-primary w-full justify-start">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 5.5v13" />
+                    <path d="M5.5 12h13" />
+                  </svg>
+                  <span>New chat</span>
+                </button>
               </div>
 
-              <button onClick={onNewChat} className="chat-editorial-side-action" type="button">
-                <span>New chat</span>
-                <svg viewBox="0 0 20 20" aria-hidden="true">
-                  <path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                </svg>
-              </button>
-
-              <div className="chat-editorial-recents">
-                <p className="text-xs uppercase tracking-[0.16em] text-[var(--chat-text-muted)]">Recent chats</p>
-              </div>
-
-              <div className="chat-editorial-side-scroll">
+              <div className="chat-editorial-drawer-list">
                 {sessions.length === 0 ? (
-                  <div className="chat-editorial-empty-rail rounded-[1.35rem] px-4 py-5 text-sm text-[var(--chat-text-secondary)]">
+                  <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-5 text-sm text-[var(--chat-text-secondary)]">
                     No chats yet. Start a new one to begin.
                   </div>
                 ) : (
@@ -682,37 +768,34 @@ export function ChatApp() {
                     <button
                       key={session.id}
                       onClick={() => onSelectSession(session.id)}
-                      className={`chat-editorial-session w-full rounded-[1.35rem] px-3 py-3 text-left transition-colors ${
-                        session.id === activeSessionId ? "is-active" : ""
-                      }`}
+                      className={`chat-editorial-session ${session.id === activeSessionId ? "is-active" : ""}`}
                       type="button"
                     >
-                      <p className="truncate text-sm font-medium text-[var(--chat-text-primary)]">{session.title}</p>
-                      <p className="mt-1 truncate text-xs text-[var(--chat-text-muted)]">{prettyTime(session.updatedAt)}</p>
+                      <p className="chat-editorial-session-title truncate">{session.title}</p>
+                      <p className="chat-editorial-session-meta truncate">{prettyTime(session.updatedAt)}</p>
                     </button>
                   ))
                 )}
               </div>
 
-              <div className="chat-editorial-sidebar-footer">
-                <div className="chat-editorial-sidebar-status">
-                  <span className="chat-editorial-sidebar-status-dot" aria-hidden="true" />
-                  <span>{sidebarAccountLabel}</span>
-                </div>
-                <div className="chat-editorial-brand-links">
-                  <Link href="/" className="chat-editorial-brand-link">
+              <div className="chat-editorial-drawer-footer">
+                <p className="chat-editorial-drawer-note truncate" title={viewerLabel}>
+                  {viewerLabel}
+                </p>
+                <div className="chat-editorial-link-row">
+                  <Link href="/" className="chat-editorial-link">
                     Home
                   </Link>
                   {viewer && !viewer.isAnonymous ? (
-                    <Link href="/dashboard" className="chat-editorial-brand-link is-primary">
+                    <Link href="/dashboard" className="chat-editorial-link is-primary">
                       Dashboard
                     </Link>
                   ) : (
                     <>
-                      <Link href="/auth/signin" className="chat-editorial-brand-link">
+                      <Link href="/auth/signin" className="chat-editorial-link">
                         Sign in
                       </Link>
-                      <Link href="/auth/signup" className="chat-editorial-brand-link is-primary">
+                      <Link href="/auth/signup" className="chat-editorial-link is-primary">
                         Sign up
                       </Link>
                     </>
@@ -720,131 +803,66 @@ export function ChatApp() {
                 </div>
               </div>
             </div>
-          </div>
-        </aside>
+          </aside>
+        </div>
 
-        {sidebarOpen ? (
-          <button
-            type="button"
-            className="fixed inset-0 z-30 bg-black/55 backdrop-blur-[2px] md:hidden"
-            onClick={() => setSidebarOpen(false)}
-            aria-label="Close sidebar"
-          />
-        ) : null}
-
-        <main className="relative z-10 flex min-w-0 flex-1 flex-col chat-editorial-main">
-          <div className="chat-editorial-shell flex min-h-0 flex-1 flex-col">
-            <header className="chat-editorial-topbar px-4 py-4 sm:px-6">
-              <div className="chat-editorial-topbar-main">
-                <button
-                  type="button"
-                  className="chat-editorial-mobile-button chat-editorial-menu-button rounded-full md:hidden"
-                  onClick={() => setSidebarOpen(true)}
-                  aria-label="Open chats"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M4.5 7.5h15M4.5 12h15M4.5 16.5h15"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.7"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </button>
-
-                <div className="min-w-0">
-                  <p className="chat-editorial-topbar-kicker">Playground 1 chat</p>
-                  <h1 className="truncate text-lg font-semibold text-[var(--chat-text-primary)] sm:text-[1.35rem]">
-                    {shellTitle}
-                  </h1>
-                  <p className="chat-editorial-topbar-meta">
-                    {loadingMessages
-                      ? "Loading conversation"
-                      : sessionTimestamp
-                        ? `Updated ${sessionTimestamp}`
-                        : isEmpty
-                          ? "Ready when you are"
-                          : "Live text session"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="chat-editorial-topbar-actions">
-                <span className="chat-editorial-model-pill hidden sm:inline-flex">Playground 1</span>
-                <Link href="/" className="chat-editorial-topbar-link">
-                  Home
-                </Link>
-                {viewer && !viewer.isAnonymous ? (
-                  <Link href="/dashboard" className="chat-editorial-topbar-link is-primary">
-                    Dashboard
-                  </Link>
-                ) : (
-                  <Link href="/auth/signin" className="chat-editorial-topbar-link is-primary">
-                    Sign in
-                  </Link>
-                )}
-              </div>
-            </header>
-
-            <div
-              ref={messageViewportRef}
-              className="chat-editorial-scroll flex-1 overflow-y-auto overscroll-y-contain px-4 pb-6 pt-2 sm:px-6"
-            >
+        <main className="chat-editorial-main">
+          <div ref={messageViewportRef} className="chat-editorial-scroll flex-1 overflow-y-auto overscroll-y-contain">
+            <div className="mx-auto flex min-h-full w-full max-w-[1040px] flex-col px-4 py-4 sm:px-6 sm:py-5">
               {loadingMessages ? (
-                <div className="chat-editorial-loading mx-auto w-full max-w-[920px]">
-                  <div className="chat-editorial-spinner" aria-hidden="true" />
-                  <p className="text-sm text-[var(--chat-text-secondary)]">Loading messages...</p>
+                <div className="flex min-h-full items-center justify-center">
+                  <div className="chat-editorial-card flex items-center gap-3 rounded-2xl px-5 py-4">
+                    <div className="chat-editorial-spinner" aria-hidden="true" />
+                    <p className="text-sm text-[var(--chat-text-secondary)]">Loading messages...</p>
+                  </div>
                 </div>
               ) : isEmpty ? (
-                <div className="chat-editorial-empty chat-editorial-center mx-auto w-full max-w-[920px] animate-fade-in-up">
+                <div className="chat-editorial-empty flex min-h-full items-center justify-center">
                   <div className="chat-editorial-empty-copy">
-                    <div className="chat-editorial-empty-hero-head">
-                      <p className="chat-editorial-kicker">Playground 1</p>
-                      <span className="chat-editorial-model-pill">Text chat</span>
-                    </div>
-                    <h2 className="chat-editorial-hero text-balance text-3xl font-semibold text-[var(--chat-text-primary)] sm:text-[3.4rem]">
-                      How can <span className="whitespace-nowrap">Playground 1</span> help today?
-                    </h2>
+                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--chat-text-muted)]">Minimal chat</p>
+                    <h2 className="chat-editorial-empty-title mt-3">What should we work on?</h2>
                     <p className="chat-editorial-empty-text">
-                      Plan features, debug code, and think through your next move in one clean workspace.
+                      Keep the surface clean and use this space for code help, product thinking, or quick writing.
                     </p>
+                    <div className="chat-editorial-chip-row">
+                      {STARTER_PROMPTS.map((prompt) => (
+                        <button
+                          key={prompt}
+                          type="button"
+                          className="chat-editorial-chip"
+                          onClick={() => onUseStarterPrompt(prompt)}
+                        >
+                          {prompt}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div className="mt-8 w-full">{composer}</div>
                 </div>
               ) : (
-                <div className="chat-editorial-message-list mx-auto w-full max-w-[920px] space-y-8">
+                <div className="chat-editorial-message-list">
                   {messages.map((message) => (
                     <article
                       key={message.id}
                       className={`chat-editorial-message ${message.role === "user" ? "is-user" : "is-assistant"}`}
                     >
-                      <div className="chat-editorial-avatar" aria-hidden="true">
-                        {message.role === "user" ? "You" : "P1"}
-                      </div>
-                      <div className="chat-editorial-message-body">
+                      <div className="chat-editorial-bubble">
                         {message.role === "assistant" ? (
-                          <p className="chat-editorial-message-label">Playground 1</p>
-                        ) : null}
-                        <div className="chat-editorial-bubble">
-                          {message.role === "assistant" ? (
-                            <AssistantMessage message={message} />
-                          ) : (
-                            <p className="whitespace-pre-wrap break-words text-sm leading-6 text-[var(--chat-text-primary)]">
-                              {message.content}
-                            </p>
-                          )}
-                        </div>
+                          <AssistantMessage message={message} />
+                        ) : (
+                          <p className="whitespace-pre-wrap break-words text-sm leading-6 text-[var(--chat-text-primary)]">
+                            {message.content}
+                          </p>
+                        )}
                       </div>
                     </article>
                   ))}
                 </div>
               )}
             </div>
+          </div>
 
-            {isEmpty ? null : (
-              <div className="chat-editorial-composer-wrap px-4 pb-4 pt-3 sm:px-6">{composer}</div>
-            )}
+          <div className="chat-editorial-composer-shell safe-area-inset-bottom">
+            <div className="mx-auto w-full max-w-[1040px] px-4 py-2.5 sm:px-6 sm:py-3">{composer}</div>
           </div>
         </main>
       </div>

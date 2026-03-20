@@ -12,6 +12,10 @@ const {
   requestBinaryBuild,
   requestBinaryBuildStream,
   requestBinaryStreamEvents,
+  requestBinaryRefine,
+  requestBinaryBranch,
+  requestBinaryRewind,
+  requestBinaryExecute,
   requestBinaryCancel,
   requestBinaryStatus,
   requestBinaryValidate,
@@ -40,6 +44,10 @@ const {
   requestBinaryBuild: vi.fn(),
   requestBinaryBuildStream: vi.fn(),
   requestBinaryStreamEvents: vi.fn(),
+  requestBinaryRefine: vi.fn(),
+  requestBinaryBranch: vi.fn(),
+  requestBinaryRewind: vi.fn(),
+  requestBinaryExecute: vi.fn(),
   requestBinaryCancel: vi.fn(),
   requestBinaryStatus: vi.fn(),
   requestBinaryValidate: vi.fn(),
@@ -122,9 +130,13 @@ vi.mock("vscode", () => ({
 }));
 
 vi.mock("../src/binary-client", () => ({
+  branchBinaryBuild: requestBinaryBranch,
   createBinaryBuild: requestBinaryBuild,
   createBinaryBuildStream: requestBinaryBuildStream,
   streamBinaryBuildEvents: requestBinaryStreamEvents,
+  executeBinaryBuild: requestBinaryExecute,
+  refineBinaryBuild: requestBinaryRefine,
+  rewindBinaryBuild: requestBinaryRewind,
   cancelBinaryBuild: requestBinaryCancel,
   getBinaryBuild: requestBinaryStatus,
   validateBinaryBuild: requestBinaryValidate,
@@ -251,6 +263,74 @@ function createArtifactState(overrides: Partial<NonNullable<BinaryBuildRecord["a
     entryPoints: [],
     latestFile: "src/index.ts",
     updatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function createSourceGraph(overrides: Partial<NonNullable<BinaryBuildRecord["sourceGraph"]>> = {}) {
+  return {
+    coverage: 67,
+    readyModules: 2,
+    totalModules: 3,
+    modules: [
+      {
+        path: "src/index.ts",
+        language: "typescript",
+        imports: ["./lib/health"],
+        exports: ["health"],
+        functions: [
+          {
+            name: "health",
+            sourcePath: "src/index.ts",
+            exported: true,
+            async: false,
+            callable: true,
+            signature: "health()",
+          },
+        ],
+        completed: true,
+        diagnosticCount: 0,
+      },
+    ],
+    dependencies: [
+      {
+        from: "src/index.ts",
+        to: "src/lib/health.ts",
+        kind: "import",
+        resolved: true,
+      },
+    ],
+    diagnostics: [],
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function createExecutionState(overrides: Partial<NonNullable<BinaryBuildRecord["execution"]>> = {}) {
+  return {
+    runnable: true,
+    mode: "native" as const,
+    availableFunctions: [
+      {
+        name: "health",
+        sourcePath: "src/index.ts",
+        mode: "native" as const,
+        callable: true,
+        signature: "health()",
+      },
+    ],
+    lastRun: null,
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function createCheckpointSummary(overrides: Partial<NonNullable<BinaryBuildRecord["checkpoints"]>[number]> = {}) {
+  return {
+    id: "chk_123",
+    phase: "materializing" as const,
+    savedAt: new Date().toISOString(),
+    label: "Graph synced",
     ...overrides,
   };
 }
@@ -434,6 +514,10 @@ describe("binary provider", () => {
     requestBinaryBuild.mockReset();
     requestBinaryBuildStream.mockReset();
     requestBinaryStreamEvents.mockReset();
+    requestBinaryRefine.mockReset();
+    requestBinaryBranch.mockReset();
+    requestBinaryRewind.mockReset();
+    requestBinaryExecute.mockReset();
     requestBinaryCancel.mockReset();
     requestBinaryStatus.mockReset();
     requestBinaryValidate.mockReset();
@@ -676,6 +760,201 @@ describe("binary provider", () => {
     expect(provider.state.messages.some((message: any) => /Only completed portable starter bundles can be published/i.test(message.content))).toBe(true);
   });
 
+  it("tracks graph, execution, checkpoint, and refinement stream events in binary state", async () => {
+    configurationValues["xpersona.binary"].runtime = "playgroundApi";
+    const { provider } = createProvider();
+    provider.state.binary.activeBuild = createBuild({
+      id: "bin_stream",
+      status: "running",
+      phase: "materializing",
+      progress: 42,
+      cancelable: true,
+    });
+
+    await provider.handleBinaryBuildEvent(
+      createEvent("generation.delta", {
+        delta: {
+          path: "src/index.ts",
+          language: "typescript",
+          content: "export const health = () => ({ ok: true });",
+          completed: false,
+          order: 1,
+          operation: "upsert",
+        },
+      }, "bin_stream")
+    );
+    await provider.handleBinaryBuildEvent(
+      createEvent("graph.updated", { sourceGraph: createSourceGraph() }, "bin_stream")
+    );
+    await provider.handleBinaryBuildEvent(
+      createEvent("execution.updated", { execution: createExecutionState() }, "bin_stream")
+    );
+    await provider.handleBinaryBuildEvent(
+      createEvent(
+        "checkpoint.saved",
+        {
+          checkpoint: {
+            id: "chk_123",
+            buildId: "bin_stream",
+            phase: "materializing",
+            savedAt: new Date().toISOString(),
+            label: "Graph synced",
+            preview: {
+              plan: createPlanPreview(),
+              files: [createPreviewFile()],
+              recentLogs: ["checkpoint saved"],
+            },
+            manifest: null,
+            reliability: null,
+            artifactState: createArtifactState(),
+            sourceGraph: createSourceGraph(),
+            execution: createExecutionState(),
+            artifact: null,
+          },
+        },
+        "bin_stream"
+      )
+    );
+    await provider.handleBinaryBuildEvent(
+      createEvent(
+        "interrupt.accepted",
+        {
+          action: "refine",
+          message: "Queued refinement for the active build.",
+          pendingRefinement: {
+            intent: "Add retry logic",
+            requestedAt: new Date().toISOString(),
+          },
+        },
+        "bin_stream"
+      )
+    );
+
+    expect(provider.state.binary.previewFiles[0]?.path).toBe("src/index.ts");
+    expect(provider.state.binary.sourceGraph?.coverage).toBe(67);
+    expect(provider.state.binary.execution?.availableFunctions[0]?.name).toBe("health");
+    expect(provider.state.binary.checkpoints[0]?.id).toBe("chk_123");
+    expect(provider.state.binary.pendingRefinement?.intent).toBe("Add retry logic");
+  });
+
+  it("dispatches refine, branch, rewind, and execute actions through the binary client", async () => {
+    configurationValues["xpersona.binary"].runtime = "playgroundApi";
+    const { provider } = createProvider();
+
+    provider.state.binary.activeBuild = createBuild({
+      id: "bin_actions",
+      status: "running",
+      phase: "materializing",
+      progress: 38,
+      cancelable: true,
+      checkpointId: "chk_123",
+      checkpoints: [createCheckpointSummary()],
+      execution: createExecutionState(),
+    });
+    provider.state.binary.checkpoints = [createCheckpointSummary()];
+    provider.state.binary.execution = createExecutionState();
+
+    requestBinaryRefine.mockResolvedValue(
+      createBuild({
+        id: "bin_actions",
+        status: "running",
+        phase: "materializing",
+        progress: 44,
+        pendingRefinement: {
+          intent: "Add retry logic",
+          requestedAt: new Date().toISOString(),
+        },
+      })
+    );
+
+    await provider.refineBinaryBuild("Add retry logic");
+
+    requestBinaryBranch.mockResolvedValue(
+      createBuild({
+        id: "bin_branch",
+        status: "completed",
+        phase: "completed",
+        progress: 100,
+        cancelable: false,
+        parentBuildId: "bin_actions",
+        checkpointId: "chk_123",
+        checkpoints: [createCheckpointSummary()],
+      })
+    );
+
+    await provider.branchBinaryBuild("Try a branch", "chk_123");
+
+    provider.state.binary.activeBuild = createBuild({
+      id: "bin_branch",
+      status: "completed",
+      phase: "completed",
+      progress: 100,
+      cancelable: false,
+      checkpointId: "chk_123",
+      checkpoints: [createCheckpointSummary()],
+      execution: createExecutionState(),
+    });
+
+    requestBinaryRewind.mockResolvedValue(
+      createBuild({
+        id: "bin_branch",
+        status: "completed",
+        phase: "completed",
+        progress: 100,
+        checkpointId: "chk_123",
+        checkpoints: [createCheckpointSummary()],
+      })
+    );
+
+    await provider.rewindBinaryBuild("chk_123");
+
+    requestBinaryExecute.mockResolvedValue(
+      createBuild({
+        id: "bin_branch",
+        status: "completed",
+        phase: "completed",
+        progress: 100,
+        execution: createExecutionState({
+          lastRun: {
+            id: "exec_123",
+            entryPoint: "health",
+            args: [],
+            status: "completed",
+            outputJson: { ok: true },
+            logs: ["health ok"],
+            startedAt: new Date().toISOString(),
+            completedAt: new Date().toISOString(),
+          },
+        }),
+      })
+    );
+
+    await provider.executeBinaryBuild("health");
+
+    expect(requestBinaryRefine).toHaveBeenCalledWith({
+      auth: { apiKey: "test-key" },
+      buildId: "bin_actions",
+      intent: "Add retry logic",
+    });
+    expect(requestBinaryBranch).toHaveBeenCalledWith({
+      auth: { apiKey: "test-key" },
+      buildId: "bin_actions",
+      checkpointId: "chk_123",
+      intent: "Try a branch",
+    });
+    expect(requestBinaryRewind).toHaveBeenCalledWith({
+      auth: { apiKey: "test-key" },
+      buildId: "bin_branch",
+      checkpointId: "chk_123",
+    });
+    expect(requestBinaryExecute).toHaveBeenCalledWith({
+      auth: { apiKey: "test-key" },
+      buildId: "bin_branch",
+      entryPoint: "health",
+    });
+    expect(provider.state.binary.activeBuild?.execution?.lastRun?.entryPoint).toBe("health");
+  });
+
   it("opens the Binary IDE settings surface from configure", async () => {
     const { provider } = createProvider();
     showQuickPick.mockResolvedValueOnce({
@@ -857,6 +1136,37 @@ describe("binary provider", () => {
     expect(assistantMessages[0].live?.status).toBe("done");
   });
 
+  it("keeps the streamed body when the final qwen message is only slightly shorter", async () => {
+    const { provider } = createProvider();
+    const streamedBody =
+      "I found the likely issue and the full fix path is ready to ship today for the current workspace.";
+    provider.qwenCodeRuntime.runPrompt.mockImplementationOnce(
+      async ({ onPartial }: { onPartial?: (value: string) => void }) => {
+        onPartial?.(streamedBody);
+        return {
+          sessionId: "qwen_session",
+          assistantText: "I found the likely issue and the full fix path is ready to ship.",
+          permissionDenials: [],
+          usedTools: [],
+          didMutate: false,
+          toolEvents: [],
+        };
+      }
+    );
+
+    await provider.runQwenPrompt({
+      text: "please fix the bug",
+      appendUser: true,
+      searchDepth: "fast",
+    });
+
+    const assistantMessages = provider.state.messages.filter((message: any) => message.role === "assistant");
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].content).toContain(streamedBody);
+    expect(assistantMessages[0].content).not.toBe("I found the likely issue and the full fix path is ready to ship.");
+    expect(assistantMessages[0].live?.status).toBe("done");
+  });
+
   it("shows the live assistant shell before qwen context preview starts", async () => {
     const { provider, contextCollector } = createProvider();
 
@@ -922,6 +1232,51 @@ describe("binary provider", () => {
     expect(provider.state.liveChat).toBeNull();
   });
 
+  it("keeps the richer streamed body when the hosted final answer is shorter", async () => {
+    configurationValues["xpersona.binary"].runtime = "playgroundApi";
+    const { provider } = createProvider();
+    const streamedBody =
+      "Hosted stream answer with the full explanation of the change, why it works, and what the next edit should be.";
+
+    streamJsonEventsMock.mockImplementationOnce(
+      async (
+        _method: string,
+        _url: string,
+        _auth: unknown,
+        _body: unknown,
+        onEvent: (event: string, data: unknown) => Promise<void>
+      ) => {
+        await onEvent("ack", "Assist stream connected.");
+        await onEvent("meta", {
+          sessionId: "sess_hosted",
+          decision: { mode: "auto", reason: "x", confidence: 0.9 },
+          validationPlan: {
+            scope: "targeted",
+            checks: [],
+            touchedFiles: [],
+            reason: "targeted",
+          },
+          targetInference: { confidence: 0.8, source: "unknown" },
+          contextSelection: { files: [], snippets: 0, usedCloudIndex: false },
+          completionStatus: "complete",
+          missingRequirements: [],
+          actions: [],
+          plan: null,
+        });
+        await onEvent("partial", streamedBody);
+        await onEvent("final", "Hosted stream answer.");
+      }
+    );
+
+    await provider.sendPromptWithPlaygroundApi("help me with this file");
+
+    const assistantMessages = provider.state.messages.filter((message: any) => message.role === "assistant");
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].content).toContain(streamedBody);
+    expect(assistantMessages[0].content).not.toBe("Hosted stream answer.");
+    expect(assistantMessages[0].live?.status).toBe("done");
+  });
+
   it("waits for bootstrap before handling the first send prompt", async () => {
     const { provider } = createProvider();
     provider.didBootstrap = false;
@@ -941,7 +1296,7 @@ describe("binary provider", () => {
     });
 
     expect(provider.bootstrap).toHaveBeenCalledTimes(1);
-    expect(provider.sendPrompt).toHaveBeenCalledWith("hello world");
+    expect(provider.sendPrompt).toHaveBeenCalledWith("hello world", "");
     expect(events).toEqual(["bootstrap", "sendPrompt"]);
   });
 

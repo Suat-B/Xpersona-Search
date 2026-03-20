@@ -1,4 +1,5 @@
 import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import type {
   BinaryArtifactMetadata,
   BinaryArtifactState,
@@ -9,14 +10,19 @@ import type {
   BinaryBuildRecord,
   BinaryBuildRequest,
   BinaryBuildStatus,
+  BinaryExecuteRequest,
+  BinaryExecutionState,
+  BinaryGenerationDelta,
   BinaryManifest,
+  BinaryPendingRefinement,
   BinaryPlanPreview,
   BinaryPreviewFile,
   BinaryPublishResult,
+  BinarySourceGraph,
   BinaryTargetEnvironment,
   BinaryValidationReport,
 } from "@/lib/binary/contracts";
-import { runPackageBundleBuild } from "@/lib/binary/build-runner";
+import { computeBinaryExecutionState, executeBinaryEntryPoint } from "@/lib/binary/execution";
 import {
   appendBinaryBuildEvent,
   createBinaryBuildRecord,
@@ -24,10 +30,13 @@ import {
   getBinaryArtifactPath,
   getBinaryBuildRecord,
   getBinaryBuildWorkspaceDir,
+  getBinaryCheckpointSnapshot,
+  listBinaryBuildCheckpoints,
   subscribeBinaryBuildEvents,
   updateBinaryBuildRecord,
   writeBinaryBuildCheckpoint,
 } from "@/lib/binary/store";
+import { runStreamingBinaryBuild, type BinaryStreamingControlAction } from "@/lib/binary/streaming-runner";
 import {
   assertBinaryDownloadSigningReady,
   createBinaryDownloadSignature,
@@ -40,6 +49,7 @@ type ActiveBinaryBuildJob = {
   abortController: AbortController;
   heartbeatTimer: ReturnType<typeof setInterval> | null;
   lastEventAt: number;
+  controlQueue: BinaryStreamingControlAction[];
 };
 
 const activeBuildJobs = new Map<string, ActiveBinaryBuildJob>();
@@ -180,6 +190,23 @@ function buildPreviewWithCheckpoint(
   return checkpoint.preview || current || emptyPreview();
 }
 
+function summarizeCheckpoint(checkpoint: BinaryBuildCheckpoint) {
+  return {
+    id: checkpoint.id,
+    phase: checkpoint.phase,
+    savedAt: checkpoint.savedAt,
+    ...(checkpoint.label ? { label: checkpoint.label } : {}),
+  };
+}
+
+function queueBinaryControlAction(buildId: string, action: BinaryStreamingControlAction): boolean {
+  const active = activeBuildJobs.get(buildId);
+  if (!active) return false;
+  active.controlQueue.push(action);
+  active.lastEventAt = Date.now();
+  return true;
+}
+
 async function emitBuildEvent<T extends BinaryBuildEvent["type"]>(input: {
   buildId: string;
   type: T;
@@ -230,6 +257,14 @@ async function emitPlanUpdate(buildId: string, plan: BinaryPlanPreview): Promise
   });
 }
 
+async function emitGenerationDelta(buildId: string, delta: BinaryGenerationDelta): Promise<void> {
+  await emitBuildEvent({
+    buildId,
+    type: "generation.delta",
+    data: { delta },
+  });
+}
+
 async function emitFileUpdate(buildId: string, file: BinaryPreviewFile): Promise<void> {
   const record = await getBinaryBuildRecord(buildId);
   await updateBinaryBuildRecord(buildId, {
@@ -274,6 +309,28 @@ async function emitReliabilityDelta(
   });
 }
 
+async function emitGraphUpdated(buildId: string, sourceGraph: BinarySourceGraph): Promise<void> {
+  await updateBinaryBuildRecord(buildId, {
+    sourceGraph,
+  });
+  await emitBuildEvent({
+    buildId,
+    type: "graph.updated",
+    data: { sourceGraph },
+  });
+}
+
+async function emitExecutionUpdated(buildId: string, execution: BinaryExecutionState): Promise<void> {
+  await updateBinaryBuildRecord(buildId, {
+    execution,
+  });
+  await emitBuildEvent({
+    buildId,
+    type: "execution.updated",
+    data: { execution },
+  });
+}
+
 async function emitArtifactDelta(buildId: string, artifactState: BinaryArtifactState): Promise<void> {
   await updateBinaryBuildRecord(buildId, {
     artifactState,
@@ -290,13 +347,39 @@ async function emitArtifactDelta(buildId: string, artifactState: BinaryArtifactS
 async function emitCheckpoint(buildId: string, checkpoint: BinaryBuildCheckpoint): Promise<void> {
   await writeBinaryBuildCheckpoint(checkpoint);
   const record = await getBinaryBuildRecord(buildId);
+  const nextCheckpoints = [
+    summarizeCheckpoint(checkpoint),
+    ...((record?.checkpoints || []).filter((item) => item.id !== checkpoint.id)),
+  ].slice(0, 200);
   await updateBinaryBuildRecord(buildId, {
     preview: buildPreviewWithCheckpoint(record?.preview, checkpoint),
+    sourceGraph: checkpoint.sourceGraph || record?.sourceGraph || null,
+    execution: checkpoint.execution || record?.execution || null,
+    checkpointId: checkpoint.id,
+    checkpoints: nextCheckpoints,
   });
   await emitBuildEvent({
     buildId,
     type: "checkpoint.saved",
     data: { checkpoint },
+  });
+}
+
+async function emitInterruptAccepted(
+  buildId: string,
+  input: {
+    action: "cancel" | "refine";
+    message?: string;
+    pendingRefinement?: BinaryPendingRefinement | null;
+  }
+): Promise<void> {
+  await updateBinaryBuildRecord(buildId, {
+    pendingRefinement: input.pendingRefinement || null,
+  });
+  await emitBuildEvent({
+    buildId,
+    type: "interrupt.accepted",
+    data: input,
   });
 }
 
@@ -345,6 +428,29 @@ async function emitTerminalEvent(build: BinaryBuildRecord): Promise<void> {
   });
 }
 
+async function emitBranchCreated(buildId: string, input: {
+  sourceBuildId: string;
+  checkpointId?: string;
+  build: BinaryBuildRecord;
+}): Promise<void> {
+  await emitBuildEvent({
+    buildId,
+    type: "branch.created",
+    data: input,
+  });
+}
+
+async function emitRewindCompleted(buildId: string, input: {
+  checkpointId: string;
+  build: BinaryBuildRecord;
+}): Promise<void> {
+  await emitBuildEvent({
+    buildId,
+    type: "rewind.completed",
+    data: input,
+  });
+}
+
 function stopHeartbeat(buildId: string): void {
   const active = activeBuildJobs.get(buildId);
   if (!active?.heartbeatTimer) return;
@@ -380,11 +486,13 @@ async function finalizeQueuedBinaryBuild(input: {
   userId: string;
   buildId: string;
   request: BinaryBuildRequest;
-  runId: string;
+  runId?: string | null;
+  initialFiles?: Record<string, string>;
 }): Promise<void> {
-  const result = await runPackageBundleBuild({
+  const result = await runStreamingBinaryBuild({
     buildId: input.buildId,
     request: input.request,
+    initialFiles: input.initialFiles,
     hooks: {
       signal: activeBuildJobs.get(input.buildId)?.abortController.signal,
       onPhaseChange: async ({ status, phase, progress, message }) => {
@@ -392,6 +500,9 @@ async function finalizeQueuedBinaryBuild(input: {
       },
       onPlanUpdated: async (plan) => {
         await emitPlanUpdate(input.buildId, plan);
+      },
+      onGenerationDelta: async (delta) => {
+        await emitGenerationDelta(input.buildId, delta);
       },
       onFileUpdated: async (file) => {
         await emitFileUpdate(input.buildId, file);
@@ -402,6 +513,12 @@ async function finalizeQueuedBinaryBuild(input: {
       onReliability: async ({ kind, report }) => {
         await emitReliabilityDelta(input.buildId, { kind, report });
       },
+      onSourceGraph: async (sourceGraph) => {
+        await emitGraphUpdated(input.buildId, sourceGraph);
+      },
+      onExecution: async (execution) => {
+        await emitExecutionUpdated(input.buildId, execution);
+      },
       onArtifactState: async (artifactState) => {
         await emitArtifactDelta(input.buildId, artifactState);
       },
@@ -410,6 +527,13 @@ async function finalizeQueuedBinaryBuild(input: {
       },
       onArtifactReady: async ({ artifact, manifest }) => {
         await emitArtifactReady(input.buildId, { artifact, manifest });
+      },
+      onInterruptAccepted: async (interrupt) => {
+        await emitInterruptAccepted(input.buildId, interrupt);
+      },
+      pullControlAction: async () => {
+        const active = activeBuildJobs.get(input.buildId);
+        return active?.controlQueue.shift() || null;
       },
     },
   });
@@ -424,37 +548,48 @@ async function finalizeQueuedBinaryBuild(input: {
     manifest: result.manifest,
     reliability: result.reliability,
     artifactState: result.artifactState,
+    sourceGraph: result.sourceGraph,
+    execution: result.execution,
+    checkpointId: result.checkpointId,
+    checkpoints: result.checkpoints.map((checkpoint) => summarizeCheckpoint(checkpoint)),
     artifact: result.artifact,
     errorMessage: result.errorMessage,
     cancelable: false,
+    pendingRefinement: null,
+    preview: result.preview,
   });
 
   if (!finalRecord) return;
 
   await emitTerminalEvent(finalRecord);
-  await updateAgentRun({
-    userId: input.userId,
-    runId: input.runId,
-    status:
-      finalRecord.status === "completed"
-        ? "completed"
-        : "failed",
+  if (input.runId) {
+    await updateAgentRun({
+      userId: input.userId,
+      runId: input.runId,
+      status:
+        finalRecord.status === "completed"
+          ? "completed"
+          : "failed",
       output: {
         workflow: "binary_generate",
         artifactBuildId: input.buildId,
         manifest: finalRecord.manifest,
         reliability: finalRecord.reliability,
-      artifact: finalRecord.artifact,
-    },
-    errorMessage: finalRecord.errorMessage,
-    confidence:
-      finalRecord.status === "canceled"
-        ? 0.2
-        : finalRecord.reliability?.score
-          ? finalRecord.reliability.score / 100
-          : 0.5,
-    riskLevel: riskLevelFromReliability(finalRecord.reliability),
-  }).catch(() => null);
+        artifact: finalRecord.artifact,
+        sourceGraph: finalRecord.sourceGraph,
+        execution: finalRecord.execution,
+        checkpointId: finalRecord.checkpointId,
+      },
+      errorMessage: finalRecord.errorMessage,
+      confidence:
+        finalRecord.status === "canceled"
+          ? 0.2
+          : finalRecord.reliability?.score
+            ? finalRecord.reliability.score / 100
+            : 0.5,
+      riskLevel: riskLevelFromReliability(finalRecord.reliability),
+    }).catch(() => null);
+  }
 
   await maybeAppendSessionMessage({
     userId: input.userId,
@@ -472,12 +607,14 @@ function startQueuedBinaryBuild(input: {
   userId: string;
   buildId: string;
   request: BinaryBuildRequest;
-  runId: string;
+  runId?: string | null;
+  initialFiles?: Record<string, string>;
 }): void {
   const active: ActiveBinaryBuildJob = {
     abortController: new AbortController(),
     heartbeatTimer: null,
     lastEventAt: Date.now(),
+    controlQueue: [],
     promise: Promise.resolve(),
   };
   activeBuildJobs.set(input.buildId, active);
@@ -495,18 +632,20 @@ function startQueuedBinaryBuild(input: {
         errorMessage: message,
         cancelable: false,
       });
-      await updateAgentRun({
-        userId: input.userId,
-        runId: input.runId,
-        status: "failed",
-        output: {
-          workflow: "binary_generate",
-          artifactBuildId: input.buildId,
-        },
-        errorMessage: message,
-        confidence: 0.1,
-        riskLevel: "high",
-      }).catch(() => null);
+      if (input.runId) {
+        await updateAgentRun({
+          userId: input.userId,
+          runId: input.runId,
+          status: "failed",
+          output: {
+            workflow: "binary_generate",
+            artifactBuildId: input.buildId,
+          },
+          errorMessage: message,
+          confidence: 0.1,
+          riskLevel: "high",
+        }).catch(() => null);
+      }
       if (updated) {
         await emitTerminalEvent(updated).catch(() => null);
         await maybeAppendSessionMessage({
@@ -582,6 +721,12 @@ export async function createBinaryBuild(input: {
     cancelable: true,
     manifest: null,
     reliability: null,
+    sourceGraph: null,
+    execution: null,
+    checkpointId: null,
+    checkpoints: [],
+    parentBuildId: null,
+    pendingRefinement: null,
     artifact: null,
     artifactState: null,
     publish: null,
@@ -631,18 +776,247 @@ export async function cancelBinaryBuild(input: {
   const record = await getBinaryBuildForUser({ userId: input.userId, buildId: input.buildId });
   if (!record) return null;
   if (record.status === "completed" || record.status === "failed" || record.status === "canceled") {
-    return record;
+    return null;
   }
 
   const active = activeBuildJobs.get(input.buildId);
   if (active && !active.abortController.signal.aborted) {
     active.abortController.abort();
+    queueBinaryControlAction(input.buildId, { action: "cancel" });
+    await emitInterruptAccepted(input.buildId, {
+      action: "cancel",
+      message: "Cancellation requested.",
+      pendingRefinement: null,
+    }).catch(() => null);
     await emitLogChunk(input.buildId, {
       stream: "system",
       chunk: "Cancellation requested.",
     }).catch(() => null);
   }
 
+  return getBinaryBuildForUser({ userId: input.userId, buildId: input.buildId });
+}
+
+export async function refineBinaryBuild(input: {
+  userId: string;
+  buildId: string;
+  intent: string;
+}): Promise<BinaryBuildRecord | null> {
+  const record = await getBinaryBuildForUser({ userId: input.userId, buildId: input.buildId });
+  if (!record) return null;
+  if (!isBinaryBuildActive(input.buildId) || (record.status !== "queued" && record.status !== "running")) {
+    return null;
+  }
+
+  const pendingRefinement: BinaryPendingRefinement = {
+    intent: input.intent,
+    requestedAt: nowIso(),
+  };
+  const queued = queueBinaryControlAction(input.buildId, {
+    action: "refine",
+    intent: input.intent,
+  });
+  if (!queued) return null;
+
+  await emitInterruptAccepted(input.buildId, {
+    action: "refine",
+    message: "Queued refinement for the active streaming build.",
+    pendingRefinement,
+  }).catch(() => null);
+  await emitLogChunk(input.buildId, {
+    stream: "system",
+    chunk: `Refinement queued: ${input.intent}`,
+  }).catch(() => null);
+
+  return getBinaryBuildForUser({ userId: input.userId, buildId: input.buildId });
+}
+
+export async function branchBinaryBuild(input: {
+  userId: string;
+  buildId: string;
+  checkpointId?: string;
+  intent?: string;
+}): Promise<BinaryBuildRecord | null> {
+  const source = await getBinaryBuildForUser({ userId: input.userId, buildId: input.buildId });
+  if (!source) return null;
+
+  const targetCheckpointId =
+    String(input.checkpointId || "").trim() ||
+    String(source.checkpointId || "").trim() ||
+    String(source.checkpoints?.[0]?.id || "").trim();
+  if (!targetCheckpointId) return null;
+
+  const snapshot = await getBinaryCheckpointSnapshot(source.id, targetCheckpointId);
+  if (!snapshot) return null;
+
+  const newBuildId = createBuildId();
+  const createdAt = nowIso();
+  const logs = mergeLogs(source.logs, [`Branched from ${source.id} at checkpoint ${targetCheckpointId}.`]);
+  const initial: BinaryBuildRecord = {
+    ...source,
+    id: newBuildId,
+    runId: null,
+    workflow: "binary_generate",
+    status: input.intent ? "queued" : "completed",
+    phase: input.intent ? "queued" : "completed",
+    progress: input.intent ? 0 : 100,
+    logs,
+    stream: {
+      enabled: isBinaryStreamingEnabled(),
+      transport: "sse",
+      ...buildStreamPaths(newBuildId),
+      lastEventId: null,
+    },
+    preview: snapshot.preview || source.preview || emptyPreview(),
+    cancelable: Boolean(input.intent),
+    manifest: snapshot.manifest || source.manifest || null,
+    reliability: snapshot.reliability || source.reliability || null,
+    sourceGraph: snapshot.sourceGraph || source.sourceGraph || null,
+    execution: snapshot.execution || source.execution || null,
+    artifactState: snapshot.artifactState || source.artifactState || null,
+    checkpointId: targetCheckpointId,
+    checkpoints:
+      source.checkpoints?.filter((checkpoint) => checkpoint.id === targetCheckpointId).length
+        ? source.checkpoints.filter((checkpoint) => checkpoint.id === targetCheckpointId)
+        : source.checkpoints || [],
+    parentBuildId: source.id,
+    pendingRefinement: input.intent
+      ? {
+          intent: input.intent,
+          requestedAt: createdAt,
+        }
+      : null,
+    artifact: null,
+    publish: null,
+    errorMessage: null,
+    createdAt,
+    updatedAt: createdAt,
+  };
+
+  await createBinaryBuildRecord(initial);
+  await fs.rm(getBinaryBuildWorkspaceDir(newBuildId), { recursive: true, force: true }).catch(() => null);
+  await fs.mkdir(getBinaryBuildWorkspaceDir(newBuildId), { recursive: true });
+  for (const [relativePath, content] of Object.entries(snapshot.draftFiles)) {
+    const absolutePath = path.join(getBinaryBuildWorkspaceDir(newBuildId), relativePath);
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true }).catch(() => null);
+    await fs.writeFile(absolutePath, content, "utf8");
+  }
+
+  await emitBuildEvent({
+    buildId: newBuildId,
+    type: "build.created",
+    data: { build: initial },
+  });
+  await emitBranchCreated(newBuildId, {
+    sourceBuildId: source.id,
+    checkpointId: targetCheckpointId,
+    build: initial,
+  });
+
+  if (input.intent) {
+    startQueuedBinaryBuild({
+      userId: input.userId,
+      buildId: newBuildId,
+      request: {
+        intent: `${source.intent}\n\nBranch refinement:\n${input.intent}`.trim(),
+        workspaceFingerprint: source.workspaceFingerprint,
+        historySessionId: source.historySessionId || undefined,
+        targetEnvironment: source.targetEnvironment,
+      },
+      initialFiles: snapshot.draftFiles,
+    });
+  }
+
+  return getBinaryBuildForUser({ userId: input.userId, buildId: newBuildId });
+}
+
+export async function rewindBinaryBuild(input: {
+  userId: string;
+  buildId: string;
+  checkpointId: string;
+}): Promise<BinaryBuildRecord | null> {
+  const record = await getBinaryBuildForUser({ userId: input.userId, buildId: input.buildId });
+  if (!record) return null;
+  if (isBinaryBuildActive(input.buildId)) return null;
+
+  const snapshot = await getBinaryCheckpointSnapshot(record.id, input.checkpointId);
+  if (!snapshot) return null;
+
+  const workspaceDir = getBinaryBuildWorkspaceDir(record.id);
+  await fs.rm(workspaceDir, { recursive: true, force: true }).catch(() => null);
+  await fs.mkdir(workspaceDir, { recursive: true });
+  for (const [relativePath, content] of Object.entries(snapshot.draftFiles)) {
+    const absolutePath = path.join(workspaceDir, relativePath);
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true }).catch(() => null);
+    await fs.writeFile(absolutePath, content, "utf8");
+  }
+  if (snapshot.manifest) {
+    await fs.writeFile(
+      path.join(workspaceDir, "binary.manifest.json"),
+      JSON.stringify(snapshot.manifest, null, 2),
+      "utf8"
+    ).catch(() => null);
+  }
+
+  const checkpoints = (await listBinaryBuildCheckpoints(record.id)).map((checkpoint) => summarizeCheckpoint(checkpoint));
+  const updated = await updateBinaryBuildRecord(record.id, {
+    status: "completed",
+    phase: "completed",
+    progress: 100,
+    preview: snapshot.preview || emptyPreview(),
+    manifest: snapshot.manifest || null,
+    reliability: snapshot.reliability || null,
+    sourceGraph: snapshot.sourceGraph || null,
+    execution: snapshot.execution || null,
+    artifactState: snapshot.artifactState || null,
+    checkpointId: input.checkpointId,
+    checkpoints,
+    artifact: null,
+    publish: null,
+    pendingRefinement: null,
+    logs: mergeLogs(record.logs, [`Rewound build to checkpoint ${input.checkpointId}.`]),
+    cancelable: false,
+    errorMessage: null,
+  });
+  if (updated) {
+    await emitRewindCompleted(record.id, {
+      checkpointId: input.checkpointId,
+      build: updated,
+    }).catch(() => null);
+  }
+  return updated;
+}
+
+export async function executeBinaryBuild(input: {
+  userId: string;
+  buildId: string;
+  request: BinaryExecuteRequest;
+}): Promise<BinaryBuildRecord | null> {
+  const record = await getBinaryBuildForUser({ userId: input.userId, buildId: input.buildId });
+  if (!record) return null;
+
+  const checkpointId =
+    String(record.checkpointId || "").trim() ||
+    String(record.checkpoints?.[0]?.id || "").trim();
+  if (!checkpointId) return null;
+
+  const snapshot = await getBinaryCheckpointSnapshot(record.id, checkpointId);
+  if (!snapshot) return null;
+
+  const execution =
+    record.execution ||
+    snapshot.execution ||
+    (await computeBinaryExecutionState({
+      draftFiles: snapshot.draftFiles,
+      sourceGraph: snapshot.sourceGraph,
+    }));
+  const { execution: nextExecution } = await executeBinaryEntryPoint({
+    execution,
+    draftFiles: snapshot.draftFiles,
+    entryPoint: input.request.entryPoint,
+    args: input.request.args,
+  });
+  await emitExecutionUpdated(record.id, nextExecution).catch(() => null);
   return getBinaryBuildForUser({ userId: input.userId, buildId: input.buildId });
 }
 
@@ -669,6 +1043,8 @@ export async function validateBinaryBuild(input: {
     targetEnvironment,
     buildSucceeded: record.status === "completed",
     stage: "full",
+    sourceGraph: record.sourceGraph,
+    execution: record.execution,
   });
 
   const run = await createAgentRun({

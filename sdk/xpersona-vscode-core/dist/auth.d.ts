@@ -1,0 +1,41 @@
+import * as vscode from "vscode";
+import type { HostedAuthState, RequestAuth } from "./types";
+export type HostedAuthManagerOptions = {
+    context: vscode.ExtensionContext;
+    getBaseApiUrl: () => string;
+    extensionUriAuthority: string;
+    apiKeySecret: string;
+    legacyApiKeySecrets?: string[];
+    refreshTokenSecret: string;
+    pendingPkceKey: string;
+    productLabel: string;
+    apiKeyTitle: string;
+    apiKeyPrompt: string;
+    apiKeySavedMessage: string;
+    apiKeyClearedMessage: string;
+    signInOpenedMessage: string;
+    signInCompletedMessage: string;
+    signOutMessage: string;
+};
+export declare class HostedAuthManager implements vscode.UriHandler {
+    private readonly options;
+    private accessToken;
+    private accessTokenExpiresAt;
+    private signedInEmail;
+    private readonly onDidChangeEmitter;
+    readonly onDidChange: vscode.Event<HostedAuthState>;
+    constructor(options: HostedAuthManagerOptions);
+    getAuthState(): Promise<HostedAuthState>;
+    getRequestAuth(): Promise<RequestAuth | null>;
+    getApiKey(): Promise<string | null>;
+    setApiKeyInteractive(): Promise<void>;
+    signInWithBrowser(): Promise<void>;
+    handleUri(uri: vscode.Uri): vscode.ProviderResult<void>;
+    signOut(): Promise<void>;
+    private completeBrowserSignIn;
+    private getStoredApiKey;
+    private acceptTokenResponse;
+    private getBrowserAccessToken;
+    private resolveSignedInEmail;
+    private emitCurrentState;
+}

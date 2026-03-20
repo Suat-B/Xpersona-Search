@@ -1,6 +1,17 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { BinaryBuildCheckpoint, BinaryBuildEvent, BinaryBuildRecord } from "@/lib/binary/contracts";
+import type {
+  BinaryArtifactState,
+  BinaryBuildCheckpoint,
+  BinaryBuildEvent,
+  BinaryBuildPreview,
+  BinaryBuildRecord,
+  BinaryExecutionState,
+  BinaryManifest,
+  BinaryPlanPreview,
+  BinarySourceGraph,
+  BinaryValidationReport,
+} from "@/lib/binary/contracts";
 
 const ROOT_DIR = path.join(process.cwd(), "artifacts", "binary-builds");
 const memory = new Map<string, BinaryBuildRecord>();
@@ -21,6 +32,32 @@ function eventsPath(buildId: string): string {
 function checkpointPath(buildId: string): string {
   return path.join(buildDir(buildId), "checkpoint.json");
 }
+
+function checkpointsLogPath(buildId: string): string {
+  return path.join(buildDir(buildId), "checkpoints.ndjson");
+}
+
+function checkpointsDir(buildId: string): string {
+  return path.join(buildDir(buildId), "checkpoints");
+}
+
+function checkpointSnapshotPath(buildId: string, checkpointId: string): string {
+  return path.join(checkpointsDir(buildId), `${checkpointId}.snapshot.json`);
+}
+
+export type BinaryCheckpointSnapshot = {
+  buildId: string;
+  checkpointId: string;
+  savedAt: string;
+  draftFiles: Record<string, string>;
+  plan: BinaryPlanPreview | null;
+  preview: BinaryBuildPreview | null;
+  manifest: BinaryManifest | null;
+  reliability: BinaryValidationReport | null;
+  artifactState: BinaryArtifactState | null;
+  sourceGraph: BinarySourceGraph | null;
+  execution: BinaryExecutionState | null;
+};
 
 export function getBinaryArtifactsRootDir(): string {
   return ROOT_DIR;
@@ -44,6 +81,10 @@ export function getBinaryBuildEventsPath(buildId: string): string {
 
 export function getBinaryBuildCheckpointPath(buildId: string): string {
   return checkpointPath(buildId);
+}
+
+export function getBinaryBuildCheckpointsDir(buildId: string): string {
+  return checkpointsDir(buildId);
 }
 
 async function ensureDirectory(dir: string): Promise<void> {
@@ -144,12 +185,47 @@ export async function writeBinaryBuildCheckpoint(checkpoint: BinaryBuildCheckpoi
   const dir = buildDir(checkpoint.buildId);
   await ensureDirectory(dir);
   await fs.writeFile(checkpointPath(checkpoint.buildId), JSON.stringify(checkpoint, null, 2), "utf8");
+  await fs.appendFile(checkpointsLogPath(checkpoint.buildId), `${JSON.stringify(checkpoint)}\n`, "utf8");
 }
 
 export async function getBinaryBuildCheckpoint(buildId: string): Promise<BinaryBuildCheckpoint | null> {
   try {
     const raw = await fs.readFile(checkpointPath(buildId), "utf8");
     return JSON.parse(raw) as BinaryBuildCheckpoint;
+  } catch {
+    return null;
+  }
+}
+
+export async function listBinaryBuildCheckpoints(buildId: string): Promise<BinaryBuildCheckpoint[]> {
+  try {
+    const raw = await fs.readFile(checkpointsLogPath(buildId), "utf8");
+    return raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as BinaryBuildCheckpoint);
+  } catch {
+    return [];
+  }
+}
+
+export async function writeBinaryCheckpointSnapshot(snapshot: BinaryCheckpointSnapshot): Promise<void> {
+  await ensureDirectory(checkpointsDir(snapshot.buildId));
+  await fs.writeFile(
+    checkpointSnapshotPath(snapshot.buildId, snapshot.checkpointId),
+    JSON.stringify(snapshot, null, 2),
+    "utf8"
+  );
+}
+
+export async function getBinaryCheckpointSnapshot(
+  buildId: string,
+  checkpointId: string
+): Promise<BinaryCheckpointSnapshot | null> {
+  try {
+    const raw = await fs.readFile(checkpointSnapshotPath(buildId, checkpointId), "utf8");
+    return JSON.parse(raw) as BinaryCheckpointSnapshot;
   } catch {
     return null;
   }

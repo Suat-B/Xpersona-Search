@@ -54,8 +54,18 @@ describe("playground webview shell", () => {
     expect(html).toContain('id="binaryLogPreviewCard"');
     expect(html).toContain('data-action="generateBinary"');
     expect(html).toContain('data-action="cancelBinary"');
+    expect(html).toContain('data-action="refineBinary"');
+    expect(html).toContain('data-action="branchBinary"');
+    expect(html).toContain('data-action="rewindBinary"');
+    expect(html).toContain('data-action="executeBinary"');
     expect(html).toContain('data-action="validateBinary"');
     expect(html).toContain('data-action="deployBinary"');
+    expect(html).toContain('id="binaryGraphSummary"');
+    expect(html).toContain('id="binaryExecutionSummary"');
+    expect(html).toContain('id="binaryCheckpointSelect"');
+    expect(html).toContain('id="binaryCheckpointSummary"');
+    expect(html).toContain('id="binaryEntryPointSelect"');
+    expect(html).toContain('id="binaryEntryPointSummary"');
     expect(html).toContain('class="composer-card"');
     expect(html).toContain('id="composer"');
     expect(html).toContain('id="composerConfirm"');
@@ -83,7 +93,7 @@ describe("playground webview shell", () => {
     expect(html).toContain(".utility-rail{display:flex;align-items:center;justify-content:space-between");
     expect(html).toContain(".workspace-header-title{min-width:0;max-width:none;flex:1 1 auto");
     expect(html).toContain(".workspace-header-actions{display:flex;align-items:center;justify-content:flex-end");
-    expect(html).toContain(".composer-dock{flex:none;overflow:visible;padding:10px 20px 16px");
+    expect(html).toContain(".composer-dock{flex:0 0 auto;min-height:110px;min-width:0;overflow:visible;padding:12px 20px 12px;background:var(--widget-surface)}");
     expect(html).toContain(".chat-binary-spotlight-host{position:sticky;top:0;z-index:8");
     expect(html).toContain(".chat-binary-spotlight{display:grid;grid-template-columns:minmax(0,1.18fr) minmax(220px,.82fr);gap:16px");
     expect(html).toContain(".chat-binary-kicker{display:inline-flex;align-items:center;gap:8px");
@@ -91,7 +101,7 @@ describe("playground webview shell", () => {
     expect(html).toContain(".message.live-binary{padding:0 0 16px}");
     expect(html).toContain(".live-message-shell{display:flex;flex-direction:column;gap:14px;padding:16px 18px 17px");
     expect(html).toContain(".live-message-shell.compact{gap:10px;padding:11px 14px 12px");
-    expect(html).toContain(".live-message-settled-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}");
+    expect(html).toContain(".live-message-settled-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;opacity:1;transform:none}");
     expect(html).toContain(".live-message-transcript{margin-top:10px;overflow:visible;padding:10px 12px");
     expect(html).toContain(".message.live-binary.settled .message-body{margin-top:10px}");
     expect(html).toContain(".live-message-main{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,240px);gap:16px");
@@ -101,7 +111,7 @@ describe("playground webview shell", () => {
     expect(html).toContain('.workspace-shell[data-binary-hero="true"] .message.live-binary.hero-collapsed .live-message-transcript{overflow:visible}');
     expect(html).toContain('.binary-hero-line{display:block;font-family:var(--vscode-editor-font-family');
     expect(html).toContain('.binary-hero-line.prism{background:linear-gradient(92deg,#7ee7ff 0%,#8cf7b0 35%,#ffd27e 70%,#f7a4ff 100%)');
-    expect(html).toContain(".binary-panel-body{order:3;display:flex;flex-direction:column;gap:0;min-height:0");
+    expect(html).toContain(".binary-panel-body{position:absolute;bottom:100%;left:0;right:0;margin-bottom:8px;z-index:12;display:flex;flex-direction:column;gap:0;min-height:0");
     expect(html).toContain(".binary-build-visual{display:none;grid-template-columns:minmax(0,1fr) minmax(170px,240px);align-items:stretch;gap:14px");
     expect(html).toContain(".binary-build-stream,.live-message-stream{position:relative;width:100%;max-width:100%;min-height:94px");
     expect(html).toContain(".binary-build-stream-track{display:flex;flex-direction:column;gap:5px;min-height:max-content;animation:binaryCascade 8.8s linear infinite");
