@@ -45,7 +45,71 @@ const cutie_runtime_1 = require("./cutie-runtime");
 const cutie_session_store_1 = require("./cutie-session-store");
 const cutie_tool_registry_1 = require("./cutie-tool-registry");
 const cutie_workspace_adapter_1 = require("./cutie-workspace-adapter");
+const cutie_diff_1 = require("./cutie-diff");
 const webview_html_1 = require("./webview-html");
+function goalLabel(goal) {
+    switch (goal) {
+        case "code_change":
+            return "Editing file";
+        case "workspace_investigation":
+            return "Inspecting workspace";
+        case "desktop_action":
+            return "Desktop action";
+        case "conversation":
+        default:
+            return "Conversation";
+    }
+}
+function phaseLabel(run) {
+    if (run.phase === "needs_guidance")
+        return "Need guidance";
+    if (run.phase === "repairing")
+        return "Repairing action plan";
+    if (run.phase === "collecting_context")
+        return "Inspecting target context";
+    if (run.phase === "planning") {
+        if (run.goal === "code_change" && run.stepCount > 0)
+            return "Preparing concrete edit";
+        return "Planning next step";
+    }
+    if (run.phase === "executing_tool")
+        return "Executing tool";
+    if (run.phase === "completed")
+        return "Completed";
+    if (run.phase === "failed")
+        return "Failed";
+    if (run.phase === "canceled")
+        return "Canceled";
+    return "Idle";
+}
+function pursuitLabel(run) {
+    if (run.goal === "code_change") {
+        return run.goalSatisfied ? "Real file change achieved" : "Still working toward a file change";
+    }
+    if (run.goal === "desktop_action") {
+        return run.goalSatisfied ? "Desktop action completed" : "Still working toward a desktop action";
+    }
+    if (run.goal === "workspace_investigation") {
+        return run.goalSatisfied ? "Investigation progressed" : "Still gathering the answer";
+    }
+    return "Handling the conversation";
+}
+function buildProgressViewModel(run) {
+    if (!run)
+        return null;
+    return {
+        goal: run.goal,
+        goalLabel: goalLabel(run.goal),
+        phaseLabel: phaseLabel(run),
+        pursuingLabel: pursuitLabel(run),
+        ...(run.lastMeaningfulProgressSummary ? { lastMeaningfulProgressSummary: run.lastMeaningfulProgressSummary } : {}),
+        ...(run.repairAttemptCount > 0 ? { repairLabel: `Repair stage ${run.repairAttemptCount}` } : {}),
+        ...(run.stuckReason ? { escalationMessage: run.stuckReason } : {}),
+        ...(run.suggestedNextAction ? { suggestedNextAction: run.suggestedNextAction } : {}),
+        goalSatisfied: run.goalSatisfied,
+        escalationState: run.escalationState,
+    };
+}
 function buildDefaultDesktopState() {
     return {
         platform: process.platform,
@@ -122,6 +186,16 @@ function scoreFilePath(relativePath, query, options) {
     score -= Math.min(relativePath.length, 120) / 200;
     return score;
 }
+/** Primary line = basename only; secondary line = badge (e.g. Active file) + parent folder path. */
+function mentionDisplayForWorkspaceFile(relativePath, badge) {
+    const norm = relativePath.replace(/\\/g, "/").trim();
+    const base = path.posix.basename(norm) || norm;
+    const dirRaw = path.posix.dirname(norm);
+    const folder = dirRaw && dirRaw !== "." && dirRaw !== "/" ? dirRaw.replace(/\/+$/, "") : "";
+    const parts = [badge, folder].map((s) => String(s || "").trim()).filter(Boolean);
+    const detail = parts.length ? parts.join(" · ") : undefined;
+    return { label: base, ...(detail ? { detail } : {}) };
+}
 function scoreWindow(windowValue, query, isActive) {
     const title = String(windowValue.title || "").toLowerCase();
     const app = String(windowValue.app || "").toLowerCase();
@@ -151,6 +225,10 @@ class CutieSidebarProvider {
             kind: "none",
             label: "Not signed in",
         };
+        /** Cached workspace paths for @ file lookup (avoid findFiles on every keystroke). */
+        this.workspaceMentionPaths = null;
+        this.workspaceMentionPathsFetchedAt = 0;
+        this.workspaceMentionIndexPromise = null;
         this.desktop = new cutie_desktop_adapter_1.CutieDesktopAdapter();
         this.modelClient = new cutie_model_client_1.CutieModelClient();
         this.sessionStore = new cutie_session_store_1.CutieSessionStore(context);
@@ -161,6 +239,51 @@ class CutieSidebarProvider {
                 void this.emitState();
             });
         });
+        this.context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => {
+            this.invalidateWorkspaceMentionIndex();
+        }));
+    }
+    invalidateWorkspaceMentionIndex() {
+        this.workspaceMentionPaths = null;
+        this.workspaceMentionPathsFetchedAt = 0;
+        this.workspaceMentionIndexPromise = null;
+    }
+    async ensureWorkspaceMentionIndex() {
+        const now = Date.now();
+        if (this.workspaceMentionPaths &&
+            now - this.workspaceMentionPathsFetchedAt < CutieSidebarProvider.WORKSPACE_MENTION_INDEX_TTL_MS) {
+            return this.workspaceMentionPaths;
+        }
+        if (this.workspaceMentionIndexPromise) {
+            return this.workspaceMentionIndexPromise;
+        }
+        this.workspaceMentionIndexPromise = (async () => {
+            if (!(0, config_1.getWorkspaceRootPath)()) {
+                this.workspaceMentionPaths = [];
+                this.workspaceMentionPathsFetchedAt = Date.now();
+                return [];
+            }
+            const exclude = "**/{node_modules,.git,.svn,.hg,dist,build,out,.next,.turbo,target}/**";
+            let uris = [];
+            try {
+                uris = await vscode.workspace.findFiles("**/*", exclude, 2500);
+            }
+            catch {
+                uris = [];
+            }
+            const paths = uris
+                .map((uri) => (0, config_1.toWorkspaceRelativePath)(uri))
+                .filter((p) => typeof p === "string" && p.length > 0 && !isIgnoredWorkspacePath(p));
+            this.workspaceMentionPaths = paths;
+            this.workspaceMentionPathsFetchedAt = Date.now();
+            return paths;
+        })();
+        try {
+            return await this.workspaceMentionIndexPromise;
+        }
+        finally {
+            this.workspaceMentionIndexPromise = null;
+        }
     }
     resolveWebviewView(webviewView) {
         this.view = webviewView;
@@ -242,6 +365,83 @@ class CutieSidebarProvider {
             return this.respondToMentionsQuery(message.query, message.requestId);
         if (message.type === "submitPrompt")
             return this.runPrompt(message.prompt, asMentionArray(message.mentions));
+        if (message.type === "openWorkspaceFile")
+            return this.openWorkspaceRelativePath(message.path, { mode: "editor" });
+        if (message.type === "revealWorkspaceFile")
+            return this.openWorkspaceRelativePath(message.path, { mode: "reveal" });
+        if (message.type === "diffWorkspaceFile")
+            return this.openCutieDiffForPath(message.path);
+    }
+    async openWorkspaceRelativePath(relativePath, options) {
+        const trimmed = String(relativePath || "").trim().replace(/\\/g, "/");
+        if (!trimmed)
+            return;
+        const root = (0, config_1.getWorkspaceRootPath)();
+        if (!root) {
+            void vscode.window.showWarningMessage("Open a workspace folder before opening files from Cutie.");
+            return;
+        }
+        const absolutePath = path.join(root, ...trimmed.split("/").filter(Boolean));
+        const uri = vscode.Uri.file(absolutePath);
+        try {
+            const stat = await vscode.workspace.fs.stat(uri);
+            if (stat.type === vscode.FileType.Directory) {
+                await vscode.commands.executeCommand("revealInExplorer", uri);
+                return;
+            }
+            if (options.mode === "reveal") {
+                await vscode.commands.executeCommand("revealInExplorer", uri);
+                return;
+            }
+            const doc = await vscode.workspace.openTextDocument(uri);
+            await vscode.window.showTextDocument(doc, {
+                preview: false,
+                preserveFocus: options.preserveFocus ?? false,
+            });
+        }
+        catch {
+            void vscode.window.showErrorMessage(`Cutie could not open “${trimmed}”. Check that the path exists in this workspace.`);
+        }
+    }
+    async showCutieDiffEditor(info) {
+        const trimmed = String(info.relativePath || "").trim().replace(/\\/g, "/");
+        if (!trimmed)
+            return;
+        const root = (0, config_1.getWorkspaceRootPath)();
+        if (!root) {
+            void vscode.window.showWarningMessage("Open a workspace folder before viewing a Cutie diff.");
+            return;
+        }
+        const absolutePath = path.join(root, ...trimmed.split("/").filter(Boolean));
+        const rightUri = vscode.Uri.file(absolutePath);
+        try {
+            await vscode.workspace.fs.stat(rightUri);
+        }
+        catch {
+            void vscode.window.showErrorMessage(`Cutie could not diff “${trimmed}” — the file is not on disk.`);
+            return;
+        }
+        (0, cutie_diff_1.rememberMutationBefore)(trimmed, info.previousContent);
+        const leftUri = (0, cutie_diff_1.createCutieBeforeUri)(info.previousContent);
+        const baseName = path.basename(trimmed);
+        const title = info.toolName === "write_file"
+            ? `Cutie · ${baseName} (before ⟡ after)`
+            : `Cutie · ${baseName} (before ⟡ after · edit)`;
+        await vscode.commands.executeCommand("vscode.diff", leftUri, rightUri, title, { preview: false });
+    }
+    /** Reopen diff from the chat card using the last remembered “before” buffer for this path. */
+    async openCutieDiffForPath(relativePath) {
+        const trimmed = String(relativePath || "").trim().replace(/\\/g, "/");
+        const previous = (0, cutie_diff_1.takeLastMutationBefore)(trimmed);
+        if (previous === undefined) {
+            void vscode.window.showWarningMessage("No Cutie “before” snapshot is cached for that file anymore. Run Cutie again on this file, or use Source Control.");
+            return;
+        }
+        await this.showCutieDiffEditor({
+            relativePath: trimmed,
+            toolName: "write_file",
+            previousContent: previous,
+        });
     }
     async requireAuth() {
         const auth = await this.auth.getRequestAuth();
@@ -379,17 +579,8 @@ class CutieSidebarProvider {
                 pushFile(relativePath, "Open file");
             }
             if (fileQuery) {
-                let workspaceFiles = [];
-                try {
-                    workspaceFiles = await vscode.workspace.findFiles("**/*", undefined, 700);
-                }
-                catch {
-                    workspaceFiles = [];
-                }
-                for (const uri of workspaceFiles) {
-                    const relativePath = (0, config_1.toWorkspaceRelativePath)(uri);
-                    if (!relativePath)
-                        continue;
+                const indexedPaths = await this.ensureWorkspaceMentionIndex();
+                for (const relativePath of indexedPaths) {
                     pushFile(relativePath);
                 }
             }
@@ -397,12 +588,15 @@ class CutieSidebarProvider {
         const fileItems = Array.from(rankedFiles.values())
             .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
             .slice(0, 6)
-            .map((item) => ({
-            kind: "file",
-            label: item.path,
-            insertText: `@"${item.path}"`,
-            ...(item.detail ? { detail: item.detail } : {}),
-        }));
+            .map((item) => {
+            const { label, detail } = mentionDisplayForWorkspaceFile(item.path, item.detail);
+            return {
+                kind: "file",
+                label,
+                insertText: `@"${item.path}"`,
+                ...(detail ? { detail } : {}),
+            };
+        });
         const shouldLookupWindows = wantsWindowsOnly || windowQuery.length > 0;
         const activeWindow = shouldLookupWindows
             ? await this.desktop.getActiveWindow().catch(() => this.desktopState.activeWindow || null)
@@ -481,6 +675,19 @@ class CutieSidebarProvider {
                         this.streamingAssistantText = accumulated;
                         await this.emitState();
                     },
+                    onWorkspaceFileMutated: async (info) => {
+                        const cfg = vscode.workspace.getConfiguration("cutie-product");
+                        const autoOpenDiff = cfg.get("autoOpenDiff", true) !== false;
+                        if (autoOpenDiff) {
+                            await this.showCutieDiffEditor(info);
+                        }
+                        else {
+                            (0, cutie_diff_1.rememberMutationBefore)(info.relativePath, info.previousContent);
+                        }
+                        if (cfg.get("showDiffToast", false)) {
+                            void vscode.window.showInformationMessage(`Cutie updated ${info.relativePath} — compare before and after in the diff editor.`);
+                        }
+                    },
                 },
             });
             this.activeSession = result.session;
@@ -490,11 +697,13 @@ class CutieSidebarProvider {
             this.status =
                 result.run.status === "completed"
                     ? "Cutie completed the run."
-                    : result.run.status === "canceled"
-                        ? "Cutie run cancelled."
-                        : result.run.error
-                            ? `Cutie stopped: ${result.run.error}`
-                            : "Cutie stopped early.";
+                    : result.run.status === "needs_guidance"
+                        ? "Cutie needs guidance to keep making real progress."
+                        : result.run.status === "canceled"
+                            ? "Cutie run cancelled."
+                            : result.run.error
+                                ? `Cutie stopped: ${result.run.error}`
+                                : "Cutie stopped early.";
         }
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -540,6 +749,14 @@ class CutieSidebarProvider {
                     desktopMutationCount: run.desktopMutationCount,
                     maxDesktopMutations: run.maxDesktopMutations,
                     repeatedCallCount: run.repeatedCallCount,
+                    goal: run.goal,
+                    goalSatisfied: run.goalSatisfied,
+                    lastMeaningfulProgressAtStep: run.lastMeaningfulProgressAtStep ?? null,
+                    lastMeaningfulProgressSummary: run.lastMeaningfulProgressSummary || null,
+                    repairAttemptCount: run.repairAttemptCount,
+                    escalationState: run.escalationState,
+                    stuckReason: run.stuckReason || null,
+                    suggestedNextAction: run.suggestedNextAction || null,
                     lastToolName: run.lastToolName || null,
                     error: run.error || null,
                     startedAt: run.startedAt,
@@ -607,11 +824,14 @@ class CutieSidebarProvider {
             running: this.activeRun?.status === "running",
             activeRun: this.activeRun,
             desktop: this.desktopState,
+            progress: buildProgressViewModel(this.activeRun),
         };
         this.view.webview.postMessage({ type: "state", state });
     }
 }
+CutieSidebarProvider.WORKSPACE_MENTION_INDEX_TTL_MS = 90000;
 function activate(context) {
+    (0, cutie_diff_1.registerCutieDiffBeforeProvider)(context);
     const auth = new auth_1.CutieAuthManager(context);
     const provider = new CutieSidebarProvider(context, auth);
     context.subscriptions.push(vscode.window.registerWebviewViewProvider(config_1.VIEW_ID, provider), vscode.window.registerUriHandler(auth), vscode.commands.registerCommand("cutie-product.startChat", async () => provider.show()), vscode.commands.registerCommand("cutie-product.captureScreen", async () => provider.captureScreen()), vscode.commands.registerCommand("cutie-product.setApiKey", async () => auth.setApiKeyInteractive()), vscode.commands.registerCommand("cutie-product.signIn", async () => auth.signInWithBrowser()), vscode.commands.registerCommand("cutie-product.signOut", async () => {

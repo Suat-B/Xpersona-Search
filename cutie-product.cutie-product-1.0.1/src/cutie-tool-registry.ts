@@ -431,6 +431,7 @@ export class CutieToolRegistry {
             data: {
               path: data.path,
               replacedCount: data.replacedCount,
+              previousContent: data.previousContent,
               ...resultFromCheckpoint(data.checkpoint),
             },
             checkpoint: data.checkpoint,
@@ -451,6 +452,7 @@ export class CutieToolRegistry {
             data: {
               path: data.path,
               bytes: data.bytes,
+              previousContent: data.previousContent,
               ...resultFromCheckpoint(data.checkpoint),
             },
             checkpoint: data.checkpoint,
@@ -493,6 +495,7 @@ export class CutieToolRegistry {
             ? argumentsRecord.args.map((item) => String(item ?? "")).filter(Boolean)
             : [];
           await this.desktop.openApp(app, args);
+          this.desktop.invalidateDesktopContextCache();
           return {
             toolName: toolCall.name,
             kind: definition.kind,
@@ -505,6 +508,7 @@ export class CutieToolRegistry {
         case "desktop_open_url": {
           const url = asString(argumentsRecord.url, "url");
           await this.desktop.openUrl(url);
+          this.desktop.invalidateDesktopContextCache();
           return {
             toolName: toolCall.name,
             kind: definition.kind,
@@ -531,6 +535,7 @@ export class CutieToolRegistry {
             };
           }
           await this.desktop.focusWindow({ windowId, title, app });
+          this.desktop.invalidateDesktopContextCache();
           return {
             toolName: toolCall.name,
             kind: definition.kind,
@@ -553,6 +558,7 @@ export class CutieToolRegistry {
             button,
             clickCount,
           });
+          this.desktop.invalidateDesktopContextCache();
           return {
             toolName: toolCall.name,
             kind: definition.kind,
@@ -565,6 +571,7 @@ export class CutieToolRegistry {
         case "desktop_type": {
           const text = asString(argumentsRecord.text, "text");
           await this.desktop.typeText(text);
+          this.desktop.invalidateDesktopContextCache();
           return {
             toolName: toolCall.name,
             kind: definition.kind,
@@ -577,6 +584,7 @@ export class CutieToolRegistry {
         case "desktop_keypress": {
           const keys = asStringArray(argumentsRecord.keys, "keys");
           await this.desktop.keypress(keys);
+          this.desktop.invalidateDesktopContextCache();
           return {
             toolName: toolCall.name,
             kind: definition.kind,
@@ -590,6 +598,7 @@ export class CutieToolRegistry {
           const deltaX = maybeNumber(argumentsRecord.deltaX, -20_000, 20_000) ?? 0;
           const deltaY = maybeNumber(argumentsRecord.deltaY, -20_000, 20_000) ?? 0;
           await this.desktop.scroll({ deltaX, deltaY });
+          this.desktop.invalidateDesktopContextCache();
           return {
             toolName: toolCall.name,
             kind: definition.kind,

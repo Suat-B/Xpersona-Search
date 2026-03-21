@@ -6,7 +6,7 @@
 		"type": "git",
 		"url": "https://github.com/cutie/product"
 	},
-	"version": "1.0.1",
+	"version": "1.0.3",
 	"publisher": "cutie-product",
 	"engines": {
 		"vscode": "^1.85.0"
@@ -83,12 +83,22 @@
 				"cutie-product.model": {
 					"type": "string",
 					"default": "MiniMaxAI/MiniMax-M2.5:fastest",
-					"description": "Cutie model identifier to send to the Cutie model proxy."
+					"description": "Model id for the Cutie proxy. Use a \"fastest\" or small variant if your host exposes one—planning runs once per agent step, so a faster model noticeably shortens waits."
 				},
 				"cutie-product.experimentalDesktopAdapters": {
 					"type": "boolean",
 					"default": false,
 					"description": "Enable experimental desktop automation adapters on macOS and Linux."
+				},
+				"cutie-product.showDiffToast": {
+					"type": "boolean",
+					"default": false,
+					"description": "Show an information toast when Cutie updates a workspace file (diff may still open depending on auto-open)."
+				},
+				"cutie-product.autoOpenDiff": {
+					"type": "boolean",
+					"default": true,
+					"description": "Automatically open the diff editor after Cutie edits a file. When off, the before snapshot is still kept for manual diff from chat."
 				}
 			}
 		}

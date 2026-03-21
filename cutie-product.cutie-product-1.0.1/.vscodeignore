@@ -3,4 +3,5 @@ vendor/**
 tsconfig.json
 package-lock.json
 *.tgz
+*.vsix
 out/**/*.map

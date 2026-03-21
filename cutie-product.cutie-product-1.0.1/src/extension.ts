@@ -9,7 +9,16 @@ import { CutieRuntime } from "./cutie-runtime";
 import { CutieSessionStore } from "./cutie-session-store";
 import { CutieToolRegistry } from "./cutie-tool-registry";
 import { CutieWorkspaceAdapter } from "./cutie-workspace-adapter";
-import type { CutieChatMessage, CutieMentionSuggestion, CutieRunState, CutieSessionRecord, CutieViewState } from "./types";
+import type {
+  CutieChatMessage,
+  CutieMentionSuggestion,
+  CutieProgressViewModel,
+  CutieRunState,
+  CutieSessionRecord,
+  CutieViewState,
+  CutieWorkspaceMutationInfo,
+} from "./types";
+import { createCutieBeforeUri, rememberMutationBefore, registerCutieDiffBeforeProvider, takeLastMutationBefore } from "./cutie-diff";
 import { buildWebviewHtml } from "./webview-html";
 
 type WebviewMessage =
@@ -23,9 +32,70 @@ type WebviewMessage =
   | { type: "signIn" }
   | { type: "signOut" }
   | { type: "setApiKey" }
-  | { type: "mentionsQuery"; query: string; requestId: number };
+  | { type: "mentionsQuery"; query: string; requestId: number }
+  | { type: "openWorkspaceFile"; path: string }
+  | { type: "revealWorkspaceFile"; path: string }
+  | { type: "diffWorkspaceFile"; path: string };
 
 type DesktopContextForView = CutieViewState["desktop"];
+
+function goalLabel(goal: CutieRunState["goal"]): string {
+  switch (goal) {
+    case "code_change":
+      return "Editing file";
+    case "workspace_investigation":
+      return "Inspecting workspace";
+    case "desktop_action":
+      return "Desktop action";
+    case "conversation":
+    default:
+      return "Conversation";
+  }
+}
+
+function phaseLabel(run: CutieRunState): string {
+  if (run.phase === "needs_guidance") return "Need guidance";
+  if (run.phase === "repairing") return "Repairing action plan";
+  if (run.phase === "collecting_context") return "Inspecting target context";
+  if (run.phase === "planning") {
+    if (run.goal === "code_change" && run.stepCount > 0) return "Preparing concrete edit";
+    return "Planning next step";
+  }
+  if (run.phase === "executing_tool") return "Executing tool";
+  if (run.phase === "completed") return "Completed";
+  if (run.phase === "failed") return "Failed";
+  if (run.phase === "canceled") return "Canceled";
+  return "Idle";
+}
+
+function pursuitLabel(run: CutieRunState): string {
+  if (run.goal === "code_change") {
+    return run.goalSatisfied ? "Real file change achieved" : "Still working toward a file change";
+  }
+  if (run.goal === "desktop_action") {
+    return run.goalSatisfied ? "Desktop action completed" : "Still working toward a desktop action";
+  }
+  if (run.goal === "workspace_investigation") {
+    return run.goalSatisfied ? "Investigation progressed" : "Still gathering the answer";
+  }
+  return "Handling the conversation";
+}
+
+function buildProgressViewModel(run: CutieRunState | null): CutieProgressViewModel | null {
+  if (!run) return null;
+  return {
+    goal: run.goal,
+    goalLabel: goalLabel(run.goal),
+    phaseLabel: phaseLabel(run),
+    pursuingLabel: pursuitLabel(run),
+    ...(run.lastMeaningfulProgressSummary ? { lastMeaningfulProgressSummary: run.lastMeaningfulProgressSummary } : {}),
+    ...(run.repairAttemptCount > 0 ? { repairLabel: `Repair stage ${run.repairAttemptCount}` } : {}),
+    ...(run.stuckReason ? { escalationMessage: run.stuckReason } : {}),
+    ...(run.suggestedNextAction ? { suggestedNextAction: run.suggestedNextAction } : {}),
+    goalSatisfied: run.goalSatisfied,
+    escalationState: run.escalationState,
+  };
+}
 
 function buildDefaultDesktopState(): DesktopContextForView {
   return {
@@ -102,6 +172,18 @@ function scoreFilePath(relativePath: string, query: string, options?: { activePa
   return score;
 }
 
+/** Primary line = basename only; secondary line = badge (e.g. Active file) + parent folder path. */
+function mentionDisplayForWorkspaceFile(relativePath: string, badge?: string): { label: string; detail?: string } {
+  const norm = relativePath.replace(/\\/g, "/").trim();
+  const base = path.posix.basename(norm) || norm;
+  const dirRaw = path.posix.dirname(norm);
+  const folder =
+    dirRaw && dirRaw !== "." && dirRaw !== "/" ? dirRaw.replace(/\/+$/, "") : "";
+  const parts = [badge, folder].map((s) => String(s || "").trim()).filter(Boolean);
+  const detail = parts.length ? parts.join(" · ") : undefined;
+  return { label: base, ...(detail ? { detail } : {}) };
+}
+
 function scoreWindow(windowValue: { title?: string; app?: string }, query: string, isActive: boolean): number {
   const title = String(windowValue.title || "").toLowerCase();
   const app = String(windowValue.app || "").toLowerCase();
@@ -128,6 +210,12 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
     label: "Not signed in",
   };
 
+  /** Cached workspace paths for @ file lookup (avoid findFiles on every keystroke). */
+  private workspaceMentionPaths: string[] | null = null;
+  private workspaceMentionPathsFetchedAt = 0;
+  private workspaceMentionIndexPromise: Promise<string[]> | null = null;
+  private static readonly WORKSPACE_MENTION_INDEX_TTL_MS = 90_000;
+
   private readonly desktop = new CutieDesktopAdapter();
   private readonly sessionStore: CutieSessionStore;
   private readonly modelClient = new CutieModelClient();
@@ -147,6 +235,56 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
         void this.emitState();
       });
     });
+
+    this.context.subscriptions.push(
+      vscode.workspace.onDidChangeWorkspaceFolders(() => {
+        this.invalidateWorkspaceMentionIndex();
+      })
+    );
+  }
+
+  private invalidateWorkspaceMentionIndex(): void {
+    this.workspaceMentionPaths = null;
+    this.workspaceMentionPathsFetchedAt = 0;
+    this.workspaceMentionIndexPromise = null;
+  }
+
+  private async ensureWorkspaceMentionIndex(): Promise<string[]> {
+    const now = Date.now();
+    if (
+      this.workspaceMentionPaths &&
+      now - this.workspaceMentionPathsFetchedAt < CutieSidebarProvider.WORKSPACE_MENTION_INDEX_TTL_MS
+    ) {
+      return this.workspaceMentionPaths;
+    }
+    if (this.workspaceMentionIndexPromise) {
+      return this.workspaceMentionIndexPromise;
+    }
+    this.workspaceMentionIndexPromise = (async (): Promise<string[]> => {
+      if (!getWorkspaceRootPath()) {
+        this.workspaceMentionPaths = [];
+        this.workspaceMentionPathsFetchedAt = Date.now();
+        return [];
+      }
+      const exclude = "**/{node_modules,.git,.svn,.hg,dist,build,out,.next,.turbo,target}/**";
+      let uris: vscode.Uri[] = [];
+      try {
+        uris = await vscode.workspace.findFiles("**/*", exclude, 2500);
+      } catch {
+        uris = [];
+      }
+      const paths = uris
+        .map((uri) => toWorkspaceRelativePath(uri))
+        .filter((p): p is string => typeof p === "string" && p.length > 0 && !isIgnoredWorkspacePath(p));
+      this.workspaceMentionPaths = paths;
+      this.workspaceMentionPathsFetchedAt = Date.now();
+      return paths;
+    })();
+    try {
+      return await this.workspaceMentionIndexPromise;
+    } finally {
+      this.workspaceMentionIndexPromise = null;
+    }
   }
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -226,6 +364,86 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
     if (message.type === "setApiKey") return this.auth.setApiKeyInteractive();
     if (message.type === "mentionsQuery") return this.respondToMentionsQuery(message.query, message.requestId);
     if (message.type === "submitPrompt") return this.runPrompt(message.prompt, asMentionArray(message.mentions));
+    if (message.type === "openWorkspaceFile") return this.openWorkspaceRelativePath(message.path, { mode: "editor" });
+    if (message.type === "revealWorkspaceFile") return this.openWorkspaceRelativePath(message.path, { mode: "reveal" });
+    if (message.type === "diffWorkspaceFile") return this.openCutieDiffForPath(message.path);
+  }
+
+  private async openWorkspaceRelativePath(
+    relativePath: string,
+    options: { mode: "editor" | "reveal"; preserveFocus?: boolean }
+  ): Promise<void> {
+    const trimmed = String(relativePath || "").trim().replace(/\\/g, "/");
+    if (!trimmed) return;
+    const root = getWorkspaceRootPath();
+    if (!root) {
+      void vscode.window.showWarningMessage("Open a workspace folder before opening files from Cutie.");
+      return;
+    }
+    const absolutePath = path.join(root, ...trimmed.split("/").filter(Boolean));
+    const uri = vscode.Uri.file(absolutePath);
+    try {
+      const stat = await vscode.workspace.fs.stat(uri);
+      if (stat.type === vscode.FileType.Directory) {
+        await vscode.commands.executeCommand("revealInExplorer", uri);
+        return;
+      }
+      if (options.mode === "reveal") {
+        await vscode.commands.executeCommand("revealInExplorer", uri);
+        return;
+      }
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc, {
+        preview: false,
+        preserveFocus: options.preserveFocus ?? false,
+      });
+    } catch {
+      void vscode.window.showErrorMessage(`Cutie could not open “${trimmed}”. Check that the path exists in this workspace.`);
+    }
+  }
+
+  private async showCutieDiffEditor(info: CutieWorkspaceMutationInfo): Promise<void> {
+    const trimmed = String(info.relativePath || "").trim().replace(/\\/g, "/");
+    if (!trimmed) return;
+    const root = getWorkspaceRootPath();
+    if (!root) {
+      void vscode.window.showWarningMessage("Open a workspace folder before viewing a Cutie diff.");
+      return;
+    }
+    const absolutePath = path.join(root, ...trimmed.split("/").filter(Boolean));
+    const rightUri = vscode.Uri.file(absolutePath);
+    try {
+      await vscode.workspace.fs.stat(rightUri);
+    } catch {
+      void vscode.window.showErrorMessage(`Cutie could not diff “${trimmed}” — the file is not on disk.`);
+      return;
+    }
+
+    rememberMutationBefore(trimmed, info.previousContent);
+    const leftUri = createCutieBeforeUri(info.previousContent);
+    const baseName = path.basename(trimmed);
+    const title =
+      info.toolName === "write_file"
+        ? `Cutie · ${baseName} (before ⟡ after)`
+        : `Cutie · ${baseName} (before ⟡ after · edit)`;
+    await vscode.commands.executeCommand("vscode.diff", leftUri, rightUri, title, { preview: false });
+  }
+
+  /** Reopen diff from the chat card using the last remembered “before” buffer for this path. */
+  private async openCutieDiffForPath(relativePath: string): Promise<void> {
+    const trimmed = String(relativePath || "").trim().replace(/\\/g, "/");
+    const previous = takeLastMutationBefore(trimmed);
+    if (previous === undefined) {
+      void vscode.window.showWarningMessage(
+        "No Cutie “before” snapshot is cached for that file anymore. Run Cutie again on this file, or use Source Control."
+      );
+      return;
+    }
+    await this.showCutieDiffEditor({
+      relativePath: trimmed,
+      toolName: "write_file",
+      previousContent: previous,
+    });
   }
 
   private async requireAuth(): Promise<RequestAuth | null> {
@@ -375,15 +593,8 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       }
 
       if (fileQuery) {
-        let workspaceFiles: vscode.Uri[] = [];
-        try {
-          workspaceFiles = await vscode.workspace.findFiles("**/*", undefined, 700);
-        } catch {
-          workspaceFiles = [];
-        }
-        for (const uri of workspaceFiles) {
-          const relativePath = toWorkspaceRelativePath(uri);
-          if (!relativePath) continue;
+        const indexedPaths = await this.ensureWorkspaceMentionIndex();
+        for (const relativePath of indexedPaths) {
           pushFile(relativePath);
         }
       }
@@ -392,12 +603,15 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
     const fileItems = Array.from(rankedFiles.values())
       .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
       .slice(0, 6)
-      .map((item) => ({
-        kind: "file",
-        label: item.path,
-        insertText: `@"${item.path}"`,
-        ...(item.detail ? { detail: item.detail } : {}),
-      } satisfies CutieMentionSuggestion));
+      .map((item) => {
+        const { label, detail } = mentionDisplayForWorkspaceFile(item.path, item.detail);
+        return {
+          kind: "file",
+          label,
+          insertText: `@"${item.path}"`,
+          ...(detail ? { detail } : {}),
+        } satisfies CutieMentionSuggestion;
+      });
 
     const shouldLookupWindows = wantsWindowsOnly || windowQuery.length > 0;
     const activeWindow = shouldLookupWindows
@@ -484,6 +698,20 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
             this.streamingAssistantText = accumulated;
             await this.emitState();
           },
+          onWorkspaceFileMutated: async (info) => {
+            const cfg = vscode.workspace.getConfiguration("cutie-product");
+            const autoOpenDiff = cfg.get<boolean>("autoOpenDiff", true) !== false;
+            if (autoOpenDiff) {
+              await this.showCutieDiffEditor(info);
+            } else {
+              rememberMutationBefore(info.relativePath, info.previousContent);
+            }
+            if (cfg.get<boolean>("showDiffToast", false)) {
+              void vscode.window.showInformationMessage(
+                `Cutie updated ${info.relativePath} — compare before and after in the diff editor.`
+              );
+            }
+          },
         },
       });
 
@@ -494,6 +722,8 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       this.status =
         result.run.status === "completed"
           ? "Cutie completed the run."
+          : result.run.status === "needs_guidance"
+            ? "Cutie needs guidance to keep making real progress."
           : result.run.status === "canceled"
             ? "Cutie run cancelled."
             : result.run.error
@@ -543,6 +773,14 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
             desktopMutationCount: run.desktopMutationCount,
             maxDesktopMutations: run.maxDesktopMutations,
             repeatedCallCount: run.repeatedCallCount,
+            goal: run.goal,
+            goalSatisfied: run.goalSatisfied,
+            lastMeaningfulProgressAtStep: run.lastMeaningfulProgressAtStep ?? null,
+            lastMeaningfulProgressSummary: run.lastMeaningfulProgressSummary || null,
+            repairAttemptCount: run.repairAttemptCount,
+            escalationState: run.escalationState,
+            stuckReason: run.stuckReason || null,
+            suggestedNextAction: run.suggestedNextAction || null,
             lastToolName: run.lastToolName || null,
             error: run.error || null,
             startedAt: run.startedAt,
@@ -618,12 +856,14 @@ class CutieSidebarProvider implements vscode.WebviewViewProvider {
       running: this.activeRun?.status === "running",
       activeRun: this.activeRun,
       desktop: this.desktopState,
+      progress: buildProgressViewModel(this.activeRun),
     };
     this.view.webview.postMessage({ type: "state", state });
   }
 }
 
 export function activate(context: vscode.ExtensionContext) {
+  registerCutieDiffBeforeProvider(context);
   const auth = new CutieAuthManager(context);
   const provider = new CutieSidebarProvider(context, auth);
 

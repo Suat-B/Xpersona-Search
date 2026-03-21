@@ -1,6 +1,6 @@
 import type { CutieToolCall, CutieToolName } from "./types";
 
-export const CUTIE_MAX_STEPS = 15;
+export const CUTIE_MAX_STEPS = 18;
 export const CUTIE_MAX_WORKSPACE_MUTATIONS = 8;
 export const CUTIE_MAX_DESKTOP_MUTATIONS = 20;
 export const CUTIE_MAX_WALL_CLOCK_MS = 10 * 60 * 1000;

@@ -25,6 +25,9 @@ function buildWebviewHtml(webview) {
     const keyIcon = icon("M21 2l-2 2m-7 5a5 5 0 1 0-7 7l2-2h3l2-2v-3z");
     const settingsIcon = icon("M12 3a2.5 2.5 0 0 0-2.45 2l-.13.78a7.96 7.96 0 0 0-1.52.88l-.72-.29a2.5 2.5 0 0 0-3.18 1.42 2.5 2.5 0 0 0 .85 3.02l.65.46a8.77 8.77 0 0 0 0 1.76l-.65.46a2.5 2.5 0 0 0-.85 3.02 2.5 2.5 0 0 0 3.18 1.42l.72-.29c.47.36.98.65 1.52.88l.13.78A2.5 2.5 0 0 0 12 21a2.5 2.5 0 0 0 2.45-2l.13-.78a7.96 7.96 0 0 0 1.52-.88l.72.29a2.5 2.5 0 0 0 3.18-1.42 2.5 2.5 0 0 0-.85-3.02l-.65-.46a8.77 8.77 0 0 0 0-1.76l.65-.46a2.5 2.5 0 0 0 .85-3.02 2.5 2.5 0 0 0-3.18-1.42l-.72.29a7.96 7.96 0 0 0-1.52-.88l-.13-.78A2.5 2.5 0 0 0 12 3z M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4", 13);
     const submitIcon = icon("M12 19V5 M6 11l6-6 6 6", 18);
+    const composerStopIcon = icon("M8 8h8v8H8z", 18);
+    const encodedComposerSubmitIcon = JSON.stringify(submitIcon);
+    const encodedComposerStopIcon = JSON.stringify(composerStopIcon);
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -54,7 +57,7 @@ function buildWebviewHtml(webview) {
       --danger: var(--vscode-errorForeground, #ff8f9d);
       --user: color-mix(in srgb, var(--accent) 18%, var(--canvas) 82%);
       --assistant: color-mix(in srgb, var(--panel-elevated) 86%, var(--canvas) 14%);
-      --shadow: 0 20px 44px rgba(0, 0, 0, 0.34);
+      --shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
     }
     * { box-sizing: border-box; }
     html, body {
@@ -76,7 +79,7 @@ function buildWebviewHtml(webview) {
     }
     .workspace-shell {
       display: grid;
-      grid-template-rows: 44px minmax(0, 1fr);
+      grid-template-rows: 34px minmax(0, 1fr);
       height: 100dvh;
       min-height: 0;
       overflow: hidden;
@@ -86,8 +89,8 @@ function buildWebviewHtml(webview) {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      padding: 6px 10px;
+      gap: 8px;
+      padding: 4px 8px;
       border-bottom: 1px solid var(--line);
       background: color-mix(in srgb, var(--surface-elevated) 92%, transparent);
     }
@@ -123,8 +126,8 @@ function buildWebviewHtml(webview) {
       text-overflow: ellipsis;
       white-space: nowrap;
       color: var(--text);
-      font-size: 13px;
-      font-weight: 620;
+      font-size: 12px;
+      font-weight: 600;
       letter-spacing: 0.01em;
     }
     .header-meta {
@@ -154,14 +157,14 @@ function buildWebviewHtml(webview) {
       transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, opacity 0.16s ease;
     }
     .rail-button {
-      min-width: 28px;
-      min-height: 28px;
+      min-width: 24px;
+      min-height: 24px;
       display: inline-grid;
       place-items: center;
       gap: 2px;
-      padding: 2px 8px;
+      padding: 1px 6px;
       border: 1px solid transparent;
-      border-radius: 10px;
+      border-radius: 8px;
       background: transparent;
       color: var(--muted);
       cursor: pointer;
@@ -189,22 +192,23 @@ function buildWebviewHtml(webview) {
       letter-spacing: 0.08em;
     }
     .rail-button.stop {
-      color: var(--danger);
+      color: var(--accent);
     }
     .rail-button.is-hidden {
       display: none;
     }
     .rail-button.stop:hover,
     .rail-button.stop:focus-visible {
-      border-color: color-mix(in srgb, var(--danger) 46%, var(--line) 54%);
-      background: color-mix(in srgb, var(--danger) 12%, transparent);
+      border-color: var(--accent-line);
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+      color: var(--text);
     }
     .status-pill {
-      max-width: 300px;
-      min-height: 28px;
+      max-width: 280px;
+      min-height: 24px;
       display: inline-flex;
       align-items: center;
-      padding: 0 12px;
+      padding: 0 8px;
       border: 1px solid var(--line);
       border-radius: 999px;
       background: color-mix(in srgb, var(--panel-elevated) 86%, transparent);
@@ -308,7 +312,7 @@ function buildWebviewHtml(webview) {
       min-width: 0;
       min-height: 0;
       display: grid;
-      grid-template-columns: 300px minmax(0, 1fr);
+      grid-template-columns: 228px minmax(0, 1fr);
       overflow: hidden;
       background: var(--canvas);
     }
@@ -321,7 +325,7 @@ function buildWebviewHtml(webview) {
       background: color-mix(in srgb, var(--panel) 94%, var(--surface) 6%);
     }
     .brand {
-      padding: 16px 18px 14px;
+      padding: 10px 12px 8px;
       border-bottom: 1px solid var(--line);
     }
     .brand-kicker {
@@ -334,40 +338,35 @@ function buildWebviewHtml(webview) {
     }
     .brand strong {
       display: block;
-      margin-top: 7px;
-      font-size: 18px;
-      font-weight: 620;
+      margin-top: 4px;
+      font-size: 14px;
+      font-weight: 600;
     }
     .brand span,
-    .desktop-panel,
-    .status-line,
-    .sidebar-note {
+    .status-line {
       color: var(--muted);
       font-size: 12px;
       line-height: 1.55;
     }
-    .desktop-panel {
-      padding: 12px 18px 14px;
-      border-bottom: 1px solid var(--line);
-    }
+    .desktop-panel,
     .sidebar-note {
-      padding: 12px 18px 0;
+      display: none;
     }
     .sessions {
       flex: 1;
       min-height: 0;
       overflow: auto;
-      padding: 14px 12px 16px;
+      padding: 8px 8px 10px;
     }
     .session {
       width: 100%;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
       text-align: left;
       border: 1px solid transparent;
       background: transparent;
       color: var(--text);
-      padding: 12px 14px;
-      border-radius: 14px;
+      padding: 8px 10px;
+      border-radius: 10px;
       cursor: pointer;
     }
     .session:hover,
@@ -383,9 +382,9 @@ function buildWebviewHtml(webview) {
     }
     .session-title {
       display: block;
-      font-size: 13px;
-      font-weight: 560;
-      line-height: 1.4;
+      font-size: 12px;
+      font-weight: 550;
+      line-height: 1.35;
       word-break: break-word;
     }
     .session small {
@@ -405,10 +404,10 @@ function buildWebviewHtml(webview) {
       flex: 1 1 auto;
       min-height: 0;
       overflow: auto;
-      padding: 18px 20px 16px;
+      padding: 10px 12px 8px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 6px;
       scrollbar-gutter: stable;
     }
     .empty {
@@ -426,15 +425,26 @@ function buildWebviewHtml(webview) {
       line-height: 1.65;
       box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 12%, transparent);
     }
+    .empty.empty-minimal {
+      padding: 16px 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.55;
+    }
     .bubble {
       max-width: min(760px, 92%);
-      padding: 14px 16px;
-      border-radius: 18px;
+      padding: 8px 11px;
+      border-radius: 12px;
       border: 1px solid var(--line);
       background: var(--assistant);
       white-space: pre-wrap;
       word-break: break-word;
-      line-height: 1.62;
+      line-height: 1.5;
     }
     .bubble.user {
       align-self: flex-end;
@@ -443,38 +453,128 @@ function buildWebviewHtml(webview) {
       border-radius: 20px 20px 10px 20px;
     }
     .bubble.assistant {
-      align-self: flex-start;
-      min-width: min(620px, 76%);
-      padding: 0;
-      border: 0;
+      align-self: stretch;
+      min-width: 0;
+      max-width: 100%;
+      padding: 2px 0 10px;
+      margin: 0;
+      border: none;
       border-radius: 0;
       background: transparent;
       box-shadow: none;
+      color: var(--text);
     }
     .bubble.system {
-      align-self: flex-start;
+      align-self: stretch;
       max-width: 100%;
-      padding: 0;
+      padding: 4px 0 4px 10px;
+      margin: 0;
       border: 0;
-      border-style: none;
+      border-left: 2px solid color-mix(in srgb, var(--line) 70%, var(--muted) 30%);
       border-radius: 0;
       background: transparent;
       color: var(--muted);
+      font-family: var(--vscode-editor-font-family, ui-monospace, "Cascadia Code", Consolas, monospace);
+      font-size: 11px;
+      line-height: 1.5;
       text-align: left;
       min-width: 0;
+      opacity: 0.92;
     }
     .composer {
       position: relative;
       flex: 0 0 auto;
-      padding: 12px 16px 14px;
+      min-width: 0;
+      width: 100%;
+      padding: 8px 10px 10px;
       display: grid;
-      gap: 8px;
+      gap: 6px;
       background: linear-gradient(180deg, color-mix(in srgb, var(--canvas) 98%, #000 2%), var(--canvas));
       overflow: visible;
     }
+    .prompt-queue-wrap {
+      min-width: 0;
+      width: 100%;
+      max-width: 100%;
+      border: 1px solid var(--accent-line);
+      border-radius: 11px;
+      background: color-mix(in srgb, var(--accent) 9%, var(--panel-elevated) 91%);
+      padding: 8px 10px 7px;
+      box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 12%, transparent);
+    }
+    .prompt-queue-wrap.is-hidden {
+      display: none;
+    }
+    .prompt-queue-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .prompt-queue-title {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .prompt-queue-badge {
+      flex: 0 0 auto;
+      min-width: 1.5rem;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: var(--accent-foreground);
+      font-size: 11px;
+      font-weight: 700;
+      text-align: center;
+      line-height: 1.3;
+    }
+    .prompt-queue-list {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      max-height: 200px;
+      overflow-x: hidden;
+      overflow-y: auto;
+      scrollbar-gutter: stable;
+    }
+    .prompt-queue-item {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      padding: 5px 8px;
+      border-radius: 8px;
+      border: 1px solid color-mix(in srgb, var(--line) 88%, var(--accent) 12%);
+      background: color-mix(in srgb, var(--canvas) 40%, transparent);
+      font-size: 11px;
+      line-height: 1.45;
+      color: var(--text);
+    }
+    .prompt-queue-num {
+      flex: 0 0 auto;
+      font-weight: 700;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      line-height: 1.45;
+    }
+    .prompt-queue-text {
+      flex: 1 1 0%;
+      min-width: 0;
+      max-width: 100%;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      font-feature-settings: normal;
+      line-height: 1.45;
+    }
     .composer-card {
       border: 1px solid var(--line);
-      border-radius: 20px;
+      border-radius: 14px;
       background: color-mix(in srgb, var(--panel-elevated) 90%, transparent);
       box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 8%, transparent);
       overflow: hidden;
@@ -482,17 +582,17 @@ function buildWebviewHtml(webview) {
     .mentions {
       display: none;
       position: absolute;
-      left: 16px;
-      right: 16px;
-      bottom: calc(100% + 8px);
+      left: 10px;
+      right: 10px;
+      bottom: calc(100% + 6px);
       z-index: 12;
-      max-height: 240px;
+      max-height: 200px;
       overflow: auto;
       border: 1px solid var(--line-strong);
-      border-radius: 16px;
+      border-radius: 11px;
       background: color-mix(in srgb, var(--panel-elevated) 96%, transparent);
       box-shadow: var(--shadow);
-      padding: 6px;
+      padding: 4px;
     }
     .mentions.show {
       display: block;
@@ -507,15 +607,15 @@ function buildWebviewHtml(webview) {
     .mention-item button {
       width: 100%;
       border: 1px solid transparent;
-      border-radius: 12px;
+      border-radius: 8px;
       background: transparent;
       color: var(--text);
       text-align: left;
-      padding: 10px 12px;
+      padding: 5px 8px;
       cursor: pointer;
       display: flex;
       align-items: flex-start;
-      gap: 10px;
+      gap: 7px;
     }
     .mention-item button:hover {
       border-color: color-mix(in srgb, var(--accent) 20%, var(--line) 80%);
@@ -530,12 +630,12 @@ function buildWebviewHtml(webview) {
     }
     .mention-kind {
       flex: 0 0 auto;
-      min-width: 56px;
+      min-width: 44px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-height: 22px;
-      padding: 0 8px;
+      min-height: 18px;
+      padding: 0 6px;
       border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
       border-radius: 999px;
       font-size: 10px;
@@ -555,14 +655,14 @@ function buildWebviewHtml(webview) {
       gap: 2px;
     }
     .mention-label {
-      font-size: 12px;
-      line-height: 1.45;
+      font-size: 11px;
+      line-height: 1.4;
       color: inherit;
       word-break: break-word;
     }
     .mention-detail {
-      font-size: 11px;
-      line-height: 1.4;
+      font-size: 10px;
+      line-height: 1.35;
       color: var(--muted);
       word-break: break-word;
     }
@@ -576,19 +676,19 @@ function buildWebviewHtml(webview) {
       border-bottom: 1px solid var(--line);
       background: transparent;
       color: var(--text);
-      padding: 12px 14px 10px;
+      padding: 8px 10px 7px;
       resize: none;
-      min-height: 64px;
-      max-height: 140px;
+      min-height: 52px;
+      max-height: 120px;
       outline: none;
-      line-height: 1.56;
+      line-height: 1.48;
     }
     .composer-row {
       display: flex;
-      gap: 8px;
+      gap: 6px;
       justify-content: space-between;
       align-items: center;
-      padding: 10px 12px 10px;
+      padding: 6px 8px 6px;
     }
     .chips {
       display: flex;
@@ -597,14 +697,15 @@ function buildWebviewHtml(webview) {
       min-width: 0;
     }
     .chip {
-      min-height: 28px;
+      min-height: 24px;
       display: inline-flex;
       align-items: center;
       border: 1px solid var(--line);
       background: transparent;
       color: var(--muted);
       border-radius: 999px;
-      padding: 0 10px;
+      padding: 0 8px;
+      font-size: 11px;
       cursor: pointer;
     }
     .chip:hover,
@@ -615,8 +716,8 @@ function buildWebviewHtml(webview) {
       outline: none;
     }
     .composer-send {
-      width: 34px;
-      height: 34px;
+      width: 30px;
+      height: 30px;
       display: inline-grid;
       place-items: center;
       border: 1px solid color-mix(in srgb, var(--accent) 72%, var(--line) 28%);
@@ -636,12 +737,24 @@ function buildWebviewHtml(webview) {
       opacity: 0.82;
       transform: scale(0.98);
     }
+    .composer-send.is-stop {
+      background: var(--accent);
+      border-color: color-mix(in srgb, var(--accent) 72%, var(--line) 28%);
+      color: var(--accent-foreground);
+    }
+    .composer-send.is-stop:hover,
+    .composer-send.is-stop:focus-visible {
+      background: var(--accent-hover);
+      border-color: var(--accent);
+      outline: none;
+    }
     .status-line {
-      padding: 0 14px 12px;
+      padding: 0 10px 8px;
+      font-size: 11px;
     }
     @media (max-width: 1080px) {
       .workspace-main {
-        grid-template-columns: 260px minmax(0, 1fr);
+        grid-template-columns: 200px minmax(0, 1fr);
       }
       .status-pill {
         max-width: 220px;
@@ -649,7 +762,7 @@ function buildWebviewHtml(webview) {
     }
     @media (max-width: 900px) {
       .workspace-shell {
-        grid-template-rows: 50px minmax(0, 1fr);
+        grid-template-rows: 38px minmax(0, 1fr);
       }
       .utility-rail {
         padding: 6px 8px;
@@ -678,18 +791,17 @@ function buildWebviewHtml(webview) {
         display: none;
       }
       .chat {
-        padding: 14px 12px 12px;
+        padding: 8px 10px 6px;
       }
       .composer {
-        padding: 10px 12px 12px;
+        padding: 6px 8px 8px;
       }
       .mentions {
-        left: 12px;
-        right: 12px;
+        left: 8px;
+        right: 8px;
       }
       .bubble.assistant {
-        min-width: 0;
-        max-width: 100%;
+        padding: 2px 0 8px;
       }
       .composer-row {
         align-items: flex-end;
@@ -761,6 +873,13 @@ function buildWebviewHtml(webview) {
         <div class="chat" id="chat"></div>
         <div class="composer">
           <div class="mentions" id="mentions"></div>
+          <div class="prompt-queue-wrap is-hidden" id="promptQueueWrap" aria-live="polite" aria-label="Queued prompts">
+            <div class="prompt-queue-header">
+              <span class="prompt-queue-title">Queued — runs after this one</span>
+              <span class="prompt-queue-badge" id="promptQueueCount">0</span>
+            </div>
+            <div class="prompt-queue-list" id="promptQueueList"></div>
+          </div>
           <div class="composer-card">
             <textarea id="input" placeholder="Ask Cutie to work in this workspace or help with a desktop task"></textarea>
             <div class="composer-row">
@@ -781,6 +900,8 @@ function buildWebviewHtml(webview) {
   </div>
 
   <script nonce="${nonce}">
+    const ICON_SUBMIT = ${encodedComposerSubmitIcon};
+    const ICON_STOP = ${encodedComposerStopIcon};
     const vscode = acquireVsCodeApi();
     const input = document.getElementById('input');
     const chat = document.getElementById('chat');
@@ -793,15 +914,19 @@ function buildWebviewHtml(webview) {
     const desktopSummary = document.getElementById('desktopSummary');
     const desktopSummaryPanel = document.getElementById('desktopSummaryPanel');
     const runtimeLine = document.getElementById('runtimeLine');
+    const promptQueueWrap = document.getElementById('promptQueueWrap');
+    const promptQueueList = document.getElementById('promptQueueList');
+    const promptQueueCount = document.getElementById('promptQueueCount');
     const settingsToggle = document.getElementById('settingsToggle');
     const settingsMenu = document.getElementById('settingsMenu');
     const stopBtn = document.getElementById('stopBtn');
     const sendBtn = document.getElementById('sendBtn');
     const drafts = new Map();
     const draftMentions = new Map();
-    let state = { sessions: [], messages: [], activeSessionId: null, running: false, status: 'Ready', activeRun: null };
+    let state = { sessions: [], messages: [], activeSessionId: null, running: false, status: 'Ready', activeRun: null, progress: null };
     let pendingSubmission = null;
     let isSubmitting = false;
+    let queuedPrompts = [];
     let mentionState = {
       requestId: 0,
       items: [],
@@ -809,6 +934,7 @@ function buildWebviewHtml(webview) {
       range: null,
       loading: false,
     };
+    let mentionDebounceTimer = null;
 
     function currentDraftKey() {
       return state.activeSessionId || '__new__';
@@ -844,13 +970,28 @@ function buildWebviewHtml(webview) {
 
     function autoSize() {
       input.style.height = 'auto';
-      input.style.height = Math.min(Math.max(input.scrollHeight, 64), 140) + 'px';
+      input.style.height = Math.min(Math.max(input.scrollHeight, 52), 120) + 'px';
+    }
+
+    function updateComposerPrimaryButton() {
+      if (state.running) {
+        sendBtn.innerHTML = ICON_STOP;
+        sendBtn.classList.add('is-stop');
+        sendBtn.classList.remove('is-busy');
+        sendBtn.disabled = false;
+        sendBtn.setAttribute('aria-label', 'Stop run');
+        return;
+      }
+      sendBtn.classList.remove('is-stop');
+      sendBtn.innerHTML = ICON_SUBMIT;
+      sendBtn.disabled = isSubmitting;
+      sendBtn.classList.toggle('is-busy', isSubmitting);
+      sendBtn.setAttribute('aria-label', 'Submit');
     }
 
     function setComposerSubmitting(nextSubmitting) {
       isSubmitting = Boolean(nextSubmitting);
-      sendBtn.disabled = isSubmitting;
-      sendBtn.classList.toggle('is-busy', isSubmitting);
+      updateComposerPrimaryButton();
     }
 
     function escapeHtmlText(value) {
@@ -877,6 +1018,10 @@ function buildWebviewHtml(webview) {
     }
 
     function closeMentions() {
+      if (mentionDebounceTimer) {
+        clearTimeout(mentionDebounceTimer);
+        mentionDebounceTimer = null;
+      }
       mentionState.range = null;
       mentionState.items = [];
       mentionState.activeIndex = 0;
@@ -968,13 +1113,33 @@ function buildWebviewHtml(webview) {
         return;
       }
       mentionState.range = range;
-      mentionState.loading = true;
-      mentionState.items = [];
-      mentionState.activeIndex = 0;
-      renderMentions();
-      const requestId = mentionState.requestId + 1;
-      mentionState.requestId = requestId;
-      vscode.postMessage({ type: 'mentionsQuery', query: range.query, requestId });
+      if (mentionDebounceTimer) {
+        clearTimeout(mentionDebounceTimer);
+        mentionDebounceTimer = null;
+      }
+      const delay = range.query.length === 0 ? 0 : 80;
+      const sendQuery = () => {
+        mentionDebounceTimer = null;
+        const live = getMentionRange();
+        if (!live || !mentionState.range) return;
+        if (live.start !== mentionState.range.start || live.query !== mentionState.range.query) return;
+        mentionState.loading = true;
+        mentionState.items = [];
+        mentionState.activeIndex = 0;
+        renderMentions();
+        const requestId = mentionState.requestId + 1;
+        mentionState.requestId = requestId;
+        vscode.postMessage({ type: 'mentionsQuery', query: live.query, requestId });
+      };
+      if (delay === 0) {
+        sendQuery();
+      } else {
+        mentionState.loading = true;
+        mentionState.items = [];
+        mentionState.activeIndex = 0;
+        renderMentions();
+        mentionDebounceTimer = setTimeout(sendQuery, delay);
+      }
     }
 
     function applyMentionsResponse(requestId, items) {
@@ -1028,7 +1193,7 @@ function buildWebviewHtml(webview) {
         sessions.appendChild(button);
       }
     }
-    
+
     function renderMessages() {
       chat.innerHTML = '';
       const visibleMessages = [...(Array.isArray(state.messages) ? state.messages : [])];
@@ -1041,20 +1206,20 @@ function buildWebviewHtml(webview) {
 
       if (!visibleMessages.length) {
         const empty = document.createElement('div');
-        empty.className = 'empty';
-        empty.innerHTML =
-          '<strong style="display:block;color:var(--text);margin-bottom:8px;font-size:15px;">Cutie local runtime is ready.</strong>' +
-          '<div>Sessions stay in this workspace, runs stay local, and the model is only used for planning and final responses.</div>';
+        empty.className = 'empty empty-minimal';
+        empty.textContent = 'Cutie is ready. Ask in this workspace or use @ for files and windows.';
         chat.appendChild(empty);
         return;
       }
 
-      for (const message of visibleMessages) {
+      for (let index = 0; index < visibleMessages.length; index += 1) {
+        const message = visibleMessages[index];
         const div = document.createElement('div');
         div.className = 'bubble ' + message.role;
         div.textContent = message.content;
         chat.appendChild(div);
       }
+
       chat.scrollTop = chat.scrollHeight;
     }
 
@@ -1075,16 +1240,80 @@ function buildWebviewHtml(webview) {
       desktopSummaryPanel.textContent = summary;
     }
 
-    function renderRuntime(run) {
-      if (!run) {
-        runtimeLine.textContent = 'Enter sends. Shift+Enter adds a newline. Use @ for files and windows.';
+    function formatStatusPillBase(status) {
+      return String(status || 'Ready').trim() || 'Ready';
+    }
+
+    function refreshStatusPillFromState() {
+      const base = formatStatusPillBase(state.status);
+      if (queuedPrompts.length) {
+        statusPill.textContent = base + ' · ' + queuedPrompts.length + ' queued';
+      } else {
+        statusPill.textContent = base;
+      }
+    }
+
+    function renderPromptQueue() {
+      const n = queuedPrompts.length;
+      if (!promptQueueWrap || !promptQueueList || !promptQueueCount) return;
+      if (!n) {
+        promptQueueWrap.classList.add('is-hidden');
+        promptQueueList.innerHTML = '';
+        promptQueueCount.textContent = '0';
         return;
       }
-      runtimeLine.textContent =
-        'Phase: ' + (run.phase || 'idle') +
-        ' - Step ' + String(run.stepCount || 0) + '/' + String(run.maxSteps || 0) +
-        ' - Workspace ' + String(run.workspaceMutationCount || 0) + '/' + String(run.maxWorkspaceMutations || 0) +
-        ' - Desktop ' + String(run.desktopMutationCount || 0) + '/' + String(run.maxDesktopMutations || 0);
+      promptQueueWrap.classList.remove('is-hidden');
+      promptQueueCount.textContent = String(n);
+      promptQueueList.innerHTML = '';
+      for (let index = 0; index < queuedPrompts.length; index += 1) {
+        const item = queuedPrompts[index];
+        const row = document.createElement('div');
+        row.className = 'prompt-queue-item';
+        const num = document.createElement('span');
+        num.className = 'prompt-queue-num';
+        num.textContent = (index + 1) + '.';
+        const text = document.createElement('div');
+        text.className = 'prompt-queue-text';
+        const normalized = String(item.prompt || '').replace(/\s+/g, ' ').trim();
+        const full = normalized || '(empty)';
+        text.textContent = full;
+        if (full.length > 280) {
+          text.textContent = full.slice(0, 277) + '…';
+        }
+        text.title = normalized || '(empty)';
+        row.appendChild(num);
+        row.appendChild(text);
+        promptQueueList.appendChild(row);
+      }
+    }
+
+    function renderRuntime(run) {
+      const hint = 'Enter send · Shift+Enter newline · @ files/windows';
+      if (!run || run.status !== 'running') {
+        runtimeLine.textContent = queuedPrompts.length ? queuedPrompts.length + ' in queue · ' + hint : hint;
+        return;
+      }
+      runtimeLine.textContent = queuedPrompts.length ? 'Working… · ' + queuedPrompts.length + ' waiting in queue' : 'Working…';
+    }
+
+    function drainQueuedPrompts() {
+      if (state.running || isSubmitting || !queuedPrompts.length) return;
+      const next = queuedPrompts.shift();
+      if (!next) return;
+      renderPromptQueue();
+      refreshStatusPillFromState();
+      sendPrompt(next.prompt, { mentions: next.mentions || [] });
+    }
+
+    function queuePrompt(prompt, mentions) {
+      queuedPrompts.push({
+        prompt,
+        mentions: Array.isArray(mentions) ? mentions : [],
+      });
+      refreshStatusPillFromState();
+      renderPromptQueue();
+      renderMessages();
+      renderRuntime(state.activeRun || null);
     }
 
     function closeSettingsMenu() {
@@ -1108,13 +1337,14 @@ function buildWebviewHtml(webview) {
         pendingSubmission &&
         !next.running &&
         typeof next.status === 'string' &&
-        /sign in|failed|stopped|cancelled|canceled/i.test(next.status);
+        /sign in|failed|stopped|cancelled|canceled|guidance/i.test(next.status);
       if (hasPendingEcho || shouldClearPendingWithoutEcho) {
         pendingSubmission = null;
       }
 
       state = next;
-      setComposerSubmitting(false);
+      isSubmitting = false;
+      updateComposerPrimaryButton();
 
       const authState = next.authState || { kind: 'none', label: 'Not signed in' };
       authLabel.textContent = authState.label || 'Not signed in';
@@ -1122,9 +1352,10 @@ function buildWebviewHtml(webview) {
       authStatusButton.classList.toggle('is-ready', authState.kind !== 'none');
       authStatusButton.title = authState.label || 'Authentication';
 
-      statusPill.textContent = next.status || 'Ready';
       renderDesktop(next.desktop || { platform: '', displays: [], recentSnapshots: [] });
       renderRuntime(next.activeRun || null);
+      refreshStatusPillFromState();
+      renderPromptQueue();
       renderSessions();
       renderMessages();
 
@@ -1135,12 +1366,20 @@ function buildWebviewHtml(webview) {
       if (previousSessionId !== next.activeSessionId) {
         restoreDraft();
       }
+
+      if (!next.running) {
+        drainQueuedPrompts();
+      }
     }
 
-    function sendPrompt(text) {
+    function sendPrompt(text, options) {
       const prompt = String(text || input.value || '').trim();
       if (!prompt) return;
-      const mentionItems = text ? [] : collectCurrentMentions(prompt);
+      const mentionItems = options && Array.isArray(options.mentions)
+        ? options.mentions
+        : text
+          ? []
+          : collectCurrentMentions(prompt);
       pendingSubmission = {
         id: '__pending_user__',
         role: 'user',
@@ -1148,7 +1387,10 @@ function buildWebviewHtml(webview) {
         createdAt: new Date().toISOString(),
       };
       setComposerSubmitting(true);
-      statusPill.textContent = 'Submitting...';
+      statusPill.textContent =
+        queuedPrompts.length > 0
+          ? 'Submitting… · ' + queuedPrompts.length + ' still queued'
+          : 'Submitting…';
       runtimeLine.textContent = 'Submitting your prompt...';
       saveDraft();
       drafts.set(currentDraftKey(), '');
@@ -1159,6 +1401,24 @@ function buildWebviewHtml(webview) {
       autoSize();
       renderMessages();
       vscode.postMessage({ type: 'submitPrompt', prompt, mentions: mentionItems });
+    }
+
+    function queueOrSendPrompt(text) {
+      const prompt = String(text || input.value || '').trim();
+      if (!prompt) return;
+      const mentionItems = text ? [] : collectCurrentMentions(prompt);
+      if (state.running || isSubmitting) {
+        queuePrompt(prompt, mentionItems);
+        saveDraft();
+        drafts.set(currentDraftKey(), '');
+        draftMentions.set(currentDraftKey(), []);
+        input.value = '';
+        closeMentions();
+        closeSettingsMenu();
+        autoSize();
+        return;
+      }
+      sendPrompt(prompt, { mentions: mentionItems });
     }
 
     document.getElementById('newChatBtn').addEventListener('click', () => {
@@ -1190,7 +1450,14 @@ function buildWebviewHtml(webview) {
       closeSettingsMenu();
       vscode.postMessage({ type: 'copyDebug' });
     });
-    sendBtn.addEventListener('click', () => sendPrompt());
+    sendBtn.addEventListener('click', () => {
+      if (state.running) {
+        closeSettingsMenu();
+        vscode.postMessage({ type: 'stopAutomation' });
+        return;
+      }
+      queueOrSendPrompt();
+    });
 
     authStatusButton.addEventListener('click', () => toggleSettingsMenu());
     settingsToggle.addEventListener('click', () => toggleSettingsMenu());
@@ -1244,12 +1511,12 @@ function buildWebviewHtml(webview) {
 
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
-        sendPrompt();
+        queueOrSendPrompt();
       }
     });
 
     for (const chip of document.querySelectorAll('.chip')) {
-      chip.addEventListener('click', () => sendPrompt(chip.getAttribute('data-prompt')));
+      chip.addEventListener('click', () => queueOrSendPrompt(chip.getAttribute('data-prompt')));
     }
 
     window.addEventListener('message', (event) => {

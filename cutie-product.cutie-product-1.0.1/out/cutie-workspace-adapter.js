@@ -45,6 +45,36 @@ const execAsync = (0, util_1.promisify)(child_process_1.exec);
 function uniqueStrings(values) {
     return Array.from(new Set(values.filter(Boolean)));
 }
+/**
+ * read_file normalizes CRLF→LF in returned content so the model often proposes LF-only find strings.
+ * edit_file must match against on-disk / buffer text, which may still be CRLF on Windows.
+ * Try a literal match first, then the same strings after normalizing newlines for comparison only.
+ */
+function applyEditFindReplace(before, find, replace, replaceAll) {
+    const run = (src, f, r, all) => {
+        const occurrences = src.split(f).length - 1;
+        if (occurrences <= 0)
+            return null;
+        const after = all ? src.split(f).join(r) : src.replace(f, r);
+        return { after, count: all ? occurrences : 1 };
+    };
+    const direct = run(before, find, replace, replaceAll);
+    if (direct)
+        return { after: direct.after, replacedCount: direct.count };
+    const findNl = find.replace(/\r\n/g, "\n");
+    const repNl = replace.replace(/\r\n/g, "\n");
+    const beforeNl = before.replace(/\r\n/g, "\n");
+    const viaNl = run(beforeNl, findNl, repNl, replaceAll);
+    if (!viaNl)
+        return null;
+    if (before.includes("\r\n")) {
+        return {
+            after: viaNl.after.replace(/\n/g, "\r\n"),
+            replacedCount: viaNl.count,
+        };
+    }
+    return { after: viaNl.after, replacedCount: viaNl.count };
+}
 function toAbsoluteWorkspacePath(relativePath) {
     const root = (0, config_1.getWorkspaceRootPath)();
     const normalized = (0, cutie_policy_1.normalizeWorkspaceRelativePath)(relativePath);
@@ -64,6 +94,45 @@ function isExcludedPath(relativePath) {
 class CutieWorkspaceAdapter {
     constructor() {
         this.checkpoint = null;
+    }
+    openDocumentForAbsolutePath(absolutePath) {
+        const resolved = path.resolve(absolutePath);
+        return vscode.workspace.textDocuments.find((doc) => path.resolve(doc.uri.fsPath) === resolved);
+    }
+    fullDocumentRange(doc) {
+        if (doc.lineCount <= 0) {
+            return new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 0));
+        }
+        const last = doc.lineAt(doc.lineCount - 1);
+        return new vscode.Range(new vscode.Position(0, 0), last.range.end);
+    }
+    /**
+     * Baseline for edits: live editor buffer when the file is open (saved or unsaved), else disk.
+     * Unsaved buffers are merged by replacing the whole document and saving — no user prompts.
+     */
+    async readUtf8Baseline(absolutePath, _normalizedPath) {
+        const open = this.openDocumentForAbsolutePath(absolutePath);
+        if (open) {
+            return { text: open.getText(), existed: true };
+        }
+        try {
+            const text = await fs.readFile(absolutePath, "utf8");
+            return { text, existed: true };
+        }
+        catch {
+            return { text: "", existed: false };
+        }
+    }
+    async replaceEntireFileViaWorkspace(uri, newText, normalizedPath) {
+        const doc = await vscode.workspace.openTextDocument(uri);
+        const range = this.fullDocumentRange(doc);
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(uri, range, newText);
+        const applied = await vscode.workspace.applyEdit(edit);
+        if (!applied) {
+            throw new Error(`VS Code did not apply Cutie's edit to "${normalizedPath}".`);
+        }
+        await vscode.workspace.save(uri);
     }
     async listFiles(query, limit) {
         const rows = await vscode.workspace.findFiles("**/*", undefined, 2000);
@@ -86,7 +155,8 @@ class CutieWorkspaceAdapter {
         const absolutePath = toAbsoluteWorkspacePath(filePath);
         if (!absolutePath)
             throw new Error(`Invalid workspace-relative path: ${filePath}`);
-        const raw = await fs.readFile(absolutePath, "utf8");
+        const open = this.openDocumentForAbsolutePath(absolutePath);
+        const raw = open ? open.getText() : await fs.readFile(absolutePath, "utf8");
         const lines = raw.replace(/\r\n/g, "\n").split("\n");
         const maxLine = Math.max(lines.length, 1);
         const startLine = Number.isFinite(Number(startLineValue))
@@ -175,20 +245,22 @@ class CutieWorkspaceAdapter {
         const absolutePath = toAbsoluteWorkspacePath(normalizedPath);
         if (!absolutePath)
             throw new Error(`Invalid workspace-relative path: ${normalizedPath}`);
-        await this.captureUndoSnapshot(normalizedPath);
-        const before = await fs.readFile(absolutePath, "utf8");
-        const occurrences = before.split(input.find).length - 1;
-        if (occurrences <= 0) {
+        const { text: before, existed } = await this.readUtf8Baseline(absolutePath, normalizedPath);
+        if (!existed) {
+            throw new Error(`edit_file target does not exist yet: ${normalizedPath}`);
+        }
+        await this.captureUndoSnapshotWithBaseline(normalizedPath, before, true);
+        const applied = applyEditFindReplace(before, input.find, input.replace, Boolean(input.replaceAll));
+        if (!applied) {
             throw new Error(`edit_file could not find the requested text in ${normalizedPath}.`);
         }
-        const after = input.replaceAll
-            ? before.split(input.find).join(input.replace)
-            : before.replace(input.find, input.replace);
-        const replacedCount = input.replaceAll ? occurrences : 1;
-        await fs.writeFile(absolutePath, after, "utf8");
+        const { after, replacedCount } = applied;
+        const uri = vscode.Uri.file(absolutePath);
+        await this.replaceEntireFileViaWorkspace(uri, after, normalizedPath);
         return {
             path: normalizedPath,
             replacedCount,
+            previousContent: before,
             checkpoint: this.createCheckpoint(),
         };
     }
@@ -205,12 +277,21 @@ class CutieWorkspaceAdapter {
                 throw new Error(`write_file refused to overwrite ${normalizedPath} without overwrite=true.`);
             }
         }
-        await this.captureUndoSnapshot(normalizedPath);
+        const { text: previousContent, existed } = await this.readUtf8Baseline(absolutePath, normalizedPath);
+        await this.captureUndoSnapshotWithBaseline(normalizedPath, previousContent, existed);
         await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-        await fs.writeFile(absolutePath, String(input.content || ""), "utf8");
+        const uri = vscode.Uri.file(absolutePath);
+        const nextContent = String(input.content || "");
+        if (!existed) {
+            await vscode.workspace.fs.writeFile(uri, new Uint8Array(Buffer.from(nextContent, "utf8")));
+        }
+        else {
+            await this.replaceEntireFileViaWorkspace(uri, nextContent, normalizedPath);
+        }
         return {
             path: normalizedPath,
-            bytes: Buffer.byteLength(String(input.content || ""), "utf8"),
+            bytes: Buffer.byteLength(nextContent, "utf8"),
+            previousContent,
             checkpoint: this.createCheckpoint(),
         };
     }
@@ -315,7 +396,7 @@ class CutieWorkspaceAdapter {
         }
         return matches;
     }
-    async captureUndoSnapshot(filePath) {
+    async captureUndoSnapshotWithBaseline(filePath, baselineText, existed) {
         if (!this.checkpoint) {
             this.createCheckpoint("Automatic checkpoint before workspace mutation.");
         }
@@ -323,23 +404,11 @@ class CutieWorkspaceAdapter {
             return;
         if (this.checkpoint.files.some((entry) => entry.path === filePath))
             return;
-        const absolutePath = toAbsoluteWorkspacePath(filePath);
-        if (!absolutePath)
-            return;
-        try {
-            this.checkpoint.files.push({
-                path: filePath,
-                existed: true,
-                content: await fs.readFile(absolutePath, "utf8"),
-            });
-        }
-        catch {
-            this.checkpoint.files.push({
-                path: filePath,
-                existed: false,
-                content: "",
-            });
-        }
+        this.checkpoint.files.push({
+            path: filePath,
+            existed,
+            content: baselineText,
+        });
     }
     async runProcess(command, cwd, timeoutMs) {
         try {

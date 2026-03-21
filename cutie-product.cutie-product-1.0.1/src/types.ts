@@ -26,6 +26,8 @@ export type CutieToolName =
 
 export type CutieToolKind = "observe" | "mutate" | "command";
 export type CutieToolDomain = "workspace" | "desktop";
+export type CutieTaskGoal = "conversation" | "code_change" | "workspace_investigation" | "desktop_action";
+export type CutieEscalationState = "none" | "needs_guidance";
 
 export type CutieToolCall = {
   id: string;
@@ -113,16 +115,26 @@ export type DesktopContextState = {
 export type CutieRunState = {
   id: string;
   sessionId: string;
-  status: "idle" | "running" | "completed" | "failed" | "canceled";
+  status: "idle" | "running" | "needs_guidance" | "completed" | "failed" | "canceled";
   phase:
     | "idle"
     | "collecting_context"
     | "planning"
+    | "repairing"
     | "executing_tool"
     | "saving_session"
+    | "needs_guidance"
     | "completed"
     | "failed"
     | "canceled";
+  goal: CutieTaskGoal;
+  goalSatisfied: boolean;
+  lastMeaningfulProgressAtStep?: number;
+  lastMeaningfulProgressSummary?: string;
+  repairAttemptCount: number;
+  escalationState: CutieEscalationState;
+  stuckReason?: string;
+  suggestedNextAction?: string;
   stepCount: number;
   maxSteps: number;
   workspaceMutationCount: number;
@@ -166,6 +178,20 @@ export type CutieViewState = {
   running: boolean;
   activeRun: CutieRunState | null;
   desktop: DesktopContextState;
+  progress: CutieProgressViewModel | null;
+};
+
+export type CutieProgressViewModel = {
+  goal: CutieTaskGoal;
+  goalLabel: string;
+  phaseLabel: string;
+  pursuingLabel: string;
+  lastMeaningfulProgressSummary?: string;
+  repairLabel?: string;
+  escalationMessage?: string;
+  suggestedNextAction?: string;
+  goalSatisfied: boolean;
+  escalationState: CutieEscalationState;
 };
 
 export type CutieModelMessage = {
@@ -209,8 +235,17 @@ export type CutieToolResult = {
   snapshot?: DesktopSnapshotRef | null;
 };
 
+export type CutieWorkspaceMutationInfo = {
+  relativePath: string;
+  toolName: "write_file" | "edit_file";
+  /** Snapshot immediately before this mutation (empty string if the file did not exist). */
+  previousContent: string;
+};
+
 export type CutieRuntimeCallbacks = {
   onSessionChanged?: (session: CutieSessionRecord) => void | Promise<void>;
   onStatusChanged?: (status: string, run: CutieRunState | null) => void | Promise<void>;
   onAssistantDelta?: (delta: string, accumulated: string) => void | Promise<void>;
+  /** Fired after a successful workspace file write or edit so the host can open the file and surface UX cues. */
+  onWorkspaceFileMutated?: (info: CutieWorkspaceMutationInfo) => void | Promise<void>;
 };

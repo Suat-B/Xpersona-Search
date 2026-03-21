@@ -64,13 +64,31 @@ function buildKeyChord(keys: string[]): string {
   return `${modifiers.join("")}${primary || ""}`;
 }
 
+const DESKTOP_CONTEXT_CACHE_TTL_MS = 3_000;
+
 export class CutieDesktopAdapter {
   private recentSnapshots: DesktopSnapshotRef[] = [];
+  private desktopContextCache: { at: number; value: DesktopContextState } | null = null;
+
+  /** Drops cached getDesktopContext() so the next call re-queries displays and active window. */
+  invalidateDesktopContextCache(): void {
+    this.desktopContextCache = null;
+  }
 
   async getDesktopContext(): Promise<DesktopContextState> {
+    const now = Date.now();
+    if (
+      this.desktopContextCache &&
+      now - this.desktopContextCache.at < DESKTOP_CONTEXT_CACHE_TTL_MS
+    ) {
+      return {
+        ...this.desktopContextCache.value,
+        recentSnapshots: this.recentSnapshots.slice(0, 8),
+      };
+    }
     const displays = await this.listDisplays().catch(() => []);
     const activeWindow = await this.getActiveWindow().catch(() => null);
-    return {
+    const value: DesktopContextState = {
       platform: process.platform,
       displays,
       activeWindow,
@@ -80,6 +98,8 @@ export class CutieDesktopAdapter {
         experimentalAdaptersEnabled: getExperimentalDesktopAdaptersEnabled(),
       },
     };
+    this.desktopContextCache = { at: now, value };
+    return value;
   }
 
   async captureScreen(displayId?: string): Promise<DesktopSnapshotRef> {
@@ -103,6 +123,7 @@ export class CutieDesktopAdapter {
       activeWindow,
     };
     this.recentSnapshots = [snapshot, ...this.recentSnapshots.filter((item) => item.snapshotId !== snapshot.snapshotId)].slice(0, 12);
+    this.invalidateDesktopContextCache();
     return snapshot;
   }
 
